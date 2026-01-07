@@ -1,0 +1,151 @@
+/**
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This file is part of the Luciferase.
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <http://www.gnu.org/licenses/>.
+ */
+
+package com.hellblazer.luciferase.simulation.von;
+
+import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
+import com.hellblazer.luciferase.simulation.ghost.GhostEntity;
+import javafx.geometry.Point3D;
+
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Sealed message types for VON P2P communication.
+ * <p>
+ * In v4.0 architecture, all VON communication after JOIN is point-to-point
+ * between neighbors (NOT broadcast). These messages are sent directly to
+ * specific neighbors via VonTransport.
+ * <p>
+ * Message Types:
+ * <ul>
+ *   <li>{@link JoinRequest} - Request to join the network at a position</li>
+ *   <li>{@link JoinResponse} - Response with neighbor information</li>
+ *   <li>{@link Move} - Notification of position/bounds change</li>
+ *   <li>{@link Leave} - Notification of graceful departure</li>
+ *   <li>{@link GhostSync} - Ghost entity synchronization</li>
+ *   <li>{@link Ack} - Acknowledgment of received message</li>
+ * </ul>
+ *
+ * @author hal.hildebrand
+ */
+public sealed interface VonMessage {
+
+    /**
+     * Request to join the VON at a specific position.
+     * <p>
+     * Sent to the acceptor (node responsible for the region) to initiate JOIN protocol.
+     *
+     * @param joinerId  UUID of the joining node
+     * @param position  Desired position in the network
+     * @param bounds    Initial spatial bounds
+     * @param timestamp Message creation time
+     */
+    record JoinRequest(UUID joinerId, Point3D position, BubbleBounds bounds, long timestamp) implements VonMessage {
+        public JoinRequest(UUID joinerId, Point3D position, BubbleBounds bounds) {
+            this(joinerId, position, bounds, System.currentTimeMillis());
+        }
+    }
+
+    /**
+     * Response to a JOIN request with neighbor information.
+     * <p>
+     * Contains the set of neighbors the joiner should connect to.
+     *
+     * @param acceptorId UUID of the accepting node
+     * @param neighbors  Set of neighbor information for the joiner
+     * @param timestamp  Message creation time
+     */
+    record JoinResponse(UUID acceptorId, Set<NeighborInfo> neighbors, long timestamp) implements VonMessage {
+        public JoinResponse(UUID acceptorId, Set<NeighborInfo> neighbors) {
+            this(acceptorId, neighbors, System.currentTimeMillis());
+        }
+    }
+
+    /**
+     * Notification of a node's position or bounds change.
+     * <p>
+     * Sent to all neighbors when this node moves.
+     *
+     * @param nodeId      UUID of the moving node
+     * @param newPosition New position after movement
+     * @param newBounds   New bounds after movement
+     * @param timestamp   Message creation time
+     */
+    record Move(UUID nodeId, Point3D newPosition, BubbleBounds newBounds, long timestamp) implements VonMessage {
+        public Move(UUID nodeId, Point3D newPosition, BubbleBounds newBounds) {
+            this(nodeId, newPosition, newBounds, System.currentTimeMillis());
+        }
+    }
+
+    /**
+     * Notification of a node's graceful departure.
+     * <p>
+     * Sent to all neighbors when this node is leaving the network.
+     *
+     * @param nodeId    UUID of the leaving node
+     * @param timestamp Message creation time
+     */
+    record Leave(UUID nodeId, long timestamp) implements VonMessage {
+        public Leave(UUID nodeId) {
+            this(nodeId, System.currentTimeMillis());
+        }
+    }
+
+    /**
+     * Ghost entity synchronization between neighbors.
+     * <p>
+     * Sent to neighboring bubbles to sync ghost entities.
+     *
+     * @param sourceBubbleId UUID of the source bubble
+     * @param ghosts         List of ghost entities to sync
+     * @param timestamp      Message creation time
+     */
+    record GhostSync(UUID sourceBubbleId, List<GhostEntity> ghosts, long timestamp) implements VonMessage {
+        public GhostSync(UUID sourceBubbleId, List<GhostEntity> ghosts) {
+            this(sourceBubbleId, ghosts, System.currentTimeMillis());
+        }
+    }
+
+    /**
+     * Acknowledgment of a received message.
+     * <p>
+     * Sent back to confirm receipt of JOIN/MOVE/LEAVE messages.
+     *
+     * @param ackFor    UUID of the message being acknowledged
+     * @param senderId  UUID of the acknowledging node
+     * @param timestamp Message creation time
+     */
+    record Ack(UUID ackFor, UUID senderId, long timestamp) implements VonMessage {
+        public Ack(UUID ackFor, UUID senderId) {
+            this(ackFor, senderId, System.currentTimeMillis());
+        }
+    }
+
+    /**
+     * Information about a VON neighbor.
+     * <p>
+     * Exchanged during JOIN to provide new nodes with neighbor details.
+     *
+     * @param nodeId   UUID of the neighbor
+     * @param position Neighbor's current position
+     * @param bounds   Neighbor's current bounds
+     */
+    record NeighborInfo(UUID nodeId, Point3D position, BubbleBounds bounds) {
+    }
+}
