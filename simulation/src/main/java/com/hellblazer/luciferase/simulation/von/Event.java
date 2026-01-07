@@ -1,7 +1,6 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import com.hellblazer.luciferase.simulation.ghost.GhostEntity;
 import javafx.geometry.Point3D;
 
 import java.util.List;
@@ -160,11 +159,13 @@ public sealed interface Event {
      * Used for dead reckoning and entity interpolation across bubble boundaries.
      *
      * @param sourceBubbleId Source bubble that sent the ghosts
-     * @param ghosts         List of ghost entities received
+     * @param ghosts         List of transport ghost entities received
+     * @param bucket         Simulation bucket for temporal ordering
      */
     record GhostSync(
         UUID sourceBubbleId,
-        List<GhostEntity> ghosts
+        List<VonMessage.TransportGhost> ghosts,
+        long bucket
     ) implements Event {
 
         @Override

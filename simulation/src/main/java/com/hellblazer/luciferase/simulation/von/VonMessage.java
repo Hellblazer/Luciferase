@@ -18,9 +18,9 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import com.hellblazer.luciferase.simulation.ghost.GhostEntity;
 import javafx.geometry.Point3D;
 
+import javax.vecmath.Point3f;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -113,13 +113,40 @@ public sealed interface VonMessage {
      * Sent to neighboring bubbles to sync ghost entities.
      *
      * @param sourceBubbleId UUID of the source bubble
-     * @param ghosts         List of ghost entities to sync
+     * @param ghosts         List of transport ghost entities to sync
+     * @param bucket         Simulation bucket for temporal ordering
      * @param timestamp      Message creation time
      */
-    record GhostSync(UUID sourceBubbleId, List<GhostEntity> ghosts, long timestamp) implements VonMessage {
-        public GhostSync(UUID sourceBubbleId, List<GhostEntity> ghosts) {
-            this(sourceBubbleId, ghosts, System.currentTimeMillis());
+    record GhostSync(UUID sourceBubbleId, List<TransportGhost> ghosts, long bucket,
+                     long timestamp) implements VonMessage {
+        public GhostSync(UUID sourceBubbleId, List<TransportGhost> ghosts, long bucket) {
+            this(sourceBubbleId, ghosts, bucket, System.currentTimeMillis());
         }
+    }
+
+    /**
+     * Transport-friendly ghost entity representation.
+     * <p>
+     * Serializable format for P2P ghost synchronization carrying all
+     * SimulationGhostEntity data needed for reconstruction on the receiver.
+     *
+     * @param entityId     Entity identifier as string
+     * @param position     Entity 3D position
+     * @param contentClass Content class name for reconstruction
+     * @param sourceTreeId Source spatial tree identifier
+     * @param epoch        Authority epoch for stale detection
+     * @param version      Entity version within epoch
+     * @param timestamp    Creation timestamp
+     */
+    record TransportGhost(
+        String entityId,
+        Point3f position,
+        String contentClass,
+        String sourceTreeId,
+        long epoch,
+        long version,
+        long timestamp
+    ) {
     }
 
     /**

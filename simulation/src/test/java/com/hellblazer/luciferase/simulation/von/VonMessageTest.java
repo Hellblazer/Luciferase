@@ -92,11 +92,13 @@ public class VonMessageTest {
     @Test
     void testGhostSync_withEmptyGhosts() {
         var sourceBubbleId = UUID.randomUUID();
+        long bucket = 100L;
 
-        var sync = new VonMessage.GhostSync(sourceBubbleId, List.of());
+        var sync = new VonMessage.GhostSync(sourceBubbleId, List.of(), bucket);
 
         assertThat(sync.sourceBubbleId()).isEqualTo(sourceBubbleId);
         assertThat(sync.ghosts()).isEmpty();
+        assertThat(sync.bucket()).isEqualTo(bucket);
         assertThat(sync.timestamp()).isGreaterThan(0);
     }
 

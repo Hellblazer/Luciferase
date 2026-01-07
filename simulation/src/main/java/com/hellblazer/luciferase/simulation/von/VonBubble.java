@@ -405,10 +405,11 @@ public class VonBubble extends EnhancedBubble implements Node {
     }
 
     private void handleGhostSync(VonMessage.GhostSync sync) {
-        log.trace("Received GHOST_SYNC from {} with {} ghosts", sync.sourceBubbleId(), sync.ghosts().size());
+        log.trace("Received GHOST_SYNC from {} with {} ghosts at bucket {}",
+                  sync.sourceBubbleId(), sync.ghosts().size(), sync.bucket());
         // Ghost handling is delegated to external ghost manager
         // Emit event for external processing
-        emitEvent(new Event.GhostSync(sync.sourceBubbleId(), sync.ghosts()));
+        emitEvent(new Event.GhostSync(sync.sourceBubbleId(), sync.ghosts(), sync.bucket()));
     }
 
     private void handleAck(VonMessage.Ack ack) {
