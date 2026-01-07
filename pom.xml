@@ -20,6 +20,7 @@
         <h2.version>2.1.212</h2.version>
         <javafx.version>${java.target.version}</javafx.version>
         <prime-mover.version>1.0.5</prime-mover.version>
+        <delos.version>0.0.1</delos.version>
         <jmh.version>1.37</jmh.version>
         <jqwik.version>1.8.4</jqwik.version>
         <lwjgl.version>3.3.6</lwjgl.version>
@@ -122,6 +123,13 @@
                 <groupId>com.hellblazer.primeMover</groupId>
                 <artifactId>primemover-maven-plugin</artifactId>
                 <version>${prime-mover.version}</version>
+            </dependency>
+
+            <!-- Delos Framework -->
+            <dependency>
+                <groupId>com.hellblazer.delos</groupId>
+                <artifactId>fireflies</artifactId>
+                <version>${delos.version}</version>
             </dependency>
 
             <dependency>
@@ -573,6 +581,14 @@
             <id>github-prime-mover</id>
             <name>Prime Mover GitHub Packages</name>
             <url>https://maven.pkg.github.com/Hellblazer/Prime-Mover</url>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>github-delos</id>
+            <name>Delos GitHub Packages</name>
+            <url>https://maven.pkg.github.com/Hellblazer/Delos</url>
             <snapshots>
                 <enabled>true</enabled>
             </snapshots>
