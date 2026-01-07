@@ -17,17 +17,11 @@
 
 package com.hellblazer.luciferase.simulation.integration;
 
-import com.hellblazer.delos.fireflies.View.Seed;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Test TestClusterBuilder infrastructure with 6-node cluster.
@@ -43,48 +37,44 @@ public class TestClusterBuilderTest extends IntegrationTestBase {
         // Given: 6-node cluster from TestClusterBuilder
         setupCluster(6);
 
-        var views = cluster.views();
-        var members = cluster.members();
-        var endpoints = cluster.endpoints();
+        // When: Bootstrap and start the cluster
+        var success = cluster.bootstrapAndStart(Duration.ofMillis(5), 30);
 
-        // Create seed from first member
-        var kernel = List.of(new Seed(
-            members.get(0).getIdentifier().getIdentifier(),
-            endpoints.get(0)
-        ));
+        // Then: Cluster should stabilize
+        assertTrue(success, "Cluster did not stabilize: " + cluster.getUnstableNodes());
 
-        var gossipDuration = Duration.ofMillis(5);
+        // Verify all views see all members
+        var views = cluster.getViews();
+        for (var view : views) {
+            assertEquals(6, view.getContext().activeCount(),
+                         "Each view should see 6 active members");
+        }
 
-        // When: Bootstrap kernel node (view 0) with no seeds
-        var countdown = new AtomicReference<>(new CountDownLatch(1));
-        views.get(0).start(() -> countdown.get().countDown(), gossipDuration, Collections.emptyList());
+        System.out.println("6-node cluster using TestClusterBuilder converged successfully");
+    }
 
-        // Then: Kernel node should bootstrap within 30s
-        assertTrue(countdown.get().await(30, TimeUnit.SECONDS), "Kernel node did not bootstrap");
+    @Test
+    void testCardinality_respected() throws Exception {
+        // Given: Custom cardinality
+        cluster = new TestClusterBuilder()
+            .cardinality(4)
+            .build();
 
-        // When: Start ALL views with kernel as seed
-        countdown.set(new CountDownLatch(6));
-        views.forEach(view ->
-            view.start(() -> countdown.get().countDown(), gossipDuration, kernel)
-        );
+        // Then: Should have correct number of views and members
+        assertEquals(4, cluster.getViews().size());
+        assertEquals(4, cluster.getMembers().size());
+        assertEquals(4, cluster.getCardinality());
+    }
 
-        // Then: All nodes should start within 30s
-        assertTrue(countdown.get().await(30, TimeUnit.SECONDS), "Not all nodes started");
+    @Test
+    void testBuildAndStart_convenience() throws Exception {
+        // Given: Using static convenience method
+        cluster = TestClusterBuilder.buildAndStart(8);
 
-        // Wait for cluster convergence
-        Thread.sleep(5000);
-
-        // Then: All 6 nodes should see all 6 members
-        var failed = views.stream()
-                          .filter(v -> v.getContext().activeCount() != 6)
-                          .map(v -> String.format("View %s has activeCount %d (expected 6)",
-                                                  v.getContext().getId(),
-                                                  v.getContext().activeCount()))
-                          .toList();
-
-        assertTrue(failed.isEmpty(),
-                   "Cluster did not converge. Failed: " + failed.size() + "\n" + String.join("\n", failed));
-
-        System.out.println("✅ 6-node cluster using TestClusterBuilder converged successfully");
+        // Then: Should be fully connected
+        assertEquals(8, cluster.getCardinality());
+        for (var view : cluster.getViews()) {
+            assertEquals(8, view.getContext().activeCount());
+        }
     }
 }

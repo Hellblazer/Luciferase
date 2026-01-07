@@ -47,7 +47,9 @@ public abstract class IntegrationTestBase {
      * @param nodeCount number of nodes in cluster
      */
     protected void setupCluster(int nodeCount) {
-        cluster = TestClusterBuilder.buildCluster(nodeCount);
+        cluster = new TestClusterBuilder()
+            .cardinality(nodeCount)
+            .build();
     }
 
     /**
@@ -58,7 +60,7 @@ public abstract class IntegrationTestBase {
     @AfterEach
     void teardownCluster() {
         if (cluster != null) {
-            cluster.cleanup().run();
+            cluster.close();
             cluster = null;
         }
     }

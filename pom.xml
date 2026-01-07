@@ -20,7 +20,7 @@
         <h2.version>2.1.212</h2.version>
         <javafx.version>${java.target.version}</javafx.version>
         <prime-mover.version>1.0.5</prime-mover.version>
-        <delos.version>0.0.1</delos.version>
+        <delos.version>0.0.4</delos.version>
         <jmh.version>1.37</jmh.version>
         <jqwik.version>1.8.4</jqwik.version>
         <lwjgl.version>3.3.6</lwjgl.version>

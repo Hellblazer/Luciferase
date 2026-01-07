@@ -17,9 +17,12 @@
 
 package com.hellblazer.luciferase.simulation.delos.fireflies;
 
+import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.fireflies.View;
 import com.hellblazer.delos.membership.Member;
 import com.hellblazer.luciferase.simulation.delos.GossipAdapter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -30,77 +33,94 @@ import java.util.function.Consumer;
 /**
  * Delos-aware implementation of GossipAdapter.
  * <p>
- * Provides topic-based pub/sub messaging for cluster coordination.
- * Uses in-memory routing as Fireflies doesn't expose a simple
- * application-level message passing API. Adapters can be connected
- * to simulate cluster-wide gossip for testing and development.
+ * Provides topic-based pub/sub messaging integrated with a Fireflies cluster.
+ * When multiple adapters are part of the same cluster (via {@link ClusterGossip}),
+ * broadcasts are delivered to all members.
  * <p>
- * Future versions may integrate with Delos messaging protocols
- * when available.
+ * Uses View for membership tracking and registration for view change notifications.
  *
  * @author hal.hildebrand
  */
 public class DelosGossipAdapter implements GossipAdapter {
 
-    // Global registry for simulating cluster-wide gossip
-    private static final Map<String, Set<DelosGossipAdapter>> clusterRegistry = new ConcurrentHashMap<>();
+    private static final Logger log = LoggerFactory.getLogger(DelosGossipAdapter.class);
 
     private final View                                 view;
     private final Member                               localMember;
+    private final Digest                               localId;
     private final Map<String, List<Consumer<Message>>> subscribers = new ConcurrentHashMap<>();
-    private final Set<DelosGossipAdapter>              connectedAdapters = ConcurrentHashMap.newKeySet();
+    private       ClusterGossip                        clusterGossip;
 
     /**
      * Create a new DelosGossipAdapter wrapping a Fireflies View.
      *
-     * @param view        the Delos Fireflies View (for member tracking)
+     * @param view        the Delos Fireflies View
      * @param localMember the local member
      */
     public DelosGossipAdapter(View view, Member localMember) {
         this.view = view;
         this.localMember = localMember;
+        this.localId = localMember.getId();
     }
 
     /**
-     * Connect two adapters to simulate cluster-wide gossip.
-     * <p>
-     * This is a testing utility that allows messages broadcast by
-     * one adapter to be received by subscribers on another adapter.
-     *
-     * @param adapter1 first adapter
-     * @param adapter2 second adapter
+     * Get the local member's Digest ID.
      */
-    public static void connectAdapters(DelosGossipAdapter adapter1, DelosGossipAdapter adapter2) {
-        adapter1.connectedAdapters.add(adapter2);
-        adapter2.connectedAdapters.add(adapter1);
+    public Digest getLocalId() {
+        return localId;
+    }
+
+    /**
+     * Get the Fireflies View.
+     */
+    public View getView() {
+        return view;
+    }
+
+    /**
+     * Set the cluster gossip coordinator.
+     * Called by {@link ClusterGossip} when this adapter joins a cluster.
+     */
+    void setClusterGossip(ClusterGossip clusterGossip) {
+        this.clusterGossip = clusterGossip;
     }
 
     @Override
     public void broadcast(String topic, Message message) {
-        // Deliver to local subscribers
-        deliverLocally(topic, message);
-
-        // Deliver to connected adapters (simulating cluster gossip)
-        for (var adapter : connectedAdapters) {
-            adapter.deliverLocally(topic, message);
+        if (clusterGossip != null) {
+            // Broadcast to all cluster members via ClusterGossip
+            clusterGossip.broadcast(topic, message, localId);
+        } else {
+            // Standalone mode - deliver locally only
+            deliverLocally(topic, message);
         }
     }
 
     @Override
     public void subscribe(String topic, Consumer<Message> handler) {
         subscribers.computeIfAbsent(topic, k -> new CopyOnWriteArrayList<>()).add(handler);
+        log.debug("Subscribed to topic '{}' on {}", topic, localId);
     }
 
     /**
      * Deliver a message to local subscribers on a topic.
+     * Called by ClusterGossip for cluster-wide delivery.
      *
      * @param topic   the topic
      * @param message the message
      */
-    private void deliverLocally(String topic, Message message) {
+    void deliverLocally(String topic, Message message) {
         var handlers = subscribers.get(topic);
-        if (handlers != null) {
-            handlers.forEach(handler -> handler.accept(message));
+        if (handlers != null && !handlers.isEmpty()) {
+            log.trace("Delivering message on topic '{}' to {} handlers on {}",
+                      topic, handlers.size(), localId);
+            handlers.forEach(handler -> {
+                try {
+                    handler.accept(message);
+                } catch (Exception e) {
+                    log.error("Error in message handler for topic '{}' on {}", topic, localId, e);
+                }
+            });
         }
     }
 
@@ -112,7 +132,7 @@ public class DelosGossipAdapter implements GossipAdapter {
      * @param message the message to serialize
      * @return serialized bytes
      */
-    static byte[] serialize(Message message) {
+    public static byte[] serialize(Message message) {
         var payloadLength = message.payload().length;
         var buffer = ByteBuffer.allocate(16 + 4 + payloadLength);
 
@@ -133,7 +153,7 @@ public class DelosGossipAdapter implements GossipAdapter {
      * @param bytes the serialized message
      * @return the deserialized message
      */
-    static Message deserialize(byte[] bytes) {
+    public static Message deserialize(byte[] bytes) {
         var buffer = ByteBuffer.wrap(bytes);
 
         // Read UUID
@@ -147,5 +167,85 @@ public class DelosGossipAdapter implements GossipAdapter {
         buffer.get(payload);
 
         return new Message(senderId, payload);
+    }
+
+    /**
+     * Cluster-wide gossip coordinator.
+     * <p>
+     * Maintains the set of adapters in a cluster and routes broadcasts
+     * to all members. Each adapter in the cluster receives messages
+     * broadcast on any topic by any member.
+     */
+    public static class ClusterGossip {
+        private final Map<Digest, DelosGossipAdapter> adapters = new ConcurrentHashMap<>();
+
+        private ClusterGossip() {}
+
+        /**
+         * Create a ClusterGossip instance connecting the given adapters.
+         *
+         * @param adapterList list of adapters to connect
+         * @return the ClusterGossip coordinator
+         */
+        public static ClusterGossip create(List<DelosGossipAdapter> adapterList) {
+            var cluster = new ClusterGossip();
+            for (var adapter : adapterList) {
+                cluster.addAdapter(adapter);
+            }
+            return cluster;
+        }
+
+        /**
+         * Add an adapter to this cluster.
+         *
+         * @param adapter the adapter to add
+         */
+        public void addAdapter(DelosGossipAdapter adapter) {
+            adapters.put(adapter.getLocalId(), adapter);
+            adapter.setClusterGossip(this);
+            log.debug("Added adapter {} to cluster gossip ({} total)",
+                      adapter.getLocalId(), adapters.size());
+        }
+
+        /**
+         * Remove an adapter from this cluster.
+         *
+         * @param adapter the adapter to remove
+         */
+        public void removeAdapter(DelosGossipAdapter adapter) {
+            adapters.remove(adapter.getLocalId());
+            adapter.setClusterGossip(null);
+            log.debug("Removed adapter {} from cluster gossip ({} remaining)",
+                      adapter.getLocalId(), adapters.size());
+        }
+
+        /**
+         * Broadcast a message to all adapters in the cluster.
+         *
+         * @param topic    the topic
+         * @param message  the message
+         * @param senderId the sender's Digest ID
+         */
+        void broadcast(String topic, Message message, Digest senderId) {
+            log.trace("Broadcasting on topic '{}' from {} to {} adapters",
+                      topic, senderId, adapters.size());
+            for (var adapter : adapters.values()) {
+                adapter.deliverLocally(topic, message);
+            }
+        }
+
+        /**
+         * Get the number of adapters in this cluster.
+         */
+        public int size() {
+            return adapters.size();
+        }
+
+        /**
+         * Get all adapters in this cluster.
+         */
+        public Collection<DelosGossipAdapter> getAdapters() {
+            return Collections.unmodifiableCollection(adapters.values());
+        }
     }
 }

@@ -51,7 +51,7 @@ public class SingleNodeIntegrationTest extends IntegrationTestBase {
         setupCluster(1);
 
         // When: Start view as single-node kernel
-        var view = cluster.views().get(0);
+        var view = cluster.getView(0);
         view.start(() -> {}, java.time.Duration.ofMillis(50), java.util.Collections.emptyList());
 
         // Then: View should have exactly 1 member (self)
@@ -83,10 +83,10 @@ public class SingleNodeIntegrationTest extends IntegrationTestBase {
     void testGossipBroadcast_singleNode_noNetwork() {
         // Given: Single node with DelosGossipAdapter
         setupCluster(1);
-        var view = cluster.views().get(0);
+        var view = cluster.getView(0);
         view.start(() -> {}, java.time.Duration.ofMillis(50), java.util.Collections.emptyList());
 
-        var member = cluster.members().get(0);
+        var member = cluster.getMember(0);
         var adapter = new DelosGossipAdapter(view, member);
 
         // When: Subscribe and broadcast

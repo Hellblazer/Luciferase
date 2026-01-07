@@ -17,16 +17,15 @@
 
 package com.hellblazer.luciferase.simulation.integration;
 
-import com.hellblazer.delos.fireflies.View.Seed;
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.simulation.bubble.BubbleEntry;
 import com.hellblazer.luciferase.simulation.bubble.ReplicatedForest;
+import com.hellblazer.luciferase.simulation.delos.fireflies.DelosClusterFactory;
 import com.hellblazer.luciferase.simulation.delos.fireflies.DelosGossipAdapter;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.time.Duration;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -49,58 +48,36 @@ import static org.awaitility.Awaitility.await;
 public class MultiNodeIntegrationTest extends IntegrationTestBase {
 
     @Test
-    void testTwoNodeCluster_membershipSync() {
-        // Given: Two-node cluster
-        setupCluster(2);
+    void testFourNodeCluster_membershipSync() throws Exception {
+        // Given: Four-node cluster bootstrapped and started
+        setupCluster(4);
 
-        // Extract cluster components
-        var views = cluster.views();
-        var duration = Duration.ofMillis(50);
+        // Bootstrap and start the cluster
+        var success = cluster.bootstrapAndStart(Duration.ofMillis(5), 30);
 
-        // Start first view as kernel
-        views.get(0).start(() -> {}, duration, Collections.emptyList());
+        // Then: All nodes should see all members
+        assertThat(success).as("Cluster should bootstrap and stabilize").isTrue();
 
-        // Start second view connecting to first (using stored endpoint)
-        var member0 = cluster.members().get(0);
-        var kernel = List.of(new Seed(
-            member0.getIdentifier().getIdentifier(),
-            cluster.endpoints().get(0)
-        ));
-        views.get(1).start(() -> {}, duration, kernel);
-
-        // Then: Both nodes see both members within 5s
-        await().atMost(5, SECONDS).until(() ->
-            views.get(0).getContext().size() == 2 &&
-            views.get(1).getContext().size() == 2
-        );
-
-        assertThat(views.get(0).getContext().size()).isEqualTo(2);
-        assertThat(views.get(1).getContext().size()).isEqualTo(2);
+        var views = cluster.getViews();
+        for (var view : views) {
+            assertThat(view.getContext().activeCount()).isEqualTo(4);
+        }
     }
 
     @Test
-    void testReplicatedForest_twoNodes_gossipPropagation() {
-        // Given: Two nodes with ReplicatedForest + real gossip
-        setupCluster(2);
+    void testReplicatedForest_gossipPropagation() throws Exception {
+        // Given: Four nodes with ReplicatedForest + real gossip
+        setupCluster(4);
+        cluster.bootstrapAndStart(Duration.ofMillis(5), 30);
 
-        var views = cluster.views();
-        var members = cluster.members();
-        var duration = Duration.ofMillis(50);
+        // Create DelosCluster from test cluster
+        var delosCluster = DelosClusterFactory.create(
+            cluster.getViews(),
+            cluster.getMembers()
+        );
 
-        views.get(0).start(() -> {}, duration, Collections.emptyList());
-
-        var member0 = members.get(0);
-        var kernel = List.of(new Seed(
-            member0.getIdentifier().getIdentifier(),
-            cluster.endpoints().get(0)
-        ));
-        views.get(1).start(() -> {}, duration, kernel);
-
-        await().atMost(5, SECONDS).until(() -> views.get(0).getContext().size() == 2);
-
-        var adapter1 = new DelosGossipAdapter(views.get(0), members.get(0));
-        var adapter2 = new DelosGossipAdapter(views.get(1), members.get(1));
-        DelosGossipAdapter.connectAdapters(adapter1, adapter2);
+        var adapter1 = delosCluster.getNode(0).getDelosGossipAdapter();
+        var adapter2 = delosCluster.getNode(1).getDelosGossipAdapter();
 
         var forest1 = new ReplicatedForest(adapter1);
         var forest2 = new ReplicatedForest(adapter2);
@@ -120,28 +97,18 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void testBubbleAddition_propagatesWithinTimeout() {
-        // Given: Two-node cluster with ReplicatedForest
-        setupCluster(2);
+    void testBubbleAddition_propagatesWithinTimeout() throws Exception {
+        // Given: Four-node cluster with ReplicatedForest
+        setupCluster(4);
+        cluster.bootstrapAndStart(Duration.ofMillis(5), 30);
 
-        var views = cluster.views();
-        var members = cluster.members();
-        var duration = Duration.ofMillis(50);
+        var delosCluster = DelosClusterFactory.create(
+            cluster.getViews(),
+            cluster.getMembers()
+        );
 
-        views.get(0).start(() -> {}, duration, Collections.emptyList());
-
-        var member0 = members.get(0);
-        var kernel = List.of(new Seed(
-            member0.getIdentifier().getIdentifier(),
-            cluster.endpoints().get(0)
-        ));
-        views.get(1).start(() -> {}, duration, kernel);
-
-        await().atMost(5, SECONDS).until(() -> views.get(0).getContext().size() == 2);
-
-        var adapter1 = new DelosGossipAdapter(views.get(0), members.get(0));
-        var adapter2 = new DelosGossipAdapter(views.get(1), members.get(1));
-        DelosGossipAdapter.connectAdapters(adapter1, adapter2);
+        var adapter1 = delosCluster.getNode(0).getDelosGossipAdapter();
+        var adapter2 = delosCluster.getNode(1).getDelosGossipAdapter();
 
         var forest1 = new ReplicatedForest(adapter1);
         var forest2 = new ReplicatedForest(adapter2);
@@ -167,28 +134,18 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void testBubbleRemoval_propagatesWithinTimeout() {
-        // Given: Two-node cluster with shared entry
-        setupCluster(2);
+    void testBubbleRemoval_propagatesWithinTimeout() throws Exception {
+        // Given: Four-node cluster with shared entry
+        setupCluster(4);
+        cluster.bootstrapAndStart(Duration.ofMillis(5), 30);
 
-        var views = cluster.views();
-        var members = cluster.members();
-        var duration = Duration.ofMillis(50);
+        var delosCluster = DelosClusterFactory.create(
+            cluster.getViews(),
+            cluster.getMembers()
+        );
 
-        views.get(0).start(() -> {}, duration, Collections.emptyList());
-
-        var member0 = members.get(0);
-        var kernel = List.of(new Seed(
-            member0.getIdentifier().getIdentifier(),
-            cluster.endpoints().get(0)
-        ));
-        views.get(1).start(() -> {}, duration, kernel);
-
-        await().atMost(5, SECONDS).until(() -> views.get(0).getContext().size() == 2);
-
-        var adapter1 = new DelosGossipAdapter(views.get(0), members.get(0));
-        var adapter2 = new DelosGossipAdapter(views.get(1), members.get(1));
-        DelosGossipAdapter.connectAdapters(adapter1, adapter2);
+        var adapter1 = delosCluster.getNode(0).getDelosGossipAdapter();
+        var adapter2 = delosCluster.getNode(1).getDelosGossipAdapter();
 
         var forest1 = new ReplicatedForest(adapter1);
         var forest2 = new ReplicatedForest(adapter2);
@@ -209,28 +166,18 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void testConflictResolution_lastWriteWins() {
-        // Given: Two nodes with ReplicatedForest
-        setupCluster(2);
+    void testConflictResolution_lastWriteWins() throws Exception {
+        // Given: Four nodes with ReplicatedForest
+        setupCluster(4);
+        cluster.bootstrapAndStart(Duration.ofMillis(5), 30);
 
-        var views = cluster.views();
-        var members = cluster.members();
-        var duration = Duration.ofMillis(50);
+        var delosCluster = DelosClusterFactory.create(
+            cluster.getViews(),
+            cluster.getMembers()
+        );
 
-        views.get(0).start(() -> {}, duration, Collections.emptyList());
-
-        var member0 = members.get(0);
-        var kernel = List.of(new Seed(
-            member0.getIdentifier().getIdentifier(),
-            cluster.endpoints().get(0)
-        ));
-        views.get(1).start(() -> {}, duration, kernel);
-
-        await().atMost(5, SECONDS).until(() -> views.get(0).getContext().size() == 2);
-
-        var adapter1 = new DelosGossipAdapter(views.get(0), members.get(0));
-        var adapter2 = new DelosGossipAdapter(views.get(1), members.get(1));
-        DelosGossipAdapter.connectAdapters(adapter1, adapter2);
+        var adapter1 = delosCluster.getNode(0).getDelosGossipAdapter();
+        var adapter2 = delosCluster.getNode(1).getDelosGossipAdapter();
 
         var forest1 = new ReplicatedForest(adapter1);
         var forest2 = new ReplicatedForest(adapter2);

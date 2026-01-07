@@ -104,7 +104,7 @@ class DelosGossipAdapterTest {
         adapter2 = new DelosGossipAdapter(mockView, localMember);
 
         // Connect them (simulate cluster)
-        DelosGossipAdapter.connectAdapters(adapter1, adapter2);
+        DelosGossipAdapter.ClusterGossip.create(java.util.List.of(adapter1, adapter2));
 
         var topic = "test-topic";
         var receivedMessages = new ArrayList<GossipAdapter.Message>();
