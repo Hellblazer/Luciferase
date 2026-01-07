@@ -8,7 +8,10 @@
  */
 package com.hellblazer.luciferase.simulation.viz;
 
+import com.hellblazer.luciferase.simulation.behavior.EntityBehavior;
+import com.hellblazer.luciferase.simulation.behavior.RandomWalkBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.loop.SimulationLoop;
 import io.javalin.Javalin;
 import io.javalin.websocket.WsContext;
 import org.slf4j.Logger;
@@ -47,6 +50,7 @@ public class EntityVisualizationServer {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     private EnhancedBubble bubble;
+    private SimulationLoop simulation;
     private ScheduledFuture<?> streamTask;
 
     /**
@@ -149,6 +153,43 @@ public class EntityVisualizationServer {
     }
 
     /**
+     * Set the simulation loop.
+     * Also sets the bubble from the simulation.
+     *
+     * @param simulation SimulationLoop to run
+     */
+    public void setSimulation(SimulationLoop simulation) {
+        this.simulation = simulation;
+        this.bubble = simulation.getBubble();
+        log.info("Simulation set: {} entities", bubble.entityCount());
+    }
+
+    /**
+     * Get the simulation loop.
+     */
+    public SimulationLoop getSimulation() {
+        return simulation;
+    }
+
+    /**
+     * Start the simulation if one is configured.
+     */
+    public void startSimulation() {
+        if (simulation != null && !simulation.isRunning()) {
+            simulation.start();
+        }
+    }
+
+    /**
+     * Stop the simulation if one is running.
+     */
+    public void stopSimulation() {
+        if (simulation != null && simulation.isRunning()) {
+            simulation.stop();
+        }
+    }
+
+    /**
      * Start the server.
      */
     public void start() {
@@ -170,6 +211,9 @@ public class EntityVisualizationServer {
     public void stop() {
         log.info("Stopping Entity Visualization Server...");
         stopStreaming();
+        if (simulation != null) {
+            simulation.shutdown();
+        }
         scheduler.shutdownNow();
         app.stop();
         clients.clear();
@@ -312,13 +356,14 @@ public class EntityVisualizationServer {
      */
     public static void main(String[] args) {
         var port = args.length > 0 ? Integer.parseInt(args[0]) : DEFAULT_PORT;
+        var entityCount = args.length > 1 ? Integer.parseInt(args[1]) : 50;
         var server = new EntityVisualizationServer(port);
 
         // Create demo bubble with random entities
         var bubble = new EnhancedBubble(UUID.randomUUID(), (byte) 10, 16);
         var random = new Random(42);
 
-        for (int i = 0; i < 50; i++) {
+        for (int i = 0; i < entityCount; i++) {
             var position = new Point3f(
                 10 + random.nextFloat() * 180,
                 10 + random.nextFloat() * 180,
@@ -327,8 +372,16 @@ public class EntityVisualizationServer {
             bubble.addEntity("entity-" + i, position, null);
         }
 
-        server.setBubble(bubble);
+        // Create simulation with random walk behavior
+        var behavior = new RandomWalkBehavior(42);  // Seeded for reproducibility
+        var simulation = new SimulationLoop(bubble, behavior);
+
+        server.setSimulation(simulation);
         server.start();
+        server.startSimulation();
+
+        log.info("Demo running with {} moving entities", entityCount);
+        log.info("Open http://localhost:{}/entity-viz.html to view", port);
 
         // Add shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(server::stop));

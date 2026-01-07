@@ -176,11 +176,20 @@ public class EnhancedBubble {
     public void updateEntityPosition(String entityId, Point3f newPosition) {
         var internalId = idMapping.get(entityId);
         if (internalId != null) {
-            spatialIndex.updateEntity(internalId, newPosition, spatialLevel);
+            // Get existing entity data
+            var oldData = spatialIndex.getEntity(internalId);
+            if (oldData != null) {
+                // Remove old entity
+                spatialIndex.removeEntity(internalId);
 
-            // Expand bounds if needed
-            if (bounds != null) {
-                bounds = bounds.expand(newPosition);
+                // Re-add with new position (EntityData is immutable record)
+                var newData = new EntityData(newPosition, oldData.content(), oldData.addedBucket());
+                spatialIndex.insert(internalId, newPosition, spatialLevel, newData);
+
+                // Expand bounds if needed
+                if (bounds != null) {
+                    bounds = bounds.expand(newPosition);
+                }
             }
         }
     }
