@@ -9,6 +9,7 @@
 package com.hellblazer.luciferase.simulation.viz;
 
 import com.hellblazer.luciferase.simulation.behavior.EntityBehavior;
+import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.behavior.RandomWalkBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.loop.SimulationLoop;
@@ -354,9 +355,17 @@ public class EntityVisualizationServer {
     /**
      * Main entry point for standalone server with demo data.
      */
+    /**
+     * Main entry point for standalone server with demo data.
+     * <p>
+     * Usage: java EntityVisualizationServer [port] [entityCount] [behavior]
+     * <p>
+     * behavior: "flock" (default) or "random"
+     */
     public static void main(String[] args) {
         var port = args.length > 0 ? Integer.parseInt(args[0]) : DEFAULT_PORT;
-        var entityCount = args.length > 1 ? Integer.parseInt(args[1]) : 50;
+        var entityCount = args.length > 1 ? Integer.parseInt(args[1]) : 100;
+        var behaviorType = args.length > 2 ? args[2] : "flock";
         var server = new EntityVisualizationServer(port);
 
         // Create demo bubble with random entities
@@ -365,22 +374,30 @@ public class EntityVisualizationServer {
 
         for (int i = 0; i < entityCount; i++) {
             var position = new Point3f(
-                10 + random.nextFloat() * 180,
-                10 + random.nextFloat() * 180,
-                10 + random.nextFloat() * 180
+                20 + random.nextFloat() * 160,
+                20 + random.nextFloat() * 160,
+                20 + random.nextFloat() * 160
             );
             bubble.addEntity("entity-" + i, position, null);
         }
 
-        // Create simulation with random walk behavior
-        var behavior = new RandomWalkBehavior(42);  // Seeded for reproducibility
+        // Create behavior based on type
+        EntityBehavior behavior;
+        if ("random".equalsIgnoreCase(behaviorType)) {
+            behavior = new RandomWalkBehavior(42);
+            log.info("Using RandomWalkBehavior");
+        } else {
+            behavior = new FlockingBehavior();
+            log.info("Using FlockingBehavior (separation/alignment/cohesion)");
+        }
+
         var simulation = new SimulationLoop(bubble, behavior);
 
         server.setSimulation(simulation);
         server.start();
         server.startSimulation();
 
-        log.info("Demo running with {} moving entities", entityCount);
+        log.info("Demo running with {} entities using {} behavior", entityCount, behaviorType);
         log.info("Open http://localhost:{}/entity-viz.html to view", port);
 
         // Add shutdown hook
