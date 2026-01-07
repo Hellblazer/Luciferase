@@ -26,7 +26,9 @@ jobs:
       - name: Cache Maven packages
         uses: actions/cache@v4
         with:
-          path: ~/.m2/repository
+          path: |
+            ~/.m2/repository
+            **/target/
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
@@ -58,7 +60,7 @@ jobs:
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Compile with Maven
-        run: ./mvnw -batch-mode clean compile test-compile --file pom.xml
+        run: ./mvnw -batch-mode clean test-compile install -DskipTests --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -68,7 +70,9 @@ jobs:
         if: success()
         uses: actions/cache/save@v4
         with:
-          path: ~/.m2/repository
+          path: |
+            ~/.m2/repository
+            **/target/
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
 
   test:
@@ -93,7 +97,9 @@ jobs:
       - name: Restore Maven cache
         uses: actions/cache/restore@v4
         with:
-          path: ~/.m2/repository
+          path: |
+            ~/.m2/repository
+            **/target/
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
@@ -132,7 +138,7 @@ jobs:
       - name: Test with Maven
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode test --file pom.xml
+          xvfb-run -a ./mvnw -batch-mode surefire:test --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
