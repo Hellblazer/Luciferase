@@ -1,0 +1,140 @@
+/**
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This file is part of the Luciferase.
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <http://www.gnu.org/licenses/>.
+ */
+
+package com.hellblazer.luciferase.simulation.delos.fireflies;
+
+import com.hellblazer.delos.fireflies.View;
+import com.hellblazer.luciferase.simulation.delos.GossipAdapter;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
+
+/**
+ * Test for DelosGossipAdapter - real Delos Fireflies gossip integration.
+ * <p>
+ * These tests verify that the adapter properly wraps Fireflies gossip and provides:
+ * 1. Broadcast functionality for cluster-wide messaging
+ * 2. Topic-based subscription mechanism
+ * 3. Topic isolation (messages on different topics don't interfere)
+ *
+ * @author hal.hildebrand
+ */
+class DelosGossipAdapterTest {
+
+    private View                mockView;
+    private DelosGossipAdapter  adapter;
+
+    @BeforeEach
+    void setUp() {
+        mockView = mock(View.class);
+    }
+
+    /**
+     * Test 1: Verify broadcast sends messages via Fireflies gossip
+     */
+    @Test
+    void testBroadcast() {
+        // Given: An adapter wrapping a Fireflies View
+        adapter = new DelosGossipAdapter(mockView);
+
+        var topic = "test-topic";
+        var senderId = UUID.randomUUID();
+        var payload = "test-payload".getBytes();
+        var message = new GossipAdapter.Message(senderId, payload);
+
+        // When: We broadcast a message
+        adapter.broadcast(topic, message);
+
+        // Then: Fireflies View should be used to gossip the message
+        // Verify interaction with Fireflies (specific method TBD based on actual API)
+        verify(mockView, atLeastOnce()).getContext();
+    }
+
+    /**
+     * Test 2: Verify subscribe registers handlers for specific topics
+     */
+    @Test
+    void testSubscribe() throws Exception {
+        // Given: An adapter with a subscriber
+        adapter = new DelosGossipAdapter(mockView);
+
+        var topic = "test-topic";
+        var receivedMessages = new ArrayList<GossipAdapter.Message>();
+        var latch = new CountDownLatch(1);
+
+        adapter.subscribe(topic, msg -> {
+            receivedMessages.add(msg);
+            latch.countDown();
+        });
+
+        // When: A message is broadcast on that topic
+        var senderId = UUID.randomUUID();
+        var payload = "test-payload".getBytes();
+        var message = new GossipAdapter.Message(senderId, payload);
+
+        adapter.broadcast(topic, message);
+
+        // Then: Subscriber should receive the message
+        var received = latch.await(1, TimeUnit.SECONDS);
+        assertThat(received).as("Subscriber should receive message").isTrue();
+        assertThat(receivedMessages).hasSize(1);
+        assertThat(receivedMessages.get(0).senderId()).isEqualTo(senderId);
+        assertThat(receivedMessages.get(0).payload()).isEqualTo(payload);
+    }
+
+    /**
+     * Test 3: Verify topics are isolated (no cross-topic message delivery)
+     */
+    @Test
+    void testTopicIsolation() throws Exception {
+        // Given: An adapter with subscribers on different topics
+        adapter = new DelosGossipAdapter(mockView);
+
+        var topic1 = "topic-1";
+        var topic2 = "topic-2";
+
+        var topic1Messages = new ArrayList<GossipAdapter.Message>();
+        var topic2Messages = new ArrayList<GossipAdapter.Message>();
+
+        adapter.subscribe(topic1, topic1Messages::add);
+        adapter.subscribe(topic2, topic2Messages::add);
+
+        // When: We broadcast messages on different topics
+        var message1 = new GossipAdapter.Message(UUID.randomUUID(), "msg1".getBytes());
+        var message2 = new GossipAdapter.Message(UUID.randomUUID(), "msg2".getBytes());
+
+        adapter.broadcast(topic1, message1);
+        adapter.broadcast(topic2, message2);
+
+        Thread.sleep(100); // Allow time for message delivery
+
+        // Then: Each subscriber should only receive messages from their topic
+        assertThat(topic1Messages).hasSize(1);
+        assertThat(topic2Messages).hasSize(1);
+
+        assertThat(topic1Messages.get(0).payload()).isEqualTo("msg1".getBytes());
+        assertThat(topic2Messages.get(0).payload()).isEqualTo("msg2".getBytes());
+    }
+}
