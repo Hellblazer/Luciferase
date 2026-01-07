@@ -927,7 +927,7 @@ For detailed API documentation, build the Javadoc using `mvn javadoc:javadoc` or
 
 ---
 
-**Version**: 0.0.1-SNAPSHOT  
-**Java Version**: 24+  
-**Last Updated**: August 2025  
+**Version**: 0.0.3-SNAPSHOT
+**Java Version**: 24+
+**Last Updated**: January 2026
 **Maintainer**: DyAda Development Team
