@@ -53,6 +53,7 @@ public class VonBubble extends EnhancedBubble implements Node {
 
     private final VonTransport transport;
     private final Map<UUID, NeighborState> neighborStates;
+    private final Set<UUID> introducedTo;  // Track neighbors we've introduced ourselves to
     private final List<Consumer<Event>> eventListeners;
     private final Consumer<VonMessage> messageHandler;
 
@@ -68,6 +69,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         super(id, spatialLevel, targetFrameMs);
         this.transport = transport;
         this.neighborStates = new ConcurrentHashMap<>();
+        this.introducedTo = ConcurrentHashMap.newKeySet();
         this.eventListeners = new ArrayList<>();
 
         // Register message handler
@@ -351,11 +353,28 @@ public class VonBubble extends EnhancedBubble implements Node {
             ));
         }
 
-        // Send ACK
+        // Send ACK to acceptor
         try {
             transport.sendToNeighbor(resp.acceptorId(), new VonMessage.Ack(resp.acceptorId(), id()));
         } catch (VonTransport.TransportException e) {
             log.warn("Failed to send ACK to {}: {}", resp.acceptorId(), e.getMessage());
+        }
+
+        // Notify other learned neighbors of our presence (establish bidirectional relationship)
+        // Skip the acceptor (already knows about us from JoinRequest)
+        // Also skip neighbors we've already introduced ourselves to (prevents message loops)
+        for (var neighborInfo : resp.neighbors()) {
+            UUID neighborId = neighborInfo.nodeId();
+            if (!neighborId.equals(resp.acceptorId()) && !introducedTo.contains(neighborId)) {
+                introducedTo.add(neighborId);  // Mark as introduced before sending
+                try {
+                    var introRequest = new VonMessage.JoinRequest(id(), position(), bounds());
+                    transport.sendToNeighbor(neighborId, introRequest);
+                    log.trace("Sent introduction to neighbor {} from JoinResponse", neighborId);
+                } catch (VonTransport.TransportException e) {
+                    log.warn("Failed to introduce to neighbor {}: {}", neighborId, e.getMessage());
+                }
+            }
         }
     }
 

@@ -13,7 +13,11 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * TDD tests for VON JOIN Protocol.
+ * TDD tests for VON JOIN Protocol - LOCAL MODE.
+ * <p>
+ * These tests validate the LOCAL-ONLY protocol implementation using
+ * SpatialNeighborIndex for single-JVM operation. For distributed P2P
+ * testing, see {@link VonManagerTest} and {@link P2PProtocolIntegrationTest}.
  * <p>
  * The JOIN protocol enables new bubbles to enter the VON overlay network.
  * Tests validate:
@@ -23,7 +27,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Sync establishment with neighbors
  * - Performance requirement: JOIN latency < 100ms
  * <p>
- * These tests MUST pass before implementing JoinProtocol (TDD red phase).
+ * LOCAL MODE vs P2P MODE:
+ * - Local: Uses SpatialNeighborIndex for direct neighbor lookup
+ * - P2P: Uses VonTransport for network communication (VonBubble)
  *
  * @author hal.hildebrand
  */
