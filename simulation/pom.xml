@@ -37,6 +37,14 @@
             <groupId>io.javalin</groupId>
             <artifactId>javalin</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.hellblazer.delos</groupId>
+            <artifactId>fireflies</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.hellblazer.delos</groupId>
+            <artifactId>memberships</artifactId>
+        </dependency>
 
         <!-- Test Only Dependencies Below This Line-->
         <dependency>
