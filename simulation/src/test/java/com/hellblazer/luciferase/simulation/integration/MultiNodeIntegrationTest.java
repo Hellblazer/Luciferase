@@ -22,7 +22,6 @@ import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.simulation.bubble.BubbleEntry;
 import com.hellblazer.luciferase.simulation.bubble.ReplicatedForest;
 import com.hellblazer.luciferase.simulation.delos.fireflies.DelosGossipAdapter;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -50,25 +49,22 @@ import static org.awaitility.Awaitility.await;
 public class MultiNodeIntegrationTest extends IntegrationTestBase {
 
     @Test
-    @Disabled("MTLS multi-node communication not yet working - investigate View gossip protocol initialization")
     void testTwoNodeCluster_membershipSync() {
         // Given: Two-node cluster
         setupCluster(2);
 
         // Extract cluster components
         var views = cluster.views();
-        var members = cluster.members();
-        var endpoints = cluster.endpoints();
         var duration = Duration.ofMillis(50);
 
         // Start first view as kernel
         views.get(0).start(() -> {}, duration, Collections.emptyList());
 
-        // Start second view connecting to first
-        var member0 = members.get(0);
+        // Start second view connecting to first (using stored endpoint)
+        var member0 = cluster.members().get(0);
         var kernel = List.of(new Seed(
             member0.getIdentifier().getIdentifier(),
-            endpoints.get(member0.getId())
+            cluster.endpoints().get(0)
         ));
         views.get(1).start(() -> {}, duration, kernel);
 
@@ -83,14 +79,12 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @Disabled("MTLS multi-node communication not yet working - investigate View gossip protocol initialization")
     void testReplicatedForest_twoNodes_gossipPropagation() {
         // Given: Two nodes with ReplicatedForest + real gossip
         setupCluster(2);
 
         var views = cluster.views();
         var members = cluster.members();
-        var endpoints = cluster.endpoints();
         var duration = Duration.ofMillis(50);
 
         views.get(0).start(() -> {}, duration, Collections.emptyList());
@@ -98,7 +92,7 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
         var member0 = members.get(0);
         var kernel = List.of(new Seed(
             member0.getIdentifier().getIdentifier(),
-            endpoints.get(member0.getId())
+            cluster.endpoints().get(0)
         ));
         views.get(1).start(() -> {}, duration, kernel);
 
@@ -126,14 +120,12 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @Disabled("MTLS multi-node communication not yet working - investigate View gossip protocol initialization")
     void testBubbleAddition_propagatesWithinTimeout() {
         // Given: Two-node cluster with ReplicatedForest
         setupCluster(2);
 
         var views = cluster.views();
         var members = cluster.members();
-        var endpoints = cluster.endpoints();
         var duration = Duration.ofMillis(50);
 
         views.get(0).start(() -> {}, duration, Collections.emptyList());
@@ -141,7 +133,7 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
         var member0 = members.get(0);
         var kernel = List.of(new Seed(
             member0.getIdentifier().getIdentifier(),
-            endpoints.get(member0.getId())
+            cluster.endpoints().get(0)
         ));
         views.get(1).start(() -> {}, duration, kernel);
 
@@ -175,14 +167,12 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @Disabled("MTLS multi-node communication not yet working - investigate View gossip protocol initialization")
     void testBubbleRemoval_propagatesWithinTimeout() {
         // Given: Two-node cluster with shared entry
         setupCluster(2);
 
         var views = cluster.views();
         var members = cluster.members();
-        var endpoints = cluster.endpoints();
         var duration = Duration.ofMillis(50);
 
         views.get(0).start(() -> {}, duration, Collections.emptyList());
@@ -190,7 +180,7 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
         var member0 = members.get(0);
         var kernel = List.of(new Seed(
             member0.getIdentifier().getIdentifier(),
-            endpoints.get(member0.getId())
+            cluster.endpoints().get(0)
         ));
         views.get(1).start(() -> {}, duration, kernel);
 
@@ -219,14 +209,12 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @Disabled("MTLS multi-node communication not yet working - investigate View gossip protocol initialization")
     void testConflictResolution_lastWriteWins() {
         // Given: Two nodes with ReplicatedForest
         setupCluster(2);
 
         var views = cluster.views();
         var members = cluster.members();
-        var endpoints = cluster.endpoints();
         var duration = Duration.ofMillis(50);
 
         views.get(0).start(() -> {}, duration, Collections.emptyList());
@@ -234,7 +222,7 @@ public class MultiNodeIntegrationTest extends IntegrationTestBase {
         var member0 = members.get(0);
         var kernel = List.of(new Seed(
             member0.getIdentifier().getIdentifier(),
-            endpoints.get(member0.getId())
+            cluster.endpoints().get(0)
         ));
         views.get(1).start(() -> {}, duration, kernel);
 
