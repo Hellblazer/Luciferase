@@ -130,7 +130,7 @@ public class MoveProtocol {
         }
 
         // Step 6: Emit MOVE event
-        eventEmitter.accept(new Event.Move(mover.id(), newPosition));
+        eventEmitter.accept(new Event.Move(mover.id(), newPosition, mover.bounds()));
     }
 
     /**

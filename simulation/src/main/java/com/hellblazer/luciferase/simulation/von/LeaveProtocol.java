@@ -73,7 +73,7 @@ public class LeaveProtocol {
         index.remove(leaver.id());
 
         // Step 3: Emit LEAVE event
-        eventEmitter.accept(new Event.Leave(leaver.id()));
+        eventEmitter.accept(new Event.Leave(leaver.id(), leaver.position()));
     }
 
     /**

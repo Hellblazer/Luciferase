@@ -67,7 +67,7 @@ public class BubbleNode implements Node {
         Objects.requireNonNull(neighbor, "neighbor cannot be null");
 
         // Emit MOVE event for this neighbor
-        eventEmitter.accept(new Event.Move(neighbor.id(), neighbor.position()));
+        eventEmitter.accept(new Event.Move(neighbor.id(), neighbor.position(), neighbor.bounds()));
 
         // TODO: Check if neighbor is still in AOI radius
         // TODO: Remove neighbor if out of range
@@ -82,7 +82,7 @@ public class BubbleNode implements Node {
         removeNeighbor(neighbor.id());
 
         // Emit LEAVE event
-        eventEmitter.accept(new Event.Leave(neighbor.id()));
+        eventEmitter.accept(new Event.Leave(neighbor.id(), neighbor.position()));
     }
 
     @Override

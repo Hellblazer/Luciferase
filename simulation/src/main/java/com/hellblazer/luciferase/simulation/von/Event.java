@@ -1,9 +1,10 @@
 package com.hellblazer.luciferase.simulation.von;
 
-import com.hellblazer.luciferase.simulation.bubble.*;
-
+import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
+import com.hellblazer.luciferase.simulation.ghost.GhostEntity;
 import javafx.geometry.Point3D;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -53,10 +54,12 @@ public sealed interface Event {
      *
      * @param nodeId      Node that moved
      * @param newPosition New position (bubble centroid)
+     * @param newBounds   New spatial bounds (may be null)
      */
     record Move(
         UUID nodeId,
-        Point3D newPosition
+        Point3D newPosition,
+        BubbleBounds newBounds
     ) implements Event {
 
         /**
@@ -105,10 +108,12 @@ public sealed interface Event {
      * 2. Neighbors remove from neighbor lists
      * 3. Node removed from index
      *
-     * @param nodeId Node leaving
+     * @param nodeId   Node leaving
+     * @param position Last known position
      */
     record Leave(
-        UUID nodeId
+        UUID nodeId,
+        Point3D position
     ) implements Event {
     }
 
@@ -146,5 +151,25 @@ public sealed interface Event {
         UUID nodeId,
         int newNeighbors
     ) implements Event {
+    }
+
+    /**
+     * Ghost entity synchronization event.
+     * <p>
+     * Triggered when ghost entities are received from a neighbor.
+     * Used for dead reckoning and entity interpolation across bubble boundaries.
+     *
+     * @param sourceBubbleId Source bubble that sent the ghosts
+     * @param ghosts         List of ghost entities received
+     */
+    record GhostSync(
+        UUID sourceBubbleId,
+        List<GhostEntity> ghosts
+    ) implements Event {
+
+        @Override
+        public UUID nodeId() {
+            return sourceBubbleId;
+        }
     }
 }
