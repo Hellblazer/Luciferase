@@ -9,11 +9,13 @@
 package com.hellblazer.luciferase.simulation.behavior;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.config.WorldBounds;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -29,6 +31,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * Entity AOI is distinct from bubble region - it's the perception radius
  * for behavior calculations (typically 10-50 units).
+ * <p>
+ * Thread Safety: Uses double-buffering for velocity cache to avoid race conditions
+ * when multiple entities compute velocities concurrently.
  *
  * @author hal.hildebrand
  */
@@ -39,8 +44,17 @@ public class FlockingBehavior implements EntityBehavior {
     private static final float DEFAULT_MAX_SPEED = 15.0f;
     private static final float DEFAULT_MAX_FORCE = 0.5f;
 
-    // Separation uses a smaller radius for "too close" detection
-    private static final float SEPARATION_RADIUS_FACTOR = 0.4f;
+    /**
+     * Separation radius as fraction of AOI.
+     * Entities within this distance trigger separation force.
+     */
+    private static final float DEFAULT_SEPARATION_RADIUS_FACTOR = 0.4f;
+
+    /**
+     * Boundary avoidance margin as fraction of AOI.
+     * Entities within this distance from world edge start turning.
+     */
+    private static final float BOUNDARY_MARGIN_FACTOR = 0.67f;
 
     // Force weights
     private final float separationWeight;
@@ -51,72 +65,116 @@ public class FlockingBehavior implements EntityBehavior {
     private final float maxSpeed;
     private final float maxForce;
     private final float separationRadius;
-    private final float worldMin;
-    private final float worldMax;
+    private final WorldBounds worldBounds;
+    private final float boundaryMargin;
     private final Random random;
 
-    // Track neighbor velocities for alignment (shared across all entities)
-    private final Map<String, Vector3f> velocityCache = new ConcurrentHashMap<>();
+    // Double-buffered velocity cache for thread-safe alignment calculations
+    // previousVelocities: read from during computation (last tick's values)
+    // currentVelocities: write to during computation (this tick's values)
+    private volatile Map<String, Vector3f> previousVelocities = new ConcurrentHashMap<>();
+    private volatile Map<String, Vector3f> currentVelocities = new ConcurrentHashMap<>();
 
     /**
      * Create flocking behavior with default parameters.
      */
     public FlockingBehavior() {
         this(DEFAULT_AOI_RADIUS, DEFAULT_MAX_SPEED, DEFAULT_MAX_FORCE,
-             1.5f, 1.0f, 1.0f, 0f, 200f, new Random());
+             1.5f, 1.0f, 1.0f, WorldBounds.DEFAULT, new Random());
     }
 
     /**
      * Create flocking behavior with custom weights.
      *
-     * @param separationWeight Weight for separation force
-     * @param alignmentWeight  Weight for alignment force
-     * @param cohesionWeight   Weight for cohesion force
+     * @param separationWeight Weight for separation force (typical: 1.0-2.0)
+     * @param alignmentWeight  Weight for alignment force (typical: 0.5-1.5)
+     * @param cohesionWeight   Weight for cohesion force (typical: 0.5-1.5)
      */
     public FlockingBehavior(float separationWeight, float alignmentWeight, float cohesionWeight) {
         this(DEFAULT_AOI_RADIUS, DEFAULT_MAX_SPEED, DEFAULT_MAX_FORCE,
-             separationWeight, alignmentWeight, cohesionWeight, 0f, 200f, new Random());
+             separationWeight, alignmentWeight, cohesionWeight, WorldBounds.DEFAULT, new Random());
     }
 
     /**
      * Create flocking behavior with full customization.
      *
-     * @param aoiRadius        Area of interest radius for neighbor detection
-     * @param maxSpeed         Maximum movement speed
-     * @param maxForce         Maximum steering force per tick
+     * @param aoiRadius        Area of interest radius for neighbor detection (must be > 0)
+     * @param maxSpeed         Maximum movement speed (must be > 0)
+     * @param maxForce         Maximum steering force per tick (must be > 0)
      * @param separationWeight Weight for separation force
      * @param alignmentWeight  Weight for alignment force
      * @param cohesionWeight   Weight for cohesion force
-     * @param worldMin         Minimum world coordinate
-     * @param worldMax         Maximum world coordinate
+     * @param worldBounds      World boundary configuration
      * @param random           Random number generator
+     * @throws IllegalArgumentException if parameters are invalid
      */
     public FlockingBehavior(float aoiRadius, float maxSpeed, float maxForce,
                             float separationWeight, float alignmentWeight, float cohesionWeight,
-                            float worldMin, float worldMax, Random random) {
+                            WorldBounds worldBounds, Random random) {
+        // Parameter validation
+        if (aoiRadius <= 0) {
+            throw new IllegalArgumentException("AOI radius must be positive, got: " + aoiRadius);
+        }
+        if (maxSpeed <= 0) {
+            throw new IllegalArgumentException("Max speed must be positive, got: " + maxSpeed);
+        }
+        if (maxForce <= 0) {
+            throw new IllegalArgumentException("Max force must be positive, got: " + maxForce);
+        }
+        if (worldBounds == null) {
+            throw new IllegalArgumentException("World bounds cannot be null");
+        }
+        if (random == null) {
+            throw new IllegalArgumentException("Random cannot be null");
+        }
+
         this.aoiRadius = aoiRadius;
         this.maxSpeed = maxSpeed;
         this.maxForce = maxForce;
         this.separationWeight = separationWeight;
         this.alignmentWeight = alignmentWeight;
         this.cohesionWeight = cohesionWeight;
-        this.separationRadius = aoiRadius * SEPARATION_RADIUS_FACTOR;
-        this.worldMin = worldMin;
-        this.worldMax = worldMax;
+        this.separationRadius = aoiRadius * DEFAULT_SEPARATION_RADIUS_FACTOR;
+        this.worldBounds = worldBounds;
+        this.boundaryMargin = aoiRadius * BOUNDARY_MARGIN_FACTOR;
         this.random = random;
+    }
+
+    /**
+     * Swap velocity buffers at the start of each tick.
+     * <p>
+     * Must be called by SimulationLoop before processing any entities.
+     * This ensures all entities read from the previous tick's velocities
+     * while writing to the current tick's buffer.
+     */
+    public void swapVelocityBuffers() {
+        previousVelocities = currentVelocities;
+        currentVelocities = new ConcurrentHashMap<>();
+    }
+
+    /**
+     * Clean up velocity entries for entities that no longer exist.
+     * <p>
+     * Should be called periodically to prevent memory leaks.
+     *
+     * @param activeEntityIds Set of currently active entity IDs
+     */
+    public void cleanupRemovedEntities(Set<String> activeEntityIds) {
+        previousVelocities.keySet().retainAll(activeEntityIds);
+        currentVelocities.keySet().retainAll(activeEntityIds);
     }
 
     @Override
     public Vector3f computeVelocity(String entityId, Point3f position, Vector3f velocity,
                                     EnhancedBubble bubble, float deltaTime) {
-        // Cache current velocity for other entities to use in alignment
-        velocityCache.put(entityId, new Vector3f(velocity));
+        // Store current velocity for next tick's alignment calculations
+        currentVelocities.put(entityId, new Vector3f(velocity));
 
         // Query neighbors within AOI
         var neighbors = bubble.queryRange(position, aoiRadius);
 
-        // If no neighbors, add some wander behavior
-        if (neighbors.size() <= 1) {  // Only self
+        // If no neighbors (only self), add wander behavior
+        if (neighbors.size() <= 1) {
             return applyWander(velocity, deltaTime);
         }
 
@@ -146,9 +204,10 @@ public class FlockingBehavior implements EntityBehavior {
         }
 
         // Ensure minimum speed to keep entities moving
-        if (speed < maxSpeed * 0.3f) {
+        float minSpeed = maxSpeed * 0.3f;
+        if (speed < minSpeed) {
             if (speed > 0.001f) {
-                newVelocity.scale((maxSpeed * 0.3f) / speed);
+                newVelocity.scale(minSpeed / speed);
             } else {
                 // Random direction if nearly stopped
                 newVelocity.set(
@@ -196,10 +255,7 @@ public class FlockingBehavior implements EntityBehavior {
                 steer.normalize();
                 steer.scale(maxSpeed);
                 // Limit force
-                if (steer.length() > maxForce) {
-                    steer.normalize();
-                    steer.scale(maxForce);
-                }
+                limitForce(steer);
             }
         }
 
@@ -208,6 +264,8 @@ public class FlockingBehavior implements EntityBehavior {
 
     /**
      * Alignment: Steer towards average heading of neighbors.
+     * <p>
+     * Reads from previousVelocities to avoid race conditions.
      */
     private Vector3f computeAlignment(String entityId,
                                       java.util.List<EnhancedBubble.EntityRecord> neighbors) {
@@ -217,7 +275,8 @@ public class FlockingBehavior implements EntityBehavior {
         for (var neighbor : neighbors) {
             if (neighbor.id().equals(entityId)) continue;
 
-            var neighborVel = velocityCache.get(neighbor.id());
+            // Read from previous tick's velocities (thread-safe)
+            var neighborVel = previousVelocities.get(neighbor.id());
             if (neighborVel != null) {
                 avgVelocity.add(neighborVel);
                 count++;
@@ -230,11 +289,7 @@ public class FlockingBehavior implements EntityBehavior {
             if (avgVelocity.length() > 0) {
                 avgVelocity.normalize();
                 avgVelocity.scale(maxSpeed);
-                // We return the steering force, caller will subtract current velocity
-                if (avgVelocity.length() > maxForce) {
-                    avgVelocity.normalize();
-                    avgVelocity.scale(maxForce);
-                }
+                limitForce(avgVelocity);
             }
         }
 
@@ -271,11 +326,7 @@ public class FlockingBehavior implements EntityBehavior {
             if (desired.length() > 0) {
                 desired.normalize();
                 desired.scale(maxSpeed);
-                // Limit force
-                if (desired.length() > maxForce) {
-                    desired.normalize();
-                    desired.scale(maxForce);
-                }
+                limitForce(desired);
             }
 
             return desired;
@@ -286,17 +337,28 @@ public class FlockingBehavior implements EntityBehavior {
 
     /**
      * Apply boundary avoidance forces near world edges.
+     * <p>
+     * Uses boundary margin derived from AOI radius.
      */
     private void applyBoundaryAvoidance(Point3f position, Vector3f velocity) {
-        float margin = 20.0f;
         float turnForce = maxForce * 2;
 
-        if (position.x < worldMin + margin) velocity.x += turnForce;
-        if (position.x > worldMax - margin) velocity.x -= turnForce;
-        if (position.y < worldMin + margin) velocity.y += turnForce;
-        if (position.y > worldMax - margin) velocity.y -= turnForce;
-        if (position.z < worldMin + margin) velocity.z += turnForce;
-        if (position.z > worldMax - margin) velocity.z -= turnForce;
+        if (position.x < worldBounds.min() + boundaryMargin) velocity.x += turnForce;
+        if (position.x > worldBounds.max() - boundaryMargin) velocity.x -= turnForce;
+        if (position.y < worldBounds.min() + boundaryMargin) velocity.y += turnForce;
+        if (position.y > worldBounds.max() - boundaryMargin) velocity.y -= turnForce;
+        if (position.z < worldBounds.min() + boundaryMargin) velocity.z += turnForce;
+        if (position.z > worldBounds.max() - boundaryMargin) velocity.z -= turnForce;
+    }
+
+    /**
+     * Limit a force vector to maxForce magnitude.
+     */
+    private void limitForce(Vector3f force) {
+        if (force.length() > maxForce) {
+            force.normalize();
+            force.scale(maxForce);
+        }
     }
 
     /**
@@ -315,8 +377,9 @@ public class FlockingBehavior implements EntityBehavior {
         if (speed > maxSpeed) {
             newVelocity.scale(maxSpeed / speed);
         }
-        if (speed < maxSpeed * 0.5f && speed > 0.001f) {
-            newVelocity.scale((maxSpeed * 0.5f) / speed);
+        float minSpeed = maxSpeed * 0.5f;
+        if (speed < minSpeed && speed > 0.001f) {
+            newVelocity.scale(minSpeed / speed);
         }
 
         return newVelocity;
@@ -340,9 +403,17 @@ public class FlockingBehavior implements EntityBehavior {
     }
 
     /**
-     * Clear the velocity cache (call when resetting simulation).
+     * Get the world bounds configuration.
+     */
+    public WorldBounds getWorldBounds() {
+        return worldBounds;
+    }
+
+    /**
+     * Clear velocity caches (call when resetting simulation).
      */
     public void clearCache() {
-        velocityCache.clear();
+        previousVelocities.clear();
+        currentVelocities.clear();
     }
 }

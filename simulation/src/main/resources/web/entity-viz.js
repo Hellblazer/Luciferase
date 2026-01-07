@@ -154,12 +154,17 @@ function connect() {
         document.getElementById('status-dot').classList.remove('connected');
         document.getElementById('status-text').textContent = 'Disconnected';
 
-        // Attempt reconnect
+        // Attempt reconnect with exponential backoff
         if (reconnectAttempts < maxReconnectAttempts) {
             reconnectAttempts++;
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-            console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+            console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+            document.getElementById('status-text').textContent = `Reconnecting (${reconnectAttempts}/${maxReconnectAttempts})...`;
             setTimeout(connect, delay);
+        } else {
+            console.error('Max reconnection attempts reached. Please refresh the page.');
+            document.getElementById('status-text').textContent = 'Connection failed - refresh page';
+            document.getElementById('status-dot').style.backgroundColor = '#ef4444'; // Red color
         }
     };
 

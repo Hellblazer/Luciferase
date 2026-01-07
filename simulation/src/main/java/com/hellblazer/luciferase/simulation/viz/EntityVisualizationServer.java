@@ -12,6 +12,8 @@ import com.hellblazer.luciferase.simulation.behavior.EntityBehavior;
 import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.behavior.RandomWalkBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
+import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.loop.SimulationLoop;
 import io.javalin.Javalin;
 import io.javalin.websocket.WsContext;
@@ -49,6 +51,7 @@ public class EntityVisualizationServer {
     private final Set<WsContext> clients = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean streaming = new AtomicBoolean(false);
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final Object streamingLock = new Object();
 
     private EnhancedBubble bubble;
     private SimulationLoop simulation;
@@ -95,6 +98,26 @@ public class EntityVisualizationServer {
             ctx.json(Map.of("entities", getEntityDTOs()));
         });
 
+        // Simulation metrics endpoint
+        javalin.get("/api/metrics", ctx -> {
+            if (simulation == null) {
+                ctx.status(404).json(Map.of("error", "No simulation configured"));
+                return;
+            }
+            var metrics = simulation.getMetrics();
+            ctx.json(Map.of(
+                "totalTicks", metrics.getTotalTicks(),
+                "averageFrameTimeMs", metrics.getAverageFrameTimeMs(),
+                "maxFrameTimeMs", metrics.getMaxFrameTimeMs(),
+                "lastFrameTimeMs", metrics.getLastFrameTimeMs(),
+                "lastEntityCount", metrics.getLastEntityCount(),
+                "averageEntitiesPerTick", metrics.getAverageEntitiesPerTick(),
+                "ticksPerSecond", metrics.getTicksPerSecond(),
+                "clients", clients.size(),
+                "streaming", streaming.get()
+            ));
+        });
+
         // WebSocket for real-time streaming
         javalin.ws("/ws/entities", ws -> {
             ws.onConnect(ctx -> {
@@ -106,20 +129,16 @@ public class EntityVisualizationServer {
                     sendEntities(ctx);
                 }
 
-                // Start streaming if not already
-                if (!streaming.get() && bubble != null) {
-                    startStreaming();
-                }
+                // Start streaming if conditions met (thread-safe)
+                startStreamingIfNeeded();
             });
 
             ws.onClose(ctx -> {
                 clients.remove(ctx);
                 log.info("Client disconnected: {} (total: {})", ctx.sessionId(), clients.size());
 
-                // Stop streaming if no clients
-                if (clients.isEmpty()) {
-                    stopStreaming();
-                }
+                // Stop streaming if no clients (thread-safe)
+                stopStreamingIfNoClients();
             });
 
             ws.onError(ctx -> {
@@ -140,10 +159,8 @@ public class EntityVisualizationServer {
         this.bubble = bubble;
         log.info("Bubble set: {}", bubble.id());
 
-        // If clients are connected, start streaming
-        if (!clients.isEmpty() && !streaming.get()) {
-            startStreaming();
-        }
+        // Start streaming if conditions met (thread-safe)
+        startStreamingIfNeeded();
     }
 
     /**
@@ -251,7 +268,31 @@ public class EntityVisualizationServer {
 
     // ========== Streaming Methods ==========
 
-    private void startStreaming() {
+    /**
+     * Start streaming if conditions are met (clients connected and bubble available).
+     * Thread-safe using synchronized block to prevent TOCTOU race conditions.
+     */
+    private void startStreamingIfNeeded() {
+        synchronized (streamingLock) {
+            if (!clients.isEmpty() && bubble != null && !streaming.get()) {
+                startStreamingInternal();
+            }
+        }
+    }
+
+    /**
+     * Stop streaming if no clients are connected.
+     * Thread-safe using synchronized block to prevent TOCTOU race conditions.
+     */
+    private void stopStreamingIfNoClients() {
+        synchronized (streamingLock) {
+            if (clients.isEmpty() && streaming.get()) {
+                stopStreamingInternal();
+            }
+        }
+    }
+
+    private void startStreamingInternal() {
         if (streaming.compareAndSet(false, true)) {
             streamTask = scheduler.scheduleAtFixedRate(
                 this::broadcastEntities,
@@ -263,13 +304,22 @@ public class EntityVisualizationServer {
         }
     }
 
-    private void stopStreaming() {
+    private void stopStreamingInternal() {
         if (streaming.compareAndSet(true, false)) {
             if (streamTask != null) {
                 streamTask.cancel(false);
                 streamTask = null;
             }
             log.info("Entity streaming stopped");
+        }
+    }
+
+    /**
+     * Forcibly stop streaming (for shutdown).
+     */
+    private void stopStreaming() {
+        synchronized (streamingLock) {
+            stopStreamingInternal();
         }
     }
 
@@ -368,15 +418,20 @@ public class EntityVisualizationServer {
         var behaviorType = args.length > 2 ? args[2] : "flock";
         var server = new EntityVisualizationServer(port);
 
+        // Use centralized world bounds configuration
+        var worldBounds = WorldBounds.DEFAULT;
+        var spawnMargin = 20f;
+        var spawnRange = worldBounds.size() - (2 * spawnMargin);
+
         // Create demo bubble with random entities
         var bubble = new EnhancedBubble(UUID.randomUUID(), (byte) 10, 16);
         var random = new Random(42);
 
         for (int i = 0; i < entityCount; i++) {
             var position = new Point3f(
-                20 + random.nextFloat() * 160,
-                20 + random.nextFloat() * 160,
-                20 + random.nextFloat() * 160
+                worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
+                worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
+                worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange
             );
             bubble.addEntity("entity-" + i, position, null);
         }
@@ -398,7 +453,9 @@ public class EntityVisualizationServer {
         server.startSimulation();
 
         log.info("Demo running with {} entities using {} behavior", entityCount, behaviorType);
+        log.info("World bounds: {} to {}", worldBounds.min(), worldBounds.max());
         log.info("Open http://localhost:{}/entity-viz.html to view", port);
+        log.info("Metrics: http://localhost:{}/api/metrics", port);
 
         // Add shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(server::stop));

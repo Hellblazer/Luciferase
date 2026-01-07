@@ -9,7 +9,10 @@
 package com.hellblazer.luciferase.simulation.loop;
 
 import com.hellblazer.luciferase.simulation.behavior.EntityBehavior;
+import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
+import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +26,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 /**
  * Simulation loop for entity movement within a single bubble.
@@ -34,6 +38,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>
  * For Inc 1: Single bubble, single behavior, no distributed sync.
  * Later increments add multi-bubble coordination via BucketScheduler.
+ * <p>
+ * Thread Safety: SimulationLoop owns the simulation thread and coordinates
+ * with behaviors that may have internal state (like FlockingBehavior's
+ * velocity cache).
  *
  * @author hal.hildebrand
  */
@@ -46,24 +54,31 @@ public class SimulationLoop {
      */
     public static final long DEFAULT_TICK_INTERVAL_MS = 16;
 
+    /**
+     * Cleanup frequency: every 30 seconds at 60fps.
+     */
+    private static final long CLEANUP_INTERVAL_TICKS = 1800;
+
     private final EnhancedBubble bubble;
     private final EntityBehavior behavior;
+    private final WorldBounds worldBounds;
     private final long tickIntervalMs;
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicLong tickCount = new AtomicLong(0);
     private final Map<String, Vector3f> velocities = new ConcurrentHashMap<>();
+    private final SimulationMetrics metrics = new SimulationMetrics();
 
     private ScheduledFuture<?> tickTask;
 
     /**
-     * Create a simulation loop with default tick rate.
+     * Create a simulation loop with default tick rate and world bounds.
      *
      * @param bubble   The bubble to simulate
      * @param behavior The behavior to apply to all entities
      */
     public SimulationLoop(EnhancedBubble bubble, EntityBehavior behavior) {
-        this(bubble, behavior, DEFAULT_TICK_INTERVAL_MS);
+        this(bubble, behavior, DEFAULT_TICK_INTERVAL_MS, WorldBounds.DEFAULT);
     }
 
     /**
@@ -74,9 +89,36 @@ public class SimulationLoop {
      * @param tickIntervalMs Milliseconds between ticks
      */
     public SimulationLoop(EnhancedBubble bubble, EntityBehavior behavior, long tickIntervalMs) {
+        this(bubble, behavior, tickIntervalMs, WorldBounds.DEFAULT);
+    }
+
+    /**
+     * Create a simulation loop with full customization.
+     *
+     * @param bubble         The bubble to simulate
+     * @param behavior       The behavior to apply to all entities
+     * @param tickIntervalMs Milliseconds between ticks
+     * @param worldBounds    World boundary configuration
+     */
+    public SimulationLoop(EnhancedBubble bubble, EntityBehavior behavior,
+                          long tickIntervalMs, WorldBounds worldBounds) {
+        if (bubble == null) {
+            throw new IllegalArgumentException("Bubble cannot be null");
+        }
+        if (behavior == null) {
+            throw new IllegalArgumentException("Behavior cannot be null");
+        }
+        if (tickIntervalMs <= 0) {
+            throw new IllegalArgumentException("Tick interval must be positive");
+        }
+        if (worldBounds == null) {
+            throw new IllegalArgumentException("World bounds cannot be null");
+        }
+
         this.bubble = bubble;
         this.behavior = behavior;
         this.tickIntervalMs = tickIntervalMs;
+        this.worldBounds = worldBounds;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "SimulationLoop-" + bubble.id());
             t.setDaemon(true);
@@ -112,7 +154,7 @@ public class SimulationLoop {
                 tickTask.cancel(false);
                 tickTask = null;
             }
-            log.info("Simulation stopped after {} ticks", tickCount.get());
+            log.info("Simulation stopped after {} ticks. {}", tickCount.get(), metrics);
         }
     }
 
@@ -152,6 +194,33 @@ public class SimulationLoop {
     }
 
     /**
+     * Get the behavior being used.
+     *
+     * @return EntityBehavior
+     */
+    public EntityBehavior getBehavior() {
+        return behavior;
+    }
+
+    /**
+     * Get simulation metrics.
+     *
+     * @return SimulationMetrics
+     */
+    public SimulationMetrics getMetrics() {
+        return metrics;
+    }
+
+    /**
+     * Get the world bounds configuration.
+     *
+     * @return WorldBounds
+     */
+    public WorldBounds getWorldBounds() {
+        return worldBounds;
+    }
+
+    /**
      * Execute a single simulation tick.
      */
     private void tick() {
@@ -159,8 +228,26 @@ public class SimulationLoop {
             long startNs = System.nanoTime();
             float deltaTime = tickIntervalMs / 1000.0f;
 
+            // Swap velocity buffers for FlockingBehavior (thread-safe double-buffering)
+            if (behavior instanceof FlockingBehavior fb) {
+                fb.swapVelocityBuffers();
+            }
+
             // Get all entities
             var entities = bubble.getAllEntityRecords();
+            var activeEntityIds = entities.stream()
+                .map(EnhancedBubble.EntityRecord::id)
+                .collect(Collectors.toSet());
+
+            // Periodic cleanup of removed entities from velocity caches
+            long currentTick = tickCount.get();
+            if (currentTick > 0 && currentTick % CLEANUP_INTERVAL_TICKS == 0) {
+                velocities.keySet().retainAll(activeEntityIds);
+                if (behavior instanceof FlockingBehavior fb) {
+                    fb.cleanupRemovedEntities(activeEntityIds);
+                }
+                log.debug("Cleanup: {} velocities retained", velocities.size());
+            }
 
             // Update each entity
             for (var entity : entities) {
@@ -185,24 +272,24 @@ public class SimulationLoop {
                 newPosition.z += newVelocity.z * deltaTime;
 
                 // Clamp to world bounds
-                newPosition.x = Math.max(0, Math.min(200, newPosition.x));
-                newPosition.y = Math.max(0, Math.min(200, newPosition.y));
-                newPosition.z = Math.max(0, Math.min(200, newPosition.z));
+                newPosition.x = worldBounds.clamp(newPosition.x);
+                newPosition.y = worldBounds.clamp(newPosition.y);
+                newPosition.z = worldBounds.clamp(newPosition.z);
 
                 // Update position in bubble
                 bubble.updateEntityPosition(entity.id(), newPosition);
             }
 
-            // Record frame time
+            // Record metrics
             long frameTimeNs = System.nanoTime() - startNs;
             bubble.recordFrameTime(frameTimeNs);
+            metrics.recordTick(frameTimeNs, entities.size());
 
             tickCount.incrementAndGet();
 
-            // Log periodically
-            if (tickCount.get() % 600 == 0) {  // Every 10 seconds at 60fps
-                log.debug("Tick {}: {} entities, {}ms frame time",
-                          tickCount.get(), entities.size(), frameTimeNs / 1_000_000.0);
+            // Log periodically (every 10 seconds at 60fps)
+            if (currentTick > 0 && currentTick % 600 == 0) {
+                log.debug("Tick {}: {} entities, {}", currentTick, entities.size(), metrics);
             }
         } catch (Exception e) {
             log.error("Error in simulation tick: {}", e.getMessage(), e);
