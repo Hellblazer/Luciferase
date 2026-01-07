@@ -11,6 +11,7 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
+import java.io.Serializable;
 import java.util.List;
 
 /**
@@ -27,12 +28,12 @@ import java.util.List;
  *
  * @author hal.hildebrand
  */
-public final class BubbleBounds {
+public final class BubbleBounds implements Serializable {
 
     private final TetreeKey<?> rootKey;
     private final Point3i rdgMin;
     private final Point3i rdgMax;
-    private final Tetrahedral coordSystem;
+    private transient Tetrahedral coordSystem;
 
     /**
      * Create BubbleBounds from tetrahedral and RDGCS coordinates.
@@ -167,13 +168,25 @@ public final class BubbleBounds {
     }
 
     /**
+     * Ensure coordSystem is initialized (handles post-deserialization).
+     *
+     * @return coordSystem instance
+     */
+    private Tetrahedral getCoordSystem() {
+        if (coordSystem == null) {
+            coordSystem = new Tetrahedral();
+        }
+        return coordSystem;
+    }
+
+    /**
      * Convert Cartesian coordinates to RDGCS.
      *
      * @param cartesian Cartesian position
      * @return RDGCS coordinates
      */
     public Point3i toRDG(Tuple3f cartesian) {
-        return coordSystem.toRDG(cartesian);
+        return getCoordSystem().toRDG(cartesian);
     }
 
     /**
@@ -183,7 +196,7 @@ public final class BubbleBounds {
      * @return Cartesian position
      */
     public Point3D toCartesian(Tuple3i rdg) {
-        return coordSystem.toCartesian(rdg);
+        return getCoordSystem().toCartesian(rdg);
     }
 
     /**

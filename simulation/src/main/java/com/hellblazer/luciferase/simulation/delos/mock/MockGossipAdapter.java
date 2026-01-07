@@ -30,15 +30,23 @@ import java.util.function.Consumer;
  * <p>
  * Provides in-memory pub/sub messaging for testing cluster coordination.
  * Messages are delivered synchronously to all subscribers on the same topic.
+ * <p>
+ * For testing verification, all broadcast messages are recorded and can be
+ * retrieved via {@link #getMessages()}.
  *
  * @author hal.hildebrand
  */
 public class MockGossipAdapter implements GossipAdapter {
 
     private final Map<String, List<Consumer<Message>>> subscribers = new ConcurrentHashMap<>();
+    private final List<Message> broadcastMessages = new CopyOnWriteArrayList<>();
 
     @Override
     public void broadcast(String topic, Message message) {
+        // Record for testing verification
+        broadcastMessages.add(message);
+
+        // Deliver to subscribers
         var handlers = subscribers.get(topic);
         if (handlers != null) {
             handlers.forEach(handler -> handler.accept(message));
@@ -48,5 +56,21 @@ public class MockGossipAdapter implements GossipAdapter {
     @Override
     public void subscribe(String topic, Consumer<Message> handler) {
         subscribers.computeIfAbsent(topic, k -> new CopyOnWriteArrayList<>()).add(handler);
+    }
+
+    /**
+     * Get all broadcast messages (for testing verification).
+     *
+     * @return list of all messages broadcast via this adapter
+     */
+    public List<Message> getMessages() {
+        return List.copyOf(broadcastMessages);
+    }
+
+    /**
+     * Clear all recorded messages (for test isolation).
+     */
+    public void clearMessages() {
+        broadcastMessages.clear();
     }
 }
