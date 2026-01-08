@@ -277,6 +277,60 @@ class TwoBubbleSimulationTest {
         assertThat(state.migrationFailures()).isZero();
     }
 
+    @Test
+    void testMigrationPreservesEntityMovement() throws Exception {
+        // Verify that entities continue moving after migration
+        // This indirectly tests velocity preservation
+        simulation = new TwoBubbleSimulation(100, WorldBounds.DEFAULT,
+                                              new FlockingBehavior(), new FlockingBehavior());
+
+        simulation.start();
+        waitForTicks(60, 3000);  // Let simulation run and migrations happen
+
+        // Capture positions at tick 60
+        var positionsAtTick60 = new java.util.HashMap<String, javax.vecmath.Point3f>();
+        for (var entity : simulation.getAllEntities()) {
+            if (!entity.isGhost()) {
+                positionsAtTick60.put(entity.id(), new javax.vecmath.Point3f(entity.position()));
+            }
+        }
+
+        // Let simulation run more
+        waitForTicks(120, 3000);
+        simulation.stop();
+
+        // Capture positions at tick 120
+        var positionsAtTick120 = simulation.getAllEntities().stream()
+            .filter(e -> !e.isGhost())
+            .collect(java.util.stream.Collectors.toMap(
+                TwoBubbleSimulation.EntitySnapshot::id,
+                TwoBubbleSimulation.EntitySnapshot::position
+            ));
+
+        // Count entities that moved (indicates velocity is working)
+        int movedCount = 0;
+        for (var entry : positionsAtTick60.entrySet()) {
+            var id = entry.getKey();
+            var pos60 = entry.getValue();
+            var pos120 = positionsAtTick120.get(id);
+
+            if (pos120 != null) {
+                float dx = pos120.x - pos60.x;
+                float dy = pos120.y - pos60.y;
+                float dz = pos120.z - pos60.z;
+                float distMoved = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                if (distMoved > 0.1f) {  // Moved more than 0.1 units
+                    movedCount++;
+                }
+            }
+        }
+
+        // Most entities should have moved (velocity preserved)
+        // At least 80% should be moving
+        assertThat(movedCount).isGreaterThan((int) (positionsAtTick60.size() * 0.8));
+    }
+
     // ========== Bounds Tests ==========
 
     @Test

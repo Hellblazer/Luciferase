@@ -541,17 +541,20 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
             tickCount.incrementAndGet();
 
-            // Periodic velocity cleanup to remove orphaned entries
+            // Periodic cleanup to remove orphaned entries
             if (currentTick > 0 && currentTick % VELOCITY_CLEANUP_INTERVAL_TICKS == 0) {
                 cleanupOrphanedVelocities();
+                cleanupExpiredCooldowns();
             }
 
             // Log periodically
             if (currentTick > 0 && currentTick % 600 == 0) {
-                log.debug("Tick {}: bubble1={}, bubble2={}, ghosts1={}, ghosts2={}, migrations(to1={}, to2={}), {}",
+                log.debug("Tick {}: bubble1={}, bubble2={}, ghosts1={}, ghosts2={}, " +
+                          "migrations(to1={}, to2={}, failures={}), cooldowns={}, {}",
                           currentTick, bubble1.entityCount(), bubble2.entityCount(),
                           ghostsInBubble1.size(), ghostsInBubble2.size(),
-                          migrationsTo1.get(), migrationsTo2.get(), metrics);
+                          migrationsTo1.get(), migrationsTo2.get(), migrationFailures.get(),
+                          migrationCooldowns.size(), metrics);
             }
 
         } catch (Exception e) {
@@ -614,6 +617,21 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
         if (removed1 > 0 || removed2 > 0) {
             log.debug("Velocity cleanup: removed {} from bubble1, {} from bubble2", removed1, removed2);
+        }
+    }
+
+    /**
+     * Clean up expired cooldown entries.
+     * Prevents memory growth from accumulated cooldown entries in long-running simulations.
+     */
+    private void cleanupExpiredCooldowns() {
+        long currentTick = tickCount.get();
+        int sizeBefore = migrationCooldowns.size();
+        migrationCooldowns.entrySet().removeIf(e -> e.getValue() <= currentTick);
+        int removed = sizeBefore - migrationCooldowns.size();
+
+        if (removed > 0) {
+            log.debug("Cooldown cleanup: removed {} expired entries", removed);
         }
     }
 
@@ -792,15 +810,24 @@ public class TwoBubbleSimulation implements AutoCloseable {
     /**
      * COMMIT phase: Execute migration atomically with rollback on failure.
      * <p>
-     * Order of operations for atomicity:
-     * 1. Add to target (target now owns entity)
-     * 2. Transfer velocity
-     * 3. Remove from source
-     * 4. Clean up ghosts
-     * 5. Update metrics
+     * ATOMICITY GUARANTEE: Add-before-remove prevents entity loss.
+     * Alternative remove-before-add would risk entity loss if add fails.
      * <p>
-     * If step 1 fails: no rollback needed, entity stays in source
-     * If step 3 fails: rollback by removing from target
+     * Order of operations for atomicity:
+     * <ol>
+     *   <li>Remove ghost from target (if entity was ghosted there)</li>
+     *   <li>Add entity to target bubble (target now owns entity)</li>
+     *   <li>Add velocity to target (don't remove from source yet)</li>
+     *   <li>Remove entity from source bubble</li>
+     *   <li>Remove velocity from source (only after source removal succeeds)</li>
+     *   <li>Update metrics and cooldown</li>
+     * </ol>
+     * <p>
+     * Rollback scenarios:
+     * <ul>
+     *   <li>Step 2 fails: no rollback needed, entity stays in source</li>
+     *   <li>Step 4 fails: rollback removes from target, velocity stays in source</li>
+     * </ul>
      *
      * @param intent Migration intent from prepare phase
      * @param currentTick Current simulation tick
@@ -817,8 +844,12 @@ public class TwoBubbleSimulation implements AutoCloseable {
         var targetGhosts = (direction == MigrationDirection.TO_BUBBLE_2) ? ghostsInBubble2 : ghostsInBubble1;
         var migrationCounter = (direction == MigrationDirection.TO_BUBBLE_2) ? migrationsTo2 : migrationsTo1;
 
+        // Step 1: Remove ghost from target FIRST (before adding as real entity)
+        // This prevents conflicts if entity was already ghosted in target
+        targetGhosts.remove(entityId);
+
         try {
-            // Step 1: Add to target bubble first (target now owns entity)
+            // Step 2: Add entity to target bubble (target now owns entity)
             targetBubble.addEntity(entityId, intent.position(), intent.content());
         } catch (Exception e) {
             // Add failed - no rollback needed, entity stays in source
@@ -827,27 +858,29 @@ public class TwoBubbleSimulation implements AutoCloseable {
         }
 
         try {
-            // Step 2: Transfer velocity
+            // Step 3: Add velocity to target (but don't remove from source yet)
             if (intent.velocity() != null) {
                 targetVelocities.put(entityId, intent.velocity());
             }
-            sourceVelocities.remove(entityId);
 
-            // Step 3: Remove from source bubble
+            // Step 4: Remove entity from source bubble
             sourceBubble.removeEntity(entityId);
 
-            // Step 4: Remove from target ghosts (entity is now real in target)
-            targetGhosts.remove(entityId);
+            // Step 5: Now safe to remove velocity from source (source removal succeeded)
+            sourceVelocities.remove(entityId);
 
-            // Step 5: Update metrics and cooldown
+            // Step 6: Update metrics and cooldown
             migrationCounter.incrementAndGet();
             migrationCooldowns.put(entityId, currentTick + MIGRATION_COOLDOWN_TICKS);
 
-            log.debug("Migrated {} {}", entityId, direction);
+            log.debug("Migrated {} from bubble{} to bubble{}", entityId,
+                      direction == MigrationDirection.TO_BUBBLE_2 ? 1 : 2,
+                      direction == MigrationDirection.TO_BUBBLE_2 ? 2 : 1);
             return MigrationResult.success(entityId, direction);
 
         } catch (Exception e) {
             // Rollback: remove from target since it was added but migration failed
+            // Note: velocity was NOT removed from source, so no need to restore it
             rollbackMigration(intent, e);
             migrationFailures.incrementAndGet();
             return MigrationResult.failure(entityId, direction, "Rollback after failure: " + e.getMessage());
@@ -855,7 +888,10 @@ public class TwoBubbleSimulation implements AutoCloseable {
     }
 
     /**
-     * Rollback a failed migration by removing entity from target.
+     * Rollback a failed migration by removing entity from target and restoring velocity.
+     * <p>
+     * Called when migration fails after entity was added to target but before
+     * source removal completed. Ensures entity stays in source with velocity intact.
      *
      * @param intent Original migration intent
      * @param cause Exception that caused the failure
@@ -865,11 +901,27 @@ public class TwoBubbleSimulation implements AutoCloseable {
         var direction = intent.direction();
         var targetBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble2 : bubble1;
         var targetVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities2 : velocities1;
+        var sourceVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities1 : velocities2;
 
         try {
+            // Remove entity from target bubble
             targetBubble.removeEntity(entityId);
+
+            // Remove velocity from target (it was copied there)
             targetVelocities.remove(entityId);
-            log.warn("Rolled back migration of {} {}: {}", entityId, direction, cause.getMessage());
+
+            // Restore velocity to source if it was transferred
+            // (With new ordering, velocity is NOT removed from source until after
+            // source removal succeeds, so this is just a safety net)
+            if (intent.velocity() != null && !sourceVelocities.containsKey(entityId)) {
+                sourceVelocities.put(entityId, intent.velocity());
+            }
+
+            log.warn("Rolled back migration of {} from bubble{} to bubble{}: {}",
+                     entityId,
+                     direction == MigrationDirection.TO_BUBBLE_2 ? 1 : 2,
+                     direction == MigrationDirection.TO_BUBBLE_2 ? 2 : 1,
+                     cause.getMessage());
         } catch (Exception rollbackError) {
             log.error("Rollback failed for {}: original error={}, rollback error={}",
                       entityId, cause.getMessage(), rollbackError.getMessage());
