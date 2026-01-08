@@ -202,12 +202,13 @@ class EntityVisualizationServerTest {
 
     @Test
     void testEntityDTO() {
-        var dto = new EntityVisualizationServer.EntityDTO("test-id", 1.0f, 2.0f, 3.0f);
+        var dto = new EntityVisualizationServer.EntityDTO("test-id", 1.0f, 2.0f, 3.0f, "DEFAULT");
 
         assertThat(dto.id()).isEqualTo("test-id");
         assertThat(dto.x()).isEqualTo(1.0f);
         assertThat(dto.y()).isEqualTo(2.0f);
         assertThat(dto.z()).isEqualTo(3.0f);
+        assertThat(dto.type()).isEqualTo("DEFAULT");
     }
 
     @Test
