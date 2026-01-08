@@ -203,12 +203,18 @@ public class EnhancedBubble {
      */
     public List<EntityRecord> queryRange(Point3f center, float radius) {
         // Create bounding cube for sphere (origin at sphere's min corner, extent = 2*radius)
-        var cube = new Spatial.Cube(
-            center.x - radius,  // originX
-            center.y - radius,  // originY
-            center.z - radius,  // originZ
-            radius * 2          // extent (size of cube)
-        );
+        // Clamp to positive coordinates since Tetree requires positive coordinate space
+        float minX = Math.max(0, center.x - radius);
+        float minY = Math.max(0, center.y - radius);
+        float minZ = Math.max(0, center.z - radius);
+
+        // Compute extent that covers the query sphere (accounting for clamping)
+        float maxX = center.x + radius;
+        float maxY = center.y + radius;
+        float maxZ = center.z + radius;
+        float extent = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
+
+        var cube = new Spatial.Cube(minX, minY, minZ, extent);
 
         var entityIds = spatialIndex.entitiesInRegion(cube);
 
