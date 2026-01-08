@@ -203,7 +203,24 @@ public class TwoBubbleSimulation implements AutoCloseable {
     @Override
     public void close() {
         stop();
+
+        // Clear ghost and velocity maps to prevent memory leaks
+        ghostsInBubble1.clear();
+        ghostsInBubble2.clear();
+        velocities1.clear();
+        velocities2.clear();
+
+        // Shutdown scheduler with timeout
         scheduler.shutdownNow();
+        try {
+            if (!scheduler.awaitTermination(1, TimeUnit.SECONDS)) {
+                log.warn("Scheduler did not terminate within 1 second");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Interrupted while waiting for scheduler termination");
+        }
+
         bubble1.close();
         bubble2.close();
         transportRegistry.close();
@@ -464,19 +481,13 @@ public class TwoBubbleSimulation implements AutoCloseable {
     }
 
     private void checkMigration() {
-        // Build maps for entity lookup
-        var bubble1Entities = new HashMap<String, EnhancedBubble.EntityRecord>();
-        for (var entity : bubble1.getAllEntityRecords()) {
-            bubble1Entities.put(entity.id(), entity);
-        }
-        var bubble2Entities = new HashMap<String, EnhancedBubble.EntityRecord>();
-        for (var entity : bubble2.getAllEntityRecords()) {
-            bubble2Entities.put(entity.id(), entity);
-        }
+        // Snapshot entities atomically - use List.copyOf() to prevent modifications during iteration
+        var bubble1Snapshot = List.copyOf(bubble1.getAllEntityRecords());
+        var bubble2Snapshot = List.copyOf(bubble2.getAllEntityRecords());
 
         // Check bubble1 entities that crossed into bubble2's region
         var toMigrateTo2 = new ArrayList<EnhancedBubble.EntityRecord>();
-        for (var entity : bubble1Entities.values()) {
+        for (var entity : bubble1Snapshot) {
             if (entity.position().x >= boundaryX) {
                 toMigrateTo2.add(entity);
             }
@@ -484,33 +495,41 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
         // Check bubble2 entities that crossed into bubble1's region
         var toMigrateTo1 = new ArrayList<EnhancedBubble.EntityRecord>();
-        for (var entity : bubble2Entities.values()) {
+        for (var entity : bubble2Snapshot) {
             if (entity.position().x < boundaryX) {
                 toMigrateTo1.add(entity);
             }
         }
 
-        // Perform migrations
+        // Perform migrations with error handling
         for (var record : toMigrateTo2) {
-            bubble1.removeEntity(record.id());
-            bubble2.addEntity(record.id(), record.position(), record.content());
-            var velocity = velocities1.remove(record.id());
-            if (velocity != null) {
-                velocities2.put(record.id(), velocity);
+            try {
+                bubble1.removeEntity(record.id());
+                bubble2.addEntity(record.id(), record.position(), record.content());
+                var velocity = velocities1.remove(record.id());
+                if (velocity != null) {
+                    velocities2.put(record.id(), velocity);
+                }
+                ghostsInBubble2.remove(record.id());  // No longer a ghost if it's real
+                log.debug("Migrated {} from bubble1 to bubble2", record.id());
+            } catch (Exception e) {
+                log.error("Failed to migrate {} from bubble1 to bubble2: {}", record.id(), e.getMessage());
             }
-            ghostsInBubble2.remove(record.id());  // No longer a ghost if it's real
-            log.debug("Migrated {} from bubble1 to bubble2", record.id());
         }
 
         for (var record : toMigrateTo1) {
-            bubble2.removeEntity(record.id());
-            bubble1.addEntity(record.id(), record.position(), record.content());
-            var velocity = velocities2.remove(record.id());
-            if (velocity != null) {
-                velocities1.put(record.id(), velocity);
+            try {
+                bubble2.removeEntity(record.id());
+                bubble1.addEntity(record.id(), record.position(), record.content());
+                var velocity = velocities2.remove(record.id());
+                if (velocity != null) {
+                    velocities1.put(record.id(), velocity);
+                }
+                ghostsInBubble1.remove(record.id());  // No longer a ghost if it's real
+                log.debug("Migrated {} from bubble2 to bubble1", record.id());
+            } catch (Exception e) {
+                log.error("Failed to migrate {} from bubble2 to bubble1: {}", record.id(), e.getMessage());
             }
-            ghostsInBubble1.remove(record.id());  // No longer a ghost if it's real
-            log.debug("Migrated {} from bubble2 to bubble1", record.id());
         }
     }
 
