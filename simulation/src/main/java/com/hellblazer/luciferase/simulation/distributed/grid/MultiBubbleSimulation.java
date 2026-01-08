@@ -54,6 +54,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final BubbleGrid<EnhancedBubble> bubbleGrid;
     private final EntityBehavior behavior;
     private final GridGhostSyncAdapter ghostSyncAdapter;
+    private final MultiDirectionalMigration migration;
 
     private final Map<String, javax.vecmath.Vector3f> velocities = new ConcurrentHashMap<>();
 
@@ -99,6 +100,9 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
         // Create ghost sync adapter (Inc 5C integration)
         this.ghostSyncAdapter = new GridGhostSyncAdapter(gridConfig, bubbleGrid);
+
+        // Create multi-directional migration (Inc 5D integration)
+        this.migration = new MultiDirectionalMigration(gridConfig, bubbleGrid, velocities);
 
         // Distribute entities spatially
         populateEntities(entityCount);
@@ -182,6 +186,13 @@ public class MultiBubbleSimulation implements AutoCloseable {
      */
     public SimulationMetrics getMetrics() {
         return metrics;
+    }
+
+    /**
+     * Get migration metrics.
+     */
+    public MigrationMetrics getMigrationMetrics() {
+        return migration.getMetrics();
     }
 
     /**
@@ -346,6 +357,9 @@ public class MultiBubbleSimulation implements AutoCloseable {
                     totalEntities += bubble.entityCount();
                 }
             }
+
+            // Migration: check for entities crossing boundaries (Inc 5D)
+            migration.checkMigrations(tickCount.get());
 
             // Ghost sync: detect boundary entities and create ghosts (Inc 5C)
             ghostSyncAdapter.processBoundaryEntities(bucket);
