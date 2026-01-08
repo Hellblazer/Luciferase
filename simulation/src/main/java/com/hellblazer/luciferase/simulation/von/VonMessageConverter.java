@@ -115,6 +115,7 @@ public class VonMessageConverter {
             case VonMessage.Leave m -> m.timestamp();
             case VonMessage.GhostSync m -> m.timestamp();
             case VonMessage.Ack m -> m.timestamp();
+            default -> System.currentTimeMillis(); // Phase 6B distributed messages
         };
     }
 }

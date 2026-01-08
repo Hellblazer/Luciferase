@@ -131,7 +131,7 @@ public class VonMessageTest {
     void testSealedInterface_patternMatching() {
         VonMessage message = new VonMessage.Leave(UUID.randomUUID());
 
-        // Verify sealed interface allows exhaustive pattern matching
+        // Verify VonMessage allows pattern matching (non-sealed for Phase 6B extensions)
         var result = switch (message) {
             case VonMessage.JoinRequest r -> "join";
             case VonMessage.JoinResponse r -> "response";
@@ -139,6 +139,7 @@ public class VonMessageTest {
             case VonMessage.Leave l -> "leave";
             case VonMessage.GhostSync g -> "ghost";
             case VonMessage.Ack a -> "ack";
+            default -> "other"; // Phase 6B extensions (RegisterProcessMessage, etc.)
         };
 
         assertThat(result).isEqualTo("leave");

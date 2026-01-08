@@ -299,6 +299,7 @@ public class VonBubble extends EnhancedBubble implements Node {
             case VonMessage.Leave leave -> handleLeave(leave);
             case VonMessage.GhostSync sync -> handleGhostSync(sync);
             case VonMessage.Ack ack -> handleAck(ack);
+            default -> log.warn("Unhandled message type: {}", message.getClass().getSimpleName());
         }
     }
 

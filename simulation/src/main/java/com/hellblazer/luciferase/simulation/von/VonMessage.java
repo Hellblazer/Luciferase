@@ -41,10 +41,15 @@ import java.util.UUID;
  *   <li>{@link GhostSync} - Ghost entity synchronization</li>
  *   <li>{@link Ack} - Acknowledgment of received message</li>
  * </ul>
+ * <p>
+ * Phase 6B Extensions (non-sealed for distributed messages):
+ * - RegisterProcessMessage
+ * - TopologyUpdateMessage
+ * - HeartbeatMessage
  *
  * @author hal.hildebrand
  */
-public sealed interface VonMessage {
+public interface VonMessage {
 
     /**
      * Request to join the VON at a specific position.
