@@ -230,6 +230,16 @@ public class VONDiscoveryProtocol {
     }
 
     /**
+     * Check if a bubble is registered (has state in the discovery protocol).
+     *
+     * @param bubbleId UUID of the bubble to check
+     * @return true if bubble is registered, false otherwise
+     */
+    public boolean hasBubble(UUID bubbleId) {
+        return bubbleStates.containsKey(bubbleId);
+    }
+
+    /**
      * Shutdown the protocol.
      * <p>
      * Clears all state and unsubscribes event listeners.

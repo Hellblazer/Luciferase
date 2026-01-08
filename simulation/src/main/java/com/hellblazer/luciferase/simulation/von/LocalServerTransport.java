@@ -186,8 +186,10 @@ public class LocalServerTransport implements VonTransport {
 
     /**
      * Deliver a message to this transport (called by sender).
+     * <p>
+     * Public to allow cross-package message delivery for migration coordinator.
      */
-    void deliver(VonMessage message) {
+    public void deliver(VonMessage message) {
         executor.submit(() -> {
             for (var handler : handlers) {
                 try {
