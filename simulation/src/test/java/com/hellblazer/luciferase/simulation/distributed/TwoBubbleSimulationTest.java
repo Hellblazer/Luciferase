@@ -219,6 +219,64 @@ class TwoBubbleSimulationTest {
         assertThat(simulation.getMigrationsTo2()).isGreaterThanOrEqualTo(0);
     }
 
+    @Test
+    void testMigrationNoEntityLoss() throws Exception {
+        // Extended run to verify no entities are lost during migrations
+        simulation = new TwoBubbleSimulation(200, WorldBounds.DEFAULT,
+                                              new FlockingBehavior(), new FlockingBehavior());
+
+        int initialTotal = simulation.getBubble1().entityCount() + simulation.getBubble2().entityCount();
+        assertThat(initialTotal).isEqualTo(200);
+
+        simulation.start();
+        waitForTicks(300, 10000);  // Run for ~5 seconds
+        simulation.stop();
+
+        int finalTotal = simulation.getBubble1().entityCount() + simulation.getBubble2().entityCount();
+        assertThat(finalTotal).isEqualTo(initialTotal);
+
+        // Should have zero migration failures
+        assertThat(simulation.getMigrationFailures()).isZero();
+    }
+
+    @Test
+    void testMigrationCooldownPreventsOscillation() throws Exception {
+        // Test that entities don't oscillate rapidly at boundary
+        simulation = new TwoBubbleSimulation(100, WorldBounds.DEFAULT,
+                                              new FlockingBehavior(), new FlockingBehavior());
+
+        simulation.start();
+        waitForTicks(200, 7000);
+        simulation.stop();
+
+        // Total migrations should be reasonable, not excessive
+        // With cooldown, an entity can only migrate once every 30 ticks (500ms)
+        // In 200 ticks, max migrations per entity = ~6
+        // With 100 entities, theoretical max = 600, but most won't migrate at all
+        long totalMigrations = simulation.getMigrationsTo1() + simulation.getMigrationsTo2();
+        assertThat(totalMigrations).isLessThan(300);  // Well under theoretical max
+
+        // Should have some cooldowns active if migrations occurred
+        // (or zero if no migrations near the end)
+        assertThat(simulation.getCooldownsActive()).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    void testMigrationFailuresTracked() throws Exception {
+        simulation = new TwoBubbleSimulation(50);
+
+        // Initially zero failures
+        assertThat(simulation.getMigrationFailures()).isZero();
+
+        simulation.start();
+        waitForTicks(30, 2000);
+        simulation.stop();
+
+        // Under normal operation, should have no failures
+        var state = simulation.getDebugState();
+        assertThat(state.migrationFailures()).isZero();
+    }
+
     // ========== Bounds Tests ==========
 
     @Test
@@ -287,6 +345,8 @@ class TwoBubbleSimulationTest {
         assertThat(initialState.bubble1EntityCount() + initialState.bubble2EntityCount()).isEqualTo(100);
         assertThat(initialState.migrationsTo1()).isZero();
         assertThat(initialState.migrationsTo2()).isZero();
+        assertThat(initialState.migrationFailures()).isZero();
+        assertThat(initialState.cooldownsActive()).isZero();
 
         simulation.start();
         waitForTicks(20, 2000);
@@ -297,5 +357,7 @@ class TwoBubbleSimulationTest {
         assertThat(finalState.tickCount()).isGreaterThanOrEqualTo(20);
         assertThat(finalState.bubble1EntityCount() + finalState.bubble2EntityCount()).isEqualTo(100);
         assertThat(finalState.metrics()).isNotNull();
+        // Migration failures should be zero under normal operation
+        assertThat(finalState.migrationFailures()).isZero();
     }
 }

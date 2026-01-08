@@ -91,6 +91,18 @@ public class TwoBubbleSimulation implements AutoCloseable {
      */
     private static final long VELOCITY_CLEANUP_INTERVAL_TICKS = 1800;
 
+    /**
+     * Migration cooldown: minimum ticks between migrations for same entity.
+     * Prevents boundary oscillation (ping-pong effect).
+     */
+    public static final int MIGRATION_COOLDOWN_TICKS = 30;  // 500ms at 60fps
+
+    /**
+     * Hysteresis distance: entity must be this far past boundary to trigger migration.
+     * Prevents rapid toggling when entity hovers near boundary.
+     */
+    public static final float HYSTERESIS_DISTANCE = 2.0f;
+
     private final WorldBounds worldBounds;
     private final float boundaryX;  // X coordinate that divides the bubbles
 
@@ -113,6 +125,10 @@ public class TwoBubbleSimulation implements AutoCloseable {
     // Migration metrics
     private final AtomicLong migrationsTo1 = new AtomicLong(0);
     private final AtomicLong migrationsTo2 = new AtomicLong(0);
+    private final AtomicLong migrationFailures = new AtomicLong(0);
+
+    // Migration cooldowns: entityId -> tick when cooldown expires
+    private final Map<String, Long> migrationCooldowns = new ConcurrentHashMap<>();
 
     private ScheduledFuture<?> tickTask;
 
@@ -120,6 +136,45 @@ public class TwoBubbleSimulation implements AutoCloseable {
      * Ghost entry with position, velocity, and expiration.
      */
     private record GhostEntry(String id, Point3f position, javax.vecmath.Vector3f velocity, long expirationTick) {}
+
+    /**
+     * Migration direction enum.
+     */
+    public enum MigrationDirection {
+        TO_BUBBLE_1,
+        TO_BUBBLE_2
+    }
+
+    /**
+     * Migration intent: captures entity state and validates migration is safe.
+     * Created during PREPARE phase, consumed during COMMIT phase.
+     */
+    public record MigrationIntent(
+        String entityId,
+        Point3f position,
+        Object content,
+        javax.vecmath.Vector3f velocity,
+        MigrationDirection direction,
+        long preparedAtTick
+    ) {}
+
+    /**
+     * Migration result: outcome of a migration attempt.
+     */
+    public record MigrationResult(
+        String entityId,
+        MigrationDirection direction,
+        boolean success,
+        String message
+    ) {
+        public static MigrationResult success(String entityId, MigrationDirection direction) {
+            return new MigrationResult(entityId, direction, true, "Success");
+        }
+
+        public static MigrationResult failure(String entityId, MigrationDirection direction, String message) {
+            return new MigrationResult(entityId, direction, false, message);
+        }
+    }
 
     /**
      * Create a two-bubble simulation with default parameters.
@@ -224,11 +279,12 @@ public class TwoBubbleSimulation implements AutoCloseable {
     public void close() {
         stop();
 
-        // Clear ghost and velocity maps to prevent memory leaks
+        // Clear ghost, velocity, and cooldown maps to prevent memory leaks
         ghostsInBubble1.clear();
         ghostsInBubble2.clear();
         velocities1.clear();
         velocities2.clear();
+        migrationCooldowns.clear();
 
         // Shutdown scheduler with timeout
         scheduler.shutdownNow();
@@ -350,8 +406,31 @@ public class TwoBubbleSimulation implements AutoCloseable {
             ghostsInBubble2.size(),
             migrationsTo1.get(),
             migrationsTo2.get(),
+            migrationFailures.get(),
+            migrationCooldowns.size(),
             metrics
         );
+    }
+
+    /**
+     * Get count of migration failures.
+     *
+     * @return Number of failed migration attempts
+     */
+    public long getMigrationFailures() {
+        return migrationFailures.get();
+    }
+
+    /**
+     * Get count of entities currently in migration cooldown.
+     *
+     * @return Number of entities that cannot migrate yet
+     */
+    public int getCooldownsActive() {
+        long currentTick = tickCount.get();
+        return (int) migrationCooldowns.entrySet().stream()
+            .filter(e -> e.getValue() > currentTick)
+            .count();
     }
 
     // ========== Records for Visualization and Debugging ==========
@@ -377,6 +456,8 @@ public class TwoBubbleSimulation implements AutoCloseable {
         int bubble2GhostCount,
         long migrationsTo1,
         long migrationsTo2,
+        long migrationFailures,
+        int cooldownsActive,
         SimulationMetrics metrics
     ) {}
 
@@ -578,58 +659,220 @@ public class TwoBubbleSimulation implements AutoCloseable {
         ghostsInBubble2.entrySet().removeIf(e -> e.getValue().expirationTick <= currentTick);
     }
 
+    /**
+     * Check for entities that need migration using two-phase commit protocol.
+     * <p>
+     * Phase 1 (PREPARE): Validate migration is safe, create intent
+     * Phase 2 (COMMIT): Execute migration atomically with rollback on failure
+     */
     private void checkMigration() {
+        long currentTick = tickCount.get();
+
         // Snapshot entities atomically - use List.copyOf() to prevent modifications during iteration
         var bubble1Snapshot = List.copyOf(bubble1.getAllEntityRecords());
         var bubble2Snapshot = List.copyOf(bubble2.getAllEntityRecords());
 
-        // Check bubble1 entities that crossed into bubble2's region
-        var toMigrateTo2 = new ArrayList<EnhancedBubble.EntityRecord>();
+        // Phase 1: PREPARE - identify migration candidates with hysteresis and cooldown checks
+        var intentsTo2 = new ArrayList<MigrationIntent>();
         for (var entity : bubble1Snapshot) {
-            if (entity.position().x >= boundaryX) {
-                toMigrateTo2.add(entity);
+            if (shouldMigrate(entity, MigrationDirection.TO_BUBBLE_2, currentTick)) {
+                var intent = prepareMigration(entity, MigrationDirection.TO_BUBBLE_2, currentTick);
+                if (intent != null) {
+                    intentsTo2.add(intent);
+                }
             }
         }
 
-        // Check bubble2 entities that crossed into bubble1's region
-        var toMigrateTo1 = new ArrayList<EnhancedBubble.EntityRecord>();
+        var intentsTo1 = new ArrayList<MigrationIntent>();
         for (var entity : bubble2Snapshot) {
-            if (entity.position().x < boundaryX) {
-                toMigrateTo1.add(entity);
+            if (shouldMigrate(entity, MigrationDirection.TO_BUBBLE_1, currentTick)) {
+                var intent = prepareMigration(entity, MigrationDirection.TO_BUBBLE_1, currentTick);
+                if (intent != null) {
+                    intentsTo1.add(intent);
+                }
             }
         }
 
-        // Perform migrations with error handling
-        for (var record : toMigrateTo2) {
-            try {
-                bubble1.removeEntity(record.id());
-                bubble2.addEntity(record.id(), record.position(), record.content());
-                var velocity = velocities1.remove(record.id());
-                if (velocity != null) {
-                    velocities2.put(record.id(), velocity);
-                }
-                ghostsInBubble2.remove(record.id());  // No longer a ghost if it's real
-                migrationsTo2.incrementAndGet();
-                log.debug("Migrated {} from bubble1 to bubble2", record.id());
-            } catch (Exception e) {
-                log.error("Failed to migrate {} from bubble1 to bubble2: {}", record.id(), e.getMessage());
+        // Phase 2: COMMIT - execute migrations with rollback on failure
+        for (var intent : intentsTo2) {
+            var result = commitMigration(intent, currentTick);
+            if (!result.success()) {
+                log.warn("Migration failed: {}", result.message());
             }
         }
 
-        for (var record : toMigrateTo1) {
-            try {
-                bubble2.removeEntity(record.id());
-                bubble1.addEntity(record.id(), record.position(), record.content());
-                var velocity = velocities2.remove(record.id());
-                if (velocity != null) {
-                    velocities1.put(record.id(), velocity);
-                }
-                ghostsInBubble1.remove(record.id());  // No longer a ghost if it's real
-                migrationsTo1.incrementAndGet();
-                log.debug("Migrated {} from bubble2 to bubble1", record.id());
-            } catch (Exception e) {
-                log.error("Failed to migrate {} from bubble2 to bubble1: {}", record.id(), e.getMessage());
+        for (var intent : intentsTo1) {
+            var result = commitMigration(intent, currentTick);
+            if (!result.success()) {
+                log.warn("Migration failed: {}", result.message());
             }
+        }
+    }
+
+    /**
+     * Check if entity should migrate based on hysteresis and cooldown.
+     *
+     * @param entity    Entity to check
+     * @param direction Target direction
+     * @param currentTick Current simulation tick
+     * @return true if entity should migrate
+     */
+    private boolean shouldMigrate(EnhancedBubble.EntityRecord entity, MigrationDirection direction, long currentTick) {
+        // Check cooldown first (cheaper check)
+        if (isInCooldown(entity.id(), currentTick)) {
+            return false;
+        }
+
+        // Apply hysteresis: entity must be past boundary by HYSTERESIS_DISTANCE
+        float x = entity.position().x;
+        if (direction == MigrationDirection.TO_BUBBLE_2) {
+            // Entity in bubble1 needs to be HYSTERESIS_DISTANCE past boundary into bubble2's region
+            return x >= (boundaryX + HYSTERESIS_DISTANCE);
+        } else {
+            // Entity in bubble2 needs to be HYSTERESIS_DISTANCE past boundary into bubble1's region
+            return x < (boundaryX - HYSTERESIS_DISTANCE);
+        }
+    }
+
+    /**
+     * Check if entity is in migration cooldown.
+     *
+     * @param entityId Entity ID to check
+     * @param currentTick Current simulation tick
+     * @return true if entity cannot migrate yet
+     */
+    private boolean isInCooldown(String entityId, long currentTick) {
+        var cooldownExpires = migrationCooldowns.get(entityId);
+        if (cooldownExpires == null) {
+            return false;
+        }
+        return currentTick < cooldownExpires;
+    }
+
+    /**
+     * PREPARE phase: Validate migration and create intent.
+     *
+     * @param entity    Entity to migrate
+     * @param direction Target direction
+     * @param currentTick Current simulation tick
+     * @return MigrationIntent if valid, null if migration should not proceed
+     */
+    private MigrationIntent prepareMigration(EnhancedBubble.EntityRecord entity, MigrationDirection direction, long currentTick) {
+        String entityId = entity.id();
+
+        // Validate entity exists in source bubble
+        var sourceBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble1 : bubble2;
+        var targetBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble2 : bubble1;
+
+        if (!sourceBubble.getEntities().contains(entityId)) {
+            log.trace("Prepare failed: entity {} not in source bubble", entityId);
+            return null;
+        }
+
+        // Validate entity NOT in target bubble (prevents duplicates)
+        if (targetBubble.getEntities().contains(entityId)) {
+            log.warn("Prepare failed: entity {} already in target bubble", entityId);
+            return null;
+        }
+
+        // Get velocity from source bubble's velocity map
+        var velocityMap = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities1 : velocities2;
+        var velocity = velocityMap.get(entityId);
+
+        return new MigrationIntent(
+            entityId,
+            new Point3f(entity.position()),  // Copy position
+            entity.content(),
+            velocity != null ? new javax.vecmath.Vector3f(velocity) : null,
+            direction,
+            currentTick
+        );
+    }
+
+    /**
+     * COMMIT phase: Execute migration atomically with rollback on failure.
+     * <p>
+     * Order of operations for atomicity:
+     * 1. Add to target (target now owns entity)
+     * 2. Transfer velocity
+     * 3. Remove from source
+     * 4. Clean up ghosts
+     * 5. Update metrics
+     * <p>
+     * If step 1 fails: no rollback needed, entity stays in source
+     * If step 3 fails: rollback by removing from target
+     *
+     * @param intent Migration intent from prepare phase
+     * @param currentTick Current simulation tick
+     * @return MigrationResult indicating success or failure
+     */
+    private MigrationResult commitMigration(MigrationIntent intent, long currentTick) {
+        String entityId = intent.entityId();
+        var direction = intent.direction();
+
+        var sourceBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble1 : bubble2;
+        var targetBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble2 : bubble1;
+        var sourceVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities1 : velocities2;
+        var targetVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities2 : velocities1;
+        var targetGhosts = (direction == MigrationDirection.TO_BUBBLE_2) ? ghostsInBubble2 : ghostsInBubble1;
+        var migrationCounter = (direction == MigrationDirection.TO_BUBBLE_2) ? migrationsTo2 : migrationsTo1;
+
+        try {
+            // Step 1: Add to target bubble first (target now owns entity)
+            targetBubble.addEntity(entityId, intent.position(), intent.content());
+        } catch (Exception e) {
+            // Add failed - no rollback needed, entity stays in source
+            migrationFailures.incrementAndGet();
+            return MigrationResult.failure(entityId, direction, "Failed to add to target: " + e.getMessage());
+        }
+
+        try {
+            // Step 2: Transfer velocity
+            if (intent.velocity() != null) {
+                targetVelocities.put(entityId, intent.velocity());
+            }
+            sourceVelocities.remove(entityId);
+
+            // Step 3: Remove from source bubble
+            sourceBubble.removeEntity(entityId);
+
+            // Step 4: Remove from target ghosts (entity is now real in target)
+            targetGhosts.remove(entityId);
+
+            // Step 5: Update metrics and cooldown
+            migrationCounter.incrementAndGet();
+            migrationCooldowns.put(entityId, currentTick + MIGRATION_COOLDOWN_TICKS);
+
+            log.debug("Migrated {} {}", entityId, direction);
+            return MigrationResult.success(entityId, direction);
+
+        } catch (Exception e) {
+            // Rollback: remove from target since it was added but migration failed
+            rollbackMigration(intent, e);
+            migrationFailures.incrementAndGet();
+            return MigrationResult.failure(entityId, direction, "Rollback after failure: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Rollback a failed migration by removing entity from target.
+     *
+     * @param intent Original migration intent
+     * @param cause Exception that caused the failure
+     */
+    private void rollbackMigration(MigrationIntent intent, Exception cause) {
+        String entityId = intent.entityId();
+        var direction = intent.direction();
+        var targetBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble2 : bubble1;
+        var targetVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities2 : velocities1;
+
+        try {
+            targetBubble.removeEntity(entityId);
+            targetVelocities.remove(entityId);
+            log.warn("Rolled back migration of {} {}: {}", entityId, direction, cause.getMessage());
+        } catch (Exception rollbackError) {
+            log.error("Rollback failed for {}: original error={}, rollback error={}",
+                      entityId, cause.getMessage(), rollbackError.getMessage());
         }
     }
 
