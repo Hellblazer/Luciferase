@@ -62,6 +62,10 @@ public class LocalServerTransport implements VonTransport {
     private final ExecutorService executor;
     private volatile boolean connected = true;
 
+    // Failure injection for testing (Phase 6A)
+    private volatile long injectDelayMs = 0;
+    private volatile boolean injectPartition = false;
+
     /**
      * Create a LocalServerTransport (use Registry.register() instead).
      */
@@ -75,6 +79,22 @@ public class LocalServerTransport implements VonTransport {
     public void sendToNeighbor(UUID neighborId, VonMessage message) throws TransportException {
         if (!connected) {
             throw new TransportException("Transport is closed");
+        }
+
+        // Failure injection: Simulate network partition (drop message)
+        if (injectPartition) {
+            log.debug("{} -> {}: DROPPED (partition injected)", localId, neighborId);
+            return; // Message silently dropped
+        }
+
+        // Failure injection: Simulate network delay
+        if (injectDelayMs > 0) {
+            try {
+                Thread.sleep(injectDelayMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new TransportException("Interrupted during injected delay", e);
+            }
         }
 
         var neighbor = registry.get(neighborId);
@@ -177,6 +197,32 @@ public class LocalServerTransport implements VonTransport {
                 }
             }
         });
+    }
+
+    /**
+     * Inject artificial network delay for testing.
+     * <p>
+     * Phase 6A failure injection API: Allows tests to simulate network latency
+     * by adding a delay before each sendToNeighbor operation.
+     *
+     * @param delayMs Delay in milliseconds (0 to disable)
+     */
+    public void injectDelay(long delayMs) {
+        this.injectDelayMs = delayMs;
+        log.debug("Injected delay: {} ms", delayMs);
+    }
+
+    /**
+     * Inject network partition for testing.
+     * <p>
+     * Phase 6A failure injection API: When enabled, all sendToNeighbor calls
+     * silently drop messages (simulating complete network partition).
+     *
+     * @param enabled true to drop all messages, false to restore normal operation
+     */
+    public void injectPartition(boolean enabled) {
+        this.injectPartition = enabled;
+        log.debug("Injected partition: {}", enabled);
     }
 
     /**
