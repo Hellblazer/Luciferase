@@ -53,12 +53,14 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final WorldBounds worldBounds;
     private final BubbleGrid<EnhancedBubble> bubbleGrid;
     private final EntityBehavior behavior;
+    private final GridGhostSyncAdapter ghostSyncAdapter;
 
     private final Map<String, javax.vecmath.Vector3f> velocities = new ConcurrentHashMap<>();
 
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicLong tickCount = new AtomicLong(0);
+    private final AtomicLong currentBucket = new AtomicLong(0);
     private final SimulationMetrics metrics = new SimulationMetrics();
 
     private ScheduledFuture<?> tickTask;
@@ -94,6 +96,9 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
         // Create bubbles in grid topology
         this.bubbleGrid = GridBubbleFactory.createBubbles(gridConfig, (byte) 10, DEFAULT_TICK_INTERVAL_MS);
+
+        // Create ghost sync adapter (Inc 5C integration)
+        this.ghostSyncAdapter = new GridGhostSyncAdapter(gridConfig, bubbleGrid);
 
         // Distribute entities spatially
         populateEntities(entityCount);
@@ -205,6 +210,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
     /**
      * Get all entities from all bubbles (for visualization).
+     * Includes both real entities and ghosts.
      *
      * @return List of all entities with their positions and bubble coordinates
      */
@@ -216,18 +222,39 @@ public class MultiBubbleSimulation implements AutoCloseable {
                 var coord = new BubbleCoordinate(row, col);
                 var bubble = bubbleGrid.getBubble(coord);
 
+                // Add real entities
                 for (var record : bubble.getAllEntityRecords()) {
                     entities.add(new EntitySnapshot(
                         record.id(),
                         record.position(),
                         coord,
-                        false // No ghosts yet (added in Inc 5C)
+                        false // Real entity
+                    ));
+                }
+
+                // Add ghost entities (Inc 5C)
+                var ghosts = ghostSyncAdapter.getGhostsForBubble(bubble.id());
+                for (var ghost : ghosts) {
+                    entities.add(new EntitySnapshot(
+                        ghost.entityId().toString(),
+                        ghost.position(),
+                        coord,
+                        true // Ghost entity
                     ));
                 }
             }
         }
 
         return entities;
+    }
+
+    /**
+     * Get total ghost count across all bubbles (for testing).
+     *
+     * @return Total number of ghost entities
+     */
+    public int getGhostCount() {
+        return ghostSyncAdapter.getTotalGhostCount();
     }
 
     // ========== Records for Visualization ==========
@@ -291,6 +318,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
         try {
             long startNs = System.nanoTime();
             float deltaTime = DEFAULT_TICK_INTERVAL_MS / 1000.0f;
+            long bucket = currentBucket.get();
 
             // Swap velocity buffers for FlockingBehavior
             if (behavior instanceof FlockingBehavior fb) {
@@ -308,17 +336,23 @@ public class MultiBubbleSimulation implements AutoCloseable {
                 }
             }
 
+            // Ghost sync: detect boundary entities and create ghosts (Inc 5C)
+            ghostSyncAdapter.processBoundaryEntities(bucket);
+            ghostSyncAdapter.onBucketComplete(bucket);
+
             // Record metrics
             long frameTimeNs = System.nanoTime() - startNs;
             metrics.recordTick(frameTimeNs, totalEntities);
 
             tickCount.incrementAndGet();
+            currentBucket.incrementAndGet();
 
             // Log periodically
             long currentTick = tickCount.get();
             if (currentTick > 0 && currentTick % 600 == 0) {
-                log.debug("Tick {}: {} bubbles, {} entities, {}",
-                          currentTick, gridConfig.bubbleCount(), totalEntities, metrics);
+                log.debug("Tick {}: {} bubbles, {} entities, {} ghosts, {}",
+                          currentTick, gridConfig.bubbleCount(), totalEntities,
+                          ghostSyncAdapter.getTotalGhostCount(), metrics);
             }
 
         } catch (Exception e) {
