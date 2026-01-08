@@ -128,13 +128,19 @@ class PerformanceStabilityTest {
 
     @Test
     void testHeapStability() throws InterruptedException {
+        // Given: Warmup phase to stabilize heap before monitoring
+        validator.migrateBatch(50);
+        Thread.sleep(200);
+        System.gc(); // Clear transient objects from warmup
+        Thread.sleep(200);
+
         // Given: HeapMonitor tracking memory
         var heapMonitor = new HeapMonitor();
         heapMonitor.start(100); // snapshot every 100ms
 
-        // When: Run sustained load for 5 seconds
-        for (int i = 0; i < 5; i++) {
-            validator.migrateBatch(100);
+        // When: Run sustained load for 2 seconds (longer duration for reliable trend)
+        for (int i = 0; i < 20; i++) {
+            validator.migrateBatch(50);
             Thread.sleep(100);
         }
 
