@@ -228,9 +228,11 @@ public class SimulationLoop {
             long startNs = System.nanoTime();
             float deltaTime = tickIntervalMs / 1000.0f;
 
-            // Swap velocity buffers for FlockingBehavior (thread-safe double-buffering)
+            // Swap velocity buffers for behaviors that support it (thread-safe double-buffering)
             if (behavior instanceof FlockingBehavior fb) {
                 fb.swapVelocityBuffers();
+            } else if (behavior instanceof com.hellblazer.luciferase.simulation.behavior.CompositeEntityBehavior composite) {
+                composite.swapVelocityBuffers();
             }
 
             // Get all entities

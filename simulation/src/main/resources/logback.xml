@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+    </root>
+
+    <!-- Enable debug logging for Luciferase simulation packages -->
+    <logger name="com.hellblazer.luciferase.simulation" level="INFO" />
+
+    <!-- Visualization servers - show important startup info -->
+    <logger name="com.hellblazer.luciferase.simulation.viz" level="INFO" />
+
+    <!-- Reduce Javalin noise -->
+    <logger name="io.javalin" level="WARN" />
+    <logger name="org.eclipse.jetty" level="WARN" />
+</configuration>

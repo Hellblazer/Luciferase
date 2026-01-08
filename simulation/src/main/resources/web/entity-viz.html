@@ -102,6 +102,11 @@
             background: #4b5563;
             cursor: not-allowed;
         }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
     </style>
 </head>
 <body>
@@ -118,6 +123,10 @@
             <span class="stat-value" id="stat-entities">0</span>
         </div>
         <div class="stat-row">
+            <span class="stat-label">Types</span>
+            <span class="stat-value" id="stat-breakdown" style="font-size: 11px;">-</span>
+        </div>
+        <div class="stat-row">
             <span class="stat-label">FPS</span>
             <span class="stat-value" id="stat-fps">0</span>
         </div>
@@ -128,8 +137,54 @@
     </div>
 
     <div id="controls-panel">
+        <h3 style="margin: 0 0 12px 0; color: #60a5fa; font-size: 13px;">Controls</h3>
         <button id="btn-reset-camera">Reset Camera</button>
         <button id="btn-toggle-grid">Toggle Grid</button>
+        <button id="btn-record" style="background: #ef4444;">● Record Video</button>
+        <button id="btn-stop-record" style="display: none; background: #6b7280;">■ Stop Recording</button>
+        <div id="recording-status" style="display: none; margin-top: 8px; font-size: 12px; color: #ef4444;">
+            <span id="recording-dot" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ef4444; margin-right: 6px; animation: pulse 1s infinite;"></span>
+            <span id="recording-time">00:00</span>
+        </div>
+    </div>
+
+    <div id="params-panel" style="position: fixed; bottom: 20px; right: 20px; background: rgba(30, 30, 50, 0.9); border-radius: 12px; padding: 16px; backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); min-width: 250px; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <h3 style="margin: 0 0 12px 0; color: #60a5fa; font-size: 13px;">Simulation Parameters</h3>
+        <div style="font-size: 11px; color: #a0a0a0; margin-bottom: 12px;">
+            (Restart simulation to apply changes)
+        </div>
+
+        <div style="margin-bottom: 12px;">
+            <label style="font-size: 12px; color: #a0a0a0; display: block; margin-bottom: 4px;">
+                Prey Speed: <span id="prey-speed-value" style="color: #4A90E2;">18.0</span> m/s
+            </label>
+            <input type="range" id="prey-speed" min="10" max="30" value="18" step="0.5" style="width: 100%;">
+        </div>
+
+        <div style="margin-bottom: 12px;">
+            <label style="font-size: 12px; color: #a0a0a0; display: block; margin-bottom: 4px;">
+                Predator Speed: <span id="predator-speed-value" style="color: #E74C3C;">12.0</span> m/s
+            </label>
+            <input type="range" id="predator-speed" min="8" max="20" value="12" step="0.5" style="width: 100%;">
+        </div>
+
+        <div style="margin-bottom: 12px;">
+            <label style="font-size: 12px; color: #a0a0a0; display: block; margin-bottom: 4px;">
+                Flee Weight: <span id="flee-weight-value" style="color: #34d399;">3.0</span>
+            </label>
+            <input type="range" id="flee-weight" min="1" max="5" value="3" step="0.1" style="width: 100%;">
+        </div>
+
+        <div style="margin-bottom: 12px;">
+            <label style="font-size: 12px; color: #a0a0a0; display: block; margin-bottom: 4px;">
+                Detection Range: <span id="detection-range-value" style="color: #34d399;">35.0</span> m
+            </label>
+            <input type="range" id="detection-range" min="20" max="60" value="35" step="1" style="width: 100%;">
+        </div>
+
+        <div style="font-size: 10px; color: #666; margin-top: 8px; font-style: italic;">
+            Future: Real-time parameter updates via WebSocket
+        </div>
     </div>
 
     <script type="importmap">

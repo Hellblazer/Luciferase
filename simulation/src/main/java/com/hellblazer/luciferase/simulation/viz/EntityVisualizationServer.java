@@ -373,7 +373,8 @@ public class EntityVisualizationServer {
             sb.append("{\"id\":\"").append(entity.id()).append("\",");
             sb.append("\"x\":").append(entity.x()).append(",");
             sb.append("\"y\":").append(entity.y()).append(",");
-            sb.append("\"z\":").append(entity.z()).append("}");
+            sb.append("\"z\":").append(entity.z()).append(",");
+            sb.append("\"type\":\"").append(entity.type()).append("\"}");
         }
 
         sb.append("],\"timestamp\":").append(System.currentTimeMillis()).append("}");
@@ -390,7 +391,10 @@ public class EntityVisualizationServer {
 
         for (var record : records) {
             var pos = record.position();
-            dtos.add(new EntityDTO(record.id(), pos.x, pos.y, pos.z));
+            String type = (record.content() instanceof com.hellblazer.luciferase.simulation.entity.EntityType entityType)
+                ? entityType.name()
+                : "DEFAULT";
+            dtos.add(new EntityDTO(record.id(), pos.x, pos.y, pos.z, type));
         }
 
         return dtos;
@@ -398,7 +402,7 @@ public class EntityVisualizationServer {
 
     // ========== DTO ==========
 
-    public record EntityDTO(String id, float x, float y, float z) {}
+    public record EntityDTO(String id, float x, float y, float z, String type) {}
 
     // ========== Main ==========
 
@@ -410,7 +414,7 @@ public class EntityVisualizationServer {
      * <p>
      * Usage: java EntityVisualizationServer [port] [entityCount] [behavior]
      * <p>
-     * behavior: "flock" (default) or "random"
+     * behavior: "flock" (default), "random", or "predator-prey"
      */
     public static void main(String[] args) {
         var port = args.length > 0 ? Integer.parseInt(args[0]) : DEFAULT_PORT;
@@ -423,25 +427,70 @@ public class EntityVisualizationServer {
         var spawnMargin = 20f;
         var spawnRange = worldBounds.size() - (2 * spawnMargin);
 
-        // Create demo bubble with random entities
+        // Create demo bubble
         var bubble = new EnhancedBubble(UUID.randomUUID(), (byte) 10, 16);
         var random = new Random(42);
-
-        for (int i = 0; i < entityCount; i++) {
-            var position = new Point3f(
-                worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
-                worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
-                worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange
-            );
-            bubble.addEntity("entity-" + i, position, null);
-        }
 
         // Create behavior based on type
         EntityBehavior behavior;
         if ("random".equalsIgnoreCase(behaviorType)) {
+            // Random walk - all entities wander randomly
+            for (int i = 0; i < entityCount; i++) {
+                var position = new Point3f(
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange
+                );
+                bubble.addEntity("entity-" + i, position, null);
+            }
             behavior = new RandomWalkBehavior(42);
             log.info("Using RandomWalkBehavior");
+
+        } else if ("predator-prey".equalsIgnoreCase(behaviorType)) {
+            // Predator-prey simulation
+            int predatorCount = Math.max(1, entityCount / 10);  // 10% predators
+            int preyCount = entityCount - predatorCount;
+
+            // Add prey entities (blue)
+            for (int i = 0; i < preyCount; i++) {
+                var position = new Point3f(
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange
+                );
+                bubble.addEntity("prey-" + i, position, com.hellblazer.luciferase.simulation.entity.EntityType.PREY);
+            }
+
+            // Add predator entities (red) - distributed around the edges
+            for (int i = 0; i < predatorCount; i++) {
+                var position = new Point3f(
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange
+                );
+                bubble.addEntity("predator-" + i, position, com.hellblazer.luciferase.simulation.entity.EntityType.PREDATOR);
+            }
+
+            // Create composite behavior
+            var composite = new com.hellblazer.luciferase.simulation.behavior.CompositeEntityBehavior(new FlockingBehavior());
+            composite.addBehavior(com.hellblazer.luciferase.simulation.entity.EntityType.PREY,
+                                  new com.hellblazer.luciferase.simulation.behavior.PreyBehavior());
+            composite.addBehavior(com.hellblazer.luciferase.simulation.entity.EntityType.PREDATOR,
+                                  new com.hellblazer.luciferase.simulation.behavior.PredatorBehavior());
+
+            behavior = composite;
+            log.info("Using Predator-Prey behavior ({} prey, {} predators)", preyCount, predatorCount);
+
         } else {
+            // Default: flocking
+            for (int i = 0; i < entityCount; i++) {
+                var position = new Point3f(
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange,
+                    worldBounds.min() + spawnMargin + random.nextFloat() * spawnRange
+                );
+                bubble.addEntity("entity-" + i, position, null);
+            }
             behavior = new FlockingBehavior();
             log.info("Using FlockingBehavior (separation/alignment/cohesion)");
         }
