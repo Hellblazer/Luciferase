@@ -324,7 +324,8 @@ class BubbleGridTest {
     /**
      * Check if a set of bubbles contains the bubble at a specific coordinate.
      */
-    private boolean containsBubbleAt(Set<Bubble> neighbors, BubbleGrid grid, BubbleCoordinate coord) {
+    @SuppressWarnings("unchecked")
+    private boolean containsBubbleAt(Set neighbors, BubbleGrid grid, BubbleCoordinate coord) {
         var bubble = grid.getBubble(coord);
         return neighbors.contains(bubble);
     }

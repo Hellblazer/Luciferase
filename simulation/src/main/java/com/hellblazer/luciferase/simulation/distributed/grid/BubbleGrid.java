@@ -28,12 +28,13 @@ import java.util.Set;
  * <p>
  * Thread-safe for concurrent reads. Writes should be externally synchronized.
  *
+ * @param <T> Type of bubble stored in the grid
  * @author hal.hildebrand
  */
-public class BubbleGrid {
+public class BubbleGrid<T> {
 
     private final GridConfiguration config;
-    private final Bubble[][] grid;
+    private final Object[][] grid;  // Use Object[][] for generic array creation
 
     /**
      * Create a new bubble grid with the given configuration.
@@ -42,17 +43,18 @@ public class BubbleGrid {
      */
     private BubbleGrid(GridConfiguration config) {
         this.config = config;
-        this.grid = new Bubble[config.rows()][config.columns()];
+        this.grid = new Object[config.rows()][config.columns()];
     }
 
     /**
      * Create an empty grid with all cells initialized to null.
      *
+     * @param <T>    Type of bubble
      * @param config Grid configuration
      * @return New empty grid
      */
-    public static BubbleGrid createEmpty(GridConfiguration config) {
-        return new BubbleGrid(config);
+    public static <T> BubbleGrid<T> createEmpty(GridConfiguration config) {
+        return new BubbleGrid<>(config);
     }
 
     /**
@@ -72,9 +74,10 @@ public class BubbleGrid {
      * @return Bubble at the coordinate, or null if empty
      * @throws IllegalArgumentException if coordinate is out of bounds
      */
-    public Bubble getBubble(BubbleCoordinate coord) {
+    @SuppressWarnings("unchecked")
+    public T getBubble(BubbleCoordinate coord) {
         validateCoordinate(coord);
-        return grid[coord.row()][coord.column()];
+        return (T) grid[coord.row()][coord.column()];
     }
 
     /**
@@ -85,7 +88,7 @@ public class BubbleGrid {
      * @param bubble Bubble to place, or null to clear the cell
      * @throws IllegalArgumentException if coordinate is out of bounds
      */
-    public void setBubble(BubbleCoordinate coord, Bubble bubble) {
+    public void setBubble(BubbleCoordinate coord, T bubble) {
         validateCoordinate(coord);
         grid[coord.row()][coord.column()] = bubble;
     }
@@ -103,10 +106,11 @@ public class BubbleGrid {
      * @return Unmodifiable set of neighboring bubbles (may be empty)
      * @throws IllegalArgumentException if coordinate is out of bounds
      */
-    public Set<Bubble> getNeighbors(BubbleCoordinate coord) {
+    @SuppressWarnings("unchecked")
+    public Set<T> getNeighbors(BubbleCoordinate coord) {
         validateCoordinate(coord);
 
-        var neighbors = new HashSet<Bubble>();
+        var neighbors = new HashSet<T>();
         int row = coord.row();
         int col = coord.column();
 
@@ -125,7 +129,7 @@ public class BubbleGrid {
                 if (neighborRow >= 0 && neighborRow < config.rows()
                     && neighborCol >= 0 && neighborCol < config.columns()) {
 
-                    var neighbor = grid[neighborRow][neighborCol];
+                    var neighbor = (T) grid[neighborRow][neighborCol];
                     if (neighbor != null) {
                         neighbors.add(neighbor);
                     }
