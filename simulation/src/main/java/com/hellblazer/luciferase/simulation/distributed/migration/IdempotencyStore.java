@@ -156,6 +156,51 @@ public class IdempotencyStore {
     }
 
     /**
+     * Check if migration key is duplicate and store if new.
+     * <p>
+     * This checks application-level idempotency based on (entity, source, dest)
+     * tuple, independent of timestamp or nonce. This prevents duplicate migrations
+     * even if they are initiated at different times or with different tokens.
+     *
+     * @param token Idempotency token to check
+     * @return true if migration was stored (first time), false if duplicate migration
+     */
+    public boolean checkAndStoreMigration(IdempotencyToken token) {
+        var migrationKey = token.migrationKey();
+        var entry = new TokenEntry(System.currentTimeMillis());
+
+        // Atomic check-and-store using migration key
+        var existing = tokens.putIfAbsent(migrationKey, entry);
+
+        if (existing == null) {
+            // Migration was new
+            tokensStored.incrementAndGet();
+            log.debug("Stored new migration key: {}", migrationKey);
+            return true;
+        } else {
+            // Migration already exists (duplicate)
+            duplicatesRejected.incrementAndGet();
+            log.debug("Rejected duplicate migration key: {}", migrationKey);
+            return false;
+        }
+    }
+
+    /**
+     * Remove a token by UUID (for rollback scenarios).
+     *
+     * @param tokenId Token UUID to remove
+     * @return true if token was removed, false if not found
+     */
+    public boolean remove(UUID tokenId) {
+        var removed = tokens.remove(tokenId);
+        if (removed != null) {
+            log.debug("Removed token: {}", tokenId);
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Remove expired tokens based on TTL.
      * <p>
      * Should be called periodically (e.g., every 60 seconds) to prevent

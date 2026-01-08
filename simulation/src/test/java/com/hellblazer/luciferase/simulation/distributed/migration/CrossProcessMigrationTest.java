@@ -337,9 +337,13 @@ class CrossProcessMigrationTest {
         var destId1 = UUID.randomUUID();
         var destId2 = UUID.randomUUID();
 
-        var source = createMockBubbleReference(sourceId, true);
-        var dest1 = createMockBubbleReference(destId1, true);
-        var dest2 = createMockBubbleReference(destId2, true);
+        // Use delayed source/dest to ensure migrations overlap in time
+        // Delay must be > LOCK_TIMEOUT_MS (50ms) to force second migration to fail
+        // But not so long that first migration times out (PHASE_TIMEOUT_MS = 100ms)
+        // Use 60ms: enough to force overlap, but won't trigger phase timeout
+        var source = createDelayedBubbleReference(sourceId, 60);
+        var dest1 = createDelayedBubbleReference(destId1, 0);  // dest1 instant
+        var dest2 = createDelayedBubbleReference(destId2, 0);  // dest2 instant
 
         var latch = new CountDownLatch(2);
         var successCount = new AtomicInteger(0);

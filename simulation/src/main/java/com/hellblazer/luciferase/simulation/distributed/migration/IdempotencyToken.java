@@ -79,4 +79,26 @@ public record IdempotencyToken(
         // Generate deterministic UUID using MD5 hash
         return UUID.nameUUIDFromBytes(combined.getBytes(StandardCharsets.UTF_8));
     }
+
+    /**
+     * Generate a migration key UUID based only on (entity, source, dest).
+     * <p>
+     * This is used for application-level idempotency - preventing duplicate
+     * migrations of the same entity from source to dest, regardless of when
+     * they were initiated or what nonce they have.
+     * <p>
+     * This is DIFFERENT from toUUID() which includes timestamp and nonce for
+     * network-level deduplication (same gRPC message retried).
+     *
+     * @return Migration key UUID for application-level idempotency
+     */
+    public UUID migrationKey() {
+        // Only entity + source + dest (no timestamp or nonce)
+        var combined = entityId + ":"
+                       + sourceProcessId + ":"
+                       + destProcessId;
+
+        // Generate deterministic UUID using MD5 hash
+        return UUID.nameUUIDFromBytes(combined.getBytes(StandardCharsets.UTF_8));
+    }
 }

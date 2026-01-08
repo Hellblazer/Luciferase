@@ -107,11 +107,15 @@ public class CrossProcessMigration {
             return CompletableFuture.completedFuture(MigrationResult.failure(entityId, "INTERRUPTED"));
         }
 
+        // Execute entire 2PC protocol synchronously inside the lock
         try {
             metrics.incrementConcurrent();
             var startTime = System.currentTimeMillis();
 
-            return executeRemoveThenCommit(entityId, source, dest, startTime);
+            // Execute 2PC synchronously - returns immediately completed future
+            var result = executeRemoveThenCommitSync(entityId, source, dest, startTime);
+
+            return CompletableFuture.completedFuture(result);
         } finally {
             lock.unlock();
             metrics.decrementConcurrent();
@@ -119,25 +123,26 @@ public class CrossProcessMigration {
     }
 
     /**
-     * Execute remove-then-commit 2PC protocol.
+     * Execute remove-then-commit 2PC protocol synchronously.
      *
      * @param entityId  Entity identifier
      * @param source    Source bubble
      * @param dest      Destination bubble
      * @param startTime Migration start timestamp
-     * @return CompletableFuture with MigrationResult
+     * @return MigrationResult
      */
-    private CompletableFuture<MigrationResult> executeRemoveThenCommit(String entityId, BubbleReference source,
-                                                                        BubbleReference dest, long startTime) {
+    private MigrationResult executeRemoveThenCommitSync(String entityId, BubbleReference source,
+                                                         BubbleReference dest, long startTime) {
         // Generate idempotency token
         var token = new IdempotencyToken(entityId, source.getBubbleId(), dest.getBubbleId(),
                                          System.currentTimeMillis(), UUID.randomUUID());
 
-        // Check for duplicate (idempotency)
-        if (!dedup.checkAndStore(token)) {
+        // Check for duplicate migration (application-level idempotency)
+        if (!dedup.checkAndStoreMigration(token)) {
             metrics.recordDuplicateRejection();
-            log.debug("Duplicate migration token for entity {}, rejecting", entityId);
-            return CompletableFuture.completedFuture(MigrationResult.failure(entityId, "ALREADY_APPLIED"));
+            log.debug("Duplicate migration for entity {} from {} to {}, rejecting",
+                     entityId, source.getBubbleId(), dest.getBubbleId());
+            return MigrationResult.failure(entityId, "ALREADY_APPLIED");
         }
 
         // Create transaction
@@ -151,7 +156,7 @@ public class CrossProcessMigration {
             var prepareResult = doPrepare(txn);
             if (!prepareResult.success()) {
                 activeTransactions.remove(txnId);
-                return CompletableFuture.completedFuture(prepareResult);
+                return prepareResult;
             }
 
             // Advance to COMMIT phase
@@ -165,7 +170,7 @@ public class CrossProcessMigration {
                 log.warn("COMMIT failed for entity {}, initiating rollback", entityId);
                 doAbort(txn);
                 activeTransactions.remove(txnId);
-                return CompletableFuture.completedFuture(commitResult);
+                return commitResult;
             }
 
             // Success
@@ -173,14 +178,13 @@ public class CrossProcessMigration {
             metrics.recordSuccess(latency);
             activeTransactions.remove(txnId);
 
-            return CompletableFuture.completedFuture(
-            MigrationResult.success(entityId, dest.getBubbleId(), latency));
+            return MigrationResult.success(entityId, dest.getBubbleId(), latency);
 
         } catch (Exception e) {
             log.error("Unexpected error during migration of entity {}", entityId, e);
             activeTransactions.remove(txnId);
             metrics.recordFailure("UNEXPECTED_ERROR: " + e.getMessage());
-            return CompletableFuture.completedFuture(MigrationResult.failure(entityId, "UNEXPECTED_ERROR"));
+            return MigrationResult.failure(entityId, "UNEXPECTED_ERROR");
         }
     }
 
@@ -214,19 +218,22 @@ public class CrossProcessMigration {
                 }
             }
 
-            // Remove entity from source
+            // Remove entity from source with timeout check
+            var prepareStartTime = System.currentTimeMillis();
             boolean removed;
             if (source instanceof com.hellblazer.luciferase.simulation.distributed.migration.TestableEntityStore testSource) {
-                testSource.simulateDelay(0); // Tests can override this
-                removed = testSource.removeEntity(entityId);
+                removed = testSource.removeEntity(entityId);  // Delay is handled internally
             } else {
                 // Production code would call source.asLocal().removeEntity(entityId)
                 removed = true;
             }
+            var prepareElapsed = System.currentTimeMillis() - prepareStartTime;
 
-            // Check timeout after operation
-            if (txn.isTimedOut(PHASE_TIMEOUT_MS)) {
-                log.warn("PREPARE timed out for entity {}", entityId);
+            // Check per-phase timeout (not cumulative)
+            // Each phase (PREPARE, COMMIT) has independent 100ms timeout
+            if (prepareElapsed > PHASE_TIMEOUT_MS) {
+                log.warn("PREPARE phase timed out for entity {} ({}ms > {}ms)",
+                        entityId, prepareElapsed, PHASE_TIMEOUT_MS);
                 metrics.recordFailure("PREPARE_TIMEOUT");
                 return MigrationResult.failure(entityId, "TIMEOUT");
             }
@@ -261,19 +268,22 @@ public class CrossProcessMigration {
             var snapshot = txn.entitySnapshot();
             var entityId = snapshot.entityId();
 
-            // Add entity to destination
+            // Add entity to destination with timeout check
+            var commitStartTime = System.currentTimeMillis();
             boolean added;
             if (dest instanceof com.hellblazer.luciferase.simulation.distributed.migration.TestableEntityStore testDest) {
-                testDest.simulateDelay(0); // Tests can override this
-                added = testDest.addEntity(snapshot);
+                added = testDest.addEntity(snapshot);  // Delay is handled internally
             } else {
                 // Production code would call dest.asLocal().addEntity(snapshot)
                 added = true;
             }
+            var commitElapsed = System.currentTimeMillis() - commitStartTime;
 
-            // Check timeout after operation
-            if (txn.isTimedOut(PHASE_TIMEOUT_MS * 2)) { // 200ms total (prepare + commit)
-                log.warn("COMMIT timed out for entity {}", entityId);
+            // Check per-phase timeout (not cumulative)
+            // Each phase (PREPARE, COMMIT) has independent 100ms timeout
+            if (commitElapsed > PHASE_TIMEOUT_MS) {
+                log.warn("COMMIT phase timed out for entity {} ({}ms > {}ms)",
+                        entityId, commitElapsed, PHASE_TIMEOUT_MS);
                 metrics.recordFailure("COMMIT_TIMEOUT");
                 return MigrationResult.failure(entityId, "TIMEOUT");
             }
@@ -342,8 +352,8 @@ public class CrossProcessMigration {
             log.debug("ABORT: Restored entity {} to source {} with epoch {}", entityId, source.getBubbleId(),
                       snapshot.epoch());
 
-            // Remove idempotency token to allow retry
-            // (dedup store will handle TTL)
+            // Remove migration key to allow retry
+            dedup.remove(txn.idempotencyToken().migrationKey());
 
             metrics.recordAbort("COMMIT_FAILED");
 
