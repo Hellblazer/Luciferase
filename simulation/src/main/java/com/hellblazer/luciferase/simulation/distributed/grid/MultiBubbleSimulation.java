@@ -257,6 +257,17 @@ public class MultiBubbleSimulation implements AutoCloseable {
         return ghostSyncAdapter.getTotalGhostCount();
     }
 
+    /**
+     * Get only real entities (excludes ghosts).
+     *
+     * @return List of real entities (isGhost = false)
+     */
+    public List<EntitySnapshot> getRealEntities() {
+        return getAllEntities().stream()
+            .filter(e -> !e.isGhost())
+            .toList();
+    }
+
     // ========== Records for Visualization ==========
 
     /**

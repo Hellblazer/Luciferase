@@ -228,14 +228,14 @@ class MultiBubbleSimulationTest {
         var config = GridConfiguration.square(2, 100f);
         var sim = new MultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
 
-        int initialCount = sim.getAllEntities().size();
+        int initialCount = sim.getRealEntities().size();  // Count only real entities (no ghosts)
         assertEquals(100, initialCount);
 
         sim.start();
         Thread.sleep(200);
         sim.stop();
 
-        int finalCount = sim.getAllEntities().size();
+        int finalCount = sim.getRealEntities().size();  // Count only real entities (no ghosts)
         assertEquals(initialCount, finalCount, "Entity count should remain stable");
 
         sim.close();
