@@ -106,6 +106,8 @@ public class MigrationMetrics {
     private final AtomicLong    failedMigrations     = new AtomicLong(0);
     private final AtomicLong    duplicatesRejected   = new AtomicLong(0);
     private final AtomicLong    aborts               = new AtomicLong(0);
+    private final AtomicLong    rollbackFailures     = new AtomicLong(0);
+    private final AtomicLong    alreadyMigrating     = new AtomicLong(0);
     private final AtomicInteger concurrentMigrations = new AtomicInteger(0);
 
     // Latency tracking
@@ -163,6 +165,25 @@ public class MigrationMetrics {
         concurrentMigrations.decrementAndGet();
     }
 
+    /**
+     * Record a rollback failure (C3).
+     * <p>
+     * Called when abort/rollback fails to restore entity to source.
+     * This is a critical error that requires manual intervention.
+     */
+    public void recordRollbackFailure() {
+        rollbackFailures.incrementAndGet();
+    }
+
+    /**
+     * Record an entity already being migrated.
+     * <p>
+     * Called when migration lock acquisition fails (C1).
+     */
+    public void recordAlreadyMigrating() {
+        alreadyMigrating.incrementAndGet();
+    }
+
     // Getters
 
     public long getSuccessfulMigrations() {
@@ -185,6 +206,14 @@ public class MigrationMetrics {
         return concurrentMigrations.get();
     }
 
+    public long getRollbackFailures() {
+        return rollbackFailures.get();
+    }
+
+    public long getAlreadyMigrating() {
+        return alreadyMigrating.get();
+    }
+
     public LatencyStats getPrepareLatency() {
         return prepareLatency;
     }
@@ -200,8 +229,8 @@ public class MigrationMetrics {
     @Override
     public String toString() {
         return String.format(
-            "MigrationMetrics{success=%d, failed=%d, duplicates=%d, aborts=%d, concurrent=%d, avgLatency=%.2fms}",
+            "MigrationMetrics{success=%d, failed=%d, duplicates=%d, aborts=%d, rollbackFailures=%d, alreadyMigrating=%d, concurrent=%d, avgLatency=%.2fms}",
             successfulMigrations.get(), failedMigrations.get(), duplicatesRejected.get(), aborts.get(),
-            concurrentMigrations.get(), totalLatency.mean());
+            rollbackFailures.get(), alreadyMigrating.get(), concurrentMigrations.get(), totalLatency.mean());
     }
 }
