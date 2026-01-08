@@ -23,6 +23,9 @@ import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.entity.StringEntityIDGenerator;
+import com.hellblazer.luciferase.simulation.ghost.DuplicateDetectionConfig;
+import com.hellblazer.luciferase.simulation.ghost.DuplicateEntityDetector;
+import com.hellblazer.luciferase.simulation.ghost.MigrationLog;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
@@ -114,6 +117,11 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
     // Phase 5D: Migration manager
     private final TetrahedralMigration migration;
+    private final MigrationLog migrationLog;
+
+    // Phase 5E: Duplicate entity detection
+    private final DuplicateEntityDetector duplicateDetector;
+    private final DuplicateDetectionConfig duplicateConfig;
 
     // Velocity tracking: entityId → velocity
     private final Map<String, Vector3f> velocities;
@@ -186,8 +194,13 @@ public class MultiBubbleSimulation implements AutoCloseable {
         var neighborFinder = new TetreeNeighborFinder(spatialIndex);
         this.ghostSyncAdapter = new TetreeGhostSyncAdapter(bubbleGrid, neighborFinder);
 
-        // Phase 5D: Initialize migration manager
+        // Phase 5D: Initialize migration log and manager
+        this.migrationLog = new MigrationLog();
         this.migration = new TetrahedralMigration(bubbleGrid, spatialIndex);
+
+        // Phase 5E: Initialize duplicate detection
+        this.duplicateConfig = DuplicateDetectionConfig.defaultConfig();
+        this.duplicateDetector = new DuplicateEntityDetector(bubbleGrid, migrationLog, duplicateConfig);
     }
 
     /**
@@ -330,6 +343,15 @@ public class MultiBubbleSimulation implements AutoCloseable {
     }
 
     /**
+     * Get duplicate detection metrics (Phase 5E).
+     *
+     * @return DuplicateEntityMetrics instance
+     */
+    public com.hellblazer.luciferase.simulation.ghost.DuplicateEntityMetrics getDuplicateDetectionMetrics() {
+        return duplicateDetector.getMetrics();
+    }
+
+    /**
      * Execute one simulation tick: update entities, detect migrations, sync ghosts.
      */
     private void tick() {
@@ -352,7 +374,12 @@ public class MultiBubbleSimulation implements AutoCloseable {
             ghostSyncAdapter.processBoundaryEntities(bucket);
             ghostSyncAdapter.onBucketComplete(bucket);
 
-            // Step 4: Record metrics
+            // Step 4: (Phase 5E) Detect and reconcile duplicate entities
+            if (duplicateConfig.enabled()) {
+                duplicateDetector.detectAndReconcile(bubbleGrid.getAllBubbles());
+            }
+
+            // Step 5: Record metrics
             var elapsedNs = System.nanoTime() - startTime;
             var totalEntities = getAllEntities().size();
             metrics.recordTick(elapsedNs, totalEntities);

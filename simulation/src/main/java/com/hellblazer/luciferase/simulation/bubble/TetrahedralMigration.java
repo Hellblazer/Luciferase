@@ -187,7 +187,27 @@ public class TetrahedralMigration {
      * PHASE 3 (ROLLBACK on failure): Remove from destination
      * </pre>
      * <p>
-     * Ensures atomicity: entity is in exactly one bubble at all times.
+     * <b>Failure Modes Leading to Duplicate Entities:</b>
+     * <ol>
+     *   <li><b>Rollback Failure</b>: If removeEntity(src) throws and rollback removeEntity(dst)
+     *       also throws, entity persists in both bubbles. Requires DuplicateEntityDetector
+     *       to reconcile. Root cause: concurrent access, OutOfMemoryError, or spatial index corruption.</li>
+     *   <li><b>Partial Commit</b>: If thread is forcibly stopped (Thread.stop, JVM crash)
+     *       between addEntity(dst) and removeEntity(src), duplicate persists in memory.
+     *       Extremely rare but possible in distributed crash scenarios.</li>
+     *   <li><b>Observation Window</b>: During normal operation, entity temporarily exists
+     *       in both bubbles between the two phases. This is expected and transient (microseconds),
+     *       but concurrent observers may detect it.</li>
+     *   <li><b>Cascading Failures</b>: If Mode 1 occurs and entity migrates again before
+     *       reconciliation, duplicates can accumulate across 3+ bubbles. Example: A→B fails rollback,
+     *       then B→C succeeds, resulting in entity in A+B+C.</li>
+     * </ol>
+     * <p>
+     * <b>Mitigation</b>: DuplicateEntityDetector scans all bubbles every tick to detect and
+     * reconcile duplicates using MigrationLog as source-of-truth. Detection latency is 1 tick maximum.
+     * <p>
+     * <b>Atomicity Guarantee</b>: While not atomic across bubbles, the two-phase protocol ensures
+     * eventual consistency via detection and reconciliation. Entity loss is impossible (worst case: duplicate).
      *
      * @param decision    Migration decision
      * @param currentTick Current simulation tick
