@@ -134,13 +134,14 @@ public class SocketTransport implements NetworkTransport {
     /**
      * Check if a hostname is a loopback address.
      * <p>
-     * Used for Inc 6 scope enforcement.
+     * Used for Inc 6 scope enforcement. Accepts IPv4 (127.0.0.1),
+     * IPv6 (::1), and DNS name (localhost).
      *
      * @param hostname Hostname to check
-     * @return true if hostname is 127.0.0.1 or localhost
+     * @return true if hostname is 127.0.0.1, ::1, or localhost
      */
     private boolean isLoopback(String hostname) {
-        return hostname.equals("127.0.0.1") || hostname.equals("localhost");
+        return hostname.equals("127.0.0.1") || hostname.equals("::1") || hostname.equals("localhost");
     }
 
     /**

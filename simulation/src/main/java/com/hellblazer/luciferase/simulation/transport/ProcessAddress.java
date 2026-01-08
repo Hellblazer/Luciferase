@@ -29,20 +29,20 @@ import java.util.Objects;
  * <ul>
  *   <li>processId: Logical identifier for the process (e.g., "process-1")</li>
  *   <li>hostname: Network hostname (must be loopback in Inc 6)</li>
- *   <li>port: TCP port for socket binding (1-65535)</li>
+ *   <li>port: TCP port for socket binding (0 for dynamic allocation, 1-65535 for explicit)</li>
  * </ul>
  *
  * @param processId Logical process identifier
  * @param hostname  Network hostname
- * @param port      TCP listening port
+ * @param port      TCP listening port (0 = dynamic allocation, 1-65535 = explicit)
  * @author hal.hildebrand
  */
 public record ProcessAddress(String processId, String hostname, int port) {
     public ProcessAddress {
         Objects.requireNonNull(processId, "processId cannot be null");
         Objects.requireNonNull(hostname, "hostname cannot be null");
-        if (port <= 0 || port > 65535) {
-            throw new IllegalArgumentException("Port must be 1-65535, got: " + port);
+        if (port < 0 || port > 65535) {
+            throw new IllegalArgumentException("Port must be 0-65535, got: " + port);
         }
     }
 

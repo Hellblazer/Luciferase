@@ -91,7 +91,8 @@ public class SocketClient {
         log.info("Connected to {}", remoteAddress.toUrl());
 
         // Start receive loop in background
-        var receiveThread = new Thread(this::receiveMessages, "socket-client-recv-" + remoteAddress.processId());
+        var threadName = String.format("socket-client-recv-%s:%d", remoteAddress.hostname(), remoteAddress.port());
+        var receiveThread = new Thread(this::receiveMessages, threadName);
         receiveThread.setDaemon(true);
         receiveThread.start();
     }
@@ -111,7 +112,7 @@ public class SocketClient {
             }
         } catch (EOFException e) {
             // Normal disconnect
-            log.debug("Server closed connection: {}", remoteAddress.toUrl());
+            log.info("Server closed connection: {}", remoteAddress.toUrl());
         } catch (SocketException e) {
             if (connected) {
                 log.error("Socket error reading from {}", remoteAddress.toUrl(), e);

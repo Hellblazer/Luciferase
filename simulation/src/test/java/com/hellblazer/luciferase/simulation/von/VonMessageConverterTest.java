@@ -36,20 +36,22 @@ class VonMessageConverterTest {
 
     @Test
     void testToTransport_WithPosition() {
+        var bubble1Id = UUID.randomUUID();
+        var bubble2Id = UUID.randomUUID();
         var ackMessage = new VonMessage.Ack(UUID.randomUUID(), UUID.randomUUID());
         var position = new Point3f(10.5f, 20.25f, 30.75f);
 
         var transport = VonMessageConverter.toTransport(
             ackMessage,
-            "bubble-1",
-            "bubble-2",
+            bubble1Id.toString(),
+            bubble2Id.toString(),
             position,
             "entity-42"
         );
 
         assertEquals("Ack", transport.type());
-        assertEquals("bubble-1", transport.sourceBubbleId());
-        assertEquals("bubble-2", transport.targetBubbleId());
+        assertEquals(bubble1Id.toString(), transport.sourceBubbleId());
+        assertEquals(bubble2Id.toString(), transport.targetBubbleId());
         assertEquals(10.5f, transport.posX(), 0.001f);
         assertEquals(20.25f, transport.posY(), 0.001f);
         assertEquals(30.75f, transport.posZ(), 0.001f);
@@ -59,12 +61,14 @@ class VonMessageConverterTest {
 
     @Test
     void testToTransport_NullPosition() {
+        var bubble1Id = UUID.randomUUID();
+        var bubble2Id = UUID.randomUUID();
         var ackMessage = new VonMessage.Ack(UUID.randomUUID(), UUID.randomUUID());
 
         var transport = VonMessageConverter.toTransport(
             ackMessage,
-            "bubble-1",
-            "bubble-2",
+            bubble1Id.toString(),
+            bubble2Id.toString(),
             null,
             "entity-1"
         );
@@ -76,13 +80,15 @@ class VonMessageConverterTest {
 
     @Test
     void testToTransport_NullEntityId() {
+        var bubble1Id = UUID.randomUUID();
+        var bubble2Id = UUID.randomUUID();
         var ackMessage = new VonMessage.Ack(UUID.randomUUID(), UUID.randomUUID());
         var position = new Point3f(1.0f, 2.0f, 3.0f);
 
         var transport = VonMessageConverter.toTransport(
             ackMessage,
-            "bubble-1",
-            "bubble-2",
+            bubble1Id.toString(),
+            bubble2Id.toString(),
             position,
             null
         );
@@ -92,10 +98,12 @@ class VonMessageConverterTest {
 
     @Test
     void testFromTransport() {
+        var bubble1Id = UUID.randomUUID();
+        var bubble2Id = UUID.randomUUID();
         var transport = new TransportVonMessage(
             "Ack",
-            "bubble-1",
-            "bubble-2",
+            bubble1Id.toString(),
+            bubble2Id.toString(),
             1.0f, 2.0f, 3.0f,
             "entity-1",
             System.currentTimeMillis()
@@ -111,14 +119,16 @@ class VonMessageConverterTest {
     @Test
     void testSerializationRoundTrip() throws IOException, ClassNotFoundException {
         // Create original message
+        var bubble1Id = UUID.randomUUID();
+        var bubble2Id = UUID.randomUUID();
         var originalMessage = new VonMessage.Ack(UUID.randomUUID(), UUID.randomUUID());
         var originalPosition = new Point3f(10.5f, 20.25f, 30.75f);
 
         // Convert to transport format
         var transport = VonMessageConverter.toTransport(
             originalMessage,
-            "bubble-1",
-            "bubble-2",
+            bubble1Id.toString(),
+            bubble2Id.toString(),
             originalPosition,
             "entity-42"
         );
@@ -153,10 +163,12 @@ class VonMessageConverterTest {
 
     @Test
     void testPositionReconstruction() {
+        var bubble1Id = UUID.randomUUID();
+        var bubble2Id = UUID.randomUUID();
         var transport = new TransportVonMessage(
             "Ack",
-            "bubble-1",
-            "bubble-2",
+            bubble1Id.toString(),
+            bubble2Id.toString(),
             10.5f, 20.25f, 30.75f,
             "entity-1",
             System.currentTimeMillis()
@@ -170,14 +182,17 @@ class VonMessageConverterTest {
 
     @Test
     void testMultipleMessageTypes() {
+        var b1 = UUID.randomUUID();
+        var b2 = UUID.randomUUID();
+
         // Test JoinRequest
         var joinReq = new VonMessage.JoinRequest(UUID.randomUUID(), null, null);
-        var transport1 = VonMessageConverter.toTransport(joinReq, "b1", "b2", new Point3f(1, 2, 3), "e1");
+        var transport1 = VonMessageConverter.toTransport(joinReq, b1.toString(), b2.toString(), new Point3f(1, 2, 3), "e1");
         assertEquals("JoinRequest", transport1.type());
 
         // Test Leave
         var leave = new VonMessage.Leave(UUID.randomUUID());
-        var transport2 = VonMessageConverter.toTransport(leave, "b1", "b2", null, null);
+        var transport2 = VonMessageConverter.toTransport(leave, b1.toString(), b2.toString(), null, null);
         assertEquals("Leave", transport2.type());
     }
 }

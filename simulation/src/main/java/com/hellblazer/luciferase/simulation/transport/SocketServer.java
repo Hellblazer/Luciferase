@@ -105,7 +105,7 @@ public class SocketServer {
             while (running) {
                 try {
                     var clientSocket = serverSocket.accept();
-                    log.debug("Accepted connection from {}", clientSocket.getRemoteSocketAddress());
+                    log.info("Accepted connection from {}", clientSocket.getRemoteSocketAddress());
                     executor.execute(() -> handleClient(clientSocket));
                 } catch (SocketException e) {
                     if (running) {
@@ -138,7 +138,7 @@ public class SocketServer {
             }
         } catch (EOFException | SocketException e) {
             // Normal client disconnect
-            log.debug("Client disconnected: {}", clientSocket.getRemoteSocketAddress());
+            log.info("Client disconnected: {}", clientSocket.getRemoteSocketAddress());
         } catch (IOException e) {
             if (running) {
                 log.error("IO error reading from client {}", clientSocket.getRemoteSocketAddress(), e);
