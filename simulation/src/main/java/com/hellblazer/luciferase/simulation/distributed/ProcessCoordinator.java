@@ -66,6 +66,8 @@ public class ProcessCoordinator {
     private final ProcessRegistry registry;
     private final CoordinatorElectionProtocol election;
     private final ScheduledExecutorService heartbeatScheduler;
+    private final WallClockBucketScheduler bucketScheduler;
+    private final MessageOrderValidator messageValidator;
 
     private volatile boolean running = false;
     private volatile long lastElectionTime = 0;
@@ -85,6 +87,8 @@ public class ProcessCoordinator {
             t.setDaemon(true);
             return t;
         });
+        this.bucketScheduler = new WallClockBucketScheduler();
+        this.messageValidator = new MessageOrderValidator();
     }
 
     /**
@@ -277,5 +281,23 @@ public class ProcessCoordinator {
      */
     public CoordinatorElectionProtocol getElection() {
         return election;
+    }
+
+    /**
+     * Get the bucket scheduler.
+     *
+     * @return WallClockBucketScheduler
+     */
+    public WallClockBucketScheduler getBucketScheduler() {
+        return bucketScheduler;
+    }
+
+    /**
+     * Get the message order validator.
+     *
+     * @return MessageOrderValidator
+     */
+    public MessageOrderValidator getMessageValidator() {
+        return messageValidator;
     }
 }
