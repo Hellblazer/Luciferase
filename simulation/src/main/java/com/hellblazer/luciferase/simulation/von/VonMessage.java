@@ -170,6 +170,22 @@ public interface VonMessage {
     }
 
     /**
+     * Query for remote bubble information.
+     * <p>
+     * Used by RemoteBubbleProxy to fetch state from remote bubbles.
+     *
+     * @param senderId  UUID of the querying node
+     * @param targetId  UUID of the target bubble
+     * @param queryType Type of query (e.g., "position", "neighbors")
+     * @param timestamp Message creation time
+     */
+    record Query(UUID senderId, UUID targetId, String queryType, long timestamp) implements VonMessage {
+        public Query(UUID senderId, UUID targetId, String queryType) {
+            this(senderId, targetId, queryType, System.currentTimeMillis());
+        }
+    }
+
+    /**
      * Information about a VON neighbor.
      * <p>
      * Exchanged during JOIN to provide new nodes with neighbor details.

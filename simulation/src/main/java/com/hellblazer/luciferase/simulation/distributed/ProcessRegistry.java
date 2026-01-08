@@ -144,6 +144,21 @@ public class ProcessRegistry {
     }
 
     /**
+     * Find which process hosts a specific bubble.
+     *
+     * @param bubbleId UUID of the bubble to find
+     * @return Process UUID if found, null otherwise
+     */
+    public UUID findProcess(UUID bubbleId) {
+        for (var entry : processes.entrySet()) {
+            if (entry.getValue().bubbles().contains(bubbleId)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    /**
      * Get the number of registered processes.
      *
      * @return Count of active processes
