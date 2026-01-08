@@ -117,24 +117,25 @@ public class TetreeBubbleGrid {
         // Track used keys to avoid duplicates
         var usedKeys = new HashSet<TetreeKey<?>>();
 
-        int bubbleIndex = 0;
         int createdCount = 0;
 
         for (byte level = 0; level < numLevels && createdCount < count; level++) {
             // Distribute remainder across first few levels
             int bubblesAtThisLevel = bubblesPerLevel + (level < remainder ? 1 : 0);
 
-            for (int i = 0; i < bubblesAtThisLevel && createdCount < count; i++) {
-                // Generate a valid Tet at this level by creating child subdivisions
-                // Start from root and subdivide to desired level
-                Tet tet = createTetAtLevel(level, bubbleIndex);
+            // Use a per-level index to avoid collisions
+            int levelIndex = 0;
+
+            while (levelIndex < bubblesAtThisLevel && createdCount < count) {
+                // Generate a valid Tet at this level using levelIndex
+                Tet tet = createTetAtLevel(level, levelIndex);
 
                 // Get TetreeKey from the Tet (guaranteed valid)
                 var key = tet.tmIndex();
 
-                // Skip if we've already used this key (duplicate)
+                // Skip if we've already used this key (shouldn't happen with per-level index)
                 if (usedKeys.contains(key)) {
-                    bubbleIndex++;
+                    levelIndex++;
                     continue;
                 }
 
@@ -163,7 +164,7 @@ public class TetreeBubbleGrid {
                     location
                 );
 
-                bubbleIndex++;
+                levelIndex++;
                 createdCount++;
             }
         }
