@@ -112,8 +112,8 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final TetreeGhostSyncAdapter ghostSyncAdapter;
     private final AtomicLong currentBucket;
 
-    // Phase 5D: Migration manager (placeholder for future integration)
-    // private final MultiDirectionalMigration migration;
+    // Phase 5D: Migration manager
+    private final TetrahedralMigration migration;
 
     // Velocity tracking: entityId → velocity
     private final Map<String, Vector3f> velocities;
@@ -185,6 +185,9 @@ public class MultiBubbleSimulation implements AutoCloseable {
         // Phase 5C: Initialize ghost sync adapter
         var neighborFinder = new TetreeNeighborFinder(spatialIndex);
         this.ghostSyncAdapter = new TetreeGhostSyncAdapter(bubbleGrid, neighborFinder);
+
+        // Phase 5D: Initialize migration manager
+        this.migration = new TetrahedralMigration(bubbleGrid, spatialIndex);
     }
 
     /**
@@ -318,6 +321,15 @@ public class MultiBubbleSimulation implements AutoCloseable {
     }
 
     /**
+     * Get migration metrics (Phase 5D).
+     *
+     * @return TetrahedralMigrationMetrics instance
+     */
+    public TetrahedralMigrationMetrics getMigrationMetrics() {
+        return migration.getMetrics();
+    }
+
+    /**
      * Execute one simulation tick: update entities, detect migrations, sync ghosts.
      */
     private void tick() {
@@ -334,7 +346,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
             }
 
             // Step 2: (Phase 5D) Detect and execute migrations
-            // TODO: detectAndExecuteMigrations();
+            migration.checkMigrations(currentTick);
 
             // Step 3: (Phase 5C) Synchronize ghosts across bubble boundaries
             ghostSyncAdapter.processBoundaryEntities(bucket);
