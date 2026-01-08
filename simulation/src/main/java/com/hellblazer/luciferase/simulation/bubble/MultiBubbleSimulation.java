@@ -108,8 +108,9 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final int entityCount;
     private final byte maxLevel;
 
-    // Phase 5C: Ghost sync adapter (placeholder for future integration)
-    // private final GridGhostSyncAdapter ghostSyncAdapter;
+    // Phase 5C: Ghost sync adapter
+    private final TetreeGhostSyncAdapter ghostSyncAdapter;
+    private final AtomicLong currentBucket;
 
     // Phase 5D: Migration manager (placeholder for future integration)
     // private final MultiDirectionalMigration migration;
@@ -172,6 +173,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
         this.scheduler = Executors.newScheduledThreadPool(1);
         this.running = new AtomicBoolean(false);
         this.tickCount = new AtomicLong(0);
+        this.currentBucket = new AtomicLong(0);
         this.metrics = new SimulationMetrics();
 
         // Initialize distribution manager
@@ -179,6 +181,10 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
         // Setup simulation: create bubbles and distribute entities
         initializeSimulation(bubbleCount, entityCount);
+
+        // Phase 5C: Initialize ghost sync adapter
+        var neighborFinder = new TetreeNeighborFinder(spatialIndex);
+        this.ghostSyncAdapter = new TetreeGhostSyncAdapter(bubbleGrid, neighborFinder);
     }
 
     /**
@@ -318,8 +324,9 @@ public class MultiBubbleSimulation implements AutoCloseable {
         var startTime = System.nanoTime();
 
         try {
-            // Increment tick counter
+            // Increment tick and bucket counters
             var currentTick = tickCount.incrementAndGet();
+            var bucket = currentBucket.incrementAndGet();
 
             // Step 1: Update all bubbles (entity positions and velocities)
             for (var bubble : bubbleGrid.getAllBubbles()) {
@@ -330,7 +337,8 @@ public class MultiBubbleSimulation implements AutoCloseable {
             // TODO: detectAndExecuteMigrations();
 
             // Step 3: (Phase 5C) Synchronize ghosts across bubble boundaries
-            // TODO: synchronizeGhosts();
+            ghostSyncAdapter.processBoundaryEntities(bucket);
+            ghostSyncAdapter.onBucketComplete(bucket);
 
             // Step 4: Record metrics
             var elapsedNs = System.nanoTime() - startTime;
@@ -397,16 +405,35 @@ public class MultiBubbleSimulation implements AutoCloseable {
     public List<EntitySnapshot> getAllEntities() {
         var snapshots = new ArrayList<EntitySnapshot>();
 
+        // Add real entities from bubbles
         for (var bubble : bubbleGrid.getAllBubbles()) {
             var records = bubble.getAllEntityRecords();
+            TetreeKey<?> fallbackKey = null;
+
             for (var record : records) {
-                // For now, all entities are real (no ghosts until Phase 5C)
                 var key = distribution.getEntityToBubbleMapping().get(record.id());
                 if (key == null) {
                     // Entity not in mapping - skip or use fallback key
                     continue;
                 }
+                if (fallbackKey == null) {
+                    fallbackKey = key;
+                }
                 snapshots.add(new EntitySnapshot(record.id(), record.position(), key, false));
+            }
+
+            // Add ghost entities for this bubble
+            var ghosts = ghostSyncAdapter.getGhostsForBubble(bubble.id());
+            for (var ghost : ghosts) {
+                // Determine key for ghost (use fallback or root key)
+                var ghostKey = fallbackKey != null ? fallbackKey :
+                              com.hellblazer.luciferase.lucien.tetree.TetreeKey.create((byte) 0, 0L, 0L);
+                snapshots.add(new EntitySnapshot(
+                    ghost.entityId().toString(),
+                    ghost.position(),
+                    ghostKey,
+                    true  // isGhost = true
+                ));
             }
         }
 
@@ -429,14 +456,12 @@ public class MultiBubbleSimulation implements AutoCloseable {
     /**
      * Get count of ghost entities.
      * <p>
-     * Returns 0 until Phase 5C is implemented.
+     * Phase 5C: Returns actual ghost count from ghost sync adapter.
      *
      * @return Number of ghost entities
      */
     public int getGhostCount() {
-        return (int) getAllEntities().stream()
-                                     .filter(EntitySnapshot::isGhost)
-                                     .count();
+        return ghostSyncAdapter.getTotalGhostCount();
     }
 
     /**
