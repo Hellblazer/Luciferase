@@ -112,12 +112,16 @@ public class ProcessRegistry {
      * Update heartbeat timestamp for a process.
      *
      * @param processId UUID of the process
+     * @return true if heartbeat was updated, false if process not found
      */
-    public void updateHeartbeat(UUID processId) {
+    public boolean updateHeartbeat(UUID processId) {
+        var updated = new java.util.concurrent.atomic.AtomicBoolean(false);
         processes.computeIfPresent(processId, (id, metadata) -> {
             log.trace("Updated heartbeat for process {}", processId);
+            updated.set(true);
             return metadata.withUpdatedHeartbeat();
         });
+        return updated.get();
     }
 
     /**

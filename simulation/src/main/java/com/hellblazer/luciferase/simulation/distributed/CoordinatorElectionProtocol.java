@@ -106,13 +106,16 @@ public class CoordinatorElectionProtocol {
 
     /**
      * Check if election has reached quorum (majority of candidates voted).
+     * <p>
+     * Majority is calculated as (n + 1) / 2 to properly round up:
+     * 1 candidate → 1 required, 2 candidates → 2 required, 3 → 2 required, etc.
      *
      * @return true if majority of candidates have cast votes
      */
     public boolean hasQuorum() {
         var votedCount = ballots.size();
         var totalCandidates = candidates.size();
-        var majority = (totalCandidates / 2) + 1;
+        var majority = (totalCandidates + 1) / 2;
 
         return votedCount >= majority;
     }

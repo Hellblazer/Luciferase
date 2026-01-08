@@ -68,6 +68,8 @@ public class ProcessCoordinator {
     private final ScheduledExecutorService heartbeatScheduler;
 
     private volatile boolean running = false;
+    private volatile long lastElectionTime = 0;
+    private static final long MIN_ELECTION_INTERVAL_MS = 500;
 
     /**
      * Create a ProcessCoordinator with the given transport.
@@ -120,7 +122,15 @@ public class ProcessCoordinator {
         }
 
         running = false;
-        heartbeatScheduler.shutdown();
+        heartbeatScheduler.shutdownNow();
+        try {
+            if (!heartbeatScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                log.warn("Heartbeat scheduler did not terminate within 5 second timeout");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Interrupted while waiting for heartbeat scheduler shutdown", e);
+        }
         log.info("ProcessCoordinator stopped");
     }
 
@@ -147,10 +157,12 @@ public class ProcessCoordinator {
         registry.unregister(processId);
         log.info("Unregistered process {}", processId);
 
-        // Check if coordinator failed
-        if (election.isElected(processId)) {
-            election.coordinatorFailed();
-            conductElection();
+        // Check if coordinator failed (synchronized to prevent duplicate elections)
+        synchronized (election) {
+            if (election.isElected(processId)) {
+                election.coordinatorFailed();
+                conductElection();
+            }
         }
     }
 
@@ -162,8 +174,11 @@ public class ProcessCoordinator {
      * @param processId UUID of the process sending heartbeat
      */
     public void processHeartbeatAck(UUID processId) {
-        registry.updateHeartbeat(processId);
-        log.trace("Heartbeat ACK from {}", processId);
+        if (!registry.updateHeartbeat(processId)) {
+            log.warn("Heartbeat from unregistered process {}", processId);
+        } else {
+            log.trace("Heartbeat ACK from {}", processId);
+        }
     }
 
     /**
@@ -184,8 +199,19 @@ public class ProcessCoordinator {
      * <p>
      * Runs election protocol with all registered processes.
      * Lowest UUID wins (deterministic).
+     * <p>
+     * Rate-limited to prevent election storms during cascading failures.
+     * Minimum interval between elections: 500ms.
      */
     public void conductElection() {
+        var now = System.currentTimeMillis();
+        if (now - lastElectionTime < MIN_ELECTION_INTERVAL_MS) {
+            log.debug("Skipping election, too soon after last election ({}ms elapsed)",
+                    now - lastElectionTime);
+            return;
+        }
+        lastElectionTime = now;
+
         var processes = registry.getAllProcesses();
         if (processes.isEmpty()) {
             log.debug("No processes registered, skipping election");
