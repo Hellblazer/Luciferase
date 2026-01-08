@@ -51,11 +51,10 @@ class ProcessAddressTest {
     }
 
     @Test
-    void testInvalidPort_Zero() {
-        assertThrows(IllegalArgumentException.class, () ->
-            new ProcessAddress("p1", "localhost", 0),
-            "Port 0 should be rejected"
-        );
+    void testValidPort_Zero() {
+        // Port 0 is valid for dynamic port allocation (standard Java practice)
+        assertDoesNotThrow(() -> new ProcessAddress("p1", "localhost", 0),
+            "Port 0 should be accepted for dynamic allocation");
     }
 
     @Test
