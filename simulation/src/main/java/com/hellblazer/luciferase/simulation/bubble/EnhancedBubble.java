@@ -202,6 +202,11 @@ public class EnhancedBubble {
      * @return List of entities within radius
      */
     public List<EntityRecord> queryRange(Point3f center, float radius) {
+        // Validate radius
+        if (radius <= 0) {
+            throw new IllegalArgumentException("Radius must be positive: " + radius);
+        }
+
         // Create bounding cube for sphere (origin at sphere's min corner, extent = 2*radius)
         // Clamp to positive coordinates since Tetree requires positive coordinate space
         float minX = Math.max(0, center.x - radius);
@@ -213,6 +218,11 @@ public class EnhancedBubble {
         float maxY = center.y + radius;
         float maxZ = center.z + radius;
         float extent = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
+
+        // Early return if extent is non-positive (query entirely out of bounds)
+        if (extent <= 0) {
+            return List.of();
+        }
 
         var cube = new Spatial.Cube(minX, minY, minZ, extent);
 

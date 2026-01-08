@@ -86,6 +86,11 @@ public class TwoBubbleSimulation implements AutoCloseable {
      */
     public static final int GHOST_TTL_TICKS = 10;
 
+    /**
+     * Velocity cleanup interval: every 30 seconds at 60fps.
+     */
+    private static final long VELOCITY_CLEANUP_INTERVAL_TICKS = 1800;
+
     private final WorldBounds worldBounds;
     private final float boundaryX;  // X coordinate that divides the bubbles
 
@@ -104,6 +109,10 @@ public class TwoBubbleSimulation implements AutoCloseable {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicLong tickCount = new AtomicLong(0);
     private final SimulationMetrics metrics = new SimulationMetrics();
+
+    // Migration metrics
+    private final AtomicLong migrationsTo1 = new AtomicLong(0);
+    private final AtomicLong migrationsTo2 = new AtomicLong(0);
 
     private ScheduledFuture<?> tickTask;
 
@@ -164,6 +173,17 @@ public class TwoBubbleSimulation implements AutoCloseable {
             t.setDaemon(true);
             return t;
         });
+
+        // Validate ghost sync parameters - warn if entities could cross boundary without being ghosted
+        float maxDistancePerInterval = Math.max(behavior1.getMaxSpeed(), behavior2.getMaxSpeed())
+            * (GHOST_SYNC_INTERVAL_TICKS * DEFAULT_TICK_INTERVAL_MS / 1000.0f);
+        if (maxDistancePerInterval > GHOST_BOUNDARY_WIDTH) {
+            log.warn("Entity max speed ({}) may cause boundary crossing without ghost sync. " +
+                     "Max distance per sync interval: {}, ghost boundary width: {}. " +
+                     "Consider increasing GHOST_BOUNDARY_WIDTH or reducing GHOST_SYNC_INTERVAL_TICKS.",
+                     Math.max(behavior1.getMaxSpeed(), behavior2.getMaxSpeed()),
+                     maxDistancePerInterval, GHOST_BOUNDARY_WIDTH);
+        }
 
         log.info("TwoBubbleSimulation created: {} entities in bubble1, {} in bubble2, boundary at x={}",
                  bubble1.entityCount(), bubble2.entityCount(), boundaryX);
@@ -304,7 +324,37 @@ public class TwoBubbleSimulation implements AutoCloseable {
         return worldBounds;
     }
 
-    // ========== Entity Snapshot for Visualization ==========
+    /**
+     * Get total migrations to bubble 1.
+     */
+    public long getMigrationsTo1() {
+        return migrationsTo1.get();
+    }
+
+    /**
+     * Get total migrations to bubble 2.
+     */
+    public long getMigrationsTo2() {
+        return migrationsTo2.get();
+    }
+
+    /**
+     * Get detailed debug state for visualization and debugging.
+     */
+    public DebugState getDebugState() {
+        return new DebugState(
+            tickCount.get(),
+            bubble1.entityCount(),
+            bubble2.entityCount(),
+            ghostsInBubble1.size(),
+            ghostsInBubble2.size(),
+            migrationsTo1.get(),
+            migrationsTo2.get(),
+            metrics
+        );
+    }
+
+    // ========== Records for Visualization and Debugging ==========
 
     /**
      * Snapshot of an entity for visualization.
@@ -315,6 +365,20 @@ public class TwoBubbleSimulation implements AutoCloseable {
      * @param isGhost  True if this is a ghost copy
      */
     public record EntitySnapshot(String id, Point3f position, int bubbleId, boolean isGhost) {}
+
+    /**
+     * Debug state snapshot for monitoring and debugging.
+     */
+    public record DebugState(
+        long tickCount,
+        int bubble1EntityCount,
+        int bubble2EntityCount,
+        int bubble1GhostCount,
+        int bubble2GhostCount,
+        long migrationsTo1,
+        long migrationsTo2,
+        SimulationMetrics metrics
+    ) {}
 
     // ========== Private Methods ==========
 
@@ -396,11 +460,17 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
             tickCount.incrementAndGet();
 
+            // Periodic velocity cleanup to remove orphaned entries
+            if (currentTick > 0 && currentTick % VELOCITY_CLEANUP_INTERVAL_TICKS == 0) {
+                cleanupOrphanedVelocities();
+            }
+
             // Log periodically
             if (currentTick > 0 && currentTick % 600 == 0) {
-                log.debug("Tick {}: bubble1={}, bubble2={}, ghosts1={}, ghosts2={}, {}",
+                log.debug("Tick {}: bubble1={}, bubble2={}, ghosts1={}, ghosts2={}, migrations(to1={}, to2={}), {}",
                           currentTick, bubble1.entityCount(), bubble2.entityCount(),
-                          ghostsInBubble1.size(), ghostsInBubble2.size(), metrics);
+                          ghostsInBubble1.size(), ghostsInBubble2.size(),
+                          migrationsTo1.get(), migrationsTo2.get(), metrics);
             }
 
         } catch (Exception e) {
@@ -412,29 +482,57 @@ public class TwoBubbleSimulation implements AutoCloseable {
                                        Map<String, javax.vecmath.Vector3f> velocities,
                                        float deltaTime, float minX, float maxX) {
         for (var entity : bubble.getAllEntityRecords()) {
-            var velocity = velocities.computeIfAbsent(entity.id(), k -> new javax.vecmath.Vector3f());
+            try {
+                var velocity = velocities.computeIfAbsent(entity.id(), k -> new javax.vecmath.Vector3f());
 
-            var newVelocity = behavior.computeVelocity(
-                entity.id(),
-                entity.position(),
-                velocity,
-                bubble,
-                deltaTime
-            );
+                var newVelocity = behavior.computeVelocity(
+                    entity.id(),
+                    entity.position(),
+                    velocity,
+                    bubble,
+                    deltaTime
+                );
 
-            velocities.put(entity.id(), newVelocity);
+                velocities.put(entity.id(), newVelocity);
 
-            var newPosition = new Point3f(entity.position());
-            newPosition.x += newVelocity.x * deltaTime;
-            newPosition.y += newVelocity.y * deltaTime;
-            newPosition.z += newVelocity.z * deltaTime;
+                var newPosition = new Point3f(entity.position());
+                newPosition.x += newVelocity.x * deltaTime;
+                newPosition.y += newVelocity.y * deltaTime;
+                newPosition.z += newVelocity.z * deltaTime;
 
-            // Clamp to world bounds (y, z) and bubble region (x)
-            newPosition.x = Math.max(minX, Math.min(maxX, newPosition.x));
-            newPosition.y = worldBounds.clamp(newPosition.y);
-            newPosition.z = worldBounds.clamp(newPosition.z);
+                // Clamp to world bounds (y, z) and bubble region (x)
+                newPosition.x = Math.max(minX, Math.min(maxX, newPosition.x));
+                newPosition.y = worldBounds.clamp(newPosition.y);
+                newPosition.z = worldBounds.clamp(newPosition.z);
 
-            bubble.updateEntityPosition(entity.id(), newPosition);
+                bubble.updateEntityPosition(entity.id(), newPosition);
+            } catch (Exception e) {
+                log.error("Failed to update entity {}: {}", entity.id(), e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Clean up velocity entries for entities that no longer exist.
+     * Prevents memory leaks from orphaned velocity entries.
+     */
+    private void cleanupOrphanedVelocities() {
+        var bubble1Ids = bubble1.getAllEntityRecords().stream()
+            .map(EnhancedBubble.EntityRecord::id)
+            .collect(java.util.stream.Collectors.toSet());
+        int removed1 = velocities1.size();
+        velocities1.keySet().retainAll(bubble1Ids);
+        removed1 -= velocities1.size();
+
+        var bubble2Ids = bubble2.getAllEntityRecords().stream()
+            .map(EnhancedBubble.EntityRecord::id)
+            .collect(java.util.stream.Collectors.toSet());
+        int removed2 = velocities2.size();
+        velocities2.keySet().retainAll(bubble2Ids);
+        removed2 -= velocities2.size();
+
+        if (removed1 > 0 || removed2 > 0) {
+            log.debug("Velocity cleanup: removed {} from bubble1, {} from bubble2", removed1, removed2);
         }
     }
 
@@ -511,6 +609,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
                     velocities2.put(record.id(), velocity);
                 }
                 ghostsInBubble2.remove(record.id());  // No longer a ghost if it's real
+                migrationsTo2.incrementAndGet();
                 log.debug("Migrated {} from bubble1 to bubble2", record.id());
             } catch (Exception e) {
                 log.error("Failed to migrate {} from bubble1 to bubble2: {}", record.id(), e.getMessage());
@@ -526,6 +625,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
                     velocities1.put(record.id(), velocity);
                 }
                 ghostsInBubble1.remove(record.id());  // No longer a ghost if it's real
+                migrationsTo1.incrementAndGet();
                 log.debug("Migrated {} from bubble2 to bubble1", record.id());
             } catch (Exception e) {
                 log.error("Failed to migrate {} from bubble2 to bubble1: {}", record.id(), e.getMessage());
