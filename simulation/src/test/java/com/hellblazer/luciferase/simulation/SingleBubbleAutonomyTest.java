@@ -172,7 +172,8 @@ class SingleBubbleAutonomyTest {
 
         // Simulate receiving remote event with higher clock
         var remoteClock = localClock + 100;
-        controller.updateLamportClock(remoteClock);
+        var remoteBubbleId = UUID.randomUUID();
+        controller.updateLamportClock(remoteClock, remoteBubbleId);
 
         var updatedClock = controller.getLamportClock();
 

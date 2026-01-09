@@ -17,11 +17,13 @@
 
 package com.hellblazer.luciferase.simulation.bubble;
 
+import com.hellblazer.luciferase.simulation.causality.LamportClockGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -74,14 +76,14 @@ public class RealTimeController {
 
     private static final Logger log = LoggerFactory.getLogger(RealTimeController.class);
 
-    private final UUID         bubbleId;
-    private final String       name;
-    private final AtomicLong   simulationTime;
-    private final AtomicLong   lamportClock;
-    private final AtomicBoolean running;
-    private final long         tickPeriodNs;
-    private final List<TickListener> tickListeners; // Phase 7B.3: tick notification callbacks
-    private Thread            tickThread;
+    private final UUID                    bubbleId;
+    private final String                  name;
+    private final AtomicLong              simulationTime;
+    private final LamportClockGenerator   clockGenerator;
+    private final AtomicBoolean           running;
+    private final long                    tickPeriodNs;
+    private final List<TickListener>      tickListeners; // Phase 7B.3: tick notification callbacks
+    private Thread                        tickThread;
 
     /**
      * Create a RealTimeController for a bubble.
@@ -104,7 +106,7 @@ public class RealTimeController {
         this.bubbleId = bubbleId;
         this.name = name;
         this.simulationTime = new AtomicLong(0L);
-        this.lamportClock = new AtomicLong(0L);
+        this.clockGenerator = new LamportClockGenerator(bubbleId);
         this.running = new AtomicBoolean(false);
         this.tickPeriodNs = TimeUnit.NANOSECONDS.convert(1, TimeUnit.SECONDS) / tickRate;
         this.tickListeners = new ArrayList<>();
@@ -128,9 +130,9 @@ public class RealTimeController {
      *
      * @return Current Lamport clock value
      */
-    
+
     public long getLamportClock() {
-        return lamportClock.get();
+        return clockGenerator.getLamportClock();
     }
 
     /**
@@ -170,7 +172,7 @@ public class RealTimeController {
     public void start() {
         if (running.compareAndSet(false, true)) {
             simulationTime.set(0L);
-            lamportClock.set(0L);
+            // Note: clockGenerator initializes to 0 internally
             log.info("RealTimeController started: bubble={}, name={}", bubbleId, name);
 
             // Start the tick thread
@@ -194,7 +196,7 @@ public class RealTimeController {
                 }
             }
             log.info("RealTimeController stopped: bubble={}, name={}, finalTime={}, finalClock={}",
-                   bubbleId, name, simulationTime.get(), lamportClock.get());
+                   bubbleId, name, simulationTime.get(), clockGenerator.getLamportClock());
         }
     }
 
@@ -210,7 +212,7 @@ public class RealTimeController {
     private void tickLoop() {
         while (running.get()) {
             var currentSimTime = simulationTime.incrementAndGet();
-            var currentLamportClock = lamportClock.incrementAndGet();
+            var currentLamportClock = clockGenerator.tick();
 
             // Emit local tick event for entity updates
             emitLocalTickEvent(currentSimTime, currentLamportClock);
@@ -280,16 +282,36 @@ public class RealTimeController {
      * Update Lamport clock upon receiving remote event.
      * Applies: localClock = max(localClock, remoteClock) + 1
      *
-     * @param remoteClock Lamport clock from remote event
+     * @param remoteClock    Lamport clock from remote event
+     * @param sourceBubbleId Bubble that generated the event
      */
-    
-    public void updateLamportClock(long remoteClock) {
-        lamportClock.updateAndGet(current -> Math.max(current, remoteClock) + 1);
+
+    public void updateLamportClock(long remoteClock, UUID sourceBubbleId) {
+        clockGenerator.onRemoteEvent(remoteClock, sourceBubbleId);
+    }
+
+    /**
+     * Get vector timestamp map for causality checking.
+     * Returns snapshot of clocks seen from all known bubbles.
+     *
+     * @return Immutable map of bubble ID to highest seen Lamport clock
+     */
+    public Map<UUID, Long> getVectorTimestamp() {
+        return clockGenerator.getVectorTimestamp();
+    }
+
+    /**
+     * Get Lamport clock generator for advanced operations.
+     *
+     * @return LamportClockGenerator instance
+     */
+    public LamportClockGenerator getClockGenerator() {
+        return clockGenerator;
     }
 
     @Override
     public String toString() {
         return String.format("RealTimeController{bubble=%s, name=%s, simTime=%d, lamportClock=%d, running=%s}",
-                           bubbleId, name, simulationTime.get(), lamportClock.get(), running.get());
+                           bubbleId, name, simulationTime.get(), clockGenerator.getLamportClock(), running.get());
     }
 }
