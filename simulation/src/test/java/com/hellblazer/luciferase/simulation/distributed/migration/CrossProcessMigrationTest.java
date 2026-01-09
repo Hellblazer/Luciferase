@@ -102,7 +102,8 @@ class CrossProcessMigrationTest {
         assertEquals(1, metrics.getSuccessfulMigrations());
         assertEquals(0, metrics.getFailedMigrations());
         assertEquals(0, metrics.getAborts());
-        assertTrue(result.latencyMs() > 0);
+        // Migration can complete in 0ms on fast systems, so >= 0 is correct
+        assertTrue(result.latencyMs() >= 0);
     }
 
     /**

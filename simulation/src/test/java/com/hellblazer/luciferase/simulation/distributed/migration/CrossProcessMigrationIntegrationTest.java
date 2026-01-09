@@ -129,7 +129,8 @@ class CrossProcessMigrationIntegrationTest {
         // Verify success
         assertTrue(result.success(), "Migration should succeed: " + result.reason());
         assertEquals(entityId, result.entityId());
-        assertTrue(result.latencyMs() > 0);
+        // Migration can complete in 0ms on fast systems, so >= 0 is correct
+        assertTrue(result.latencyMs() >= 0);
 
         // Verify entity moved (TestBubble directly implements entity store)
         assertFalse(b1.hasEntity(entityId), "Entity should not exist in B1");
