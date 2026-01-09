@@ -202,16 +202,6 @@ class EntityMigrationStateMachineTest {
         assertEquals(EntityMigrationState.GHOST, fsm.getState(entityId));
     }
 
-    @Test
-    void testInvariantExactlyOneOwned() {
-        assertTrue(fsm.verifyInvariant(entityId), "Initial OWNED state should satisfy invariant");
-
-        fsm.transition(entityId, EntityMigrationState.MIGRATING_OUT);
-        assertTrue(fsm.verifyInvariant(entityId), "MIGRATING_OUT should satisfy invariant");
-
-        // Invariant check: cannot be both OWNED and MIGRATING_IN
-        assertTrue(fsm.verifyInvariant(entityId), "Valid state should pass invariant");
-    }
 
     @Test
     void testViewChangeTriggersRollback() {

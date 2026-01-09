@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -141,8 +142,9 @@ public class FirefliesViewMonitor {
 
     /**
      * Previous stable state (for detecting transitions).
+     * Uses AtomicBoolean to ensure atomic state transitions with metric updates.
      */
-    private volatile boolean wasStable = false;
+    private final AtomicBoolean wasStable = new AtomicBoolean(false);
 
     /**
      * Create a FirefliesViewMonitor with default stability threshold.
@@ -207,7 +209,7 @@ public class FirefliesViewMonitor {
         hasChanged = true;  // Mark that a change has occurred
 
         // Reset stable state on view change
-        wasStable = false;
+        wasStable.set(false);
 
         log.debug("View change detected: joined={}, left={}, members={}, time={}",
                  joined.size(), left.size(), currentMembers.size(), currentTime);
@@ -234,9 +236,8 @@ public class FirefliesViewMonitor {
     public boolean isViewStable() {
         // If no changes have occurred yet, view is stable (no perturbations)
         if (!hasChanged) {
-            // Track that we transitioned to stable if not already
-            if (!wasStable) {
-                wasStable = true;
+            // Track that we transitioned to stable if not already (atomically)
+            if (wasStable.compareAndSet(false, true)) {
                 timesStable.incrementAndGet();
             }
             return true;
@@ -245,13 +246,11 @@ public class FirefliesViewMonitor {
         var ticksSinceChange = currentTime - lastViewChangeTime;
         boolean stable = ticksSinceChange >= config.stabilityThresholdTicks;
 
-        // Track transitions to stable state
-        if (stable && !wasStable) {
-            wasStable = true;
+        // Track transitions to stable state (atomically)
+        if (stable && wasStable.compareAndSet(false, true)) {
             timesStable.incrementAndGet();
             log.debug("View became stable: ticks={}, threshold={}", ticksSinceChange, config.stabilityThresholdTicks);
-        } else if (!stable && wasStable) {
-            wasStable = false;
+        } else if (!stable && wasStable.compareAndSet(true, false)) {
             log.debug("View changed (became unstable): ticks={}, threshold={}", ticksSinceChange, config.stabilityThresholdTicks);
         }
 
@@ -344,7 +343,7 @@ public class FirefliesViewMonitor {
         totalMembersJoined.set(0L);
         totalMembersLeft.set(0L);
         timesStable.set(0L);
-        wasStable = false;
+        wasStable.set(false);
         log.debug("FirefliesViewMonitor reset");
     }
 

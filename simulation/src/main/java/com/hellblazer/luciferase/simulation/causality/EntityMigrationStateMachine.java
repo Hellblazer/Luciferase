@@ -101,22 +101,6 @@ public class EntityMigrationStateMachine {
      */
     private final AtomicLong totalFailedTransitions;
 
-    /**
-     * Configuration for this state machine.
-     * FUTURE: Currently unused but reserved for:
-     * - Dynamic enable/disable of view stability requirement
-     * - Timeout-based rollback implementation
-     * Will be implemented in Phase 7D when timeout handling is needed.
-     */
-    public static class Configuration {
-        public final boolean requireViewStability;
-        public final int rollbackTimeoutTicks;
-
-        public Configuration(boolean requireViewStability, int rollbackTimeoutTicks) {
-            this.requireViewStability = requireViewStability;
-            this.rollbackTimeoutTicks = rollbackTimeoutTicks;
-        }
-    }
 
     /**
      * Context for an entity undergoing migration.
@@ -175,16 +159,6 @@ public class EntityMigrationStateMachine {
      * @param viewMonitor FirefliesViewMonitor for stability checks
      */
     public EntityMigrationStateMachine(FirefliesViewMonitor viewMonitor) {
-        this(viewMonitor, new Configuration(true, 100));
-    }
-
-    /**
-     * Create EntityMigrationStateMachine with custom configuration.
-     *
-     * @param viewMonitor FirefliesViewMonitor for stability checks
-     * @param config Configuration for behavior
-     */
-    public EntityMigrationStateMachine(FirefliesViewMonitor viewMonitor, Configuration config) {
         this.viewMonitor = Objects.requireNonNull(viewMonitor, "viewMonitor must not be null");
         this.entityStates = new ConcurrentHashMap<>();
         this.migrationContexts = new ConcurrentHashMap<>();
@@ -319,35 +293,6 @@ public class EntityMigrationStateMachine {
                (currentState == EntityMigrationState.MIGRATING_IN && newState == EntityMigrationState.OWNED);
     }
 
-    /**
-     * Verify critical invariant: entity state is valid and consistent.
-     * For global invariant (exactly one OWNED per entity across all bubbles),
-     * would need to coordinate across bubbles via distributed consensus.
-     *
-     * This method validates LOCAL invariants:
-     * - Entity state must be one of the valid enum values
-     * - No entity can simultaneously be in two states (impossible by design)
-     *
-     * Global invariant validation requires inter-bubble coordination and is
-     * implemented via the migration protocol: only one bubble can have OWNED
-     * or MIGRATING_IN at any time (enforced by state transitions).
-     *
-     * @param entityId Entity to check
-     * @return true if entity state is valid locally
-     */
-    public boolean verifyInvariant(Object entityId) {
-        Objects.requireNonNull(entityId, "entityId must not be null");
-        var state = entityStates.get(entityId);
-
-        // Entity is either not tracked or in a valid state
-        // (null is valid - entity may not be tracked locally)
-        if (state == null) {
-            return true;
-        }
-
-        // State must be one of the enum values
-        return state != null;
-    }
 
     /**
      * Get current state of entity.
