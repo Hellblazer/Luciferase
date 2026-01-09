@@ -20,6 +20,8 @@ package com.hellblazer.luciferase.simulation.bubble;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -53,6 +55,23 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class RealTimeController {
 
+    /**
+     * Tick listener interface for receiving tick notifications.
+     * Implementations should execute quickly to avoid blocking the tick thread.
+     *
+     * @author hal.hildebrand
+     */
+    @FunctionalInterface
+    public interface TickListener {
+        /**
+         * Called on each simulation tick.
+         *
+         * @param simulationTime Current simulation time (tick count)
+         * @param lamportClock   Current Lamport clock value
+         */
+        void onTick(long simulationTime, long lamportClock);
+    }
+
     private static final Logger log = LoggerFactory.getLogger(RealTimeController.class);
 
     private final UUID         bubbleId;
@@ -61,6 +80,7 @@ public class RealTimeController {
     private final AtomicLong   lamportClock;
     private final AtomicBoolean running;
     private final long         tickPeriodNs;
+    private final List<TickListener> tickListeners; // Phase 7B.3: tick notification callbacks
     private Thread            tickThread;
 
     /**
@@ -87,6 +107,7 @@ public class RealTimeController {
         this.lamportClock = new AtomicLong(0L);
         this.running = new AtomicBoolean(false);
         this.tickPeriodNs = TimeUnit.NANOSECONDS.convert(1, TimeUnit.SECONDS) / tickRate;
+        this.tickListeners = new ArrayList<>();
         this.tickThread = null;
     }
 
@@ -219,9 +240,40 @@ public class RealTimeController {
      * @param lamportClock Current Lamport clock
      */
     private void emitLocalTickEvent(long simTime, long lamportClock) {
-        // Phase 7A: Event emission placeholder
-        // Full implementation in Phase 7B with Delos event transport
-        // For now, this is a no-op - entity updates will be driven by entity lifecycle
+        // Phase 7B.3: Notify registered tick listeners (e.g., EnhancedBubble for ghost updates)
+        for (var listener : tickListeners) {
+            try {
+                listener.onTick(simTime, lamportClock);
+            } catch (Exception e) {
+                log.error("Error in tick listener: bubble={}, simTime={}", bubbleId, simTime, e);
+            }
+        }
+    }
+
+    /**
+     * Register a tick listener to receive tick notifications.
+     * Listeners are called on each simulation tick in registration order.
+     * Phase 7B.3: Used by EnhancedBubble to update ghost states on each tick.
+     *
+     * @param listener Tick listener to register
+     */
+    public void addTickListener(TickListener listener) {
+        if (listener != null) {
+            tickListeners.add(listener);
+            log.debug("Registered tick listener: bubble={}, totalListeners={}", bubbleId, tickListeners.size());
+        }
+    }
+
+    /**
+     * Unregister a tick listener.
+     *
+     * @param listener Tick listener to remove
+     */
+    public void removeTickListener(TickListener listener) {
+        if (listener != null) {
+            tickListeners.remove(listener);
+            log.debug("Unregistered tick listener: bubble={}, totalListeners={}", bubbleId, tickListeners.size());
+        }
     }
 
     /**

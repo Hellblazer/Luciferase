@@ -3,7 +3,9 @@ package com.hellblazer.luciferase.simulation.bubble;
 import com.hellblazer.luciferase.simulation.entity.*;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
+import com.hellblazer.luciferase.simulation.ghost.DelosSocketTransport;
 import com.hellblazer.luciferase.simulation.ghost.GhostChannel;
+import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
 import com.hellblazer.luciferase.simulation.ghost.InMemoryGhostChannel;
 
 import com.hellblazer.luciferase.lucien.Spatial;
@@ -41,6 +43,7 @@ public class EnhancedBubble {
     private final Map<String, StringEntityID> idMapping;  // Map user String IDs to EntityIDs
     private final RealTimeController realTimeController;
     private final GhostChannel<StringEntityID, EntityData> ghostChannel;
+    private final GhostStateManager ghostStateManager;  // Phase 7B.3: Ghost state tracking + dead reckoning
     private BubbleBounds bounds;
 
     /**
@@ -102,6 +105,31 @@ public class EnhancedBubble {
         // Initialize bounds to root tetrahedron at specified level
         var rootKey = com.hellblazer.luciferase.lucien.tetree.TetreeKey.create(spatialLevel, 0L, 0L);
         this.bounds = BubbleBounds.fromTetreeKey(rootKey);
+
+        // Phase 7B.3: Initialize GhostStateManager for dead reckoning
+        this.ghostStateManager = new GhostStateManager(bounds, 1000); // max 1000 ghosts
+
+        // Phase 7B.3: Register ghost reception handler using GhostChannel interface
+        ghostChannel.onReceive((sourceBubbleId, ghosts) -> {
+            for (var ghost : ghosts) {
+                // Convert SimulationGhostEntity to EntityUpdateEvent for GhostStateManager
+                // Note: Phase 7B.2 sets velocity to (0,0,0) placeholder
+                var event = new com.hellblazer.luciferase.simulation.events.EntityUpdateEvent(
+                    ghost.entityId(),
+                    ghost.position(),
+                    new javax.vecmath.Point3f(0f, 0f, 0f), // Placeholder velocity
+                    ghost.timestamp(),
+                    ghost.bucket() // Use bucket as lamport clock
+                );
+                ghostStateManager.updateGhost(sourceBubbleId, event);
+            }
+        });
+
+        // Phase 7B.3: Register tick listener with RealTimeController for ghost updates
+        realTimeController.addTickListener((simTime, lamportClock) -> {
+            // Update ghost states via dead reckoning on each tick
+            tickGhosts(simTime);
+        });
     }
 
     /**
@@ -139,6 +167,27 @@ public class EnhancedBubble {
     @SuppressWarnings("rawtypes") // EntityData used as raw type
     public GhostChannel<StringEntityID, EntityData> getGhostChannel() {
         return ghostChannel;
+    }
+
+    /**
+     * Get the ghost state manager (Phase 7B.3).
+     * Provides access to ghost tracking and dead reckoning.
+     *
+     * @return GhostStateManager instance
+     */
+    public GhostStateManager getGhostStateManager() {
+        return ghostStateManager;
+    }
+
+    /**
+     * Tick ghost state on simulation step (Phase 7B.3).
+     * Updates ghost positions via dead reckoning and culls stale ghosts.
+     * Should be called once per simulation tick.
+     *
+     * @param currentTime Current simulation time (milliseconds)
+     */
+    public void tickGhosts(long currentTime) {
+        ghostStateManager.tick(currentTime);
     }
 
     /**
