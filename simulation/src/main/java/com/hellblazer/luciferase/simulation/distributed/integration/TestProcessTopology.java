@@ -25,17 +25,21 @@ import java.util.*;
  * <p>
  * Organizes processes and bubbles in a 2D grid layout where:
  * <ul>
- *   <li>Processes are arranged in a row</li>
+ *   <li>Processes are arranged in a grid (2x2 for 4 processes, 4x2 for 8 processes)</li>
  *   <li>Each process contains N bubbles stacked vertically</li>
  *   <li>Neighbor relationships are based on spatial adjacency</li>
  * </ul>
  * <p>
  * Phase 6B5.2: TestProcessCluster Infrastructure
+ * Phase 6B6: 8-Process Scaling & GC Benchmarking
  * <p>
- * Grid Layout Example (4 processes, 2 bubbles each):
+ * Grid Layout Examples:
  * <pre>
- *   P1-B1  P2-B1  P3-B1  P4-B1
- *   P1-B2  P2-B2  P3-B2  P4-B2
+ * 4 processes (2x2):          8 processes (4x2):
+ *   P0-B1  P1-B1               P0-B1  P1-B1  P2-B1  P3-B1
+ *   P0-B2  P1-B2               P0-B2  P1-B2  P2-B2  P3-B2
+ *   P2-B1  P3-B1               P4-B1  P5-B1  P6-B1  P7-B1
+ *   P2-B2  P3-B2               P4-B2  P5-B2  P6-B2  P7-B2
  * </pre>
  *
  * @author hal.hildebrand
@@ -152,6 +156,32 @@ public class TestProcessTopology {
             addProcessNeighbor(0, 2); // P0 <-> P2
             addProcessNeighbor(1, 3); // P1 <-> P3
             addProcessNeighbor(2, 3); // P2 <-> P3
+        } else if (processCount == 8) {
+            // 4x2 grid layout (4 columns, 2 rows)
+            // P0 -- P1 -- P2 -- P3  (Row 0)
+            // |     |     |     |
+            // P4 -- P5 -- P6 -- P7  (Row 1)
+            //
+            // Horizontal edges (Row 0): P0-P1, P1-P2, P2-P3 (3 edges)
+            // Horizontal edges (Row 1): P4-P5, P5-P6, P6-P7 (3 edges)
+            // Vertical edges: P0-P4, P1-P5, P2-P6, P3-P7 (4 edges)
+            // Total: 10 edges
+
+            // Row 0 horizontal neighbors
+            addProcessNeighbor(0, 1); // P0 <-> P1
+            addProcessNeighbor(1, 2); // P1 <-> P2
+            addProcessNeighbor(2, 3); // P2 <-> P3
+
+            // Row 1 horizontal neighbors
+            addProcessNeighbor(4, 5); // P4 <-> P5
+            addProcessNeighbor(5, 6); // P5 <-> P6
+            addProcessNeighbor(6, 7); // P6 <-> P7
+
+            // Vertical neighbors
+            addProcessNeighbor(0, 4); // P0 <-> P4
+            addProcessNeighbor(1, 5); // P1 <-> P5
+            addProcessNeighbor(2, 6); // P2 <-> P6
+            addProcessNeighbor(3, 7); // P3 <-> P7
         } else {
             // Fallback to bubble-based neighbor detection for other sizes
             for (var entry : bubbleNeighbors.entrySet()) {
@@ -174,6 +204,15 @@ public class TestProcessTopology {
         var processB = processIds.get(indexB);
         processNeighbors.get(processA).add(processB);
         processNeighbors.get(processB).add(processA);
+    }
+
+    /**
+     * Gets the total number of processes.
+     *
+     * @return process count
+     */
+    public int getProcessCount() {
+        return processCount;
     }
 
     /**
