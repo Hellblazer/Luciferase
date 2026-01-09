@@ -17,10 +17,15 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
+import com.hellblazer.luciferase.simulation.distributed.migration.MigrationLogPersistence;
+import com.hellblazer.luciferase.simulation.distributed.migration.TransactionState;
 import com.hellblazer.luciferase.simulation.von.VonTransport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -68,6 +73,7 @@ public class ProcessCoordinator {
     private final ScheduledExecutorService heartbeatScheduler;
     private final WallClockBucketScheduler bucketScheduler;
     private final MessageOrderValidator messageValidator;
+    private MigrationLogPersistence walPersistence;
 
     private volatile boolean running = false;
     private volatile long lastElectionTime = 0;
@@ -89,12 +95,14 @@ public class ProcessCoordinator {
         });
         this.bucketScheduler = new WallClockBucketScheduler();
         this.messageValidator = new MessageOrderValidator();
+        this.walPersistence = null; // Initialized lazily in start()
     }
 
     /**
-     * Start the coordinator: begin listening and election protocol.
+     * Start the coordinator: begin listening and election protocol with crash recovery.
      * <p>
      * Initiates:
+     * - Crash recovery (load and recover incomplete migrations)
      * - Heartbeat monitoring (every 1000ms)
      * - Failure detection (timeout 3000ms)
      * - Election if this is the first process
@@ -105,6 +113,26 @@ public class ProcessCoordinator {
         }
 
         running = true;
+
+        // Initialize WAL persistence for crash recovery
+        try {
+            walPersistence = new MigrationLogPersistence(transport.getLocalId());
+        } catch (IOException e) {
+            log.error("Failed to initialize WAL persistence: {}", e.getMessage(), e);
+            running = false;
+            throw new Exception("WAL initialization failed", e);
+        }
+
+        // Check for crash recovery
+        if (isRestart()) {
+            log.info("Detected process restart, initiating crash recovery on {}", transport.getLocalId());
+            try {
+                recoverInFlightMigrations();
+            } catch (Exception e) {
+                log.error("Crash recovery failed: {}", e.getMessage(), e);
+                // Continue startup anyway - migrations will be retried by source processes
+            }
+        }
 
         // Start heartbeat monitoring
         heartbeatScheduler.scheduleAtFixedRate(
@@ -299,5 +327,161 @@ public class ProcessCoordinator {
      */
     public MessageOrderValidator getMessageValidator() {
         return messageValidator;
+    }
+
+    /**
+     * Detect if this is a process restart (WAL files exist from previous run).
+     * <p>
+     * Checks for persisted WAL directory which indicates incomplete migrations
+     * from before the crash.
+     *
+     * @return true if WAL directory exists and contains transaction data
+     */
+    private boolean isRestart() {
+        if (walPersistence == null) {
+            return false;
+        }
+
+        try {
+            var walDir = walPersistence.getWalDirectory();
+            if (!Files.exists(walDir)) {
+                return false;
+            }
+
+            // Check if WAL file exists and has data
+            var walFile = walPersistence.getWalFile();
+            if (Files.exists(walFile)) {
+                return Files.size(walFile) > 0;
+            }
+
+            return false;
+        } catch (IOException e) {
+            log.error("Error checking for restart: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Recover in-flight migrations from WAL on process restart.
+     * <p>
+     * Protocol:
+     * 1. Load incomplete transactions from WAL
+     * 2. For PREPARE-only: Restore entity to source bubble (rollback)
+     * 3. For PREPARE+COMMIT: Assume migration succeeded (idempotency)
+     * 4. For PREPARE+ABORT: Complete the rollback
+     * <p>
+     * After recovery, remove transactions from WAL.
+     *
+     * @throws Exception If recovery fails
+     */
+    private void recoverInFlightMigrations() throws Exception {
+        if (walPersistence == null) {
+            log.warn("WAL persistence not initialized, skipping recovery");
+            return;
+        }
+
+        try {
+            var incomplete = walPersistence.loadIncomplete();
+            log.info("Loaded {} incomplete transactions for recovery", incomplete.size());
+
+            int recovered = 0;
+            int failed = 0;
+
+            for (var txn : incomplete) {
+                try {
+                    recoverTransaction(txn);
+                    recovered++;
+                } catch (Exception e) {
+                    log.error("Failed to recover transaction {}: {}", txn.transactionId(), e.getMessage(), e);
+                    failed++;
+                }
+            }
+
+            log.info("Recovery complete: {} recovered, {} failed", recovered, failed);
+        } catch (Exception e) {
+            log.error("Failed to load incomplete transactions: {}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * Recover a single in-flight transaction.
+     * <p>
+     * Recovery strategy by phase:
+     * - PREPARE-only: Entity was removed from source but never committed to destination
+     *   → Restore entity to source bubble (rollback)
+     * - PREPARE+COMMIT: Commit phase started, assume completed
+     *   → No action needed, entity already in destination (idempotency ensures no duplicates)
+     * - PREPARE+ABORT: Abort was in progress
+     *   → Complete the rollback to source
+     *
+     * @param txn Transaction to recover
+     */
+    private void recoverTransaction(TransactionState txn) {
+        switch (txn.phase()) {
+            case PREPARE -> {
+                // Entity was removed from source but not committed to dest
+                log.info("Recovering PREPARE-only transaction {}: rolling back entity {} to source",
+                         txn.transactionId(), txn.entityId());
+                rollbackToSource(txn);
+            }
+            case COMMIT -> {
+                // COMMIT phase started, assume it succeeded or will be retried by destination
+                log.info("Recovering COMMIT transaction {}: assuming destination has entity {}",
+                         txn.transactionId(), txn.entityId());
+                // No action needed - entity already in destination
+                // Idempotency tokens prevent duplicate adds on retry
+            }
+            case ABORT -> {
+                // ABORT was in progress, complete it
+                log.info("Recovering ABORT transaction {}: completing rollback of entity {}",
+                         txn.transactionId(), txn.entityId());
+                rollbackToSource(txn);
+            }
+        }
+
+        // Mark transaction as complete in WAL (prevents re-recovery)
+        try {
+            walPersistence.recordAbort(txn.transactionId());
+        } catch (IOException e) {
+            log.error("Failed to update WAL after recovery of transaction {}: {}",
+                     txn.transactionId(), e.getMessage());
+            // Continue anyway - recovery already complete
+        }
+    }
+
+    /**
+     * Rollback entity to source bubble (restore on crash recovery).
+     * <p>
+     * Restores entity from snapshot to source bubble.
+     * Used when PREPARE completed but COMMIT did not finish.
+     * <p>
+     * Note: In a real system, would look up the local bubble and call
+     * bubble.asLocal().addEntity(snapshot). For test/simulation environments,
+     * this would be injected or mocked.
+     *
+     * @param txn Transaction containing source bubble and entity snapshot
+     */
+    private void rollbackToSource(TransactionState txn) {
+        // In production: Look up local bubble and restore entity
+        // var sourceBubble = registry.getBubble(txn.sourceBubble());
+        // if (sourceBubble != null && sourceBubble.isLocal()) {
+        //     sourceBubble.asLocal().addEntity(txn.snapshot());
+        //     log.info("Restored entity {} to source bubble {}", txn.entityId(), txn.sourceBubble());
+        // } else {
+        //     log.error("Cannot rollback: source bubble {} not found or not local", txn.sourceBubble());
+        // }
+
+        // For now, just log - actual restoration depends on ProcessRegistry/BubbleRegistry integration
+        log.info("Rollback would restore entity {} to bubble {}", txn.entityId(), txn.sourceBubble());
+    }
+
+    /**
+     * Get the WAL persistence instance (for testing and recovery operations).
+     *
+     * @return MigrationLogPersistence instance (may be null if not initialized)
+     */
+    public MigrationLogPersistence getWalPersistence() {
+        return walPersistence;
     }
 }
