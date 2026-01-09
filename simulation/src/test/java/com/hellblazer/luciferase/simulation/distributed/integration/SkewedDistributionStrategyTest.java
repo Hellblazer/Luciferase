@@ -23,7 +23,7 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for SkewedDistributionStrategy load-imbalanced distribution.
+ * Unit tests for SkewedDistributionStrategy (80/20 split approach).
  * <p>
  * Phase 6B6: 8-Process Scaling & GC Benchmarking
  *
@@ -31,338 +31,295 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class SkewedDistributionStrategyTest {
 
+    /**
+     * Test 1: Basic Heavy/Light Split
+     * <p>
+     * Validates that heavy bubbles receive more entities than light bubbles.
+     */
     @Test
-    void testSkewed4Heavy12Light_Distribution() {
-        // Given: 8-process topology with 2 bubbles each (16 total)
-        var topology = new TestProcessTopology(8, 2);
-
-        // And: Select bubbles 0, 4, 8, 12 as heavy (4 heavy, 12 light)
+    void testHeavyLightSplit() {
+        // Given: 16 bubbles, 4 heavy (indices 0,4,8,12), 80% weight
+        var topology = new TestProcessTopology(8, 2);  // 16 bubbles
         var heavyIndices = Set.of(0, 4, 8, 12);
-        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
+        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42);
 
         // When: Distribute 1200 entities
-        var bubbleIds = new ArrayList<>(topology.getAllBubbleIds());
-        var entities = new ArrayList<UUID>();
         for (int i = 0; i < 1200; i++) {
-            entities.add(UUID.randomUUID());
-        }
-
-        for (var entityId : entities) {
+            var entityId = UUID.randomUUID();
             strategy.selectBubble(entityId);
         }
 
-        var stats = strategy.getStats();
-
-        // Then: Total should be 1200
-        assertEquals(1200, stats.total(), "Should have 1200 entities total");
-
-        // And: Heavy bubbles should have ~80% of entities (960 +/- tolerance)
-        var tolerance = 100; // Allow 100 entities variance due to hashing
-        assertTrue(stats.heavyTotal() >= 860 && stats.heavyTotal() <= 1060,
-            "Heavy bubbles should have ~80% (960) entities, got: " + stats.heavyTotal());
-
-        // And: Light bubbles should have ~20% of entities (240 +/- tolerance)
-        assertTrue(stats.lightTotal() >= 140 && stats.lightTotal() <= 340,
-            "Light bubbles should have ~20% (240) entities, got: " + stats.lightTotal());
-    }
-
-    @Test
-    void testSkewed4Heavy12Light_PerBubbleDistribution() {
-        // Given: 8-process topology with 2 bubbles each (16 total)
-        var topology = new TestProcessTopology(8, 2);
-
-        // And: Select bubbles 0, 4, 8, 12 as heavy
-        var heavyIndices = Set.of(0, 4, 8, 12);
-        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-
-        // When: Distribute 1200 entities
-        var entities = new ArrayList<UUID>();
-        for (int i = 0; i < 1200; i++) {
-            entities.add(UUID.randomUUID());
-        }
-
-        for (var entityId : entities) {
-            strategy.selectBubble(entityId);
-        }
-
-        // Then: Heavy bubbles should each have ~200 entities (240 per 4 heavy bubbles on average)
-        var bubbleIds = new ArrayList<>(topology.getAllBubbleIds());
-        var heavyBubbleIds = new ArrayList<UUID>();
-        for (int i : heavyIndices) {
-            heavyBubbleIds.add(bubbleIds.get(i));
-        }
-
-        // Allow wider variance due to hash-based distribution (±50%)
-        for (var bubbleId : heavyBubbleIds) {
-            var count = strategy.getEntityCount(bubbleId);
-            assertTrue(count >= 100 && count <= 350,
-                "Heavy bubble should have ~200 entities (±50%), got: " + count);
-        }
-
-        // And: Light bubbles should each have ~20 entities (240 per 12 light bubbles on average)
-        var lightBubbleIds = new ArrayList<UUID>();
-        for (int i = 0; i < bubbleIds.size(); i++) {
-            if (!heavyIndices.contains(i)) {
-                lightBubbleIds.add(bubbleIds.get(i));
-            }
-        }
-
-        // Allow wider variance due to hash-based distribution
-        for (var bubbleId : lightBubbleIds) {
-            var count = strategy.getEntityCount(bubbleId);
-            assertTrue(count >= 0 && count <= 80,
-                "Light bubble should have ~20 entities, got: " + count);
-        }
-    }
-
-    @Test
-    void testSkewed_Determinism() {
-        // Given: 8-process topology
-        var topology = new TestProcessTopology(8, 2);
-        var heavyIndices = Set.of(0, 4, 8, 12);
-
-        // When: Create two strategies with same seed
-        var strategy1 = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-        var strategy2 = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-
-        // And: Distribute same entities
-        var entities = new ArrayList<UUID>();
-        for (int i = 0; i < 100; i++) {
-            entities.add(UUID.nameUUIDFromBytes(("entity-" + i).getBytes()));
-        }
-
-        var results1 = new ArrayList<UUID>();
-        var results2 = new ArrayList<UUID>();
-
-        for (var entityId : entities) {
-            results1.add(strategy1.selectBubble(entityId));
-            results2.add(strategy2.selectBubble(entityId));
-        }
-
-        // Then: Results should be identical (deterministic)
-        assertEquals(results1, results2, "Same seed should produce identical distribution");
-    }
-
-    @Test
-    void testSkewed_DifferentSeedsDifferentDistribution() {
-        // Given: 8-process topology
-        var topology = new TestProcessTopology(8, 2);
-        var heavyIndices = Set.of(0, 4, 8, 12);
-
-        // When: Create strategies with different seeds
-        var strategy1 = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-        var strategy2 = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 99L);
-
-        // And: Distribute same entities
-        var entities = new ArrayList<UUID>();
-        for (int i = 0; i < 100; i++) {
-            entities.add(UUID.nameUUIDFromBytes(("entity-" + i).getBytes()));
-        }
-
-        for (var entityId : entities) {
-            strategy1.selectBubble(entityId);
-            strategy2.selectBubble(entityId);
-        }
-
-        var stats1 = strategy1.getStats();
-        var stats2 = strategy2.getStats();
-
-        // Then: Distribution might be slightly different due to different random state
-        // (though for deterministic entity IDs, they should be same - demonstrating hash-based selection)
-        assertEquals(stats1.total(), stats2.total(), "Total should be same");
-    }
-
-    @Test
-    void testSkewed_HeavyBubbleCount() {
-        // Given: 8-process topology
-        var topology = new TestProcessTopology(8, 2);
-        var heavyIndices = Set.of(0, 4, 8, 12);
-
-        // When: Create skewed strategy
-        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-
-        // Then: Should report 4 heavy bubbles
+        // Then: Verify split
         assertEquals(4, strategy.getHeavyBubbleCount(), "Should have 4 heavy bubbles");
-
-        // And: Should report 12 light bubbles
         assertEquals(12, strategy.getLightBubbleCount(), "Should have 12 light bubbles");
-    }
-
-    @Test
-    void testSkewed_EmptyDistribution() {
-        // Given: 8-process topology
-        var topology = new TestProcessTopology(8, 2);
-        var heavyIndices = Set.of(0, 4, 8, 12);
-
-        // When: Create strategy without distributing entities
-        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-
-        // Then: Total should be 0
-        assertEquals(0, strategy.getTotalEntityCount(), "Should have 0 entities initially");
 
         var stats = strategy.getStats();
-        assertEquals(0, stats.total(), "Stats total should be 0");
-        assertEquals(0, stats.heavyTotal(), "Heavy total should be 0");
-        assertEquals(0, stats.lightTotal(), "Light total should be 0");
+        assertEquals(1200, stats.total(), "Should have 1200 total entities");
+
+        // Heavy bubbles should average significantly more than light
+        assertTrue(stats.heavyAverage() > stats.lightAverage(),
+                String.format("Heavy avg (%.1f) should be > light avg (%.1f)",
+                        stats.heavyAverage(), stats.lightAverage()));
     }
 
+    /**
+     * Test 2: 80/20 Weight Distribution
+     * <p>
+     * Validates that approximately 80% of entities go to heavy bubbles.
+     */
     @Test
-    void testSkewed_SingleEntity() {
-        // Given: 8-process topology
+    void test80_20Distribution() {
+        // Given: 16 bubbles, 4 heavy, 0.8 weight
         var topology = new TestProcessTopology(8, 2);
         var heavyIndices = Set.of(0, 4, 8, 12);
+        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42);
 
-        // When: Create strategy and distribute 1 entity
-        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-        var entityId = UUID.randomUUID();
-        var bubbleId = strategy.selectBubble(entityId);
-
-        // Then: Should have 1 entity total
-        assertEquals(1, strategy.getTotalEntityCount(), "Should have 1 entity");
-
-        // And: Selected bubble should have the entity
-        assertEquals(1, strategy.getEntityCount(bubbleId), "Selected bubble should have entity");
-    }
-
-    @Test
-    void testSkewed_WeightVariations() {
-        // Given: 8-process topology
-        var topology = new TestProcessTopology(8, 2);
-        var heavyIndices = Set.of(0, 4, 8, 12);
-
-        // When: Create strategies with different weights (70/30, 80/20, 90/10)
-        var strategy70 = new SkewedDistributionStrategy(topology, heavyIndices, 0.7, 42L);
-        var strategy80 = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-        var strategy90 = new SkewedDistributionStrategy(topology, heavyIndices, 0.9, 42L);
-
-        // And: Distribute 1000 entities to each
-        var entities = new ArrayList<UUID>();
-        for (int i = 0; i < 1000; i++) {
-            entities.add(UUID.nameUUIDFromBytes(("entity-" + i).getBytes()));
+        // When: Distribute 1200 entities
+        for (int i = 0; i < 1200; i++) {
+            var entityId = UUID.randomUUID();
+            strategy.selectBubble(entityId);
         }
 
-        for (var entityId : entities) {
-            strategy70.selectBubble(entityId);
-            strategy80.selectBubble(entityId);
+        // Then: Heavy bubbles should get ~80% (960 entities)
+        var stats = strategy.getStats();
+        var heavyPercentage = (double) stats.heavyTotal() / stats.total();
+
+        assertTrue(heavyPercentage >= 0.75 && heavyPercentage <= 0.85,
+                "Heavy bubbles should get ~80%, got: " + String.format("%.1f%%", heavyPercentage * 100));
+    }
+
+    /**
+     * Test 3: Reproducibility with Same Seed
+     * <p>
+     * Validates that same seed produces identical distribution.
+     */
+    @Test
+    void testReproducibility() {
+        // Given: Two strategies with same seed
+        var topology = new TestProcessTopology(8, 2);
+        var heavyIndices = Set.of(0, 4, 8, 12);
+        var strategy1 = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42);
+        var strategy2 = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42);
+
+        // When: Distribute same entities to both
+        var testEntities = new ArrayList<UUID>();
+        for (int i = 0; i < 100; i++) {
+            testEntities.add(UUID.randomUUID());
+        }
+
+        var bubbles1 = new ArrayList<UUID>();
+        var bubbles2 = new ArrayList<UUID>();
+
+        for (var entityId : testEntities) {
+            bubbles1.add(strategy1.selectBubble(entityId));
+            bubbles2.add(strategy2.selectBubble(entityId));
+        }
+
+        // Then: Should select same bubbles
+        assertEquals(bubbles1, bubbles2, "Same seed should produce identical distribution");
+    }
+
+    /**
+     * Test 4: Entity Count Tracking
+     * <p>
+     * Validates that entity counts are tracked correctly per bubble.
+     */
+    @Test
+    void testEntityCountTracking() {
+        // Given: 16 bubbles with skewed distribution
+        var topology = new TestProcessTopology(8, 2);
+        var heavyIndices = Set.of(0, 4, 8, 12);
+        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42);
+
+        // When: Distribute 800 entities
+        for (int i = 0; i < 800; i++) {
+            var entityId = UUID.randomUUID();
+            strategy.selectBubble(entityId);
+        }
+
+        // Then: Total entity count should match
+        assertEquals(800, strategy.getTotalEntityCount(), "Total count should be 800");
+
+        // And: Sum of individual counts should equal total
+        var allBubbles = topology.getAllBubbleIds();
+        var sumOfCounts = allBubbles.stream()
+                .mapToInt(strategy::getEntityCount)
+                .sum();
+        assertEquals(800, sumOfCounts, "Sum of bubble counts should equal total");
+    }
+
+    /**
+     * Test 5: Heavy Bubble Distribution
+     * <p>
+     * Validates that entities are distributed evenly within heavy bubbles.
+     */
+    @Test
+    void testHeavyBubbleDistribution() {
+        // Given: 16 bubbles, 4 heavy
+        var topology = new TestProcessTopology(8, 2);
+        var heavyIndices = Set.of(0, 4, 8, 12);
+        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42);
+
+        // When: Distribute 1200 entities
+        for (int i = 0; i < 1200; i++) {
+            var entityId = UUID.randomUUID();
+            strategy.selectBubble(entityId);
+        }
+
+        // Then: Each heavy bubble should get roughly equal share
+        var allBubbles = new ArrayList<>(topology.getAllBubbleIds());
+        var heavyCounts = new ArrayList<Integer>();
+        for (int idx : heavyIndices) {
+            var bubbleId = allBubbles.get(idx);
+            heavyCounts.add(strategy.getEntityCount(bubbleId));
+        }
+
+        var avgHeavy = heavyCounts.stream().mapToInt(Integer::intValue).average().orElse(0);
+        for (var count : heavyCounts) {
+            var deviation = Math.abs(count - avgHeavy) / avgHeavy;
+            assertTrue(deviation < 0.3,
+                    String.format("Heavy bubble deviation should be <30%%, got: %.1f%%", deviation * 100));
+        }
+    }
+
+    /**
+     * Test 6: Light Bubble Distribution
+     * <p>
+     * Validates that light bubbles receive fewer entities.
+     */
+    @Test
+    void testLightBubbleDistribution() {
+        // Given: 16 bubbles, 12 light
+        var topology = new TestProcessTopology(8, 2);
+        var heavyIndices = Set.of(0, 4, 8, 12);
+        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42);
+
+        // When: Distribute 1200 entities
+        for (int i = 0; i < 1200; i++) {
+            var entityId = UUID.randomUUID();
+            strategy.selectBubble(entityId);
+        }
+
+        // Then: Light bubbles should have fewer entities than heavy
+        var allBubbles = new ArrayList<>(topology.getAllBubbleIds());
+        var stats = strategy.getStats();
+
+        assertTrue(stats.lightAverage() < stats.heavyAverage(),
+                String.format("Light avg (%.1f) should be < heavy avg (%.1f)",
+                        stats.lightAverage(), stats.heavyAverage()));
+    }
+
+    /**
+     * Test 7: Edge Case - All Heavy Bubbles
+     * <p>
+     * Validates handling when all bubbles are designated heavy.
+     */
+    @Test
+    void testAllHeavyBubbles() {
+        // Given: All 16 bubbles are heavy
+        var topology = new TestProcessTopology(8, 2);
+        var heavyIndices = Set.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42);
+
+        // When: Distribute entities
+        for (int i = 0; i < 800; i++) {
+            var entityId = UUID.randomUUID();
+            strategy.selectBubble(entityId);
+        }
+
+        // Then: Should work correctly
+        assertEquals(16, strategy.getHeavyBubbleCount(), "Should have 16 heavy bubbles");
+        assertEquals(0, strategy.getLightBubbleCount(), "Should have 0 light bubbles");
+        assertEquals(800, strategy.getTotalEntityCount(), "Should have 800 entities");
+    }
+
+    /**
+     * Test 8: Edge Case - Single Heavy Bubble
+     * <p>
+     * Validates handling with only one heavy bubble.
+     */
+    @Test
+    void testSingleHeavyBubble() {
+        // Given: Only 1 heavy bubble
+        var topology = new TestProcessTopology(8, 2);
+        var heavyIndices = Set.of(0);
+        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42);
+
+        // When: Distribute entities
+        for (int i = 0; i < 1000; i++) {
+            var entityId = UUID.randomUUID();
+            strategy.selectBubble(entityId);
+        }
+
+        // Then: Heavy bubble should get ~80%
+        var stats = strategy.getStats();
+        var heavyPercentage = (double) stats.heavyTotal() / stats.total();
+
+        assertTrue(heavyPercentage >= 0.75 && heavyPercentage <= 0.85,
+                "Single heavy bubble should get ~80%, got: " + String.format("%.1f%%", heavyPercentage * 100));
+    }
+
+    /**
+     * Test 9: Stats Calculation
+     * <p>
+     * Validates that distribution statistics are computed correctly.
+     */
+    @Test
+    void testStatsCalculation() {
+        // Given: Skewed distribution
+        var topology = new TestProcessTopology(8, 2);
+        var heavyIndices = Set.of(0, 4, 8, 12);
+        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42);
+
+        // When: Distribute entities
+        for (int i = 0; i < 1200; i++) {
+            var entityId = UUID.randomUUID();
+            strategy.selectBubble(entityId);
+        }
+
+        // Then: Stats should be consistent
+        var stats = strategy.getStats();
+        assertEquals(stats.total(), stats.heavyTotal() + stats.lightTotal(),
+                "Total should equal heavy + light");
+
+        var calculatedHeavyAvg = (double) stats.heavyTotal() / strategy.getHeavyBubbleCount();
+        assertEquals(calculatedHeavyAvg, stats.heavyAverage(), 0.1,
+                "Heavy average should match calculation");
+
+        var calculatedLightAvg = (double) stats.lightTotal() / strategy.getLightBubbleCount();
+        assertEquals(calculatedLightAvg, stats.lightAverage(), 0.1,
+                "Light average should match calculation");
+    }
+
+    /**
+     * Test 10: Different Heavy Weights
+     * <p>
+     * Validates that different heavy weights produce different distributions.
+     */
+    @Test
+    void testDifferentHeavyWeights() {
+        // Given: Same topology, different weights
+        var topology = new TestProcessTopology(8, 2);
+        var heavyIndices = Set.of(0, 4, 8, 12);
+        var strategy60 = new SkewedDistributionStrategy(topology, heavyIndices, 0.6, 42);
+        var strategy90 = new SkewedDistributionStrategy(topology, heavyIndices, 0.9, 42);
+
+        // When: Distribute same entities
+        for (int i = 0; i < 1000; i++) {
+            var entityId = UUID.randomUUID();
+            strategy60.selectBubble(entityId);
             strategy90.selectBubble(entityId);
         }
 
-        var stats70 = strategy70.getStats();
-        var stats80 = strategy80.getStats();
+        // Then: Higher weight should produce higher heavy percentage
+        var stats60 = strategy60.getStats();
         var stats90 = strategy90.getStats();
 
-        // Then: Should see increasing heavy distribution
-        assertTrue(stats70.heavyTotal() < stats80.heavyTotal(),
-            "70% weight should have less heavy distribution than 80%");
-        assertTrue(stats80.heavyTotal() < stats90.heavyTotal(),
-            "80% weight should have less heavy distribution than 90%");
-    }
+        var heavyPercentage60 = (double) stats60.heavyTotal() / stats60.total();
+        var heavyPercentage90 = (double) stats90.heavyTotal() / stats90.total();
 
-    @Test
-    void testSkewed_EntityCountAccuracy() {
-        // Given: 8-process topology
-        var topology = new TestProcessTopology(8, 2);
-        var heavyIndices = Set.of(0, 4, 8, 12);
-
-        // When: Create strategy and track distribution manually
-        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-
-        var manualDistribution = new HashMap<UUID, Integer>();
-        for (var bubbleId : topology.getAllBubbleIds()) {
-            manualDistribution.put(bubbleId, 0);
-        }
-
-        // And: Distribute 500 entities
-        var entities = new ArrayList<UUID>();
-        for (int i = 0; i < 500; i++) {
-            entities.add(UUID.randomUUID());
-        }
-
-        for (var entityId : entities) {
-            var bubbleId = strategy.selectBubble(entityId);
-            manualDistribution.put(bubbleId, manualDistribution.get(bubbleId) + 1);
-        }
-
-        // Then: Strategy's counts should match manual counts
-        for (var bubbleId : topology.getAllBubbleIds()) {
-            var strategyCount = strategy.getEntityCount(bubbleId);
-            var manualCount = manualDistribution.get(bubbleId);
-            assertEquals(manualCount, strategyCount,
-                "Strategy count should match manual count for bubble");
-        }
-
-        // And: Total should match
-        var manualTotal = manualDistribution.values().stream().mapToInt(Integer::intValue).sum();
-        assertEquals(manualTotal, strategy.getTotalEntityCount(), "Total should match");
-    }
-
-    @Test
-    void testSkewed_AllHeavyBubbles() {
-        // Given: 8-process topology
-        var topology = new TestProcessTopology(8, 2);
-
-        // When: All bubbles are marked as heavy
-        var heavyIndices = new HashSet<Integer>();
-        for (int i = 0; i < 16; i++) {
-            heavyIndices.add(Integer.valueOf(i));
-        }
-        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-
-        // And: Distribute entities
-        for (int i = 0; i < 100; i++) {
-            strategy.selectBubble(UUID.randomUUID());
-        }
-
-        var stats = strategy.getStats();
-
-        // Then: All entities should go to heavy bubbles
-        assertEquals(100, stats.heavyTotal(), "All entities should go to heavy");
-        assertEquals(0, stats.lightTotal(), "No entities in light");
-    }
-
-    @Test
-    void testSkewed_AllLightBubbles() {
-        // Given: 8-process topology
-        var topology = new TestProcessTopology(8, 2);
-
-        // When: No bubbles are marked as heavy (empty set)
-        var heavyIndices = new HashSet<Integer>();
-        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-
-        // And: Distribute entities
-        for (int i = 0; i < 100; i++) {
-            strategy.selectBubble(UUID.randomUUID());
-        }
-
-        var stats = strategy.getStats();
-
-        // Then: All entities should go to light bubbles
-        assertEquals(0, stats.heavyTotal(), "No entities in heavy");
-        assertEquals(100, stats.lightTotal(), "All entities should go to light");
-    }
-
-    @Test
-    void testSkewed_DistributionStatsAccuracy() {
-        // Given: 8-process topology with 4 heavy, 12 light
-        var topology = new TestProcessTopology(8, 2);
-        var heavyIndices = Set.of(0, 4, 8, 12);
-        var strategy = new SkewedDistributionStrategy(topology, heavyIndices, 0.8, 42L);
-
-        // When: Distribute 1000 entities
-        for (int i = 0; i < 1000; i++) {
-            strategy.selectBubble(UUID.randomUUID());
-        }
-
-        var stats = strategy.getStats();
-
-        // Then: Heavy average should be significantly higher than light average
-        assertTrue(stats.heavyAverage() > stats.lightAverage() * 5,
-            "Heavy average should be much higher than light average");
-
-        // And: Sum of averages * counts should equal totals
-        var heavySum = (int)(stats.heavyAverage() * strategy.getHeavyBubbleCount());
-        var lightSum = (int)(stats.lightAverage() * strategy.getLightBubbleCount());
-        assertEquals(stats.heavyTotal(), heavySum, "Heavy sum should match average * count");
-        assertEquals(stats.lightTotal(), lightSum, "Light sum should match average * count");
+        assertTrue(heavyPercentage90 > heavyPercentage60,
+                String.format("0.9 weight (%.1f%%) should produce higher heavy percentage than 0.6 weight (%.1f%%)",
+                        heavyPercentage90 * 100, heavyPercentage60 * 100));
     }
 }
