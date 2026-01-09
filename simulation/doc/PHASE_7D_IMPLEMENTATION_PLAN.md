@@ -1,10 +1,10 @@
 # Phase 7D Implementation Plan: Ghost Physics & Timeout Handling
 
-**Last Updated**: 2026-01-09
-**Status**: PLANNING (Awaiting Architecture Review)
+**Last Updated**: 2026-01-09 (Updated after plan-auditor review)
+**Status**: READY FOR IMPLEMENTATION (Conditional GO)
 **Epic Bead**: Luciferase-qq0i (Inc7 Phase 0)
-**Estimated Duration**: 8-10 days
-**Depends On**: Phase 7C (COMPLETE)
+**Estimated Duration**: 8 days (adjusted from 8-10 after Phase 7D.2 rescoping)
+**Depends On**: Phase 7C (COMPLETE), R1+R3 blockers addressed
 **Blocks**: Inc7 Phase 7D completion
 
 ---
@@ -12,10 +12,10 @@
 ## Executive Summary
 
 Phase 7D completes the autonomous distributed simulation framework by implementing:
-1. **Timeout-based Rollback**: Automatic rollback when migrations exceed time limits
-2. **Ghost Physics**: Dead reckoning and ghost entity behavior during ownership transfer
-3. **Advanced View Stability**: Dynamic stability thresholds and recovery strategies
-4. **Comprehensive E2E Testing**: Full 4-8 bubble scenarios with fault injection
+1. **Timeout-based Rollback**: Automatic rollback when migrations exceed time limits (2 days)
+2. **Ghost Physics Integration**: FSM integration with existing dead reckoning (1.5 days rescoped)
+3. **Advanced View Stability**: Dynamic stability thresholds and recovery strategies (1.5 days)
+4. **Comprehensive E2E Testing**: 50+ tests across 7 scenarios with fault injection (3 days)
 
 **Key Design Principle**: All operations remain eventually consistent through Lamport timestamps, with timeout-driven recovery ensuring no entities are permanently lost.
 
@@ -121,29 +121,31 @@ public static class Configuration {
 - [ ] Configuration system fully functional
 - [ ] All unit tests passing (target: 35+ tests)
 
-### Phase 7D.2: Dead Reckoning for Ghosts (2.5 days)
+### Phase 7D.2: Ghost Physics Integration (1.5 days)
 
-**Objective**: Implement ghost entity physics and state extrapolation.
+**Objective**: Integrate existing dead reckoning with EntityMigrationStateMachine GHOST state lifecycle.
+
+**Context**: GhostStateManager.java already implements dead reckoning with velocity tracking and DeadReckoningEstimator.java provides position prediction. This phase focuses on FSM integration and collision prevention.
 
 **Key Changes**:
-- Enhance `GhostStateManager` with velocity tracking
-- Implement position extrapolation during ownership transfer
-- Add predictive state updates based on last known velocity
-- Integrate with physics simulation during ghost period
+- Integrate GhostStateManager with EntityMigrationStateMachine state transitions
+- Ensure ghost velocity tracking works during GHOST→MIGRATING_IN→OWNED transitions
+- Implement collision double-counting prevention (source vs target physics)
+- Validate extrapolation accuracy during ownership transfer
 
 **Deliverables**:
 | Component | File | Changes | Tests |
 |-----------|------|---------|-------|
-| Ghost Velocity | GhostStateManager.java | Track velocities | Unit |
-| Extrapolation | GhostStateManager.java | Position prediction | Unit |
-| Physics Integration | GhostStateManager.java | Apply to entities | Integration |
+| FSM Integration | EntityMigrationStateMachine.java | Hook GHOST state to GhostStateManager | Unit |
+| Collision Prevention | GhostStateManager.java | Track source/target zones separately | Unit |
+| State Validation | Both files | Verify velocity consistency through transfer | Integration |
 
 **Acceptance Criteria**:
-- [ ] Ghost entities maintain velocity during transfer
-- [ ] Position extrapolation accurate within 5% of final position
-- [ ] Physics simulation continues during GHOST state
-- [ ] No collision double-counting between source/target
-- [ ] All tests passing (target: 20+ tests)
+- [ ] Ghost entities maintain velocity from source to target
+- [ ] Position extrapolation accurate within 5% during transfer (validation, not new implementation)
+- [ ] No collisions counted twice between source and target
+- [ ] State consistency verified across GHOST→MIGRATING_IN→OWNED cycle
+- [ ] All tests passing (target: 12+ new integration tests)
 
 ### Phase 7D.3: Advanced View Stability (1.5 days)
 
@@ -180,7 +182,7 @@ public static class Configuration {
 4. **Ghost Extrapolation**: Entity location matches expected dead reckoning
 5. **Cascading Transfers**: Chain of 3+ migrations with ghost physics
 6. **Network Jitter**: Rapid view changes with recovery
-7. **Performance**: 1000 entities with 4-bubble cluster, > 500 TPS
+7. **Performance**: 1000 entities with 4-bubble cluster, ≥ 94 TPS (Phase 7C baseline, no regression)
 
 **Deliverables**:
 | Test Suite | File | Scenarios | Target |
@@ -189,15 +191,85 @@ public static class Configuration {
 | Ghost Physics | GhostPhysicsTest.java | 2 scenarios | 8+ tests |
 | Cascading | CascadingMigrationTest.java | 2 scenarios | 10+ tests |
 | Performance | E2EPerformanceTest.java | 1 scenario | 3+ tests |
+| Stability Integration | AdvancedViewStabilityTest.java | 3 scenarios | 8+ tests |
+
+**Test Count Reconciliation**:
+- **Unit Tests (7D.1-7D.3)**: 50+ new tests (timeout infrastructure, dead reckoning integration, stability metrics)
+- **Integration Tests (7D.2, 7D.3)**: 35+ tests (FSM integration, cascading transfers, stability recovery)
+- **E2E Tests (7D.4)**: 31+ tests across 7 scenarios (4 test suites as shown above)
+- **Total Phase 7D**: 50+ unit + 35+ integration + 31+ E2E = 116+ comprehensive tests
+- **Regression Tests**: All Phase 7C tests (32 tests) continue to pass without regression
 
 **Acceptance Criteria**:
-- [ ] All 31+ E2E tests passing
+- [ ] All 116+ Phase 7D tests passing (50+ unit + 35+ integration + 31+ E2E)
+- [ ] All 32 Phase 7C regression tests passing
 - [ ] No entity loss or duplication in any scenario
-- [ ] Ghost position within 5% of expected
-- [ ] Performance > 500 TPS sustained
-- [ ] View changes handled gracefully
-- [ ] Timeout recovery always succeeds
+- [ ] Ghost position within 5% of expected (validation, not implementation)
+- [ ] Performance ≥ 94 TPS sustained (Phase 7C baseline maintained)
+- [ ] View changes handled gracefully with backoff strategy
+- [ ] Timeout recovery always succeeds within configured limits
 - [ ] Full 4-bubble scenarios complete in < 5 seconds
+
+---
+
+## Phase 7D Blockers & Dependencies (From Substantive-Critic Review)
+
+**Status**: Must be addressed before Phase 7D.1 can begin
+**Timeline**: 3 days (R1: 2 days, R3: 1 day, R4: config update)
+
+### R1: Implement MigrationCoordinator Bridge (2 days, CRITICAL)
+
+**Problem**: EntityMigrationStateMachine is disconnected from CrossProcessMigration 2PC protocol.
+- FSM manages local state transitions
+- 2PC manages distributed commit protocol
+- No bridge exists between them → risk of state divergence
+- **Impact**: 30% probability of entity duplication/loss during migrations
+
+**Solution**: Create `MigrationCoordinator.java` to bridge FSM and 2PC:
+- Listen to FSM state transitions (OWNED → MIGRATING_OUT → DEPARTED)
+- Coordinate with 2PC PREPARE/COMMIT phases
+- Ensure consistency between local FSM state and global 2PC state
+- Handle ROLLBACK_OWNED recovery in 2PC context
+
+**Implementation Location**: `simulation/src/main/java/com/hellblazer/luciferase/simulation/causality/MigrationCoordinator.java`
+
+### R3: Define EventReprocessor Gap Handling (1 day, CRITICAL)
+
+**Problem**: Queue overflow causes event drops, but gap recovery mechanism is undefined.
+- Current: Events dropped silently on overflow
+- Risk: Permanent event loss when packet loss > 500ms
+- **Impact**: Inconsistent state under packet loss scenarios
+
+**Solution**: Define 30-second timeout threshold + explicit gap acceptance:
+- On queue overflow, start 30-second timeout
+- Accept gap explicitly rather than silently dropping
+- Trigger view change if timeout expires (forces rollback/recovery)
+- Log gap occurrences for monitoring and debugging
+
+**Implementation Location**: Enhance `EventReprocessor.java` with timeout + gap acceptance mechanism
+
+### R4: Update View Stability Threshold (config update, IMPORTANT)
+
+**Problem**: Current N=3 ticks (100ms) insufficient for realistic network jitter.
+- Recommended for production: N=30 ticks (300ms)
+- **Impact**: Reduces false-positive view instability under normal network conditions
+
+**Solution**: Update `FirefliesViewMonitor.java` configuration:
+```java
+// Current:
+public FirefliesViewMonitor(FirefliesView<?> view) {
+    this(view, 3);  // 3 ticks = 100ms at 30 ticks/sec
+}
+
+// Updated:
+public FirefliesViewMonitor(FirefliesView<?> view) {
+    this(view, 30);  // 30 ticks = 1000ms at 30 ticks/sec (more realistic)
+}
+```
+
+**Notes**:
+- Can be configured per-bubble for testing (N=3) vs production (N=30)
+- Phase 7D accepts either threshold; production deployment will use N=30
 
 ---
 
@@ -326,16 +398,39 @@ simulation/src/test/java/com/hellblazer/luciferase/simulation/
 ## Success Criteria
 
 **Phase 7D is COMPLETE when**:
-1. ✓ 50+ unit tests pass with > 95% coverage
-2. ✓ 35+ integration tests pass
-3. ✓ 7 E2E scenarios pass including performance
-4. ✓ Zero entity loss/duplication in any test
-5. ✓ 500+ TPS sustained (or beats Phase 7C baseline)
-6. ✓ Timeout rollback tested and verified
-7. ✓ Ghost physics within 5% accuracy
-8. ✓ Code review passed for all changes
-9. ✓ No regressions in Phase 7C tests
-10. ✓ Plan audit passed
+1. ✓ 50+ unit tests pass with > 90% code coverage (Phase 7D.1-7D.3 new code)
+2. ✓ 35+ integration tests pass (Phase 7D.2 FSM integration + 7D.4 E2E)
+3. ✓ 7 E2E scenarios all pass:
+   - Successful migration (4 bubbles, 100 entities, stable network)
+   - Timeout rollback (entity returned to source after 8s timeout)
+   - View changes during transfer (entity recovers correctly)
+   - Ghost extrapolation validation (position within 5%)
+   - Cascading transfers (3+ migration chain)
+   - Network jitter recovery (rapid view changes handled)
+   - Performance baseline (≥ Phase 7C performance: 94+ TPS)
+
+4. ✓ Zero entity loss or duplication verified in all tests
+
+5. ✓ **Performance**: Simulation throughput ≥ 94 TPS (Phase 7C baseline)
+   - Measured as: Simulation ticks processed per wall-clock second
+   - Test scenario: 1000 entities, 4 bubbles, 100+ simulation ticks
+   - Success: No performance regression from Phase 7C
+
+6. ✓ **Timeout Rollback**: Automatic rollback verified for:
+   - Migrations exceeding 8-second timeout
+   - View changes during MIGRATING_OUT state
+   - Recovery without entity loss
+
+7. ✓ **Ghost Physics Accuracy**: Validation (not implementation):
+   - Definition: `error = |extrapolated_position - actual_position| / max(1.0, distance_traveled)`
+   - Success: `error ≤ 0.05` (5% of movement distance)
+   - Test: 10 migrations with velocity changes, measure extrapolation error
+
+8. ✓ Code review passed for all Phase 7D changes (code-review-expert agent)
+
+9. ✓ No regressions in Phase 7C tests (all 32 tests still passing)
+
+10. ✓ Plan audit validation (plan-auditor confirmation of completion)
 
 ---
 
