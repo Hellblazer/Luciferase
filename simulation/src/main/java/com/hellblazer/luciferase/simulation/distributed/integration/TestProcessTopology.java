@@ -23,23 +23,32 @@ import java.util.*;
 /**
  * Defines the topology of bubbles and processes for distributed simulation.
  * <p>
- * Organizes processes and bubbles in a 2D grid layout where:
+ * Organizes processes and bubbles in a 3D cube layout where:
  * <ul>
- *   <li>Processes are arranged in a grid (2x2 for 4 processes, 4x2 for 8 processes)</li>
- *   <li>Each process contains N bubbles stacked vertically</li>
- *   <li>Neighbor relationships are based on spatial adjacency</li>
+ *   <li>Processes are arranged in a 3D grid (2x2x1 for 4 processes, 2x2x2 for 8 processes)</li>
+ *   <li>Each process contains N bubbles stacked vertically within its region</li>
+ *   <li>Neighbor relationships are based on 3D spatial adjacency (face neighbors only)</li>
  * </ul>
  * <p>
  * Phase 6B5.2: TestProcessCluster Infrastructure
  * Phase 6B6: 8-Process Scaling & GC Benchmarking
+ * Phase 6B7: 3D Topology & Entity Simulation
  * <p>
  * Grid Layout Examples:
  * <pre>
- * 4 processes (2x2):          8 processes (4x2):
- *   P0-B1  P1-B1               P0-B1  P1-B1  P2-B1  P3-B1
- *   P0-B2  P1-B2               P0-B2  P1-B2  P2-B2  P3-B2
- *   P2-B1  P3-B1               P4-B1  P5-B1  P6-B1  P7-B1
- *   P2-B2  P3-B2               P4-B2  P5-B2  P6-B2  P7-B2
+ * 4 processes (2x2x1):          8 processes (2x2x2):
+ *
+ * Z=0:                          Z=1 (Top):
+ *   P0 --- P1                      P4 --- P5
+ *   |       |                      |       |
+ *   P2 --- P3                      P6 --- P7
+ *
+ *                                 Z=0 (Bottom):
+ *                                   P0 --- P1
+ *                                   |       |
+ *                                   P2 --- P3
+ *
+ * Each bubble in a process is stacked along the local Z-axis within that process's region.
  * </pre>
  *
  * @author hal.hildebrand
@@ -56,6 +65,10 @@ public class TestProcessTopology {
     private final Map<UUID, Set<UUID>> bubbleNeighbors;
     private final Map<UUID, UUID> bubbleToProcess;
     private final Map<UUID, Set<UUID>> processNeighbors;
+    private final int gridWidth;  // X dimension
+    private final int gridHeight; // Y dimension
+    private final int gridDepth;  // Z dimension
+    private final Map<Integer, int[]> processToGridCoords; // process index -> [x, y, z]
 
     /**
      * Creates a new topology with the specified dimensions.
@@ -71,14 +84,23 @@ public class TestProcessTopology {
         this.bubbleNeighbors = new HashMap<>();
         this.bubbleToProcess = new HashMap<>();
         this.processNeighbors = new HashMap<>();
+        this.processToGridCoords = new HashMap<>();
+
+        // Calculate grid dimensions for 3D topology
+        var dims = calculateGridDimensions(processCount);
+        this.gridWidth = dims[0];
+        this.gridHeight = dims[1];
+        this.gridDepth = dims[2];
 
         initializeTopology();
     }
 
     private void initializeTopology() {
-        // Generate process IDs
+        // Generate process IDs and map to 3D grid coordinates
         for (int i = 0; i < processCount; i++) {
             processIds.add(generateDeterministicUUID("process", i));
+            var coords = getProcessGridCoordinates(i);
+            processToGridCoords.put(i, coords);
         }
 
         // Create bubbles for each process
@@ -96,8 +118,43 @@ public class TestProcessTopology {
         // Calculate bubble neighbors based on spatial proximity
         calculateBubbleNeighbors();
 
-        // Calculate process neighbors (processes that share bubble boundaries)
+        // Calculate process neighbors based on 3D grid adjacency
         calculateProcessNeighbors();
+    }
+
+    /**
+     * Calculates grid dimensions for 3D topology based on process count.
+     * Returns [width, height, depth] for X, Y, Z dimensions.
+     *
+     * @param count number of processes
+     * @return [gridWidth, gridHeight, gridDepth]
+     */
+    private int[] calculateGridDimensions(int count) {
+        return switch (count) {
+            case 1 -> new int[]{1, 1, 1};   // 1x1x1
+            case 2 -> new int[]{2, 1, 1};   // 2x1x1
+            case 4 -> new int[]{2, 2, 1};   // 2x2x1 (backward compatible)
+            case 8 -> new int[]{2, 2, 2};   // 2x2x2 (true 3D cube)
+            default -> {
+                // Fallback: approximate cube root
+                int side = (int) Math.round(Math.cbrt(count));
+                yield new int[]{side, side, side};
+            }
+        };
+    }
+
+    /**
+     * Converts a process index to 3D grid coordinates [x, y, z].
+     * Maps processes sequentially in order: z varies fastest, then y, then x.
+     *
+     * @param processIndex the process index
+     * @return [x, y, z] coordinates in the grid
+     */
+    private int[] getProcessGridCoordinates(int processIndex) {
+        int x = (processIndex / (gridHeight * gridDepth)) % gridWidth;
+        int y = (processIndex / gridDepth) % gridHeight;
+        int z = processIndex % gridDepth;
+        return new int[]{x, y, z};
     }
 
     private UUID generateDeterministicUUID(String prefix, int index) {
@@ -107,12 +164,34 @@ public class TestProcessTopology {
         return new UUID(random.nextLong(), random.nextLong());
     }
 
+    /**
+     * Calculates the position of a bubble in 3D space.
+     * Each process occupies a region in 3D space, and bubbles are stacked vertically within that region.
+     *
+     * @param processIndex the process index
+     * @param bubbleIndex  the bubble index within the process
+     * @return 3D position
+     */
     private Point3D calculateBubblePosition(int processIndex, int bubbleIndex) {
-        // Layout: processes along X axis, bubbles stacked along Y axis
-        var x = processIndex * BUBBLE_SPACING;
-        var y = bubbleIndex * BUBBLE_SPACING;
-        var z = 0.0f;
-        return new Point3D(x, y, z);
+        var coords = processToGridCoords.get(processIndex);
+        int gridX = coords[0];
+        int gridY = coords[1];
+        int gridZ = coords[2];
+
+        // Each process region is BUBBLE_SPACING in each dimension
+        var regionX = gridX * BUBBLE_SPACING;
+        var regionY = gridY * BUBBLE_SPACING;
+        var regionZ = gridZ * BUBBLE_SPACING;
+
+        // Within the process region, stack bubbles vertically (add to Y axis)
+        var bubbleLocalY = bubbleIndex * BUBBLE_SPACING;
+
+        // Return the center of the bubble's region
+        return new Point3D(
+            regionX + BUBBLE_SPACING / 2.0,
+            regionY + bubbleLocalY + BUBBLE_SPACING / 2.0,
+            regionZ + BUBBLE_SPACING / 2.0
+        );
     }
 
     private void calculateBubbleNeighbors() {
@@ -136,67 +215,50 @@ public class TestProcessTopology {
         }
     }
 
+    /**
+     * Calculates process neighbors based on 3D grid adjacency.
+     * Two processes are neighbors if they are face-adjacent in the 3D grid
+     * (differ by 1 in exactly one dimension).
+     */
     private void calculateProcessNeighbors() {
         for (var processId : processIds) {
             processNeighbors.put(processId, new HashSet<>());
         }
 
-        // For a 2D grid layout, create deterministic neighbor relationships
-        // With 4 processes in a 2x2 grid:
-        // P0 -- P1
-        // |     |
-        // P2 -- P3
-        //
-        // Neighbors: P0<->P1, P0<->P2, P1<->P3, P2<->P3
-        // Each process has exactly 2 neighbors
+        // Check all pairs of processes for 3D grid adjacency
+        for (int i = 0; i < processCount; i++) {
+            var coordsI = processToGridCoords.get(i);
 
-        if (processCount == 4) {
-            // 2x2 grid layout
-            addProcessNeighbor(0, 1); // P0 <-> P1
-            addProcessNeighbor(0, 2); // P0 <-> P2
-            addProcessNeighbor(1, 3); // P1 <-> P3
-            addProcessNeighbor(2, 3); // P2 <-> P3
-        } else if (processCount == 8) {
-            // 4x2 grid layout (4 columns, 2 rows)
-            // P0 -- P1 -- P2 -- P3  (Row 0)
-            // |     |     |     |
-            // P4 -- P5 -- P6 -- P7  (Row 1)
-            //
-            // Horizontal edges (Row 0): P0-P1, P1-P2, P2-P3 (3 edges)
-            // Horizontal edges (Row 1): P4-P5, P5-P6, P6-P7 (3 edges)
-            // Vertical edges: P0-P4, P1-P5, P2-P6, P3-P7 (4 edges)
-            // Total: 10 edges
+            for (int j = i + 1; j < processCount; j++) {
+                var coordsJ = processToGridCoords.get(j);
 
-            // Row 0 horizontal neighbors
-            addProcessNeighbor(0, 1); // P0 <-> P1
-            addProcessNeighbor(1, 2); // P1 <-> P2
-            addProcessNeighbor(2, 3); // P2 <-> P3
-
-            // Row 1 horizontal neighbors
-            addProcessNeighbor(4, 5); // P4 <-> P5
-            addProcessNeighbor(5, 6); // P5 <-> P6
-            addProcessNeighbor(6, 7); // P6 <-> P7
-
-            // Vertical neighbors
-            addProcessNeighbor(0, 4); // P0 <-> P4
-            addProcessNeighbor(1, 5); // P1 <-> P5
-            addProcessNeighbor(2, 6); // P2 <-> P6
-            addProcessNeighbor(3, 7); // P3 <-> P7
-        } else {
-            // Fallback to bubble-based neighbor detection for other sizes
-            for (var entry : bubbleNeighbors.entrySet()) {
-                var bubbleId = entry.getKey();
-                var neighbors = entry.getValue();
-                var processId = bubbleToProcess.get(bubbleId);
-
-                for (var neighborBubble : neighbors) {
-                    var neighborProcess = bubbleToProcess.get(neighborBubble);
-                    if (!neighborProcess.equals(processId)) {
-                        processNeighbors.get(processId).add(neighborProcess);
-                    }
+                // Check if processes are face-adjacent (differ by 1 in exactly one dimension)
+                if (isAdjacent3D(coordsI, coordsJ)) {
+                    addProcessNeighbor(i, j);
                 }
             }
         }
+    }
+
+    /**
+     * Checks if two 3D grid coordinates are face-adjacent.
+     * Face adjacency means differing by 1 in exactly one dimension.
+     *
+     * @param coords1 [x, y, z] coordinates
+     * @param coords2 [x, y, z] coordinates
+     * @return true if face-adjacent
+     */
+    private boolean isAdjacent3D(int[] coords1, int[] coords2) {
+        int diffCount = 0;
+        for (int dim = 0; dim < 3; dim++) {
+            int diff = Math.abs(coords1[dim] - coords2[dim]);
+            if (diff == 1) {
+                diffCount++;
+            } else if (diff != 0) {
+                return false; // Differ by more than 1 in this dimension
+            }
+        }
+        return diffCount == 1; // Must differ by exactly 1 in exactly one dimension
     }
 
     private void addProcessNeighbor(int indexA, int indexB) {

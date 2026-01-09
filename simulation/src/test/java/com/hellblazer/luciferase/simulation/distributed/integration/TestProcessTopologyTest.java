@@ -21,15 +21,16 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for TestProcessTopology 2D grid layouts.
+ * Tests for TestProcessTopology 3D cube layouts.
  * <p>
  * Phase 6B6: 8-Process Scaling & GC Benchmarking
+ * Phase 6B7: 3D Topology & Entity Simulation
  * <p>
  * Verifies:
- * - 4-process 2x2 grid topology
- * - 8-process 4x2 grid topology
- * - Correct neighbor relationships
- * - Cross-process migration paths
+ * - 4-process 2x2x1 grid topology (2D layer in 3D space)
+ * - 8-process 2x2x2 cube topology (true 3D)
+ * - Correct 3D neighbor relationships (face adjacency)
+ * - Cross-process migration paths in 3D
  *
  * @author hal.hildebrand
  */
@@ -49,14 +50,14 @@ class TestProcessTopologyTest {
 
     @Test
     void test4ProcessTopology_NeighborCount() {
-        // Given: 4-process 2x2 grid
+        // Given: 4-process 2x2x1 grid (2D layer in 3D space)
         var topology = new TestProcessTopology(4, 2);
 
-        // Then: Each process should have 2 neighbors (2x2 grid = 4 corners)
+        // Then: Each process should have 2 neighbors (corners of a 2x2x1 grid)
         for (int i = 0; i < 4; i++) {
             var processId = topology.getProcessId(i);
             var neighbors = topology.getNeighborProcesses(processId);
-            assertEquals(2, neighbors.size(), "Process " + i + " should have 2 neighbors in 2x2 grid");
+            assertEquals(2, neighbors.size(), "Process " + i + " should have 2 neighbors in 2x2x1 grid");
         }
     }
 
@@ -93,7 +94,7 @@ class TestProcessTopologyTest {
 
     @Test
     void test8ProcessTopology_GridStructure() {
-        // Given: 8-process topology with 2 bubbles per process (4x2 grid)
+        // Given: 8-process topology with 2 bubbles per process (2x2x2 cube)
         var topology = new TestProcessTopology(8, 2);
 
         // Then: Should have 16 bubbles total
@@ -105,32 +106,29 @@ class TestProcessTopologyTest {
 
     @Test
     void test8ProcessTopology_NeighborDistribution() {
-        // Given: 8-process 4x2 grid
-        // P0 -- P1 -- P2 -- P3  (Row 0)
-        // |     |     |     |
-        // P4 -- P5 -- P6 -- P7  (Row 1)
+        // Given: 8-process 2x2x2 cube
+        // Z=1 (Top):     Z=0 (Bottom):
+        //   P4 -- P5       P0 -- P1
+        //   |     |        |     |
+        //   P6 -- P7       P2 -- P3
         var topology = new TestProcessTopology(8, 2);
 
-        // Then: Corner processes (0, 3, 4, 7) should have 2 neighbors
-        for (int cornerIdx : new int[]{0, 3, 4, 7}) {
-            var processId = topology.getProcessId(cornerIdx);
-            var neighbors = topology.getNeighborProcesses(processId);
-            assertEquals(2, neighbors.size(),
-                "Corner process " + cornerIdx + " should have 2 neighbors, got: " + neighbors.size());
-        }
-
-        // And: Edge processes (1, 2, 5, 6) should have 3 neighbors
-        for (int edgeIdx : new int[]{1, 2, 5, 6}) {
-            var processId = topology.getProcessId(edgeIdx);
+        // Then: All 8 corner processes in a cube have exactly 3 neighbors (face adjacency)
+        for (int i = 0; i < 8; i++) {
+            var processId = topology.getProcessId(i);
             var neighbors = topology.getNeighborProcesses(processId);
             assertEquals(3, neighbors.size(),
-                "Edge process " + edgeIdx + " should have 3 neighbors, got: " + neighbors.size());
+                "Process " + i + " in 2x2x2 cube should have 3 neighbors, got: " + neighbors.size());
         }
     }
 
     @Test
-    void test8ProcessTopology_HorizontalNeighbors() {
-        // Given: 8-process 4x2 grid
+    void test8ProcessTopology_XAxisNeighbors() {
+        // Given: 8-process 2x2x2 cube
+        // Z=0 (Bottom layer):
+        //   P0(0,0,0) -- P1(1,0,0)
+        //   |             |
+        //   P2(0,1,0) -- P3(1,1,0)
         var topology = new TestProcessTopology(8, 2);
 
         var p0 = topology.getProcessId(0);
@@ -138,28 +136,47 @@ class TestProcessTopologyTest {
         var p2 = topology.getProcessId(2);
         var p3 = topology.getProcessId(3);
 
-        // Then: Row 0 horizontal neighbors
-        var neighbors0 = topology.getNeighborProcesses(p0);
-        assertTrue(neighbors0.contains(p1), "P0 should be neighbor with P1 (horizontal)");
-
-        var neighbors1 = topology.getNeighborProcesses(p1);
-        assertTrue(neighbors1.contains(p0), "P1 should be neighbor with P0 (horizontal)");
-        assertTrue(neighbors1.contains(p2), "P1 should be neighbor with P2 (horizontal)");
-
-        var neighbors2 = topology.getNeighborProcesses(p2);
-        assertTrue(neighbors2.contains(p1), "P2 should be neighbor with P1 (horizontal)");
-        assertTrue(neighbors2.contains(p3), "P2 should be neighbor with P3 (horizontal)");
-
-        var neighbors3 = topology.getNeighborProcesses(p3);
-        assertTrue(neighbors3.contains(p2), "P3 should be neighbor with P2 (horizontal)");
+        // Then: X-axis neighbors (differ only in X coordinate)
+        assertTrue(topology.getNeighborProcesses(p0).contains(p1), "P0(0,0,0) should be neighbor with P1(1,0,0)");
+        assertTrue(topology.getNeighborProcesses(p2).contains(p3), "P2(0,1,0) should be neighbor with P3(1,1,0)");
     }
 
     @Test
-    void test8ProcessTopology_VerticalNeighbors() {
-        // Given: 8-process 4x2 grid
+    void test8ProcessTopology_YAxisNeighbors() {
+        // Given: 8-process 2x2x2 cube
+        // Y-axis connections (depth in 3D):
+        //   P0(0,0,0) <-> P2(0,1,0)
+        //   P1(1,0,0) <-> P3(1,1,0)
+        //   P4(0,0,1) <-> P6(0,1,1)
+        //   P5(1,0,1) <-> P7(1,1,1)
         var topology = new TestProcessTopology(8, 2);
 
-        // Vertical relationships
+        var p0 = topology.getProcessId(0);
+        var p2 = topology.getProcessId(2);
+        var p1 = topology.getProcessId(1);
+        var p3 = topology.getProcessId(3);
+        var p4 = topology.getProcessId(4);
+        var p6 = topology.getProcessId(6);
+        var p5 = topology.getProcessId(5);
+        var p7 = topology.getProcessId(7);
+
+        // Then: Y-axis neighbors (differ only in Y coordinate)
+        assertTrue(topology.getNeighborProcesses(p0).contains(p2), "P0(0,0,0) should be neighbor with P2(0,1,0)");
+        assertTrue(topology.getNeighborProcesses(p1).contains(p3), "P1(1,0,0) should be neighbor with P3(1,1,0)");
+        assertTrue(topology.getNeighborProcesses(p4).contains(p6), "P4(0,0,1) should be neighbor with P6(0,1,1)");
+        assertTrue(topology.getNeighborProcesses(p5).contains(p7), "P5(1,0,1) should be neighbor with P7(1,1,1)");
+    }
+
+    @Test
+    void test8ProcessTopology_ZAxisNeighbors() {
+        // Given: 8-process 2x2x2 cube
+        // Z-axis connections (vertical in 3D):
+        //   P0(0,0,0) <-> P4(0,0,1)
+        //   P1(1,0,0) <-> P5(1,0,1)
+        //   P2(0,1,0) <-> P6(0,1,1)
+        //   P3(1,1,0) <-> P7(1,1,1)
+        var topology = new TestProcessTopology(8, 2);
+
         var p0 = topology.getProcessId(0);
         var p4 = topology.getProcessId(4);
         var p1 = topology.getProcessId(1);
@@ -169,16 +186,11 @@ class TestProcessTopologyTest {
         var p3 = topology.getProcessId(3);
         var p7 = topology.getProcessId(7);
 
-        // Then: Vertical neighbors
-        assertTrue(topology.getNeighborProcesses(p0).contains(p4), "P0 should be neighbor with P4 (vertical)");
-        assertTrue(topology.getNeighborProcesses(p1).contains(p5), "P1 should be neighbor with P5 (vertical)");
-        assertTrue(topology.getNeighborProcesses(p2).contains(p6), "P2 should be neighbor with P6 (vertical)");
-        assertTrue(topology.getNeighborProcesses(p3).contains(p7), "P3 should be neighbor with P7 (vertical)");
-
-        assertTrue(topology.getNeighborProcesses(p4).contains(p0), "P4 should be neighbor with P0 (vertical)");
-        assertTrue(topology.getNeighborProcesses(p5).contains(p1), "P5 should be neighbor with P1 (vertical)");
-        assertTrue(topology.getNeighborProcesses(p6).contains(p2), "P6 should be neighbor with P2 (vertical)");
-        assertTrue(topology.getNeighborProcesses(p7).contains(p3), "P7 should be neighbor with P3 (vertical)");
+        // Then: Z-axis neighbors (differ only in Z coordinate)
+        assertTrue(topology.getNeighborProcesses(p0).contains(p4), "P0(0,0,0) should be neighbor with P4(0,0,1)");
+        assertTrue(topology.getNeighborProcesses(p1).contains(p5), "P1(1,0,0) should be neighbor with P5(1,0,1)");
+        assertTrue(topology.getNeighborProcesses(p2).contains(p6), "P2(0,1,0) should be neighbor with P6(0,1,1)");
+        assertTrue(topology.getNeighborProcesses(p3).contains(p7), "P3(1,1,0) should be neighbor with P7(1,1,1)");
     }
 
     @Test
@@ -282,10 +294,11 @@ class TestProcessTopologyTest {
 
     @Test
     void test8ProcessTopology_TotalEdgeCount() {
-        // Given: 8-process 4x2 grid
+        // Given: 8-process 2x2x2 cube (topology)
+        // A cube has 12 edges (4 on bottom, 4 on top, 4 vertical)
         var topology = new TestProcessTopology(8, 2);
 
-        // Then: Total neighbor pairs should be 10 (each pair counted once)
+        // Then: Total neighbor pairs should be 12 (each pair counted once)
         var totalNeighbors = 0;
         for (int i = 0; i < 8; i++) {
             var processId = topology.getProcessId(i);
@@ -294,6 +307,6 @@ class TestProcessTopologyTest {
 
         // Each edge connects 2 processes, so total count is 2 * edges
         var edgeCount = totalNeighbors / 2;
-        assertEquals(10, edgeCount, "Should have 10 edges in 4x2 grid topology");
+        assertEquals(12, edgeCount, "Should have 12 edges in 2x2x2 cube topology");
     }
 }
