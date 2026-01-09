@@ -1,10 +1,14 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
+import com.hellblazer.luciferase.simulation.distributed.migration.MigrationLogPersistence;
+import com.hellblazer.luciferase.simulation.distributed.migration.TransactionState;
 import com.hellblazer.luciferase.simulation.ghost.*;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,6 +44,7 @@ import java.util.stream.Collectors;
  * @author hal.hildebrand
  */
 public class MigrationLog {
+    private static final Logger log = LoggerFactory.getLogger(MigrationLog.class);
 
     /**
      * Migration record with idempotency token.
@@ -67,12 +72,27 @@ public class MigrationLog {
     // entityId -> Set of tokens (for duplicate detection)
     private final Map<EntityID, Set<UUID>> entityTokens;
 
+    // Optional Write-Ahead Log for crash recovery (nullable)
+    private final MigrationLogPersistence persistence;
+
     /**
-     * Create a new migration log.
+     * Create a new migration log without persistence (legacy).
      */
     public MigrationLog() {
+        this(null);
+    }
+
+    /**
+     * Create a new migration log with optional persistence integration.
+     * <p>
+     * If persistence is provided, migration records are also written to WAL for crash recovery.
+     *
+     * @param persistence Optional MigrationLogPersistence for WAL (null = no persistence)
+     */
+    public MigrationLog(MigrationLogPersistence persistence) {
         this.migrationHistory = new ConcurrentHashMap<>();
         this.entityTokens = new ConcurrentHashMap<>();
+        this.persistence = persistence;
     }
 
     /**
@@ -114,6 +134,28 @@ public class MigrationLog {
 
         synchronized (history) {
             history.add(record);
+        }
+
+        // Optionally persist to WAL for crash recovery
+        if (persistence != null) {
+            try {
+                var state = new TransactionState(
+                    UUID.randomUUID(), // transactionId (new for WAL)
+                    entityId.toString(), // entityId as string
+                    UUID.randomUUID(), // sourceProcess (placeholder - filled by caller)
+                    UUID.randomUUID(), // destProcess (placeholder - filled by caller)
+                    sourceBubble,
+                    targetBubble,
+                    null, // snapshot not needed for WAL
+                    token,
+                    TransactionState.MigrationPhase.PREPARE,
+                    System.currentTimeMillis()
+                );
+                persistence.recordPrepare(state);
+            } catch (Exception e) {
+                log.error("Failed to persist migration to WAL: {}", e.getMessage(), e);
+                // Continue anyway - in-memory log is still valid
+            }
         }
 
         return true;
