@@ -18,21 +18,18 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import javax.vecmath.Point3f;
+import java.util.ArrayList;
+import java.util.UUID;
 
 /**
  * Bidirectional converter between VonMessage (domain) and TransportVonMessage (wire format).
  * <p>
- * Phase 6A Implementation Note:
- * This converter currently handles a simplified subset of VonMessage types needed
- * for Phase 6A testing. Specifically, it supports generic message transport with
- * position and entity ID fields.
- * <p>
- * For Phase 6B/6C, this converter will be extended to handle full VonMessage
- * sealed interface hierarchy (JoinRequest, JoinResponse, Move, Leave, GhostSync, Ack).
+ * Converts all VonMessage sealed interface types:
+ * - JoinRequest, JoinResponse, Move, Leave, GhostSync, Ack, Query
  * <p>
  * Design:
- * - toTransport: Extracts serializable fields from VonMessage
- * - fromTransport: Reconstructs VonMessage from wire format
+ * - toTransport: Pattern matches on message type to extract serializable fields
+ * - fromTransport: Uses type field to dispatch reconstruction of correct subtype
  *
  * @author hal.hildebrand
  */
@@ -41,60 +38,219 @@ public class VonMessageConverter {
     /**
      * Convert domain VonMessage to serializable TransportVonMessage.
      * <p>
-     * Phase 6A: Handles generic message structure. For specific VonMessage
-     * subtypes (Join/Move/Leave/GhostSync), this extracts common fields.
+     * Pattern matches all VonMessage subtypes and extracts their fields
+     * into the wire format. GhostSync messages include the ghost list and bucket.
      *
-     * @param message Domain VonMessage (can be any sealed subtype)
-     * @param sourceBubbleId Source bubble UUID as string
-     * @param targetBubbleId Target bubble UUID as string
-     * @param position Entity position (may be null for some message types)
-     * @param entityId Entity identifier (may be null for some message types)
+     * @param message Domain VonMessage
      * @return TransportVonMessage ready for serialization
+     * @throws IllegalArgumentException if message type is unknown
      */
-    public static TransportVonMessage toTransport(
-        VonMessage message,
-        String sourceBubbleId,
-        String targetBubbleId,
-        Point3f position,
-        String entityId
-    ) {
-        // Determine message type
-        var type = message.getClass().getSimpleName();
-
-        // Decompose position (or use 0,0,0 if null)
-        var posX = position != null ? position.x : 0.0f;
-        var posY = position != null ? position.y : 0.0f;
-        var posZ = position != null ? position.z : 0.0f;
-
-        // Extract timestamp (all VonMessage types have this)
-        var timestamp = extractTimestamp(message);
-
-        return new TransportVonMessage(
-            type,
-            sourceBubbleId,
-            targetBubbleId,
-            posX, posY, posZ,
-            entityId != null ? entityId : "",
-            timestamp
-        );
+    public static TransportVonMessage toTransport(VonMessage message) {
+        return switch (message) {
+            case VonMessage.GhostSync ghostSync ->
+                ghostSyncToTransport(ghostSync);
+            case VonMessage.JoinRequest joinReq ->
+                joinRequestToTransport(joinReq);
+            case VonMessage.JoinResponse joinResp ->
+                joinResponseToTransport(joinResp);
+            case VonMessage.Move move ->
+                moveToTransport(move);
+            case VonMessage.Leave leave ->
+                leaveToTransport(leave);
+            case VonMessage.Ack ack ->
+                ackToTransport(ack);
+            case VonMessage.Query query ->
+                queryToTransport(query);
+            default ->
+                throw new IllegalArgumentException("Unknown VonMessage type: " + message.getClass().getSimpleName());
+        };
     }
 
     /**
      * Convert serializable TransportVonMessage back to domain VonMessage.
      * <p>
-     * Phase 6A: Returns a synthetic VonMessage.Ack for testing purposes.
-     * Phase 6B will implement full reconstruction of all VonMessage subtypes.
+     * Uses type field to dispatch reconstruction of correct subtype.
+     * Handles GhostSync specially by reconstructing the ghost list.
      *
      * @param transport Wire-format message
      * @return Reconstructed VonMessage
+     * @throws IllegalArgumentException if type is unknown
      */
     public static VonMessage fromTransport(TransportVonMessage transport) {
-        // Phase 6A: For testing, return a simple Ack message with correct UUIDs
-        // Phase 6B will use switch on transport.type() to reconstruct proper subtype
-        var ackFor = transport.targetBubbleId().isEmpty()
-            ? java.util.UUID.randomUUID()
-            : java.util.UUID.fromString(transport.targetBubbleId());
-        var senderId = java.util.UUID.fromString(transport.sourceBubbleId());
+        return switch (transport.type()) {
+            case "GhostSync" ->
+                ghostSyncFromTransport(transport);
+            case "JoinRequest" ->
+                joinRequestFromTransport(transport);
+            case "JoinResponse" ->
+                joinResponseFromTransport(transport);
+            case "Move" ->
+                moveFromTransport(transport);
+            case "Leave" ->
+                leaveFromTransport(transport);
+            case "Ack" ->
+                ackFromTransport(transport);
+            case "Query" ->
+                queryFromTransport(transport);
+            default ->
+                throw new IllegalArgumentException("Unknown message type: " + transport.type());
+        };
+    }
+
+    // ==================== GhostSync Conversion ====================
+
+    private static TransportVonMessage ghostSyncToTransport(VonMessage.GhostSync msg) {
+        var ghosts = new ArrayList<TransportGhostData>(msg.ghosts().size());
+        for (var ghost : msg.ghosts()) {
+            ghosts.add(TransportGhostData.from(ghost));
+        }
+
+        return new TransportVonMessage(
+            "GhostSync",
+            msg.sourceBubbleId().toString(),
+            msg.sourceBubbleId().toString(),  // No specific target in GhostSync
+            0f, 0f, 0f,  // Position not used for GhostSync
+            "",  // Entity ID not used for GhostSync
+            msg.timestamp(),
+            ghosts,
+            msg.bucket()
+        );
+    }
+
+    private static VonMessage ghostSyncFromTransport(TransportVonMessage transport) {
+        var sourceBubbleId = UUID.fromString(transport.sourceBubbleId());
+        var ghosts = new ArrayList<VonMessage.TransportGhost>();
+
+        if (transport.ghosts() != null) {
+            for (var ghostData : transport.ghosts()) {
+                ghosts.add(ghostData.toTransportGhost());
+            }
+        }
+
+        return new VonMessage.GhostSync(
+            sourceBubbleId,
+            ghosts,
+            transport.bucket() != null ? transport.bucket() : 0L,
+            transport.timestamp()
+        );
+    }
+
+    // ==================== JoinRequest Conversion ====================
+
+    private static TransportVonMessage joinRequestToTransport(VonMessage.JoinRequest msg) {
+        return new TransportVonMessage(
+            "JoinRequest",
+            msg.joinerId().toString(),
+            msg.joinerId().toString(),
+            (float) msg.position().getX(),
+            (float) msg.position().getY(),
+            (float) msg.position().getZ(),
+            msg.joinerId().toString(),
+            msg.timestamp()
+        );
+    }
+
+    private static VonMessage joinRequestFromTransport(TransportVonMessage transport) {
+        var joinerId = UUID.fromString(transport.sourceBubbleId());
+        var position = new javafx.geometry.Point3D(transport.posX(), transport.posY(), transport.posZ());
+
+        return new VonMessage.JoinRequest(
+            joinerId,
+            position,
+            null,  // BubbleBounds not transmitted in wire format (Phase 6B)
+            transport.timestamp()
+        );
+    }
+
+    // ==================== JoinResponse Conversion ====================
+
+    private static TransportVonMessage joinResponseToTransport(VonMessage.JoinResponse msg) {
+        // JoinResponse contains neighbor set - simplified for Phase 6A
+        return new TransportVonMessage(
+            "JoinResponse",
+            msg.acceptorId().toString(),
+            msg.acceptorId().toString(),
+            0f, 0f, 0f,
+            "",
+            msg.timestamp()
+        );
+    }
+
+    private static VonMessage joinResponseFromTransport(TransportVonMessage transport) {
+        var acceptorId = UUID.fromString(transport.sourceBubbleId());
+
+        return new VonMessage.JoinResponse(
+            acceptorId,
+            java.util.Set.of(),  // Neighbor set not transmitted in Phase 6A wire format
+            transport.timestamp()
+        );
+    }
+
+    // ==================== Move Conversion ====================
+
+    private static TransportVonMessage moveToTransport(VonMessage.Move msg) {
+        return new TransportVonMessage(
+            "Move",
+            msg.nodeId().toString(),
+            msg.nodeId().toString(),
+            (float) msg.newPosition().getX(),
+            (float) msg.newPosition().getY(),
+            (float) msg.newPosition().getZ(),
+            msg.nodeId().toString(),
+            msg.timestamp()
+        );
+    }
+
+    private static VonMessage moveFromTransport(TransportVonMessage transport) {
+        var nodeId = UUID.fromString(transport.sourceBubbleId());
+        var newPosition = new javafx.geometry.Point3D(transport.posX(), transport.posY(), transport.posZ());
+
+        return new VonMessage.Move(
+            nodeId,
+            newPosition,
+            null,  // BubbleBounds not transmitted in wire format (Phase 6B)
+            transport.timestamp()
+        );
+    }
+
+    // ==================== Leave Conversion ====================
+
+    private static TransportVonMessage leaveToTransport(VonMessage.Leave msg) {
+        return new TransportVonMessage(
+            "Leave",
+            msg.nodeId().toString(),
+            msg.nodeId().toString(),
+            0f, 0f, 0f,
+            msg.nodeId().toString(),
+            msg.timestamp()
+        );
+    }
+
+    private static VonMessage leaveFromTransport(TransportVonMessage transport) {
+        var nodeId = UUID.fromString(transport.sourceBubbleId());
+
+        return new VonMessage.Leave(
+            nodeId,
+            transport.timestamp()
+        );
+    }
+
+    // ==================== Ack Conversion ====================
+
+    private static TransportVonMessage ackToTransport(VonMessage.Ack msg) {
+        return new TransportVonMessage(
+            "Ack",
+            msg.senderId().toString(),
+            msg.ackFor().toString(),
+            0f, 0f, 0f,
+            msg.ackFor().toString(),
+            msg.timestamp()
+        );
+    }
+
+    private static VonMessage ackFromTransport(TransportVonMessage transport) {
+        var ackFor = UUID.fromString(transport.targetBubbleId());
+        var senderId = UUID.fromString(transport.sourceBubbleId());
 
         return new VonMessage.Ack(
             ackFor,
@@ -103,19 +259,29 @@ public class VonMessageConverter {
         );
     }
 
-    /**
-     * Extract timestamp from any VonMessage subtype.
-     * All VonMessage record types have a timestamp() method.
-     */
-    private static long extractTimestamp(VonMessage message) {
-        return switch (message) {
-            case VonMessage.JoinRequest m -> m.timestamp();
-            case VonMessage.JoinResponse m -> m.timestamp();
-            case VonMessage.Move m -> m.timestamp();
-            case VonMessage.Leave m -> m.timestamp();
-            case VonMessage.GhostSync m -> m.timestamp();
-            case VonMessage.Ack m -> m.timestamp();
-            default -> System.currentTimeMillis(); // Phase 6B distributed messages
-        };
+    // ==================== Query Conversion ====================
+
+    private static TransportVonMessage queryToTransport(VonMessage.Query msg) {
+        return new TransportVonMessage(
+            "Query",
+            msg.senderId().toString(),
+            msg.targetId().toString(),
+            0f, 0f, 0f,
+            msg.queryType(),
+            msg.timestamp()
+        );
+    }
+
+    private static VonMessage queryFromTransport(TransportVonMessage transport) {
+        var senderId = UUID.fromString(transport.sourceBubbleId());
+        var targetId = UUID.fromString(transport.targetBubbleId());
+        var queryType = transport.entityId();
+
+        return new VonMessage.Query(
+            senderId,
+            targetId,
+            queryType,
+            transport.timestamp()
+        );
     }
 }

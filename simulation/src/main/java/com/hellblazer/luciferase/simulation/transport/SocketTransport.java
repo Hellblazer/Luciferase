@@ -220,21 +220,9 @@ public class SocketTransport implements NetworkTransport {
      * Phase 6B: Will use full VonMessageConverter with all message types.
      */
     private TransportVonMessage convertToTransport(VonMessage message) {
-        // Phase 6A: Use simplified converter
-        // Extract common fields and delegate to VonMessageConverter
-        return switch (message) {
-            case VonMessage.Ack ack ->
-                VonMessageConverter.toTransport(ack, ack.senderId().toString(), ack.ackFor().toString(), null, "");
-
-            case VonMessage.Move move ->
-                VonMessageConverter.toTransport(move, move.nodeId().toString(), "", null, "");
-
-            case VonMessage.Leave leave ->
-                VonMessageConverter.toTransport(leave, leave.nodeId().toString(), "", null, "");
-
-            default ->
-                VonMessageConverter.toTransport(message, getLocalId().toString(), "", null, "");
-        };
+        // Phase 6A: Use new comprehensive converter
+        // Delegates to VonMessageConverter which pattern matches on message type
+        return VonMessageConverter.toTransport(message);
     }
 
     /**

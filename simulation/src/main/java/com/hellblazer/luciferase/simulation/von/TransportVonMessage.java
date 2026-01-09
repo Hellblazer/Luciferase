@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.von;
 
 import javax.vecmath.Point3f;
 import java.io.Serializable;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -30,35 +31,68 @@ import java.util.Objects;
  * Solution: Decompose Point3f into 3x float (posX, posY, posZ) to ensure reliable
  * Java Serialization without depending on external type serialization behavior.
  * <p>
+ * Supports all VonMessage types:
+ * <ul>
+ *   <li>JoinRequest/JoinResponse - Join protocol messages</li>
+ *   <li>Move - Position/bounds change notification</li>
+ *   <li>Leave - Graceful departure</li>
+ *   <li>GhostSync - Ghost entity batching (ghosts and bucket fields)</li>
+ *   <li>Ack - Acknowledgment</li>
+ *   <li>Query - Remote bubble query</li>
+ * </ul>
+ * <p>
  * Used by SocketTransport for cross-process communication via VonMessageConverter.
  *
- * @param type            VonMessage type name (e.g., "GHOST_SYNC")
- * @param sourceBubbleId  Source bubble UUID as string
- * @param targetBubbleId  Target bubble UUID as string
- * @param posX            Entity X position (decomposed from Point3f)
- * @param posY            Entity Y position (decomposed from Point3f)
- * @param posZ            Entity Z position (decomposed from Point3f)
- * @param entityId        Entity identifier as string
- * @param timestamp       Message timestamp in millis
  * @author hal.hildebrand
  */
 public record TransportVonMessage(
-    String type,
-    String sourceBubbleId,
-    String targetBubbleId,
-    float posX,
-    float posY,
-    float posZ,
-    String entityId,
-    long timestamp
+    String type,                      // Message type: "GHOST_SYNC", "ACK", "MOVE", etc.
+    String sourceBubbleId,            // Source bubble UUID as string
+    String targetBubbleId,            // Target bubble UUID as string
+    float posX,                       // Entity X position (decomposed from Point3f)
+    float posY,                       // Entity Y position (decomposed from Point3f)
+    float posZ,                       // Entity Z position (decomposed from Point3f)
+    String entityId,                  // Entity identifier as string
+    long timestamp,                   // Message timestamp in millis
+    List<TransportGhostData> ghosts,  // Ghost list for GhostSync (null for other types)
+    Long bucket                       // Simulation bucket for GhostSync (null for other types)
 ) implements Serializable {
     @java.io.Serial
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Compact constructor with validation.
+     * Handles legacy calls with 8 parameters by creating new record with null ghosts/bucket.
+     */
     public TransportVonMessage {
         Objects.requireNonNull(type, "type cannot be null");
         Objects.requireNonNull(sourceBubbleId, "sourceBubbleId cannot be null");
         Objects.requireNonNull(targetBubbleId, "targetBubbleId cannot be null");
+    }
+
+    /**
+     * Create TransportVonMessage for non-ghost messages (legacy constructor).
+     *
+     * @param type           Message type
+     * @param sourceBubbleId Source bubble ID
+     * @param targetBubbleId Target bubble ID
+     * @param posX           X position
+     * @param posY           Y position
+     * @param posZ           Z position
+     * @param entityId       Entity ID
+     * @param timestamp      Timestamp
+     */
+    public TransportVonMessage(
+        String type,
+        String sourceBubbleId,
+        String targetBubbleId,
+        float posX,
+        float posY,
+        float posZ,
+        String entityId,
+        long timestamp
+    ) {
+        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp, null, null);
     }
 
     /**

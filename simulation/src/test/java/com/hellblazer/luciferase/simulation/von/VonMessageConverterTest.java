@@ -17,10 +17,10 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
+import javafx.geometry.Point3D;
 import org.junit.jupiter.api.Test;
 
-import javax.vecmath.Point3f;
-import java.io.*;
+import java.util.ArrayList;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -28,171 +28,250 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Unit tests for VonMessageConverter.
  * <p>
- * Phase 6A: Tests focus on serialization round-trip and field preservation.
+ * Tests bidirectional conversion of all VonMessage types
+ * to/from TransportVonMessage wire format.
  *
  * @author hal.hildebrand
  */
 class VonMessageConverterTest {
 
     @Test
-    void testToTransport_WithPosition() {
-        var bubble1Id = UUID.randomUUID();
-        var bubble2Id = UUID.randomUUID();
-        var ackMessage = new VonMessage.Ack(UUID.randomUUID(), UUID.randomUUID());
-        var position = new Point3f(10.5f, 20.25f, 30.75f);
+    void testAckRoundTrip() {
+        var ackFor = UUID.randomUUID();
+        var senderId = UUID.randomUUID();
+        var originalAck = new VonMessage.Ack(ackFor, senderId);
 
-        var transport = VonMessageConverter.toTransport(
-            ackMessage,
-            bubble1Id.toString(),
-            bubble2Id.toString(),
-            position,
-            "entity-42"
-        );
+        // Convert to transport
+        var transport = VonMessageConverter.toTransport(originalAck);
 
         assertEquals("Ack", transport.type());
-        assertEquals(bubble1Id.toString(), transport.sourceBubbleId());
-        assertEquals(bubble2Id.toString(), transport.targetBubbleId());
+        assertEquals(senderId.toString(), transport.sourceBubbleId());
+        assertEquals(ackFor.toString(), transport.targetBubbleId());
+
+        // Convert back
+        var recovered = VonMessageConverter.fromTransport(transport);
+
+        assertInstanceOf(VonMessage.Ack.class, recovered);
+        var recoveredAck = (VonMessage.Ack) recovered;
+        assertEquals(ackFor, recoveredAck.ackFor());
+        assertEquals(senderId, recoveredAck.senderId());
+    }
+
+    @Test
+    void testMoveRoundTrip() {
+        var nodeId = UUID.randomUUID();
+        var newPosition = new Point3D(10.5, 20.25, 30.75);
+        var originalMove = new VonMessage.Move(nodeId, newPosition, null);
+
+        // Convert to transport
+        var transport = VonMessageConverter.toTransport(originalMove);
+
+        assertEquals("Move", transport.type());
+        assertEquals(nodeId.toString(), transport.sourceBubbleId());
         assertEquals(10.5f, transport.posX(), 0.001f);
         assertEquals(20.25f, transport.posY(), 0.001f);
         assertEquals(30.75f, transport.posZ(), 0.001f);
-        assertEquals("entity-42", transport.entityId());
-        assertEquals(ackMessage.timestamp(), transport.timestamp());
+
+        // Convert back
+        var recovered = VonMessageConverter.fromTransport(transport);
+
+        assertInstanceOf(VonMessage.Move.class, recovered);
+        var recoveredMove = (VonMessage.Move) recovered;
+        assertEquals(nodeId, recoveredMove.nodeId());
+        assertEquals(10.5, recoveredMove.newPosition().getX(), 0.001);
+        assertEquals(20.25, recoveredMove.newPosition().getY(), 0.001);
+        assertEquals(30.75, recoveredMove.newPosition().getZ(), 0.001);
     }
 
     @Test
-    void testToTransport_NullPosition() {
-        var bubble1Id = UUID.randomUUID();
-        var bubble2Id = UUID.randomUUID();
-        var ackMessage = new VonMessage.Ack(UUID.randomUUID(), UUID.randomUUID());
+    void testLeaveRoundTrip() {
+        var nodeId = UUID.randomUUID();
+        var originalLeave = new VonMessage.Leave(nodeId);
 
-        var transport = VonMessageConverter.toTransport(
-            ackMessage,
-            bubble1Id.toString(),
-            bubble2Id.toString(),
-            null,
-            "entity-1"
+        // Convert to transport
+        var transport = VonMessageConverter.toTransport(originalLeave);
+
+        assertEquals("Leave", transport.type());
+        assertEquals(nodeId.toString(), transport.sourceBubbleId());
+
+        // Convert back
+        var recovered = VonMessageConverter.fromTransport(transport);
+
+        assertInstanceOf(VonMessage.Leave.class, recovered);
+        var recoveredLeave = (VonMessage.Leave) recovered;
+        assertEquals(nodeId, recoveredLeave.nodeId());
+    }
+
+    @Test
+    void testJoinRequestRoundTrip() {
+        var joinerId = UUID.randomUUID();
+        var position = new Point3D(5.0, 10.0, 15.0);
+        var originalJoinReq = new VonMessage.JoinRequest(joinerId, position, null);
+
+        // Convert to transport
+        var transport = VonMessageConverter.toTransport(originalJoinReq);
+
+        assertEquals("JoinRequest", transport.type());
+        assertEquals(joinerId.toString(), transport.sourceBubbleId());
+        assertEquals(5.0f, transport.posX(), 0.001f);
+
+        // Convert back
+        var recovered = VonMessageConverter.fromTransport(transport);
+
+        assertInstanceOf(VonMessage.JoinRequest.class, recovered);
+        var recoveredJoinReq = (VonMessage.JoinRequest) recovered;
+        assertEquals(joinerId, recoveredJoinReq.joinerId());
+    }
+
+    @Test
+    void testJoinResponseRoundTrip() {
+        var acceptorId = UUID.randomUUID();
+        var originalJoinResp = new VonMessage.JoinResponse(acceptorId, java.util.Set.of());
+
+        // Convert to transport
+        var transport = VonMessageConverter.toTransport(originalJoinResp);
+
+        assertEquals("JoinResponse", transport.type());
+        assertEquals(acceptorId.toString(), transport.sourceBubbleId());
+
+        // Convert back
+        var recovered = VonMessageConverter.fromTransport(transport);
+
+        assertInstanceOf(VonMessage.JoinResponse.class, recovered);
+        var recoveredJoinResp = (VonMessage.JoinResponse) recovered;
+        assertEquals(acceptorId, recoveredJoinResp.acceptorId());
+    }
+
+    @Test
+    void testQueryRoundTrip() {
+        var senderId = UUID.randomUUID();
+        var targetId = UUID.randomUUID();
+        var originalQuery = new VonMessage.Query(senderId, targetId, "position");
+
+        // Convert to transport
+        var transport = VonMessageConverter.toTransport(originalQuery);
+
+        assertEquals("Query", transport.type());
+        assertEquals(senderId.toString(), transport.sourceBubbleId());
+        assertEquals(targetId.toString(), transport.targetBubbleId());
+        assertEquals("position", transport.entityId());
+
+        // Convert back
+        var recovered = VonMessageConverter.fromTransport(transport);
+
+        assertInstanceOf(VonMessage.Query.class, recovered);
+        var recoveredQuery = (VonMessage.Query) recovered;
+        assertEquals(senderId, recoveredQuery.senderId());
+        assertEquals(targetId, recoveredQuery.targetId());
+        assertEquals("position", recoveredQuery.queryType());
+    }
+
+    @Test
+    void testGhostSyncRoundTrip() {
+        var sourceBubbleId = UUID.randomUUID();
+        var ghosts = new ArrayList<VonMessage.TransportGhost>();
+
+        var ghost1 = new VonMessage.TransportGhost(
+            "entity-1",
+            new javax.vecmath.Point3f(1.0f, 2.0f, 3.0f),
+            "TestContent",
+            "tree-1",
+            1L,
+            1L,
+            System.currentTimeMillis()
         );
+        ghosts.add(ghost1);
 
-        assertEquals(0.0f, transport.posX());
-        assertEquals(0.0f, transport.posY());
-        assertEquals(0.0f, transport.posZ());
+        var originalGhostSync = new VonMessage.GhostSync(sourceBubbleId, ghosts, 42L);
+
+        // Convert to transport
+        var transport = VonMessageConverter.toTransport(originalGhostSync);
+
+        assertEquals("GhostSync", transport.type());
+        assertEquals(sourceBubbleId.toString(), transport.sourceBubbleId());
+        assertEquals(42L, transport.bucket());
+        assertNotNull(transport.ghosts());
+        assertEquals(1, transport.ghosts().size());
+        assertEquals("entity-1", transport.ghosts().get(0).entityId());
+
+        // Convert back
+        var recovered = VonMessageConverter.fromTransport(transport);
+
+        assertInstanceOf(VonMessage.GhostSync.class, recovered);
+        var recoveredGhostSync = (VonMessage.GhostSync) recovered;
+        assertEquals(sourceBubbleId, recoveredGhostSync.sourceBubbleId());
+        assertEquals(42L, recoveredGhostSync.bucket());
+        assertEquals(1, recoveredGhostSync.ghosts().size());
+        assertEquals("entity-1", recoveredGhostSync.ghosts().get(0).entityId());
     }
 
     @Test
-    void testToTransport_NullEntityId() {
-        var bubble1Id = UUID.randomUUID();
-        var bubble2Id = UUID.randomUUID();
-        var ackMessage = new VonMessage.Ack(UUID.randomUUID(), UUID.randomUUID());
-        var position = new Point3f(1.0f, 2.0f, 3.0f);
+    void testGhostSyncEmptyList() {
+        var sourceBubbleId = UUID.randomUUID();
+        var originalGhostSync = new VonMessage.GhostSync(sourceBubbleId, java.util.List.of(), 100L);
 
-        var transport = VonMessageConverter.toTransport(
-            ackMessage,
-            bubble1Id.toString(),
-            bubble2Id.toString(),
-            position,
+        // Convert to transport
+        var transport = VonMessageConverter.toTransport(originalGhostSync);
+
+        assertEquals("GhostSync", transport.type());
+        assertNotNull(transport.ghosts());
+        assertEquals(0, transport.ghosts().size());
+
+        // Convert back
+        var recovered = VonMessageConverter.fromTransport(transport);
+
+        assertInstanceOf(VonMessage.GhostSync.class, recovered);
+        var recoveredGhostSync = (VonMessage.GhostSync) recovered;
+        assertEquals(0, recoveredGhostSync.ghosts().size());
+    }
+
+    @Test
+    void testUnknownMessageTypeThrows() {
+        var transport = new TransportVonMessage(
+            "UnknownType",
+            UUID.randomUUID().toString(),
+            UUID.randomUUID().toString(),
+            0f, 0f, 0f,
+            "",
+            System.currentTimeMillis(),
+            null,
             null
         );
 
-        assertEquals("", transport.entityId());
-    }
-
-    @Test
-    void testFromTransport() {
-        var bubble1Id = UUID.randomUUID();
-        var bubble2Id = UUID.randomUUID();
-        var transport = new TransportVonMessage(
-            "Ack",
-            bubble1Id.toString(),
-            bubble2Id.toString(),
-            1.0f, 2.0f, 3.0f,
-            "entity-1",
-            System.currentTimeMillis()
+        assertThrows(IllegalArgumentException.class, () ->
+            VonMessageConverter.fromTransport(transport)
         );
-
-        var message = VonMessageConverter.fromTransport(transport);
-
-        assertNotNull(message);
-        assertInstanceOf(VonMessage.Ack.class, message);
-        assertEquals(transport.timestamp(), ((VonMessage.Ack) message).timestamp());
     }
 
     @Test
-    void testSerializationRoundTrip() throws IOException, ClassNotFoundException {
-        // Create original message
-        var bubble1Id = UUID.randomUUID();
-        var bubble2Id = UUID.randomUUID();
-        var originalMessage = new VonMessage.Ack(UUID.randomUUID(), UUID.randomUUID());
-        var originalPosition = new Point3f(10.5f, 20.25f, 30.75f);
+    void testMultipleGhostSync() {
+        var sourceBubbleId = UUID.randomUUID();
+        var ghosts = new ArrayList<VonMessage.TransportGhost>();
 
-        // Convert to transport format
-        var transport = VonMessageConverter.toTransport(
-            originalMessage,
-            bubble1Id.toString(),
-            bubble2Id.toString(),
-            originalPosition,
-            "entity-42"
-        );
+        for (int i = 0; i < 5; i++) {
+            ghosts.add(new VonMessage.TransportGhost(
+                "entity-" + i,
+                new javax.vecmath.Point3f(i, i + 1, i + 2),
+                "Content" + i,
+                "tree-" + i,
+                (long) i,
+                (long) i,
+                System.currentTimeMillis()
+            ));
+        }
 
-        // Serialize to bytes
-        var baos = new ByteArrayOutputStream();
-        var oos = new ObjectOutputStream(baos);
-        oos.writeObject(transport);
-        oos.close();
+        var originalGhostSync = new VonMessage.GhostSync(sourceBubbleId, ghosts, 123L);
 
-        // Deserialize from bytes
-        var bais = new ByteArrayInputStream(baos.toByteArray());
-        var ois = new ObjectInputStream(bais);
-        var recovered = (TransportVonMessage) ois.readObject();
-        ois.close();
+        // Convert to transport and back
+        var transport = VonMessageConverter.toTransport(originalGhostSync);
+        var recovered = VonMessageConverter.fromTransport(transport);
 
-        // Verify field preservation
-        assertEquals(transport.type(), recovered.type());
-        assertEquals(transport.sourceBubbleId(), recovered.sourceBubbleId());
-        assertEquals(transport.targetBubbleId(), recovered.targetBubbleId());
-        assertEquals(transport.posX(), recovered.posX(), 0.001f);
-        assertEquals(transport.posY(), recovered.posY(), 0.001f);
-        assertEquals(transport.posZ(), recovered.posZ(), 0.001f);
-        assertEquals(transport.entityId(), recovered.entityId());
-        assertEquals(transport.timestamp(), recovered.timestamp());
+        assertInstanceOf(VonMessage.GhostSync.class, recovered);
+        var recoveredGhostSync = (VonMessage.GhostSync) recovered;
+        assertEquals(5, recoveredGhostSync.ghosts().size());
 
-        // Convert back to VonMessage
-        var result = VonMessageConverter.fromTransport(recovered);
-        assertNotNull(result);
-        assertInstanceOf(VonMessage.Ack.class, result);
-    }
-
-    @Test
-    void testPositionReconstruction() {
-        var bubble1Id = UUID.randomUUID();
-        var bubble2Id = UUID.randomUUID();
-        var transport = new TransportVonMessage(
-            "Ack",
-            bubble1Id.toString(),
-            bubble2Id.toString(),
-            10.5f, 20.25f, 30.75f,
-            "entity-1",
-            System.currentTimeMillis()
-        );
-
-        var position = transport.position();
-        assertEquals(10.5f, position.x, 0.001f);
-        assertEquals(20.25f, position.y, 0.001f);
-        assertEquals(30.75f, position.z, 0.001f);
-    }
-
-    @Test
-    void testMultipleMessageTypes() {
-        var b1 = UUID.randomUUID();
-        var b2 = UUID.randomUUID();
-
-        // Test JoinRequest
-        var joinReq = new VonMessage.JoinRequest(UUID.randomUUID(), null, null);
-        var transport1 = VonMessageConverter.toTransport(joinReq, b1.toString(), b2.toString(), new Point3f(1, 2, 3), "e1");
-        assertEquals("JoinRequest", transport1.type());
-
-        // Test Leave
-        var leave = new VonMessage.Leave(UUID.randomUUID());
-        var transport2 = VonMessageConverter.toTransport(leave, b1.toString(), b2.toString(), null, null);
-        assertEquals("Leave", transport2.type());
+        for (int i = 0; i < 5; i++) {
+            assertEquals("entity-" + i, recoveredGhostSync.ghosts().get(i).entityId());
+        }
     }
 }
