@@ -3,8 +3,11 @@ package com.hellblazer.luciferase.simulation.bubble;
 import com.hellblazer.luciferase.simulation.entity.*;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
+import com.hellblazer.luciferase.simulation.ghost.GhostChannel;
+import com.hellblazer.luciferase.simulation.ghost.InMemoryGhostChannel;
 
 import com.hellblazer.luciferase.lucien.Spatial;
+import com.hellblazer.luciferase.lucien.entity.EntityData;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import javafx.geometry.Point3D;
 
@@ -37,6 +40,7 @@ public class EnhancedBubble {
     private final AtomicLong lastFrameTimeNs;
     private final Map<String, StringEntityID> idMapping;  // Map user String IDs to EntityIDs
     private final RealTimeController realTimeController;
+    private final GhostChannel<StringEntityID, EntityData> ghostChannel;
     private BubbleBounds bounds;
 
     /**
@@ -59,10 +63,37 @@ public class EnhancedBubble {
      * @param realTimeController   RealTimeController for simulation time management
      */
     public EnhancedBubble(UUID id, byte spatialLevel, long targetFrameMs, RealTimeController realTimeController) {
+        this(id, spatialLevel, targetFrameMs, realTimeController, new InMemoryGhostChannel<>());
+    }
+
+    /**
+     * Create an enhanced bubble with spatial indexing, monitoring, and custom ghost channel.
+     * <p>
+     * This constructor allows injection of different GhostChannel implementations:
+     * - InMemoryGhostChannel: For testing and single-bubble scenarios (default)
+     * - DelosSocketTransport: For distributed multi-bubble simulation (Phase 7B.2)
+     * <p>
+     * <strong>Phase 7B.2 Integration:</strong>
+     * <pre>
+     * // Use Delos-based network transport
+     * var transport = new DelosSocketTransport(bubbleId);
+     * var bubble = new EnhancedBubble(id, level, frameMs, controller, transport);
+     * </pre>
+     *
+     * @param id                   Unique bubble identifier
+     * @param spatialLevel         Tetree refinement level for spatial index
+     * @param targetFrameMs        Target frame time budget in milliseconds
+     * @param realTimeController   RealTimeController for simulation time management
+     * @param ghostChannel         GhostChannel for cross-bubble ghost transmission
+     */
+    @SuppressWarnings("rawtypes") // EntityData used as raw type throughout EnhancedBubble
+    public EnhancedBubble(UUID id, byte spatialLevel, long targetFrameMs, RealTimeController realTimeController,
+                          GhostChannel<StringEntityID, EntityData> ghostChannel) {
         this.id = id;
         this.spatialLevel = spatialLevel;
         this.targetFrameMs = targetFrameMs;
         this.realTimeController = realTimeController;
+        this.ghostChannel = Objects.requireNonNull(ghostChannel, "ghostChannel must not be null");
         this.spatialIndex = new Tetree<>(new StringEntityIDGenerator(), 10, spatialLevel);
         this.vonNeighbors = ConcurrentHashMap.newKeySet();
         this.lastFrameTimeNs = new AtomicLong(0);
@@ -98,6 +129,16 @@ public class EnhancedBubble {
      */
     public BubbleBounds bounds() {
         return bounds;
+    }
+
+    /**
+     * Get the ghost channel for cross-bubble communication.
+     *
+     * @return GhostChannel instance
+     */
+    @SuppressWarnings("rawtypes") // EntityData used as raw type
+    public GhostChannel<StringEntityID, EntityData> getGhostChannel() {
+        return ghostChannel;
     }
 
     /**
