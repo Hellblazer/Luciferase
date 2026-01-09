@@ -146,12 +146,13 @@ public class FirefliesViewMonitor {
 
     /**
      * Create a FirefliesViewMonitor with default stability threshold.
-     * Default: 10 ticks (100ms at 100Hz) per audit recommendation.
+     * Default: 30 ticks (300ms at 100Hz) for production reliability.
+     * Can be overridden for testing scenarios (e.g., 3 ticks = 30ms for fast tests).
      *
      * @param membershipView MembershipView from Fireflies
      */
     public FirefliesViewMonitor(MembershipView<?> membershipView) {
-        this(membershipView, 10);  // 10 ticks = 100ms at 100Hz
+        this(membershipView, 30);  // 30 ticks = 300ms at 100Hz (production threshold)
     }
 
     /**
