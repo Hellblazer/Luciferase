@@ -36,19 +36,33 @@ public class EnhancedBubble {
     private final Set<UUID> vonNeighbors;
     private final AtomicLong lastFrameTimeNs;
     private final Map<String, StringEntityID> idMapping;  // Map user String IDs to EntityIDs
+    private final RealTimeController realTimeController;
     private BubbleBounds bounds;
 
     /**
      * Create an enhanced bubble with spatial indexing and monitoring.
      *
-     * @param id            Unique bubble identifier
-     * @param spatialLevel  Tetree refinement level for spatial index
-     * @param targetFrameMs Target frame time budget in milliseconds
+     * @param id                   Unique bubble identifier
+     * @param spatialLevel         Tetree refinement level for spatial index
+     * @param targetFrameMs        Target frame time budget in milliseconds
      */
     public EnhancedBubble(UUID id, byte spatialLevel, long targetFrameMs) {
+        this(id, spatialLevel, targetFrameMs, new RealTimeController(id, "bubble-" + id.toString().substring(0, 8)));
+    }
+
+    /**
+     * Create an enhanced bubble with spatial indexing and monitoring.
+     *
+     * @param id                   Unique bubble identifier
+     * @param spatialLevel         Tetree refinement level for spatial index
+     * @param targetFrameMs        Target frame time budget in milliseconds
+     * @param realTimeController   RealTimeController for simulation time management
+     */
+    public EnhancedBubble(UUID id, byte spatialLevel, long targetFrameMs, RealTimeController realTimeController) {
         this.id = id;
         this.spatialLevel = spatialLevel;
         this.targetFrameMs = targetFrameMs;
+        this.realTimeController = realTimeController;
         this.spatialIndex = new Tetree<>(new StringEntityIDGenerator(), 10, spatialLevel);
         this.vonNeighbors = ConcurrentHashMap.newKeySet();
         this.lastFrameTimeNs = new AtomicLong(0);
@@ -126,6 +140,7 @@ public class EnhancedBubble {
     /**
      * Add an entity to this bubble.
      * Inserts into spatial index and updates bounds.
+     * Uses RealTimeController's simulation time for entity timestamp.
      *
      * @param entityId Entity identifier
      * @param position Entity position
@@ -135,7 +150,9 @@ public class EnhancedBubble {
         var internalId = new StringEntityID(entityId);
         idMapping.put(entityId, internalId);
 
-        var entityData = new EntityData(position, content, System.currentTimeMillis());
+        // Use simulation time instead of wall-clock time for determinism
+        var simulationTime = realTimeController.getSimulationTime();
+        var entityData = new EntityData(position, content, simulationTime);
         spatialIndex.insert(internalId, position, spatialLevel, entityData);
 
         // Update bounds
