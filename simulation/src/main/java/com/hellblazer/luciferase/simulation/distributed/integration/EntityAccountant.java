@@ -78,9 +78,19 @@ public class EntityAccountant {
      * @param fromBubble the source bubble identifier
      * @param toBubble   the target bubble identifier
      */
-    public void moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
-        unregister(fromBubble, entityId);
-        register(toBubble, entityId);
+    public synchronized void moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
+        // Remove from source bubble
+        var sourceEntities = bubbleToEntities.get(fromBubble);
+        if (sourceEntities != null) {
+            sourceEntities.remove(entityId);
+        }
+
+        // Add to target bubble
+        bubbleToEntities.computeIfAbsent(toBubble, k -> new CopyOnWriteArraySet<>()).add(entityId);
+
+        // Update mapping
+        entityToBubble.put(entityId, toBubble);
+
         totalOperations.incrementAndGet();
     }
 
@@ -154,6 +164,16 @@ public class EntityAccountant {
             distribution.put(entry.getKey(), entry.getValue().size());
         }
         return distribution;
+    }
+
+    /**
+     * Gets the current location (bubble) of an entity.
+     *
+     * @param entityId the entity identifier
+     * @return the bubble ID containing the entity, or null if not found
+     */
+    public UUID getLocationOfEntity(UUID entityId) {
+        return entityToBubble.get(entityId);
     }
 
     /**

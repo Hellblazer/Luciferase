@@ -484,4 +484,23 @@ public class ProcessCoordinator {
     public MigrationLogPersistence getWalPersistence() {
         return walPersistence;
     }
+
+    /**
+     * Synchronize ghost entities across process boundaries.
+     * <p>
+     * Triggered by test infrastructure to validate ghost layer propagation.
+     * In a real system, this would be scheduled automatically.
+     * <p>
+     * For Phase 6E: This is a stub implementation that logs the synchronization.
+     * Actual ghost sync logic is handled by the BubbleRegistry and ghost layer.
+     */
+    public void syncGhosts() {
+        if (!running) {
+            log.debug("Cannot sync ghosts - coordinator not running");
+            return;
+        }
+        log.debug("Ghost synchronization triggered on coordinator for process {}",
+                transport.getLocalId());
+        // Actual ghost sync would be coordinated here with the bubble registry
+    }
 }

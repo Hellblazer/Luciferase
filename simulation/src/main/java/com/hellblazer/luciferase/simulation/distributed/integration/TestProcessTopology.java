@@ -288,6 +288,15 @@ public class TestProcessTopology {
     }
 
     /**
+     * Gets all process IDs in the topology.
+     *
+     * @return collection of all process UUIDs
+     */
+    public Collection<UUID> getProcessIds() {
+        return new ArrayList<>(processIds);
+    }
+
+    /**
      * Gets the total number of bubbles.
      *
      * @return bubble count

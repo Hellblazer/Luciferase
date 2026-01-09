@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -42,6 +44,9 @@ public class DistributedSimulationMetrics {
     private final AtomicLong totalLatencyMs = new AtomicLong(0);
     private final AtomicLong latencyCount = new AtomicLong(0);
     private volatile long startTimeMs = 0;
+    private final Set<UUID> crashedProcesses = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> recoveredProcesses = ConcurrentHashMap.newKeySet();
+    private final Map<String, Object> metrics = new ConcurrentHashMap<>();
 
     /**
      * Creates a new metrics instance.
@@ -202,6 +207,43 @@ public class DistributedSimulationMetrics {
     }
 
     /**
+     * Records a process crash.
+     *
+     * @param processId the process UUID
+     */
+    public void recordProcessCrash(UUID processId) {
+        crashedProcesses.add(processId);
+    }
+
+    /**
+     * Records a process recovery.
+     *
+     * @param processId the process UUID
+     */
+    public void recordProcessRecovery(UUID processId) {
+        recoveredProcesses.add(processId);
+        crashedProcesses.remove(processId);
+    }
+
+    /**
+     * Gets the crashed processes.
+     *
+     * @return set of crashed process UUIDs
+     */
+    public Set<UUID> getCrashedProcesses() {
+        return new HashSet<>(crashedProcesses);
+    }
+
+    /**
+     * Gets the metrics map.
+     *
+     * @return metrics map
+     */
+    public Map<String, Object> getMetrics() {
+        return new HashMap<>(metrics);
+    }
+
+    /**
      * Resets all metrics.
      */
     public void reset() {
@@ -213,6 +255,9 @@ public class DistributedSimulationMetrics {
         totalLatencyMs.set(0);
         latencyCount.set(0);
         startTimeMs = 0;
+        crashedProcesses.clear();
+        recoveredProcesses.clear();
+        metrics.clear();
     }
 
     /**

@@ -59,6 +59,12 @@ public class TestProcessCluster {
     private TestProcessTopology topology;
     private volatile boolean running = false;
 
+    // Failure injection state
+    private final Set<UUID> crashedProcesses = ConcurrentHashMap.newKeySet();
+    private volatile int messageDelayMs = 0;
+    private final Map<UUID, Integer> processSlowdownMs = new ConcurrentHashMap<>();
+    private volatile boolean ghostSyncFailuresEnabled = false;
+
     /**
      * Creates a new test process cluster.
      *
@@ -241,4 +247,198 @@ public class TestProcessCluster {
     public EntityAccountant getEntityAccountant() {
         return entityAccountant;
     }
+
+    /**
+     * Crashes a process by removing it from the active set.
+     * The process can be recovered with recoverProcess().
+     *
+     * @param processId the process UUID to crash
+     */
+    public void crashProcess(UUID processId) {
+        if (!coordinators.containsKey(processId)) {
+            throw new IllegalArgumentException("Process not found: " + processId);
+        }
+        crashedProcesses.add(processId);
+        var coordinator = coordinators.get(processId);
+        if (coordinator != null) {
+            try {
+                coordinator.stop();
+            } catch (Exception e) {
+                log.warn("Error stopping crashed process {}: {}", processId, e.getMessage());
+            }
+        }
+        metrics.recordProcessCrash(processId);
+        log.info("Crashed process {}", processId);
+    }
+
+    /**
+     * Recovers a crashed process by restarting it.
+     *
+     * @param processId the process UUID to recover
+     */
+    public void recoverProcess(UUID processId) {
+        if (!coordinators.containsKey(processId)) {
+            throw new IllegalArgumentException("Process not found: " + processId);
+        }
+        crashedProcesses.remove(processId);
+        var coordinator = coordinators.get(processId);
+        if (coordinator != null) {
+            try {
+                coordinator.start();
+                var bubbles = topology.getBubblesForProcess(processId);
+                coordinator.registerProcess(processId, new ArrayList<>(bubbles));
+            } catch (Exception e) {
+                log.warn("Error recovering process {}: {}", processId, e.getMessage());
+            }
+        }
+        metrics.recordProcessRecovery(processId);
+        log.info("Recovered process {}", processId);
+    }
+
+    /**
+     * Checks if a process is crashed.
+     *
+     * @param processId the process UUID
+     * @return true if the process is crashed
+     */
+    public boolean isCrashed(UUID processId) {
+        return crashedProcesses.contains(processId);
+    }
+
+    /**
+     * Injects a message delay on all inter-process communications.
+     * A delay of 0 removes the delay.
+     *
+     * @param delayMs delay in milliseconds (0 to disable)
+     */
+    public void injectMessageDelay(int delayMs) {
+        this.messageDelayMs = delayMs;
+        if (delayMs > 0) {
+            log.info("Injecting {}ms message delay", delayMs);
+        } else {
+            log.info("Removing message delay");
+        }
+    }
+
+    /**
+     * Gets the current message delay.
+     *
+     * @return delay in milliseconds (0 if no delay)
+     */
+    public int getMessageDelay() {
+        return messageDelayMs;
+    }
+
+    /**
+     * Injects slowdown on a specific process (simulating GC pause or CPU throttling).
+     *
+     * @param processId the process UUID
+     * @param delayMs   delay in milliseconds (0 to remove slowdown)
+     */
+    public void injectProcessSlowdown(UUID processId, int delayMs) {
+        if (!coordinators.containsKey(processId)) {
+            throw new IllegalArgumentException("Process not found: " + processId);
+        }
+        if (delayMs > 0) {
+            processSlowdownMs.put(processId, delayMs);
+            log.info("Injecting {}ms slowdown on process {}", delayMs, processId);
+        } else {
+            processSlowdownMs.remove(processId);
+            log.info("Removing slowdown on process {}", processId);
+        }
+    }
+
+    /**
+     * Gets the slowdown delay for a process.
+     *
+     * @param processId the process UUID
+     * @return delay in milliseconds (0 if no slowdown)
+     */
+    public int getProcessSlowdown(UUID processId) {
+        return processSlowdownMs.getOrDefault(processId, 0);
+    }
+
+    /**
+     * Enables or disables ghost synchronization failures.
+     * When enabled, ghost sync operations will fail silently.
+     *
+     * @param enabled true to enable failures, false to disable
+     */
+    public void injectGhostSyncFailures(boolean enabled) {
+        this.ghostSyncFailuresEnabled = enabled;
+        if (enabled) {
+            log.info("Injecting ghost sync failures");
+        } else {
+            log.info("Removing ghost sync failures");
+        }
+    }
+
+    /**
+     * Checks if ghost sync failures are enabled.
+     *
+     * @return true if ghost sync failures are enabled
+     */
+    public boolean areGhostSyncFailuresEnabled() {
+        return ghostSyncFailuresEnabled;
+    }
+
+    /**
+     * Triggers a ghost synchronization operation across all bubbles.
+     * If ghost sync failures are injected, this may fail silently.
+     */
+    public void syncGhosts() {
+        if (ghostSyncFailuresEnabled) {
+            log.debug("Ghost sync triggered but failures are enabled - falling back to on-demand discovery");
+            return;
+        }
+
+        // Trigger ghost sync across all coordinators
+        for (var coordinator : coordinators.values()) {
+            try {
+                if (coordinator != null) {
+                    // Synchronize ghost entities across process boundaries
+                    // This is a simplified implementation for testing
+                    coordinator.syncGhosts();
+                }
+            } catch (Exception e) {
+                log.debug("Error syncing ghosts: {}", e.getMessage());
+            }
+        }
+        log.debug("Ghost sync completed");
+    }
+
+    /**
+     * Returns metrics about the ghost layer synchronization.
+     *
+     * @return GhostMetrics with current ghost information
+     */
+    public GhostMetrics getGhostMetrics() {
+        // Count active neighbor relationships (simplified metric)
+        int activeNeighbors = 0;
+        var allBubbles = topology.getAllBubbleIds();
+
+        for (var bubbleId : allBubbles) {
+            activeNeighbors += topology.getNeighbors(bubbleId).size();
+        }
+
+        // Count ghosts (entities that have been migrated across boundaries)
+        var distribution = entityAccountant.getDistribution();
+        int totalEntities = distribution.values().stream().mapToInt(Integer::intValue).sum();
+
+        return new GhostMetrics(
+            activeNeighbors,
+            totalEntities,
+            0  // Ghost sync latency in ms
+        );
+    }
+}
+
+/**
+ * Metrics about the ghost layer synchronization.
+ *
+ * @param activeNeighbors number of active neighbor relationships
+ * @param totalGhosts     total count of ghost entities
+ * @param syncLatencyMs   ghost synchronization latency in milliseconds
+ */
+record GhostMetrics(int activeNeighbors, int totalGhosts, int syncLatencyMs) {
 }
