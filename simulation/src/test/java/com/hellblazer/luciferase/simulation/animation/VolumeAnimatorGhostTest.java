@@ -287,7 +287,7 @@ class VolumeAnimatorGhostTest {
 
         // Measure baseline tick time
         long baselineStart = System.nanoTime();
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 1000; i++) {
             animator.tick();
         }
         long baselineDuration = System.nanoTime() - baselineStart;
@@ -311,20 +311,20 @@ class VolumeAnimatorGhostTest {
 
         // Measure with ghosts
         long withGhostsStart = System.nanoTime();
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 1000; i++) {
             animator.tick();
             bubble.tickGhosts(controller.getSimulationTime() + i * 10L);
         }
         long withGhostsDuration = System.nanoTime() - withGhostsStart;
 
         // Calculate overhead
-        double overhead = ((double) withGhostsDuration - baselineDuration) / baselineDuration;
+        double overhead = ((double) withGhostsDuration - baselineDuration) / Math.max(1L, baselineDuration);
 
         // Phase 7B.4: Accept up to 100% overhead for initial implementation
         // This will be optimized in future phases (7B.5+) with caching and batching
         assertTrue(overhead < 1.0,
             "Ghost animation overhead should be < 100%, was: " + (overhead * 100) + "% " +
-            "(baseline: " + (baselineDuration / 1_000_000) + "ms, with ghosts: " + (withGhostsDuration / 1_000_000) + "ms)");
+            "(baseline: " + (baselineDuration / 1_000_000.0) + "ms, with ghosts: " + (withGhostsDuration / 1_000_000.0) + "ms)");
     }
 
     /**
