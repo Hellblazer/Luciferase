@@ -73,6 +73,14 @@ public class ViewCommitteeConsensusTest {
         view1 = DigestAlgorithm.DEFAULT.digest("view1".getBytes());
         view2 = DigestAlgorithm.DEFAULT.digest("view2".getBytes());
 
+        // Mock bftSubset to return a 3-member committee (quorum = t+1 = 2)
+        var members = new ArrayList<Member>();
+        for (int i = 0; i < 3; i++) {
+            members.add(new MockMember(DigestAlgorithm.DEFAULT.getOrigin().prefix(i)));
+        }
+        var committee = new java.util.LinkedHashSet<>(members);
+        when(context.bftSubset(Mockito.any(Digest.class))).thenReturn((java.util.SequencedSet) committee);
+
         // Create mock view monitor
         mockMonitor = new MockViewMonitor(view1);
 
@@ -213,6 +221,37 @@ public class ViewCommitteeConsensusTest {
         // Should immediately return false (view mismatch)
         var result = future.get(100, TimeUnit.MILLISECONDS);
         assertFalse(result, "Proposal with old viewId should be rejected immediately");
+    }
+
+    // Mock Member implementation
+    private static class MockMember implements Member {
+        private final Digest id;
+
+        MockMember(Digest id) {
+            this.id = id;
+        }
+
+        @Override
+        public Digest getId() {
+            return id;
+        }
+
+        @Override
+        public int compareTo(Member o) {
+            return id.compareTo(o.getId());
+        }
+
+        @Override
+        public boolean verify(com.hellblazer.delos.cryptography.SigningThreshold threshold, com.hellblazer.delos.cryptography.JohnHancock signature, java.io.InputStream is) {
+            // Mock implementation - always valid for testing
+            return true;
+        }
+
+        @Override
+        public boolean verify(com.hellblazer.delos.cryptography.JohnHancock signature, java.io.InputStream is) {
+            // Mock implementation - always valid for testing
+            return true;
+        }
     }
 
     // Mock ViewMonitor for testing

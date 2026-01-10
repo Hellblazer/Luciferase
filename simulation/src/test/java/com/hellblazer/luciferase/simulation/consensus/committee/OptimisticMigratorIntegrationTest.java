@@ -20,17 +20,21 @@ package com.hellblazer.luciferase.simulation.consensus.committee;
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
+import com.hellblazer.delos.cryptography.JohnHancock;
 import com.hellblazer.delos.membership.Member;
 import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
 import com.hellblazer.luciferase.simulation.delos.MembershipView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.when;
 
 /**
  * Integration tests for OptimisticMigratorIntegration adapter.
@@ -55,19 +59,23 @@ public class OptimisticMigratorIntegrationTest {
 
     @BeforeEach
     public void setUp() {
-        // Create test context with 5 members (t=1)
-        var params = com.hellblazer.delos.context.DynamicContext.newBuilder()
-                                                                .setpByz(0.1)
-                                                                .setCardinality(5)
-                                                                .build();
+        // Create mock context with 5 members (t=1, quorum=2)
+        context = Mockito.mock(DynamicContext.class);
+        when(context.size()).thenReturn(5);
+        when(context.toleranceLevel()).thenReturn(1);
+
+        // Create members
         members = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
             members.add(new MockMember(DigestAlgorithm.DEFAULT.getOrigin().prefix(i)));
         }
-        context = new DynamicContext<>(DigestAlgorithm.DEFAULT.getOrigin(), params, members, 0.2);
 
         // Create view ID
         view1 = DigestAlgorithm.DEFAULT.digest("view1".getBytes());
+
+        // Mock bftSubset to return first 3 members as committee (quorum = t+1 = 2)
+        var committee = new java.util.LinkedHashSet<>(members.subList(0, 3));
+        when(context.bftSubset(Mockito.any(Digest.class))).thenReturn((java.util.SequencedSet) committee);
 
         // Create mock view monitor
         mockMonitor = new MockViewMonitor(view1);
@@ -76,7 +84,7 @@ public class OptimisticMigratorIntegrationTest {
         selector = new ViewCommitteeSelector(context);
 
         // Create voting protocol
-        var config = new CommitteeConfig(5); // 5 second timeout
+        var config = CommitteeConfig.defaultConfig();
         var scheduler = Executors.newScheduledThreadPool(1);
         votingProtocol = new CommitteeVotingProtocol(context, config, scheduler);
 
@@ -175,6 +183,18 @@ public class OptimisticMigratorIntegrationTest {
         public int compareTo(Member o) {
             return id.compareTo(o.getId());
         }
+
+        @Override
+        public boolean verify(com.hellblazer.delos.cryptography.SigningThreshold threshold, JohnHancock signature, java.io.InputStream is) {
+            // Mock implementation - always valid for testing
+            return true;
+        }
+
+        @Override
+        public boolean verify(JohnHancock signature, java.io.InputStream is) {
+            // Mock implementation - always valid for testing
+            return true;
+        }
     }
 
     // Mock ViewMonitor for testing
@@ -202,8 +222,8 @@ public class OptimisticMigratorIntegrationTest {
         public void addListener(java.util.function.Consumer<ViewChange<Member>> listener) {}
 
         @Override
-        public Set<Member> getMembers() {
-            return Collections.emptySet();
+        public Stream<Member> getMembers() {
+            return Stream.empty();
         }
     }
 }

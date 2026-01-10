@@ -75,6 +75,16 @@ public class ViewIdRaceConditionTest {
         when(context.size()).thenReturn(5);
         when(context.toleranceLevel()).thenReturn(1);
 
+        // Create members
+        var members = new ArrayList<Member>();
+        for (int i = 0; i < 5; i++) {
+            members.add(new MockMember(DigestAlgorithm.DEFAULT.getOrigin().prefix(i)));
+        }
+
+        // Mock bftSubset to return first 3 members as committee (quorum = t+1 = 2)
+        var committee = new java.util.LinkedHashSet<>(members.subList(0, 3));
+        when(context.bftSubset(Mockito.any(Digest.class))).thenReturn((java.util.SequencedSet) committee);
+
         // Create view IDs
         view1 = DigestAlgorithm.DEFAULT.digest("view1".getBytes());
         view2 = DigestAlgorithm.DEFAULT.digest("view2".getBytes());
@@ -274,6 +284,35 @@ public class ViewIdRaceConditionTest {
 
         void setCurrentViewId(Digest viewId) {
             this.currentViewId = viewId;
+        }
+    }
+
+    // Mock Member implementation
+    private static class MockMember implements Member {
+        private final Digest id;
+
+        MockMember(Digest id) {
+            this.id = id;
+        }
+
+        @Override
+        public Digest getId() {
+            return id;
+        }
+
+        @Override
+        public int compareTo(Member o) {
+            return id.compareTo(o.getId());
+        }
+
+        @Override
+        public boolean verify(com.hellblazer.delos.cryptography.SigningThreshold threshold, com.hellblazer.delos.cryptography.JohnHancock signature, java.io.InputStream is) {
+            return true;
+        }
+
+        @Override
+        public boolean verify(com.hellblazer.delos.cryptography.JohnHancock signature, java.io.InputStream is) {
+            return true;
         }
     }
 
