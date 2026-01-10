@@ -88,6 +88,11 @@ public class EntityMigrationStateMachine {
     private final FirefliesViewMonitor viewMonitor;
 
     /**
+     * Configuration for timeout and rollback behavior (Phase 7D.1 Part 1).
+     */
+    private final Configuration config;
+
+    /**
      * Metrics: Total state transitions.
      */
     private final AtomicLong totalTransitions;
@@ -120,10 +125,68 @@ public class EntityMigrationStateMachine {
         public UUID targetBubble;
         public UUID sourceBubble;
 
+        // Phase 7D.1 Part 1: Wall clock time tracking
+        public final long startTimeMs;      // When migration started (wall clock)
+        public final long timeoutMs;        // Deadline for migration (wall clock)
+        public volatile int retryCount;     // Number of retries attempted
+
+        // Legacy constructor for backward compatibility
         public MigrationContext(Object entityId, long startTimeTicks, EntityMigrationState originState) {
+            this(entityId, startTimeTicks, originState, System.currentTimeMillis(),
+                 System.currentTimeMillis() + 8000L); // Default 8s timeout
+        }
+
+        // Phase 7D.1 Part 1: New constructor with wall clock timeout
+        public MigrationContext(Object entityId, long startTimeTicks,
+                               EntityMigrationState originState,
+                               long startTimeMs, long timeoutMs) {
             this.entityId = Objects.requireNonNull(entityId, "entityId must not be null");
             this.startTimeTicks = startTimeTicks;
             this.originState = Objects.requireNonNull(originState, "originState must not be null");
+            this.startTimeMs = startTimeMs;
+            this.timeoutMs = timeoutMs;
+            this.retryCount = 0;
+        }
+
+        /**
+         * Check if migration has timed out.
+         *
+         * @param currentTimeMs Current wall clock time in milliseconds
+         * @return true if migration has exceeded timeout
+         */
+        public boolean isTimedOut(long currentTimeMs) {
+            return currentTimeMs >= timeoutMs;
+        }
+
+        /**
+         * Get remaining time until timeout.
+         *
+         * @param currentTimeMs Current wall clock time in milliseconds
+         * @return Remaining milliseconds until timeout (0 if already timed out)
+         */
+        public long remainingTimeMs(long currentTimeMs) {
+            return Math.max(0, timeoutMs - currentTimeMs);
+        }
+
+        /**
+         * Get elapsed time since migration started.
+         *
+         * @param currentTimeMs Current wall clock time in milliseconds
+         * @return Elapsed milliseconds since start
+         */
+        public long elapsedTimeMs(long currentTimeMs) {
+            return currentTimeMs - startTimeMs;
+        }
+
+        /**
+         * Format time information for logging.
+         *
+         * @param currentTimeMs Current wall clock time in milliseconds
+         * @return Formatted string with elapsed, remaining, and retry count
+         */
+        public String formatTimeInfo(long currentTimeMs) {
+            return String.format("elapsed=%dms, remaining=%dms, retries=%d",
+                elapsedTimeMs(currentTimeMs), remainingTimeMs(currentTimeMs), retryCount);
         }
     }
 
@@ -161,19 +224,140 @@ public class EntityMigrationStateMachine {
     }
 
     /**
-     * Create EntityMigrationStateMachine with Fireflies view monitor.
+     * Configuration for EntityMigrationStateMachine (Phase 7D.1 Part 1).
+     * Controls timeout behavior, stability requirements, and retry policies.
+     */
+    public static class Configuration {
+        public final boolean requireViewStability;
+        public final int rollbackTimeoutTicks;
+
+        // Phase 7D.1 Part 1: Timeout configuration
+        public final long migrationTimeoutMs;      // How long migration can take
+        public final int minStabilityTicks;        // Minimum stability ticks
+        public final boolean enableTimeoutRollback; // Enable timeout-based rollback
+        public final int maxRetries;               // Max retry attempts
+
+        public Configuration(boolean requireViewStability, int rollbackTimeoutTicks,
+                            long migrationTimeoutMs, int minStabilityTicks,
+                            boolean enableTimeoutRollback, int maxRetries) {
+            this.requireViewStability = requireViewStability;
+            this.rollbackTimeoutTicks = rollbackTimeoutTicks;
+            this.migrationTimeoutMs = migrationTimeoutMs;
+            this.minStabilityTicks = minStabilityTicks;
+            this.enableTimeoutRollback = enableTimeoutRollback;
+            this.maxRetries = maxRetries;
+        }
+
+        /**
+         * Default configuration (balanced settings).
+         */
+        public static Configuration defaultConfig() {
+            return new Configuration(true, 100, 8000L, 3, true, 3);
+        }
+
+        /**
+         * Aggressive configuration (shorter timeouts, fewer retries).
+         */
+        public static Configuration aggressive() {
+            return new Configuration(true, 50, 2000L, 2, true, 2);
+        }
+
+        /**
+         * Conservative configuration (longer timeouts, more retries).
+         */
+        public static Configuration conservative() {
+            return new Configuration(true, 200, 15000L, 5, true, 5);
+        }
+
+        /**
+         * Adaptive configuration based on observed latency.
+         *
+         * @param observedLatencyMs Observed network latency in milliseconds
+         * @return Configuration with timeout scaled to 10x latency (min 2000ms)
+         */
+        public static Configuration adaptive(long observedLatencyMs) {
+            var timeout = Math.max(2000L, observedLatencyMs * 10);
+            return new Configuration(true, 100, timeout, 3, true, 3);
+        }
+
+        /**
+         * Builder for custom configurations.
+         */
+        public static class Builder {
+            private boolean requireViewStability = true;
+            private int rollbackTimeoutTicks = 100;
+            private long migrationTimeoutMs = 8000L;
+            private int minStabilityTicks = 3;
+            private boolean enableTimeoutRollback = true;
+            private int maxRetries = 3;
+
+            public Builder requireViewStability(boolean value) {
+                this.requireViewStability = value;
+                return this;
+            }
+
+            public Builder rollbackTimeoutTicks(int value) {
+                this.rollbackTimeoutTicks = value;
+                return this;
+            }
+
+            public Builder migrationTimeoutMs(long value) {
+                this.migrationTimeoutMs = value;
+                return this;
+            }
+
+            public Builder minStabilityTicks(int value) {
+                this.minStabilityTicks = value;
+                return this;
+            }
+
+            public Builder enableTimeoutRollback(boolean value) {
+                this.enableTimeoutRollback = value;
+                return this;
+            }
+
+            public Builder maxRetries(int value) {
+                this.maxRetries = value;
+                return this;
+            }
+
+            public Configuration build() {
+                return new Configuration(requireViewStability, rollbackTimeoutTicks,
+                    migrationTimeoutMs, minStabilityTicks, enableTimeoutRollback, maxRetries);
+            }
+        }
+
+        public static Builder builder() {
+            return new Builder();
+        }
+    }
+
+    /**
+     * Create EntityMigrationStateMachine with Fireflies view monitor and default configuration.
      *
      * @param viewMonitor FirefliesViewMonitor for stability checks
      */
     public EntityMigrationStateMachine(FirefliesViewMonitor viewMonitor) {
+        this(viewMonitor, Configuration.defaultConfig());
+    }
+
+    /**
+     * Create EntityMigrationStateMachine with Fireflies view monitor and custom configuration.
+     *
+     * @param viewMonitor FirefliesViewMonitor for stability checks
+     * @param config Configuration for timeout and rollback behavior
+     */
+    public EntityMigrationStateMachine(FirefliesViewMonitor viewMonitor, Configuration config) {
         this.viewMonitor = Objects.requireNonNull(viewMonitor, "viewMonitor must not be null");
+        this.config = Objects.requireNonNull(config, "config must not be null");
         this.entityStates = new ConcurrentHashMap<>();
         this.migrationContexts = new ConcurrentHashMap<>();
         this.totalTransitions = new AtomicLong(0L);
         this.totalRollbacks = new AtomicLong(0L);
         this.totalFailedTransitions = new AtomicLong(0L);
         this.listeners = new CopyOnWriteArrayList<>();
-        log.debug("EntityMigrationStateMachine created");
+        log.debug("EntityMigrationStateMachine created with config: timeout={}ms, maxRetries={}",
+                 config.migrationTimeoutMs, config.maxRetries);
     }
 
     /**
@@ -268,7 +452,10 @@ public class EntityMigrationStateMachine {
 
         // Update migration context
         if (newState.isInTransition()) {
-            migrationContexts.putIfAbsent(entityId, new MigrationContext(entityId, 0L, currentState));
+            var startTimeMs = System.currentTimeMillis();
+            var timeoutMs = startTimeMs + config.migrationTimeoutMs;
+            migrationContexts.putIfAbsent(entityId,
+                new MigrationContext(entityId, 0L, currentState, startTimeMs, timeoutMs));
         } else {
             // Clean up context for ALL terminal/non-transitional states
             // Prevents memory leak from contexts piling up for ROLLBACK_OWNED, GHOST, DEPARTED, OWNED
@@ -441,6 +628,17 @@ public class EntityMigrationStateMachine {
         return (int) entityStates.values().stream()
             .filter(EntityMigrationState::isInTransition)
             .count();
+    }
+
+    /**
+     * Get migration context for an entity (Phase 7D.1 Part 1).
+     *
+     * @param entityId Entity to query
+     * @return Migration context, or null if entity not in migration
+     */
+    public MigrationContext getMigrationContext(Object entityId) {
+        Objects.requireNonNull(entityId, "entityId must not be null");
+        return migrationContexts.get(entityId);
     }
 
     /**
