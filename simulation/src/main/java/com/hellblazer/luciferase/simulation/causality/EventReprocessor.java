@@ -74,21 +74,36 @@ public class EventReprocessor {
     }
 
     /**
+     * Gap state enum for tracking event loss scenarios.
+     */
+    public enum GapState {
+        NONE,       // Normal operation, no gap detected
+        DETECTED,   // Gap detected (overflow occurred)
+        TIMEOUT     // Gap timeout expired, view change triggered
+    }
+
+    /**
      * Configuration for lookahead window.
      */
     public static class Configuration {
         public final long minLookaheadMs;
         public final long maxLookaheadMs;
         public final int  maxQueueSize;
+        public final long gapTimeoutMs;
 
         public Configuration(long minLookaheadMs, long maxLookaheadMs) {
-            this(minLookaheadMs, maxLookaheadMs, 1000);
+            this(minLookaheadMs, maxLookaheadMs, 1000, 30000);
         }
 
         public Configuration(long minLookaheadMs, long maxLookaheadMs, int maxQueueSize) {
+            this(minLookaheadMs, maxLookaheadMs, maxQueueSize, 30000);
+        }
+
+        public Configuration(long minLookaheadMs, long maxLookaheadMs, int maxQueueSize, long gapTimeoutMs) {
             this.minLookaheadMs = minLookaheadMs;
             this.maxLookaheadMs = maxLookaheadMs;
             this.maxQueueSize = maxQueueSize;
+            this.gapTimeoutMs = gapTimeoutMs;
         }
     }
 
@@ -122,6 +137,29 @@ public class EventReprocessor {
      * Metrics: Total events reprocessed.
      */
     private final AtomicLong totalReprocessed = new AtomicLong(0L);
+
+    /**
+     * Metrics: Total gap cycles detected.
+     * A gap cycle begins on the first queue overflow (NONE → DETECTED) and ends when resetGap() is called.
+     * Multiple queue overflows during a single gap cycle count as one gap cycle.
+     * Use getTotalDropped() to monitor individual overflow events.
+     */
+    private final AtomicLong totalGaps = new AtomicLong(0L);
+
+    /**
+     * Current gap state.
+     */
+    private volatile GapState gapState = GapState.NONE;
+
+    /**
+     * Timestamp when current gap was detected (milliseconds).
+     */
+    private volatile long gapStartTimeMs = 0L;
+
+    /**
+     * Callback to invoke when gap timeout expires.
+     */
+    private volatile Runnable viewChangeCallback = null;
 
     /**
      * Create an EventReprocessor with specified lookahead window.
@@ -162,6 +200,15 @@ public class EventReprocessor {
         // Check queue overflow
         if (pendingQueue.size() >= config.maxQueueSize) {
             totalDropped.incrementAndGet();
+
+            // Detect gap if not already in gap state
+            if (gapState == GapState.NONE) {
+                gapState = GapState.DETECTED;
+                gapStartTimeMs = System.currentTimeMillis();
+                totalGaps.incrementAndGet();
+                log.warn("Gap detected: queue overflow at size={}, gap#{}", config.maxQueueSize, totalGaps.get());
+            }
+
             log.warn("Event queue overflow: dropping event {} at clock={}",
                     event.entityId(), event.lamportClock());
             return false;
@@ -318,10 +365,105 @@ public class EventReprocessor {
         return result;
     }
 
+    /**
+     * Check gap timeout and trigger view change if timeout expired.
+     * Should be called periodically during tick processing.
+     *
+     * @param currentTimeMs Current time in milliseconds
+     */
+    public synchronized void checkGapTimeout(long currentTimeMs) {
+        if ((gapState == GapState.DETECTED) &&
+            currentTimeMs - gapStartTimeMs >= config.gapTimeoutMs) {
+            acceptGap();
+        }
+    }
+
+    /**
+     * Accept the gap and trigger view change callback.
+     * Called when gap timeout expires.
+     */
+    private void acceptGap() {
+        gapState = GapState.TIMEOUT;
+        log.warn("Gap timeout expired after {}ms, accepting gap and triggering view change",
+                config.gapTimeoutMs);
+
+        if (viewChangeCallback != null) {
+            try {
+                viewChangeCallback.run();
+            } catch (Exception e) {
+                log.error("Error in viewChangeCallback", e);
+            }
+        }
+    }
+
+    /**
+     * Set callback to invoke when gap timeout expires.
+     *
+     * @param callback Callback to invoke on gap timeout
+     */
+    public void setViewChangeCallback(Runnable callback) {
+        this.viewChangeCallback = callback;
+    }
+
+    /**
+     * Reset gap state to NONE, clearing gap tracking.
+     * Called after queue drains or view change completes.
+     */
+    public synchronized void resetGap() {
+        gapState = GapState.NONE;
+        gapStartTimeMs = 0L;
+        log.debug("Gap reset - returning to normal operation");
+    }
+
+    /**
+     * Get current gap state.
+     *
+     * @return Current GapState
+     */
+    public GapState getGapState() {
+        return gapState;
+    }
+
+    /**
+     * Get timestamp when current gap was detected.
+     *
+     * @return Gap start time in milliseconds, or 0 if no gap
+     */
+    public long getGapStartTimeMs() {
+        return gapStartTimeMs;
+    }
+
+    /**
+     * Get duration of current gap.
+     *
+     * @param currentTimeMs Current time in milliseconds
+     * @return Gap duration in milliseconds, or 0 if no gap
+     */
+    public synchronized long getGapDurationMs(long currentTimeMs) {
+        if (gapState == GapState.NONE) {
+            return 0L;
+        }
+        return currentTimeMs - gapStartTimeMs;
+    }
+
+    /**
+     * Get total number of gap cycles detected.
+     *
+     * A gap cycle begins when queue overflows for the first time (transition to DETECTED)
+     * and ends when resetGap() is called. Multiple overflows within a single gap cycle
+     * count as one gap.
+     *
+     * @return Total gap cycles count
+     * @see #getTotalDropped() to monitor individual overflow events
+     */
+    public long getTotalGaps() {
+        return totalGaps.get();
+    }
+
     @Override
     public String toString() {
-        return String.format("EventReprocessor{queue=%d, dropped=%d, reprocessed=%d, healthy=%s}",
+        return String.format("EventReprocessor{queue=%d, dropped=%d, reprocessed=%d, gaps=%d, gapState=%s, healthy=%s}",
                            pendingQueue.size(), totalDropped.get(), totalReprocessed.get(),
-                           isHealthy());
+                           totalGaps.get(), gapState, isHealthy());
     }
 }
