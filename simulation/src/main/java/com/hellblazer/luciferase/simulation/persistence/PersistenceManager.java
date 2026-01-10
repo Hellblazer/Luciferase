@@ -237,6 +237,89 @@ public class PersistenceManager implements AutoCloseable {
         }
     }
 
+    // ========== Consensus Event Logging (Phase 7G Day 3.2) ==========
+
+    /**
+     * Log consensus election start event.
+     *
+     * @param candidateId UUID of the candidate starting election
+     * @param term Election term number
+     * @throws IOException if logging fails
+     */
+    public void logElectionStart(UUID candidateId, long term) throws IOException {
+        Objects.requireNonNull(candidateId, "candidateId must not be null");
+
+        var event = createEvent("ELECTION_START");
+        event.put("candidateId", candidateId.toString());
+        event.put("term", term);
+
+        writeAheadLog.append(event);
+        eventCounter.incrementAndGet();
+
+        log.debug("Election start logged: candidate={}, term={}", candidateId, term);
+    }
+
+    /**
+     * Log vote cast by node.
+     *
+     * @param voterId UUID of node casting vote
+     * @param candidateId UUID of candidate receiving vote
+     * @param term Election term
+     * @param vote true if vote granted, false if denied
+     * @throws IOException if logging fails
+     */
+    public void logVoteCast(UUID voterId, UUID candidateId, long term, boolean vote) throws IOException {
+        Objects.requireNonNull(voterId, "voterId must not be null");
+        Objects.requireNonNull(candidateId, "candidateId must not be null");
+
+        var event = createEvent("VOTE_CAST");
+        event.put("voterId", voterId.toString());
+        event.put("candidateId", candidateId.toString());
+        event.put("term", term);
+        event.put("vote", vote);
+
+        writeAheadLog.append(event);
+        eventCounter.incrementAndGet();
+
+        log.debug("Vote cast logged: voter={}, candidate={}, term={}, vote={}", voterId, candidateId, term, vote);
+    }
+
+    /**
+     * Log leader election completion.
+     *
+     * @param leaderId UUID of elected leader
+     * @param term Election term
+     * @throws IOException if logging fails
+     */
+    public void logLeaderElected(UUID leaderId, long term) throws IOException {
+        Objects.requireNonNull(leaderId, "leaderId must not be null");
+
+        var event = createEvent("LEADER_ELECTED");
+        event.put("leaderId", leaderId.toString());
+        event.put("term", term);
+
+        writeAheadLog.append(event);
+        eventCounter.incrementAndGet();
+
+        log.info("Leader elected logged: leader={}, term={}", leaderId, term);
+    }
+
+    /**
+     * Log term number increment.
+     *
+     * @param term New term number
+     * @throws IOException if logging fails
+     */
+    public void logTermIncrement(long term) throws IOException {
+        var event = createEvent("TERM_INCREMENT");
+        event.put("term", term);
+
+        writeAheadLog.append(event);
+        eventCounter.incrementAndGet();
+
+        log.debug("Term increment logged: term={}", term);
+    }
+
     /**
      * Close persistence manager and release resources.
      *
