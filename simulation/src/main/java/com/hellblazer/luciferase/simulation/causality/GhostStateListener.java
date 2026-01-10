@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.causality;
 
+import com.hellblazer.luciferase.simulation.delos.MembershipView;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
 import org.slf4j.Logger;
@@ -27,6 +28,7 @@ import javax.vecmath.Vector3f;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * GhostStateListener - FSM/Ghost Bridge Integration (Phase 7D.2 Part 1).
@@ -99,6 +101,12 @@ public class GhostStateListener implements MigrationStateListener {
      * Thread-safe via ConcurrentHashMap.
      */
     private final ConcurrentHashMap<Object, UUID> entityToSourceBubble;
+
+    /**
+     * Reconciliation count metric (for Phase 7D.2 Part 2).
+     * Tracks how many times reconcileGhostState() has been called.
+     */
+    private final AtomicLong reconciliationCount = new AtomicLong(0L);
 
     /**
      * Create GhostStateListener with ghost state manager and FSM.
@@ -198,6 +206,49 @@ public class GhostStateListener implements MigrationStateListener {
                 log.debug("Reconciled: removed ghost for {} (current state: {})", entityId, currentState);
             }
         }
+
+        // Increment reconciliation count metric
+        reconciliationCount.incrementAndGet();
+    }
+
+    /**
+     * Register this listener with FirefliesViewMonitor for view change callbacks.
+     * <p>
+     * When view changes occur, reconcileGhostState() will be automatically triggered
+     * to clean up ghosts for entities that are no longer in GHOST state.
+     *
+     * @param viewMonitor FirefliesViewMonitor to register with
+     */
+    public void registerWithViewMonitor(FirefliesViewMonitor viewMonitor) {
+        Objects.requireNonNull(viewMonitor, "viewMonitor must not be null");
+
+        // Register callback for view changes
+        viewMonitor.addViewChangeListener(this::onViewChange);
+
+        log.debug("GhostStateListener registered with FirefliesViewMonitor");
+    }
+
+    /**
+     * Handle view change notifications from FirefliesViewMonitor.
+     * Triggers ghost state reconciliation on view changes.
+     *
+     * @param change ViewChange with joined and left members
+     */
+    private void onViewChange(MembershipView.ViewChange<?> change) {
+        log.debug("View change detected: {} joined, {} left - triggering reconciliation",
+                 change.joined().size(), change.left().size());
+
+        // Reconcile ghost state
+        reconcileGhostState();
+    }
+
+    /**
+     * Get number of times reconcileGhostState() has been called.
+     *
+     * @return Reconciliation count
+     */
+    public long getReconciliationCount() {
+        return reconciliationCount.get();
     }
 
     // ========== Internal Transition Handlers ==========

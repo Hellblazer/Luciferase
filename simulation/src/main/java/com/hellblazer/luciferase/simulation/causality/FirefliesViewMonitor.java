@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -147,6 +148,12 @@ public class FirefliesViewMonitor {
     private final AtomicBoolean wasStable = new AtomicBoolean(false);
 
     /**
+     * External view change listeners (for ghost reconciliation, etc.).
+     * Thread-safe via CopyOnWriteArrayList.
+     */
+    private final List<java.util.function.Consumer<MembershipView.ViewChange<?>>> viewChangeListeners = new CopyOnWriteArrayList<>();
+
+    /**
      * Create a FirefliesViewMonitor with default stability threshold.
      * Default: 30 ticks (300ms at 100Hz) for production reliability.
      * Can be overridden for testing scenarios (e.g., 3 ticks = 30ms for fast tests).
@@ -185,6 +192,7 @@ public class FirefliesViewMonitor {
      *
      * @param change ViewChange with joined and left members
      */
+    @SuppressWarnings("unchecked")
     private synchronized void handleViewChange(MembershipView.ViewChange<?> change) {
         Objects.requireNonNull(change, "change must not be null");
 
@@ -213,6 +221,36 @@ public class FirefliesViewMonitor {
 
         log.debug("View change detected: joined={}, left={}, members={}, time={}",
                  joined.size(), left.size(), currentMembers.size(), currentTime);
+
+        // Notify external listeners
+        for (var listener : viewChangeListeners) {
+            try {
+                listener.accept(change);
+            } catch (Exception e) {
+                log.error("Error notifying view change listener", e);
+            }
+        }
+    }
+
+    /**
+     * Register a view change listener.
+     * Listener will be notified on all view changes.
+     *
+     * @param listener Listener to register
+     */
+    public void addViewChangeListener(java.util.function.Consumer<MembershipView.ViewChange<?>> listener) {
+        Objects.requireNonNull(listener, "listener must not be null");
+        viewChangeListeners.add(listener);
+        log.debug("View change listener registered");
+    }
+
+    /**
+     * Remove a view change listener.
+     *
+     * @param listener Listener to remove
+     */
+    public void removeViewChangeListener(java.util.function.Consumer<MembershipView.ViewChange<?>> listener) {
+        viewChangeListeners.remove(listener);
     }
 
     /**
