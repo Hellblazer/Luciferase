@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -101,6 +102,12 @@ public class EntityMigrationStateMachine {
      */
     private final AtomicLong totalFailedTransitions;
 
+    /**
+     * Listeners for state transition notifications (Phase 7D Day 1).
+     * Thread-safe collection using CopyOnWriteArrayList for concurrent reads during iteration.
+     */
+    private final CopyOnWriteArrayList<MigrationStateListener> listeners;
+
 
     /**
      * Context for an entity undergoing migration.
@@ -165,7 +172,48 @@ public class EntityMigrationStateMachine {
         this.totalTransitions = new AtomicLong(0L);
         this.totalRollbacks = new AtomicLong(0L);
         this.totalFailedTransitions = new AtomicLong(0L);
+        this.listeners = new CopyOnWriteArrayList<>();
         log.debug("EntityMigrationStateMachine created");
+    }
+
+    /**
+     * Add a listener for state transition notifications (Phase 7D Day 1).
+     *
+     * @param listener Listener to register (must not be null)
+     * @throws NullPointerException if listener is null
+     */
+    public void addListener(MigrationStateListener listener) {
+        Objects.requireNonNull(listener, "listener must not be null");
+        listeners.add(listener);
+        log.debug("Listener added: {}", listener.getClass().getSimpleName());
+    }
+
+    /**
+     * Remove a listener from state transition notifications (Phase 7D Day 1).
+     *
+     * @param listener Listener to remove
+     */
+    public void removeListener(MigrationStateListener listener) {
+        listeners.remove(listener);
+        log.debug("Listener removed: {}", listener == null ? "null" : listener.getClass().getSimpleName());
+    }
+
+    /**
+     * Get unmodifiable set of registered listeners (Phase 7D Day 1).
+     *
+     * @return Unmodifiable set of listeners
+     */
+    public Set<MigrationStateListener> getListeners() {
+        return Collections.unmodifiableSet(new HashSet<>(listeners));
+    }
+
+    /**
+     * Get count of registered listeners (Phase 7D Day 1).
+     *
+     * @return Number of listeners
+     */
+    public int getListenerCount() {
+        return listeners.size();
     }
 
     /**
@@ -192,20 +240,26 @@ public class EntityMigrationStateMachine {
         var currentState = entityStates.get(entityId);
         if (currentState == null) {
             totalFailedTransitions.incrementAndGet();
-            return TransitionResult.notFound(newState);
+            var result = TransitionResult.notFound(newState);
+            notifyListeners(entityId, null, newState, result);
+            return result;
         }
 
         // Validate transition
         if (!isValidTransition(currentState, newState)) {
             totalFailedTransitions.incrementAndGet();
-            return TransitionResult.invalid(currentState, newState);
+            var result = TransitionResult.invalid(currentState, newState);
+            notifyListeners(entityId, currentState, newState, result);
+            return result;
         }
 
         // Check view stability if this specific transition requires it
         if (requiresViewStabilityForTransition(currentState, newState) && !viewMonitor.isViewStable()) {
             totalFailedTransitions.incrementAndGet();
             log.debug("Transition blocked: view not stable for {} -> {}", currentState, newState);
-            return TransitionResult.blocked(currentState, newState, "View not stable");
+            var result = TransitionResult.blocked(currentState, newState, "View not stable");
+            notifyListeners(entityId, currentState, newState, result);
+            return result;
         }
 
         // Perform transition
@@ -222,7 +276,9 @@ public class EntityMigrationStateMachine {
         }
 
         log.debug("Transition: {} {} -> {}", entityId, currentState, newState);
-        return TransitionResult.success(currentState, newState);
+        var result = TransitionResult.success(currentState, newState);
+        notifyListeners(entityId, currentState, newState, result);
+        return result;
     }
 
     /**
@@ -234,17 +290,25 @@ public class EntityMigrationStateMachine {
      * where entities change state between snapshot and update.
      */
     public void onViewChange() {
+        var rolledBackCount = new java.util.concurrent.atomic.AtomicInteger(0);
+        var ghostCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
         entityStates.replaceAll((entityId, currentState) -> {
             if (currentState == EntityMigrationState.MIGRATING_OUT) {
                 totalRollbacks.incrementAndGet();
+                rolledBackCount.incrementAndGet();
                 log.info("View change: rolled back {} to ROLLBACK_OWNED", entityId);
                 return EntityMigrationState.ROLLBACK_OWNED;
             } else if (currentState == EntityMigrationState.MIGRATING_IN) {
+                ghostCount.incrementAndGet();
                 log.info("View change: {} becomes GHOST", entityId);
                 return EntityMigrationState.GHOST;
             }
             return currentState;
         });
+
+        // Notify listeners once with aggregate counts (Phase 7D Day 1)
+        notifyViewChangeRollback(rolledBackCount.get(), ghostCount.get());
     }
 
     /**
@@ -377,6 +441,43 @@ public class EntityMigrationStateMachine {
         return (int) entityStates.values().stream()
             .filter(EntityMigrationState::isInTransition)
             .count();
+    }
+
+    /**
+     * Notify all registered listeners of state transition (Phase 7D Day 1).
+     *
+     * @param entityId Entity that transitioned
+     * @param fromState Previous state
+     * @param toState New state
+     * @param result Transition result
+     */
+    private void notifyListeners(Object entityId, EntityMigrationState fromState,
+                                EntityMigrationState toState, TransitionResult result) {
+        for (var listener : listeners) {
+            try {
+                listener.onEntityStateTransition(entityId, fromState, toState, result);
+            } catch (Exception e) {
+                log.error("Listener {} threw exception during transition notification: {}",
+                         listener.getClass().getSimpleName(), e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * Notify all registered listeners of view change rollback (Phase 7D Day 1).
+     *
+     * @param rolledBackCount Number of entities rolled back to ROLLBACK_OWNED
+     * @param ghostCount Number of entities converted to GHOST
+     */
+    private void notifyViewChangeRollback(int rolledBackCount, int ghostCount) {
+        for (var listener : listeners) {
+            try {
+                listener.onViewChangeRollback(rolledBackCount, ghostCount);
+            } catch (Exception e) {
+                log.error("Listener {} threw exception during view change notification: {}",
+                         listener.getClass().getSimpleName(), e.getMessage(), e);
+            }
+        }
     }
 
     @Override
