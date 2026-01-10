@@ -153,6 +153,11 @@ public class GhostStateManager {
     private final Map<StringEntityID, GhostState> ghostStates;
 
     /**
+     * Performance metrics (optional, null-safe).
+     */
+    private GhostPhysicsMetrics metrics;
+
+    /**
      * Create GhostStateManager with specified bounds and ghost limit.
      *
      * @param bounds     Spatial bounds for extrapolation clamping
@@ -176,6 +181,8 @@ public class GhostStateManager {
      * @param event          EntityUpdateEvent with position, velocity, timestamp
      */
     public void updateGhost(UUID sourceBubbleId, EntityUpdateEvent event) {
+        var startNanos = System.nanoTime();  // Metrics: record start time
+
         Objects.requireNonNull(sourceBubbleId, "sourceBubbleId must not be null");
         Objects.requireNonNull(event, "event must not be null");
 
@@ -207,6 +214,11 @@ public class GhostStateManager {
 
         log.debug("Updated ghost {} from bubble {} at position {} with velocity {}",
                  entityId, sourceBubbleId, position, velocity);
+
+        // Metrics: record latency
+        if (metrics != null) {
+            metrics.recordUpdateGhost(System.nanoTime() - startNanos);
+        }
     }
 
     /**
@@ -288,16 +300,38 @@ public class GhostStateManager {
     }
 
     /**
+     * Get ghost velocity for a given entity.
+     * Returns the velocity tracked in the ghost state, used for dead reckoning.
+     *
+     * @param entityId Entity ID to lookup
+     * @return Velocity vector, or zero vector (0,0,0) if ghost doesn't exist
+     */
+    public Vector3f getGhostVelocity(StringEntityID entityId) {
+        var state = ghostStates.get(entityId);
+        if (state == null) {
+            return new Vector3f(0.0f, 0.0f, 0.0f);
+        }
+        return new Vector3f(state.velocity);
+    }
+
+    /**
      * Remove ghost from tracking.
      * Clears both state and dead reckoning prediction.
      *
      * @param entityId Entity ID to remove
      */
     public void removeGhost(StringEntityID entityId) {
+        var startNanos = System.nanoTime();  // Metrics: record start time
+
         var removed = ghostStates.remove(entityId);
         if (removed != null) {
             deadReckoning.clearEntity(entityId);
             log.debug("Removed ghost {}", entityId);
+        }
+
+        // Metrics: record latency
+        if (metrics != null) {
+            metrics.recordRemoveGhost(System.nanoTime() - startNanos);
         }
     }
 
@@ -390,6 +424,25 @@ public class GhostStateManager {
         return new Point3f((float) clampedCartesian.getX(),
                           (float) clampedCartesian.getY(),
                           (float) clampedCartesian.getZ());
+    }
+
+    /**
+     * Set metrics tracker for performance monitoring.
+     * Optional: if not set, operations proceed normally without metrics.
+     *
+     * @param metrics GhostPhysicsMetrics instance
+     */
+    public void setMetrics(GhostPhysicsMetrics metrics) {
+        this.metrics = metrics;
+    }
+
+    /**
+     * Get current metrics (may be null).
+     *
+     * @return GhostPhysicsMetrics instance or null if not set
+     */
+    public GhostPhysicsMetrics getMetrics() {
+        return metrics;
     }
 
     @Override

@@ -64,6 +64,12 @@ public class GhostConsistencyValidator {
     private static final Logger log = LoggerFactory.getLogger(GhostConsistencyValidator.class);
 
     /**
+     * Epsilon for floating point comparisons (FP32 tolerance).
+     * Used for zero-velocity division guards (I1 audit finding).
+     */
+    private static final float EPSILON = 1e-6f;
+
+    /**
      * Consistency validation report.
      *
      * @param positionValid  true if position is within acceptable threshold
@@ -200,23 +206,38 @@ public class GhostConsistencyValidator {
 
         // Calculate maximum allowed movement based on velocity and extrapolation window
         var expectedSpeed = expectedVelocity.length();
-        var maxMovement = expectedSpeed * (extrapolationWindowMs / 1000f);
 
-        // Position valid if delta ≤ maxMovement × accuracyTarget (5% default)
+        // Zero-velocity guard (I1 audit finding): prevent division by zero
+        var maxMovement = expectedSpeed * (extrapolationWindowMs / 1000f);
         var maxAllowedDelta = maxMovement * accuracyTargetPercent;
+
+        // If velocity is essentially zero, allow minimal position delta
+        if (expectedSpeed < EPSILON) {
+            maxAllowedDelta = 0.1f;  // Allow 0.1 unit position delta for stationary objects
+        }
+
         var positionValid = positionDelta <= maxAllowedDelta;
 
-        // Velocity validation: check for major reversals
-        // Get ghost velocity from ghost entity (if available)
-        var ghostVelocity = new Vector3f(0, 0, 0);  // Default to zero if not available
-        // Ghost velocity is tracked in GhostStateManager internals, we'll use a simple heuristic
-        // for now: if position is consistent, velocity is likely consistent
+        // Velocity validation: check for major reversals using actual ghost velocity
+        var ghostVelocity = ghostStateManager.getGhostVelocity(
+            (com.hellblazer.luciferase.simulation.entity.StringEntityID) entityId
+        );
 
         // Calculate velocity delta (difference in magnitude)
-        var velocityDelta = Math.abs(ghostVelocity.length() - expectedVelocity.length());
+        var ghostSpeed = ghostVelocity.length();
+        var velocityDelta = Math.abs(ghostSpeed - expectedSpeed);
 
         // Check for major reversals using dot product
-        var dotProduct = 1.0f;  // Assume consistent direction if we can't access ghost velocity
+        var dotProduct = 1.0f;  // Default to consistent
+
+        // Zero-velocity guard: only check dot product if both velocities are non-zero
+        if (ghostSpeed >= EPSILON && expectedSpeed >= EPSILON) {
+            ghostVelocity.normalize();
+            var normalizedExpected = new Vector3f(expectedVelocity);
+            normalizedExpected.normalize();
+            dotProduct = ghostVelocity.dot(normalizedExpected);
+        }
+
         var velocityValid = dotProduct >= -0.5f;  // No major reversals
 
         // Build validation message
