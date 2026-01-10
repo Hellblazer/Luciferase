@@ -1,0 +1,141 @@
+/**
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This file is part of the Luciferase Simulation Framework.
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program.  If not, see
+ * <http://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package lucien;
+
+option java_multiple_files = true;
+option java_package = "com.hellblazer.luciferase.simulation.consensus";
+option java_outer_classname = "CoordinatorProto";
+
+/**
+ * Coordinator Election Service - Three-state consensus protocol for leader election
+ *
+ * States:
+ * - FOLLOWER: Default state, listens for leader heartbeat
+ * - CANDIDATE: Election in progress, voting for leadership
+ * - LEADER: Won election, broadcasts heartbeats
+ */
+service CoordinatorElectionService {
+  // Request a vote from a node during election
+  rpc RequestVote(VoteRequest) returns (VoteResponse);
+
+  // Send heartbeat from leader to maintain authority
+  rpc AppendHeartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // Query current leader (non-voting)
+  rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+}
+
+/**
+ * Vote request during election (candidate requesting votes)
+ */
+message VoteRequest {
+  string version = 1;           // Version for backward compatibility
+  string candidate_id = 2;      // UUID of the candidate requesting votes
+  int64 term = 3;              // Election term number
+  int64 last_log_index = 4;    // Index of last log entry (for log-based validation)
+  int64 last_log_term = 5;     // Term of last log entry
+}
+
+/**
+ * Vote response (node granting or denying vote)
+ */
+message VoteResponse {
+  string version = 1;           // Version for backward compatibility
+  int64 term = 2;              // Current term (helps candidate update)
+  bool vote_granted = 3;       // True if vote granted, false otherwise
+  string reason = 4;           // Explanation for denial (debugging)
+}
+
+/**
+ * Heartbeat request from leader (maintains leadership, prevents elections)
+ */
+message HeartbeatRequest {
+  string version = 1;           // Version for backward compatibility
+  string leader_id = 2;        // UUID of the leader
+  int64 term = 3;              // Current term
+  int64 leader_commit = 4;     // Commit index at leader
+  repeated LogEntry entries = 5;  // Log entries to replicate (empty for heartbeat)
+  int64 prev_log_index = 6;    // Index of log entry preceding new ones
+  int64 prev_log_term = 7;     // Term of prev_log_index entry
+}
+
+/**
+ * Log entry for replication (consensus state)
+ */
+message LogEntry {
+  int64 index = 1;             // Index in log
+  int64 term = 2;              // Term when entry was received by leader
+  string entry_type = 3;       // Type: "VOTE", "MIGRATION_COMMIT", etc.
+  bytes data = 4;              // Serialized entry data
+}
+
+/**
+ * Heartbeat response (acknowledges receipt, reports follower state)
+ */
+message HeartbeatResponse {
+  string version = 1;           // Version for backward compatibility
+  int64 term = 2;              // Current term
+  bool success = 3;            // True if follower received heartbeat
+  int64 match_index = 4;       // Index of highest log entry known to be replicated
+  string reason = 5;           // Explanation if not successful
+}
+
+/**
+ * Query current leader request
+ */
+message GetLeaderRequest {
+  string version = 1;           // Version for backward compatibility
+  string requester_id = 2;     // UUID of node requesting leader info
+}
+
+/**
+ * Current leader response
+ */
+message GetLeaderResponse {
+  string version = 1;           // Version for backward compatibility
+  string leader_id = 2;        // UUID of current leader (empty if no leader)
+  int64 term = 3;              // Current term
+  bool leader_is_valid = 4;    // Whether leader is known to be active
+}
+
+/**
+ * Consensus decision proposal for voting (ballot)
+ */
+message BallotProposal {
+  string version = 1;           // Version for backward compatibility
+  string proposal_id = 2;      // UUID of the proposal
+  int64 term = 3;              // Term in which proposal was made
+  string proposal_type = 4;    // Type: "ENTITY_OWNERSHIP", "MIGRATION_AUTH", etc.
+  string entity_id = 5;        // Entity UUID affected by proposal
+  bytes data = 6;              // Additional proposal data
+  int64 quorum_size = 7;       // Number of votes needed for approval
+}
+
+/**
+ * Ballot vote (yes/no decision on a proposal)
+ */
+message BallotVote {
+  string version = 1;           // Version for backward compatibility
+  string proposal_id = 2;      // Which proposal this votes on
+  string voter_id = 3;         // UUID of voting node
+  int64 term = 4;              // Term of the vote
+  bool vote = 5;               // True = yes, false = no
+  string reason = 6;           // Explanation (for debugging)
+}
