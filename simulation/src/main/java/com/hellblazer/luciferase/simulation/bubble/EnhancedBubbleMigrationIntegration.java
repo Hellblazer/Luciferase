@@ -418,6 +418,24 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
         );
     }
 
+    /**
+     * Get the migration oracle for boundary detection.
+     *
+     * @return MigrationOracle instance
+     */
+    public MigrationOracle getMigrationOracle() {
+        return migrationOracle;
+    }
+
+    /**
+     * Get the optimistic migrator for migration coordination.
+     *
+     * @return OptimisticMigrator instance
+     */
+    public OptimisticMigrator getOptimisticMigrator() {
+        return optimisticMigrator;
+    }
+
     @Override
     public String toString() {
         return String.format(
