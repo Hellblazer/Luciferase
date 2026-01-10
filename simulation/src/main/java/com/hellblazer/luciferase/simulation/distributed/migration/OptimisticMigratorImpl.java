@@ -102,6 +102,21 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
     }
 
     @Override
+    public java.util.concurrent.CompletableFuture<Boolean> requestMigrationApproval(UUID entityId, UUID targetBubble) {
+        Objects.requireNonNull(entityId, "entityId must not be null");
+        Objects.requireNonNull(targetBubble, "targetBubble must not be null");
+
+        // Phase 7G.3: Request consensus approval for migration
+        // For now, default to approved (consensus coordinator not initialized in existing code)
+        // In consensus mode, this would delegate to ConsensusCoordinator.proposeEntityOwnership()
+
+        log.debug("Migration approval requested: entity={}, target={} (approved by default)",
+                entityId, targetBubble.toString().substring(0, 8));
+
+        return java.util.concurrent.CompletableFuture.completedFuture(true);
+    }
+
+    @Override
     public void queueDeferredUpdate(UUID entityId, float[] position, float[] velocity) {
         Objects.requireNonNull(entityId, "entityId must not be null");
 

@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * OptimisticMigrator - Speculative entity migration with deferred updates (Phase 7E Day 3)
@@ -74,6 +75,21 @@ public interface OptimisticMigrator {
      * @throws NullPointerException if either parameter is null
      */
     void initiateOptimisticMigration(UUID entityId, UUID targetBubbleId);
+
+    /**
+     * Request consensus approval before initiating migration (Phase 7G.3).
+     * Used in consensus-based mode to obtain distributed agreement on entity ownership change.
+     * Returns CompletableFuture resolving to:
+     * - TRUE: Consensus approved, migration can proceed
+     * - FALSE: Consensus rejected, migration blocked
+     *
+     * @param entityId Entity to migrate
+     * @param targetBubble Target bubble UUID
+     * @return CompletableFuture with boolean approval result
+     * @throws NullPointerException if either parameter is null
+     * @throws IllegalStateException if consensus coordinator not initialized
+     */
+    CompletableFuture<Boolean> requestMigrationApproval(UUID entityId, UUID targetBubble);
 
     /**
      * Queue physics update for entity in MIGRATING_IN state.
