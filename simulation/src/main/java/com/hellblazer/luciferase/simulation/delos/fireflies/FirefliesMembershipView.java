@@ -73,6 +73,18 @@ public class FirefliesMembershipView implements MembershipView<Member> {
     }
 
     /**
+     * Get current view ID (diadem) for proposal tagging.
+     * <p>
+     * Phase 7G Day 1: Committee Consensus integration.
+     * This ID is used to prevent double-commit race conditions across view boundaries.
+     *
+     * @return Current view context ID
+     */
+    public Digest getCurrentViewId() {
+        return view.getContext().getId();
+    }
+
+    /**
      * Handle ViewChange notifications from Delos Fireflies.
      * <p>
      * Converts Delos ViewChange (using Digests) to our ViewChange format (using Members).

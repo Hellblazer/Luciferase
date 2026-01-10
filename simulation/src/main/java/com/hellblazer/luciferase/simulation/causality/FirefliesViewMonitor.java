@@ -369,6 +369,22 @@ public class FirefliesViewMonitor {
     }
 
     /**
+     * Get current view ID (diadem) for proposal tagging.
+     * <p>
+     * This ID uniquely identifies the current membership view and is used
+     * to prevent double-commit race conditions across view boundaries.
+     * Phase 7G Day 1: Committee Consensus integration.
+     *
+     * @return Current view ID (null if membershipView doesn't expose it)
+     */
+    public com.hellblazer.delos.cryptography.Digest getCurrentViewId() {
+        if (membershipView instanceof com.hellblazer.luciferase.simulation.delos.fireflies.FirefliesMembershipView fmv) {
+            return fmv.getCurrentViewId();
+        }
+        return null;  // Mock views won't have this
+    }
+
+    /**
      * Reset all metrics and state (for testing or recovery).
      * WARNING: Clears all history and current member list.
      */
