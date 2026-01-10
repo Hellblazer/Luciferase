@@ -108,6 +108,11 @@ public class EntityMigrationStateMachine {
     private final AtomicLong totalFailedTransitions;
 
     /**
+     * Metrics: Total timeout-based rollbacks (Phase 7D.1 Part 2).
+     */
+    private final AtomicLong totalTimeoutRollbacks;
+
+    /**
      * Listeners for state transition notifications (Phase 7D Day 1).
      * Thread-safe collection using CopyOnWriteArrayList for concurrent reads during iteration.
      */
@@ -355,6 +360,7 @@ public class EntityMigrationStateMachine {
         this.totalTransitions = new AtomicLong(0L);
         this.totalRollbacks = new AtomicLong(0L);
         this.totalFailedTransitions = new AtomicLong(0L);
+        this.totalTimeoutRollbacks = new AtomicLong(0L);
         this.listeners = new CopyOnWriteArrayList<>();
         log.debug("EntityMigrationStateMachine created with config: timeout={}ms, maxRetries={}",
                  config.migrationTimeoutMs, config.maxRetries);
@@ -580,6 +586,7 @@ public class EntityMigrationStateMachine {
         totalTransitions.set(0L);
         totalRollbacks.set(0L);
         totalFailedTransitions.set(0L);
+        totalTimeoutRollbacks.set(0L);
         log.debug("EntityMigrationStateMachine reset");
     }
 
@@ -639,6 +646,104 @@ public class EntityMigrationStateMachine {
     public MigrationContext getMigrationContext(Object entityId) {
         Objects.requireNonNull(entityId, "entityId must not be null");
         return migrationContexts.get(entityId);
+    }
+
+    /**
+     * Get total number of timeout-based rollbacks (Phase 7D.1 Part 2).
+     *
+     * @return Total timeout rollbacks
+     */
+    public long getTotalTimeoutRollbacks() {
+        return totalTimeoutRollbacks.get();
+    }
+
+    /**
+     * Check for timed-out migrations (Phase 7D.1 Part 2).
+     * Only checks entities in transitional states (MIGRATING_OUT, MIGRATING_IN).
+     *
+     * @param currentTimeMs Current wall clock time in milliseconds
+     * @return List of entity IDs that have timed out (unmodifiable)
+     */
+    public List<Object> checkTimeouts(long currentTimeMs) {
+        if (!config.enableTimeoutRollback) {
+            return List.of();
+        }
+
+        var timedOut = new ArrayList<Object>();
+
+        for (var entry : migrationContexts.entrySet()) {
+            var entityId = entry.getKey();
+            var context = entry.getValue();
+            var state = entityStates.get(entityId);
+
+            // Only check entities in transitional states that have contexts
+            if (state != null && state.isInTransition() && context != null &&
+                context.isTimedOut(currentTimeMs)) {
+                timedOut.add(entityId);
+            }
+        }
+
+        return List.copyOf(timedOut);  // Return unmodifiable list
+    }
+
+    /**
+     * Process timed-out entities by triggering appropriate rollback (Phase 7D.1 Part 2).
+     *
+     * Timeout handling:
+     * - MIGRATING_OUT state -> transition to ROLLBACK_OWNED
+     * - MIGRATING_IN state -> transition to GHOST
+     *
+     * @param currentTimeMs Current wall clock time in milliseconds
+     * @return Number of entities rolled back
+     */
+    public synchronized int processTimeouts(long currentTimeMs) {
+        var timedOut = checkTimeouts(currentTimeMs);
+        int rolledBack = 0;
+
+        for (var entityId : timedOut) {
+            var state = entityStates.get(entityId);
+
+            if (state == null) {
+                log.warn("Entity {} timeout check found entity in timeouts but not in states", entityId);
+                continue;
+            }
+
+            try {
+                // Capture context before transition (it gets cleared during transition)
+                var context = getMigrationContext(entityId);
+                var elapsedMs = context != null ? context.elapsedTimeMs(currentTimeMs) : -1;
+
+                if (state == EntityMigrationState.MIGRATING_OUT) {
+                    // Rolling out timed out - revert to ROLLBACK_OWNED
+                    var result = transition(entityId, EntityMigrationState.ROLLBACK_OWNED);
+                    if (result.success) {
+                        rolledBack++;
+                        totalTimeoutRollbacks.incrementAndGet();
+                        log.info("Timeout rollback: {} from MIGRATING_OUT ({}ms elapsed)",
+                                entityId, elapsedMs);
+                    } else {
+                        log.warn("Failed to rollback {} from MIGRATING_OUT: {}",
+                                entityId, result.reason);
+                    }
+                } else if (state == EntityMigrationState.MIGRATING_IN) {
+                    // Rolling in timed out - revert to GHOST
+                    var result = transition(entityId, EntityMigrationState.GHOST);
+                    if (result.success) {
+                        rolledBack++;
+                        totalTimeoutRollbacks.incrementAndGet();
+                        log.info("Timeout rollback: {} from MIGRATING_IN to GHOST ({}ms elapsed)",
+                                entityId, elapsedMs);
+                    } else {
+                        log.warn("Failed to rollback {} from MIGRATING_IN: {}",
+                                entityId, result.reason);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Error processing timeout for entity {}", entityId, e);
+            }
+        }
+
+        return rolledBack;
     }
 
     /**
