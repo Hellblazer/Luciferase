@@ -25,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -231,15 +232,15 @@ class PersistenceTest {
 
     @Test
     void testRecoverWithDeadletter() throws IOException {
-        // Arrange - write events with one that will be unrecoverable
+        // Arrange - write events including one that's valid JSON but invalid event
         var event1 = createEvent("ENTITY_DEPARTURE", "entity-1", "MIGRATING_OUT");
 
-        // Create malformed event (missing required entityId for known type)
+        // Create valid JSON event but missing required entityId for VIEW_SYNC_ACK
         var badEvent = new HashMap<String, Object>();
         badEvent.put("version", 1);
-        badEvent.put("type", "VIEW_SYNC_ACK"); // Known type but missing entityId
+        badEvent.put("type", "VIEW_SYNC_ACK");
         badEvent.put("timestamp", Instant.now().toString());
-        // Missing entityId intentionally - this should be invalid
+        // Intentionally missing entityId - should be invalid for VIEW_SYNC_ACK type
 
         var event2 = createEvent("VIEW_SYNC_ACK", "entity-2", "SUCCESS");
 
@@ -249,14 +250,16 @@ class PersistenceTest {
         wal.flush();
         wal.close();
 
-        // Act - recovery should skip bad event
+        // Act - recovery should skip invalid event and recover good events
         var recovery = new EventRecovery(tempDir);
         var recovered = recovery.recover(nodeId);
 
-        // Assert
-        assertNotNull(recovered, "Should recover despite bad event");
-        assertTrue(recovered.skippedEvents() >= 1, "Should skip at least 1 bad event");
-        assertTrue(recovered.totalEventsReplayed() >= 2, "Should replay good events");
+        // Assert - the bad event (missing entityId) should be skipped during replay
+        assertNotNull(recovered, "Should recover despite invalid event");
+        // Both good events should be replayed
+        assertEquals(2, recovered.totalEventsReplayed(), "Should replay 2 valid events");
+        // The bad event should be skipped (valid JSON but invalid event structure)
+        assertEquals(1, recovered.skippedEvents(), "Should skip 1 invalid event");
     }
 
     // ========== Integration Tests ==========
