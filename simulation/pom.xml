@@ -46,6 +46,14 @@
             <groupId>com.hellblazer.delos</groupId>
             <artifactId>memberships</artifactId>
         </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>grpc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+        </dependency>
 
         <!-- Test Only Dependencies Below This Line-->
         <dependency>

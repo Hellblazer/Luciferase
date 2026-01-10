@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.hellblazer.luciferase.lucien.distributed.migration.proto";
+option java_outer_classname = "MigrationProto";
+option objc_class_prefix = "Migration";
+
+package lucien.migration;
+
+import "google/protobuf/timestamp.proto";
+
+// Version field for backward compatibility (Phase 7G.4 requirement)
+message ProtocolVersion {
+    int32 major = 1;
+    int32 minor = 2;
+    int32 patch = 3;
+}
+
+// Entity migration states (6-state FSM)
+enum EntityMigrationState {
+    STATE_UNKNOWN = 0;
+    OWNED = 1;
+    MIGRATING_OUT = 2;
+    DEPARTED = 3;
+    GHOST = 4;
+    MIGRATING_IN = 5;
+    ROLLBACK_OWNED = 6;
+}
+
+// Entity departure event - sent when source initiates migration
+message EntityDepartureEvent {
+    int32 version = 1;  // Version for backward compatibility
+    string entity_id = 2;
+    string source_bubble_id = 3;
+    string target_bubble_id = 4;
+    EntityMigrationState state = 5;
+    int64 timestamp_nanos = 6;
+    bytes entity_state = 7;  // Serialized entity state
+    repeated float position = 8;  // 3D position [x, y, z]
+    repeated float bounds = 9;  // AABB bounds [minX, minY, minZ, maxX, maxY, maxZ]
+}
+
+// View synchrony acknowledgment - confirms membership view stable
+message ViewSynchronyAck {
+    int32 version = 1;  // Version for backward compatibility
+    string entity_id = 2;
+    string source_bubble_id = 3;
+    string target_bubble_id = 4;
+    EntityMigrationState state = 5;
+    int64 timestamp_nanos = 6;
+    bool success = 7;
+    string error_message = 8;
+    int32 member_count = 9;  // Cluster membership size
+}
+
+// Entity rollback event - signals migration failure
+message EntityRollbackEvent {
+    int32 version = 1;  // Version for backward compatibility
+    string entity_id = 2;
+    string source_bubble_id = 3;
+    string target_bubble_id = 4;
+    EntityMigrationState state = 5;
+    int64 timestamp_nanos = 6;
+    string rollback_reason = 7;
+    bool source_initiated = 8;  // true if source initiated rollback
+}
+
+// Deferred physics update - queued during GHOST state
+message DeferredUpdate {
+    int32 version = 1;  // Version for backward compatibility
+    string entity_id = 2;
+    repeated float position = 3;  // 3D position delta [dx, dy, dz]
+    repeated float velocity = 4;  // 3D velocity [vx, vy, vz]
+    int64 update_timestamp = 5;
+}
+
+// Batch of deferred updates for atomic flush
+message DeferredUpdateBatch {
+    int32 version = 1;  // Version for backward compatibility
+    string target_bubble_id = 2;
+    repeated DeferredUpdate updates = 3;
+    int64 batch_timestamp = 4;
+}
+
+// Migration request from source to target
+message MigrationRequest {
+    int32 version = 1;  // Version for backward compatibility
+    string entity_id = 2;
+    string source_bubble_id = 3;
+    string target_bubble_id = 4;
+    bytes entity_state = 5;
+    repeated float position = 6;
+    repeated float bounds = 7;
+    int64 request_timestamp = 8;
+}
+
+// Migration response from target
+message MigrationResponse {
+    int32 version = 1;  // Version for backward compatibility
+    string entity_id = 2;
+    string source_bubble_id = 3;
+    string target_bubble_id = 4;
+    bool accepted = 5;
+    string error_message = 6;
+    int64 response_timestamp = 7;
+}
+
+// Health check request
+message HealthCheckRequest {
+    int32 version = 1;  // Version for backward compatibility
+    string bubble_id = 2;
+    int64 request_timestamp = 3;
+}
+
+// Health check response
+message HealthCheckResponse {
+    int32 version = 1;  // Version for backward compatibility
+    string bubble_id = 2;
+    bool healthy = 3;
+    int64 response_timestamp = 4;
+    string status_message = 5;
+    int32 pending_migrations = 6;
+    int32 active_entities = 7;
+}
+
+// Migration coordination service (gRPC)
+service BubbleMigrationService {
+    // Initiate entity migration
+    rpc InitiateMigration(EntityDepartureEvent) returns (MigrationResponse);
+
+    // Acknowledge view synchrony
+    rpc AcknowledgeViewSynchrony(ViewSynchronyAck) returns (ViewSynchronyAck);
+
+    // Rollback entity migration
+    rpc RollbackMigration(EntityRollbackEvent) returns (EntityRollbackEvent);
+
+    // Send deferred physics updates batch
+    rpc SendDeferredUpdates(DeferredUpdateBatch) returns (ViewSynchronyAck);
+
+    // Stream migration events in real-time
+    rpc StreamMigrationEvents(stream EntityDepartureEvent) returns (stream MigrationResponse);
+
+    // Health check and heartbeat
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
