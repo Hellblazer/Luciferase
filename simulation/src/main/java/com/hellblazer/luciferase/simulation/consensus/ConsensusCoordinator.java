@@ -266,4 +266,49 @@ public class ConsensusCoordinator {
     public UUID getNodeId() {
         return nodeId;
     }
+
+    /**
+     * Records an election vote for this node's candidacy (package-private for testing).
+     * <p>
+     * In a real distributed system, this would be called when a gRPC vote response
+     * arrives from another node. For integration testing, this allows simulating
+     * votes from other nodes without requiring actual gRPC communication.
+     *
+     * @param voterId  the UUID of the node casting the vote
+     * @param approved true if the vote is YES, false if NO
+     */
+    void recordElectionVote(UUID voterId, boolean approved) {
+        protocol.recordVote(nodeId.toString(), voterId, approved);
+    }
+
+    /**
+     * Triggers an election timeout (package-private for testing).
+     * <p>
+     * Forces this node to check for election timeout and potentially start
+     * an election if it hasn't received a recent heartbeat.
+     */
+    void triggerElectionTimeout() {
+        protocol.handleElectionTimeout();
+    }
+
+    /**
+     * Returns the internal protocol (package-private for testing).
+     *
+     * @return the consensus election protocol
+     */
+    ConsensusElectionProtocol getProtocol() {
+        return protocol;
+    }
+
+    /**
+     * Sets the peer communicator for inter-node messaging (package-private for testing).
+     * <p>
+     * Enables in-process communication between coordinators in integration tests
+     * without requiring actual gRPC network calls.
+     *
+     * @param communicator the peer communicator implementation
+     */
+    void setPeerCommunicator(ConsensusElectionProtocol.PeerCommunicator communicator) {
+        protocol.setPeerCommunicator(communicator);
+    }
 }

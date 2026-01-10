@@ -43,6 +43,28 @@ public class ConsensusElectionProtocol {
     private static final Logger log = LoggerFactory.getLogger(ConsensusElectionProtocol.class);
     private static final long HEARTBEAT_INTERVAL_MS = 100; // Leader sends heartbeats every 100ms
 
+    /**
+     * Interface for broadcasting messages to peer nodes.
+     * Allows different implementations (gRPC, in-process testing, etc.)
+     */
+    public interface PeerCommunicator {
+        /**
+         * Broadcasts vote request to all peers.
+         *
+         * @param candidateId the candidate requesting votes
+         * @param term        the election term
+         */
+        void broadcastVoteRequest(UUID candidateId, long term);
+
+        /**
+         * Broadcasts heartbeat to all peers.
+         *
+         * @param leaderId the leader ID
+         * @param term     the leader's term
+         */
+        void broadcastHeartbeat(UUID leaderId, long term);
+    }
+
     private final UUID nodeId;
     private final int quorumSize;
     private final long electionTimeoutMs;
@@ -56,6 +78,7 @@ public class ConsensusElectionProtocol {
     private final AtomicReference<UUID> votedFor;
     private final AtomicReference<UUID> currentLeader;
     private volatile long lastHeartbeatTime;
+    private volatile PeerCommunicator peerCommunicator;
 
     /**
      * Creates a new consensus election protocol.
@@ -155,6 +178,16 @@ public class ConsensusElectionProtocol {
      */
     public BallotBox getBallotBox() {
         return ballotBox;
+    }
+
+    /**
+     * Sets the peer communicator for broadcasting messages.
+     * Must be set before starting elections for multi-node consensus.
+     *
+     * @param communicator the peer communicator implementation
+     */
+    public void setPeerCommunicator(PeerCommunicator communicator) {
+        this.peerCommunicator = communicator;
     }
 
     /**
@@ -287,8 +320,19 @@ public class ConsensusElectionProtocol {
         // Vote for self
         ballotBox.recordYesVote(proposalId, nodeId);
 
+        // Check if we've already achieved quorum (single-node case)
+        var decision = ballotBox.getDecisionState(proposalId);
+        if (decision == BallotBox.DecisionState.APPROVED) {
+            transitionToLeader();
+        }
+
         // Reset timeout for new election
         lastHeartbeatTime = System.currentTimeMillis();
+
+        // Broadcast vote request to peers
+        if (peerCommunicator != null) {
+            peerCommunicator.broadcastVoteRequest(nodeId, newTerm);
+        }
     }
 
     private void transitionToLeader() {
@@ -308,6 +352,11 @@ public class ConsensusElectionProtocol {
     private void broadcastHeartbeat() {
         heartbeatCount.incrementAndGet();
         log.trace("Leader {} broadcasting heartbeat (count={})", nodeId, heartbeatCount.get());
+
+        // Broadcast heartbeat to peers
+        if (peerCommunicator != null) {
+            peerCommunicator.broadcastHeartbeat(nodeId, currentTerm.get());
+        }
     }
 
     private void stepDown(long newTerm) {
@@ -329,12 +378,17 @@ public class ConsensusElectionProtocol {
             return;
         }
 
+        // Add random jitter (0-50% of timeout) to prevent simultaneous elections
+        var jitter = (long) (Math.random() * electionTimeoutMs * 0.5);
+        var initialDelay = electionTimeoutMs + jitter;
+
         // Use fixed-rate monitoring instead of rescheduling
         executor.scheduleAtFixedRate(() -> {
             var timeSinceLastHeartbeat = System.currentTimeMillis() - lastHeartbeatTime;
-            if (timeSinceLastHeartbeat >= electionTimeoutMs) {
+            var effectiveTimeout = electionTimeoutMs + (long) (Math.random() * electionTimeoutMs * 0.1);
+            if (timeSinceLastHeartbeat >= effectiveTimeout) {
                 handleElectionTimeout();
             }
-        }, electionTimeoutMs, electionTimeoutMs / 4, TimeUnit.MILLISECONDS);
+        }, initialDelay, electionTimeoutMs / 4, TimeUnit.MILLISECONDS);
     }
 }
