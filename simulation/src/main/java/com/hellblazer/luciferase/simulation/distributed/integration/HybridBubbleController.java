@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
 import com.hellblazer.luciferase.simulation.bubble.RealTimeController;
+import com.hellblazer.luciferase.simulation.bubble.BucketSynchronizedController;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,16 +25,17 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Wrapper around RealTimeController for hybrid timing validation.
+ * Wrapper around BucketSynchronizedController for hybrid timing validation.
  * <p>
  * Provides:
  * <ul>
+ *   <li>Bucket boundary synchronization to bound clock drift</li>
  *   <li>Tick overhead measurement via TickListener</li>
  *   <li>Per-bucket metrics aggregation</li>
  *   <li>Simulation time access for drift measurement</li>
  * </ul>
  * <p>
- * Phase 0: Inc7 Go/No-Go Validation Gate
+ * Phase 0: Inc7 Go/No-Go Validation Gate - Uses BucketSynchronizedController for drift correction
  *
  * @author hal.hildebrand
  */
@@ -43,14 +45,14 @@ public class HybridBubbleController implements RealTimeController.TickListener {
 
     private final UUID bubbleId;
     private final String name;
-    private final RealTimeController controller;
+    private final BucketSynchronizedController controller;
 
     // Per-bucket metrics
     private final AtomicLong tickOverheadNs = new AtomicLong(0);
     private final AtomicLong tickCount = new AtomicLong(0);
 
     /**
-     * Create a hybrid bubble controller.
+     * Create a hybrid bubble controller with bucket synchronization (Phase 0 validation).
      *
      * @param bubbleId Unique identifier for this bubble
      * @param name     Human-readable name for logging
@@ -58,14 +60,14 @@ public class HybridBubbleController implements RealTimeController.TickListener {
     public HybridBubbleController(UUID bubbleId, String name) {
         this.bubbleId = bubbleId;
         this.name = name;
-        this.controller = new RealTimeController(bubbleId, name);
+        this.controller = new BucketSynchronizedController(bubbleId, name);
         this.controller.addTickListener(this);
 
-        log.debug("HybridBubbleController created: bubble={}, name={}", bubbleId, name);
+        log.debug("HybridBubbleController created with BucketSynchronizedController: bubble={}, name={}", bubbleId, name);
     }
 
     /**
-     * Create a hybrid bubble controller with default 100Hz tick rate.
+     * Create a hybrid bubble controller with bucket synchronization and custom tick rate.
      *
      * @param bubbleId Unique identifier for this bubble
      * @param name     Human-readable name for logging
@@ -74,10 +76,10 @@ public class HybridBubbleController implements RealTimeController.TickListener {
     public HybridBubbleController(UUID bubbleId, String name, int tickRate) {
         this.bubbleId = bubbleId;
         this.name = name;
-        this.controller = new RealTimeController(bubbleId, name, tickRate);
+        this.controller = new BucketSynchronizedController(bubbleId, name, tickRate);
         this.controller.addTickListener(this);
 
-        log.debug("HybridBubbleController created: bubble={}, name={}, tickRate={}",
+        log.debug("HybridBubbleController created with BucketSynchronizedController: bubble={}, name={}, tickRate={}",
                 bubbleId, name, tickRate);
     }
 
@@ -206,13 +208,32 @@ public class HybridBubbleController implements RealTimeController.TickListener {
     }
 
     /**
-     * Get the underlying RealTimeController.
+     * Get the underlying BucketSynchronizedController.
      * Use with caution; prefer wrapper methods.
      *
-     * @return RealTimeController instance
+     * @return BucketSynchronizedController instance
      */
-    public RealTimeController getController() {
+    public BucketSynchronizedController getController() {
         return controller;
+    }
+
+    /**
+     * Advance to next bucket and synchronize simulation time (Phase 0 validation).
+     * Called at bucket boundaries (100ms intervals) to bound clock drift.
+     *
+     * @param newBucket Bucket number to advance to
+     */
+    public void advanceBucket(long newBucket) {
+        controller.advanceBucket(newBucket);
+    }
+
+    /**
+     * Get drift from bucket target (diagnostic method).
+     *
+     * @return Current drift from target in simulation ticks
+     */
+    public long getDriftFromTarget() {
+        return controller.getDriftFromTarget();
     }
 
     @Override

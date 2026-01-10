@@ -76,14 +76,14 @@ public class RealTimeController {
 
     private static final Logger log = LoggerFactory.getLogger(RealTimeController.class);
 
-    private final UUID                    bubbleId;
-    private final String                  name;
-    private final AtomicLong              simulationTime;
-    private final LamportClockGenerator   clockGenerator;
-    private final AtomicBoolean           running;
-    private final long                    tickPeriodNs;
-    private final List<TickListener>      tickListeners; // Phase 7B.3: tick notification callbacks
-    private Thread                        tickThread;
+    protected final UUID                    bubbleId;
+    protected final String                  name;
+    protected final AtomicLong              simulationTime;
+    protected final LamportClockGenerator   clockGenerator;
+    protected final AtomicBoolean           running;
+    protected final long                    tickPeriodNs;
+    protected final List<TickListener>      tickListeners; // Phase 7B.3: tick notification callbacks
+    protected Thread                        tickThread;
 
     /**
      * Create a RealTimeController for a bubble.
@@ -119,9 +119,20 @@ public class RealTimeController {
      *
      * @return Current simulation time (tick count since start)
      */
-    
+
     public long getSimulationTime() {
         return simulationTime.get();
+    }
+
+    /**
+     * Set simulation time (protected for subclass use, e.g., BucketSynchronizedController).
+     * Used to synchronize bubble times at bucket boundaries.
+     * Never moves time backward.
+     *
+     * @param newTime New simulation time (must be >= current time)
+     */
+    protected void setSimulationTime(long newTime) {
+        simulationTime.set(newTime);
     }
 
     /**
@@ -208,8 +219,9 @@ public class RealTimeController {
      * Runs autonomously in dedicated thread.
      *
      * This is the core autonomous tick mechanism - no external synchronization required.
+     * Protected to allow subclasses (e.g., BucketSynchronizedController) to override for synchronization.
      */
-    private void tickLoop() {
+    protected void tickLoop() {
         while (running.get()) {
             var currentSimTime = simulationTime.incrementAndGet();
             var currentLamportClock = clockGenerator.tick();
@@ -238,10 +250,12 @@ public class RealTimeController {
      * Note: For Phase 7A, event emission is simplified since we're testing single-bubble autonomy.
      * Phase 7B will implement full event delivery via Delos.
      *
+     * Protected to allow subclasses (e.g., BucketSynchronizedController) to call from override.
+     *
      * @param simTime      Current simulation time
      * @param lamportClock Current Lamport clock
      */
-    private void emitLocalTickEvent(long simTime, long lamportClock) {
+    protected void emitLocalTickEvent(long simTime, long lamportClock) {
         // Phase 7B.3: Notify registered tick listeners (e.g., EnhancedBubble for ghost updates)
         for (var listener : tickListeners) {
             try {
