@@ -77,6 +77,38 @@ public class ConsensusAwareMigrator {
     }
 
     /**
+     * Create ConsensusAwareMigrator for testing with ConsensusBubbleGrid.
+     * <p>
+     * Uses stub implementation for testing purposes. Cross-bubble migrations will
+     * auto-approve for testing scenarios.
+     *
+     * @param grid ConsensusBubbleGrid for topology
+     */
+    public ConsensusAwareMigrator(ConsensusBubbleGrid grid) {
+        Objects.requireNonNull(grid, "grid must not be null");
+
+        // For testing: use first bubble's ID as local and node ID
+        var firstBubble = grid.getBubble(0);
+        var committeeMembers = new java.util.ArrayList<>(firstBubble.getCommitteeMembers());
+        this.localBubbleId = committeeMembers.get(0);
+        this.currentNodeId = committeeMembers.get(0);
+
+        // Stub integration that auto-approves all migrations for testing
+        // We create a minimal stub that implements the required method
+        this.consensusIntegration = new OptimisticMigratorIntegration(null, null) {
+            @Override
+            public java.util.concurrent.CompletableFuture<Boolean> requestMigrationApproval(
+                    UUID entityId, Digest sourceNode, Digest targetNode) {
+                log.debug("Test stub: auto-approving migration for entity {} from {} to {}",
+                         entityId, sourceNode, targetNode);
+                return java.util.concurrent.CompletableFuture.completedFuture(true);
+            }
+        };
+
+        log.debug("Created test ConsensusAwareMigrator with auto-approve stub");
+    }
+
+    /**
      * Request entity migration with consensus coordination.
      * <p>
      * Cross-bubble migrations require consensus approval.
