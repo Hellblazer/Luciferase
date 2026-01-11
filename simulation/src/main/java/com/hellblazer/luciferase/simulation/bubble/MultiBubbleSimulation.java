@@ -452,8 +452,13 @@ public class MultiBubbleSimulation implements AutoCloseable {
             for (var record : records) {
                 var key = distribution.getEntityToBubbleMapping().get(record.id());
                 if (key == null) {
-                    // Entity not in mapping - skip or use fallback key
-                    continue;
+                    // Entity not in mapping - use fallback key if available
+                    if (fallbackKey != null) {
+                        key = fallbackKey;
+                    } else {
+                        // Skip only if no fallback key exists yet
+                        continue;
+                    }
                 }
                 if (fallbackKey == null) {
                     fallbackKey = key;
