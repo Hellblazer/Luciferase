@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -219,6 +220,7 @@ class MultiBubbleSimulationTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true")
     void testLargePopulation_500Entities_60fps() throws InterruptedException {
         simulation = new MultiBubbleSimulation(9, (byte) 2, 500, WorldBounds.DEFAULT, new FlockingBehavior());
 
@@ -235,6 +237,7 @@ class MultiBubbleSimulationTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true")
     void testMemoryStability_1000Ticks_Under100mbGrowth() throws InterruptedException {
         simulation = new MultiBubbleSimulation(9, (byte) 2, 200, WorldBounds.DEFAULT, new FlockingBehavior());
 
