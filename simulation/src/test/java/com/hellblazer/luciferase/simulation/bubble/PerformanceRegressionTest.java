@@ -10,6 +10,7 @@ import com.hellblazer.luciferase.simulation.distributed.migration.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,8 +22,10 @@ import static org.mockito.Mockito.*;
 /**
  * Performance validation and regression test for Phase 7E Day 8
  * Validates architecture meets performance targets across all phases.
+ * Disabled in CI: All tests have hard performance thresholds that vary with CI runner speed.
  */
 @DisplayName("Performance & Regression Validation")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "All performance tests have hard timing thresholds that vary with CI runner speed")
 class PerformanceRegressionTest {
 
     private static final Logger log = LoggerFactory.getLogger(PerformanceRegressionTest.class);

@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.simulation.distributed.integration.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,9 +46,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * - p99 (99th percentile) - MUST BE <100ms in baseline
  * <p>
  * Bead: Luciferase-uchl - Inc 6E: Integration Testing & Performance Validation
+ * <p>
+ * Disabled in CI: Latency benchmarks have hard thresholds that vary with CI runner speed.
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Latency benchmarks have hard thresholds that vary with CI runner speed")
 class GhostSyncLatencyBenchmark {
 
     private static final Logger log = LoggerFactory.getLogger(GhostSyncLatencyBenchmark.class);

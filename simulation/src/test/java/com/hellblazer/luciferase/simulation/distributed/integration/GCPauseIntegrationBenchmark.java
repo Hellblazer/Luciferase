@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.distributed.integration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,9 +41,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * Phase 6B6: 8-Process Scaling & GC Benchmarking
  * Bead: Luciferase-1czq
+ * <p>
+ * Disabled in CI: GC pause benchmarks depend on GC behavior which varies in CI environments.
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "GC pause benchmarks depend on GC behavior which varies in CI environments")
 class GCPauseIntegrationBenchmark {
 
     private static final Logger log = LoggerFactory.getLogger(GCPauseIntegrationBenchmark.class);

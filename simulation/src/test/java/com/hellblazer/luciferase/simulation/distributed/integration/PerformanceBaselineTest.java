@@ -43,9 +43,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * These baselines establish the foundation for Phase 6B6 scaling tests.
  * <p>
  * Bead: Luciferase-u1am (Phase 6B5: Integration & 4-Process Baseline Validation)
+ * <p>
+ * Disabled in CI: Performance baselines have hard thresholds that vary with CI runner speed.
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Performance baselines have hard thresholds that vary with CI runner speed")
 class PerformanceBaselineTest {
 
     private static final Logger log = LoggerFactory.getLogger(PerformanceBaselineTest.class);

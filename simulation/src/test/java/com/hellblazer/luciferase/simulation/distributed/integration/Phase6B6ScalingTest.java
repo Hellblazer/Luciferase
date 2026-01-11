@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.distributed.integration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.util.Set;
 
@@ -39,9 +40,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * Phase 6B6: 8-Process Scaling & GC Benchmarking
  * Bead: Luciferase-TBD
+ * <p>
+ * Disabled in CI: Scaling tests have GC and performance requirements that vary with CI environments.
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Scaling tests have GC and performance requirements that vary with CI environments")
 class Phase6B6ScalingTest {
 
     private TestProcessCluster cluster;

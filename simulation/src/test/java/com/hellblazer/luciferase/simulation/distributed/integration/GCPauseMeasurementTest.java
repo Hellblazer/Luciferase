@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -24,9 +25,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * Tests for GCPauseMeasurement pause detection and statistics.
  * <p>
  * Phase 6B6: 8-Process Scaling & GC Benchmarking
+ * <p>
+ * Disabled in CI: GC pause measurements depend on GC behavior which varies in CI environments.
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "GC pause measurements depend on GC behavior which varies in CI environments")
 class GCPauseMeasurementTest {
 
     @Test

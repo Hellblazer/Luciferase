@@ -11,6 +11,7 @@ package com.hellblazer.luciferase.simulation.distributed.grid;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,9 +36,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Scaling characteristics
  * <p>
  * Generates detailed performance reports with assertions on thresholds.
+ * <p>
+ * Disabled in CI: Performance benchmarks have hard thresholds that vary with CI runner speed.
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Performance benchmarks have hard thresholds that vary with CI runner speed")
 class PerformanceBenchmark {
 
     private static final Logger log = LoggerFactory.getLogger(PerformanceBenchmark.class);

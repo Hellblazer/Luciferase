@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.distributed.integration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,9 +28,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * Phase 6B5.5: Performance & Stability Testing
  * Bead: Luciferase-u99r
+ * <p>
+ * Disabled in CI: Performance and stability tests have timing requirements that vary with CI runner speed.
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Performance and stability tests have timing requirements that vary with CI runner speed")
 class PerformanceStabilityTest {
 
     private TestProcessCluster cluster;
