@@ -28,6 +28,8 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.Collections;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -64,6 +66,7 @@ public class SocketServer {
     private final ProcessAddress bindAddress;
     private final Consumer<TransportVonMessage> messageHandler;
     private final ExecutorService executor;
+    private final Set<Socket> clientSockets = Collections.synchronizedSet(new java.util.HashSet<>());
     private ServerSocket serverSocket;
     private volatile boolean running = false;
 
@@ -105,6 +108,7 @@ public class SocketServer {
             while (running) {
                 try {
                     var clientSocket = serverSocket.accept();
+                    clientSockets.add(clientSocket);
                     log.info("Accepted connection from {}", clientSocket.getRemoteSocketAddress());
                     executor.execute(() -> handleClient(clientSocket));
                 } catch (SocketException e) {
@@ -146,6 +150,7 @@ public class SocketServer {
         } catch (ClassNotFoundException e) {
             log.error("Unknown message class from client {}", clientSocket.getRemoteSocketAddress(), e);
         } finally {
+            clientSockets.remove(clientSocket);
             try {
                 clientSocket.close();
             } catch (IOException e) {
@@ -170,10 +175,20 @@ public class SocketServer {
             serverSocket.close();
         }
 
+        // Close all connected client sockets to unblock readObject() calls
+        for (var clientSocket : clientSockets) {
+            try {
+                clientSocket.close();
+            } catch (IOException e) {
+                log.debug("Error closing client socket during shutdown", e);
+            }
+        }
+        clientSockets.clear();
+
         executor.shutdown();
         try {
-            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                log.warn("Executor did not terminate within 5 seconds, forcing shutdown");
+            if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {
+                log.warn("Executor did not terminate within 3 seconds, forcing shutdown");
                 executor.shutdownNow();
             }
         } catch (InterruptedException e) {
