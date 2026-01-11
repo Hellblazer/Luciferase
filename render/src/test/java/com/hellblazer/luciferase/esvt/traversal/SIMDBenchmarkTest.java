@@ -4,8 +4,8 @@
 package com.hellblazer.luciferase.esvt.traversal;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
