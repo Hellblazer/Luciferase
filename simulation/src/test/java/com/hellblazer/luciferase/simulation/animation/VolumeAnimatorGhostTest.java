@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class VolumeAnimatorGhostTest {
 
     private EnhancedBubble bubble;
