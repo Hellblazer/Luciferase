@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
@@ -70,7 +71,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         this.transport = transport;
         this.neighborStates = new ConcurrentHashMap<>();
         this.introducedTo = ConcurrentHashMap.newKeySet();
-        this.eventListeners = new ArrayList<>();
+        this.eventListeners = new CopyOnWriteArrayList<>();
 
         // Register message handler
         this.messageHandler = this::handleMessage;
