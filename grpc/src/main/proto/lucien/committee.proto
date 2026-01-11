@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.hellblazer.luciferase.simulation.consensus.committee.proto";
+option java_outer_classname = "CommitteeProto";
+option objc_class_prefix = "Committee";
+
+package lucien.committee;
+
+import "google/protobuf/empty.proto";
+
+/**
+ * Committee-based consensus protocol for distributed migration decisions.
+ *
+ * Phase 7G Day 4: Proto & P2P Communication Layer
+ *
+ * Uses Byzantine-fault-tolerant voting with committee selection.
+ * View ID prevents double-commit race conditions across view boundaries.
+ */
+
+// Migration proposal for committee voting
+message CommitteeMigrationProposal {
+    string proposal_id = 1;           // UUID as string
+    string entity_id = 2;             // UUID as string
+    string source_node_id = 3;        // Digest as hex string
+    string target_node_id = 4;        // Digest as hex string
+    string proposer_address = 5;      // gRPC address of proposer (for vote replies)
+    string view_id = 6;               // Digest as hex string (prevents cross-view double-commit)
+    int64 timestamp = 7;              // Proposal creation time (for ordering/debugging)
+}
+
+// Vote from committee member
+message CommitteeVote {
+    string proposal_id = 1;           // UUID as string (which proposal)
+    string voter_id = 2;              // Digest as hex string (who is voting)
+    bool approved = 3;                // YES (true) or NO (false)
+    string view_id = 4;               // Digest as hex string (must match proposal viewId)
+}
+
+// Quorum result notification
+message QuorumAchieved {
+    string proposal_id = 1;           // UUID as string
+    bool result = 2;                  // true=approved, false=rejected
+    string view_id = 3;               // Digest as hex string
+}
+
+// Committee consensus service for P2P voting
+service CommitteeService {
+    // Proposer sends migration proposal to committee member
+    rpc SubmitMigrationProposal(CommitteeMigrationProposal) returns (google.protobuf.Empty);
+
+    // Committee member sends vote back to proposer
+    rpc SubmitVote(CommitteeVote) returns (google.protobuf.Empty);
+
+    // Query quorum result for a proposal (optional, for debugging)
+    rpc GetQuorumResult(CommitteeMigrationProposal) returns (QuorumAchieved);
+}
