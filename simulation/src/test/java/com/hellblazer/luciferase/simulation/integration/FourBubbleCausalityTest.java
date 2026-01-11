@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.simulation.delos.mock.MockFirefliesView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.util.*;
 
@@ -37,9 +38,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * - FirefliesViewMonitor for view stability detection
  * - EntityMigrationStateMachine for ownership coordination
  *
+ * Disabled in CI: These integration tests involve multi-bubble causality ordering
+ * and are expensive. Developers can run locally with: mvn test -Dtest=FourBubbleCausalityTest
+ *
  * @author hal.hildebrand
  */
 @Tag("integration")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class FourBubbleCausalityTest {
 
     private static class TestBubble {

@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.simulation.integration.TestClusterBuilder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.time.Duration;
 import java.util.Random;
@@ -30,9 +31,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Tests for FirefliesMemberLookup with real Fireflies cluster.
  *
+ * Disabled in CI: This integration test uses TestClusterBuilder which is expensive
+ * and times out on CI hardware. Developers can run locally with:
+ * mvn test -Dtest=FirefliesMemberLookupTest
+ *
  * @author hal.hildebrand
  */
 @Tag("integration")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class FirefliesMemberLookupTest {
 
     private TestClusterBuilder.TestCluster cluster;

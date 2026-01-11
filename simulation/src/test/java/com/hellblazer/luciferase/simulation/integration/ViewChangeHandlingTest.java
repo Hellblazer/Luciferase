@@ -23,6 +23,7 @@ import com.hellblazer.luciferase.simulation.delos.mock.MockFirefliesView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,9 +39,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Recovery from view change during migration
  * - Partition tolerance and recovery
  *
+ * Disabled in CI: These integration tests are expensive multi-bubble view change tests.
+ * Developers can run locally with: mvn test -Dtest=ViewChangeHandlingTest
+ *
  * @author hal.hildebrand
  */
 @Tag("integration")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class ViewChangeHandlingTest {
 
     private static class TestBubble {

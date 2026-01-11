@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.integration;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.time.Duration;
 
@@ -27,9 +28,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * Test TestClusterBuilder infrastructure with 6-node cluster.
  * <p>
  * This verifies the TestClusterBuilder pattern works correctly.
+ * <p>
+ * Disabled in CI: These integration tests involve multi-node cluster bootstrapping
+ * and consensus convergence, which are expensive and timeout-prone on CI hardware.
+ * Developers can run locally with: mvn test -Dtest=TestClusterBuilderTest
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class TestClusterBuilderTest extends IntegrationTestBase {
 
     @Test

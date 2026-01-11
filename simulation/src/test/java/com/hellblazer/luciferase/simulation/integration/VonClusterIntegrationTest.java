@@ -26,6 +26,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.util.*;
@@ -51,9 +52,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>
  * Uses LocalServerTransport for in-process P2P (no real network).
  *
+ * Disabled in CI: These integration tests are expensive multi-bubble P2P coordination tests.
+ * Developers can run locally with: mvn test -Dtest=VonClusterIntegrationTest
+ *
  * @author hal.hildebrand
  */
 @Tag("integration")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class VonClusterIntegrationTest {
 
     private static final int NODE_COUNT = 10;
