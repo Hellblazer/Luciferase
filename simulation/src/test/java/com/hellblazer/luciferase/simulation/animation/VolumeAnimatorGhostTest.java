@@ -282,6 +282,7 @@ class VolumeAnimatorGhostTest {
      * Run locally with: mvn test -Dtest=VolumeAnimatorGhostTest#testNoPerformanceRegression
      */
     @Test
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Flaky performance test: Ghost animation overhead varies with CI runner performance")
     void testNoPerformanceRegression() {
         // Baseline: 100 owned entities
         for (int i = 0; i < 100; i++) {
