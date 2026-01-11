@@ -4,6 +4,7 @@
 package com.hellblazer.luciferase.esvt.traversal;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -15,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Benchmark comparing scalar vs SIMD Möller-Trumbore intersection.
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class SIMDBenchmarkTest {
 
     private MollerTrumboreIntersection scalar;

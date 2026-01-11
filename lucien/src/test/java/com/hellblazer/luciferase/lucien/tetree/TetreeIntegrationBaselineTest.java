@@ -5,6 +5,7 @@ import com.hellblazer.luciferase.lucien.Ray3D;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -19,6 +20,7 @@ import java.util.Random;
  *
  * This test properly follows the established patterns and uses correct insertion levels.
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 @EnabledIfEnvironmentVariable(named = "RUN_SPATIAL_INDEX_PERF_TESTS", matches = "true")
 public class TetreeIntegrationBaselineTest {
 

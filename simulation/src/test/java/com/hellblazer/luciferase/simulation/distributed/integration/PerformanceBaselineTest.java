@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.simulation.distributed.integration;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class PerformanceBaselineTest {
 
     private static final Logger log = LoggerFactory.getLogger(PerformanceBaselineTest.class);

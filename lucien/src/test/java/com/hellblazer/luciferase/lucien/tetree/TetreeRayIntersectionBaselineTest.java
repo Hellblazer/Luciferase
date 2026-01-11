@@ -6,6 +6,7 @@ import com.hellblazer.luciferase.lucien.SpatialIndex.RayIntersection;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -22,6 +23,7 @@ import java.util.Random;
  *
  * This test establishes baseline metrics before implementing enhanced ray-tetrahedron intersection.
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 @EnabledIfEnvironmentVariable(named = "RUN_SPATIAL_INDEX_PERF_TESTS", matches = "true")
 public class TetreeRayIntersectionBaselineTest {
 

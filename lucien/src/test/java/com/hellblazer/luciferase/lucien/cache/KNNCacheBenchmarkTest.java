@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.cache;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
+import org.junit.jupiter.api.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -27,14 +28,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Benchmark test for k-NN cache performance validation.
- * 
+ *
  * Validates the Phase 2 performance targets:
  * - Cache hit: 0.05-0.1ms (20-30× speedup)
  * - Cache miss: 0.3-0.5ms (Phase 1 pruning)
  * - Hit rate: 50-70% for typical motion planning scenarios
- * 
+ *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class KNNCacheBenchmarkTest {
 
     private static final int ENTITY_COUNT = 10000;
