@@ -165,14 +165,10 @@ public class VirtualSynchronyTest {
         votingProtocol.recordVote(new Vote(proposal.proposalId(), committeeList.get(1).getId(), true, view1));
         votingProtocol.recordVote(new Vote(proposal.proposalId(), committeeList.get(2).getId(), true, view1));
 
-        // Proposal should be aborted (view changed mid-vote)
-        try {
-            future.get(1, TimeUnit.SECONDS);
-            fail("Proposal should be aborted due to view change");
-        } catch (Exception e) {
-            // Expected
-            assertTrue(e.getCause() instanceof IllegalStateException || e.getMessage().contains("aborted"));
-        }
+        // Per design: View change returns false (not exception) to enable retry in new view
+        // ViewCommitteeConsensus.exceptionally() catches IllegalStateException and returns false
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertFalse(result, "View change should abort proposal and return false for retry");
 
         // ASSERT: Ordering guarantees that once view2 is active, no view1 proposals can execute
         assertEquals(view2, mockMonitor.getCurrentViewId());
@@ -215,19 +211,12 @@ public class VirtualSynchronyTest {
         consensus.onViewChange(view2);
 
         // BOTH proposals should be aborted (atomic rollback)
-        try {
-            future1.get(1, TimeUnit.SECONDS);
-            fail("Proposal1 should be aborted");
-        } catch (Exception e) {
-            // Expected
-        }
+        // Per design: View change returns false (not exception) to enable retry in new view
+        var result1 = future1.get(1, TimeUnit.SECONDS);
+        assertFalse(result1, "Proposal1 should be aborted and return false");
 
-        try {
-            future2.get(1, TimeUnit.SECONDS);
-            fail("Proposal2 should be aborted");
-        } catch (Exception e) {
-            // Expected
-        }
+        var result2 = future2.get(1, TimeUnit.SECONDS);
+        assertFalse(result2, "Proposal2 should be aborted and return false");
 
         // ASSERT: No orphaned proposals - all pending consensus rolled back
         assertFalse(consensus.hasPendingProposals(), "All proposals should be rolled back");

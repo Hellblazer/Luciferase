@@ -158,28 +158,36 @@ public class CommitteeVotingProtocol {
      * Rollback pending proposals for old view.
      * <p>
      * Called when view changes. Aborts all pending proposals with different viewId.
+     * Virtual Synchrony guarantee: All proposals from old views are atomically rolled back.
      *
      * @param newViewId the new view ID
      */
     public void rollbackOnViewChange(Digest newViewId) {
-        proposals.forEach((proposalId, state) -> {
-            if (!state.proposal.viewId().equals(newViewId)) {
-                // This proposal is from old view, abort it
-                var result = ballotBox.getResult(proposalId);
-                if (!result.isDone()) {
-                    result.completeExceptionally(new IllegalStateException("Proposal aborted due to view change"));
-                }
+        // Collect proposals to rollback first to avoid concurrent modification
+        var proposalsToRollback = proposals.entrySet().stream()
+            .filter(e -> !e.getValue().proposal.viewId().equals(newViewId))
+            .toList();
 
-                // Cancel timeout task
-                if (state.timeoutTask != null) {
-                    state.timeoutTask.cancel(false);
-                }
+        // Process rollbacks
+        for (var entry : proposalsToRollback) {
+            var proposalId = entry.getKey();
+            var state = entry.getValue();
 
-                // Clean up
-                proposals.remove(proposalId);
-                ballotBox.clear(proposalId);
+            // Abort the proposal's result future
+            var result = ballotBox.getResult(proposalId);
+            if (!result.isDone()) {
+                result.completeExceptionally(new IllegalStateException("Proposal aborted due to view change from view " + state.proposal.viewId()));
             }
-        });
+
+            // Cancel scheduled timeout task
+            if (state.timeoutTask != null) {
+                state.timeoutTask.cancel(false);
+            }
+
+            // Remove from tracking (safe now that we're not iterating)
+            proposals.remove(proposalId);
+            ballotBox.clear(proposalId);
+        }
     }
 
     /**

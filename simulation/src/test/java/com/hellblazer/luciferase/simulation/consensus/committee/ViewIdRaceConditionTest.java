@@ -67,6 +67,7 @@ public class ViewIdRaceConditionTest {
     private ScheduledExecutorService scheduler;
     private Digest view1;
     private Digest view2;
+    private List<Member> members;
 
     @BeforeEach
     public void setUp() {
@@ -76,7 +77,7 @@ public class ViewIdRaceConditionTest {
         when(context.toleranceLevel()).thenReturn(1);
 
         // Create members
-        var members = new ArrayList<Member>();
+        members = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
             members.add(new MockMember(DigestAlgorithm.DEFAULT.getOrigin().prefix(i)));
         }
@@ -134,8 +135,9 @@ public class ViewIdRaceConditionTest {
         var future1 = consensus.requestConsensus(proposal1);
 
         // Simulate quorum votes for proposal1 (quorum=2)
+        // CRITICAL: Use actual committee member IDs, not arbitrary hashes
         for (int i = 0; i < 2; i++) {
-            votingProtocol.recordVote(new Vote(proposal1.proposalId(), DigestAlgorithm.DEFAULT.digest("member-" + i), true, view1));
+            votingProtocol.recordVote(new Vote(proposal1.proposalId(), members.get(i).getId(), true, view1));
         }
 
         // Wait for proposal1 approval
@@ -159,8 +161,9 @@ public class ViewIdRaceConditionTest {
         var future2 = consensus.requestConsensus(proposal2);
 
         // New committee votes for approval (quorum=2)
+        // CRITICAL: Use actual committee member IDs, not arbitrary hashes
         for (int i = 0; i < 2; i++) {
-            votingProtocol.recordVote(new Vote(proposal2.proposalId(), DigestAlgorithm.DEFAULT.digest("member-" + i), true, view2));
+            votingProtocol.recordVote(new Vote(proposal2.proposalId(), members.get(i).getId(), true, view2));
         }
 
         var result2 = future2.get(1, TimeUnit.SECONDS);
@@ -187,10 +190,12 @@ public class ViewIdRaceConditionTest {
         var future = consensus.requestConsensus(proposal);
 
         // First vote with correct view1
-        votingProtocol.recordVote(new Vote(proposal.proposalId(), DigestAlgorithm.DEFAULT.digest("member-0"), true, view1));
+        // CRITICAL: Use actual committee member IDs, not arbitrary hashes
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(0).getId(), true, view1));
 
         // Second vote with WRONG view2 (should be ignored)
-        votingProtocol.recordVote(new Vote(proposal.proposalId(), DigestAlgorithm.DEFAULT.digest("member-1"), true, view2));
+        // CRITICAL: Use actual committee member IDs, not arbitrary hashes
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(1).getId(), true, view2));
 
         // Wait a bit - should NOT complete (only 1/2 votes with correct viewId)
         Thread.sleep(200);
@@ -213,23 +218,21 @@ public class ViewIdRaceConditionTest {
         var future = consensus.requestConsensus(proposal);
 
         // First vote arrives
-        votingProtocol.recordVote(new Vote(proposal.proposalId(), DigestAlgorithm.DEFAULT.digest("member-0"), true, view1));
+        // CRITICAL: Use actual committee member IDs, not arbitrary hashes
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(0).getId(), true, view1));
 
         // VIEW CHANGES mid-voting
         mockMonitor.setCurrentViewId(view2);
         consensus.onViewChange(view2);
 
         // Second vote arrives (but view has changed)
-        votingProtocol.recordVote(new Vote(proposal.proposalId(), DigestAlgorithm.DEFAULT.digest("member-1"), true, view1));
+        // CRITICAL: Use actual committee member IDs, not arbitrary hashes
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(1).getId(), true, view1));
 
-        // Proposal should be aborted due to view change
-        try {
-            future.get(1, TimeUnit.SECONDS);
-            fail("Proposal should be aborted due to view change");
-        } catch (Exception e) {
-            // Expected - aborted
-            assertTrue(e.getCause() instanceof IllegalStateException || e.getMessage().contains("aborted"));
-        }
+        // Per design: View change returns false (not exception) to enable retry in new view
+        // ViewCommitteeConsensus.exceptionally() catches IllegalStateException and returns false
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertFalse(result, "View change should abort proposal and return false for retry");
 
         // Double-check: cannot execute migration from old view
         assertFalse(consensus.canExecuteMigration(proposal, entityId), "Proposal from old view should not execute");
@@ -254,18 +257,15 @@ public class ViewIdRaceConditionTest {
         consensus.onViewChange(view2);
 
         // Try to vote (should be ignored - proposal already aborted)
+        // CRITICAL: Use actual committee member IDs, not arbitrary hashes
         for (int i = 0; i < 2; i++) {
-            votingProtocol.recordVote(new Vote(proposal.proposalId(), DigestAlgorithm.DEFAULT.digest("member-" + i), true, view1));
+            votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(i).getId(), true, view1));
         }
 
-        // Future should be aborted
-        try {
-            future.get(1, TimeUnit.SECONDS);
-            fail("Should be aborted due to view change");
-        } catch (Exception e) {
-            // Expected
-            assertTrue(e.getCause() instanceof IllegalStateException || e.getMessage().contains("aborted"));
-        }
+        // Per design: View change returns false (not exception) to enable retry in new view
+        // ViewCommitteeConsensus.exceptionally() catches IllegalStateException and returns false
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertFalse(result, "View change should abort proposal and return false for retry");
     }
 
     // Mock ViewMonitor for testing

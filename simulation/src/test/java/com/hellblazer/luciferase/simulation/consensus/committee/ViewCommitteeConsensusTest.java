@@ -61,6 +61,7 @@ public class ViewCommitteeConsensusTest {
     private ScheduledExecutorService scheduler;
     private Digest view1;
     private Digest view2;
+    private List<Member> members;
 
     @BeforeEach
     public void setUp() {
@@ -74,7 +75,7 @@ public class ViewCommitteeConsensusTest {
         view2 = DigestAlgorithm.DEFAULT.digest("view2".getBytes());
 
         // Mock bftSubset to return a 3-member committee (quorum = t+1 = 2)
-        var members = new ArrayList<Member>();
+        members = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             members.add(new MockMember(DigestAlgorithm.DEFAULT.getOrigin().prefix(i)));
         }
@@ -139,8 +140,9 @@ public class ViewCommitteeConsensusTest {
         var future = consensus.requestConsensus(proposal);
 
         // Simulate quorum YES votes (quorum=2 for t=1)
+        // CRITICAL: Use actual committee member IDs, not arbitrary hashes
         for (int i = 0; i < 2; i++) {
-            votingProtocol.recordVote(new Vote(proposal.proposalId(), DigestAlgorithm.DEFAULT.digest("member-" + i), true, view1));
+            votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(i).getId(), true, view1));
         }
 
         // Wait for consensus (should complete with true)
@@ -163,8 +165,9 @@ public class ViewCommitteeConsensusTest {
         var future = consensus.requestConsensus(proposal);
 
         // Simulate quorum NO votes (quorum=2 for t=1)
+        // CRITICAL: Use actual committee member IDs, not arbitrary hashes
         for (int i = 0; i < 2; i++) {
-            votingProtocol.recordVote(new Vote(proposal.proposalId(), DigestAlgorithm.DEFAULT.digest("member-" + i), false, view1));
+            votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(i).getId(), false, view1));
         }
 
         // Wait for consensus (should complete with false)
@@ -190,14 +193,10 @@ public class ViewCommitteeConsensusTest {
         mockMonitor.setCurrentViewId(view2);
         consensus.onViewChange(view2);
 
-        // Try to get result (should be aborted)
-        try {
-            future.get(1, TimeUnit.SECONDS);
-            fail("Should throw exception due to view change abort");
-        } catch (Exception e) {
-            // Expected - proposal aborted
-            assertTrue(e.getCause() instanceof IllegalStateException || e.getMessage().contains("aborted"));
-        }
+        // Per design: View change returns false (not exception) to enable retry in new view
+        // ViewCommitteeConsensus.exceptionally() catches IllegalStateException and returns false
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertFalse(result, "View change should abort proposal and return false for retry");
     }
 
     @Test
