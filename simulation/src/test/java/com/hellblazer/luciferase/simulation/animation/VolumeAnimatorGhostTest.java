@@ -9,6 +9,7 @@ import com.hellblazer.luciferase.simulation.ghost.InMemoryGhostChannel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.util.UUID;
@@ -275,8 +276,11 @@ class VolumeAnimatorGhostTest {
 
     /**
      * Test 6: No performance regression with 100 ghosts (< 5% overhead).
+     * Disabled in CI: Timing-dependent test that varies with CI runner performance.
+     * Run locally with: mvn test -Dtest=VolumeAnimatorGhostTest#testNoPerformanceRegression
      */
     @Test
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true")
     void testNoPerformanceRegression() {
         // Baseline: 100 owned entities
         for (int i = 0; i < 100; i++) {
