@@ -188,37 +188,33 @@ public class E2ETest {
         members = identities.values()
                             .stream()
                             .map(identity -> new ControlledIdentifierMember(identity))
-                            .collect(Collectors.toMap(m -> m.getId(), m -> m));
+                            .collect(Collectors.toMap(m -> m.getId(), m -> m, (a, b) -> a, LinkedHashMap::new));
         var ctxBuilder = DynamicContext.<Participant>newBuilder()
                                        .setBias(BIAS)
                                        .setpByz(P_BYZ)
                                        .setCardinality(CARDINALITY);
 
-        AtomicBoolean frist = new AtomicBoolean(true);
+        AtomicBoolean first = new AtomicBoolean(true);
         final var prefix = UUID.randomUUID().toString();
         final var gatewayPrefix = UUID.randomUUID().toString();
         views = members.values().stream().map(node -> {
+            var isFirstNode = first.getAndSet(false);
+            var metricsRegistry = isFirstNode ? node0Registry : registry;
             DynamicContext<Participant> context = ctxBuilder.build();
-            FireflyMetricsImpl metrics = new FireflyMetricsImpl(context.getId(),
-                                                                frist.getAndSet(false) ? node0Registry : registry);
+            FireflyMetricsImpl metrics = new FireflyMetricsImpl(context.getId(), metricsRegistry);
             var comms = new LocalServer(prefix, node).router(ServerConnectionCache.newBuilder()
                                                                                   .setTarget(200)
                                                                                   .setMetrics(
-                                                                                  new ServerConnectionCacheMetricsImpl(
-                                                                                  frist.getAndSet(false) ? node0Registry
-                                                                                                         : registry)));
+                                                                                  new ServerConnectionCacheMetricsImpl(metricsRegistry)));
             var gateway = new LocalServer(gatewayPrefix, node).router(ServerConnectionCache.newBuilder()
                                                                                            .setTarget(200)
                                                                                            .setMetrics(
-                                                                                           new ServerConnectionCacheMetricsImpl(
-                                                                                           frist.getAndSet(false)
-                                                                                           ? node0Registry
-                                                                                           : registry)));
+                                                                                           new ServerConnectionCacheMetricsImpl(metricsRegistry)));
             comms.start();
             communications.add(comms);
 
             gateway.start();
-            gateways.add(comms);
+            gateways.add(gateway);
             return new View(context, node, "0", EventValidation.NONE, Verifiers.from(kerl),
                             comms, parameters, gateway, DigestAlgorithm.DEFAULT, metrics);
         }).collect(Collectors.toList());
