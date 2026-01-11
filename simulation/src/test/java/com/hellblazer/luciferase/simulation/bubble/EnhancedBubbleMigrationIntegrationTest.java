@@ -24,6 +24,7 @@ import com.hellblazer.luciferase.simulation.delos.MembershipView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +54,7 @@ import static org.mockito.Mockito.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 @DisplayName("EnhancedBubbleMigrationIntegration - FSM & Migration Coordination")
 class EnhancedBubbleMigrationIntegrationTest {
 

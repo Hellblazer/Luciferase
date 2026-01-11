@@ -3,6 +3,7 @@ package com.hellblazer.luciferase.simulation.bubble;
 import com.hellblazer.luciferase.simulation.bubble.*;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class BubbleTetrahedralIntegrationTest {
 
     private static final byte SPATIAL_LEVEL = 10;

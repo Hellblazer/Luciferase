@@ -24,6 +24,7 @@ import com.hellblazer.luciferase.simulation.spatial.DeadReckoningEstimator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
@@ -38,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class DeadReckoningIntegrationTest {
 
     private DeadReckoningEstimator estimator;

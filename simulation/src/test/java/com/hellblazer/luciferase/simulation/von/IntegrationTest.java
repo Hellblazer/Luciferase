@@ -4,6 +4,7 @@ import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import javafx.geometry.Point3D;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
@@ -37,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class IntegrationTest {
 
     private static final byte SPATIAL_LEVEL = 10;

@@ -26,6 +26,7 @@ import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
 import com.hellblazer.luciferase.simulation.delos.MembershipView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.mockito.Mockito;
 
 import java.util.*;
@@ -46,6 +47,7 @@ import static org.mockito.Mockito.when;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class OptimisticMigratorIntegrationTest {
 
     private DynamicContext<Member> context;

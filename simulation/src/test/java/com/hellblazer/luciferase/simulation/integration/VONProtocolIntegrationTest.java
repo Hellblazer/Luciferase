@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.integration;
 
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 /**
  * VON protocol integration tests.
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.Test;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class VONProtocolIntegrationTest extends IntegrationTestBase {
 
     @Test

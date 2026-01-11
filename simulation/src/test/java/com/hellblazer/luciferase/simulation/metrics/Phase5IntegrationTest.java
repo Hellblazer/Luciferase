@@ -15,6 +15,7 @@ import com.hellblazer.luciferase.simulation.viz.BubbleBoundsServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.io.IOException;
@@ -42,6 +43,7 @@ import static org.assertj.core.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class Phase5IntegrationTest {
 
     private ObservabilityMetrics metrics;

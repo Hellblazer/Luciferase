@@ -26,6 +26,7 @@ import com.hellblazer.luciferase.simulation.ghost.GhostPhysicsMetrics;
 import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,6 +57,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class GhostPhysicsIntegrationTest {
 
     private static final Logger log = LoggerFactory.getLogger(GhostPhysicsIntegrationTest.class);

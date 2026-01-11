@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -34,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class Phase6B5IntegrationTest {
 

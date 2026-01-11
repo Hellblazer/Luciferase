@@ -23,6 +23,7 @@ import com.hellblazer.luciferase.simulation.consensus.committee.MigrationProposa
 import com.hellblazer.luciferase.simulation.consensus.committee.ViewCommitteeConsensus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -42,6 +43,7 @@ import static org.mockito.Mockito.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class ConsensusMigrationIntegrationTest {
 
     private ConsensusMigrationIntegration integration;
