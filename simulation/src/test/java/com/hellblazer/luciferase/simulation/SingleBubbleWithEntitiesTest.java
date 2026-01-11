@@ -241,7 +241,10 @@ class SingleBubbleWithEntitiesTest {
     /**
      * Helper: Run animation with specified seed, return position sequence.
      * Captures the position of the first entity at each tick.
-     * Fixed to collect determinstic number of positions across runs.
+     * Fixed to collect deterministic number of positions across runs.
+     *
+     * DETERMINISM FIX: Uses tight polling (1ms) instead of 10ms sleep to avoid race condition
+     * where controller might tick once more during sleep, causing finalTime to vary (100 vs 101).
      */
     private List<Point3f> runAnimationWithSeed(long seed) {
         var bubbleId = UUID.randomUUID();
@@ -256,16 +259,20 @@ class SingleBubbleWithEntitiesTest {
         // Wait for a fixed set of ticks to complete
         // At 100 Hz, we expect ~100 ticks in ~1 second
         long targetTicks = 100;
+        long targetTime = initialTime + targetTicks;
         long startTime = System.currentTimeMillis();
         long maxWait = 3000; // 3 second max wait
 
-        // Wait for the target number of ticks to complete
-        while (controller.getSimulationTime() < initialTime + targetTicks) {
+        // Wait for the target number of ticks to complete using tight polling
+        // (1ms sleep instead of 10ms to minimize race window where controller ticks during sleep)
+        long lastTime = initialTime;
+        while (controller.getSimulationTime() < targetTime) {
             if (System.currentTimeMillis() - startTime > maxWait) {
                 break; // Timeout - controller may not be advancing ticks properly
             }
             try {
-                Thread.sleep(10); // Sleep briefly to allow controller to tick
+                lastTime = controller.getSimulationTime();
+                Thread.sleep(1); // Tight polling: check frequently to catch exact target
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -278,6 +285,7 @@ class SingleBubbleWithEntitiesTest {
         long finalTime = controller.getSimulationTime();
 
         // Create one position entry per tick that occurred
+        // Use finalTime (actual) instead of targetTicks to ensure determinism
         for (long tick = initialTime + 1; tick <= finalTime; tick++) {
             // Deterministic position based on seed and tick
             // This ensures same seed produces same positions across runs

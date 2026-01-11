@@ -36,7 +36,6 @@ import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class VONProtocolIntegrationTest extends IntegrationTestBase {
 
     @Test

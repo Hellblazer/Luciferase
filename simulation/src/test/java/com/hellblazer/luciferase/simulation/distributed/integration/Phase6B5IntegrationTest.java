@@ -35,7 +35,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class Phase6B5IntegrationTest {
 

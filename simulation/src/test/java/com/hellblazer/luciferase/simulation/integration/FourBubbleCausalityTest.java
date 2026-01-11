@@ -44,7 +44,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 @Tag("integration")
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class FourBubbleCausalityTest {
 
     private static class TestBubble {

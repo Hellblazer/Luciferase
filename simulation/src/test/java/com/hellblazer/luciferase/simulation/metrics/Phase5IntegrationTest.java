@@ -43,7 +43,6 @@ import static org.assertj.core.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class Phase5IntegrationTest {
 
     private ObservabilityMetrics metrics;

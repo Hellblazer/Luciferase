@@ -50,7 +50,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class EntityMigrationTimeoutIntegrationTest {
 
     private static final Logger log = LoggerFactory.getLogger(EntityMigrationTimeoutIntegrationTest.class);

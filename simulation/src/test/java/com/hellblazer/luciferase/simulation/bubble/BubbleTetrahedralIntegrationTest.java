@@ -27,7 +27,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class BubbleTetrahedralIntegrationTest {
 
     private static final byte SPATIAL_LEVEL = 10;

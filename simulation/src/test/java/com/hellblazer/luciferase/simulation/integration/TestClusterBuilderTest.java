@@ -35,7 +35,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class TestClusterBuilderTest extends IntegrationTestBase {
 
     @Test

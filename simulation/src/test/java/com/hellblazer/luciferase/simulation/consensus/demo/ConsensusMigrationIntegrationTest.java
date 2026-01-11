@@ -43,7 +43,6 @@ import static org.mockito.Mockito.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class ConsensusMigrationIntegrationTest {
 
     private ConsensusMigrationIntegration integration;

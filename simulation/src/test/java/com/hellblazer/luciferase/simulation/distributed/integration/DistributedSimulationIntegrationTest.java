@@ -49,7 +49,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class DistributedSimulationIntegrationTest {
 
     private static final Logger log = LoggerFactory.getLogger(DistributedSimulationIntegrationTest.class);

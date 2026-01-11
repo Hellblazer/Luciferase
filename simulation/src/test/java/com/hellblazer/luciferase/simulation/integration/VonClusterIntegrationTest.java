@@ -58,7 +58,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author hal.hildebrand
  */
 @Tag("integration")
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class VonClusterIntegrationTest {
 
     private static final int NODE_COUNT = 10;

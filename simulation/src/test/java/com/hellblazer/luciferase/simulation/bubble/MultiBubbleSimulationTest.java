@@ -220,7 +220,6 @@ class MultiBubbleSimulationTest {
     }
 
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true")
     void testLargePopulation_500Entities_60fps() throws InterruptedException {
         simulation = new MultiBubbleSimulation(9, (byte) 2, 500, WorldBounds.DEFAULT, new FlockingBehavior());
 
@@ -237,7 +236,6 @@ class MultiBubbleSimulationTest {
     }
 
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true")
     void testMemoryStability_1000Ticks_Under100mbGrowth() throws InterruptedException {
         simulation = new MultiBubbleSimulation(9, (byte) 2, 200, WorldBounds.DEFAULT, new FlockingBehavior());
 

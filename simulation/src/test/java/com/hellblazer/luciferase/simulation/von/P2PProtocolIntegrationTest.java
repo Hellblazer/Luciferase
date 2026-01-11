@@ -53,7 +53,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class P2PProtocolIntegrationTest {
 
     private static final byte SPATIAL_LEVEL = 10;

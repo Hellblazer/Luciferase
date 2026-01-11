@@ -54,7 +54,6 @@ import static org.mockito.Mockito.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 @DisplayName("EnhancedBubbleMigrationIntegration - FSM & Migration Coordination")
 class EnhancedBubbleMigrationIntegrationTest {
 

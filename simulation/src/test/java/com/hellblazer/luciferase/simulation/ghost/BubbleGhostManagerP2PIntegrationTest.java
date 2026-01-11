@@ -48,7 +48,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class BubbleGhostManagerP2PIntegrationTest {
 
     private static final byte SPATIAL_LEVEL = 10;

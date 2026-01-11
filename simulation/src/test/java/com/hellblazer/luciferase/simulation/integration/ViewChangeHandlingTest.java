@@ -45,7 +45,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 @Tag("integration")
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 class ViewChangeHandlingTest {
 
     private static class TestBubble {

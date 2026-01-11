@@ -56,7 +56,6 @@ import static org.mockito.Mockito.when;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class ViewChangeIntegrationTest {
 
     private DynamicContext<Member> context;

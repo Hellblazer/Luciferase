@@ -38,7 +38,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author hal.hildebrand
  */
 @Tag("integration")
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class FirefliesMemberLookupTest {
 
     private TestClusterBuilder.TestCluster cluster;

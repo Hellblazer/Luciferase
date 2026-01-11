@@ -280,7 +280,6 @@ class VolumeAnimatorGhostTest {
      * Run locally with: mvn test -Dtest=VolumeAnimatorGhostTest#testNoPerformanceRegression
      */
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true")
     void testNoPerformanceRegression() {
         // Baseline: 100 owned entities
         for (int i = 0; i < 100; i++) {
