@@ -31,6 +31,12 @@ class ESVTRenderPipelineTest {
 
     @BeforeAll
     static void initJavaFX() throws InterruptedException {
+        // Skip JavaFX initialization in CI (xvfb may hang on JFXPanel initialization)
+        if ("true".equals(System.getenv("CI"))) {
+            System.out.println("Skipping JavaFX initialization in CI environment");
+            return;
+        }
+
         CountDownLatch latch = new CountDownLatch(1);
         try {
             new JFXPanel();

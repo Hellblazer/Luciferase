@@ -41,6 +41,11 @@ class OctreeStructureDiagramTest {
     
     @BeforeAll
     static void initToolkit() {
+        // Skip JavaFX initialization in CI (xvfb may hang on JFXPanel initialization)
+        if ("true".equals(System.getenv("CI"))) {
+            System.out.println("Skipping JavaFX initialization in CI environment");
+            return;
+        }
         // Initialize JavaFX toolkit
         new JFXPanel();
     }
