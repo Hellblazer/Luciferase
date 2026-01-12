@@ -28,7 +28,6 @@ jobs:
         with:
           path: |
             ~/.m2/repository
-            **/target/
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
@@ -72,7 +71,6 @@ jobs:
         with:
           path: |
             ~/.m2/repository
-            **/target/
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
 
   test:
@@ -100,7 +98,6 @@ jobs:
         with:
           path: |
             ~/.m2/repository
-            **/target/
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
