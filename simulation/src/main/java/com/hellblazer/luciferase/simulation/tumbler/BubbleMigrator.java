@@ -8,6 +8,7 @@
  */
 package com.hellblazer.luciferase.simulation.tumbler;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.von.VonBubble;
 import com.hellblazer.luciferase.simulation.von.VonManager;
 import org.slf4j.Logger;
@@ -38,6 +39,8 @@ public class BubbleMigrator {
 
     private static final Logger log = LoggerFactory.getLogger(BubbleMigrator.class);
 
+    private volatile Clock clock = Clock.system();
+
     private final SpatialTumbler tumbler;
     private final Duration migrationTimeout;
     private final Duration cooldownPeriod;
@@ -67,6 +70,13 @@ public class BubbleMigrator {
         this.maxConcurrentMigrations = maxConcurrentMigrations;
         log.info("BubbleMigrator created: timeout={}ms, cooldown={}ms, maxConcurrent={}",
                  migrationTimeout.toMillis(), cooldownPeriod.toMillis(), maxConcurrentMigrations);
+    }
+
+    /**
+     * Set the clock source for deterministic testing.
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -103,7 +113,7 @@ public class BubbleMigrator {
         // Check cooldown
         var lastMigration = migrationCooldowns.get(bubbleId);
         if (lastMigration != null) {
-            var elapsed = System.currentTimeMillis() - lastMigration;
+            var elapsed = clock.currentTimeMillis() - lastMigration;
             if (elapsed < cooldownPeriod.toMillis()) {
                 return CompletableFuture.completedFuture(
                     new MigrationResult(bubbleId, targetServerId, false,
@@ -121,7 +131,7 @@ public class BubbleMigrator {
         }
 
         // Start migration
-        long startTime = System.nanoTime();
+        long startTime = clock.nanoTime();
         var state = new MigrationState(bubbleId, targetServerId, startTime);
         inFlightMigrations.put(bubbleId, state);
 
@@ -186,9 +196,9 @@ public class BubbleMigrator {
             }
 
             // Record cooldown
-            migrationCooldowns.put(bubbleId, System.currentTimeMillis());
+            migrationCooldowns.put(bubbleId, clock.currentTimeMillis());
 
-            long durationMs = (System.nanoTime() - startTime) / 1_000_000;
+            long durationMs = (clock.nanoTime() - startTime) / 1_000_000;
             log.info("Migration complete: bubble {} to server {} in {}ms",
                      bubbleId, targetServerId, durationMs);
 
@@ -278,7 +288,7 @@ public class BubbleMigrator {
         if (lastMigration == null) {
             return false;
         }
-        return (System.currentTimeMillis() - lastMigration) < cooldownPeriod.toMillis();
+        return (clock.currentTimeMillis() - lastMigration) < cooldownPeriod.toMillis();
     }
 
     /**
@@ -292,7 +302,7 @@ public class BubbleMigrator {
      * Clean up stale cooldown entries.
      */
     public void cleanupCooldowns() {
-        long now = System.currentTimeMillis();
+        long now = clock.currentTimeMillis();
         long threshold = cooldownPeriod.toMillis() * 2;
         migrationCooldowns.entrySet().removeIf(e -> (now - e.getValue()) > threshold);
     }
