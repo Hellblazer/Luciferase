@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.simulation.von.Event;
 import com.hellblazer.luciferase.simulation.von.VonBubble;
 import com.hellblazer.luciferase.simulation.von.VonMessage;
+import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
 import com.hellblazer.luciferase.simulation.von.VonTransport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,6 +92,11 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     private final VonBubble vonBubble;
 
     /**
+     * Factory for creating VonMessage records with timestamp
+     */
+    private final VonMessageFactory factory;
+
+    /**
      * Pending batches grouped by target bubble
      */
     private final Map<UUID, List<SimulationGhostEntity<ID, Content>>> pendingBatches;
@@ -112,6 +118,7 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
      */
     public P2PGhostChannel(VonBubble vonBubble) {
         this.vonBubble = Objects.requireNonNull(vonBubble, "vonBubble must not be null");
+        this.factory = VonMessageFactory.system();
         this.pendingBatches = new ConcurrentHashMap<>();
         this.handlers = new CopyOnWriteArrayList<>();
 
@@ -158,7 +165,7 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
         }
 
         // Send via VonTransport
-        var message = new VonMessage.GhostSync(vonBubble.id(), transportGhosts, currentBucket);
+        var message = factory.createGhostSync(vonBubble.id(), transportGhosts, currentBucket);
         try {
             vonBubble.getTransport().sendToNeighbor(targetBubbleId, message);
             log.debug("Sent {} ghosts to neighbor {} at bucket {}",

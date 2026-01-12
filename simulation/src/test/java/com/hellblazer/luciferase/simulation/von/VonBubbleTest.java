@@ -45,6 +45,7 @@ class VonBubbleTest {
     private VonBubble bubble1;
     private VonBubble bubble2;
     private VonBubble bubble3;
+    private final VonMessageFactory factory = VonMessageFactory.system();
 
     @BeforeEach
     void setup() {
@@ -127,7 +128,7 @@ class VonBubbleTest {
         });
 
         // When: Bubble2 sends JOIN request to Bubble1
-        var joinRequest = new VonMessage.JoinRequest(id2, new Point3D(0.6, 0.6, 0.6), bubble2.bounds());
+        var joinRequest = factory.createJoinRequest(id2, new Point3D(0.6, 0.6, 0.6), bubble2.bounds());
         transport2.sendToNeighbor(id1, joinRequest);
 
         // Then: Bubble1 should respond with JoinResponse
@@ -152,7 +153,7 @@ class VonBubbleTest {
             new Point3D(0.3, 0.3, 0.3),
             null
         );
-        var response = new VonMessage.JoinResponse(
+        var response = factory.createJoinResponse(
             UUID.randomUUID(),
             Set.of(neighborInfo)
         );
@@ -190,7 +191,7 @@ class VonBubbleTest {
 
         // When: Bubble2 sends MOVE message
         var newPosition = new Point3D(0.7, 0.7, 0.7);
-        var moveMsg = new VonMessage.Move(id2, newPosition, null);
+        var moveMsg = factory.createMove(id2, newPosition, null);
         transport2.sendToNeighbor(id1, moveMsg);
 
         // Then: Bubble1 should update neighbor state
@@ -222,7 +223,7 @@ class VonBubbleTest {
         });
 
         // When: Bubble2 sends LEAVE message
-        var leaveMsg = new VonMessage.Leave(id2);
+        var leaveMsg = factory.createLeave(id2);
         transport2.sendToNeighbor(id1, leaveMsg);
 
         // Then: Bubble1 should remove bubble2 from neighbors

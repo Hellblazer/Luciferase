@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
+import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class TestProcessClusterTest {
 
     private TestProcessCluster cluster;
+    private final VonMessageFactory factory = VonMessageFactory.system();
 
     @BeforeEach
     void setUp() {
@@ -161,7 +163,7 @@ class TestProcessClusterTest {
 
         var transport1 = cluster.getTransport(process1);
         // Use Leave message as a simple message type for testing communication
-        transport1.sendToNeighbor(process2, new com.hellblazer.luciferase.simulation.von.VonMessage.Leave(process1));
+        transport1.sendToNeighbor(process2, factory.createLeave(process1));
 
         // Then: Message should be received
         assertTrue(messageSent.await(1, TimeUnit.SECONDS), "Message should be delivered");

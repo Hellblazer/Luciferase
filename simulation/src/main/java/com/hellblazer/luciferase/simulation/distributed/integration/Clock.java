@@ -38,21 +38,59 @@ public interface Clock {
     long currentTimeMillis();
 
     /**
+     * Returns the current high-resolution time in nanoseconds.
+     * <p>
+     * This is used for measuring elapsed time intervals (relative time), not absolute timestamps.
+     * The returned value is relative to an arbitrary origin and is NOT comparable across
+     * JVM instances or to {@link #currentTimeMillis()}.
+     * <p>
+     * Default implementation delegates to {@link System#nanoTime()}.
+     *
+     * @return current high-resolution time in nanoseconds
+     */
+    default long nanoTime() {
+        return System.nanoTime();
+    }
+
+    /**
      * Returns a clock that delegates to the system clock.
      *
      * @return system clock implementation
      */
     static Clock system() {
-        return System::currentTimeMillis;
+        return new Clock() {
+            @Override
+            public long currentTimeMillis() {
+                return System.currentTimeMillis();
+            }
+
+            @Override
+            public long nanoTime() {
+                return System.nanoTime();
+            }
+        };
     }
 
     /**
      * Returns a clock that always returns the given fixed time.
+     * <p>
+     * For {@link #nanoTime()}, returns {@code fixedTime * 1,000,000} to maintain
+     * consistent millis:nanos ratio of 1:1,000,000.
      *
-     * @param fixedTime the fixed timestamp
+     * @param fixedTime the fixed timestamp in milliseconds
      * @return fixed clock implementation
      */
     static Clock fixed(long fixedTime) {
-        return () -> fixedTime;
+        return new Clock() {
+            @Override
+            public long currentTimeMillis() {
+                return fixedTime;
+            }
+
+            @Override
+            public long nanoTime() {
+                return fixedTime * 1_000_000;
+            }
+        };
     }
 }

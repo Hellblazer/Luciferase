@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.transport;
 
 import com.hellblazer.luciferase.simulation.von.VonMessage;
+import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -46,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class SocketTransportTest {
 
     private final List<SocketTransport> transports = new ArrayList<>();
+    private final VonMessageFactory factory = VonMessageFactory.system();
 
     @AfterEach
     void cleanup() throws IOException {
@@ -149,7 +151,7 @@ class SocketTransportTest {
         // Send message from transport1 to transport2
         var uuid1 = UUID.randomUUID();
         var uuid2 = UUID.randomUUID();
-        var sentMessage = new VonMessage.Ack(uuid1, uuid2);
+        var sentMessage = factory.createAck(uuid1, uuid2);
 
         // Register members so routing works
         transport1.registerMember(uuid2, process2Addr);
@@ -203,11 +205,11 @@ class SocketTransportTest {
         transport2.registerMember(uuid1, process1Addr);
 
         // Send message 1 -> 2
-        var msg1to2 = new VonMessage.Ack(UUID.randomUUID(), uuid1);
+        var msg1to2 = factory.createAck(UUID.randomUUID(), uuid1);
         transport1.sendToNeighbor(uuid2, msg1to2);
 
         // Send message 2 -> 1
-        var msg2to1 = new VonMessage.Ack(UUID.randomUUID(), uuid2);
+        var msg2to1 = factory.createAck(UUID.randomUUID(), uuid2);
         transport2.sendToNeighbor(uuid1, msg2to1);
 
         // Verify both received

@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.simulation.von.TransportVonMessage;
 import com.hellblazer.luciferase.simulation.von.VonMessage;
 import com.hellblazer.luciferase.simulation.von.VonMessageConverter;
+import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
 import com.hellblazer.luciferase.simulation.von.VonTransport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +69,7 @@ public class SocketTransport implements NetworkTransport {
 
     private final UUID localId;
     private final ProcessAddress myAddress;
+    private final VonMessageFactory factory;
     private final Map<String, SocketClient> clients = new ConcurrentHashMap<>();
     private final List<Consumer<VonMessage>> handlers = new CopyOnWriteArrayList<>();
     private final Map<UUID, ProcessAddress> memberRegistry = new ConcurrentHashMap<>();
@@ -82,6 +84,7 @@ public class SocketTransport implements NetworkTransport {
     public SocketTransport(ProcessAddress myAddress) {
         this.localId = UUID.randomUUID();
         this.myAddress = myAddress;
+        this.factory = VonMessageFactory.system();
     }
 
     /**
@@ -186,7 +189,7 @@ public class SocketTransport implements NetworkTransport {
     public CompletableFuture<VonMessage.Ack> sendToNeighborAsync(UUID neighborId, VonMessage message) {
         return CompletableFuture.supplyAsync(() -> {
             sendToNeighbor(neighborId, message);
-            return new VonMessage.Ack(UUID.randomUUID(), neighborId);
+            return factory.createAck(UUID.randomUUID(), neighborId);
         });
     }
 

@@ -57,6 +57,7 @@ public class LocalServerTransport implements VonTransport {
 
     private final UUID localId;
     private final Registry registry;
+    private final VonMessageFactory factory;
     private final List<Consumer<VonMessage>> handlers = new CopyOnWriteArrayList<>();
     private final Map<UUID, CompletableFuture<VonMessage.Ack>> pendingAcks = new ConcurrentHashMap<>();
     private final ExecutorService executor;
@@ -72,6 +73,7 @@ public class LocalServerTransport implements VonTransport {
     LocalServerTransport(UUID localId, Registry registry, ExecutorService executor) {
         this.localId = localId;
         this.registry = registry;
+        this.factory = VonMessageFactory.system();
         this.executor = executor;
     }
 
@@ -120,7 +122,7 @@ public class LocalServerTransport implements VonTransport {
             try {
                 sendToNeighbor(neighborId, message);
                 // For LocalServer, immediately complete (real impl would wait for ACK)
-                future.complete(new VonMessage.Ack(messageId, neighborId));
+                future.complete(factory.createAck(messageId, neighborId));
             } catch (Exception e) {
                 future.completeExceptionally(e);
             } finally {

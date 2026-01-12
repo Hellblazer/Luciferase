@@ -56,6 +56,7 @@ public class VonManager {
 
     private final Map<UUID, VonBubble> bubbles;
     private final LocalServerTransport.Registry transportRegistry;
+    private final VonMessageFactory factory;
     private final List<Consumer<Event>> eventListeners;
     private final byte spatialLevel;
     private final long targetFrameMs;
@@ -81,6 +82,7 @@ public class VonManager {
     public VonManager(LocalServerTransport.Registry transportRegistry,
                       byte spatialLevel, long targetFrameMs, float aoiRadius) {
         this.transportRegistry = Objects.requireNonNull(transportRegistry, "transportRegistry cannot be null");
+        this.factory = VonMessageFactory.system();
         this.bubbles = new ConcurrentHashMap<>();
         this.eventListeners = new ArrayList<>();
         this.spatialLevel = spatialLevel;
@@ -158,7 +160,7 @@ public class VonManager {
 
         // Send JoinRequest to entry point
         try {
-            var joinRequest = new VonMessage.JoinRequest(bubble.id(), position, bubble.bounds());
+            var joinRequest = factory.createJoinRequest(bubble.id(), position, bubble.bounds());
             bubble.getTransport().sendToNeighbor(entryPoint.id(), joinRequest);
             log.debug("Sent JOIN request from {} to entry point {}", bubble.id(), entryPoint.id());
             return true;

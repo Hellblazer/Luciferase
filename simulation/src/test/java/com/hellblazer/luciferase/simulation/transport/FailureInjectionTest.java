@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.transport;
 
 import com.hellblazer.luciferase.simulation.von.LocalServerTransport;
 import com.hellblazer.luciferase.simulation.von.VonMessage;
+import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -46,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class FailureInjectionTest {
 
     private LocalServerTransport.Registry registry;
+    private final VonMessageFactory factory = VonMessageFactory.system();
 
     @AfterEach
     void cleanup() {
@@ -75,7 +77,7 @@ class FailureInjectionTest {
         transport1.injectDelay(150);
 
         // Send message and measure time
-        var message = new VonMessage.Ack(UUID.randomUUID(), uuid1);
+        var message = factory.createAck(UUID.randomUUID(), uuid1);
 
         var start = System.currentTimeMillis();
         transport1.sendToNeighbor(uuid2, message);
@@ -106,7 +108,7 @@ class FailureInjectionTest {
         transport2.onMessage(received::offer);
 
         // Initially no delay
-        var message = new VonMessage.Ack(UUID.randomUUID(), uuid1);
+        var message = factory.createAck(UUID.randomUUID(), uuid1);
 
         var start = System.currentTimeMillis();
         transport1.sendToNeighbor(uuid2, message);
@@ -120,7 +122,7 @@ class FailureInjectionTest {
         // Enable delay
         transport1.injectDelay(200);
         start = System.currentTimeMillis();
-        transport1.sendToNeighbor(uuid2, new VonMessage.Ack(UUID.randomUUID(), uuid1));
+        transport1.sendToNeighbor(uuid2, factory.createAck(UUID.randomUUID(), uuid1));
         received.poll(2, TimeUnit.SECONDS);
         elapsed = System.currentTimeMillis() - start;
         assertTrue(elapsed >= 200, "Delay should be active");
@@ -128,7 +130,7 @@ class FailureInjectionTest {
         // Disable delay
         transport1.injectDelay(0);
         start = System.currentTimeMillis();
-        transport1.sendToNeighbor(uuid2, new VonMessage.Ack(UUID.randomUUID(), uuid1));
+        transport1.sendToNeighbor(uuid2, factory.createAck(UUID.randomUUID(), uuid1));
         received.poll(1, TimeUnit.SECONDS);
         elapsed = System.currentTimeMillis() - start;
         assertTrue(elapsed < 100, "Delay should be disabled");
@@ -154,7 +156,7 @@ class FailureInjectionTest {
         transport1.injectPartition(true);
 
         // Send message - should be dropped
-        var message = new VonMessage.Ack(UUID.randomUUID(), uuid1);
+        var message = factory.createAck(UUID.randomUUID(), uuid1);
         transport1.sendToNeighbor(uuid2, message);
 
         // Wait and verify message NOT received
@@ -182,14 +184,14 @@ class FailureInjectionTest {
         transport1.injectPartition(true);
 
         // Send message - should be dropped
-        transport1.sendToNeighbor(uuid2, new VonMessage.Ack(UUID.randomUUID(), uuid1));
+        transport1.sendToNeighbor(uuid2, factory.createAck(UUID.randomUUID(), uuid1));
         assertNull(received.poll(500, TimeUnit.MILLISECONDS), "Message should be dropped");
 
         // Disable partition
         transport1.injectPartition(false);
 
         // Send message - should arrive
-        transport1.sendToNeighbor(uuid2, new VonMessage.Ack(UUID.randomUUID(), uuid1));
+        transport1.sendToNeighbor(uuid2, factory.createAck(UUID.randomUUID(), uuid1));
         var receivedMsg = received.poll(1, TimeUnit.SECONDS);
         assertNotNull(receivedMsg, "Message should arrive after partition cleared");
     }
@@ -215,7 +217,7 @@ class FailureInjectionTest {
         transport1.injectPartition(true);
 
         // Send message - should be dropped (partition overrides delay)
-        transport1.sendToNeighbor(uuid2, new VonMessage.Ack(UUID.randomUUID(), uuid1));
+        transport1.sendToNeighbor(uuid2, factory.createAck(UUID.randomUUID(), uuid1));
         assertNull(received.poll(500, TimeUnit.MILLISECONDS), "Partition should drop message even with delay");
 
         // Clear partition but keep delay
@@ -223,7 +225,7 @@ class FailureInjectionTest {
 
         // Send message - should arrive with delay
         var start = System.currentTimeMillis();
-        transport1.sendToNeighbor(uuid2, new VonMessage.Ack(UUID.randomUUID(), uuid1));
+        transport1.sendToNeighbor(uuid2, factory.createAck(UUID.randomUUID(), uuid1));
         var receivedMsg = received.poll(1, TimeUnit.SECONDS);
         var elapsed = System.currentTimeMillis() - start;
 
@@ -253,11 +255,11 @@ class FailureInjectionTest {
         transport1.injectPartition(true);
 
         // Send from transport1 - should be dropped
-        transport1.sendToNeighbor(uuid3, new VonMessage.Ack(UUID.randomUUID(), uuid1));
+        transport1.sendToNeighbor(uuid3, factory.createAck(UUID.randomUUID(), uuid1));
         assertNull(received.poll(500, TimeUnit.MILLISECONDS), "Transport1 message should be dropped");
 
         // Send from transport2 - should arrive
-        transport2.sendToNeighbor(uuid3, new VonMessage.Ack(UUID.randomUUID(), uuid2));
+        transport2.sendToNeighbor(uuid3, factory.createAck(UUID.randomUUID(), uuid2));
         var receivedMsg = received.poll(1, TimeUnit.SECONDS);
         assertNotNull(receivedMsg, "Transport2 message should arrive (no partition)");
     }
@@ -283,7 +285,7 @@ class FailureInjectionTest {
 
         // Send async
         var start = System.currentTimeMillis();
-        var future = transport1.sendToNeighborAsync(uuid2, new VonMessage.Ack(UUID.randomUUID(), uuid1));
+        var future = transport1.sendToNeighborAsync(uuid2, factory.createAck(UUID.randomUUID(), uuid1));
 
         // Wait for completion
         future.get(2, TimeUnit.SECONDS);

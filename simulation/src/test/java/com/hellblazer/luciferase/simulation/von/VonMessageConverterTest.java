@@ -35,11 +35,13 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class VonMessageConverterTest {
 
+    private final VonMessageFactory factory = VonMessageFactory.system();
+
     @Test
     void testAckRoundTrip() {
         var ackFor = UUID.randomUUID();
         var senderId = UUID.randomUUID();
-        var originalAck = new VonMessage.Ack(ackFor, senderId);
+        var originalAck = factory.createAck(ackFor, senderId);
 
         // Convert to transport
         var transport = VonMessageConverter.toTransport(originalAck);
@@ -61,7 +63,7 @@ class VonMessageConverterTest {
     void testMoveRoundTrip() {
         var nodeId = UUID.randomUUID();
         var newPosition = new Point3D(10.5, 20.25, 30.75);
-        var originalMove = new VonMessage.Move(nodeId, newPosition, null);
+        var originalMove = factory.createMove(nodeId, newPosition, null);
 
         // Convert to transport
         var transport = VonMessageConverter.toTransport(originalMove);
@@ -86,7 +88,7 @@ class VonMessageConverterTest {
     @Test
     void testLeaveRoundTrip() {
         var nodeId = UUID.randomUUID();
-        var originalLeave = new VonMessage.Leave(nodeId);
+        var originalLeave = factory.createLeave(nodeId);
 
         // Convert to transport
         var transport = VonMessageConverter.toTransport(originalLeave);
@@ -106,7 +108,7 @@ class VonMessageConverterTest {
     void testJoinRequestRoundTrip() {
         var joinerId = UUID.randomUUID();
         var position = new Point3D(5.0, 10.0, 15.0);
-        var originalJoinReq = new VonMessage.JoinRequest(joinerId, position, null);
+        var originalJoinReq = factory.createJoinRequest(joinerId, position, null);
 
         // Convert to transport
         var transport = VonMessageConverter.toTransport(originalJoinReq);
@@ -126,7 +128,7 @@ class VonMessageConverterTest {
     @Test
     void testJoinResponseRoundTrip() {
         var acceptorId = UUID.randomUUID();
-        var originalJoinResp = new VonMessage.JoinResponse(acceptorId, java.util.Set.of());
+        var originalJoinResp = factory.createJoinResponse(acceptorId, java.util.Set.of());
 
         // Convert to transport
         var transport = VonMessageConverter.toTransport(originalJoinResp);
@@ -146,7 +148,7 @@ class VonMessageConverterTest {
     void testQueryRoundTrip() {
         var senderId = UUID.randomUUID();
         var targetId = UUID.randomUUID();
-        var originalQuery = new VonMessage.Query(senderId, targetId, "position");
+        var originalQuery = factory.createQuery(senderId, targetId, "position");
 
         // Convert to transport
         var transport = VonMessageConverter.toTransport(originalQuery);
@@ -182,7 +184,7 @@ class VonMessageConverterTest {
         );
         ghosts.add(ghost1);
 
-        var originalGhostSync = new VonMessage.GhostSync(sourceBubbleId, ghosts, 42L);
+        var originalGhostSync = factory.createGhostSync(sourceBubbleId, ghosts, 42L);
 
         // Convert to transport
         var transport = VonMessageConverter.toTransport(originalGhostSync);
@@ -208,7 +210,7 @@ class VonMessageConverterTest {
     @Test
     void testGhostSyncEmptyList() {
         var sourceBubbleId = UUID.randomUUID();
-        var originalGhostSync = new VonMessage.GhostSync(sourceBubbleId, java.util.List.of(), 100L);
+        var originalGhostSync = factory.createGhostSync(sourceBubbleId, java.util.List.of(), 100L);
 
         // Convert to transport
         var transport = VonMessageConverter.toTransport(originalGhostSync);
@@ -260,7 +262,7 @@ class VonMessageConverterTest {
             ));
         }
 
-        var originalGhostSync = new VonMessage.GhostSync(sourceBubbleId, ghosts, 123L);
+        var originalGhostSync = factory.createGhostSync(sourceBubbleId, ghosts, 123L);
 
         // Convert to transport and back
         var transport = VonMessageConverter.toTransport(originalGhostSync);

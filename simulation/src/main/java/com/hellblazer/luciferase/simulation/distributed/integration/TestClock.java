@@ -35,6 +35,8 @@ public class TestClock implements Clock {
 
     private final AtomicLong    offset;
     private final AtomicLong    absoluteTime;
+    private final AtomicLong    nanoOffset;
+    private final AtomicLong    absoluteNanos;
     private final AtomicBoolean absoluteMode;
 
     /**
@@ -43,22 +45,27 @@ public class TestClock implements Clock {
     public TestClock() {
         this.offset = new AtomicLong(0);
         this.absoluteTime = new AtomicLong(0);
+        this.absoluteNanos = new AtomicLong(0);
+        this.nanoOffset = new AtomicLong(0);
         this.absoluteMode = new AtomicBoolean(false);
     }
 
     /**
      * Creates a new test clock with an initial fixed time (absolute mode).
      *
-     * @param initialTime the initial timestamp
+     * @param initialTime the initial timestamp in milliseconds
      */
     public TestClock(long initialTime) {
         this.offset = new AtomicLong(0);
         this.absoluteTime = new AtomicLong(initialTime);
+        this.absoluteNanos = new AtomicLong(initialTime * 1_000_000);
+        this.nanoOffset = new AtomicLong(0);
         this.absoluteMode = new AtomicBoolean(true);
     }
 
     /**
      * Advances the clock by the specified delta.
+     * Maintains consistent millis:nanos ratio (1:1,000,000).
      *
      * @param deltaMs milliseconds to advance (must be non-negative)
      * @throws IllegalArgumentException if deltaMs is negative
@@ -68,11 +75,15 @@ public class TestClock implements Clock {
             throw new IllegalArgumentException("Cannot advance by negative amount: " + deltaMs);
         }
 
+        long deltaNanos = deltaMs * 1_000_000;
+
         if (absoluteMode.get()) {
             absoluteTime.addAndGet(deltaMs);
+            absoluteNanos.addAndGet(deltaNanos);
             offset.addAndGet(deltaMs);
         } else {
             offset.addAndGet(deltaMs);
+            nanoOffset.addAndGet(deltaNanos);
         }
     }
 
@@ -88,13 +99,16 @@ public class TestClock implements Clock {
 
     /**
      * Sets the clock to an absolute time value and switches to absolute mode.
+     * Maintains consistent millis:nanos ratio (1:1,000,000).
      *
      * @param timeMs the absolute time in milliseconds
      */
     public void setTime(long timeMs) {
         absoluteMode.set(true);
         absoluteTime.set(timeMs);
+        absoluteNanos.set(timeMs * 1_000_000);
         offset.set(0);
+        nanoOffset.set(0);
     }
 
     /**
@@ -126,11 +140,14 @@ public class TestClock implements Clock {
 
     /**
      * Resets the clock to relative mode with zero offset.
+     * Clears all time tracking fields including nanosecond offsets.
      */
     public void reset() {
         absoluteMode.set(false);
         offset.set(0);
         absoluteTime.set(0);
+        nanoOffset.set(0);
+        absoluteNanos.set(0);
     }
 
     @Override
@@ -139,6 +156,15 @@ public class TestClock implements Clock {
             return absoluteTime.get();
         } else {
             return System.currentTimeMillis() + offset.get();
+        }
+    }
+
+    @Override
+    public long nanoTime() {
+        if (absoluteMode.get()) {
+            return absoluteNanos.get();
+        } else {
+            return System.nanoTime() + nanoOffset.get();
         }
     }
 }

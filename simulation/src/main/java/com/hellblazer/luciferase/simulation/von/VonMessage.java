@@ -62,9 +62,7 @@ public interface VonMessage {
      * @param timestamp Message creation time
      */
     record JoinRequest(UUID joinerId, Point3D position, BubbleBounds bounds, long timestamp) implements VonMessage {
-        public JoinRequest(UUID joinerId, Point3D position, BubbleBounds bounds) {
-            this(joinerId, position, bounds, System.currentTimeMillis());
-        }
+        // Compact constructor removed - use VonMessageFactory instead
     }
 
     /**
@@ -77,9 +75,7 @@ public interface VonMessage {
      * @param timestamp  Message creation time
      */
     record JoinResponse(UUID acceptorId, Set<NeighborInfo> neighbors, long timestamp) implements VonMessage {
-        public JoinResponse(UUID acceptorId, Set<NeighborInfo> neighbors) {
-            this(acceptorId, neighbors, System.currentTimeMillis());
-        }
+        // Compact constructor removed - use VonMessageFactory instead
     }
 
     /**
@@ -93,9 +89,7 @@ public interface VonMessage {
      * @param timestamp   Message creation time
      */
     record Move(UUID nodeId, Point3D newPosition, BubbleBounds newBounds, long timestamp) implements VonMessage {
-        public Move(UUID nodeId, Point3D newPosition, BubbleBounds newBounds) {
-            this(nodeId, newPosition, newBounds, System.currentTimeMillis());
-        }
+        // Compact constructor removed - use VonMessageFactory instead
     }
 
     /**
@@ -107,9 +101,7 @@ public interface VonMessage {
      * @param timestamp Message creation time
      */
     record Leave(UUID nodeId, long timestamp) implements VonMessage {
-        public Leave(UUID nodeId) {
-            this(nodeId, System.currentTimeMillis());
-        }
+        // Compact constructor removed - use VonMessageFactory instead
     }
 
     /**
@@ -124,9 +116,7 @@ public interface VonMessage {
      */
     record GhostSync(UUID sourceBubbleId, List<TransportGhost> ghosts, long bucket,
                      long timestamp) implements VonMessage {
-        public GhostSync(UUID sourceBubbleId, List<TransportGhost> ghosts, long bucket) {
-            this(sourceBubbleId, ghosts, bucket, System.currentTimeMillis());
-        }
+        // Compact constructor removed - use VonMessageFactory instead
     }
 
     /**
@@ -164,9 +154,7 @@ public interface VonMessage {
      * @param timestamp Message creation time
      */
     record Ack(UUID ackFor, UUID senderId, long timestamp) implements VonMessage {
-        public Ack(UUID ackFor, UUID senderId) {
-            this(ackFor, senderId, System.currentTimeMillis());
-        }
+        // Compact constructor removed - use VonMessageFactory instead
     }
 
     /**
@@ -180,9 +168,7 @@ public interface VonMessage {
      * @param timestamp Message creation time
      */
     record Query(UUID senderId, UUID targetId, String queryType, long timestamp) implements VonMessage {
-        public Query(UUID senderId, UUID targetId, String queryType) {
-            this(senderId, targetId, queryType, System.currentTimeMillis());
-        }
+        // Compact constructor removed - use VonMessageFactory instead
     }
 
     /**

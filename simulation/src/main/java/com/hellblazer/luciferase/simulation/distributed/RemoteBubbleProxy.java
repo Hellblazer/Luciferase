@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.distributed;
 
 import com.hellblazer.luciferase.simulation.von.VonMessage;
+import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
 import com.hellblazer.luciferase.simulation.von.VonTransport;
 import javafx.geometry.Point3D;
 import org.slf4j.Logger;
@@ -52,6 +53,7 @@ public class RemoteBubbleProxy implements BubbleReference {
 
     private final UUID bubbleId;
     private final VonTransport transport;
+    private final VonMessageFactory factory;
     private final long timeoutMs;
     private final long cacheTTL;
 
@@ -90,6 +92,7 @@ public class RemoteBubbleProxy implements BubbleReference {
     public RemoteBubbleProxy(UUID bubbleId, VonTransport transport, long timeoutMs, long cacheTTL) {
         this.bubbleId = Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
         this.transport = Objects.requireNonNull(transport, "Transport cannot be null");
+        this.factory = VonMessageFactory.system();
         this.timeoutMs = timeoutMs;
         this.cacheTTL = cacheTTL;
         this.cache = new ConcurrentHashMap<>();
@@ -171,7 +174,7 @@ public class RemoteBubbleProxy implements BubbleReference {
     private Point3D fetchPosition() {
         try {
             // Send query message
-            var query = new VonMessage.Query(transport.getLocalId(), bubbleId, "position");
+            var query = factory.createQuery(transport.getLocalId(), bubbleId, "position");
             transport.sendToNeighbor(bubbleId, query);
 
             // Wait for response (blocking with timeout)
@@ -200,7 +203,7 @@ public class RemoteBubbleProxy implements BubbleReference {
     private Set<UUID> fetchNeighbors() {
         try {
             // Send query message
-            var query = new VonMessage.Query(transport.getLocalId(), bubbleId, "neighbors");
+            var query = factory.createQuery(transport.getLocalId(), bubbleId, "neighbors");
             transport.sendToNeighbor(bubbleId, query);
 
             // Wait for response (blocking with timeout)

@@ -35,13 +35,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class VonMessageTest {
 
+    private final VonMessageFactory factory = VonMessageFactory.system();
+
     @Test
     void testJoinRequest_createsWithTimestamp() {
         var joinerId = UUID.randomUUID();
         var position = new Point3D(1.0, 2.0, 3.0);
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(1.0f, 2.0f, 3.0f)));
 
-        var request = new VonMessage.JoinRequest(joinerId, position, bounds);
+        var request = factory.createJoinRequest(joinerId, position, bounds);
 
         assertThat(request.joinerId()).isEqualTo(joinerId);
         assertThat(request.position()).isEqualTo(position);
@@ -57,7 +59,7 @@ public class VonMessageTest {
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(1.0f, 2.0f, 3.0f)));
 
         var neighborInfo = new VonMessage.NeighborInfo(neighborId, position, bounds);
-        var response = new VonMessage.JoinResponse(acceptorId, Set.of(neighborInfo));
+        var response = factory.createJoinResponse(acceptorId, Set.of(neighborInfo));
 
         assertThat(response.acceptorId()).isEqualTo(acceptorId);
         assertThat(response.neighbors()).hasSize(1);
@@ -71,7 +73,7 @@ public class VonMessageTest {
         var newPosition = new Point3D(4.0, 5.0, 6.0);
         var newBounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(4.0f, 5.0f, 6.0f)));
 
-        var move = new VonMessage.Move(nodeId, newPosition, newBounds);
+        var move = factory.createMove(nodeId, newPosition, newBounds);
 
         assertThat(move.nodeId()).isEqualTo(nodeId);
         assertThat(move.newPosition()).isEqualTo(newPosition);
@@ -83,7 +85,7 @@ public class VonMessageTest {
     void testLeave_withNodeId() {
         var nodeId = UUID.randomUUID();
 
-        var leave = new VonMessage.Leave(nodeId);
+        var leave = factory.createLeave(nodeId);
 
         assertThat(leave.nodeId()).isEqualTo(nodeId);
         assertThat(leave.timestamp()).isGreaterThan(0);
@@ -94,7 +96,7 @@ public class VonMessageTest {
         var sourceBubbleId = UUID.randomUUID();
         long bucket = 100L;
 
-        var sync = new VonMessage.GhostSync(sourceBubbleId, List.of(), bucket);
+        var sync = factory.createGhostSync(sourceBubbleId, List.of(), bucket);
 
         assertThat(sync.sourceBubbleId()).isEqualTo(sourceBubbleId);
         assertThat(sync.ghosts()).isEmpty();
@@ -107,7 +109,7 @@ public class VonMessageTest {
         var ackFor = UUID.randomUUID();
         var senderId = UUID.randomUUID();
 
-        var ack = new VonMessage.Ack(ackFor, senderId);
+        var ack = factory.createAck(ackFor, senderId);
 
         assertThat(ack.ackFor()).isEqualTo(ackFor);
         assertThat(ack.senderId()).isEqualTo(senderId);
@@ -129,7 +131,7 @@ public class VonMessageTest {
 
     @Test
     void testSealedInterface_patternMatching() {
-        VonMessage message = new VonMessage.Leave(UUID.randomUUID());
+        VonMessage message = factory.createLeave(UUID.randomUUID());
 
         // Verify VonMessage allows pattern matching (non-sealed for Phase 6B extensions)
         var result = switch (message) {

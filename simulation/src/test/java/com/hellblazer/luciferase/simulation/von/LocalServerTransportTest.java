@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class LocalServerTransportTest {
 
     private LocalServerTransport.Registry registry;
+    private final VonMessageFactory factory = VonMessageFactory.system();
 
     @BeforeEach
     void setUp() {
@@ -81,7 +82,7 @@ public class LocalServerTransportTest {
             latch.countDown();
         });
 
-        var message = new VonMessage.Leave(id1);
+        var message = factory.createLeave(id1);
         transport1.sendToNeighbor(id2, message);
 
         assertThat(latch.await(1, TimeUnit.SECONDS)).isTrue();
@@ -97,7 +98,7 @@ public class LocalServerTransportTest {
         var transport1 = registry.register(id1);
         registry.register(id2);
 
-        var message = new VonMessage.Leave(id1);
+        var message = factory.createLeave(id1);
         var future = transport1.sendToNeighborAsync(id2, message);
 
         var ack = future.get(1, TimeUnit.SECONDS);
@@ -112,7 +113,7 @@ public class LocalServerTransportTest {
 
         var transport1 = registry.register(id1);
 
-        var message = new VonMessage.Leave(id1);
+        var message = factory.createLeave(id1);
         assertThatThrownBy(() -> transport1.sendToNeighbor(unknownId, message))
             .isInstanceOf(VonTransport.TransportException.class)
             .hasMessageContaining("Unknown neighbor");
@@ -178,7 +179,7 @@ public class LocalServerTransportTest {
         transport1.close();
 
         assertThat(transport1.isConnected()).isFalse();
-        assertThatThrownBy(() -> transport1.sendToNeighbor(id2, new VonMessage.Leave(id1)))
+        assertThatThrownBy(() -> transport1.sendToNeighbor(id2, factory.createLeave(id1)))
             .isInstanceOf(VonTransport.TransportException.class)
             .hasMessageContaining("closed");
     }
@@ -203,7 +204,7 @@ public class LocalServerTransportTest {
             latch.countDown();
         });
 
-        var message = new VonMessage.Leave(id1);
+        var message = factory.createLeave(id1);
         transport1.sendToNeighbor(id2, message);
 
         assertThat(latch.await(1, TimeUnit.SECONDS)).isTrue();
@@ -224,7 +225,7 @@ public class LocalServerTransportTest {
         transport2.onMessage(handler);
 
         // First message should be received
-        transport1.sendToNeighbor(id2, new VonMessage.Leave(id1));
+        transport1.sendToNeighbor(id2, factory.createLeave(id1));
         Thread.sleep(100);
         assertThat(count.get()).isEqualTo(1);
 
@@ -232,7 +233,7 @@ public class LocalServerTransportTest {
         transport2.removeMessageHandler(handler);
 
         // Second message should not be received
-        transport1.sendToNeighbor(id2, new VonMessage.Leave(id1));
+        transport1.sendToNeighbor(id2, factory.createLeave(id1));
         Thread.sleep(100);
         assertThat(count.get()).isEqualTo(1);
     }
@@ -257,7 +258,7 @@ public class LocalServerTransportTest {
 
         var position = new Point3D(1.0, 2.0, 3.0);
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(1.0f, 2.0f, 3.0f)));
-        var request = new VonMessage.JoinRequest(id1, position, bounds);
+        var request = factory.createJoinRequest(id1, position, bounds);
 
         transport1.sendToNeighbor(id2, request);
 

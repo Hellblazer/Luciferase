@@ -53,6 +53,7 @@ public class VonBubble extends EnhancedBubble implements Node {
     private static final Logger log = LoggerFactory.getLogger(VonBubble.class);
 
     private final VonTransport transport;
+    private final VonMessageFactory factory;
     private final Map<UUID, NeighborState> neighborStates;
     private final Set<UUID> introducedTo;  // Track neighbors we've introduced ourselves to
     private final List<Consumer<Event>> eventListeners;
@@ -69,6 +70,7 @@ public class VonBubble extends EnhancedBubble implements Node {
     public VonBubble(UUID id, byte spatialLevel, long targetFrameMs, VonTransport transport) {
         super(id, spatialLevel, targetFrameMs);
         this.transport = transport;
+        this.factory = VonMessageFactory.system();
         this.neighborStates = new ConcurrentHashMap<>();
         this.introducedTo = ConcurrentHashMap.newKeySet();
         this.eventListeners = new CopyOnWriteArrayList<>();
@@ -166,7 +168,7 @@ public class VonBubble extends EnhancedBubble implements Node {
      * Called when this bubble's position or bounds change significantly.
      */
     public void broadcastMove() {
-        var moveMsg = new VonMessage.Move(id(), position(), bounds());
+        var moveMsg = factory.createMove(id(), position(), bounds());
 
         for (UUID neighborId : neighbors()) {
             try {
@@ -185,7 +187,7 @@ public class VonBubble extends EnhancedBubble implements Node {
      * Called during graceful shutdown.
      */
     public void broadcastLeave() {
-        var leaveMsg = new VonMessage.Leave(id());
+        var leaveMsg = factory.createLeave(id());
 
         for (UUID neighborId : neighbors()) {
             try {
@@ -216,7 +218,7 @@ public class VonBubble extends EnhancedBubble implements Node {
             }
 
             // Send JOIN request
-            var joinRequest = new VonMessage.JoinRequest(id(), targetPosition, bounds());
+            var joinRequest = factory.createJoinRequest(id(), targetPosition, bounds());
             transport.sendToNeighbor(acceptor.nodeId(), joinRequest);
 
             log.debug("Sent JOIN request to {} for position {}", acceptor.nodeId(), targetPosition);
@@ -331,7 +333,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         // Include ourselves
         neighborInfos.add(new VonMessage.NeighborInfo(id(), position(), bounds()));
 
-        var response = new VonMessage.JoinResponse(id(), neighborInfos);
+        var response = factory.createJoinResponse(id(), neighborInfos);
         try {
             transport.sendToNeighbor(req.joinerId(), response);
         } catch (VonTransport.TransportException e) {
@@ -357,7 +359,7 @@ public class VonBubble extends EnhancedBubble implements Node {
 
         // Send ACK to acceptor
         try {
-            transport.sendToNeighbor(resp.acceptorId(), new VonMessage.Ack(resp.acceptorId(), id()));
+            transport.sendToNeighbor(resp.acceptorId(), factory.createAck(resp.acceptorId(), id()));
         } catch (VonTransport.TransportException e) {
             log.warn("Failed to send ACK to {}: {}", resp.acceptorId(), e.getMessage());
         }
@@ -370,7 +372,7 @@ public class VonBubble extends EnhancedBubble implements Node {
             if (!neighborId.equals(resp.acceptorId()) && !introducedTo.contains(neighborId)) {
                 introducedTo.add(neighborId);  // Mark as introduced before sending
                 try {
-                    var introRequest = new VonMessage.JoinRequest(id(), position(), bounds());
+                    var introRequest = factory.createJoinRequest(id(), position(), bounds());
                     transport.sendToNeighbor(neighborId, introRequest);
                     log.trace("Sent introduction to neighbor {} from JoinResponse", neighborId);
                 } catch (VonTransport.TransportException e) {
