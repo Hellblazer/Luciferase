@@ -21,9 +21,9 @@ import com.hellblazer.luciferase.geometry.Point3i;
 import com.hellblazer.luciferase.portal.esvo.bridge.ESVOBridge;
 import javafx.application.Platform;
 import javafx.embed.swing.JFXPanel;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,7 +38,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
 public class OctreeStructureDiagramTest {
     
     @BeforeAll
@@ -54,6 +53,7 @@ public class OctreeStructureDiagramTest {
     
     @Test
     void testCreation() throws Exception {
+        Assumptions.assumeFalse("true".equals(System.getenv("CI")), "Skipping JavaFX UI test in CI");
         CountDownLatch latch = new CountDownLatch(1);
         
         Platform.runLater(() -> {
@@ -72,6 +72,7 @@ public class OctreeStructureDiagramTest {
     
     @Test
     void testSetOctreeData() throws Exception {
+        Assumptions.assumeFalse("true".equals(System.getenv("CI")), "Skipping JavaFX UI test in CI");
         CountDownLatch latch = new CountDownLatch(1);
         
         Platform.runLater(() -> {
@@ -101,6 +102,7 @@ public class OctreeStructureDiagramTest {
     
     @Test
     void testHighlightNodes() throws Exception {
+        Assumptions.assumeFalse("true".equals(System.getenv("CI")), "Skipping JavaFX UI test in CI");
         CountDownLatch latch = new CountDownLatch(1);
         
         Platform.runLater(() -> {
