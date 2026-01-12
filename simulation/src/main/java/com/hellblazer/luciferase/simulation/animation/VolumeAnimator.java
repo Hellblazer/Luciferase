@@ -25,6 +25,7 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.annotations.NonEvent;
 import com.hellblazer.primeMover.api.Kronos;
@@ -49,9 +50,18 @@ public class VolumeAnimator {
     private static final byte   LEVEL       = 12; // Spatial resolution level
     private static final float  WORLD_SCALE = 32200f; // Scale for normalizing world coords to [0,1]
 
+    private volatile Clock clock = Clock.system();
+
     private final Tetree<LongEntityID, Void> index;
     private final RealTimeController         controller;
     private final AnimationFrame             frame = new AnimationFrame(100);
+
+    /**
+     * Set the clock source for deterministic testing.
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Create VolumeAnimator.
@@ -119,7 +129,7 @@ public class VolumeAnimator {
         private       long frameCount          = 0;
         private       long cumulativeDurations = 0;
         private       long cumulativeDelay     = 0;
-        private       long lastActive          = System.nanoTime();
+        private       long lastActive          = clock.nanoTime();
         private       long eventOverhead       = 0;
 
         public AnimationFrame(int frameRate) {
@@ -143,16 +153,16 @@ public class VolumeAnimator {
 
         public void track() {
             frameCount++;
-            long start = System.nanoTime();
+            long start = clock.nanoTime();
             cumulativeDelay += start - lastActive;
             // No rebuild needed! SpatialIndex updates are incremental.
             // The old MutableGrid.rebuild() call is eliminated.
-            var now = System.nanoTime();
+            var now = clock.nanoTime();
             var duration = now - start;
             cumulativeDurations += duration;
             Kronos.sleep(frameRateNs - duration - eventOverhead);
             this.track();
-            lastActive = System.nanoTime();
+            lastActive = clock.nanoTime();
             eventOverhead = (lastActive - now) / 2;
         }
     }
