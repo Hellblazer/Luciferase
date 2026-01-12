@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,8 +57,17 @@ public class WallClockBucketScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(WallClockBucketScheduler.class);
 
+    private volatile Clock clock = Clock.system();
+
     private final AtomicLong currentBucket;
     private final ConcurrentHashMap<Long, Long> bucketTransitions; // fromBucket -> toBucket
+
+    /**
+     * Set the clock source for deterministic testing.
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Create a WallClockBucketScheduler.
@@ -65,7 +75,7 @@ public class WallClockBucketScheduler {
      * Initializes bucket tracking at current time.
      */
     public WallClockBucketScheduler() {
-        this.currentBucket = new AtomicLong(bucketForTimestamp(System.currentTimeMillis()));
+        this.currentBucket = new AtomicLong(bucketForTimestamp(clock.currentTimeMillis()));
         this.bucketTransitions = new ConcurrentHashMap<>();
     }
 
@@ -77,7 +87,7 @@ public class WallClockBucketScheduler {
      * @return current bucket index (0-based)
      */
     public long getCurrentBucket() {
-        var now = System.currentTimeMillis();
+        var now = clock.currentTimeMillis();
         var bucket = bucketForTimestamp(now);
         currentBucket.set(bucket);
         return bucket;
@@ -120,7 +130,7 @@ public class WallClockBucketScheduler {
      * @return clock skew in milliseconds (positive = future, negative = past)
      */
     public long getClockSkew(long timestamp) {
-        var now = System.currentTimeMillis();
+        var now = clock.currentTimeMillis();
         var skew = timestamp - now;
 
         if (Math.abs(skew) > TOLERANCE_MS) {
