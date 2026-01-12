@@ -507,6 +507,9 @@
                         <useModulePath>false</useModulePath>
                         <argLine>-Djava.awt.headless=true</argLine>
                         <argLine>--enable-preview --add-modules jdk.incubator.vector</argLine>
+                        <environmentVariables>
+                            <CI>${env.CI}</CI>
+                        </environmentVariables>
                     </configuration>
                 </plugin>
                 <plugin>
