@@ -64,6 +64,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
+      # Upload compiled classes for test job
+      - name: Upload compiled artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-classes
+          path: |
+            **/target/classes/
+            **/target/test-classes/
+            **/target/*.jar
+          retention-days: 1
+
       # Save cache after successful compile, even if tests fail later
       - name: Save Maven cache
         if: success()
@@ -101,6 +112,13 @@ jobs:
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
+
+      # Download compiled classes from compile job
+      - name: Download compiled artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: compiled-classes
+          path: .
 
       - name: Configure Maven for GitHub Packages
         run: |
