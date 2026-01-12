@@ -23,6 +23,7 @@ import javafx.application.Platform;
 import javafx.embed.swing.JFXPanel;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,9 +35,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for OctreeStructureDiagram.
- * 
+ *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+    disabledReason = "JavaFX UI tests require toolkit initialization, not available in headless CI with xvfb")
 class OctreeStructureDiagramTest {
     
     @BeforeAll
