@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityData;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.events.EntityUpdateEvent;
 import com.hellblazer.luciferase.simulation.spatial.DeadReckoningEstimator;
@@ -158,6 +159,18 @@ public class GhostStateManager {
     private GhostPhysicsMetrics metrics;
 
     /**
+     * Clock for deterministic testing.
+     */
+    private volatile Clock clock = Clock.system();
+
+    /**
+     * Set the clock source for deterministic testing.
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    /**
      * Create GhostStateManager with specified bounds and ghost limit.
      *
      * @param bounds     Spatial bounds for extrapolation clamping
@@ -181,7 +194,7 @@ public class GhostStateManager {
      * @param event          EntityUpdateEvent with position, velocity, timestamp
      */
     public void updateGhost(UUID sourceBubbleId, EntityUpdateEvent event) {
-        var startNanos = System.nanoTime();  // Metrics: record start time
+        var startNanos = clock.nanoTime();  // Metrics: record start time
 
         Objects.requireNonNull(sourceBubbleId, "sourceBubbleId must not be null");
         Objects.requireNonNull(event, "event must not be null");
@@ -217,7 +230,7 @@ public class GhostStateManager {
 
         // Metrics: record latency
         if (metrics != null) {
-            metrics.recordUpdateGhost(System.nanoTime() - startNanos);
+            metrics.recordUpdateGhost(clock.nanoTime() - startNanos);
         }
     }
 
@@ -321,7 +334,7 @@ public class GhostStateManager {
      * @param entityId Entity ID to remove
      */
     public void removeGhost(StringEntityID entityId) {
-        var startNanos = System.nanoTime();  // Metrics: record start time
+        var startNanos = clock.nanoTime();  // Metrics: record start time
 
         var removed = ghostStates.remove(entityId);
         if (removed != null) {
@@ -331,7 +344,7 @@ public class GhostStateManager {
 
         // Metrics: record latency
         if (metrics != null) {
-            metrics.recordRemoveGhost(System.nanoTime() - startNanos);
+            metrics.recordRemoveGhost(clock.nanoTime() - startNanos);
         }
     }
 
