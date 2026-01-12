@@ -38,9 +38,8 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
-    disabledReason = "JavaFX UI tests require toolkit initialization, not available in headless CI with xvfb")
-class OctreeStructureDiagramTest {
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true")
+public class OctreeStructureDiagramTest {
     
     @BeforeAll
     static void initToolkit() {
