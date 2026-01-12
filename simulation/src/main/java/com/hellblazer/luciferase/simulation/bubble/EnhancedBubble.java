@@ -1,34 +1,41 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
-import com.hellblazer.luciferase.simulation.entity.*;
-
-import com.hellblazer.luciferase.simulation.bubble.*;
-import com.hellblazer.luciferase.simulation.ghost.DelosSocketTransport;
+import com.hellblazer.luciferase.lucien.entity.EntityData;
+import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.ghost.GhostChannel;
 import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
 import com.hellblazer.luciferase.simulation.ghost.InMemoryGhostChannel;
-
-import com.hellblazer.luciferase.lucien.Spatial;
-import com.hellblazer.luciferase.lucien.entity.EntityData;
-import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import javafx.geometry.Point3D;
 
 import javax.vecmath.Point3f;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Enhanced Bubble with tetrahedral bounds, spatial index, and VON integration.
+ * Acts as orchestrator composing focused components for clean separation of concerns.
  * <p>
  * Enhancements over basic Bubble:
- * - Internal Tetree spatial index for entity storage
- * - BubbleBounds for tetrahedral bounding volumes
- * - VON neighbor tracking for distributed bubble discovery
- * - Frame time monitoring with split detection
+ * - Internal Tetree spatial index for entity storage (BubbleEntityStore)
+ * - BubbleBounds for tetrahedral bounding volumes (BubbleBoundsTracker)
+ * - VON neighbor tracking for distributed bubble discovery (BubbleVonCoordinator)
+ * - Frame time monitoring with split detection (BubbleFrameMonitor)
+ * - Ghost entity synchronization (BubbleGhostCoordinator)
  * <p>
- * Thread-safe for concurrent entity operations.
+ * Component Architecture:
+ * - BubbleFrameMonitor: Performance tracking and split detection
+ * - BubbleVonCoordinator: VON neighbor discovery
+ * - BubbleBoundsTracker: Spatial extent management (implements EntityChangeListener)
+ * - BubbleEntityStore: Entity lifecycle and spatial queries (notifies EntityChangeListeners)
+ * - BubbleGhostCoordinator: Ghost channel and state management
+ * <p>
+ * Observer Pattern: BubbleEntityStore notifies BubbleBoundsTracker via EntityChangeListener
+ * interface, enabling loose coupling for bounds updates on entity changes.
+ * <p>
+ * Thread-safe for concurrent entity operations via component delegation.
  *
  * @author hal.hildebrand
  */
@@ -36,15 +43,12 @@ public class EnhancedBubble {
 
     private final UUID id;
     private final byte spatialLevel;
-    private final long targetFrameMs;
-    private final Tetree<StringEntityID, EntityData> spatialIndex;
-    private final Set<UUID> vonNeighbors;
-    private final AtomicLong lastFrameTimeNs;
-    private final Map<String, StringEntityID> idMapping;  // Map user String IDs to EntityIDs
     private final RealTimeController realTimeController;
-    private final GhostChannel<StringEntityID, EntityData> ghostChannel;
-    private final GhostStateManager ghostStateManager;  // Phase 7B.3: Ghost state tracking + dead reckoning
-    private BubbleBounds bounds;
+    private final BubbleFrameMonitor frameMonitor;
+    private final BubbleVonCoordinator vonCoordinator;
+    private final BubbleBoundsTracker boundsTracker;
+    private final BubbleEntityStore entityStore;
+    private final BubbleGhostCoordinator ghostCoordinator;
 
     /**
      * Create an enhanced bubble with spatial indexing and monitoring.
@@ -94,42 +98,21 @@ public class EnhancedBubble {
                           GhostChannel<StringEntityID, EntityData> ghostChannel) {
         this.id = id;
         this.spatialLevel = spatialLevel;
-        this.targetFrameMs = targetFrameMs;
         this.realTimeController = realTimeController;
-        this.ghostChannel = Objects.requireNonNull(ghostChannel, "ghostChannel must not be null");
-        this.spatialIndex = new Tetree<>(new StringEntityIDGenerator(), 10, spatialLevel);
-        this.vonNeighbors = ConcurrentHashMap.newKeySet();
-        this.lastFrameTimeNs = new AtomicLong(0);
-        this.idMapping = new ConcurrentHashMap<>();
+        this.frameMonitor = new BubbleFrameMonitor(targetFrameMs);
+        this.vonCoordinator = new BubbleVonCoordinator();
+        this.boundsTracker = new BubbleBoundsTracker(spatialLevel);
+        this.entityStore = new BubbleEntityStore(spatialLevel, realTimeController);
 
-        // Initialize bounds to root tetrahedron at specified level
-        var rootKey = com.hellblazer.luciferase.lucien.tetree.TetreeKey.create(spatialLevel, 0L, 0L);
-        this.bounds = BubbleBounds.fromTetreeKey(rootKey);
+        // Register boundsTracker as listener to entity changes
+        this.entityStore.addEntityChangeListener(boundsTracker);
 
-        // Phase 7B.3: Initialize GhostStateManager for dead reckoning
-        this.ghostStateManager = new GhostStateManager(bounds, 1000); // max 1000 ghosts
-
-        // Phase 7B.3: Register ghost reception handler using GhostChannel interface
-        ghostChannel.onReceive((sourceBubbleId, ghosts) -> {
-            for (var ghost : ghosts) {
-                // Convert SimulationGhostEntity to EntityUpdateEvent for GhostStateManager
-                // Note: Phase 7B.2 sets velocity to (0,0,0) placeholder
-                var event = new com.hellblazer.luciferase.simulation.events.EntityUpdateEvent(
-                    ghost.entityId(),
-                    ghost.position(),
-                    new javax.vecmath.Point3f(0f, 0f, 0f), // Placeholder velocity
-                    ghost.timestamp(),
-                    ghost.bucket() // Use bucket as lamport clock
-                );
-                ghostStateManager.updateGhost(sourceBubbleId, event);
-            }
-        });
-
-        // Phase 7B.3: Register tick listener with RealTimeController for ghost updates
-        realTimeController.addTickListener((simTime, lamportClock) -> {
-            // Update ghost states via dead reckoning on each tick
-            tickGhosts(simTime);
-        });
+        // Create ghost coordinator with channel, bounds, and real-time controller
+        this.ghostCoordinator = new BubbleGhostCoordinator(
+            Objects.requireNonNull(ghostChannel, "ghostChannel must not be null"),
+            boundsTracker.bounds(),
+            realTimeController
+        );
     }
 
     /**
@@ -147,7 +130,7 @@ public class EnhancedBubble {
      * @return Entity count
      */
     public int entityCount() {
-        return spatialIndex.entityCount();
+        return entityStore.entityCount();
     }
 
     /**
@@ -156,7 +139,7 @@ public class EnhancedBubble {
      * @return BubbleBounds or null if no entities
      */
     public BubbleBounds bounds() {
-        return bounds;
+        return boundsTracker.bounds();
     }
 
     /**
@@ -166,7 +149,7 @@ public class EnhancedBubble {
      */
     @SuppressWarnings("rawtypes") // EntityData used as raw type
     public GhostChannel<StringEntityID, EntityData> getGhostChannel() {
-        return ghostChannel;
+        return ghostCoordinator.getGhostChannel();
     }
 
     /**
@@ -176,7 +159,7 @@ public class EnhancedBubble {
      * @return GhostStateManager instance
      */
     public GhostStateManager getGhostStateManager() {
-        return ghostStateManager;
+        return ghostCoordinator.getGhostStateManager();
     }
 
     /**
@@ -187,7 +170,7 @@ public class EnhancedBubble {
      * @param currentTime Current simulation time (milliseconds)
      */
     public void tickGhosts(long currentTime) {
-        ghostStateManager.tick(currentTime);
+        ghostCoordinator.tickGhosts(currentTime);
     }
 
     /**
@@ -196,7 +179,7 @@ public class EnhancedBubble {
      * @return Set of neighbor bubble UUIDs
      */
     public Set<UUID> getVonNeighbors() {
-        return vonNeighbors;
+        return vonCoordinator.getVonNeighbors();
     }
 
     /**
@@ -205,7 +188,7 @@ public class EnhancedBubble {
      * @return Set of entity IDs
      */
     public Set<String> getEntities() {
-        return new HashSet<>(idMapping.keySet());
+        return entityStore.getEntities();
     }
 
     /**
@@ -215,14 +198,10 @@ public class EnhancedBubble {
      * @return List of all entity records
      */
     public List<EntityRecord> getAllEntityRecords() {
+        var bubbleRecords = entityStore.getAllEntityRecords();
         var results = new ArrayList<EntityRecord>();
-        for (var entry : idMapping.entrySet()) {
-            var originalId = entry.getKey();
-            var internalId = entry.getValue();
-            var data = spatialIndex.getEntity(internalId);
-            if (data != null) {
-                results.add(new EntityRecord(originalId, data.position, data.content, data.addedBucket));
-            }
+        for (var record : bubbleRecords) {
+            results.add(new EntityRecord(record.id(), record.position(), record.content(), record.addedBucket()));
         }
         return results;
     }
@@ -237,20 +216,7 @@ public class EnhancedBubble {
      * @param content  Entity content
      */
     public void addEntity(String entityId, Point3f position, Object content) {
-        var internalId = new StringEntityID(entityId);
-        idMapping.put(entityId, internalId);
-
-        // Use simulation time instead of wall-clock time for determinism
-        var simulationTime = realTimeController.getSimulationTime();
-        var entityData = new EntityData(position, content, simulationTime);
-        spatialIndex.insert(internalId, position, spatialLevel, entityData);
-
-        // Update bounds
-        if (bounds == null) {
-            bounds = BubbleBounds.fromEntityPositions(List.of(position));
-        } else {
-            bounds = bounds.expand(position);
-        }
+        entityStore.addEntity(entityId, position, content);
     }
 
     /**
@@ -260,17 +226,7 @@ public class EnhancedBubble {
      * @param entityId Entity to remove
      */
     public void removeEntity(String entityId) {
-        var internalId = idMapping.remove(entityId);
-        if (internalId != null) {
-            spatialIndex.removeEntity(internalId);
-
-            // Recalculate bounds if entities remain
-            if (spatialIndex.entityCount() > 0) {
-                recalculateBounds();
-            } else {
-                bounds = null;
-            }
-        }
+        entityStore.removeEntity(entityId);
     }
 
     /**
@@ -281,24 +237,7 @@ public class EnhancedBubble {
      * @param newPosition New position
      */
     public void updateEntityPosition(String entityId, Point3f newPosition) {
-        var internalId = idMapping.get(entityId);
-        if (internalId != null) {
-            // Get existing entity data
-            var oldData = spatialIndex.getEntity(internalId);
-            if (oldData != null) {
-                // Remove old entity
-                spatialIndex.removeEntity(internalId);
-
-                // Re-add with new position (EntityData is immutable record)
-                var newData = new EntityData(newPosition, oldData.content(), oldData.addedBucket());
-                spatialIndex.insert(internalId, newPosition, spatialLevel, newData);
-
-                // Expand bounds if needed
-                if (bounds != null) {
-                    bounds = bounds.expand(newPosition);
-                }
-            }
-        }
+        entityStore.updateEntityPosition(entityId, newPosition);
     }
 
     /**
@@ -309,54 +248,11 @@ public class EnhancedBubble {
      * @return List of entities within radius
      */
     public List<EntityRecord> queryRange(Point3f center, float radius) {
-        // Validate radius
-        if (radius <= 0) {
-            throw new IllegalArgumentException("Radius must be positive: " + radius);
-        }
-
-        // Create bounding cube for sphere (origin at sphere's min corner, extent = 2*radius)
-        // Clamp to positive coordinates since Tetree requires positive coordinate space
-        float minX = Math.max(0, center.x - radius);
-        float minY = Math.max(0, center.y - radius);
-        float minZ = Math.max(0, center.z - radius);
-
-        // Compute extent that covers the query sphere (accounting for clamping)
-        float maxX = center.x + radius;
-        float maxY = center.y + radius;
-        float maxZ = center.z + radius;
-        float extent = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
-
-        // Early return if extent is non-positive (query entirely out of bounds)
-        if (extent <= 0) {
-            return List.of();
-        }
-
-        var cube = new Spatial.Cube(minX, minY, minZ, extent);
-
-        var entityIds = spatialIndex.entitiesInRegion(cube);
-
-        // Filter to actual sphere (entitiesInRegion returns cube, we need sphere)
+        var bubbleRecords = entityStore.queryRange(center, radius);
         var results = new ArrayList<EntityRecord>();
-        for (var entityId : entityIds) {
-            var content = spatialIndex.getEntity(entityId);
-            if (content != null) {
-                var data = content;
-                // Distance check for sphere
-                float dx = data.position.x - center.x;
-                float dy = data.position.y - center.y;
-                float dz = data.position.z - center.z;
-                float distSq = dx * dx + dy * dy + dz * dz;
-
-                if (distSq <= radius * radius) {
-                    // Find the original String ID
-                    var originalId = findOriginalId(entityId);
-                    if (originalId != null) {
-                        results.add(new EntityRecord(originalId, data.position, data.content, data.addedBucket));
-                    }
-                }
-            }
+        for (var record : bubbleRecords) {
+            results.add(new EntityRecord(record.id(), record.position(), record.content(), record.addedBucket()));
         }
-
         return results;
     }
 
@@ -368,21 +264,11 @@ public class EnhancedBubble {
      * @return List of k nearest entities
      */
     public List<EntityRecord> kNearestNeighbors(Point3f query, int k) {
-        // Use unbounded search (maxDistance = Float.MAX_VALUE)
-        var entityIds = spatialIndex.kNearestNeighbors(query, k, Float.MAX_VALUE);
-
+        var bubbleRecords = entityStore.kNearestNeighbors(query, k);
         var results = new ArrayList<EntityRecord>();
-        for (var entityId : entityIds) {
-            var content = spatialIndex.getEntity(entityId);
-            if (content != null) {
-                var data = content;
-                var originalId = findOriginalId(entityId);
-                if (originalId != null) {
-                    results.add(new EntityRecord(originalId, data.position, data.content, data.addedBucket));
-                }
-            }
+        for (var record : bubbleRecords) {
+            results.add(new EntityRecord(record.id(), record.position(), record.content(), record.addedBucket()));
         }
-
         return results;
     }
 
@@ -390,22 +276,7 @@ public class EnhancedBubble {
      * Recalculate bounds from current entity positions.
      */
     public void recalculateBounds() {
-        if (spatialIndex.entityCount() == 0) {
-            bounds = null;
-            return;
-        }
-
-        var positions = new ArrayList<Point3f>();
-        for (var entityId : idMapping.values()) {
-            var data = spatialIndex.getEntity(entityId);
-            if (data != null) {
-                positions.add(data.position);
-            }
-        }
-
-        if (!positions.isEmpty()) {
-            bounds = BubbleBounds.fromEntityPositions(positions);
-        }
+        boundsTracker.recalculateBounds();
     }
 
     /**
@@ -415,32 +286,7 @@ public class EnhancedBubble {
      * @return Centroid point or null if no bounds
      */
     public Point3D centroid() {
-        if (bounds == null) {
-            return null;
-        }
-
-        // If there are entities, compute centroid from their positions
-        if (spatialIndex.entityCount() > 0) {
-            double sumX = 0, sumY = 0, sumZ = 0;
-            int count = 0;
-
-            for (var entityId : idMapping.values()) {
-                var data = spatialIndex.getEntity(entityId);
-                if (data != null) {
-                    sumX += data.position.x;
-                    sumY += data.position.y;
-                    sumZ += data.position.z;
-                    count++;
-                }
-            }
-
-            if (count > 0) {
-                return new Point3D(sumX / count, sumY / count, sumZ / count);
-            }
-        }
-
-        // Fall back to tetrahedral centroid if no entities
-        return bounds.centroid();
+        return boundsTracker.centroid();
     }
 
     /**
@@ -449,7 +295,7 @@ public class EnhancedBubble {
      * @param neighborId Neighbor bubble UUID
      */
     public void addVonNeighbor(UUID neighborId) {
-        vonNeighbors.add(neighborId);
+        vonCoordinator.addVonNeighbor(neighborId);
     }
 
     /**
@@ -458,7 +304,7 @@ public class EnhancedBubble {
      * @param neighborId Neighbor bubble UUID to remove
      */
     public void removeVonNeighbor(UUID neighborId) {
-        vonNeighbors.remove(neighborId);
+        vonCoordinator.removeVonNeighbor(neighborId);
     }
 
     /**
@@ -467,7 +313,7 @@ public class EnhancedBubble {
      * @param frameTimeNs Frame time in nanoseconds
      */
     public void recordFrameTime(long frameTimeNs) {
-        lastFrameTimeNs.set(frameTimeNs);
+        frameMonitor.recordFrameTime(frameTimeNs);
     }
 
     /**
@@ -476,9 +322,7 @@ public class EnhancedBubble {
      * @return Utilization (0.0 to 1.0+, >1.0 means over budget)
      */
     public float frameUtilization() {
-        long frameTimeNs = lastFrameTimeNs.get();
-        long targetFrameNs = targetFrameMs * 1_000_000L;
-        return (float) frameTimeNs / targetFrameNs;
+        return frameMonitor.frameUtilization();
     }
 
     /**
@@ -488,7 +332,7 @@ public class EnhancedBubble {
      * @return true if bubble should split
      */
     public boolean needsSplit() {
-        return frameUtilization() > 1.2f;
+        return frameMonitor.needsSplit();
     }
 
     /**
@@ -503,24 +347,6 @@ public class EnhancedBubble {
         // 2. Update entity states
         // 3. Handle interactions
         // 4. Measure frame time
-    }
-
-    /**
-     * Find original String ID from internal EntityID.
-     */
-    private String findOriginalId(StringEntityID internalId) {
-        for (var entry : idMapping.entrySet()) {
-            if (entry.getValue().equals(internalId)) {
-                return entry.getKey();
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Internal entity data storage.
-     */
-    private record EntityData(Point3f position, Object content, long addedBucket) {
     }
 
     /**
