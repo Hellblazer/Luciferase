@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +56,7 @@ public class MessageOrderValidator {
 
     private final ConcurrentHashMap<UUID, SenderState> senderStates;
     private static final long LATE_MESSAGE_THRESHOLD_MS = 1000; // 1 second
+    private volatile Clock clock = Clock.system();
 
     /**
      * Tracks state for a single sender.
@@ -96,6 +98,15 @@ public class MessageOrderValidator {
      */
     public MessageOrderValidator() {
         this.senderStates = new ConcurrentHashMap<>();
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -195,7 +206,7 @@ public class MessageOrderValidator {
      * @return true if message timestamp is more than LATE_MESSAGE_THRESHOLD_MS in the past
      */
     public boolean isMessageLate(TopologyUpdateMessage message) {
-        var now = System.currentTimeMillis();
+        var now = clock.currentTimeMillis();
         var age = now - message.timestamp();
 
         if (age > LATE_MESSAGE_THRESHOLD_MS) {

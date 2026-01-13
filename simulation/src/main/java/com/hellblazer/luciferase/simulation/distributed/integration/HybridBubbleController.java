@@ -50,6 +50,7 @@ public class HybridBubbleController implements RealTimeController.TickListener {
     // Per-bucket metrics
     private final AtomicLong tickOverheadNs = new AtomicLong(0);
     private final AtomicLong tickCount = new AtomicLong(0);
+    private volatile Clock clock = Clock.system();
 
     /**
      * Create a hybrid bubble controller with bucket synchronization (Phase 0 validation).
@@ -83,16 +84,25 @@ public class HybridBubbleController implements RealTimeController.TickListener {
                 bubbleId, name, tickRate);
     }
 
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
     @Override
     public void onTick(long simulationTime, long lamportClock) {
-        long start = System.nanoTime();
+        long start = clock.nanoTime();
 
         // Simulate minimal tick work (in real scenario, entity position updates would go here)
         // For validation purposes, we just measure the callback overhead itself.
         // Any work done here adds to measured overhead.
         simulateTickWork();
 
-        long elapsed = System.nanoTime() - start;
+        long elapsed = clock.nanoTime() - start;
         tickOverheadNs.addAndGet(elapsed);
         tickCount.incrementAndGet();
     }
