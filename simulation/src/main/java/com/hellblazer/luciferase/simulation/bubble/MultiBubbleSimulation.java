@@ -29,9 +29,7 @@ import com.hellblazer.luciferase.simulation.ghost.MigrationLog;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
 import javax.vecmath.Point3f;
-import javax.vecmath.Vector3f;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -101,7 +99,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
     private final TetreeBubbleGrid bubbleGrid;
     private final Tetree<StringEntityID, EntityDistribution.EntitySpec> spatialIndex;
-    private final EntityBehavior behavior;
     private final WorldBounds worldBounds;
     private final int entityCount;
     private final byte maxLevel;
@@ -117,15 +114,15 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final DuplicateEntityDetector duplicateDetector;
     private final DuplicateDetectionConfig duplicateConfig;
 
-    // Velocity tracking: entityId → velocity
-    private final Map<String, Vector3f> velocities;
-
     // Execution engine
     private final SimulationExecutionEngine executionEngine;
     private final SimulationMetrics metrics;
 
     // Entity distribution manager
     private final EntityDistribution distribution;
+
+    // Physics manager
+    private final EntityPhysicsManager physicsManager;
 
     /**
      * Create a multi-bubble tetrahedral simulation.
@@ -157,7 +154,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
         this.maxLevel = maxLevel;
         this.entityCount = entityCount;
         this.worldBounds = Objects.requireNonNull(worldBounds, "WorldBounds cannot be null");
-        this.behavior = Objects.requireNonNull(behavior, "EntityBehavior cannot be null");
+        Objects.requireNonNull(behavior, "EntityBehavior cannot be null");
 
         // Create bubble grid
         this.bubbleGrid = new TetreeBubbleGrid(maxLevel);
@@ -165,15 +162,15 @@ public class MultiBubbleSimulation implements AutoCloseable {
         // Create spatial index for entity tracking
         this.spatialIndex = new Tetree<>(new StringEntityIDGenerator(), 100, maxLevel);
 
-        // Initialize velocity map
-        this.velocities = new ConcurrentHashMap<>();
-
         // Metrics and execution engine
         this.executionEngine = new SimulationExecutionEngine();
         this.metrics = new SimulationMetrics();
 
         // Initialize distribution manager
         this.distribution = new EntityDistribution(bubbleGrid, spatialIndex);
+
+        // Initialize physics manager
+        this.physicsManager = new EntityPhysicsManager(behavior, worldBounds);
 
         // Setup simulation: create bubbles and distribute entities
         initializeSimulation(bubbleCount, entityCount);
@@ -256,21 +253,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @param entities List of entities to initialize
      */
     private void initializeVelocities(List<EntityDistribution.EntitySpec> entities) {
-        var random = new Random(43); // Deterministic seed
-        var maxSpeed = behavior.getMaxSpeed();
-
-        for (var entity : entities) {
-            // Generate random velocity in 3D sphere
-            var theta = random.nextFloat() * 2 * Math.PI; // Azimuthal angle
-            var phi = random.nextFloat() * Math.PI; // Polar angle
-            var speed = random.nextFloat() * maxSpeed;
-
-            var vx = (float) (speed * Math.sin(phi) * Math.cos(theta));
-            var vy = (float) (speed * Math.sin(phi) * Math.sin(theta));
-            var vz = (float) (speed * Math.cos(phi));
-
-            velocities.put(entity.id(), new Vector3f(vx, vy, vz));
-        }
+        physicsManager.initializeVelocities(entities);
     }
 
     /**
@@ -381,42 +364,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @param deltaTime Time step in seconds
      */
     private void updateBubbleEntities(EnhancedBubble bubble, float deltaTime) {
-        var entityRecords = bubble.getAllEntityRecords();
-
-        for (var record : entityRecords) {
-            var entityId = record.id();
-            var currentPos = record.position();
-            var currentVel = velocities.get(entityId);
-
-            if (currentVel == null) {
-                continue; // Entity has no velocity (shouldn't happen)
-            }
-
-            // Compute new velocity based on behavior
-            var newVel = behavior.computeVelocity(entityId, currentPos, currentVel, bubble, deltaTime);
-
-            // Update position based on new velocity
-            var newPos = new Point3f(currentPos);
-            newPos.x += newVel.x * deltaTime;
-            newPos.y += newVel.y * deltaTime;
-            newPos.z += newVel.z * deltaTime;
-
-            // Clamp to world bounds
-            newPos.x = worldBounds.clamp(newPos.x);
-            newPos.y = worldBounds.clamp(newPos.y);
-            newPos.z = worldBounds.clamp(newPos.z);
-
-            // Update velocity map
-            velocities.put(entityId, newVel);
-
-            // Update entity in bubble (this also updates bounds)
-            // Note: EnhancedBubble handles position updates internally via its Tetree
-            bubble.removeEntity(entityId);
-            bubble.addEntity(entityId, newPos, record.content());
-
-            // Note: Spatial index updates are handled by bubble's internal Tetree
-            // No need to manually update the top-level spatial index here
-        }
+        physicsManager.updateBubbleEntities(bubble, deltaTime);
     }
 
     /**
