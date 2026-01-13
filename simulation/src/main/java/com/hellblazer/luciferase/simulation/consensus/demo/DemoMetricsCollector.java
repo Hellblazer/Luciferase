@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.consensus.demo;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -58,19 +60,29 @@ public class DemoMetricsCollector {
     private final AtomicLong failureInjectionTimeMs = new AtomicLong(0);
     private final AtomicLong failureDetectedTimeMs = new AtomicLong(0);
     private final AtomicLong recoveryCompleteTimeMs = new AtomicLong(0);
+    private volatile Clock clock = Clock.system();
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Start metrics collection.
      */
     public void startCollection() {
-        startTimeMs.set(System.currentTimeMillis());
+        startTimeMs.set(clock.currentTimeMillis());
     }
 
     /**
      * End metrics collection.
      */
     public void endCollection() {
-        endTimeMs.set(System.currentTimeMillis());
+        endTimeMs.set(clock.currentTimeMillis());
     }
 
     /**
@@ -121,21 +133,21 @@ public class DemoMetricsCollector {
      * Record failure injection time.
      */
     public void recordFailureInjection() {
-        failureInjectionTimeMs.set(System.currentTimeMillis());
+        failureInjectionTimeMs.set(clock.currentTimeMillis());
     }
 
     /**
      * Record failure detection time.
      */
     public void recordFailureDetected() {
-        failureDetectedTimeMs.set(System.currentTimeMillis());
+        failureDetectedTimeMs.set(clock.currentTimeMillis());
     }
 
     /**
      * Record recovery completion time.
      */
     public void recordRecoveryComplete() {
-        recoveryCompleteTimeMs.set(System.currentTimeMillis());
+        recoveryCompleteTimeMs.set(clock.currentTimeMillis());
     }
 
     // Accessors for raw metrics

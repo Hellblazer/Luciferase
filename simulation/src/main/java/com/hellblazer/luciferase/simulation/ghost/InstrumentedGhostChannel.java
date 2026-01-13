@@ -4,6 +4,7 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.ghost.SimulationGhostEntity;
 import com.hellblazer.luciferase.simulation.metrics.LatencyStats;
 import com.hellblazer.luciferase.simulation.metrics.LatencyTracker;
@@ -65,6 +66,16 @@ public class InstrumentedGhostChannel<ID extends EntityID, Content> implements G
      * Optional callback for custom latency processing
      */
     private final Consumer<Long> latencyRecorder;
+    private volatile Clock clock = Clock.system();
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Create instrumented channel without callback.
@@ -94,11 +105,11 @@ public class InstrumentedGhostChannel<ID extends EntityID, Content> implements G
 
     @Override
     public void sendBatch(UUID targetBubbleId, List<SimulationGhostEntity<ID, Content>> ghosts) {
-        var startNs = System.nanoTime();
+        var startNs = clock.nanoTime();
         try {
             delegate.sendBatch(targetBubbleId, ghosts);
         } finally {
-            var elapsedNs = System.nanoTime() - startNs;
+            var elapsedNs = clock.nanoTime() - startNs;
             latencyTracker.record(elapsedNs);
             if (latencyRecorder != null) {
                 latencyRecorder.accept(elapsedNs);
