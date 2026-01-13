@@ -74,11 +74,12 @@ class SingleBubbleAutonomyTest {
         // Wait for ticks to accumulate
         Thread.sleep(100); // Wait 100ms -> expect ~100 ticks at 1000 Hz
 
-        var simulationTime = controller.getSimulationTime();
-        var lamportClock = controller.getLamportClock();
-
         controller.stop();
         assertFalse(controller.isRunning(), "Controller should not be running after stop");
+
+        // Read stable values AFTER stopping to avoid race condition
+        var simulationTime = controller.getSimulationTime();
+        var lamportClock = controller.getLamportClock();
 
         // Assert: Time advanced
         assertTrue(simulationTime > 0, "Simulation time should have advanced: " + simulationTime);
