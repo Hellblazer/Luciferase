@@ -32,12 +32,6 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -114,7 +108,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
     // Phase 5C: Ghost sync adapter
     private final TetreeGhostSyncAdapter ghostSyncAdapter;
-    private final AtomicLong currentBucket;
 
     // Phase 5D: Migration manager
     private final TetrahedralMigration migration;
@@ -127,13 +120,9 @@ public class MultiBubbleSimulation implements AutoCloseable {
     // Velocity tracking: entityId → velocity
     private final Map<String, Vector3f> velocities;
 
-    // Execution
-    private final ScheduledExecutorService scheduler;
-    private final AtomicBoolean running;
-    private final AtomicLong tickCount;
+    // Execution engine
+    private final SimulationExecutionEngine executionEngine;
     private final SimulationMetrics metrics;
-    private volatile Clock clock = Clock.system();
-    private ScheduledFuture<?> tickTask;
 
     // Entity distribution manager
     private final EntityDistribution distribution;
@@ -179,11 +168,8 @@ public class MultiBubbleSimulation implements AutoCloseable {
         // Initialize velocity map
         this.velocities = new ConcurrentHashMap<>();
 
-        // Metrics and execution
-        this.scheduler = Executors.newScheduledThreadPool(1);
-        this.running = new AtomicBoolean(false);
-        this.tickCount = new AtomicLong(0);
-        this.currentBucket = new AtomicLong(0);
+        // Metrics and execution engine
+        this.executionEngine = new SimulationExecutionEngine();
         this.metrics = new SimulationMetrics();
 
         // Initialize distribution manager
@@ -211,7 +197,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @param clock Clock instance to use
      */
     public void setClock(Clock clock) {
-        this.clock = clock;
+        this.executionEngine.setClock(clock);
     }
 
     /**
@@ -293,28 +279,14 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @throws IllegalStateException if already running
      */
     public void start() {
-        if (running.getAndSet(true)) {
-            throw new IllegalStateException("Simulation is already running");
-        }
-
-        tickTask = scheduler.scheduleAtFixedRate(
-            this::tick,
-            0,
-            DEFAULT_TICK_INTERVAL_MS,
-            TimeUnit.MILLISECONDS
-        );
+        executionEngine.start(this::tick);
     }
 
     /**
      * Stop the simulation tick loop.
      */
     public void stop() {
-        if (running.getAndSet(false)) {
-            if (tickTask != null) {
-                tickTask.cancel(false);
-                tickTask = null;
-            }
-        }
+        executionEngine.stop();
     }
 
     /**
@@ -323,7 +295,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @return true if running, false otherwise
      */
     public boolean isRunning() {
-        return running.get();
+        return executionEngine.isRunning();
     }
 
     /**
@@ -332,7 +304,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @return Number of ticks executed
      */
     public long getTickCount() {
-        return tickCount.get();
+        return executionEngine.getTickCount();
     }
 
     /**
@@ -366,12 +338,12 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * Execute one simulation tick: update entities, detect migrations, sync ghosts.
      */
     private void tick() {
-        var startTime = clock.nanoTime();
+        var startTime = executionEngine.getClock().nanoTime();
 
         try {
             // Increment tick and bucket counters
-            var currentTick = tickCount.incrementAndGet();
-            var bucket = currentBucket.incrementAndGet();
+            var currentTick = executionEngine.incrementTickCount();
+            var bucket = executionEngine.incrementBucket();
 
             // Step 1: Update all bubbles (entity positions and velocities)
             for (var bubble : bubbleGrid.getAllBubbles()) {
@@ -391,13 +363,13 @@ public class MultiBubbleSimulation implements AutoCloseable {
             }
 
             // Step 5: Record metrics
-            var elapsedNs = clock.nanoTime() - startTime;
+            var elapsedNs = executionEngine.getClock().nanoTime() - startTime;
             var totalEntities = getAllEntities().size();
             metrics.recordTick(elapsedNs, totalEntities);
 
         } catch (Exception e) {
             // Log error but continue simulation
-            System.err.println("Error in tick " + tickCount.get() + ": " + e.getMessage());
+            System.err.println("Error in tick " + executionEngine.getTickCount() + ": " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -544,15 +516,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
      */
     @Override
     public void close() {
-        stop();
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        executionEngine.close();
     }
 }
