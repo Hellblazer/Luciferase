@@ -35,50 +35,36 @@ import java.util.stream.Collectors;
 /**
  * Main simulation orchestrator for multi-bubble tetrahedral environment.
  * <p>
- * This class manages a distributed 3D simulation with entities partitioned
- * across multiple bubbles in a tetrahedral hierarchy. Key responsibilities:
+ * <b>Orchestrator Pattern</b>: This class follows the orchestrator pattern,
+ * delegating all business logic to specialized component managers. It maintains
+ * NO business logic itself - only coordination and lifecycle management.
+ * <p>
+ * <b>Component Architecture</b>:
  * <ul>
- *   <li><b>Bubble Creation</b> - Distribute bubbles across tree levels via {@link TetreeBubbleFactory}</li>
- *   <li><b>Entity Distribution</b> - Assign entities spatially via {@link EntityDistribution}</li>
- *   <li><b>Simulation Loop</b> - Execute behavior updates at 60fps</li>
- *   <li><b>Ghost Synchronization</b> - (Phase 5C) Cross-bubble entity visibility</li>
- *   <li><b>Entity Migration</b> - (Phase 5D) Move entities between bubbles</li>
+ *   <li>{@link BubbleGridOrchestrator} - Grid and spatial index management</li>
+ *   <li>{@link SimulationExecutionEngine} - Tick loop and scheduling</li>
+ *   <li>{@link EntityPopulationManager} - Entity creation and distribution</li>
+ *   <li>{@link EntityPhysicsManager} - Physics and velocity updates</li>
+ *   <li>{@link SimulationQueryService} - Read-only query operations</li>
+ *   <li>{@link TetrahedralMigration} - Entity migration (Phase 5D)</li>
+ *   <li>{@link DuplicateEntityDetector} - Duplicate detection (Phase 5E)</li>
  * </ul>
  * <p>
- * Architecture (Tetrahedral Model):
- * <pre>
- * ┌─────────────────────────────────────────────────────────────────┐
- * │               MultiBubbleSimulation                             │
- * │                                                                 │
- * │  ┌──────────────────────────────────────────────────────────┐  │
- * │  │         TetreeBubbleGrid (3D hierarchy)                  │  │
- * │  │                                                          │  │
- * │  │  Bubble@L0  ←─────→  8 Bubbles@L1  ←─────→  ...       │  │
- * │  │  (root tet)         (subdivisions)                      │  │
- * │  │                                                          │  │
- * │  │  Each bubble:                                            │  │
- * │  │  - Internal Tetree spatial index                        │  │
- * │  │  - Adaptive bounds (BubbleBounds)                       │  │
- * │  │  - Variable neighbors (4-12)                            │  │
- * │  └──────────────────────────────────────────────────────────┘  │
- * │                                                                 │
- * │  Tick Loop (60fps):                                             │
- * │  1. Update entity positions/velocities (EntityBehavior)         │
- * │  2. Detect migrations (Phase 5D)                                │
- * │  3. Sync ghosts (Phase 5C)                                      │
- * │  4. Record metrics                                              │
- * └─────────────────────────────────────────────────────────────────┘
- * </pre>
+ * <b>Tick Loop Coordination (60fps)</b>:
+ * <ol>
+ *   <li>Physics updates via {@link EntityPhysicsManager}</li>
+ *   <li>Migration detection via {@link TetrahedralMigration}</li>
+ *   <li>Ghost synchronization via {@link TetreeGhostSyncAdapter}</li>
+ *   <li>Duplicate reconciliation via {@link DuplicateEntityDetector}</li>
+ *   <li>Metrics recording via {@link SimulationMetrics}</li>
+ * </ol>
  * <p>
- * Key Differences from 2D Grid Model:
- * <ul>
- *   <li>No GridConfiguration - use TetreeBubbleGrid</li>
- *   <li>No fixed neighbor count - variable 4-12</li>
- *   <li>RDGCS coordinates instead of 2D (x,y)</li>
- *   <li>Tetrahedral containment vs rectangular boundaries</li>
- * </ul>
+ * <b>Refactoring History</b>: Decomposed from 558 LOC god class to orchestrator
+ * facade (Sprint B B1, January 2026). Original mixed 7-10 responsibilities; now
+ * delegates to 7 focused components following Single Responsibility Principle.
  *
  * @author hal.hildebrand
+ * @see EnhancedBubble Reference implementation of orchestrator pattern
  */
 public class MultiBubbleSimulation implements AutoCloseable {
 
