@@ -181,7 +181,9 @@ public class VonBubble extends EnhancedBubble implements Node {
     public void broadcastMove() {
         var moveMsg = factory.createMove(id(), position(), bounds());
 
-        for (UUID neighborId : neighbors()) {
+        // Create snapshot to avoid ConcurrentModificationException during iteration
+        var neighborSnapshot = new ArrayList<>(neighbors());
+        for (UUID neighborId : neighborSnapshot) {
             try {
                 transport.sendToNeighbor(neighborId, moveMsg);
             } catch (VonTransport.TransportException e) {
@@ -189,7 +191,7 @@ public class VonBubble extends EnhancedBubble implements Node {
             }
         }
 
-        log.trace("Broadcast MOVE to {} neighbors", neighbors().size());
+        log.trace("Broadcast MOVE to {} neighbors", neighborSnapshot.size());
     }
 
     /**
@@ -200,7 +202,9 @@ public class VonBubble extends EnhancedBubble implements Node {
     public void broadcastLeave() {
         var leaveMsg = factory.createLeave(id());
 
-        for (UUID neighborId : neighbors()) {
+        // Create snapshot to avoid ConcurrentModificationException during iteration
+        var neighborSnapshot = new ArrayList<>(neighbors());
+        for (UUID neighborId : neighborSnapshot) {
             try {
                 transport.sendToNeighbor(neighborId, leaveMsg);
             } catch (VonTransport.TransportException e) {
@@ -208,7 +212,7 @@ public class VonBubble extends EnhancedBubble implements Node {
             }
         }
 
-        log.debug("Broadcast LEAVE to {} neighbors", neighbors().size());
+        log.debug("Broadcast LEAVE to {} neighbors", neighborSnapshot.size());
     }
 
     /**
@@ -330,8 +334,10 @@ public class VonBubble extends EnhancedBubble implements Node {
         ));
 
         // Respond with our current neighbors
+        // Create snapshot to avoid ConcurrentModificationException
         var neighborInfos = new HashSet<VonMessage.NeighborInfo>();
-        for (var entry : neighborStates.entrySet()) {
+        var statesSnapshot = new HashMap<>(neighborStates);
+        for (var entry : statesSnapshot.entrySet()) {
             if (!entry.getKey().equals(req.joinerId())) {
                 var state = entry.getValue();
                 neighborInfos.add(new VonMessage.NeighborInfo(
