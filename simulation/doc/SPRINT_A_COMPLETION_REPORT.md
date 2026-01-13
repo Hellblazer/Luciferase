@@ -52,12 +52,14 @@ Sprint A successfully achieved 100% test pass rate with **5 consecutive clean CI
 ### Phase 1: Initial Stabilization (Day 1: 2026-01-11)
 
 **H3 Determinism Epic**:
+
 - Converted 52 files to use Clock interface injection
 - Eliminated 96 direct System.* time calls
 - Pattern: `private volatile Clock clock = Clock.system();` with setter injection
 - Enabled time-travel testing and deterministic CI runs
 
 **Initial CI Runs** (before parallel workflow):
+
 - Run 1/5: ✅ PASS (TOCTTOU fix in SingleBubbleAutonomyTest)
 - Run 2/5: ✅ PASS (GitHub Actions cache conflict fix)
 - Run 3/5: ❌ FAIL (EntityMigrationStateMachineConcurrencyTest flake)
@@ -69,11 +71,13 @@ Sprint A successfully achieved 100% test pass rate with **5 consecutive clean CI
 ### Phase 2: Flaky Test Resolution (Day 2: 2026-01-12)
 
 **Root Cause Analysis**:
+
 - CountDownLatch waits for thread completion but NOT state propagation
 - ConcurrentHashMap updates may not be visible immediately (cache coherency delay)
 - Main thread assertions race with state propagation
 
 **Fix Applied**:
+
 ```java
 latch.await(5, TimeUnit.SECONDS);
 executor.shutdown();
@@ -94,6 +98,7 @@ assertEquals(3, fsm.getEntityCount());
 **Motivation**: 25+ minute sequential CI runs created productivity bottleneck during Sprint A verification (2-2.5 hours for 5 runs).
 
 **Implementation** (following Delos pattern):
+
 1. **Compile Job**: Build once, cache to SHA-specific key (54s)
 2. **6 Parallel Test Jobs**:
    - test-batch-1: Fast unit tests (bubble/behavior/metrics) - 1 min
@@ -105,6 +110,7 @@ assertEquals(3, fsm.getEntityCount());
 3. **Aggregator Job**: Collect results, report status (3-4s)
 
 **Maven Central Optimization**:
+
 - Reordered repositories to place Maven Central first
 - Impact: 10-12 minute compile → **54 seconds** (12-13x speedup)
 - Root cause: GitHub Packages dependency resolution timeouts for standard dependencies
@@ -118,6 +124,7 @@ assertEquals(3, fsm.getEntityCount());
 ### Phase 4: Sprint A Restart (Day 3: 2026-01-13)
 
 **Restart Sequence** (with parallel workflow):
+
 - Run 1/5 (94e31da): Module fix - ✅ PASS
 - Run 2/5 (8908d03): TDR documentation - ✅ PASS
 - Run 3/5 (eb73231): CI metrics - ✅ PASS
@@ -133,10 +140,12 @@ assertEquals(3, fsm.getEntityCount());
 ### 1. Test Stability ✅
 
 **Flaky Test Fixes**:
+
 - SingleBubbleAutonomyTest: TOCTTOU race (moved controller.stop() before assertions)
 - EntityMigrationStateMachineConcurrencyTest: 50ms stabilization wait after CountDownLatch
 
 **Determinism Implementation**:
+
 - Clock interface injection across 52 files
 - Eliminated all non-deterministic time dependencies
 - Enabled reproducible test runs in CI and local environments
@@ -146,17 +155,20 @@ assertEquals(3, fsm.getEntityCount());
 ### 2. CI Performance ✅
 
 **Compile Optimization**:
+
 - Maven Central first: 10-12 min → 54s (12-13x speedup)
 - SHA-specific caching with fallback restore-keys
 - Eliminated GitHub Packages dependency resolution timeouts
 
 **Parallel Workflow**:
+
 - 6 parallel test batches (vs. sequential)
 - Longest pole: 8-9 minutes (batches 2 and 4)
 - Total runtime: 9-12 minutes (vs. 20-30+ min)
 - **3-4x overall speedup**
 
 **Cache Strategy**:
+
 ```yaml
 key: luciferase-maven-${{ github.sha }}
 restore-keys: |
@@ -170,19 +182,23 @@ restore-keys: |
 ### 3. Documentation ✅
 
 **Technical Decision Records**:
+
 - TECHNICAL_DECISION_CONCURRENCY_TEST_FIX.md (327 lines)
 - TECHNICAL_DECISION_CACHE_FIX.md (287 lines)
 - TECHNICAL_DECISION_PARALLEL_CI.md (432 lines)
 
 **Performance Tracking**:
+
 - CI_PERFORMANCE_METRICS.md (294 lines) - tracks all CI runs with job-level breakdown
 
 **Developer Documentation**:
+
 - TESTING_PATTERNS.md - added concurrency testing section (260+ lines)
 - CLAUDE.md - added CI/CD section with parallel workflow overview
 - H3_EPIC_COMPLETION_REPORT.md - H3 Determinism summary
 
 **Sprint Documentation**:
+
 - SPRINT_A_RESTART_STATUS.md - restart tracking
 - SPRINT_TIMELINE_ADJUSTMENT.md - timeline impact analysis
 
@@ -324,6 +340,7 @@ restore-keys: |
 **Target**: MultiBubbleSimulation decomposition (558 LOC → 150 LOC target)
 
 **Phases**:
+
 1. Extract SimulationExecutionEngine (~30 min)
 2. Extract EntityPhysicsManager (~30 min)
 3. Extract EntityPopulationManager (~20 min)
@@ -386,31 +403,37 @@ restore-keys: |
 ### Short-Term (1-2 weeks)
 
 **Batch Rebalancing**:
+
 - Split test-batch-2 and test-batch-4 (longest poles at 8-9 min)
 - Target: No batch exceeds 5-6 minutes
 - Expected outcome: 8-9 min total runtime (vs. current 12 min)
 
 **Flaky Test Monitoring**:
+
 - Add retry logic or explicit flake detection
 - Track test execution times for regression detection
 
 ### Medium-Term (1-2 months)
 
 **Test Categorization**:
+
 - Tag tests: `@Fast`, `@Integration`, `@Slow`
 - Enable selective execution (fast tests for PRs, full suite for main)
 
 **Performance Tracking**:
+
 - Instrument workflow to track per-batch runtime trends
 - Alert on regressions (>10% slowdown)
 
 ### Long-Term (3-6 months)
 
 **Intelligent Test Selection**:
+
 - Run affected tests first based on changed files
 - Full suite nightly or on-demand
 
 **Resource Optimization**:
+
 - Right-size GitHub Actions runners (small for fast batches)
 - Artifact caching (JAR files separate from compiled classes)
 
@@ -419,14 +442,17 @@ restore-keys: |
 ## Acknowledgments
 
 **Sprint A Team**:
+
 - Test stability work: H3 Determinism conversion, flaky test fixes
 - CI optimization: Parallel workflow implementation, Maven Central reordering
 - Documentation: Comprehensive TDRs, metrics tracking, patterns
 
 **Delos Pattern**:
+
 - Parallel CI workflow inspiration (transferred cleanly to Luciferase)
 
 **User Feedback**:
+
 - Critical guidance on cache warning fix
 - Consistent emphasis on addressing all CI issues
 

@@ -225,6 +225,7 @@ Historical reference:
 **CRITICAL**: Never use `System.currentTimeMillis()` or `System.nanoTime()` directly in production code.
 
 **Standard Pattern (Regular Classes)**:
+
 ```java
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
@@ -243,6 +244,7 @@ public class MyService {
 ```
 
 **Record Class Pattern**:
+
 ```java
 public record MyMessage(String id, long timestamp) {
     public MyMessage {
@@ -257,6 +259,7 @@ VonMessageFactory.setClock(testClock);
 ```
 
 **Benefits**:
+
 - Reproducible time-dependent tests
 - Time-travel debugging capabilities
 - Elimination of timing-dependent flakiness
@@ -281,6 +284,7 @@ void testFailureRecovery() {
 ```
 
 **When to use**:
+
 - Probabilistic tests (random failure injection, packet loss)
 - Timing-sensitive tests (race conditions, timeout windows)
 - Resource-constrained tests (fail under CI load)

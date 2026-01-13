@@ -12,6 +12,7 @@
 ### Problem Statement
 
 The Luciferase CI workflow was running all tests sequentially, resulting in:
+
 - **20-30+ minute CI runs** for full test suite
 - **10-12 minute compile phase** due to GitHub Packages dependency resolution
 - Slow feedback loop during Sprint A test stabilization work
@@ -22,6 +23,7 @@ With 221 test files in the simulation module alone, sequential execution created
 ### Additional Context
 
 Sprint A required 5 consecutive clean CI runs to verify test stability. Sequential execution meant:
+
 - 2-2.5 hours minimum for 5 runs (even without failures)
 - 4-5 hours realistic timeline with investigation time
 - Significant context-switching overhead waiting for results
@@ -41,7 +43,7 @@ Implement **parallel CI test execution** following the Delos repository pattern 
 
 ### Architecture
 
-```
+```yaml
 compile (cache: luciferase-maven-{SHA})
    ├─> test-batch-1 (bubble/behavior/metrics/validation/tumbler/viz/spatial)
    ├─> test-batch-2 (von/transport/integration)
@@ -50,7 +52,7 @@ compile (cache: luciferase-maven-{SHA})
    ├─> test-batch-5 (consensus/ghost)
    └─> test-other-modules (grpc/common/lucien/sentry/render/portal/dyada-java)
         └─> build-status (aggregator)
-```
+```yaml
 
 ### Test Distribution Strategy
 
@@ -74,19 +76,22 @@ Batches were created to balance execution time and logical grouping:
 ### 1. Compile Job Caching
 
 **SHA-Specific Cache Keys**:
+
 ```yaml
 key: luciferase-maven-${{ github.sha }}
 restore-keys: |
   luciferase-maven-${{ github.ref }}-
   luciferase-maven-refs/heads/main-
   luciferase-maven-
-```
+```yaml
 
 **Cache Contents**:
+
 - `~/.m2/repository` - Maven dependencies
 - `**/target/` - Compiled classes and test classes
 
 **Benefits**:
+
 - Test jobs skip compilation entirely
 - Deterministic cache per commit
 - Fallback chain for cache misses
@@ -96,6 +101,7 @@ restore-keys: |
 **Problem**: Maven checked GitHub Packages repositories first, causing 5-10+ minute dependency resolution timeouts.
 
 **Solution**: Reordered `pom.xml` to place Maven Central first:
+
 ```xml
 <repositories>
   <repository>
@@ -104,13 +110,14 @@ restore-keys: |
   </repository>
   <!-- GitHub Packages repositories second -->
 </repositories>
-```
+```yaml
 
 **Impact**: Compile time reduced from 10-12 minutes to **54 seconds** (12-13x speedup).
 
 ### 3. Workflow YAML Structure
 
 **Key Features**:
+
 - `needs: compile` - All test jobs depend on compile job
 - `fail-on-cache-miss: false` - Graceful degradation if cache unavailable
 - `timeout-minutes: 15` - Prevent hung jobs (20 min for other-modules)
@@ -118,6 +125,7 @@ restore-keys: |
 - `xvfb-run -a` - Virtual framebuffer for JavaFX tests
 
 **Aggregator Logic**:
+
 ```bash
 if any test job != "success"; then
   echo "❌ Build FAILED: One or more test jobs failed"
@@ -126,19 +134,21 @@ if any test job != "success"; then
   exit 1
 fi
 echo "✅ Build GREEN: All tests passed"
-```
+```yaml
 
 ### 4. Module List Correction
 
 **Initial Bug**: Workflow referenced non-existent modules:
+
 - `von` - Doesn't exist as Maven module
 - `e2e-test` - Doesn't exist
 - `gpu-test-framework` - Doesn't exist
 
 **Fix**: Corrected to actual modules from `pom.xml`:
-```
+
+```yaml
 grpc, common, lucien, sentry, render, portal, dyada-java
-```
+```yaml
 
 **Root Cause**: Stale documentation/assumptions about module structure.
 
@@ -149,19 +159,22 @@ grpc, common, lucien, sentry, render, portal, dyada-java
 ### Performance Metrics
 
 **Before (Sequential)**:
+
 - Total runtime: 20-30+ minutes
 - Compile: 10-12 minutes (GitHub Packages timeouts)
 - Tests: 10-15 minutes sequential
 - Feedback loop: Unacceptably slow
 
 **After (Parallel)**:
+
 - Total runtime: **~12 minutes** (longest test batch determines total)
 - Compile: **54 seconds** (Maven Central first)
 - Tests: **~8.5 minutes** (longest batch: distributed or von/transport)
 - Speedup: **3-4x overall, 12-13x compile**
 
 **First Clean Run** (commit 94e31da):
-```
+
+```yaml
 ✓ compile:             54s
 ✓ test-batch-1:        1m7s
 ✓ test-batch-2:        8m42s  ← longest pole
@@ -171,21 +184,24 @@ grpc, common, lucien, sentry, render, portal, dyada-java
 ✓ test-other-modules:  3m15s
 ✓ build-status:        2s
 Total: ~12 minutes
-```
+```yaml
 
 ### Developer Experience Impact
 
 **Sprint A Completion**:
+
 - **Before**: 2-2.5 hours for 5 runs (sequential)
 - **After**: 1 hour for 5 runs (parallel)
 - **Savings**: 50-60% reduction in wait time
 
 **Rapid Iteration**:
+
 - Quick feedback on test failures (12 min vs 25 min)
 - Multiple attempts possible in same hour
 - Reduced context switching during debugging
 
 **CI Resource Efficiency**:
+
 - GitHub Actions runner minutes optimized through parallelization
 - Cache reuse reduces redundant compilation
 - Early failure detection (fail-fast per batch)
@@ -235,6 +251,7 @@ Total: ~12 minutes
 **Approach**: Use Surefire's parallel execution within single job.
 
 **Rejected Because**:
+
 - Harder to debug failures (interleaved output)
 - Single point of failure (one hung test blocks all)
 - Less granular control over resource allocation
@@ -245,6 +262,7 @@ Total: ~12 minutes
 **Approach**: Run only affected tests based on changed files.
 
 **Rejected Because**:
+
 - Complex to implement correctly (dependency analysis)
 - Risk of missing integration test failures
 - Sprint A requires full suite validation
@@ -255,6 +273,7 @@ Total: ~12 minutes
 **Approach**: Use 2-3 larger batches instead of 6.
 
 **Rejected Because**:
+
 - Longer individual batch runtimes
 - Less granular failure reporting
 - Harder to identify slow test categories
@@ -265,6 +284,7 @@ Total: ~12 minutes
 **Approach**: Accept 25+ minute CI times.
 
 **Rejected Because**:
+
 - Unacceptable productivity impact
 - Blocks rapid iteration during stabilization work
 - Creates developer frustration and context switching
@@ -281,6 +301,7 @@ Maven Central reordering provided **12-13x compile speedup** (12 min → 54s). A
 ### 2. Cache Strategy Matters
 
 SHA-specific keys with fallback restore-keys provide best of both worlds:
+
 - Deterministic per-commit caching
 - Graceful fallback to recent builds
 - Minimal cache misses in practice
@@ -347,6 +368,7 @@ With 6 parallel jobs, overall runtime determined by slowest batch (8m42s). Futur
 **Status**: Production - in use for all CI runs
 
 **Review Notes**:
+
 - Initial implementation had module list bug (fixed same day)
 - Maven Central reordering crucial for compile speedup
 - Pattern successfully transferred from Delos
@@ -358,7 +380,7 @@ With 6 parallel jobs, overall runtime determined by slowest batch (8m42s). Futur
 
 ### Job Dependency Graph
 
-```
+```yaml
 compile (1 job)
    ├─> test-batch-1 (1 job)
    ├─> test-batch-2 (1 job)
@@ -368,13 +390,13 @@ compile (1 job)
    └─> test-other-modules (1 job)
           ↓
        build-status (1 job, if: always())
-```
+```yaml
 
 **Total**: 8 jobs (1 compile + 6 test + 1 aggregator)
 
 ### Cache Flow
 
-```
+```yaml
 1. Compile job:
    - Restore from: SHA-specific, branch, main, any
    - Run: mvn clean test-compile install -DskipTests
@@ -390,42 +412,48 @@ compile (1 job)
    - No cache interaction
    - Check all test job results
    - Exit 0 if all success, exit 1 otherwise
-```
+```yaml
 
 ### Test Batch Patterns
 
 **Batch 1 (Fast unit tests)**:
+
 ```bash
 -Dtest='**/bubble/**/*Test,**/behavior/**/*Test,**/metrics/**/*Test,
         **/validation/**/*Test,**/tumbler/**/*Test,**/viz/**/*Test,
         **/spatial/**/*Test'
-```
+```yaml
 
 **Batch 2 (Von/transport)**:
+
 ```bash
 -Dtest='**/von/**/*Test,**/transport/**/*Test,**/integration/*Test'
-```
+```yaml
 
 **Batch 3 (Causality/migration)**:
+
 ```bash
 -Dtest='**/causality/**/*Test,**/migration/**/*Test,**/grid/**/*Test'
-```
+```yaml
 
 **Batch 4 (Distributed systems)**:
+
 ```bash
 -Dtest='**/distributed/*Test,**/distributed/integration/**/*Test,
         **/distributed/network/**/*Test,**/delos/**/*Test'
-```
+```yaml
 
 **Batch 5 (Consensus/ghost)**:
+
 ```bash
 -Dtest='**/consensus/**/*Test,**/ghost/**/*Test'
-```
+```yaml
 
 **Other Modules**:
+
 ```bash
 -pl grpc,common,lucien,sentry,render,portal,dyada-java
-```
+```yaml
 
 ---
 

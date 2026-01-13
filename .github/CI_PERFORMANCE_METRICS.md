@@ -19,6 +19,7 @@
 ### Workflow Architecture
 
 **Job Structure**:
+
 - 1 compile job (caches to SHA-specific key)
 - 6 parallel test jobs (restore from compile cache)
 - 1 aggregator job (collects results)
@@ -30,11 +31,12 @@
 ## Recent CI Runs (Commits)
 
 ### Run 1/5: commit 94e31da (2026-01-13)
+
 **Title**: Fix CI: Remove non-existent modules from test-other-modules job
 **Result**: ✅ PASS
 **Total Runtime**: ~12 minutes
 
-```
+```text
 ✓ compile:             54s
 ✓ test-batch-1:        1m7s   (bubble/behavior/metrics)
 ✓ test-batch-2:        8m42s  (von/transport) ← longest pole
@@ -43,18 +45,19 @@
 ✓ test-batch-5:        48s    (consensus/ghost)
 ✓ test-other-modules:  3m15s  (grpc/common/lucien/sentry/render/portal/dyada-java)
 ✓ build-status:        2s
-```
+```text
 
 **Notes**: First clean run after fixing non-existent module references (von, e2e-test, gpu-test-framework)
 
 ---
 
 ### Run 2/5: commit 8908d03 (2026-01-13)
+
 **Title**: Document parallel CI workflow implementation in TDR
 **Result**: ✅ PASS
 **Total Runtime**: ~12 minutes
 
-```
+```text
 ✓ compile:             54s
 ✓ test-batch-1:        46s    (bubble/behavior/metrics)
 ✓ test-batch-2:        8m41s  (von/transport) ← longest pole
@@ -63,7 +66,7 @@
 ✓ test-batch-5:        55s    (consensus/ghost)
 ✓ test-other-modules:  3m29s  (grpc/common/lucien/sentry/render/portal/dyada-java)
 ✓ build-status:        3s
-```
+```text
 
 **Notes**: Consistent performance with Run 1/5
 
@@ -76,6 +79,7 @@
 **Key Improvement**: Reordered Maven repositories to place Maven Central first (commit 20f6664)
 
 **Impact**:
+
 - **Before**: 10-12 minutes (GitHub Packages dependency resolution timeouts)
 - **After**: 54 seconds
 - **Speedup**: 12-13x
@@ -83,6 +87,7 @@
 **Root Cause**: Maven checked GitHub Packages repositories for every dependency before falling back to Maven Central, causing 5-10+ minute timeouts for commons, Jakarta EE, and standard Java dependencies.
 
 **Solution**: Placed Maven Central first in `pom.xml` repository list:
+
 ```xml
 <repositories>
   <repository>
@@ -91,15 +96,17 @@
   </repository>
   <!-- GitHub Packages repositories after -->
 </repositories>
-```
+```text
 
 ### Test Batch Distribution
 
 **Longest Poles** (determine overall runtime):
+
 1. **test-batch-2**: 8m41s (von/transport integration tests)
 2. **test-batch-4**: 8m22s (distributed systems/network/Delos)
 
 **Fast Batches**:
+
 1. **test-batch-1**: 46s-1m7s (unit tests)
 2. **test-batch-5**: 48s-55s (consensus/ghost)
 
@@ -115,14 +122,16 @@ restore-keys: |
   luciferase-maven-${{ github.ref }}-
   luciferase-maven-refs/heads/main-
   luciferase-maven-
-```
+```text
 
 **Cache Hit Rate**: ~100% (test jobs restore from compile job)
 **Cache Contents**:
+
 - `~/.m2/repository` (Maven dependencies)
 - `**/target/` (compiled classes and test classes)
 
 **Benefits**:
+
 - Test jobs skip compilation entirely
 - Deterministic builds per commit
 - Graceful fallback if cache misses
@@ -134,11 +143,13 @@ restore-keys: |
 ### Sequential Workflow (Before commit 3d143a7)
 
 **Total Runtime**: 20-30+ minutes
+
 - Compile: 10-12 minutes (GitHub Packages timeouts)
 - Tests (sequential): 10-15 minutes
 - No parallelization
 
 **Pain Points**:
+
 - Slow feedback loop (25+ minutes)
 - Context switching during wait
 - Sprint A required 2-2.5 hours for 5 consecutive runs
@@ -150,10 +161,12 @@ restore-keys: |
 ### Consistency
 
 **Compile Time**: Highly consistent at 54s (±5s variance)
+
 - Indicates stable dependency resolution
 - Maven Central reordering eliminated timeout variability
 
 **Test Batch Variance**:
+
 - **Fast batches** (1, 5): ±10s variance (acceptable)
 - **Long batches** (2, 4): ±20s variance (within expected range)
 - **Medium batches** (3, other-modules): ±15s variance
@@ -183,11 +196,13 @@ When adding new CI run data:
 ### Performance Regression Detection
 
 **Red Flags**:
+
 - Compile time > 2 minutes (investigate dependency resolution)
 - Any batch > 10 minutes (investigate test slowdown or flakiness)
 - Total runtime > 15 minutes (investigate parallelization or cache issues)
 
 **Investigation Steps**:
+
 1. Check for new dependencies causing compile slowdown
 2. Review test logs for hung tests or infinite loops
 3. Verify cache hit rate (test jobs should restore from compile)
@@ -202,6 +217,7 @@ When adding new CI run data:
 **Target**: 8-9 minute total runtime
 
 **Actions**:
+
 1. Split test-batch-2 into:
    - von tests (~4 min)
    - transport/integration tests (~4 min)
@@ -211,6 +227,7 @@ When adding new CI run data:
    - Delos integration tests (~4 min)
 
 **Expected Result**:
+
 - 8 test batches (was 6)
 - Longest pole: 5-6 minutes
 - Total runtime: 8-9 minutes
@@ -218,11 +235,13 @@ When adding new CI run data:
 ### Medium-Term (1-2 months)
 
 **Test Categorization**:
+
 - Tag tests: `@Fast`, `@Integration`, `@Slow`
 - Enable selective execution for quick feedback
 - Full suite for main branch, fast tests for PRs
 
 **Performance Tracking**:
+
 - Instrument workflow to log runtimes to database/file
 - Automated alerts on regressions
 - Trend visualization dashboard
@@ -230,11 +249,13 @@ When adding new CI run data:
 ### Long-Term (3-6 months)
 
 **Intelligent Test Selection**:
+
 - Run affected tests first based on changed files
 - Full suite nightly or on-demand
 - Further reduce feedback loop for isolated changes
 
 **Resource Optimization**:
+
 - Right-size GitHub Actions runners (small for fast batches, standard for long)
 - Artifact caching (JAR files separate from compiled classes)
 - Parallel compile (multi-module compilation)
@@ -244,9 +265,11 @@ When adding new CI run data:
 ## Sprint A Context
 
 ### Goal
+
 Achieve 5 consecutive clean CI runs to validate test stability.
 
 ### Progress
+
 - **Run 1/5**: commit 94e31da ✅ PASS
 - **Run 2/5**: commit 8908d03 ✅ PASS
 - **Run 3/5**: (pending)
@@ -256,6 +279,7 @@ Achieve 5 consecutive clean CI runs to validate test stability.
 ### Historical Attempts
 
 **Original Sprint A Sequence** (before parallel workflow):
+
 - Run 1/5: ✅ PASS (TOCTTOU fix)
 - Run 2/5: ✅ PASS (Cache fix)
 - Run 3/5: ❌ FAIL (Flaky concurrency test)
@@ -265,6 +289,7 @@ Achieve 5 consecutive clean CI runs to validate test stability.
 **Outcome**: Only 1 consecutive clean run, restarted Sprint A
 
 **Restart Sequence** (with parallel workflow):
+
 - Run 1/5: ✅ PASS (Module fix)
 - Run 2/5: ✅ PASS (TDR documentation)
 - In progress...
