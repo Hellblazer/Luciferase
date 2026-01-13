@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.von.VonMessage;
 
 import java.util.Map;
@@ -46,6 +47,6 @@ public record TopologyUpdateMessage(
 ) implements VonMessage {
 
     public TopologyUpdateMessage(UUID coordinatorId, Map<UUID, java.util.List<UUID>> topology, long sequenceNumber) {
-        this(coordinatorId, topology, sequenceNumber, System.currentTimeMillis());
+        this(coordinatorId, topology, sequenceNumber, Clock.system().currentTimeMillis());
     }
 }

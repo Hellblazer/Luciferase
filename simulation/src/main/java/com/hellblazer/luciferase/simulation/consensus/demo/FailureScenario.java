@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.consensus.demo;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -126,6 +127,7 @@ public class FailureScenario {
     private SimulationRunner runner;
     private EntitySpawner spawner;
     private ConsensusAwareMigrator migrator;
+    private volatile Clock clock = Clock.system();
 
     /**
      * Create FailureScenario.
@@ -138,6 +140,15 @@ public class FailureScenario {
         this.grid = Objects.requireNonNull(grid, "grid must not be null");
 
         log.debug("Created FailureScenario: type={}, bubbles=4", type);
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -160,7 +171,7 @@ public class FailureScenario {
         injector = new FailureInjector(grid, runner);
 
         var initialEntityCount = spawner.getEntityCount();
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
         var systemContinued = true;
         var failedMigrations = 0;
 
@@ -187,7 +198,7 @@ public class FailureScenario {
             runner.close();
         }
 
-        var endTime = System.currentTimeMillis();
+        var endTime = clock.currentTimeMillis();
         var recoveryTimeMs = endTime - startTime;
         var finalEntityCount = spawner.getEntityCount();
         var entitiesPreserved = (finalEntityCount == initialEntityCount);

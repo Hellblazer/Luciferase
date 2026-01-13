@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.von.VonMessage;
 
 import java.util.UUID;
@@ -41,6 +42,6 @@ public record HeartbeatMessage(
 ) implements VonMessage {
 
     public HeartbeatMessage(UUID senderProcessId) {
-        this(senderProcessId, System.currentTimeMillis());
+        this(senderProcessId, Clock.system().currentTimeMillis());
     }
 }

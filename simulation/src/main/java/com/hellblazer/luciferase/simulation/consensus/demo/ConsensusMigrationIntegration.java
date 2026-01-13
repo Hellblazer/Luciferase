@@ -20,6 +20,7 @@ package com.hellblazer.luciferase.simulation.consensus.demo;
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.luciferase.simulation.consensus.committee.MigrationProposal;
 import com.hellblazer.luciferase.simulation.consensus.committee.ViewCommitteeConsensus;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,6 +68,7 @@ public class ConsensusMigrationIntegration {
      * Key: proposalId, Value: callback for rollback notification
      */
     private final ConcurrentHashMap<UUID, Consumer<Boolean>> pendingProposals = new ConcurrentHashMap<>();
+    private volatile Clock clock = Clock.system();
 
     /**
      * Create ConsensusMigrationIntegration.
@@ -77,6 +79,15 @@ public class ConsensusMigrationIntegration {
     public ConsensusMigrationIntegration(ViewCommitteeConsensus consensus, Digest currentViewId) {
         this.consensus = Objects.requireNonNull(consensus, "consensus must not be null");
         this.currentViewId = Objects.requireNonNull(currentViewId, "currentViewId must not be null");
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -102,7 +113,7 @@ public class ConsensusMigrationIntegration {
             sourceId,
             targetId,
             currentViewId,
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         // Track pending proposal with callback for view change rollback

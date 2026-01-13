@@ -13,6 +13,7 @@ import com.hellblazer.luciferase.lucien.distributed.migration.proto.MigrationRes
 
 // Domain event classes
 import com.hellblazer.luciferase.simulation.causality.EntityMigrationState;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.events.EntityDepartureEvent;
 import com.hellblazer.luciferase.simulation.events.EntityRollbackEvent;
 import com.hellblazer.luciferase.simulation.events.ViewSynchronyAck;
@@ -56,9 +57,19 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
     // Optional simulation parameters (for backward compatibility with FakeNetworkChannel)
     private volatile long networkLatencyMs = 0;
     private volatile double packetLossRate = 0.0;
+    private volatile Clock clock = Clock.system();
 
     public GrpcBubbleNetworkChannel() {
         // Default constructor
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     @Override
@@ -486,7 +497,7 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
                     .setSourceBubbleId(request.getSourceBubbleId())
                     .setTargetBubbleId(request.getTargetBubbleId())
                     .setAccepted(true)
-                    .setResponseTimestamp(System.nanoTime())
+                    .setResponseTimestamp(clock.nanoTime())
                     .build();
 
                 responseObserver.onNext(response);
@@ -571,7 +582,7 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
                 .setVersion(1)
                 .setBubbleId(localNodeId.toString())
                 .setHealthy(true)
-                .setResponseTimestamp(System.nanoTime())
+                .setResponseTimestamp(clock.nanoTime())
                 .setStatusMessage("OK")
                 .setPendingMigrations(0)
                 .setActiveEntities(0)

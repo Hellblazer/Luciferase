@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.consensus.demo;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,6 +89,7 @@ public class FailureInjector {
      * Failure timeline (all events, including recovered)
      */
     private final List<FailureEvent> timeline = new ArrayList<>();
+    private volatile Clock clock = Clock.system();
 
     /**
      * Create FailureInjector.
@@ -100,6 +102,15 @@ public class FailureInjector {
         this.runner = Objects.requireNonNull(runner, "runner must not be null");
 
         log.debug("FailureInjector initialized for 4 bubbles");
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -129,7 +140,7 @@ public class FailureInjector {
             throw new IllegalArgumentException("Duration must be non-negative, got " + durationMs);
         }
 
-        var event = new FailureEvent(bubbleIndex, type, System.currentTimeMillis(), durationMs);
+        var event = new FailureEvent(bubbleIndex, type, clock.currentTimeMillis(), durationMs);
         activeFailures.put(bubbleIndex, event);
         timeline.add(event);
 
