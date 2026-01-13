@@ -499,10 +499,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
 
-      - name: Test Other Modules (common, lucien, sentry, render, portal, von, dyada-java, e2e-test, gpu-test-framework)
+      - name: Test Other Modules (grpc, common, lucien, sentry, render, portal, dyada-java)
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl common,lucien,sentry,render,portal,von,dyada-java,e2e-test,gpu-test-framework --file pom.xml
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl grpc,common,lucien,sentry,render,portal,dyada-java --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
