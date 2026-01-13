@@ -45,7 +45,6 @@
     <modules>
         <module>grpc</module>
         <module>lucien</module>
-        <module>e2e-test</module>
         <module>portal</module>
         <module>common</module>
         <module>simulation</module>
