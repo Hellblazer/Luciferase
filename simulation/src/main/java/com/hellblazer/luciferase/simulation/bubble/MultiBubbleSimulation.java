@@ -87,16 +87,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
      */
     public static final long DEFAULT_TICK_INTERVAL_MS = 16;
 
-    /**
-     * Entity snapshot for visualization and queries.
-     *
-     * @param id        Entity identifier
-     * @param position  Current position
-     * @param bubbleKey Key of containing bubble
-     * @param isGhost   True if this is a ghost entity (not authoritative)
-     */
-    public record EntitySnapshot(String id, Point3f position, TetreeKey<?> bubbleKey, boolean isGhost) {}
-
     private final TetreeBubbleGrid bubbleGrid;
     private final Tetree<StringEntityID, EntityDistribution.EntitySpec> spatialIndex;
     private final byte maxLevel;
@@ -121,6 +111,9 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
     // Physics manager
     private final EntityPhysicsManager physicsManager;
+
+    // Query service
+    private final SimulationQueryService queryService;
 
     /**
      * Create a multi-bubble tetrahedral simulation.
@@ -186,6 +179,9 @@ public class MultiBubbleSimulation implements AutoCloseable {
         // Phase 5E: Initialize duplicate detection
         this.duplicateConfig = DuplicateDetectionConfig.defaultConfig();
         this.duplicateDetector = new DuplicateEntityDetector(bubbleGrid, migrationLog, duplicateConfig);
+
+        // Initialize query service
+        this.queryService = new SimulationQueryService(bubbleGrid, ghostSyncAdapter, populationManager, metrics);
     }
 
     /**
@@ -267,7 +263,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @return SimulationMetrics instance
      */
     public SimulationMetrics getMetrics() {
-        return metrics;
+        return queryService.getMetrics();
     }
 
     /**
@@ -343,47 +339,8 @@ public class MultiBubbleSimulation implements AutoCloseable {
      *
      * @return List of entity snapshots
      */
-    public List<EntitySnapshot> getAllEntities() {
-        var snapshots = new ArrayList<EntitySnapshot>();
-
-        // Add real entities from bubbles
-        for (var bubble : bubbleGrid.getAllBubbles()) {
-            var records = bubble.getAllEntityRecords();
-            TetreeKey<?> fallbackKey = null;
-
-            for (var record : records) {
-                var key = populationManager.getDistribution().getEntityToBubbleMapping().get(record.id());
-                if (key == null) {
-                    // Entity not in mapping - use fallback key if available
-                    if (fallbackKey != null) {
-                        key = fallbackKey;
-                    } else {
-                        // Skip only if no fallback key exists yet
-                        continue;
-                    }
-                }
-                if (fallbackKey == null) {
-                    fallbackKey = key;
-                }
-                snapshots.add(new EntitySnapshot(record.id(), record.position(), key, false));
-            }
-
-            // Add ghost entities for this bubble
-            var ghosts = ghostSyncAdapter.getGhostsForBubble(bubble.id());
-            for (var ghost : ghosts) {
-                // Determine key for ghost (use fallback or root key)
-                var ghostKey = fallbackKey != null ? fallbackKey :
-                              com.hellblazer.luciferase.lucien.tetree.TetreeKey.create((byte) 0, 0L, 0L);
-                snapshots.add(new EntitySnapshot(
-                    ghost.entityId().toString(),
-                    ghost.position(),
-                    ghostKey,
-                    true  // isGhost = true
-                ));
-            }
-        }
-
-        return snapshots;
+    public List<? extends SimulationQueryService.EntitySnapshot> getAllEntities() {
+        return queryService.getAllEntities();
     }
 
     /**
@@ -393,10 +350,8 @@ public class MultiBubbleSimulation implements AutoCloseable {
      *
      * @return List of real entity snapshots
      */
-    public List<EntitySnapshot> getRealEntities() {
-        return getAllEntities().stream()
-                               .filter(e -> !e.isGhost())
-                               .collect(Collectors.toList());
+    public List<? extends SimulationQueryService.EntitySnapshot> getRealEntities() {
+        return queryService.getRealEntities();
     }
 
     /**
@@ -407,7 +362,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @return Number of ghost entities
      */
     public int getGhostCount() {
-        return ghostSyncAdapter.getTotalGhostCount();
+        return queryService.getGhostCount();
     }
 
     /**
@@ -418,7 +373,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @throws NoSuchElementException if no bubble exists at key
      */
     public EnhancedBubble getBubble(TetreeKey<?> key) {
-        return bubbleGrid.getBubble(key);
+        return queryService.getBubble(key);
     }
 
     /**
@@ -427,7 +382,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @return Collection of all EnhancedBubbles
      */
     public Collection<EnhancedBubble> getAllBubbles() {
-        return bubbleGrid.getAllBubbles();
+        return queryService.getAllBubbles();
     }
 
     /**
