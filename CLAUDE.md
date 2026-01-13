@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-**Last Updated**: 2026-01-12
+**Last Updated**: 2026-01-13
 **Status**: Current
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -25,6 +25,26 @@ Spawn multiple parallel subtasks of claude whenever applicable. Leverage the cap
 - **Specific benchmark**: `mvn test -pl lucien -Dtest=OctreeVsTetreeVsPrismBenchmark`
 - **Single test without retries**: `mvn test -pl <module> -Dtest=TestName -Dsurefire.rerunFailingTestsCount=0`
 - **Check compilation errors**: Use `mcp jetbrains.findProjectProblems` (no need to compile when IDE is available)
+
+## CI/CD
+
+The project uses **parallel GitHub Actions workflow** for fast feedback:
+
+- **Total Runtime**: 9-12 minutes (vs 20-30+ min sequential)
+- **Compile**: 54 seconds (Maven Central first optimization)
+- **Architecture**: 1 compile job + 6 parallel test batches + 1 aggregator
+- **Test Distribution**:
+  - test-batch-1: Fast unit tests (bubble/behavior/metrics) - 1 min
+  - test-batch-2: Von/transport integration tests - 8-9 min
+  - test-batch-3: Causality/migration state machines - 4-5 min
+  - test-batch-4: Distributed systems/network/Delos - 8-9 min
+  - test-batch-5: Consensus/ghost - 45-60 sec
+  - test-other-modules: grpc, common, lucien, sentry, render, portal, dyada-java - 3-4 min
+
+**Performance Metrics**: See `.github/CI_PERFORMANCE_METRICS.md`
+**Implementation Details**: See `simulation/doc/TECHNICAL_DECISION_PARALLEL_CI.md`
+
+**Key Optimization**: Maven repositories reordered to place Maven Central first, avoiding 10-12 minute GitHub Packages dependency resolution timeouts.
 
 ## Requirements
 
