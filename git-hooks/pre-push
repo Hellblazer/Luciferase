@@ -1,0 +1,47 @@
+#!/bin/bash
+# Pre-push hook: Runs bd sync and tests before push
+#
+# Installation:
+#   cp git-hooks/pre-push .git/hooks/pre-push
+#   chmod +x .git/hooks/pre-push
+#
+# To bypass (emergency only):
+#   git push --no-verify
+
+set -e
+
+echo "======================================"
+echo "Pre-push hook: Running checks..."
+echo "======================================"
+
+# Step 1: Run bd hooks for beads sync
+echo ""
+echo "[1/2] Running bd hooks (beads sync)..."
+if command -v bd >/dev/null 2>&1; then
+    bd hooks run pre-push "$@"
+else
+    echo "Warning: bd command not found, skipping beads sync" >&2
+fi
+
+# Step 2: Run tests
+echo ""
+echo "[2/2] Running tests (this may take ~12 minutes with parallel CI)..."
+echo "Tip: For local quick check, use 'mvn test -pl simulation -Dtest=*Test' for simulation only"
+echo ""
+
+# Run full test suite
+if mvn test -q -DskipTests=false; then
+    echo ""
+    echo "✅ All tests passed"
+    echo "✅ Pre-push checks complete - proceeding with push"
+    echo "======================================"
+    exit 0
+else
+    echo ""
+    echo "❌ Tests failed - push aborted"
+    echo ""
+    echo "Fix the failing tests, then try pushing again."
+    echo "To bypass this check (NOT recommended): git push --no-verify"
+    echo "======================================"
+    exit 1
+fi
