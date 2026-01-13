@@ -26,6 +26,7 @@ import com.hellblazer.luciferase.simulation.entity.StringEntityIDGenerator;
 import com.hellblazer.luciferase.simulation.ghost.DuplicateDetectionConfig;
 import com.hellblazer.luciferase.simulation.ghost.DuplicateEntityDetector;
 import com.hellblazer.luciferase.simulation.ghost.MigrationLog;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
@@ -131,6 +132,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final AtomicBoolean running;
     private final AtomicLong tickCount;
     private final SimulationMetrics metrics;
+    private volatile Clock clock = Clock.system();
     private ScheduledFuture<?> tickTask;
 
     // Entity distribution manager
@@ -201,6 +203,15 @@ public class MultiBubbleSimulation implements AutoCloseable {
         // Phase 5E: Initialize duplicate detection
         this.duplicateConfig = DuplicateDetectionConfig.defaultConfig();
         this.duplicateDetector = new DuplicateEntityDetector(bubbleGrid, migrationLog, duplicateConfig);
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -355,7 +366,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * Execute one simulation tick: update entities, detect migrations, sync ghosts.
      */
     private void tick() {
-        var startTime = System.nanoTime();
+        var startTime = clock.nanoTime();
 
         try {
             // Increment tick and bucket counters
@@ -380,7 +391,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
             }
 
             // Step 5: Record metrics
-            var elapsedNs = System.nanoTime() - startTime;
+            var elapsedNs = clock.nanoTime() - startTime;
             var totalEntities = getAllEntities().size();
             metrics.recordTick(elapsedNs, totalEntities);
 

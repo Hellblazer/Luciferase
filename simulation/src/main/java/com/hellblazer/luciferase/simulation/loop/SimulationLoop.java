@@ -13,6 +13,7 @@ import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,6 +69,7 @@ public class SimulationLoop {
     private final AtomicLong tickCount = new AtomicLong(0);
     private final Map<String, Vector3f> velocities = new ConcurrentHashMap<>();
     private final SimulationMetrics metrics = new SimulationMetrics();
+    private volatile Clock clock = Clock.system();
 
     private ScheduledFuture<?> tickTask;
 
@@ -124,6 +126,15 @@ public class SimulationLoop {
             t.setDaemon(true);
             return t;
         });
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -225,7 +236,7 @@ public class SimulationLoop {
      */
     private void tick() {
         try {
-            long startNs = System.nanoTime();
+            long startNs = clock.nanoTime();
             float deltaTime = tickIntervalMs / 1000.0f;
 
             // Swap velocity buffers for behaviors that support it (thread-safe double-buffering)
@@ -283,7 +294,7 @@ public class SimulationLoop {
             }
 
             // Record metrics
-            long frameTimeNs = System.nanoTime() - startNs;
+            long frameTimeNs = clock.nanoTime() - startNs;
             bubble.recordFrameTime(frameTimeNs);
             metrics.recordTick(frameTimeNs, entities.size());
 

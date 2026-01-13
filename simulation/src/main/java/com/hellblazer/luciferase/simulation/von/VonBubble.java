@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import javafx.geometry.Point3D;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,6 +59,16 @@ public class VonBubble extends EnhancedBubble implements Node {
     private final Set<UUID> introducedTo;  // Track neighbors we've introduced ourselves to
     private final List<Consumer<Event>> eventListeners;
     private final Consumer<VonMessage> messageHandler;
+    private volatile Clock clock = Clock.system();
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Create a VonBubble with P2P transport.
@@ -114,7 +125,7 @@ public class VonBubble extends EnhancedBubble implements Node {
                 neighbor.id(),
                 neighbor.position(),
                 neighbor.bounds(),
-                System.currentTimeMillis()
+                clock.currentTimeMillis()
             ));
             log.trace("Neighbor {} moved to {}", neighbor.id(), neighbor.position());
         }
@@ -134,7 +145,7 @@ public class VonBubble extends EnhancedBubble implements Node {
             neighbor.id(),
             neighbor.position(),
             neighbor.bounds(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         ));
         emitEvent(new Event.Join(neighbor.id(), neighbor.position()));
         log.debug("Neighbor {} joined at {}", neighbor.id(), neighbor.position());
@@ -149,7 +160,7 @@ public class VonBubble extends EnhancedBubble implements Node {
                 neighborId,
                 new Point3D(0, 0, 0),
                 null,
-                System.currentTimeMillis()
+                clock.currentTimeMillis()
             ));
         }
     }

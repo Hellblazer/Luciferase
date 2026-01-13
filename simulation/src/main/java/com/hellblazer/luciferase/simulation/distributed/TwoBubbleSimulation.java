@@ -13,6 +13,7 @@ import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.loop.SimulationLoop;
 import com.hellblazer.luciferase.simulation.von.LocalServerTransport;
 import com.hellblazer.luciferase.simulation.von.VonBubble;
@@ -121,6 +122,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicLong tickCount = new AtomicLong(0);
     private final SimulationMetrics metrics = new SimulationMetrics();
+    private volatile Clock clock = Clock.system();
 
     // Migration metrics
     private final AtomicLong migrationsTo1 = new AtomicLong(0);
@@ -242,6 +244,15 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
         log.info("TwoBubbleSimulation created: {} entities in bubble1, {} in bubble2, boundary at x={}",
                  bubble1.entityCount(), bubble2.entityCount(), boundaryX);
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -505,7 +516,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
     private void tick() {
         try {
-            long startNs = System.nanoTime();
+            long startNs = clock.nanoTime();
             long currentTick = tickCount.get();
             float deltaTime = DEFAULT_TICK_INTERVAL_MS / 1000.0f;
 
@@ -535,7 +546,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
             checkMigration();
 
             // Record metrics
-            long frameTimeNs = System.nanoTime() - startNs;
+            long frameTimeNs = clock.nanoTime() - startNs;
             int totalEntities = bubble1.entityCount() + bubble2.entityCount();
             metrics.recordTick(frameTimeNs, totalEntities);
 
