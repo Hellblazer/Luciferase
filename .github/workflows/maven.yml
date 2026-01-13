@@ -75,15 +75,6 @@ jobs:
             **/target/*.jar
           retention-days: 1
 
-      # Save cache after successful compile, even if tests fail later
-      - name: Save Maven cache
-        if: success()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-
   test:
     needs: compile
     runs-on: ubuntu-latest
