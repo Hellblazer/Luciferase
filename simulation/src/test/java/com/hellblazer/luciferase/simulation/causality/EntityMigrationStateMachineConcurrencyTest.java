@@ -133,6 +133,9 @@ class EntityMigrationStateMachineConcurrencyTest {
         assertTrue(latch.await(5, TimeUnit.SECONDS), "Should complete within timeout");
         executor.shutdown();
 
+        // Wait for FSM internal state to stabilize after thread completion
+        Thread.sleep(50);
+
         // Verify state consistency
         assertEquals(3, fsm.getEntityCount(), "Should have 3 entities");
         assertEquals(2, fsm.getEntitiesInMigration(), "Should have 2 in migration");
@@ -299,6 +302,9 @@ class EntityMigrationStateMachineConcurrencyTest {
 
         assertTrue(latch.await(10, TimeUnit.SECONDS), "Should complete within timeout");
         executor.shutdown();
+
+        // Wait for FSM internal state to stabilize after thread completion
+        Thread.sleep(50);
 
         // Verify queries completed without errors
         assertTrue(queryResults.size() > 0, "Should have query results");
