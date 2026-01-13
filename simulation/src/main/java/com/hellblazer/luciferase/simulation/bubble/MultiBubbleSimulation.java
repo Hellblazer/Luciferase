@@ -87,13 +87,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
      */
     public static final long DEFAULT_TICK_INTERVAL_MS = 16;
 
-    private final TetreeBubbleGrid bubbleGrid;
-    private final Tetree<StringEntityID, EntityDistribution.EntitySpec> spatialIndex;
-    private final byte maxLevel;
-
-    // Phase 5C: Ghost sync adapter
-    private final TetreeGhostSyncAdapter ghostSyncAdapter;
-
     // Phase 5D: Migration manager
     private final TetrahedralMigration migration;
     private final MigrationLog migrationLog;
@@ -102,18 +95,15 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final DuplicateEntityDetector duplicateDetector;
     private final DuplicateDetectionConfig duplicateConfig;
 
-    // Execution engine
+    // Component managers
+    private final BubbleGridOrchestrator gridOrchestrator;
     private final SimulationExecutionEngine executionEngine;
-    private final SimulationMetrics metrics;
-
-    // Entity population manager
     private final EntityPopulationManager populationManager;
-
-    // Physics manager
     private final EntityPhysicsManager physicsManager;
-
-    // Query service
     private final SimulationQueryService queryService;
+
+    // Metrics
+    private final SimulationMetrics metrics;
 
     /**
      * Create a multi-bubble tetrahedral simulation.
@@ -142,15 +132,21 @@ public class MultiBubbleSimulation implements AutoCloseable {
             throw new IllegalArgumentException("Entity count must be positive, got: " + entityCount);
         }
 
-        this.maxLevel = maxLevel;
         Objects.requireNonNull(worldBounds, "WorldBounds cannot be null");
         Objects.requireNonNull(behavior, "EntityBehavior cannot be null");
 
         // Create bubble grid
-        this.bubbleGrid = new TetreeBubbleGrid(maxLevel);
+        var bubbleGrid = new TetreeBubbleGrid(maxLevel);
 
         // Create spatial index for entity tracking
-        this.spatialIndex = new Tetree<>(new StringEntityIDGenerator(), 100, maxLevel);
+        var spatialIndex = new Tetree<StringEntityID, EntityDistribution.EntitySpec>(new StringEntityIDGenerator(), 100, maxLevel);
+
+        // Phase 5C: Initialize ghost sync adapter
+        var neighborFinder = new TetreeNeighborFinder(spatialIndex);
+        var ghostSyncAdapter = new TetreeGhostSyncAdapter(bubbleGrid, neighborFinder);
+
+        // Initialize grid orchestrator
+        this.gridOrchestrator = new BubbleGridOrchestrator(bubbleGrid, spatialIndex, ghostSyncAdapter, maxLevel);
 
         // Metrics and execution engine
         this.executionEngine = new SimulationExecutionEngine();
@@ -165,12 +161,11 @@ public class MultiBubbleSimulation implements AutoCloseable {
         // Initialize physics manager
         this.physicsManager = new EntityPhysicsManager(behavior, worldBounds);
 
+        // Initialize query service
+        this.queryService = new SimulationQueryService(bubbleGrid, ghostSyncAdapter, populationManager, metrics);
+
         // Setup simulation: create bubbles and distribute entities
         initializeSimulation(bubbleCount, entityCount);
-
-        // Phase 5C: Initialize ghost sync adapter
-        var neighborFinder = new TetreeNeighborFinder(spatialIndex);
-        this.ghostSyncAdapter = new TetreeGhostSyncAdapter(bubbleGrid, neighborFinder);
 
         // Phase 5D: Initialize migration log and manager
         this.migrationLog = new MigrationLog();
@@ -179,9 +174,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
         // Phase 5E: Initialize duplicate detection
         this.duplicateConfig = DuplicateDetectionConfig.defaultConfig();
         this.duplicateDetector = new DuplicateEntityDetector(bubbleGrid, migrationLog, duplicateConfig);
-
-        // Initialize query service
-        this.queryService = new SimulationQueryService(bubbleGrid, ghostSyncAdapter, populationManager, metrics);
     }
 
     /**
@@ -202,7 +194,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private void initializeSimulation(int bubbleCount, int entityCount) {
         // Step 1: Create bubbles distributed across tree levels
         var maxEntitiesPerBubble = (entityCount / bubbleCount) + 50; // +50 buffer for migration
-        TetreeBubbleFactory.createBubbles(bubbleGrid, bubbleCount, maxLevel, maxEntitiesPerBubble);
+        gridOrchestrator.createBubbles(bubbleCount, entityCount, maxEntitiesPerBubble);
 
         // Step 2: Generate entity positions
         var entities = populationManager.populateEntities(entityCount);
@@ -296,7 +288,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
             var bucket = executionEngine.incrementBucket();
 
             // Step 1: Update all bubbles (entity positions and velocities)
-            for (var bubble : bubbleGrid.getAllBubbles()) {
+            for (var bubble : gridOrchestrator.getBubbleGrid().getAllBubbles()) {
                 updateBubbleEntities(bubble, DEFAULT_TICK_INTERVAL_MS / 1000.0f);
             }
 
@@ -304,12 +296,12 @@ public class MultiBubbleSimulation implements AutoCloseable {
             migration.checkMigrations(currentTick);
 
             // Step 3: (Phase 5C) Synchronize ghosts across bubble boundaries
-            ghostSyncAdapter.processBoundaryEntities(bucket);
-            ghostSyncAdapter.onBucketComplete(bucket);
+            gridOrchestrator.getGhostSyncAdapter().processBoundaryEntities(bucket);
+            gridOrchestrator.getGhostSyncAdapter().onBucketComplete(bucket);
 
             // Step 4: (Phase 5E) Detect and reconcile duplicate entities
             if (duplicateConfig.enabled()) {
-                duplicateDetector.detectAndReconcile(bubbleGrid.getAllBubbles());
+                duplicateDetector.detectAndReconcile(gridOrchestrator.getBubbleGrid().getAllBubbles());
             }
 
             // Step 5: Record metrics
