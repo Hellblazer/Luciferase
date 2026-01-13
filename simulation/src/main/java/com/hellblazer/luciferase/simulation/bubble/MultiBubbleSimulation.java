@@ -99,8 +99,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
     private final TetreeBubbleGrid bubbleGrid;
     private final Tetree<StringEntityID, EntityDistribution.EntitySpec> spatialIndex;
-    private final WorldBounds worldBounds;
-    private final int entityCount;
     private final byte maxLevel;
 
     // Phase 5C: Ghost sync adapter
@@ -118,8 +116,8 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final SimulationExecutionEngine executionEngine;
     private final SimulationMetrics metrics;
 
-    // Entity distribution manager
-    private final EntityDistribution distribution;
+    // Entity population manager
+    private final EntityPopulationManager populationManager;
 
     // Physics manager
     private final EntityPhysicsManager physicsManager;
@@ -152,8 +150,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
         }
 
         this.maxLevel = maxLevel;
-        this.entityCount = entityCount;
-        this.worldBounds = Objects.requireNonNull(worldBounds, "WorldBounds cannot be null");
+        Objects.requireNonNull(worldBounds, "WorldBounds cannot be null");
         Objects.requireNonNull(behavior, "EntityBehavior cannot be null");
 
         // Create bubble grid
@@ -167,7 +164,10 @@ public class MultiBubbleSimulation implements AutoCloseable {
         this.metrics = new SimulationMetrics();
 
         // Initialize distribution manager
-        this.distribution = new EntityDistribution(bubbleGrid, spatialIndex);
+        var distribution = new EntityDistribution(bubbleGrid, spatialIndex);
+
+        // Initialize population manager
+        this.populationManager = new EntityPopulationManager(distribution, entityCount, worldBounds);
 
         // Initialize physics manager
         this.physicsManager = new EntityPhysicsManager(behavior, worldBounds);
@@ -209,42 +209,13 @@ public class MultiBubbleSimulation implements AutoCloseable {
         TetreeBubbleFactory.createBubbles(bubbleGrid, bubbleCount, maxLevel, maxEntitiesPerBubble);
 
         // Step 2: Generate entity positions
-        var entities = populateEntities(entityCount);
+        var entities = populationManager.populateEntities(entityCount);
 
         // Step 3: Distribute entities to bubbles spatially
-        distribution.distribute(entities);
+        populationManager.getDistribution().distribute(entities);
 
         // Step 4: Initialize velocities
         initializeVelocities(entities);
-    }
-
-    /**
-     * Generate random entity positions within world bounds.
-     *
-     * @param count Number of entities to create
-     * @return List of EntitySpec with random positions
-     */
-    private List<EntityDistribution.EntitySpec> populateEntities(int count) {
-        var entities = new ArrayList<EntityDistribution.EntitySpec>(count);
-        var random = new Random(42); // Deterministic seed for reproducibility
-
-        var size = worldBounds.size();
-        var min = worldBounds.min();
-
-        for (int i = 0; i < count; i++) {
-            // Generate random position in world bounds
-            var x = min + random.nextFloat() * size;
-            var y = min + random.nextFloat() * size;
-            var z = min + random.nextFloat() * size;
-
-            var position = new Point3f(x, y, z);
-            var entityId = "entity-" + i;
-
-            // Velocity will be initialized later
-            entities.add(new EntityDistribution.EntitySpec(entityId, position, null));
-        }
-
-        return entities;
     }
 
     /**
@@ -381,7 +352,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
             TetreeKey<?> fallbackKey = null;
 
             for (var record : records) {
-                var key = distribution.getEntityToBubbleMapping().get(record.id());
+                var key = populationManager.getDistribution().getEntityToBubbleMapping().get(record.id());
                 if (key == null) {
                     // Entity not in mapping - use fallback key if available
                     if (fallbackKey != null) {
