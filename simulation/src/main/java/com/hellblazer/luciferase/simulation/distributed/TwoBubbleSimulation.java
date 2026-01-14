@@ -113,70 +113,19 @@ public class TwoBubbleSimulation implements AutoCloseable {
     private final EntityBehavior behavior1;
     private final EntityBehavior behavior2;
 
-    private final Map<String, GhostEntry> ghostsInBubble1 = new ConcurrentHashMap<>();
-    private final Map<String, GhostEntry> ghostsInBubble2 = new ConcurrentHashMap<>();
+    private final GhostLayerSynchronizer ghostSynchronizer;
+    private final CrossBubbleMigrationManager migrationManager;
     private final VelocityTracker velocityTracker;
     private final BubbleEntityUpdater entityUpdater;
+    private final SimulationTickMetrics tickMetrics;
 
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicLong tickCount = new AtomicLong(0);
-    private final SimulationMetrics metrics = new SimulationMetrics();
     private volatile Clock clock = Clock.system();
-
-    // Migration metrics
-    private final AtomicLong migrationsTo1 = new AtomicLong(0);
-    private final AtomicLong migrationsTo2 = new AtomicLong(0);
-    private final AtomicLong migrationFailures = new AtomicLong(0);
-
-    // Migration cooldowns: entityId -> tick when cooldown expires
-    private final Map<String, Long> migrationCooldowns = new ConcurrentHashMap<>();
 
     private ScheduledFuture<?> tickTask;
 
-    /**
-     * Ghost entry with position, velocity, and expiration.
-     */
-    private record GhostEntry(String id, Point3f position, javax.vecmath.Vector3f velocity, long expirationTick) {}
-
-    /**
-     * Migration direction enum.
-     */
-    public enum MigrationDirection {
-        TO_BUBBLE_1,
-        TO_BUBBLE_2
-    }
-
-    /**
-     * Migration intent: captures entity state and validates migration is safe.
-     * Created during PREPARE phase, consumed during COMMIT phase.
-     */
-    public record MigrationIntent(
-        String entityId,
-        Point3f position,
-        Object content,
-        javax.vecmath.Vector3f velocity,
-        MigrationDirection direction,
-        long preparedAtTick
-    ) {}
-
-    /**
-     * Migration result: outcome of a migration attempt.
-     */
-    public record MigrationResult(
-        String entityId,
-        MigrationDirection direction,
-        boolean success,
-        String message
-    ) {
-        public static MigrationResult success(String entityId, MigrationDirection direction) {
-            return new MigrationResult(entityId, direction, true, "Success");
-        }
-
-        public static MigrationResult failure(String entityId, MigrationDirection direction, String message) {
-            return new MigrationResult(entityId, direction, false, message);
-        }
-    }
 
     /**
      * Create a two-bubble simulation with default parameters.
@@ -225,9 +174,26 @@ public class TwoBubbleSimulation implements AutoCloseable {
         // Populate entities (split between bubbles based on x position)
         populateEntities(entityCount);
 
-        // Initialize velocity tracker BEFORE entityUpdater (which needs it)
+        // Initialize velocity tracker BEFORE other components (they depend on velocity maps)
         this.velocityTracker = new VelocityTracker(bubble1, bubble2, new Random());
         velocityTracker.initializeVelocities(behavior1.getMaxSpeed(), behavior2.getMaxSpeed());
+
+        // Initialize metrics tracker
+        this.tickMetrics = new SimulationTickMetrics(bubble1, bubble2);
+
+        // Initialize ghost synchronizer
+        this.ghostSynchronizer = new GhostLayerSynchronizer(
+            bubble1, bubble2, boundaryX,
+            GHOST_BOUNDARY_WIDTH, GHOST_TTL_TICKS,
+            velocityTracker.getVelocities1(), velocityTracker.getVelocities2()
+        );
+
+        // Initialize migration manager
+        this.migrationManager = new CrossBubbleMigrationManager(
+            bubble1, bubble2, boundaryX,
+            MIGRATION_COOLDOWN_TICKS, HYSTERESIS_DISTANCE,
+            tickMetrics
+        );
 
         // Initialize entity updater
         this.entityUpdater = new BubbleEntityUpdater(worldBounds);
@@ -289,7 +255,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
                 tickTask.cancel(false);
                 tickTask = null;
             }
-            log.info("TwoBubbleSimulation stopped after {} ticks. {}", tickCount.get(), metrics);
+            log.info("TwoBubbleSimulation stopped after {} ticks. {}", tickCount.get(), tickMetrics);
         }
     }
 
@@ -297,11 +263,10 @@ public class TwoBubbleSimulation implements AutoCloseable {
     public void close() {
         stop();
 
-        // Clear ghost and cooldown maps to prevent memory leaks
-        ghostsInBubble1.clear();
-        ghostsInBubble2.clear();
+        // Clear component state to prevent memory leaks
+        ghostSynchronizer.clear();
         // Note: velocityTracker manages velocity maps internally
-        migrationCooldowns.clear();
+        // Note: migrationManager manages cooldown map internally
 
         // Shutdown scheduler with timeout
         scheduler.shutdownNow();
@@ -337,7 +302,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
      * Get simulation metrics.
      */
     public SimulationMetrics getMetrics() {
-        return metrics;
+        return tickMetrics.getMetrics();
     }
 
     /**
@@ -367,16 +332,16 @@ public class TwoBubbleSimulation implements AutoCloseable {
             entities.add(new EntitySnapshot(record.id(), record.position(), 2, false));
         }
 
-        // Include active ghosts for visualization
+        // Include active ghosts for visualization (delegate to ghostSynchronizer)
         long currentTick = tickCount.get();
-        for (var ghost : ghostsInBubble1.values()) {
-            if (ghost.expirationTick > currentTick) {
-                entities.add(new EntitySnapshot(ghost.id + "_ghost", ghost.position, 1, true));
+        for (var ghost : ghostSynchronizer.getGhostsInBubble1().values()) {
+            if (ghost.expirationTick() > currentTick) {
+                entities.add(new EntitySnapshot(ghost.id() + "_ghost", ghost.position(), 1, true));
             }
         }
-        for (var ghost : ghostsInBubble2.values()) {
-            if (ghost.expirationTick > currentTick) {
-                entities.add(new EntitySnapshot(ghost.id + "_ghost", ghost.position, 2, true));
+        for (var ghost : ghostSynchronizer.getGhostsInBubble2().values()) {
+            if (ghost.expirationTick() > currentTick) {
+                entities.add(new EntitySnapshot(ghost.id() + "_ghost", ghost.position(), 2, true));
             }
         }
 
@@ -401,31 +366,26 @@ public class TwoBubbleSimulation implements AutoCloseable {
      * Get total migrations to bubble 1.
      */
     public long getMigrationsTo1() {
-        return migrationsTo1.get();
+        return tickMetrics.getMigrationsTo1();
     }
 
     /**
      * Get total migrations to bubble 2.
      */
     public long getMigrationsTo2() {
-        return migrationsTo2.get();
+        return tickMetrics.getMigrationsTo2();
     }
 
     /**
      * Get detailed debug state for visualization and debugging.
      */
-    public DebugState getDebugState() {
-        return new DebugState(
-            tickCount.get(),
-            bubble1.entityCount(),
-            bubble2.entityCount(),
-            ghostsInBubble1.size(),
-            ghostsInBubble2.size(),
-            migrationsTo1.get(),
-            migrationsTo2.get(),
-            migrationFailures.get(),
-            migrationCooldowns.size(),
-            metrics
+    public SimulationTickMetrics.DebugState getDebugState() {
+        long currentTick = tickCount.get();
+        return tickMetrics.getDebugState(
+            currentTick,
+            ghostSynchronizer.getGhostsInBubble1().size(),
+            ghostSynchronizer.getGhostsInBubble2().size(),
+            migrationManager.getActiveCooldownCount(currentTick)
         );
     }
 
@@ -435,7 +395,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
      * @return Number of failed migration attempts
      */
     public long getMigrationFailures() {
-        return migrationFailures.get();
+        return tickMetrics.getMigrationFailures();
     }
 
     /**
@@ -444,10 +404,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
      * @return Number of entities that cannot migrate yet
      */
     public int getCooldownsActive() {
-        long currentTick = tickCount.get();
-        return (int) migrationCooldowns.entrySet().stream()
-            .filter(e -> e.getValue() > currentTick)
-            .count();
+        return migrationManager.getActiveCooldownCount(tickCount.get());
     }
 
     // ========== Records for Visualization and Debugging ==========
@@ -461,22 +418,6 @@ public class TwoBubbleSimulation implements AutoCloseable {
      * @param isGhost  True if this is a ghost copy
      */
     public record EntitySnapshot(String id, Point3f position, int bubbleId, boolean isGhost) {}
-
-    /**
-     * Debug state snapshot for monitoring and debugging.
-     */
-    public record DebugState(
-        long tickCount,
-        int bubble1EntityCount,
-        int bubble2EntityCount,
-        int bubble1GhostCount,
-        int bubble2GhostCount,
-        long migrationsTo1,
-        long migrationsTo2,
-        long migrationFailures,
-        int cooldownsActive,
-        SimulationMetrics metrics
-    ) {}
 
     // ========== Private Methods ==========
 
@@ -515,363 +456,44 @@ public class TwoBubbleSimulation implements AutoCloseable {
                 fb2.swapVelocityBuffers();
             }
 
-            // Update bubble 1 entities
+            // Update entities (delegate to entityUpdater)
             entityUpdater.updateBubbleEntities(bubble1, behavior1, velocityTracker.getVelocities1(), deltaTime, worldBounds.min(), boundaryX);
-
-            // Update bubble 2 entities
             entityUpdater.updateBubbleEntities(bubble2, behavior2, velocityTracker.getVelocities2(), deltaTime, boundaryX, worldBounds.max());
 
-            // Sync ghosts periodically
+            // Sync ghosts periodically (delegate to ghostSynchronizer)
             if (currentTick % GHOST_SYNC_INTERVAL_TICKS == 0) {
-                syncGhosts(currentTick);
+                ghostSynchronizer.syncGhosts(currentTick);
             }
+            ghostSynchronizer.expireGhosts(currentTick);
 
-            // Expire old ghosts
-            expireGhosts(currentTick);
+            // Check for entity migration (delegate to migrationManager)
+            migrationManager.checkAndMigrate(currentTick, velocityTracker.getVelocities1(), velocityTracker.getVelocities2());
 
-            // Check for entity migration (entity crossed boundary)
-            checkMigration();
-
-            // Record metrics
+            // Record metrics (delegate to tickMetrics)
             long frameTimeNs = clock.nanoTime() - startNs;
-            int totalEntities = bubble1.entityCount() + bubble2.entityCount();
-            metrics.recordTick(frameTimeNs, totalEntities);
+            tickMetrics.recordTick(frameTimeNs);
 
             tickCount.incrementAndGet();
 
             // Periodic cleanup to remove orphaned entries
             if (currentTick > 0 && currentTick % VELOCITY_CLEANUP_INTERVAL_TICKS == 0) {
                 velocityTracker.cleanupOrphanedVelocities();
-                cleanupExpiredCooldowns();
+                migrationManager.cleanupExpiredCooldowns(currentTick);
             }
 
-            // Log periodically
-            if (currentTick > 0 && currentTick % 600 == 0) {
-                log.debug("Tick {}: bubble1={}, bubble2={}, ghosts1={}, ghosts2={}, " +
-                          "migrations(to1={}, to2={}, failures={}), cooldowns={}, {}",
-                          currentTick, bubble1.entityCount(), bubble2.entityCount(),
-                          ghostsInBubble1.size(), ghostsInBubble2.size(),
-                          migrationsTo1.get(), migrationsTo2.get(), migrationFailures.get(),
-                          migrationCooldowns.size(), metrics);
-            }
+            // Log periodically (delegate to tickMetrics)
+            tickMetrics.logPeriodic(
+                currentTick,
+                ghostSynchronizer.getGhostsInBubble1().size(),
+                ghostSynchronizer.getGhostsInBubble2().size(),
+                migrationManager.getActiveCooldownCount(currentTick)
+            );
 
         } catch (Exception e) {
             log.error("Error in simulation tick: {}", e.getMessage(), e);
         }
     }
 
-    /**
-     * Clean up velocity entries for entities that no longer exist.
-     * Prevents memory leaks from orphaned velocity entries.
-     */
-
-    /**
-     * Clean up expired cooldown entries.
-     * Prevents memory growth from accumulated cooldown entries in long-running simulations.
-     */
-    private void cleanupExpiredCooldowns() {
-        long currentTick = tickCount.get();
-        int sizeBefore = migrationCooldowns.size();
-        migrationCooldowns.entrySet().removeIf(e -> e.getValue() <= currentTick);
-        int removed = sizeBefore - migrationCooldowns.size();
-
-        if (removed > 0) {
-            log.debug("Cooldown cleanup: removed {} expired entries", removed);
-        }
-    }
-
-    private void syncGhosts(long currentTick) {
-        long expirationTick = currentTick + GHOST_TTL_TICKS;
-
-        // Find entities near boundary in bubble1, ghost them to bubble2
-        for (var entity : bubble1.getAllEntityRecords()) {
-            float distFromBoundary = boundaryX - entity.position().x;
-            if (distFromBoundary >= 0 && distFromBoundary < GHOST_BOUNDARY_WIDTH) {
-                var velocity = velocityTracker.getVelocities1().get(entity.id());
-                var ghost = new GhostEntry(
-                    entity.id(),
-                    new Point3f(entity.position()),
-                    velocity != null ? new javax.vecmath.Vector3f(velocity) : new javax.vecmath.Vector3f(),
-                    expirationTick
-                );
-                ghostsInBubble2.put(entity.id(), ghost);
-            }
-        }
-
-        // Find entities near boundary in bubble2, ghost them to bubble1
-        for (var entity : bubble2.getAllEntityRecords()) {
-            float distFromBoundary = entity.position().x - boundaryX;
-            if (distFromBoundary >= 0 && distFromBoundary < GHOST_BOUNDARY_WIDTH) {
-                var velocity = velocityTracker.getVelocities2().get(entity.id());
-                var ghost = new GhostEntry(
-                    entity.id(),
-                    new Point3f(entity.position()),
-                    velocity != null ? new javax.vecmath.Vector3f(velocity) : new javax.vecmath.Vector3f(),
-                    expirationTick
-                );
-                ghostsInBubble1.put(entity.id(), ghost);
-            }
-        }
-
-        log.trace("Ghost sync: {} ghosts in bubble1, {} in bubble2",
-                  ghostsInBubble1.size(), ghostsInBubble2.size());
-    }
-
-    private void expireGhosts(long currentTick) {
-        ghostsInBubble1.entrySet().removeIf(e -> e.getValue().expirationTick <= currentTick);
-        ghostsInBubble2.entrySet().removeIf(e -> e.getValue().expirationTick <= currentTick);
-    }
-
-    /**
-     * Check for entities that need migration using two-phase commit protocol.
-     * <p>
-     * Phase 1 (PREPARE): Validate migration is safe, create intent
-     * Phase 2 (COMMIT): Execute migration atomically with rollback on failure
-     */
-    private void checkMigration() {
-        long currentTick = tickCount.get();
-
-        // Snapshot entities atomically - use List.copyOf() to prevent modifications during iteration
-        var bubble1Snapshot = List.copyOf(bubble1.getAllEntityRecords());
-        var bubble2Snapshot = List.copyOf(bubble2.getAllEntityRecords());
-
-        // Phase 1: PREPARE - identify migration candidates with hysteresis and cooldown checks
-        var intentsTo2 = new ArrayList<MigrationIntent>();
-        for (var entity : bubble1Snapshot) {
-            if (shouldMigrate(entity, MigrationDirection.TO_BUBBLE_2, currentTick)) {
-                var intent = prepareMigration(entity, MigrationDirection.TO_BUBBLE_2, currentTick);
-                if (intent != null) {
-                    intentsTo2.add(intent);
-                }
-            }
-        }
-
-        var intentsTo1 = new ArrayList<MigrationIntent>();
-        for (var entity : bubble2Snapshot) {
-            if (shouldMigrate(entity, MigrationDirection.TO_BUBBLE_1, currentTick)) {
-                var intent = prepareMigration(entity, MigrationDirection.TO_BUBBLE_1, currentTick);
-                if (intent != null) {
-                    intentsTo1.add(intent);
-                }
-            }
-        }
-
-        // Phase 2: COMMIT - execute migrations with rollback on failure
-        for (var intent : intentsTo2) {
-            var result = commitMigration(intent, currentTick);
-            if (!result.success()) {
-                log.warn("Migration failed: {}", result.message());
-            }
-        }
-
-        for (var intent : intentsTo1) {
-            var result = commitMigration(intent, currentTick);
-            if (!result.success()) {
-                log.warn("Migration failed: {}", result.message());
-            }
-        }
-    }
-
-    /**
-     * Check if entity should migrate based on hysteresis and cooldown.
-     *
-     * @param entity    Entity to check
-     * @param direction Target direction
-     * @param currentTick Current simulation tick
-     * @return true if entity should migrate
-     */
-    private boolean shouldMigrate(EnhancedBubble.EntityRecord entity, MigrationDirection direction, long currentTick) {
-        // Check cooldown first (cheaper check)
-        if (isInCooldown(entity.id(), currentTick)) {
-            return false;
-        }
-
-        // Apply hysteresis: entity must be past boundary by HYSTERESIS_DISTANCE
-        float x = entity.position().x;
-        if (direction == MigrationDirection.TO_BUBBLE_2) {
-            // Entity in bubble1 needs to be HYSTERESIS_DISTANCE past boundary into bubble2's region
-            return x >= (boundaryX + HYSTERESIS_DISTANCE);
-        } else {
-            // Entity in bubble2 needs to be HYSTERESIS_DISTANCE past boundary into bubble1's region
-            return x < (boundaryX - HYSTERESIS_DISTANCE);
-        }
-    }
-
-    /**
-     * Check if entity is in migration cooldown.
-     *
-     * @param entityId Entity ID to check
-     * @param currentTick Current simulation tick
-     * @return true if entity cannot migrate yet
-     */
-    private boolean isInCooldown(String entityId, long currentTick) {
-        var cooldownExpires = migrationCooldowns.get(entityId);
-        if (cooldownExpires == null) {
-            return false;
-        }
-        return currentTick < cooldownExpires;
-    }
-
-    /**
-     * PREPARE phase: Validate migration and create intent.
-     *
-     * @param entity    Entity to migrate
-     * @param direction Target direction
-     * @param currentTick Current simulation tick
-     * @return MigrationIntent if valid, null if migration should not proceed
-     */
-    private MigrationIntent prepareMigration(EnhancedBubble.EntityRecord entity, MigrationDirection direction, long currentTick) {
-        String entityId = entity.id();
-
-        // Validate entity exists in source bubble
-        var sourceBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble1 : bubble2;
-        var targetBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble2 : bubble1;
-
-        if (!sourceBubble.getEntities().contains(entityId)) {
-            log.trace("Prepare failed: entity {} not in source bubble", entityId);
-            return null;
-        }
-
-        // Validate entity NOT in target bubble (prevents duplicates)
-        if (targetBubble.getEntities().contains(entityId)) {
-            log.warn("Prepare failed: entity {} already in target bubble", entityId);
-            return null;
-        }
-
-        // Get velocity from source bubble's velocity map
-        var velocityMap = (direction == MigrationDirection.TO_BUBBLE_2) ? velocityTracker.getVelocities1() : velocityTracker.getVelocities2();
-        var velocity = velocityMap.get(entityId);
-
-        return new MigrationIntent(
-            entityId,
-            new Point3f(entity.position()),  // Copy position
-            entity.content(),
-            velocity != null ? new javax.vecmath.Vector3f(velocity) : null,
-            direction,
-            currentTick
-        );
-    }
-
-    /**
-     * COMMIT phase: Execute migration atomically with rollback on failure.
-     * <p>
-     * ATOMICITY GUARANTEE: Add-before-remove prevents entity loss.
-     * Alternative remove-before-add would risk entity loss if add fails.
-     * <p>
-     * Order of operations for atomicity:
-     * <ol>
-     *   <li>Remove ghost from target (if entity was ghosted there)</li>
-     *   <li>Add entity to target bubble (target now owns entity)</li>
-     *   <li>Add velocity to target (don't remove from source yet)</li>
-     *   <li>Remove entity from source bubble</li>
-     *   <li>Remove velocity from source (only after source removal succeeds)</li>
-     *   <li>Update metrics and cooldown</li>
-     * </ol>
-     * <p>
-     * Rollback scenarios:
-     * <ul>
-     *   <li>Step 2 fails: no rollback needed, entity stays in source</li>
-     *   <li>Step 4 fails: rollback removes from target, velocity stays in source</li>
-     * </ul>
-     *
-     * @param intent Migration intent from prepare phase
-     * @param currentTick Current simulation tick
-     * @return MigrationResult indicating success or failure
-     */
-    private MigrationResult commitMigration(MigrationIntent intent, long currentTick) {
-        String entityId = intent.entityId();
-        var direction = intent.direction();
-
-        var sourceBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble1 : bubble2;
-        var targetBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble2 : bubble1;
-        var sourceVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocityTracker.getVelocities1() : velocityTracker.getVelocities2();
-        var targetVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocityTracker.getVelocities2() : velocityTracker.getVelocities1();
-        var targetGhosts = (direction == MigrationDirection.TO_BUBBLE_2) ? ghostsInBubble2 : ghostsInBubble1;
-        var migrationCounter = (direction == MigrationDirection.TO_BUBBLE_2) ? migrationsTo2 : migrationsTo1;
-
-        // Step 1: Remove ghost from target FIRST (before adding as real entity)
-        // This prevents conflicts if entity was already ghosted in target
-        targetGhosts.remove(entityId);
-
-        try {
-            // Step 2: Add entity to target bubble (target now owns entity)
-            targetBubble.addEntity(entityId, intent.position(), intent.content());
-        } catch (Exception e) {
-            // Add failed - no rollback needed, entity stays in source
-            migrationFailures.incrementAndGet();
-            return MigrationResult.failure(entityId, direction, "Failed to add to target: " + e.getMessage());
-        }
-
-        try {
-            // Step 3: Add velocity to target (but don't remove from source yet)
-            if (intent.velocity() != null) {
-                targetVelocities.put(entityId, intent.velocity());
-            }
-
-            // Step 4: Remove entity from source bubble
-            sourceBubble.removeEntity(entityId);
-
-            // Step 5: Now safe to remove velocity from source (source removal succeeded)
-            sourceVelocities.remove(entityId);
-
-            // Step 6: Update metrics and cooldown
-            migrationCounter.incrementAndGet();
-            migrationCooldowns.put(entityId, currentTick + MIGRATION_COOLDOWN_TICKS);
-
-            log.debug("Migrated {} from bubble{} to bubble{}", entityId,
-                      direction == MigrationDirection.TO_BUBBLE_2 ? 1 : 2,
-                      direction == MigrationDirection.TO_BUBBLE_2 ? 2 : 1);
-            return MigrationResult.success(entityId, direction);
-
-        } catch (Exception e) {
-            // Rollback: remove from target since it was added but migration failed
-            // Note: velocity was NOT removed from source, so no need to restore it
-            rollbackMigration(intent, e);
-            migrationFailures.incrementAndGet();
-            return MigrationResult.failure(entityId, direction, "Rollback after failure: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Rollback a failed migration by removing entity from target and restoring velocity.
-     * <p>
-     * Called when migration fails after entity was added to target but before
-     * source removal completed. Ensures entity stays in source with velocity intact.
-     *
-     * @param intent Original migration intent
-     * @param cause Exception that caused the failure
-     */
-    private void rollbackMigration(MigrationIntent intent, Exception cause) {
-        String entityId = intent.entityId();
-        var direction = intent.direction();
-        var targetBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble2 : bubble1;
-        var targetVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocityTracker.getVelocities2() : velocityTracker.getVelocities1();
-        var sourceVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocityTracker.getVelocities1() : velocityTracker.getVelocities2();
-
-        try {
-            // Remove entity from target bubble
-            targetBubble.removeEntity(entityId);
-
-            // Remove velocity from target (it was copied there)
-            targetVelocities.remove(entityId);
-
-            // Restore velocity to source if it was transferred
-            // (With new ordering, velocity is NOT removed from source until after
-            // source removal succeeds, so this is just a safety net)
-            if (intent.velocity() != null && !sourceVelocities.containsKey(entityId)) {
-                sourceVelocities.put(entityId, intent.velocity());
-            }
-
-            log.warn("Rolled back migration of {} from bubble{} to bubble{}: {}",
-                     entityId,
-                     direction == MigrationDirection.TO_BUBBLE_2 ? 1 : 2,
-                     direction == MigrationDirection.TO_BUBBLE_2 ? 2 : 1,
-                     cause.getMessage());
-        } catch (Exception rollbackError) {
-            log.error("Rollback failed for {}: original error={}, rollback error={}",
-                      entityId, cause.getMessage(), rollbackError.getMessage());
-        }
-    }
 
     private void handleBubble1Event(com.hellblazer.luciferase.simulation.von.Event event) {
         // Handle VON events from bubble1
