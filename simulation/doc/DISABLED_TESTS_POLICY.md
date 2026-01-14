@@ -93,10 +93,14 @@ void testFailureRecovery() {
 
 ### Fixed: Race Conditions (2 tests)
 **File**: `MultiBubbleSimulationGhostSyncTest.java`
-- `testNeighborGhostConsistency()` - Fixed with poll-wait helper
-- `testGetRealEntities_ExcludesGhosts()` - Fixed with poll-wait helper
-- **Solution**: Added `waitForEntityCount()` helper that polls until entities initialize (up to 2 seconds)
-- **Status**: Both tests now passing
+- `testNeighborGhostConsistency()` - Fixed with poll-wait helpers
+- `testGetRealEntities_ExcludesGhosts()` - Fixed with poll-wait helpers
+- **Solution**:
+  - Added `waitForEntityCount()` helper that polls until entities initialize (up to 2 seconds)
+  - Added `waitForStop()` helper that polls until simulation fully stops (up to 1 second)
+  - Ensures simulation is fully stopped before assertions execute
+- **Root Cause**: stop() doesn't immediately stop simulation - could still process ticks during assertions
+- **Status**: Both tests now passing (13 run, 0 failures, 0 errors, 2 skipped)
 
 ### Converted: Performance Tests (2 tests)
 - **VolumeAnimatorGhostTest** (class) - Converted from @Disabled to @DisabledIfEnvironmentVariable(CI)
