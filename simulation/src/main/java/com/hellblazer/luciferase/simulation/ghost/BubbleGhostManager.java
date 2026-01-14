@@ -113,6 +113,11 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
     private final GhostBoundarySync<ID, Content> ghostBoundarySync;
 
     /**
+     * Ghost lifecycle state machine for timestamp-based TTL tracking (Layer 1 Causality)
+     */
+    private final GhostLifecycleStateMachine lifecycle;
+
+    /**
      * Create ghost manager with all dependencies.
      *
      * @param bubble                 Local bubble to manage
@@ -137,6 +142,12 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
         this.externalBubbleTracker = Objects.requireNonNull(externalBubbleTracker,
                                                               "externalBubbleTracker must not be null");
         this.ghostLayerHealth = Objects.requireNonNull(ghostLayerHealth, "ghostLayerHealth must not be null");
+
+        // Create lifecycle state machine with 500ms TTL and 300ms staleness threshold
+        this.lifecycle = new GhostLifecycleStateMachine(
+            500L,  // ttlMillis (5 buckets × 100ms)
+            300L   // stalenessThresholdMillis (3 buckets × 100ms)
+        );
 
         // Create internal GhostBoundarySync with ghostSender callback
         this.ghostBoundarySync = new GhostBoundarySync<>(
@@ -181,6 +192,9 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
         // Different server - create ghost and add to GhostBoundarySync
         var ghostEntity = createGhostEntity(entityId, content, position);
 
+        // Register with lifecycle state machine (bucket → milliseconds)
+        lifecycle.onCreate(entityId.toDebugString(), neighborBubble, bucket * 100L);
+
         ghostBoundarySync.addGhost(ghostEntity, bubble.id(), neighborBubble, bucket);
     }
 
@@ -196,7 +210,10 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
      * @param bucket Bucket number that just completed
      */
     public void onBucketComplete(long bucket) {
-        // Expire stale ghosts first
+        // Expire stale ghosts in lifecycle (bucket → milliseconds)
+        lifecycle.expireStaleGhosts(bucket * 100L);
+
+        // Expire stale ghosts in GhostBoundarySync (bucket-based)
         ghostBoundarySync.expireStaleGhosts(bucket);
 
         // Flush all pending batches
@@ -231,6 +248,11 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
 
         // Update NC metric (VON health)
         ghostLayerHealth.recordGhostSource(fromBubbleId);
+
+        // Update lifecycle for incoming ghosts
+        for (var ghost : ghosts) {
+            lifecycle.onUpdate(ghost.entityId().toDebugString(), ghost.timestamp());
+        }
 
         log.debug("Received ghost batch from {}: {} ghosts", fromBubbleId, ghosts.size());
     }
