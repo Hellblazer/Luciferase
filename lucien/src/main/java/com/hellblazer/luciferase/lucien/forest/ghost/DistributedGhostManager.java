@@ -56,7 +56,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
 
     private final AbstractSpatialIndex<Key, ID, Content> spatialIndex;
     private final GrpcGhostChannel<Key, ID, Content> ghostChannel;
-    private final ElementGhostManager<Key, ID, Content> localGhostManager;
+    private final GhostBoundaryDetector<Key, ID, Content> localGhostManager;
 
     // Configuration
     private final int currentRank;
@@ -80,7 +80,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
      */
     public DistributedGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
                                   GrpcGhostChannel<Key, ID, Content> ghostChannel,
-                                  ElementGhostManager<Key, ID, Content> localGhostManager) {
+                                  GhostBoundaryDetector<Key, ID, Content> localGhostManager) {
         this.spatialIndex = Objects.requireNonNull(spatialIndex);
         this.ghostChannel = Objects.requireNonNull(ghostChannel);
         this.localGhostManager = Objects.requireNonNull(localGhostManager);
