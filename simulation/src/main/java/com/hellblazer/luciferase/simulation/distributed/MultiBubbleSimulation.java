@@ -16,6 +16,8 @@ import com.hellblazer.luciferase.simulation.distributed.grid.BubbleCoordinate;
 import com.hellblazer.luciferase.simulation.distributed.grid.BubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.grid.GridConfiguration;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.simulation.tick.EntityUpdateExecutor;
+import com.hellblazer.luciferase.simulation.tick.SimulationTickOrchestrator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -83,6 +85,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final AtomicLong tickCount = new AtomicLong(0);
     private final SimulationMetrics metrics = new SimulationMetrics();
     private volatile Clock clock = Clock.system();
+    private final SimulationTickOrchestrator tickOrchestrator;
 
     private ScheduledFuture<?> tickTask;
 
@@ -125,6 +128,19 @@ public class MultiBubbleSimulation implements AutoCloseable {
             t.setDaemon(true);
             return t;
         });
+
+        // Create entity update executor
+        var entityUpdateExecutor = EntityUpdateExecutor.create(behavior, velocities, gridConfig);
+
+        // Create tick orchestrator
+        this.tickOrchestrator = SimulationTickOrchestrator.create(
+            clock,
+            gridConfig,
+            bubbleGrid,
+            behavior,
+            metrics,
+            entityUpdateExecutor::updateEntities
+        );
 
         log.info("MultiBubbleSimulation created: {} bubbles ({}), {} total entities",
                  gridConfig.bubbleCount(), gridConfig, getTotalEntityCount());
@@ -403,80 +419,11 @@ public class MultiBubbleSimulation implements AutoCloseable {
     }
 
     /**
-     * Execute one simulation tick.
+     * Execute one simulation tick (delegates to orchestrator).
      */
     private void tick() {
-        try {
-            long startNs = clock.nanoTime();
-            float deltaTime = DEFAULT_TICK_INTERVAL_MS / 1000.0f;
-
-            // Swap velocity buffers for FlockingBehavior
-            if (behavior instanceof FlockingBehavior fb) {
-                fb.swapVelocityBuffers();
-            }
-
-            // Update all bubbles
-            for (int row = 0; row < gridConfig.rows(); row++) {
-                for (int col = 0; col < gridConfig.columns(); col++) {
-                    var bubble = bubbleGrid.getBubble(new BubbleCoordinate(row, col));
-                    updateBubbleEntities(bubble, deltaTime);
-                }
-            }
-
-            // Record metrics
-            long frameTimeNs = clock.nanoTime() - startNs;
-            int totalEntities = getTotalEntityCount();
-            metrics.recordTick(frameTimeNs, totalEntities);
-
-            tickCount.incrementAndGet();
-
-            // Log periodically
-            long currentTick = tickCount.get();
-            if (currentTick > 0 && currentTick % 600 == 0) {
-                log.debug("Tick {}: {} entities across {} bubbles, {}",
-                          currentTick, totalEntities, getBubbleCount(), metrics);
-            }
-
-        } catch (Exception e) {
-            log.error("Error in simulation tick: {}", e.getMessage(), e);
-        }
+        tickOrchestrator.executeTick();
+        tickCount.set(tickOrchestrator.getTickCount());
     }
 
-    /**
-     * Update entities in a single bubble.
-     */
-    private void updateBubbleEntities(EnhancedBubble bubble, float deltaTime) {
-        for (var entity : bubble.getAllEntityRecords()) {
-            try {
-                var entityUUID = UUID.nameUUIDFromBytes(entity.id().getBytes());
-                var velocity = velocities.computeIfAbsent(entityUUID, k -> new Vector3f());
-
-                var newVelocity = behavior.computeVelocity(
-                    entity.id(),
-                    entity.position(),
-                    velocity,
-                    bubble,
-                    deltaTime
-                );
-
-                velocities.put(entityUUID, newVelocity);
-
-                var newPosition = new Point3f(entity.position());
-                newPosition.x += newVelocity.x * deltaTime;
-                newPosition.y += newVelocity.y * deltaTime;
-                newPosition.z += newVelocity.z * deltaTime;
-
-                // Clamp to grid bounds
-                newPosition.x = Math.max(gridConfig.originX(),
-                                        Math.min(gridConfig.originX() + gridConfig.totalWidth(), newPosition.x));
-                newPosition.y = Math.max(gridConfig.originY(),
-                                        Math.min(gridConfig.originY() + gridConfig.totalHeight(), newPosition.y));
-                newPosition.z = Math.max(0f, Math.min(100f, newPosition.z));
-
-                bubble.updateEntityPosition(entity.id(), newPosition);
-            } catch (Exception e) {
-                log.error("Failed to update entity {}: {}", entity.id(), e.getMessage());
-            }
-        }
-    }
 }
