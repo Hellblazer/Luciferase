@@ -31,21 +31,25 @@ Sprint A completion delayed by 2 hours due to discovery and fixing of flaky conc
 ### Investigation and Fix (2 hours)
 
 **14:15 - 14:30**: Investigate failures
+
 - Analyzed CI logs from Runs 3/5 and 4/5
 - Identified EntityMigrationStateMachineConcurrencyTest as culprit
 - Found two failing test methods with same root cause
 
 **14:30 - 14:45**: Root cause analysis
+
 - Identified CountDownLatch synchronization gap
 - Understood cache coherency propagation delay
 - Explained why CI failed but local passed
 
 **14:45 - 15:00**: Implement and verify fix
+
 - Added 50ms stabilization wait after latch
 - Ran test 10x locally (100% pass rate)
 - Committed fix (c021eb7)
 
 **15:00 - 16:00**: Documentation
+
 - Created technical decision record (52eccdd)
 - Documented Sprint A restart status (81d3915)
 - Updated TESTING_PATTERNS.md with concurrency patterns (14f8547)
@@ -68,10 +72,12 @@ Sprint A completion delayed by 2 hours due to discovery and fixing of flaky conc
 ### Sprint A
 
 **Original Plan**:
+
 - Duration: 3-5 days (2026-01-11 to 2026-01-15)
 - Status: Near complete, blocked by flaky test
 
 **Adjusted Plan**:
+
 - Duration: 3-5 days + 2 hours (2026-01-11 to 2026-01-15)
 - Status: Restart in progress, expected completion 2026-01-13 evening
 - **No overall phase impact** (still within 3-5 day window)
@@ -79,11 +85,13 @@ Sprint A completion delayed by 2 hours due to discovery and fixing of flaky conc
 ### Sprint B
 
 **Original Plan**:
+
 - Start: 2026-01-13 afternoon (after Sprint A)
 - Duration: 6-8 hours for B1 decomposition
 - Completion: 2026-01-13 evening or 2026-01-14 morning
 
 **Adjusted Plan**:
+
 - Start: 2026-01-13 evening (~18:00) after Sprint A completes
 - Duration: 6-8 hours for B1 decomposition
 - Completion: 2026-01-14 morning or afternoon
@@ -92,11 +100,13 @@ Sprint A completion delayed by 2 hours due to discovery and fixing of flaky conc
 ### Week 1 Goals
 
 **Original**:
+
 - Sprint A: 5 consecutive clean CI runs
 - Sprint B B1: MultiBubbleSimulation decomposition (558 → 150 LOC)
 - Completion: 2026-01-15 (end of week)
 
 **Adjusted**:
+
 - Sprint A: 5 consecutive clean CI runs (delayed 2 hours)
 - Sprint B B1: MultiBubbleSimulation decomposition (delayed 2 hours)
 - Completion: 2026-01-15 (end of week)
@@ -124,12 +134,14 @@ Sprint A completion delayed by 2 hours due to discovery and fixing of flaky conc
 ### Process Improvements
 
 **To Prevent Future Delays**:
+
 1. **Run concurrency tests 10x locally** before CI (now documented in TESTING_PATTERNS.md)
 2. **Pre-commit hook**: Add concurrency test multiple-run check
 3. **CI retry policy**: Consider 1 retry for known-flaky test categories
 4. **Dashboard**: Show "consecutive clean runs" metric prominently
 
 **Documentation Value**:
+
 - Future developers can reference TECHNICAL_DECISION_CONCURRENCY_TEST_FIX.md
 - TESTING_PATTERNS.md now has comprehensive concurrency section
 - SPRINT_A_RESTART_STATUS.md documents full investigative process
@@ -195,6 +207,7 @@ Sprint A completion delayed by 2 hours due to discovery and fixing of flaky conc
 ### Stakeholder Impact
 
 **Minimal**:
+
 - 2-hour delay absorbed within week slack time
 - Week 1 goals still achievable by 2026-01-15
 - No cross-team dependencies affected
@@ -223,6 +236,7 @@ The 2-hour delay to Sprint A completion is regrettable but manageable. The flaky
 ### Commits
 
 **New Sequence**:
+
 - c021eb7: Test fix (Run 1/5)
 - 52eccdd: Test fix TDR (Run 2/5)
 - 81d3915: Restart status (Run 3/5)

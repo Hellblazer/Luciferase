@@ -13,6 +13,7 @@
 Sprint B B1 preparation is complete, with MultiBubbleSimulation confirmed as the decomposition target. A detailed 6-phase extraction plan has been created, stored in ChromaDB, and validated against the EnhancedBubble reference pattern. All prerequisites are met; execution can begin immediately upon Sprint A completion.
 
 **Key Findings**:
+
 - ✅ MultiBubbleSimulation confirmed as B1 target (558 LOC, god class symptoms)
 - ✅ EnhancedBubble identified as exemplary orchestrator pattern (NOT refactoring target)
 - ✅ 6-phase decomposition plan created with detailed implementation steps
@@ -33,16 +34,19 @@ Sprint B B1 preparation is complete, with MultiBubbleSimulation confirmed as the
 Three parallel Explore agents analyzed candidate classes:
 
 **Agent 1: WallClockBucketScheduler Analysis**
+
 - **Result**: 113 lines, LOW complexity, cohesive design
 - **Verdict**: ❌ No refactoring needed
 
 **Agent 2: EnhancedBubble Analysis**
+
 - **Result**: 357 lines (NOT 531 as claimed)
 - **Architecture**: Already uses orchestrator pattern with 5 components
 - **Quality**: Exemplary design, clean delegation, single responsibility
 - **Verdict**: ❌ No refactoring needed - serves as REFERENCE for B1
 
 **Agent 3: MultiBubbleSimulation Analysis**
+
 - **Result**: 558 lines, 20 fields across 8 concerns, 7-10 responsibilities
 - **Architecture**: God class symptoms, mixed abstraction levels
 - **Verdict**: ✅ SELECTED for B1 decomposition
@@ -50,6 +54,7 @@ Three parallel Explore agents analyzed candidate classes:
 ### Decision Rationale
 
 **Why MultiBubbleSimulation**:
+
 1. **Clear god class symptoms**: 20 fields, 7-10 distinct responsibilities
 2. **High coupling**: 12+ external dependencies
 3. **Mixed abstraction levels**: Orchestration mixed with business logic
@@ -57,6 +62,7 @@ Three parallel Explore agents analyzed candidate classes:
 5. **Reference available**: EnhancedBubble provides proven pattern to follow
 
 **Why NOT EnhancedBubble**:
+
 1. **Already well-designed**: Uses orchestrator pattern correctly
 2. **Accurate metrics**: 357 lines (not 531), properly decomposed
 3. **Single responsibility**: Each component has clear, focused purpose
@@ -71,6 +77,7 @@ Three parallel Explore agents analyzed candidate classes:
 **File**: `simulation/src/main/java/.../simulation/bubble/MultiBubbleSimulation.java`
 
 **Metrics**:
+
 - **Lines of Code**: 558
 - **Fields**: 20 (across 8 distinct concerns)
 - **Public Methods**: 15
@@ -81,6 +88,7 @@ Three parallel Explore agents analyzed candidate classes:
 ### Field Breakdown (Lines 108-139)
 
 **1. Bubble/Grid Management** (3 fields):
+
 ```java
 private final TetreeBubbleGrid bubbleGrid;
 private final Tetree<StringEntityID, EntityDistribution.EntitySpec> spatialIndex;
@@ -88,6 +96,7 @@ private final EntityDistribution distribution;
 ```
 
 **2. Entity Behavior/Physics** (3 fields):
+
 ```java
 private final EntityBehavior behavior;
 private final Map<String, Vector3f> velocities;  // ConcurrentHashMap
@@ -95,6 +104,7 @@ private final WorldBounds worldBounds;
 ```
 
 **3. Execution Control** (6 fields):
+
 ```java
 private final ScheduledExecutorService scheduler;
 private final AtomicBoolean running;
@@ -105,28 +115,33 @@ private volatile Clock clock = Clock.system();
 ```
 
 **4. Phase 5C: Ghost Sync** (1 field):
+
 ```java
 private final TetreeGhostSyncAdapter ghostSyncAdapter;
 ```
 
 **5. Phase 5D: Migration** (2 fields):
+
 ```java
 private final TetrahedralMigration migration;
 private final MigrationLog migrationLog;
 ```
 
 **6. Phase 5E: Duplicate Detection** (2 fields):
+
 ```java
 private final DuplicateEntityDetector duplicateDetector;
 private final DuplicateDetectionConfig duplicateConfig;
 ```
 
 **7. Metrics** (1 field):
+
 ```java
 private final SimulationMetrics metrics;
 ```
 
 **8. Configuration** (2 fields):
+
 ```java
 private final int entityCount;
 private final byte maxLevel;
@@ -135,6 +150,7 @@ private final byte maxLevel;
 ### Responsibility Analysis
 
 **Mixed Concerns** (7-10 distinct responsibilities):
+
 1. **Execution Engine**: Tick loop, scheduling, start/stop lifecycle
 2. **Entity Physics**: Velocity tracking, position updates, collision detection
 3. **Entity Population**: Creation, distribution, count tracking
@@ -149,6 +165,7 @@ private final byte maxLevel;
 ### God Class Symptoms
 
 **Indicators Present**:
+
 - ✅ High field count (20 fields)
 - ✅ Multiple unrelated responsibilities (7-10 concerns)
 - ✅ High coupling (12+ dependencies)
@@ -165,6 +182,7 @@ private final byte maxLevel;
 **File**: `simulation/src/main/java/.../simulation/bubble/EnhancedBubble.java`
 
 **Metrics**:
+
 - **Lines of Code**: 357
 - **Fields**: 8 (id, level, controller + 5 components)
 - **Public Methods**: 23 (all delegate to components)
@@ -186,6 +204,7 @@ private final BubbleGhostCoordinator ghostCoordinator;   // Ghost channel manage
 ### Delegation Pattern
 
 **All public methods delegate to components**:
+
 ```java
 // NO business logic in facade - pure delegation
 public void addEntity(String entityId, Point3f position, Object content) {
@@ -231,36 +250,42 @@ public EnhancedBubble(...) {
 ### Component Extraction (6 Phases)
 
 **Phase 1: SimulationExecutionEngine** (~100 LOC, 30 min)
+
 - **Responsibility**: Tick loop, scheduling, start/stop lifecycle
 - **Fields**: scheduler, running, tickCount, currentBucket, tickTask, clock
 - **Methods**: start(), stop(), tick(), isRunning(), getTickCount()
 - **Dependencies**: Low (mostly java.util.concurrent)
 
 **Phase 2: EntityPhysicsManager** (~120 LOC, 30 min)
+
 - **Responsibility**: Velocity tracking, collision detection, position updates
 - **Fields**: velocities, behavior, worldBounds
 - **Methods**: updateVelocity(), applyPhysics(), checkCollisions(), bounceOffWalls()
 - **Dependencies**: Medium (EntityBehavior, WorldBounds)
 
 **Phase 3: EntityPopulationManager** (~80 LOC, 20 min)
+
 - **Responsibility**: Entity creation, distribution, migration, duplication
 - **Fields**: distribution, migration, migrationLog, duplicateDetector, duplicateConfig
 - **Methods**: createEntities(), distributeEntities(), handleMigration(), detectDuplicates()
 - **Dependencies**: High (multiple Phase 5 subsystems)
 
 **Phase 4: SimulationQueryService** (~80 LOC, 20 min)
+
 - **Responsibility**: Query operations, metrics collection
 - **Fields**: metrics, entityCount, maxLevel
 - **Methods**: getAllEntities(), getEntityPosition(), getMetrics(), getEntityCount()
 - **Dependencies**: Low (mostly queries, no side effects)
 
 **Phase 5: BubbleGridOrchestrator** (~60 LOC, 15 min)
+
 - **Responsibility**: Grid management, bubble coordination, spatial index
 - **Fields**: bubbleGrid, spatialIndex, ghostSyncAdapter
 - **Methods**: getBubble(), getAllBubbles(), syncGhosts(), updateSpatialIndex()
 - **Dependencies**: Medium (TetreeBubbleGrid, Ghost subsystem)
 
 **Phase 6: Update MultiBubbleSimulation Facade** (~150 LOC, 30 min)
+
 - **Responsibility**: Orchestration ONLY - no business logic
 - **Fields**: 5 component references (executionEngine, physicsManager, etc.)
 - **Methods**: Pure delegation to components
@@ -269,6 +294,7 @@ public EnhancedBubble(...) {
 ### Execution Strategy
 
 **Sequential Extraction**:
+
 1. Extract component (create new class with focused methods/fields)
 2. Update facade to delegate to component
 3. Run tests (verify no regressions)
@@ -276,11 +302,13 @@ public EnhancedBubble(...) {
 5. Repeat for next component
 
 **Test Strategy**:
+
 - All existing tests must pass unchanged (100% backward compatibility)
 - No new tests required (behavior unchanged)
 - Integration test: MultiBubbleSimulationGhostSyncTest (full flow)
 
 **Rollback Plan**:
+
 - Each phase is independent commit
 - Can revert individual component extraction if issues found
 - Facade maintains all public APIs (no breaking changes)
@@ -292,17 +320,20 @@ public EnhancedBubble(...) {
 ### Quantitative Metrics
 
 **LOC Reduction**:
+
 - Before: 558 LOC (MultiBubbleSimulation)
 - After: 150 LOC (facade) + 440 LOC (5 components) = 590 LOC total
 - Facade reduction: 73% (558 → 150)
 - Net increase: 32 LOC (5.7% overhead for clean architecture)
 
 **Field Reduction**:
+
 - Before: 20 fields in 1 class
 - After: 5 fields in facade (component references), 15 fields distributed across components
 - Facade field reduction: 75% (20 → 5)
 
 **Complexity Reduction**:
+
 - Before: 7-10 responsibilities in 1 class
 - After: 1 responsibility per class (6 classes total)
 - Cyclomatic complexity: Significant reduction (delegation replaces logic)
@@ -310,18 +341,21 @@ public EnhancedBubble(...) {
 ### Qualitative Criteria
 
 **Code Quality**:
+
 - ✅ Single Responsibility Principle (each class has one clear purpose)
 - ✅ Open/Closed Principle (components can be extended without modifying facade)
 - ✅ Dependency Inversion (facade depends on component abstractions)
 - ✅ Clear boundaries (no overlapping concerns between components)
 
 **Maintainability**:
+
 - ✅ Easier to locate logic (responsibility-based organization)
 - ✅ Easier to test (components can be tested in isolation)
 - ✅ Easier to modify (changes isolated to single component)
 - ✅ Easier to understand (smaller, focused classes)
 
 **Backward Compatibility**:
+
 - ✅ All public APIs unchanged (no breaking changes)
 - ✅ All tests pass without modification (behavior unchanged)
 - ✅ No new dependencies introduced (use existing types)
@@ -347,16 +381,19 @@ public EnhancedBubble(...) {
 ### Mitigation Strategies
 
 **For Complex Dependencies**:
+
 - Extract EntityPopulationManager last (Phase 3) after other components stable
 - Use interfaces for component communication (not direct coupling)
 - Document dependency graph before extraction
 
 **For Observer Pattern**:
+
 - Study EnhancedBubble's entityStore → boundsTracker listener pattern
 - Implement EventListener interfaces for cross-component coordination
 - Keep observer relationships simple (avoid deep chains)
 
 **For Large Scope**:
+
 - Commit after each phase (6 commits total)
 - Run full test suite after each commit (catch regressions early)
 - Can pause/resume between phases (each phase is self-contained)
@@ -380,6 +417,7 @@ public EnhancedBubble(...) {
 **Document ID**: `sprint-b::b1-decomposition::multibubble-simulation`
 
 **Content**:
+
 - Full component breakdown (5 components with LOC targets)
 - 6-phase execution plan with detailed steps
 - EnhancedBubble reference pattern documentation
@@ -387,6 +425,7 @@ public EnhancedBubble(...) {
 - Dependency analysis and coordination patterns
 
 **Metadata**:
+
 ```json
 {
   "type": "sprint-b-planning",
@@ -430,6 +469,7 @@ When java-developer is spawned for B1 execution, provide:
 ### Prerequisites (Sprint A Completion)
 
 **Current Status**: 2/5 consecutive clean CI runs passed
+
 - ✅ Run 1/5 (commit c352e64): TOCTTOU fix
 - ✅ Run 2/5 (commit 64e0ce8): Cache fix
 - ⏸️ Run 3/5 (commit af396cd): H3 completion documentation
