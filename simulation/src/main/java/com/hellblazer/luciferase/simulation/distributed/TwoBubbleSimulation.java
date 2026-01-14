@@ -115,8 +115,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
     private final Map<String, GhostEntry> ghostsInBubble1 = new ConcurrentHashMap<>();
     private final Map<String, GhostEntry> ghostsInBubble2 = new ConcurrentHashMap<>();
-    private final Map<String, javax.vecmath.Vector3f> velocities1 = new ConcurrentHashMap<>();
-    private final Map<String, javax.vecmath.Vector3f> velocities2 = new ConcurrentHashMap<>();
+    private final VelocityTracker velocityTracker;
     private final BubbleEntityUpdater entityUpdater;
 
     private final ScheduledExecutorService scheduler;
@@ -226,6 +225,10 @@ public class TwoBubbleSimulation implements AutoCloseable {
         // Populate entities (split between bubbles based on x position)
         populateEntities(entityCount);
 
+        // Initialize velocity tracker BEFORE entityUpdater (which needs it)
+        this.velocityTracker = new VelocityTracker(bubble1, bubble2, new Random());
+        velocityTracker.initializeVelocities(behavior1.getMaxSpeed(), behavior2.getMaxSpeed());
+
         // Initialize entity updater
         this.entityUpdater = new BubbleEntityUpdater(worldBounds);
 
@@ -264,7 +267,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
      */
     public void start() {
         if (running.compareAndSet(false, true)) {
-            initializeVelocities();
+            // Velocities initialized in constructor
 
             tickTask = scheduler.scheduleAtFixedRate(
                 this::tick,
@@ -294,11 +297,10 @@ public class TwoBubbleSimulation implements AutoCloseable {
     public void close() {
         stop();
 
-        // Clear ghost, velocity, and cooldown maps to prevent memory leaks
+        // Clear ghost and cooldown maps to prevent memory leaks
         ghostsInBubble1.clear();
         ghostsInBubble2.clear();
-        velocities1.clear();
-        velocities2.clear();
+        // Note: velocityTracker manages velocity maps internally
         migrationCooldowns.clear();
 
         // Shutdown scheduler with timeout
@@ -497,26 +499,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
         }
     }
 
-    private void initializeVelocities() {
-        velocities1.clear();
-        velocities2.clear();
-        var random = new Random();
 
-        for (var entity : bubble1.getAllEntityRecords()) {
-            velocities1.put(entity.id(), randomVelocity(random, behavior1.getMaxSpeed()));
-        }
-        for (var entity : bubble2.getAllEntityRecords()) {
-            velocities2.put(entity.id(), randomVelocity(random, behavior2.getMaxSpeed()));
-        }
-    }
-
-    private javax.vecmath.Vector3f randomVelocity(Random random, float maxSpeed) {
-        return new javax.vecmath.Vector3f(
-            (random.nextFloat() - 0.5f) * 2 * maxSpeed,
-            (random.nextFloat() - 0.5f) * 2 * maxSpeed,
-            (random.nextFloat() - 0.5f) * 2 * maxSpeed
-        );
-    }
 
     private void tick() {
         try {
@@ -533,10 +516,10 @@ public class TwoBubbleSimulation implements AutoCloseable {
             }
 
             // Update bubble 1 entities
-            entityUpdater.updateBubbleEntities(bubble1, behavior1, velocities1, deltaTime, worldBounds.min(), boundaryX);
+            entityUpdater.updateBubbleEntities(bubble1, behavior1, velocityTracker.getVelocities1(), deltaTime, worldBounds.min(), boundaryX);
 
             // Update bubble 2 entities
-            entityUpdater.updateBubbleEntities(bubble2, behavior2, velocities2, deltaTime, boundaryX, worldBounds.max());
+            entityUpdater.updateBubbleEntities(bubble2, behavior2, velocityTracker.getVelocities2(), deltaTime, boundaryX, worldBounds.max());
 
             // Sync ghosts periodically
             if (currentTick % GHOST_SYNC_INTERVAL_TICKS == 0) {
@@ -558,7 +541,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
             // Periodic cleanup to remove orphaned entries
             if (currentTick > 0 && currentTick % VELOCITY_CLEANUP_INTERVAL_TICKS == 0) {
-                cleanupOrphanedVelocities();
+                velocityTracker.cleanupOrphanedVelocities();
                 cleanupExpiredCooldowns();
             }
 
@@ -581,25 +564,6 @@ public class TwoBubbleSimulation implements AutoCloseable {
      * Clean up velocity entries for entities that no longer exist.
      * Prevents memory leaks from orphaned velocity entries.
      */
-    private void cleanupOrphanedVelocities() {
-        var bubble1Ids = bubble1.getAllEntityRecords().stream()
-            .map(EnhancedBubble.EntityRecord::id)
-            .collect(java.util.stream.Collectors.toSet());
-        int removed1 = velocities1.size();
-        velocities1.keySet().retainAll(bubble1Ids);
-        removed1 -= velocities1.size();
-
-        var bubble2Ids = bubble2.getAllEntityRecords().stream()
-            .map(EnhancedBubble.EntityRecord::id)
-            .collect(java.util.stream.Collectors.toSet());
-        int removed2 = velocities2.size();
-        velocities2.keySet().retainAll(bubble2Ids);
-        removed2 -= velocities2.size();
-
-        if (removed1 > 0 || removed2 > 0) {
-            log.debug("Velocity cleanup: removed {} from bubble1, {} from bubble2", removed1, removed2);
-        }
-    }
 
     /**
      * Clean up expired cooldown entries.
@@ -623,7 +587,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
         for (var entity : bubble1.getAllEntityRecords()) {
             float distFromBoundary = boundaryX - entity.position().x;
             if (distFromBoundary >= 0 && distFromBoundary < GHOST_BOUNDARY_WIDTH) {
-                var velocity = velocities1.get(entity.id());
+                var velocity = velocityTracker.getVelocities1().get(entity.id());
                 var ghost = new GhostEntry(
                     entity.id(),
                     new Point3f(entity.position()),
@@ -638,7 +602,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
         for (var entity : bubble2.getAllEntityRecords()) {
             float distFromBoundary = entity.position().x - boundaryX;
             if (distFromBoundary >= 0 && distFromBoundary < GHOST_BOUNDARY_WIDTH) {
-                var velocity = velocities2.get(entity.id());
+                var velocity = velocityTracker.getVelocities2().get(entity.id());
                 var ghost = new GhostEntry(
                     entity.id(),
                     new Point3f(entity.position()),
@@ -775,7 +739,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
         }
 
         // Get velocity from source bubble's velocity map
-        var velocityMap = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities1 : velocities2;
+        var velocityMap = (direction == MigrationDirection.TO_BUBBLE_2) ? velocityTracker.getVelocities1() : velocityTracker.getVelocities2();
         var velocity = velocityMap.get(entityId);
 
         return new MigrationIntent(
@@ -820,8 +784,8 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
         var sourceBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble1 : bubble2;
         var targetBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble2 : bubble1;
-        var sourceVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities1 : velocities2;
-        var targetVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities2 : velocities1;
+        var sourceVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocityTracker.getVelocities1() : velocityTracker.getVelocities2();
+        var targetVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocityTracker.getVelocities2() : velocityTracker.getVelocities1();
         var targetGhosts = (direction == MigrationDirection.TO_BUBBLE_2) ? ghostsInBubble2 : ghostsInBubble1;
         var migrationCounter = (direction == MigrationDirection.TO_BUBBLE_2) ? migrationsTo2 : migrationsTo1;
 
@@ -881,8 +845,8 @@ public class TwoBubbleSimulation implements AutoCloseable {
         String entityId = intent.entityId();
         var direction = intent.direction();
         var targetBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble2 : bubble1;
-        var targetVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities2 : velocities1;
-        var sourceVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocities1 : velocities2;
+        var targetVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocityTracker.getVelocities2() : velocityTracker.getVelocities1();
+        var sourceVelocities = (direction == MigrationDirection.TO_BUBBLE_2) ? velocityTracker.getVelocities1() : velocityTracker.getVelocities2();
 
         try {
             // Remove entity from target bubble
