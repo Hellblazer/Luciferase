@@ -117,6 +117,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
     private final Map<String, GhostEntry> ghostsInBubble2 = new ConcurrentHashMap<>();
     private final Map<String, javax.vecmath.Vector3f> velocities1 = new ConcurrentHashMap<>();
     private final Map<String, javax.vecmath.Vector3f> velocities2 = new ConcurrentHashMap<>();
+    private final BubbleEntityUpdater entityUpdater;
 
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -224,6 +225,9 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
         // Populate entities (split between bubbles based on x position)
         populateEntities(entityCount);
+
+        // Initialize entity updater
+        this.entityUpdater = new BubbleEntityUpdater(worldBounds);
 
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "TwoBubbleSimulation");
@@ -529,10 +533,10 @@ public class TwoBubbleSimulation implements AutoCloseable {
             }
 
             // Update bubble 1 entities
-            updateBubbleEntities(bubble1, behavior1, velocities1, deltaTime, worldBounds.min(), boundaryX);
+            entityUpdater.updateBubbleEntities(bubble1, behavior1, velocities1, deltaTime, worldBounds.min(), boundaryX);
 
             // Update bubble 2 entities
-            updateBubbleEntities(bubble2, behavior2, velocities2, deltaTime, boundaryX, worldBounds.max());
+            entityUpdater.updateBubbleEntities(bubble2, behavior2, velocities2, deltaTime, boundaryX, worldBounds.max());
 
             // Sync ghosts periodically
             if (currentTick % GHOST_SYNC_INTERVAL_TICKS == 0) {
@@ -570,40 +574,6 @@ public class TwoBubbleSimulation implements AutoCloseable {
 
         } catch (Exception e) {
             log.error("Error in simulation tick: {}", e.getMessage(), e);
-        }
-    }
-
-    private void updateBubbleEntities(EnhancedBubble bubble, EntityBehavior behavior,
-                                       Map<String, javax.vecmath.Vector3f> velocities,
-                                       float deltaTime, float minX, float maxX) {
-        for (var entity : bubble.getAllEntityRecords()) {
-            try {
-                var velocity = velocities.computeIfAbsent(entity.id(), k -> new javax.vecmath.Vector3f());
-
-                var newVelocity = behavior.computeVelocity(
-                    entity.id(),
-                    entity.position(),
-                    velocity,
-                    bubble,
-                    deltaTime
-                );
-
-                velocities.put(entity.id(), newVelocity);
-
-                var newPosition = new Point3f(entity.position());
-                newPosition.x += newVelocity.x * deltaTime;
-                newPosition.y += newVelocity.y * deltaTime;
-                newPosition.z += newVelocity.z * deltaTime;
-
-                // Clamp to world bounds (y, z) and bubble region (x)
-                newPosition.x = Math.max(minX, Math.min(maxX, newPosition.x));
-                newPosition.y = worldBounds.clamp(newPosition.y);
-                newPosition.z = worldBounds.clamp(newPosition.z);
-
-                bubble.updateEntityPosition(entity.id(), newPosition);
-            } catch (Exception e) {
-                log.error("Failed to update entity {}: {}", entity.id(), e.getMessage());
-            }
         }
     }
 
