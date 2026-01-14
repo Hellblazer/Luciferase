@@ -113,7 +113,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
     private final EntityBehavior behavior1;
     private final EntityBehavior behavior2;
 
-    private final GhostLayerSynchronizer ghostSynchronizer;
+    private final GhostSyncCoordinator ghostSyncCoordinator;
     private final CrossBubbleMigrationManager migrationManager;
     private final VelocityTracker velocityTracker;
     private final BubbleEntityUpdater entityUpdater;
@@ -181,12 +181,13 @@ public class TwoBubbleSimulation implements AutoCloseable {
         // Initialize metrics tracker
         this.tickMetrics = new SimulationTickMetrics(bubble1, bubble2);
 
-        // Initialize ghost synchronizer
-        this.ghostSynchronizer = new GhostLayerSynchronizer(
+        // Initialize ghost synchronizer with strategy pattern
+        var ghostStrategy = new TwoBubbleSyncStrategy(
             bubble1, bubble2, boundaryX,
             GHOST_BOUNDARY_WIDTH, GHOST_TTL_TICKS,
             velocityTracker.getVelocities1(), velocityTracker.getVelocities2()
         );
+        this.ghostSyncCoordinator = new GhostSyncCoordinator(ghostStrategy);
 
         // Initialize migration manager
         this.migrationManager = new CrossBubbleMigrationManager(
@@ -264,7 +265,7 @@ public class TwoBubbleSimulation implements AutoCloseable {
         stop();
 
         // Clear component state to prevent memory leaks
-        ghostSynchronizer.clear();
+        ghostSyncCoordinator.clear();
         // Note: velocityTracker manages velocity maps internally
         // Note: migrationManager manages cooldown map internally
 
@@ -332,14 +333,14 @@ public class TwoBubbleSimulation implements AutoCloseable {
             entities.add(new EntitySnapshot(record.id(), record.position(), 2, false));
         }
 
-        // Include active ghosts for visualization (delegate to ghostSynchronizer)
+        // Include active ghosts for visualization (delegate to ghostSyncCoordinator)
         long currentTick = tickCount.get();
-        for (var ghost : ghostSynchronizer.getGhostsInBubble1().values()) {
+        for (var ghost : ghostSyncCoordinator.getGhostsInBubble1().values()) {
             if (ghost.expirationTick() > currentTick) {
                 entities.add(new EntitySnapshot(ghost.id() + "_ghost", ghost.position(), 1, true));
             }
         }
-        for (var ghost : ghostSynchronizer.getGhostsInBubble2().values()) {
+        for (var ghost : ghostSyncCoordinator.getGhostsInBubble2().values()) {
             if (ghost.expirationTick() > currentTick) {
                 entities.add(new EntitySnapshot(ghost.id() + "_ghost", ghost.position(), 2, true));
             }
@@ -383,8 +384,8 @@ public class TwoBubbleSimulation implements AutoCloseable {
         long currentTick = tickCount.get();
         return tickMetrics.getDebugState(
             currentTick,
-            ghostSynchronizer.getGhostsInBubble1().size(),
-            ghostSynchronizer.getGhostsInBubble2().size(),
+            ghostSyncCoordinator.getGhostsInBubble1().size(),
+            ghostSyncCoordinator.getGhostsInBubble2().size(),
             migrationManager.getActiveCooldownCount(currentTick)
         );
     }
@@ -460,11 +461,11 @@ public class TwoBubbleSimulation implements AutoCloseable {
             entityUpdater.updateBubbleEntities(bubble1, behavior1, velocityTracker.getVelocities1(), deltaTime, worldBounds.min(), boundaryX);
             entityUpdater.updateBubbleEntities(bubble2, behavior2, velocityTracker.getVelocities2(), deltaTime, boundaryX, worldBounds.max());
 
-            // Sync ghosts periodically (delegate to ghostSynchronizer)
+            // Sync ghosts periodically (delegate to ghostSyncCoordinator)
             if (currentTick % GHOST_SYNC_INTERVAL_TICKS == 0) {
-                ghostSynchronizer.syncGhosts(currentTick);
+                ghostSyncCoordinator.syncGhosts(currentTick);
             }
-            ghostSynchronizer.expireGhosts(currentTick);
+            ghostSyncCoordinator.expireGhosts(currentTick);
 
             // Check for entity migration (delegate to migrationManager)
             migrationManager.checkAndMigrate(currentTick, velocityTracker.getVelocities1(), velocityTracker.getVelocities2());
@@ -484,8 +485,8 @@ public class TwoBubbleSimulation implements AutoCloseable {
             // Log periodically (delegate to tickMetrics)
             tickMetrics.logPeriodic(
                 currentTick,
-                ghostSynchronizer.getGhostsInBubble1().size(),
-                ghostSynchronizer.getGhostsInBubble2().size(),
+                ghostSyncCoordinator.getGhostsInBubble1().size(),
+                ghostSyncCoordinator.getGhostsInBubble2().size(),
                 migrationManager.getActiveCooldownCount(currentTick)
             );
 

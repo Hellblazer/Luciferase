@@ -29,8 +29,53 @@ import java.util.concurrent.ConcurrentHashMap;
  * Ghost entities enable cross-boundary flocking behavior by providing neighbor
  * information to entities approaching the boundary.
  *
+ * @deprecated Use {@link GhostSyncCoordinator} with {@link TwoBubbleSyncStrategy} instead.
+ * This class will be removed in a future release after all usages migrate to the
+ * new strategy-based architecture aligned with M1 ADR Layer 2 Integration.
+ * <p>
+ * Migration example:
+ * <pre>
+ * // Old approach:
+ * var synchronizer = new GhostLayerSynchronizer(
+ *     bubble1, bubble2, boundaryX,
+ *     ghostBoundaryWidth, ghostTtlTicks,
+ *     velocities1, velocities2
+ * );
+ * synchronizer.syncGhosts(currentTick);
+ * synchronizer.expireGhosts(currentTick);
+ * var ghosts1 = synchronizer.getGhostsInBubble1();
+ * var ghosts2 = synchronizer.getGhostsInBubble2();
+ *
+ * // New approach:
+ * var strategy = new TwoBubbleSyncStrategy(
+ *     bubble1, bubble2, boundaryX,
+ *     ghostBoundaryWidth, ghostTtlTicks,
+ *     velocities1, velocities2
+ * );
+ * var coordinator = new GhostSyncCoordinator(strategy);
+ * coordinator.syncGhosts(currentTick);
+ * coordinator.expireGhosts(currentTick);
+ * var ghosts1 = coordinator.getGhostsInBubble1();
+ * var ghosts2 = coordinator.getGhostsInBubble2();
+ * </pre>
+ * <p>
+ * Benefits of new architecture:
+ * <ul>
+ *   <li>Strategy pattern enables pluggable sync algorithms (TwoBubble, MultiBubble, MultiTree)</li>
+ *   <li>Aligned with M1 ADR Layer 2 Integration architecture</li>
+ *   <li>Supports same-server optimization via future strategies</li>
+ *   <li>Consistent with B2 decomposition patterns (pure delegation, no business logic)</li>
+ * </ul>
+ * <p>
+ * Related:
+ * <ul>
+ *   <li>M1 ADR: simulation/doc/TECHNICAL_DECISION_MIGRATION_CONSENSUS_ARCHITECTURE.md</li>
+ *   <li>M2 Analysis: simulation/doc/GHOST_LAYER_CONSOLIDATION_ANALYSIS.md</li>
+ * </ul>
+ *
  * @author hal.hildebrand
  */
+@Deprecated
 public class GhostLayerSynchronizer {
 
     private static final Logger log = LoggerFactory.getLogger(GhostLayerSynchronizer.class);
