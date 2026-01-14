@@ -314,6 +314,36 @@ Why is this change needed?
 
 ---
 
+## Design Review Gate
+
+**IMPORTANT**: Significant architectural changes require design review before implementation.
+
+### When Design Review is Required
+
+- **Phase X Day 1 Work**: Any new phase/epic implementation
+- **New Abstractions**: Adding >100 LOC or new design patterns
+- **Major Refactoring**: Changes affecting >5 files or >500 LOC
+- **API Changes**: Modifications to public APIs or module boundaries
+
+### Process
+
+1. **Before Implementation**: Create design review document from template
+2. **Get Approval**: Run plan-auditor agent for architectural validation
+3. **Document Decision**: Create ADR if introducing new patterns
+4. **Implement**: Reference design review in commits
+
+### Enforcement
+
+- Pre-push hook reminds about design review for large changes
+- Code review rejects PRs without design review link for Phase X Day 1 work
+- plan-auditor agent accessible via `/plan-audit` command
+
+**See**: [DESIGN_REVIEW_PROCESS.md](DESIGN_REVIEW_PROCESS.md) for complete design review guidelines and templates.
+
+**Example**: See `.pm/reviews/review-20260111-multibubble-decomposition.md` for completed design review of Sprint B B1 (MultiBubbleSimulation god class decomposition).
+
+---
+
 ## Architecture Decisions
 
 ### When to Document
