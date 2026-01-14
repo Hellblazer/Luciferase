@@ -70,6 +70,7 @@ public class CrossBubbleMigrationManager {
     private final float hysteresisDistance;
     private final ConcurrentHashMap<String, Long> migrationCooldowns;
     private final SimulationTickMetrics tickMetrics;
+    private volatile MigrationLifecycleCallbacks lifecycleCallbacks;
 
     /**
      * Create migration manager for two bubbles.
@@ -92,6 +93,18 @@ public class CrossBubbleMigrationManager {
         this.hysteresisDistance = hysteresisDistance;
         this.migrationCooldowns = new ConcurrentHashMap<>();
         this.tickMetrics = tickMetrics;
+    }
+
+    /**
+     * Set lifecycle callbacks for migration coordination.
+     * <p>
+     * Callbacks are invoked at key points in the migration lifecycle to
+     * coordinate with auxiliary systems (ghost layer, metrics, visualization).
+     *
+     * @param callbacks Lifecycle callbacks (null to disable)
+     */
+    public void setLifecycleCallbacks(MigrationLifecycleCallbacks callbacks) {
+        this.lifecycleCallbacks = callbacks;
     }
 
     /**
@@ -246,6 +259,16 @@ public class CrossBubbleMigrationManager {
             return null;
         }
 
+        // Invoke lifecycle callback: onMigrationPrepare
+        if (lifecycleCallbacks != null) {
+            try {
+                lifecycleCallbacks.onMigrationPrepare(entityId, sourceBubble.id(), targetBubble.id());
+            } catch (Exception e) {
+                log.warn("Prepare failed: lifecycle callback threw exception for entity {}: {}", entityId, e.getMessage());
+                return null;
+            }
+        }
+
         // Get velocity from source bubble's velocity map
         var velocity = velocities.get(entityId);
 
@@ -326,6 +349,16 @@ public class CrossBubbleMigrationManager {
             }
             migrationCooldowns.put(entityId, currentTick + cooldownTicks);
 
+            // Step 6: Invoke lifecycle callback: onMigrationCommit
+            if (lifecycleCallbacks != null) {
+                try {
+                    lifecycleCallbacks.onMigrationCommit(entityId, sourceBubble.id(), targetBubble.id());
+                } catch (Exception e) {
+                    log.warn("Migration commit callback failed for entity {}: {}", entityId, e.getMessage());
+                    // Don't fail the migration - it's already committed
+                }
+            }
+
             log.debug("Migrated {} from bubble{} to bubble{}", entityId,
                       direction == MigrationDirection.TO_BUBBLE_2 ? 1 : 2,
                       direction == MigrationDirection.TO_BUBBLE_2 ? 2 : 1);
@@ -356,6 +389,7 @@ public class CrossBubbleMigrationManager {
                                     Map<String, Vector3f> targetVelocities) {
         String entityId = intent.entityId();
         var direction = intent.direction();
+        var sourceBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble1 : bubble2;
         var targetBubble = (direction == MigrationDirection.TO_BUBBLE_2) ? bubble2 : bubble1;
 
         try {
@@ -370,6 +404,16 @@ public class CrossBubbleMigrationManager {
             // source removal succeeds, so this is just a safety net)
             if (intent.velocity() != null && !sourceVelocities.containsKey(entityId)) {
                 sourceVelocities.put(entityId, intent.velocity());
+            }
+
+            // Invoke lifecycle callback: onMigrationRollback
+            if (lifecycleCallbacks != null) {
+                try {
+                    lifecycleCallbacks.onMigrationRollback(entityId, sourceBubble.id(), targetBubble.id());
+                } catch (Exception callbackError) {
+                    log.warn("Migration rollback callback failed for entity {}: {}", entityId, callbackError.getMessage());
+                    // Don't fail the rollback
+                }
             }
 
             log.warn("Rolled back migration of {} from bubble{} to bubble{}: {}",

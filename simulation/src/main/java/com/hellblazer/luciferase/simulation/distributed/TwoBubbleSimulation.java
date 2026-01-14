@@ -196,6 +196,10 @@ public class TwoBubbleSimulation implements AutoCloseable {
             tickMetrics
         );
 
+        // Wire up ghost sync callback to coordinate ghost layer with migrations
+        var ghostCallback = new GhostSyncMigrationCallback(ghostSyncCoordinator, bubble1, bubble2);
+        migrationManager.setLifecycleCallbacks(ghostCallback);
+
         // Initialize entity updater
         this.entityUpdater = new BubbleEntityUpdater(worldBounds);
 
