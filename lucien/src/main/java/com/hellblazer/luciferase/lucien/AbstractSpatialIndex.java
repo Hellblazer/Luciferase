@@ -5141,7 +5141,7 @@ implements SpatialIndex<Key, ID, Content> {
     
     /**
      * Sets up distributed ghost management with the provided communication manager.
-     * 
+     *
      * @param communicationManager the gRPC communication manager
      * @param contentSerializer the content serializer
      * @param entityIdClass the entity ID class for deserialization
@@ -5159,23 +5159,29 @@ implements SpatialIndex<Key, ID, Content> {
                 log.warn("Cannot setup distributed ghosts - local ghost manager not initialized");
                 return;
             }
-            
+
+            // Create ghost channel wrapping the communication manager
+            var ghostChannel = new com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<>(
+                communicationManager, currentRank, treeId, getGhostType());
+
             this.distributedGhostManager = new DistributedGhostManager<>(
-                this, communicationManager, elementGhostManager, contentSerializer, entityIdClass, currentRank, treeId);
-            
+                this, ghostChannel, elementGhostManager);
+
             log.info("Distributed ghost management enabled for rank {} tree {}", currentRank, treeId);
         } finally {
             lock.writeLock().unlock();
         }
     }
-    
+
     /**
      * Initialize the distributed ghost layer.
      * This should be called after all processes are ready.
+     *
+     * @param serviceDiscovery the service discovery to find other processes
      */
-    public void initializeDistributedGhosts() {
+    public void initializeDistributedGhosts(com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostServiceClient.ServiceDiscovery serviceDiscovery) {
         if (distributedGhostManager != null) {
-            distributedGhostManager.initialize();
+            distributedGhostManager.initialize(serviceDiscovery);
         } else {
             log.warn("Cannot initialize distributed ghosts - distributed ghost manager not set up");
         }
