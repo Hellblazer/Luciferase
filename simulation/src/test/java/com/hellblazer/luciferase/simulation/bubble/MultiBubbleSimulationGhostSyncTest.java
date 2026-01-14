@@ -84,6 +84,26 @@ class MultiBubbleSimulationGhostSyncTest {
         fail("Timeout waiting for " + expected + " entities. Got: " + sim.getRealEntities().size());
     }
 
+    /**
+     * Poll wait until simulation fully stops or timeout.
+     * Ensures simulation has completed all ticks before assertions.
+     */
+    private void waitForStop(MultiBubbleSimulation sim, long timeoutMs) {
+        long start = System.currentTimeMillis();
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            if (!sim.isRunning()) {
+                return;
+            }
+            try {
+                Thread.sleep(10); // Poll every 10ms
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                fail("Interrupted while waiting for simulation to stop");
+            }
+        }
+        fail("Timeout waiting for simulation to stop");
+    }
+
     @Test
     void testGhostSyncInitialization_ConstructorValid() {
         simulation = new MultiBubbleSimulation(
@@ -281,6 +301,9 @@ class MultiBubbleSimulationGhostSyncTest {
 
         simulation.stop();
 
+        // Wait for simulation to fully stop before assertions
+        waitForStop(simulation, 1000);
+
         // Verify ghost count is consistent with entity count
         var allEntities = simulation.getAllEntities();
         var realEntities = simulation.getRealEntities();
@@ -363,6 +386,9 @@ class MultiBubbleSimulationGhostSyncTest {
         waitForEntityCount(simulation, 100, 2000);
 
         simulation.stop();
+
+        // Wait for simulation to fully stop before assertions
+        waitForStop(simulation, 1000);
 
         var realEntities = simulation.getRealEntities();
 
