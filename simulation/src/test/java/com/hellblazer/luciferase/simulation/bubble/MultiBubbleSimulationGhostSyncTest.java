@@ -64,6 +64,26 @@ class MultiBubbleSimulationGhostSyncTest {
         }
     }
 
+    /**
+     * Poll wait until entity count reaches expected value or timeout.
+     * Fixes race condition where entities may not be fully initialized immediately after start().
+     */
+    private void waitForEntityCount(MultiBubbleSimulation sim, int expected, long timeoutMs) {
+        long start = System.currentTimeMillis();
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            if (sim.getRealEntities().size() >= expected) {
+                return;
+            }
+            try {
+                Thread.sleep(50); // Poll every 50ms
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                fail("Interrupted while waiting for entity initialization");
+            }
+        }
+        fail("Timeout waiting for " + expected + " entities. Got: " + sim.getRealEntities().size());
+    }
+
     @Test
     void testGhostSyncInitialization_ConstructorValid() {
         simulation = new MultiBubbleSimulation(
@@ -245,7 +265,6 @@ class MultiBubbleSimulationGhostSyncTest {
     }
 
     @Test
-    @Disabled("Race condition: entity list sizes inconsistent at stop time - similar to testGetRealEntities_ExcludesGhosts")
     void testNeighborGhostConsistency() {
         simulation = new MultiBubbleSimulation(
             9,
@@ -257,11 +276,8 @@ class MultiBubbleSimulationGhostSyncTest {
 
         simulation.start();
 
-        try {
-            Thread.sleep(200);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // Wait for entities to initialize with polling (up to 2 seconds)
+        waitForEntityCount(simulation, 200, 2000);
 
         simulation.stop();
 
@@ -332,7 +348,6 @@ class MultiBubbleSimulationGhostSyncTest {
     }
 
     @Test
-    @Disabled("Race condition in entity spawn: 100 entities requested but one may not be initialized within 200ms startup window")
     void testGetRealEntities_ExcludesGhosts() {
         simulation = new MultiBubbleSimulation(
             4,
@@ -344,11 +359,8 @@ class MultiBubbleSimulationGhostSyncTest {
 
         simulation.start();
 
-        try {
-            Thread.sleep(200);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // Wait for entities to initialize with polling (up to 2 seconds)
+        waitForEntityCount(simulation, 100, 2000);
 
         simulation.stop();
 
