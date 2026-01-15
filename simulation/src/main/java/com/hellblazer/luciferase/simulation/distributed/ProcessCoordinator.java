@@ -29,9 +29,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Centralized topology authority for distributed bubble coordination.
@@ -69,7 +66,6 @@ public class ProcessCoordinator {
 
     private final VonTransport transport;
     private final ProcessRegistry registry;
-    private final ScheduledExecutorService heartbeatScheduler;
     private final WallClockBucketScheduler bucketScheduler;
     private final MessageOrderValidator messageValidator;
     private MigrationLogPersistence walPersistence;
@@ -85,11 +81,6 @@ public class ProcessCoordinator {
     public ProcessCoordinator(VonTransport transport) {
         this.transport = transport;
         this.registry = new ProcessRegistry();
-        this.heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            var t = new Thread(r, "coordinator-heartbeat-monitor");
-            t.setDaemon(true);
-            return t;
-        });
         this.bucketScheduler = new WallClockBucketScheduler();
         this.messageValidator = new MessageOrderValidator();
         this.walPersistence = null; // Initialized lazily in start()
@@ -105,13 +96,12 @@ public class ProcessCoordinator {
     }
 
     /**
-     * Start the coordinator: begin listening and election protocol with crash recovery.
+     * Start the coordinator: begin listening with crash recovery.
      * <p>
      * Initiates:
      * - Crash recovery (load and recover incomplete migrations)
-     * - Heartbeat monitoring (every 1000ms)
-     * - Failure detection (timeout 3000ms)
-     * - Election if this is the first process
+     * <p>
+     * Phase 4.1.2: Heartbeat monitoring removed (use Fireflies view changes instead)
      */
     public void start() throws Exception {
         if (running) {
@@ -140,19 +130,13 @@ public class ProcessCoordinator {
             }
         }
 
-        // Start heartbeat monitoring
-        heartbeatScheduler.scheduleAtFixedRate(
-            this::monitorHeartbeats,
-            ProcessRegistry.HEARTBEAT_INTERVAL_MS,
-            ProcessRegistry.HEARTBEAT_INTERVAL_MS,
-            TimeUnit.MILLISECONDS
-        );
-
         log.info("ProcessCoordinator started on {}", transport.getLocalId());
     }
 
     /**
      * Stop the coordinator gracefully.
+     * <p>
+     * Phase 4.1.2: Heartbeat scheduler removed (use Fireflies view changes instead)
      */
     public void stop() {
         if (!running) {
@@ -160,15 +144,6 @@ public class ProcessCoordinator {
         }
 
         running = false;
-        heartbeatScheduler.shutdownNow();
-        try {
-            if (!heartbeatScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                log.warn("Heartbeat scheduler did not terminate within 5 second timeout");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("Interrupted while waiting for heartbeat scheduler shutdown", e);
-        }
         log.info("ProcessCoordinator stopped");
     }
 
@@ -194,21 +169,6 @@ public class ProcessCoordinator {
     }
 
     /**
-     * Process a heartbeat acknowledgment from a process.
-     * <p>
-     * Updates the last heartbeat timestamp for failure detection.
-     *
-     * @param processId UUID of the process sending heartbeat
-     */
-    public void processHeartbeatAck(UUID processId) {
-        if (!registry.updateHeartbeat(processId)) {
-            log.warn("Heartbeat from unregistered process {}", processId);
-        } else {
-            log.trace("Heartbeat ACK from {}", processId);
-        }
-    }
-
-    /**
      * Broadcast topology update to all registered processes.
      * <p>
      * Phase 6B1: API exists but messaging is minimal.
@@ -219,26 +179,6 @@ public class ProcessCoordinator {
     public void broadcastTopologyUpdate(List<UUID> topology) throws Exception {
         log.debug("Broadcasting topology update: {} bubbles", topology.size());
         // Phase 6B2: Implement message broadcasting
-    }
-
-    /**
-     * Monitor heartbeats and detect failed processes.
-     * <p>
-     * Called periodically by heartbeatScheduler.
-     * Unregisters processes that missed heartbeat timeout.
-     */
-    private void monitorHeartbeats() {
-        var processes = registry.getAllProcesses();
-        for (var processId : processes) {
-            if (!registry.isAlive(processId)) {
-                log.warn("Process {} missed heartbeat timeout, unregistering", processId);
-                try {
-                    unregisterProcess(processId);
-                } catch (Exception e) {
-                    log.error("Failed to unregister process {}: {}", processId, e.getMessage(), e);
-                }
-            }
-        }
     }
 
     /**
