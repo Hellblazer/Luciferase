@@ -11,6 +11,7 @@ package com.hellblazer.luciferase.simulation.bubble;
 import com.hellblazer.luciferase.simulation.behavior.CompositeEntityBehavior;
 import com.hellblazer.luciferase.simulation.behavior.EntityBehavior;
 import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
+import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.primeMover.annotations.Entity;
@@ -78,6 +79,7 @@ public class SimulationBubble {
     private       volatile Clock           clock = Clock.system();
     private       volatile boolean         running = false;
     private final Map<String, Vector3f>    velocities = new HashMap<>();
+    private final SimulationMetrics        metrics = new SimulationMetrics();
 
     /**
      * Create a simulation bubble with default tick rate and world bounds.
@@ -222,6 +224,16 @@ public class SimulationBubble {
     }
 
     /**
+     * Get simulation metrics.
+     *
+     * @return SimulationMetrics
+     */
+    @NonEvent
+    public SimulationMetrics getMetrics() {
+        return metrics;
+    }
+
+    /**
      * Get the Prime-Mover controller.
      *
      * @return RealTimeController
@@ -284,6 +296,7 @@ public class SimulationBubble {
         // 3. Record metrics
         long frameTimeNs = clock.nanoTime() - startNs;
         bubble.recordFrameTime(frameTimeNs);
+        metrics.recordTick(frameTimeNs, entities.size());
     }
 
     /**

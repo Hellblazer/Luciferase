@@ -14,7 +14,6 @@ import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
-import com.hellblazer.luciferase.simulation.loop.SimulationLoop;
 import com.hellblazer.luciferase.simulation.von.LocalServerTransport;
 import com.hellblazer.luciferase.simulation.von.VonBubble;
 import com.hellblazer.luciferase.simulation.von.VonMessage;

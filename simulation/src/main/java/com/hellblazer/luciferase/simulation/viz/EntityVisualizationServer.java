@@ -15,7 +15,7 @@ import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
-import com.hellblazer.luciferase.simulation.loop.SimulationLoop;
+import com.hellblazer.luciferase.simulation.bubble.SimulationBubble;
 import io.javalin.Javalin;
 import io.javalin.websocket.WsContext;
 import org.slf4j.Logger;
@@ -55,7 +55,7 @@ public class EntityVisualizationServer {
     private final Object streamingLock = new Object();
 
     private EnhancedBubble bubble;
-    private SimulationLoop simulation;
+    private SimulationBubble simulation;
     private ScheduledFuture<?> streamTask;
     private volatile Clock clock = Clock.system();
 
@@ -182,21 +182,21 @@ public class EntityVisualizationServer {
     }
 
     /**
-     * Set the simulation loop.
+     * Set the simulation bubble.
      * Also sets the bubble from the simulation.
      *
-     * @param simulation SimulationLoop to run
+     * @param simulation SimulationBubble to run
      */
-    public void setSimulation(SimulationLoop simulation) {
+    public void setSimulation(SimulationBubble simulation) {
         this.simulation = simulation;
         this.bubble = simulation.getBubble();
         log.info("Simulation set: {} entities", bubble.entityCount());
     }
 
     /**
-     * Get the simulation loop.
+     * Get the simulation bubble.
      */
-    public SimulationLoop getSimulation() {
+    public SimulationBubble getSimulation() {
         return simulation;
     }
 
@@ -506,7 +506,7 @@ public class EntityVisualizationServer {
             log.info("Using FlockingBehavior (separation/alignment/cohesion)");
         }
 
-        var simulation = new SimulationLoop(bubble, behavior);
+        var simulation = new SimulationBubble(bubble, behavior);
 
         server.setSimulation(simulation);
         server.start();
