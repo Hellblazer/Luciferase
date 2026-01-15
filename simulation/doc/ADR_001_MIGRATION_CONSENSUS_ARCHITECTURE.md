@@ -263,105 +263,6 @@ ABORT: Remove from destination
 - `simulation/src/main/java/.../ghost/DuplicateEntityDetector.java`
 - `simulation/src/main/java/.../ghost/TetreeGhostSyncAdapter.java`
 
-## Ghost Channel Implementations (M2 Decision)
-
-**Decision Date**: 2026-01-15 (M2 Ghost Layer Consolidation)
-
-### Current Implementations
-
-#### 1. GhostChannel Interface
-- **Location**: `simulation/src/main/java/.../ghost/GhostChannel.java`
-- **Purpose**: Abstract interface for batched ghost transmission between bubbles
-- **Key Methods**: `queueGhost()`, `sendBatch()`, `flush()`, `onReceive()`
-
-#### 2. InMemoryGhostChannel (KEEP)
-- **Location**: `simulation/src/main/java/.../ghost/InMemoryGhostChannel.java`
-- **Status**: ✅ PRODUCTION (testing/single-server deployments)
-- **Features**:
-  - Thread-safe batching with ConcurrentHashMap
-  - Optional simulated latency (0-N ms)
-  - Multiple handlers via CopyOnWriteArrayList
-  - Always connected (no network failures)
-- **Use Cases**:
-  - Unit/integration testing
-  - Single-server multi-bubble simulations
-  - Performance benchmarking with controlled latency
-
-#### 3. P2PGhostChannel (PRODUCTION)
-- **Location**: `simulation/src/main/java/.../ghost/P2PGhostChannel.java`
-- **Status**: ✅ PRODUCTION (distributed multi-bubble)
-- **Features**:
-  - P2P transmission via VonTransport abstraction
-  - Batched transmission at bucket boundaries (100ms)
-  - Automatic SimulationGhostEntity ↔ TransportGhost conversion
-  - Event-based receive handling from VonBubble
-  - Same-server optimization bypass
-- **Use Cases**:
-  - Distributed multi-bubble simulations
-  - VON-based P2P neighbor synchronization
-  - Cross-process ghost delivery
-
-#### 4. DelosSocketTransport (DEPRECATED)
-- **Location**: `simulation/src/main/java/.../ghost/DelosSocketTransport.java`
-- **Status**: ⚠️ DEPRECATED (incomplete prototype)
-- **Issues**:
-  - 7+ "TODO Phase 7B.2" comments throughout implementation
-  - Uses simulated network via `connectTo()` method (not real Delos)
-  - EntityUpdateEvent serialization incomplete
-  - Superseded by P2PGhostChannel's VonTransport integration
-- **Deprecation Plan**:
-  - Mark `@Deprecated(forRemoval = true)` immediately
-  - Remove in Month 2 (after verification P2PGhostChannel covers all use cases)
-  - Tests remain for reference but skip via `@Disabled`
-
-### Decision Rationale
-
-**Why Keep InMemoryGhostChannel**:
-- Essential for deterministic testing (no network variability)
-- Lightweight for single-server scenarios
-- Simulated latency feature valuable for testing edge cases
-- Clear separation: testing vs production implementations
-
-**Why P2PGhostChannel is Production**:
-- Leverages VON transport abstraction (already implements network communication)
-- Integrated with VonBubble P2P neighbor discovery
-- Handles same-server optimization automatically
-- Production-ready with full test coverage
-
-**Why Deprecate DelosSocketTransport**:
-- Incomplete implementation (7+ TODOs for "actual Delos integration")
-- Simulated network contradicts "production" intent
-- P2PGhostChannel achieves the same goal using existing VON infrastructure
-- Maintaining both creates confusion and duplication
-- No production usage found in codebase audit
-
-### Implementation Pattern
-
-**Testing**:
-```java
-// Unit tests: use InMemoryGhostChannel
-var channel = new InMemoryGhostChannel<StringEntityID, Object>();
-channel.onReceive((from, ghosts) -> processGhosts(ghosts));
-```
-
-**Production**:
-```java
-// Distributed simulation: use P2PGhostChannel
-var vonBubble = new VonBubble(bubbleId, level, frameMs, transport);
-var channel = new P2PGhostChannel<StringEntityID, Object>(vonBubble);
-channel.onReceive((from, ghosts) -> processGhosts(ghosts));
-```
-
-### Related M2 Consolidation
-
-This decision aligns with the broader M2 Ghost Layer Consolidation effort:
-- Eliminates incomplete/duplicate implementations
-- Clarifies testing vs production boundaries
-- Reduces LOC from 3 implementations (701 LOC) to 2 (InMemory + P2P)
-- Enables future consolidation of P2PGhostChannel with BubbleGhostManager
-
-See `simulation/doc/GHOST_LAYER_CONSOLIDATION_ANALYSIS.md` for full consolidation plan.
-
 ## Future Work
 
 ### Inc 7+ (Multi-Host Distribution)
@@ -404,7 +305,8 @@ See `simulation/doc/GHOST_LAYER_CONSOLIDATION_ANALYSIS.md` for full consolidatio
 ## Date
 
 **Created**: 2026-01-15
-**Last Updated**: 2026-01-15 (M2: Ghost Channel consolidation decision added)
+**Last Updated**: 2026-01-15
+**Author**: Claude Sonnet 4.5 (M1 ADR Task)
 **Reviewed By**: [Pending human review]
 
 ---
