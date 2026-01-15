@@ -23,15 +23,19 @@ import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.distributed.migration.MigrationLogPersistence;
 import com.hellblazer.luciferase.simulation.distributed.migration.TransactionState;
 import com.hellblazer.luciferase.simulation.von.VonTransport;
+import com.hellblazer.primeMover.annotations.Entity;
+import com.hellblazer.primeMover.annotations.NonEvent;
+import com.hellblazer.primeMover.api.Kronos;
+import com.hellblazer.primeMover.controllers.RealTimeController;
+import com.hellblazer.primeMover.runtime.Kairos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.function.Supplier;
 
 /**
  * Centralized topology authority for distributed bubble coordination.
@@ -65,6 +69,7 @@ import java.util.UUID;
  * <p>
  * Phase 4.1: Redundant code removed (CoordinatorElectionProtocol, heartbeat monitoring, heartbeat tracking)
  * Phase 4.1.4: Fireflies integration (MembershipView, FirefliesViewMonitor, ring ordering)
+ * Phase 4.2.1: Prime-Mover @Entity conversion (event-driven coordination tick)
  *
  * @author hal.hildebrand
  */
@@ -80,6 +85,8 @@ public class ProcessCoordinator {
     private final WallClockBucketScheduler bucketScheduler;
     private final MessageOrderValidator messageValidator;
     private final MembershipView<UUID> membershipView;
+    private final ProcessCoordinatorEntity entity;
+    private final RealTimeController controller;
     private MigrationLogPersistence walPersistence;
     private FirefliesViewMonitor viewMonitor;
 
@@ -88,6 +95,8 @@ public class ProcessCoordinator {
 
     /**
      * Create a ProcessCoordinator with the given transport and membership view.
+     * <p>
+     * Phase 4.2.1: Initializes Prime-Mover @Entity and RealTimeController for event-driven coordination.
      *
      * @param transport      VonTransport for inter-process communication
      * @param membershipView MembershipView for Fireflies failure detection
@@ -100,6 +109,24 @@ public class ProcessCoordinator {
         this.messageValidator = new MessageOrderValidator();
         this.walPersistence = null; // Initialized lazily in start()
         this.viewMonitor = null; // Initialized in start()
+
+        // Phase 4.2.1: Initialize Prime-Mover entity and controller
+        this.controller = new RealTimeController("ProcessCoordinator-" + transport.getLocalId());
+        this.entity = new ProcessCoordinatorEntity(
+            () -> running,
+            () -> registry.getAllBubbles(),
+            topology -> {
+                try {
+                    broadcastTopologyUpdate(topology);
+                } catch (Exception e) {
+                    log.error("Failed to broadcast topology update: {}", e.getMessage(), e);
+                }
+            }
+        );
+        Kairos.setController(controller);
+
+        log.debug("Created ProcessCoordinator with event-driven coordination for process {}",
+                 transport.getLocalId());
     }
 
     /**
@@ -117,9 +144,11 @@ public class ProcessCoordinator {
      * Initiates:
      * - Crash recovery (load and recover incomplete migrations)
      * - Fireflies view monitoring (automatic failure detection)
+     * - Event-driven coordination tick (Phase 4.2.1)
      * <p>
      * Phase 4.1.2: Heartbeat monitoring removed (use Fireflies view changes instead)
      * Phase 4.1.4: FirefliesViewMonitor initialization and view change listener registration
+     * Phase 4.2.1: Start Prime-Mover controller and coordination tick
      */
     public void start() throws Exception {
         if (running) {
@@ -153,6 +182,10 @@ public class ProcessCoordinator {
             }
         }
 
+        // Phase 4.2.1: Start event-driven coordination
+        entity.coordinationTick();
+        controller.start();
+
         log.info("ProcessCoordinator started on {}", transport.getLocalId());
     }
 
@@ -160,6 +193,7 @@ public class ProcessCoordinator {
      * Stop the coordinator gracefully.
      * <p>
      * Phase 4.1.2: Heartbeat scheduler removed (use Fireflies view changes instead)
+     * Phase 4.2.1: Stop Prime-Mover controller
      */
     public void stop() {
         if (!running) {
@@ -167,6 +201,7 @@ public class ProcessCoordinator {
         }
 
         running = false;
+        controller.stop();
         log.info("ProcessCoordinator stopped");
     }
 
@@ -533,5 +568,152 @@ public class ProcessCoordinator {
      */
     public FirefliesViewMonitor getViewMonitor() {
         return viewMonitor;
+    }
+
+    /**
+     * Get the Prime-Mover controller.
+     * <p>
+     * Phase 4.2.1: Controller accessor for testing and diagnostics.
+     *
+     * @return RealTimeController instance
+     */
+    @NonEvent
+    public RealTimeController getController() {
+        return controller;
+    }
+
+    /**
+     * Prime-Mover @Entity for event-driven coordination.
+     * <p>
+     * Static nested class to avoid generic type issues with Prime-Mover bytecode transformer.
+     * Follows BucketScheduler.BucketSchedulerEntity pattern:
+     * <ul>
+     *   <li>@NonEvent on all getters</li>
+     *   <li>coordinationTick() as event method</li>
+     *   <li>Kronos.sleep() for polling timing</li>
+     *   <li>Recursive this.coordinationTick() for continuous execution</li>
+     * </ul>
+     * <p>
+     * Event-driven lifecycle:
+     * <ol>
+     *   <li>Check if topology changed (compare current vs last broadcast)</li>
+     *   <li>If changed: broadcast topology update</li>
+     *   <li>Process pending coordination tasks (future)</li>
+     *   <li>Schedule next tick (recursive)</li>
+     * </ol>
+     * <p>
+     * Polling replaces blocking calls with periodic checks.
+     * <p>
+     * Phase 4.2.1: Initial implementation with topology monitoring.
+     */
+    @Entity
+    public static class ProcessCoordinatorEntity {
+        /**
+         * Polling interval in nanoseconds (10ms).
+         * Chosen for reasonable coordination overhead (1% at 100Hz ticking).
+         */
+        private static final long POLL_INTERVAL_NS = 10_000_000;
+
+        // References to outer coordinator components (passed via suppliers)
+        private final Supplier<Boolean> runningSupplier;
+        private final Supplier<List<UUID>> topologySupplier;
+        private final java.util.function.Consumer<List<UUID>> broadcastCallback;
+
+        // State for topology change detection
+        private List<UUID> lastBroadcastTopology = List.of();
+        private long tickCount = 0;
+
+        /**
+         * Create the entity with references to outer coordinator components.
+         *
+         * @param runningSupplier    Supplier for running state
+         * @param topologySupplier   Supplier for current topology (all bubbles)
+         * @param broadcastCallback  Callback to broadcast topology update
+         */
+        public ProcessCoordinatorEntity(
+            Supplier<Boolean> runningSupplier,
+            Supplier<List<UUID>> topologySupplier,
+            java.util.function.Consumer<List<UUID>> broadcastCallback
+        ) {
+            this.runningSupplier = runningSupplier;
+            this.topologySupplier = topologySupplier;
+            this.broadcastCallback = broadcastCallback;
+        }
+
+        @NonEvent
+        public long getTickCount() {
+            return tickCount;
+        }
+
+        @NonEvent
+        public List<UUID> getLastBroadcastTopology() {
+            return lastBroadcastTopology;
+        }
+
+        /**
+         * Execute a single coordination tick.
+         * <p>
+         * Prime-Mover event method that drives distributed coordination.
+         * <p>
+         * Current responsibilities:
+         * - Detect topology changes (registry modifications)
+         * - Broadcast updates when topology changes
+         * - Future: Process pending coordination tasks
+         * <p>
+         * Phase 4.2.1: Initial implementation with topology monitoring.
+         */
+        public void coordinationTick() {
+            tickCount++;
+
+            // Check if coordinator should stop
+            if (!runningSupplier.get()) {
+                return;
+            }
+
+            // Step 1: Get current topology
+            var currentTopology = topologySupplier.get();
+
+            // Step 2: Check if topology changed
+            if (topologyChanged(currentTopology)) {
+                log.debug("Topology changed: {} bubbles (tick {})", currentTopology.size(), tickCount);
+
+                // Step 3: Broadcast topology update
+                broadcastCallback.accept(currentTopology);
+
+                // Update last broadcast
+                lastBroadcastTopology = List.copyOf(currentTopology);
+
+                log.info("Broadcasted topology update: {} bubbles (tick {})",
+                        currentTopology.size(), tickCount);
+            }
+
+            // Step 4: Process pending coordination tasks
+            // Future: Process migration coordination, bucket synchronization, etc.
+
+            // Schedule next tick (recursive event scheduling)
+            Kronos.sleep(POLL_INTERVAL_NS);
+            this.coordinationTick();
+        }
+
+        /**
+         * Check if topology changed since last broadcast.
+         * <p>
+         * Compares current topology with last broadcast topology.
+         * Uses Set comparison for order-independent change detection.
+         *
+         * @param currentTopology Current topology (list of bubble UUIDs)
+         * @return true if topology changed
+         */
+        private boolean topologyChanged(List<UUID> currentTopology) {
+            if (currentTopology.size() != lastBroadcastTopology.size()) {
+                return true;
+            }
+
+            // Order-independent comparison
+            var currentSet = new HashSet<>(currentTopology);
+            var lastSet = new HashSet<>(lastBroadcastTopology);
+
+            return !currentSet.equals(lastSet);
+        }
     }
 }
