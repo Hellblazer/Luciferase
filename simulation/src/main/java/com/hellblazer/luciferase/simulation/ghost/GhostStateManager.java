@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityData;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.events.EntityUpdateEvent;
 import com.hellblazer.luciferase.simulation.spatial.DeadReckoningEstimator;
@@ -79,31 +80,29 @@ public class GhostStateManager {
     private static final Logger log = LoggerFactory.getLogger(GhostStateManager.class);
 
     /**
-     * Per-ghost state tracking (position, velocity, timestamps).
+     * Per-ghost state tracking (position, velocity for dead reckoning).
+     * <p>
+     * Note: Timestamps and lifecycle state are now managed by GhostLifecycleStateMachine (Layer 1).
      *
      * @param ghostEntity   SimulationGhostEntity with position and metadata
      * @param velocity      Velocity vector for dead reckoning (units per second)
-     * @param createdAt     When ghost was first seen (milliseconds)
-     * @param lastUpdateAt  When ghost was last updated (milliseconds)
-     * @param sourceBubbleId Source bubble that owns this ghost
      */
     private record GhostState(
         SimulationGhostEntity<StringEntityID, EntityData> ghostEntity,
-        Vector3f velocity,
-        long createdAt,
-        long lastUpdateAt,
-        UUID sourceBubbleId
+        Vector3f velocity
     ) {
     }
 
     /**
      * Adapter for DeadReckoningEstimator to work with GhostState.
      */
-    private static class GhostStateAdapter implements com.hellblazer.luciferase.simulation.ghost.GhostEntity {
+    private class GhostStateAdapter implements com.hellblazer.luciferase.simulation.ghost.GhostEntity {
         private final GhostState state;
+        private final StringEntityID entityId;
 
-        GhostStateAdapter(GhostState state) {
+        GhostStateAdapter(GhostState state, StringEntityID entityId) {
             this.state = state;
+            this.entityId = entityId;
         }
 
         @Override
@@ -123,7 +122,9 @@ public class GhostStateManager {
 
         @Override
         public long timestamp() {
-            return state.lastUpdateAt;
+            // Get timestamp from lifecycle state machine
+            var lifecycleState = lifecycle.getLifecycleState(entityId.toDebugString());
+            return lifecycleState != null ? lifecycleState.lastUpdateAt() : 0L;
         }
     }
 
@@ -143,12 +144,12 @@ public class GhostStateManager {
     private final DeadReckoningEstimator deadReckoning;
 
     /**
-     * Culling policy for staleness detection (default 500ms).
+     * Lifecycle state machine for ghost state transitions (Layer 1 Causality).
      */
-    private final GhostCullPolicy cullPolicy;
+    private final GhostLifecycleStateMachine lifecycle;
 
     /**
-     * Active ghost state by entity ID.
+     * Active ghost state by entity ID (position and velocity only).
      */
     private final Map<StringEntityID, GhostState> ghostStates;
 
@@ -156,6 +157,19 @@ public class GhostStateManager {
      * Performance metrics (optional, null-safe).
      */
     private GhostPhysicsMetrics metrics;
+
+    /**
+     * Clock for deterministic testing.
+     */
+    private volatile Clock clock = Clock.system();
+
+    /**
+     * Set the clock source for deterministic testing.
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+        this.lifecycle.setClock(clock);
+    }
 
     /**
      * Create GhostStateManager with specified bounds and ghost limit.
@@ -167,7 +181,7 @@ public class GhostStateManager {
         this.bounds = Objects.requireNonNull(bounds, "bounds must not be null");
         this.maxGhosts = maxGhosts;
         this.deadReckoning = new DeadReckoningEstimator();
-        this.cullPolicy = new GhostCullPolicy();
+        this.lifecycle = new GhostLifecycleStateMachine(); // 500ms TTL, 300ms staleness threshold
         this.ghostStates = new ConcurrentHashMap<>();
 
         log.debug("GhostStateManager initialized with bounds {} and max ghosts {}", bounds, maxGhosts);
@@ -181,7 +195,7 @@ public class GhostStateManager {
      * @param event          EntityUpdateEvent with position, velocity, timestamp
      */
     public void updateGhost(UUID sourceBubbleId, EntityUpdateEvent event) {
-        var startNanos = System.nanoTime();  // Metrics: record start time
+        var startNanos = clock.nanoTime();  // Metrics: record start time
 
         Objects.requireNonNull(sourceBubbleId, "sourceBubbleId must not be null");
         Objects.requireNonNull(event, "event must not be null");
@@ -197,19 +211,23 @@ public class GhostStateManager {
             return;
         }
 
-        // Get or create ghost state
+        // Update lifecycle state (creates if new, updates if existing)
         var existingState = ghostStates.get(entityId);
-        long createdAt = existingState != null ? existingState.createdAt : timestamp;
+        if (existingState == null) {
+            // New ghost: create in lifecycle state machine
+            lifecycle.onCreate(entityId.toDebugString(), sourceBubbleId, timestamp);
+        }
+        lifecycle.onUpdate(entityId.toDebugString(), timestamp);
 
         // Create SimulationGhostEntity
         var ghostEntity = createGhostEntity(entityId, position, sourceBubbleId, timestamp, event.lamportClock());
 
-        // Create or update ghost state
-        var newState = new GhostState(ghostEntity, velocity, createdAt, timestamp, sourceBubbleId);
+        // Create or update ghost state (position + velocity only)
+        var newState = new GhostState(ghostEntity, velocity);
         ghostStates.put(entityId, newState);
 
         // Notify dead reckoning estimator of authoritative update
-        var adapter = new GhostStateAdapter(newState);
+        var adapter = new GhostStateAdapter(newState, entityId);
         deadReckoning.onAuthoritativeUpdate(adapter, position);
 
         log.debug("Updated ghost {} from bubble {} at position {} with velocity {}",
@@ -217,7 +235,7 @@ public class GhostStateManager {
 
         // Metrics: record latency
         if (metrics != null) {
-            metrics.recordUpdateGhost(System.nanoTime() - startNanos);
+            metrics.recordUpdateGhost(clock.nanoTime() - startNanos);
         }
     }
 
@@ -236,7 +254,7 @@ public class GhostStateManager {
         }
 
         // Use dead reckoning to extrapolate position
-        var adapter = new GhostStateAdapter(state);
+        var adapter = new GhostStateAdapter(state, entityId);
         var predictedPosition = deadReckoning.predict(adapter, currentTime);
 
         // Check for null prediction
@@ -257,23 +275,18 @@ public class GhostStateManager {
      */
     public void tick(long currentTime) {
         // Dead reckoning estimator handles prediction internally
-        // We just need to identify and remove stale ghosts
+        // Delegate staleness detection to lifecycle state machine
 
-        var staleGhosts = new ArrayList<StringEntityID>();
+        var expiredCount = lifecycle.expireStaleGhosts(currentTime);
 
-        for (var entry : ghostStates.entrySet()) {
-            var entityId = entry.getKey();
-            var state = entry.getValue();
-
-            if (cullPolicy.isStale(state.lastUpdateAt, currentTime)) {
-                staleGhosts.add(entityId);
+        if (expiredCount > 0) {
+            // Remove expired ghosts from our local state
+            for (var entityId : ghostStates.keySet()) {
+                if (lifecycle.getState(entityId.toDebugString()) == null) {
+                    removeGhost(entityId);
+                    log.debug("Culled stale ghost {} at time {}", entityId, currentTime);
+                }
             }
-        }
-
-        // Remove stale ghosts
-        for (var entityId : staleGhosts) {
-            removeGhost(entityId);
-            log.debug("Culled stale ghost {} at time {}", entityId, currentTime);
         }
     }
 
@@ -321,17 +334,18 @@ public class GhostStateManager {
      * @param entityId Entity ID to remove
      */
     public void removeGhost(StringEntityID entityId) {
-        var startNanos = System.nanoTime();  // Metrics: record start time
+        var startNanos = clock.nanoTime();  // Metrics: record start time
 
         var removed = ghostStates.remove(entityId);
         if (removed != null) {
             deadReckoning.clearEntity(entityId);
+            lifecycle.remove(entityId.toDebugString());
             log.debug("Removed ghost {}", entityId);
         }
 
         // Metrics: record latency
         if (metrics != null) {
-            metrics.recordRemoveGhost(System.nanoTime() - startNanos);
+            metrics.recordRemoveGhost(clock.nanoTime() - startNanos);
         }
     }
 
@@ -343,12 +357,8 @@ public class GhostStateManager {
      * @return true if ghost is stale and should be culled
      */
     public boolean isStale(StringEntityID entityId, long currentTime) {
-        var state = ghostStates.get(entityId);
-        if (state == null) {
-            return false;
-        }
-
-        return cullPolicy.isStale(state.lastUpdateAt, currentTime);
+        // Delegate to lifecycle state machine
+        return lifecycle.isStale(entityId.toDebugString(), currentTime);
     }
 
     /**

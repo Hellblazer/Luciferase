@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.causality;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
 import com.hellblazer.luciferase.simulation.spatial.DeadReckoningEstimator;
 import org.slf4j.Logger;
@@ -103,6 +104,7 @@ public class GhostConsistencyValidator {
      * Reference to ghost state manager for accessing ghost entities.
      */
     private GhostStateManager ghostStateManager;
+    private volatile Clock clock = Clock.system();
 
     /**
      * Create GhostConsistencyValidator with default parameters.
@@ -131,6 +133,15 @@ public class GhostConsistencyValidator {
 
         log.debug("GhostConsistencyValidator created: accuracy={}%, window={}ms",
                  accuracyTargetPercent * 100, extrapolationWindowMs);
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -184,7 +195,7 @@ public class GhostConsistencyValidator {
         }
 
         // Get extrapolated position via dead reckoning
-        var currentTime = System.currentTimeMillis();
+        var currentTime = clock.currentTimeMillis();
         var extrapolatedPosition = ghostStateManager.getGhostPosition(
             (com.hellblazer.luciferase.simulation.entity.StringEntityID) entityId,
             currentTime

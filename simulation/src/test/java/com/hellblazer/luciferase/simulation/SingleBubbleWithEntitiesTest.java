@@ -21,7 +21,6 @@ import com.hellblazer.luciferase.simulation.animation.VolumeAnimator;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.RealTimeController;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
@@ -112,9 +111,10 @@ class SingleBubbleWithEntitiesTest {
      *
      * This is the critical determinism test for Phase 7A.
      * Same seed should produce byte-for-byte identical animation sequences.
+     * <p>
+     * Re-enabled after H3.7 Clock conversion - timing now deterministic.
      */
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Flaky determinism test: Position count mismatch in CI - timing-sensitive")
     void testDeterminismWithSameSeed() {
         var positions1 = runAnimationWithSeed(SEED);
         var positions2 = runAnimationWithSeed(SEED);

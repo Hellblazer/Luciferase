@@ -26,66 +26,45 @@ import com.hellblazer.luciferase.simulation.entity.StringEntityIDGenerator;
 import com.hellblazer.luciferase.simulation.ghost.DuplicateDetectionConfig;
 import com.hellblazer.luciferase.simulation.ghost.DuplicateEntityDetector;
 import com.hellblazer.luciferase.simulation.ghost.MigrationLog;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
 import javax.vecmath.Point3f;
-import javax.vecmath.Vector3f;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
  * Main simulation orchestrator for multi-bubble tetrahedral environment.
  * <p>
- * This class manages a distributed 3D simulation with entities partitioned
- * across multiple bubbles in a tetrahedral hierarchy. Key responsibilities:
+ * <b>Orchestrator Pattern</b>: This class follows the orchestrator pattern,
+ * delegating all business logic to specialized component managers. It maintains
+ * NO business logic itself - only coordination and lifecycle management.
+ * <p>
+ * <b>Component Architecture</b>:
  * <ul>
- *   <li><b>Bubble Creation</b> - Distribute bubbles across tree levels via {@link TetreeBubbleFactory}</li>
- *   <li><b>Entity Distribution</b> - Assign entities spatially via {@link EntityDistribution}</li>
- *   <li><b>Simulation Loop</b> - Execute behavior updates at 60fps</li>
- *   <li><b>Ghost Synchronization</b> - (Phase 5C) Cross-bubble entity visibility</li>
- *   <li><b>Entity Migration</b> - (Phase 5D) Move entities between bubbles</li>
+ *   <li>{@link BubbleGridOrchestrator} - Grid and spatial index management</li>
+ *   <li>{@link SimulationExecutionEngine} - Tick loop and scheduling</li>
+ *   <li>{@link EntityPopulationManager} - Entity creation and distribution</li>
+ *   <li>{@link EntityPhysicsManager} - Physics and velocity updates</li>
+ *   <li>{@link SimulationQueryService} - Read-only query operations</li>
+ *   <li>{@link TetrahedralMigration} - Entity migration (Phase 5D)</li>
+ *   <li>{@link DuplicateEntityDetector} - Duplicate detection (Phase 5E)</li>
  * </ul>
  * <p>
- * Architecture (Tetrahedral Model):
- * <pre>
- * ┌─────────────────────────────────────────────────────────────────┐
- * │               MultiBubbleSimulation                             │
- * │                                                                 │
- * │  ┌──────────────────────────────────────────────────────────┐  │
- * │  │         TetreeBubbleGrid (3D hierarchy)                  │  │
- * │  │                                                          │  │
- * │  │  Bubble@L0  ←─────→  8 Bubbles@L1  ←─────→  ...       │  │
- * │  │  (root tet)         (subdivisions)                      │  │
- * │  │                                                          │  │
- * │  │  Each bubble:                                            │  │
- * │  │  - Internal Tetree spatial index                        │  │
- * │  │  - Adaptive bounds (BubbleBounds)                       │  │
- * │  │  - Variable neighbors (4-12)                            │  │
- * │  └──────────────────────────────────────────────────────────┘  │
- * │                                                                 │
- * │  Tick Loop (60fps):                                             │
- * │  1. Update entity positions/velocities (EntityBehavior)         │
- * │  2. Detect migrations (Phase 5D)                                │
- * │  3. Sync ghosts (Phase 5C)                                      │
- * │  4. Record metrics                                              │
- * └─────────────────────────────────────────────────────────────────┘
- * </pre>
+ * <b>Tick Loop Coordination (60fps)</b>:
+ * <ol>
+ *   <li>Physics updates via {@link EntityPhysicsManager}</li>
+ *   <li>Migration detection via {@link TetrahedralMigration}</li>
+ *   <li>Ghost synchronization via {@link TetreeGhostSyncAdapter}</li>
+ *   <li>Duplicate reconciliation via {@link DuplicateEntityDetector}</li>
+ *   <li>Metrics recording via {@link SimulationMetrics}</li>
+ * </ol>
  * <p>
- * Key Differences from 2D Grid Model:
- * <ul>
- *   <li>No GridConfiguration - use TetreeBubbleGrid</li>
- *   <li>No fixed neighbor count - variable 4-12</li>
- *   <li>RDGCS coordinates instead of 2D (x,y)</li>
- *   <li>Tetrahedral containment vs rectangular boundaries</li>
- * </ul>
+ * <b>Refactoring History</b>: Decomposed from 558 LOC god class to orchestrator
+ * facade (Sprint B B1, January 2026). Original mixed 7-10 responsibilities; now
+ * delegates to 7 focused components following Single Responsibility Principle.
  *
  * @author hal.hildebrand
+ * @see EnhancedBubble Reference implementation of orchestrator pattern
  */
 public class MultiBubbleSimulation implements AutoCloseable {
 
@@ -93,27 +72,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * Default tick interval: 60fps (16.67ms).
      */
     public static final long DEFAULT_TICK_INTERVAL_MS = 16;
-
-    /**
-     * Entity snapshot for visualization and queries.
-     *
-     * @param id        Entity identifier
-     * @param position  Current position
-     * @param bubbleKey Key of containing bubble
-     * @param isGhost   True if this is a ghost entity (not authoritative)
-     */
-    public record EntitySnapshot(String id, Point3f position, TetreeKey<?> bubbleKey, boolean isGhost) {}
-
-    private final TetreeBubbleGrid bubbleGrid;
-    private final Tetree<StringEntityID, EntityDistribution.EntitySpec> spatialIndex;
-    private final EntityBehavior behavior;
-    private final WorldBounds worldBounds;
-    private final int entityCount;
-    private final byte maxLevel;
-
-    // Phase 5C: Ghost sync adapter
-    private final TetreeGhostSyncAdapter ghostSyncAdapter;
-    private final AtomicLong currentBucket;
 
     // Phase 5D: Migration manager
     private final TetrahedralMigration migration;
@@ -123,18 +81,15 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final DuplicateEntityDetector duplicateDetector;
     private final DuplicateDetectionConfig duplicateConfig;
 
-    // Velocity tracking: entityId → velocity
-    private final Map<String, Vector3f> velocities;
+    // Component managers
+    private final BubbleGridOrchestrator gridOrchestrator;
+    private final SimulationExecutionEngine executionEngine;
+    private final EntityPopulationManager populationManager;
+    private final EntityPhysicsManager physicsManager;
+    private final SimulationQueryService queryService;
 
-    // Execution
-    private final ScheduledExecutorService scheduler;
-    private final AtomicBoolean running;
-    private final AtomicLong tickCount;
+    // Metrics
     private final SimulationMetrics metrics;
-    private ScheduledFuture<?> tickTask;
-
-    // Entity distribution manager
-    private final EntityDistribution distribution;
 
     /**
      * Create a multi-bubble tetrahedral simulation.
@@ -163,36 +118,40 @@ public class MultiBubbleSimulation implements AutoCloseable {
             throw new IllegalArgumentException("Entity count must be positive, got: " + entityCount);
         }
 
-        this.maxLevel = maxLevel;
-        this.entityCount = entityCount;
-        this.worldBounds = Objects.requireNonNull(worldBounds, "WorldBounds cannot be null");
-        this.behavior = Objects.requireNonNull(behavior, "EntityBehavior cannot be null");
+        Objects.requireNonNull(worldBounds, "WorldBounds cannot be null");
+        Objects.requireNonNull(behavior, "EntityBehavior cannot be null");
 
         // Create bubble grid
-        this.bubbleGrid = new TetreeBubbleGrid(maxLevel);
+        var bubbleGrid = new TetreeBubbleGrid(maxLevel);
 
         // Create spatial index for entity tracking
-        this.spatialIndex = new Tetree<>(new StringEntityIDGenerator(), 100, maxLevel);
-
-        // Initialize velocity map
-        this.velocities = new ConcurrentHashMap<>();
-
-        // Metrics and execution
-        this.scheduler = Executors.newScheduledThreadPool(1);
-        this.running = new AtomicBoolean(false);
-        this.tickCount = new AtomicLong(0);
-        this.currentBucket = new AtomicLong(0);
-        this.metrics = new SimulationMetrics();
-
-        // Initialize distribution manager
-        this.distribution = new EntityDistribution(bubbleGrid, spatialIndex);
-
-        // Setup simulation: create bubbles and distribute entities
-        initializeSimulation(bubbleCount, entityCount);
+        var spatialIndex = new Tetree<StringEntityID, EntityDistribution.EntitySpec>(new StringEntityIDGenerator(), 100, maxLevel);
 
         // Phase 5C: Initialize ghost sync adapter
         var neighborFinder = new TetreeNeighborFinder(spatialIndex);
-        this.ghostSyncAdapter = new TetreeGhostSyncAdapter(bubbleGrid, neighborFinder);
+        var ghostSyncAdapter = new TetreeGhostSyncAdapter(bubbleGrid, neighborFinder);
+
+        // Initialize grid orchestrator
+        this.gridOrchestrator = new BubbleGridOrchestrator(bubbleGrid, spatialIndex, ghostSyncAdapter, maxLevel);
+
+        // Metrics and execution engine
+        this.executionEngine = new SimulationExecutionEngine();
+        this.metrics = new SimulationMetrics();
+
+        // Initialize distribution manager
+        var distribution = new EntityDistribution(bubbleGrid, spatialIndex);
+
+        // Initialize population manager
+        this.populationManager = new EntityPopulationManager(distribution, entityCount, worldBounds);
+
+        // Initialize physics manager
+        this.physicsManager = new EntityPhysicsManager(behavior, worldBounds);
+
+        // Initialize query service
+        this.queryService = new SimulationQueryService(bubbleGrid, ghostSyncAdapter, populationManager, metrics);
+
+        // Setup simulation: create bubbles and distribute entities
+        initializeSimulation(bubbleCount, entityCount);
 
         // Phase 5D: Initialize migration log and manager
         this.migrationLog = new MigrationLog();
@@ -204,6 +163,15 @@ public class MultiBubbleSimulation implements AutoCloseable {
     }
 
     /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.executionEngine.setClock(clock);
+    }
+
+    /**
      * Initialize simulation: create bubbles, spawn entities, distribute spatially.
      *
      * @param bubbleCount Number of bubbles to create
@@ -212,45 +180,16 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private void initializeSimulation(int bubbleCount, int entityCount) {
         // Step 1: Create bubbles distributed across tree levels
         var maxEntitiesPerBubble = (entityCount / bubbleCount) + 50; // +50 buffer for migration
-        TetreeBubbleFactory.createBubbles(bubbleGrid, bubbleCount, maxLevel, maxEntitiesPerBubble);
+        gridOrchestrator.createBubbles(bubbleCount, entityCount, maxEntitiesPerBubble);
 
         // Step 2: Generate entity positions
-        var entities = populateEntities(entityCount);
+        var entities = populationManager.populateEntities(entityCount);
 
         // Step 3: Distribute entities to bubbles spatially
-        distribution.distribute(entities);
+        populationManager.getDistribution().distribute(entities);
 
         // Step 4: Initialize velocities
         initializeVelocities(entities);
-    }
-
-    /**
-     * Generate random entity positions within world bounds.
-     *
-     * @param count Number of entities to create
-     * @return List of EntitySpec with random positions
-     */
-    private List<EntityDistribution.EntitySpec> populateEntities(int count) {
-        var entities = new ArrayList<EntityDistribution.EntitySpec>(count);
-        var random = new Random(42); // Deterministic seed for reproducibility
-
-        var size = worldBounds.size();
-        var min = worldBounds.min();
-
-        for (int i = 0; i < count; i++) {
-            // Generate random position in world bounds
-            var x = min + random.nextFloat() * size;
-            var y = min + random.nextFloat() * size;
-            var z = min + random.nextFloat() * size;
-
-            var position = new Point3f(x, y, z);
-            var entityId = "entity-" + i;
-
-            // Velocity will be initialized later
-            entities.add(new EntityDistribution.EntitySpec(entityId, position, null));
-        }
-
-        return entities;
     }
 
     /**
@@ -259,21 +198,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @param entities List of entities to initialize
      */
     private void initializeVelocities(List<EntityDistribution.EntitySpec> entities) {
-        var random = new Random(43); // Deterministic seed
-        var maxSpeed = behavior.getMaxSpeed();
-
-        for (var entity : entities) {
-            // Generate random velocity in 3D sphere
-            var theta = random.nextFloat() * 2 * Math.PI; // Azimuthal angle
-            var phi = random.nextFloat() * Math.PI; // Polar angle
-            var speed = random.nextFloat() * maxSpeed;
-
-            var vx = (float) (speed * Math.sin(phi) * Math.cos(theta));
-            var vy = (float) (speed * Math.sin(phi) * Math.sin(theta));
-            var vz = (float) (speed * Math.cos(phi));
-
-            velocities.put(entity.id(), new Vector3f(vx, vy, vz));
-        }
+        physicsManager.initializeVelocities(entities);
     }
 
     /**
@@ -282,28 +207,14 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @throws IllegalStateException if already running
      */
     public void start() {
-        if (running.getAndSet(true)) {
-            throw new IllegalStateException("Simulation is already running");
-        }
-
-        tickTask = scheduler.scheduleAtFixedRate(
-            this::tick,
-            0,
-            DEFAULT_TICK_INTERVAL_MS,
-            TimeUnit.MILLISECONDS
-        );
+        executionEngine.start(this::tick);
     }
 
     /**
      * Stop the simulation tick loop.
      */
     public void stop() {
-        if (running.getAndSet(false)) {
-            if (tickTask != null) {
-                tickTask.cancel(false);
-                tickTask = null;
-            }
-        }
+        executionEngine.stop();
     }
 
     /**
@@ -312,7 +223,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @return true if running, false otherwise
      */
     public boolean isRunning() {
-        return running.get();
+        return executionEngine.isRunning();
     }
 
     /**
@@ -321,7 +232,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @return Number of ticks executed
      */
     public long getTickCount() {
-        return tickCount.get();
+        return executionEngine.getTickCount();
     }
 
     /**
@@ -330,7 +241,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @return SimulationMetrics instance
      */
     public SimulationMetrics getMetrics() {
-        return metrics;
+        return queryService.getMetrics();
     }
 
     /**
@@ -355,15 +266,15 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * Execute one simulation tick: update entities, detect migrations, sync ghosts.
      */
     private void tick() {
-        var startTime = System.nanoTime();
+        var startTime = executionEngine.getClock().nanoTime();
 
         try {
             // Increment tick and bucket counters
-            var currentTick = tickCount.incrementAndGet();
-            var bucket = currentBucket.incrementAndGet();
+            var currentTick = executionEngine.incrementTickCount();
+            var bucket = executionEngine.incrementBucket();
 
             // Step 1: Update all bubbles (entity positions and velocities)
-            for (var bubble : bubbleGrid.getAllBubbles()) {
+            for (var bubble : gridOrchestrator.getBubbleGrid().getAllBubbles()) {
                 updateBubbleEntities(bubble, DEFAULT_TICK_INTERVAL_MS / 1000.0f);
             }
 
@@ -371,22 +282,22 @@ public class MultiBubbleSimulation implements AutoCloseable {
             migration.checkMigrations(currentTick);
 
             // Step 3: (Phase 5C) Synchronize ghosts across bubble boundaries
-            ghostSyncAdapter.processBoundaryEntities(bucket);
-            ghostSyncAdapter.onBucketComplete(bucket);
+            gridOrchestrator.getGhostSyncAdapter().processBoundaryEntities(bucket);
+            gridOrchestrator.getGhostSyncAdapter().onBucketComplete(bucket);
 
             // Step 4: (Phase 5E) Detect and reconcile duplicate entities
             if (duplicateConfig.enabled()) {
-                duplicateDetector.detectAndReconcile(bubbleGrid.getAllBubbles());
+                duplicateDetector.detectAndReconcile(gridOrchestrator.getBubbleGrid().getAllBubbles());
             }
 
             // Step 5: Record metrics
-            var elapsedNs = System.nanoTime() - startTime;
+            var elapsedNs = executionEngine.getClock().nanoTime() - startTime;
             var totalEntities = getAllEntities().size();
             metrics.recordTick(elapsedNs, totalEntities);
 
         } catch (Exception e) {
             // Log error but continue simulation
-            System.err.println("Error in tick " + tickCount.get() + ": " + e.getMessage());
+            System.err.println("Error in tick " + executionEngine.getTickCount() + ": " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -398,42 +309,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @param deltaTime Time step in seconds
      */
     private void updateBubbleEntities(EnhancedBubble bubble, float deltaTime) {
-        var entityRecords = bubble.getAllEntityRecords();
-
-        for (var record : entityRecords) {
-            var entityId = record.id();
-            var currentPos = record.position();
-            var currentVel = velocities.get(entityId);
-
-            if (currentVel == null) {
-                continue; // Entity has no velocity (shouldn't happen)
-            }
-
-            // Compute new velocity based on behavior
-            var newVel = behavior.computeVelocity(entityId, currentPos, currentVel, bubble, deltaTime);
-
-            // Update position based on new velocity
-            var newPos = new Point3f(currentPos);
-            newPos.x += newVel.x * deltaTime;
-            newPos.y += newVel.y * deltaTime;
-            newPos.z += newVel.z * deltaTime;
-
-            // Clamp to world bounds
-            newPos.x = worldBounds.clamp(newPos.x);
-            newPos.y = worldBounds.clamp(newPos.y);
-            newPos.z = worldBounds.clamp(newPos.z);
-
-            // Update velocity map
-            velocities.put(entityId, newVel);
-
-            // Update entity in bubble (this also updates bounds)
-            // Note: EnhancedBubble handles position updates internally via its Tetree
-            bubble.removeEntity(entityId);
-            bubble.addEntity(entityId, newPos, record.content());
-
-            // Note: Spatial index updates are handled by bubble's internal Tetree
-            // No need to manually update the top-level spatial index here
-        }
+        physicsManager.updateBubbleEntities(bubble, deltaTime);
     }
 
     /**
@@ -441,47 +317,8 @@ public class MultiBubbleSimulation implements AutoCloseable {
      *
      * @return List of entity snapshots
      */
-    public List<EntitySnapshot> getAllEntities() {
-        var snapshots = new ArrayList<EntitySnapshot>();
-
-        // Add real entities from bubbles
-        for (var bubble : bubbleGrid.getAllBubbles()) {
-            var records = bubble.getAllEntityRecords();
-            TetreeKey<?> fallbackKey = null;
-
-            for (var record : records) {
-                var key = distribution.getEntityToBubbleMapping().get(record.id());
-                if (key == null) {
-                    // Entity not in mapping - use fallback key if available
-                    if (fallbackKey != null) {
-                        key = fallbackKey;
-                    } else {
-                        // Skip only if no fallback key exists yet
-                        continue;
-                    }
-                }
-                if (fallbackKey == null) {
-                    fallbackKey = key;
-                }
-                snapshots.add(new EntitySnapshot(record.id(), record.position(), key, false));
-            }
-
-            // Add ghost entities for this bubble
-            var ghosts = ghostSyncAdapter.getGhostsForBubble(bubble.id());
-            for (var ghost : ghosts) {
-                // Determine key for ghost (use fallback or root key)
-                var ghostKey = fallbackKey != null ? fallbackKey :
-                              com.hellblazer.luciferase.lucien.tetree.TetreeKey.create((byte) 0, 0L, 0L);
-                snapshots.add(new EntitySnapshot(
-                    ghost.entityId().toString(),
-                    ghost.position(),
-                    ghostKey,
-                    true  // isGhost = true
-                ));
-            }
-        }
-
-        return snapshots;
+    public List<? extends SimulationQueryService.EntitySnapshot> getAllEntities() {
+        return queryService.getAllEntities();
     }
 
     /**
@@ -491,10 +328,8 @@ public class MultiBubbleSimulation implements AutoCloseable {
      *
      * @return List of real entity snapshots
      */
-    public List<EntitySnapshot> getRealEntities() {
-        return getAllEntities().stream()
-                               .filter(e -> !e.isGhost())
-                               .collect(Collectors.toList());
+    public List<? extends SimulationQueryService.EntitySnapshot> getRealEntities() {
+        return queryService.getRealEntities();
     }
 
     /**
@@ -505,7 +340,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @return Number of ghost entities
      */
     public int getGhostCount() {
-        return ghostSyncAdapter.getTotalGhostCount();
+        return queryService.getGhostCount();
     }
 
     /**
@@ -516,7 +351,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @throws NoSuchElementException if no bubble exists at key
      */
     public EnhancedBubble getBubble(TetreeKey<?> key) {
-        return bubbleGrid.getBubble(key);
+        return queryService.getBubble(key);
     }
 
     /**
@@ -525,7 +360,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @return Collection of all EnhancedBubbles
      */
     public Collection<EnhancedBubble> getAllBubbles() {
-        return bubbleGrid.getAllBubbles();
+        return queryService.getAllBubbles();
     }
 
     /**
@@ -533,15 +368,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
      */
     @Override
     public void close() {
-        stop();
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        executionEngine.close();
     }
 }

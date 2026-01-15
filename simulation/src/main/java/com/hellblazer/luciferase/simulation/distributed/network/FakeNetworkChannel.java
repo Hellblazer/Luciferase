@@ -5,6 +5,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed.network;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.distributed.migration.*;
 import com.hellblazer.luciferase.simulation.events.*;
 import java.util.*;
@@ -20,6 +21,8 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
 
     private static final Logger log = LoggerFactory.getLogger(FakeNetworkChannel.class);
 
+    private volatile Clock clock = Clock.system();
+
     private final UUID nodeId;
     private final Map<UUID, String> nodeAddresses = new ConcurrentHashMap<>();
     private final Queue<PendingMessage> outboundMessages = new ConcurrentLinkedQueue<>();
@@ -31,6 +34,13 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
 
     private long networkLatencyMs = 0;
     private double packetLossRate = 0.0;
+
+    /**
+     * Set the clock source for deterministic testing.
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     private static final Map<UUID, FakeNetworkChannel> NETWORK = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
@@ -77,7 +87,7 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
                     channel.departureListener.onEntityDeparture(nodeId, event);
                 }
             },
-            System.currentTimeMillis() + networkLatencyMs
+            clock.currentTimeMillis() + networkLatencyMs
         );
 
         outboundMessages.offer(message);
@@ -112,7 +122,7 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
                     channel.ackListener.onViewSynchronyAck(nodeId, event);
                 }
             },
-            System.currentTimeMillis() + networkLatencyMs
+            clock.currentTimeMillis() + networkLatencyMs
         );
 
         outboundMessages.offer(message);
@@ -147,7 +157,7 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
                     channel.rollbackListener.onEntityRollback(nodeId, event);
                 }
             },
-            System.currentTimeMillis() + networkLatencyMs
+            clock.currentTimeMillis() + networkLatencyMs
         );
 
         outboundMessages.offer(message);
@@ -223,7 +233,7 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
         var iterator = outboundMessages.iterator();
         while (iterator.hasNext()) {
             var message = iterator.next();
-            if (System.currentTimeMillis() >= message.deliveryTimeMs) {
+            if (clock.currentTimeMillis() >= message.deliveryTimeMs) {
                 message.action.run();
                 iterator.remove();
             }
@@ -231,7 +241,7 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
     }
 
     private void scheduleDelivery(PendingMessage message) {
-        long delayMs = Math.max(0, message.deliveryTimeMs - System.currentTimeMillis());
+        long delayMs = Math.max(0, message.deliveryTimeMs - clock.currentTimeMillis());
         scheduler.schedule(() -> {
             try {
                 message.action.run();

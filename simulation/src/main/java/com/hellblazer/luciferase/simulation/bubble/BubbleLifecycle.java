@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
 import java.util.List;
 import java.util.UUID;
@@ -26,9 +27,19 @@ public class BubbleLifecycle {
     private static final float MERGE_THRESHOLD = 0.6f;  // 60% cross-bubble interactions
 
     private final Consumer<BubbleEvent> eventEmitter;
+    private volatile Clock clock = Clock.system();
 
     public BubbleLifecycle(Consumer<BubbleEvent> eventEmitter) {
         this.eventEmitter = eventEmitter;
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -75,7 +86,7 @@ public class BubbleLifecycle {
         }
 
         // Emit merge event (bucket = current time, can be refined later)
-        long bucket = System.currentTimeMillis();
+        long bucket = clock.currentTimeMillis();
         eventEmitter.accept(new BubbleEvent.Merge(
             b1.id(), b2.id(), merged.id(),
             bucket, size1, size2

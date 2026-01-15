@@ -8,6 +8,8 @@
  */
 package com.hellblazer.luciferase.simulation.tumbler;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -25,7 +27,7 @@ public class ServerMetrics {
 
     private final AtomicInteger bubbleCount = new AtomicInteger(0);
     private final AtomicInteger entityCount = new AtomicInteger(0);
-    private final AtomicLong lastUpdateNanos = new AtomicLong(System.nanoTime());
+    private final AtomicLong lastUpdateNanos = new AtomicLong(Clock.system().nanoTime());
 
     // EWMA-smoothed utilization (0.0 to 1.0)
     private volatile double smoothedUtilization = 0.0;
@@ -33,6 +35,7 @@ public class ServerMetrics {
     // Raw frame time tracking (milliseconds)
     private volatile double lastFrameTimeMs = 0.0;
     private final double targetFrameTimeMs;
+    private volatile Clock clock = Clock.system();
 
     public ServerMetrics(UUID serverId, double targetFrameTimeMs) {
         this(serverId, targetFrameTimeMs, DEFAULT_EWMA_ALPHA);
@@ -42,6 +45,15 @@ public class ServerMetrics {
         this.serverId = serverId;
         this.targetFrameTimeMs = targetFrameTimeMs;
         this.ewmaAlpha = ewmaAlpha;
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     public UUID serverId() {
@@ -78,7 +90,7 @@ public class ServerMetrics {
         this.lastFrameTimeMs = frameTimeMs;
         double rawUtilization = frameTimeMs / targetFrameTimeMs;
         smoothedUtilization = ewmaAlpha * rawUtilization + (1 - ewmaAlpha) * smoothedUtilization;
-        lastUpdateNanos.set(System.nanoTime());
+        lastUpdateNanos.set(clock.nanoTime());
     }
 
     /**
@@ -101,14 +113,14 @@ public class ServerMetrics {
      * Returns true if metrics are stale (no update in specified duration).
      */
     public boolean isStale(long maxAgeNanos) {
-        return (System.nanoTime() - lastUpdateNanos.get()) > maxAgeNanos;
+        return (clock.nanoTime() - lastUpdateNanos.get()) > maxAgeNanos;
     }
 
     /**
      * Returns the age of the last update in milliseconds.
      */
     public long ageMs() {
-        return (System.nanoTime() - lastUpdateNanos.get()) / 1_000_000;
+        return (clock.nanoTime() - lastUpdateNanos.get()) / 1_000_000;
     }
 
     @Override

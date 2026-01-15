@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,6 +52,16 @@ public class ProcessRegistry {
     public static final long HEARTBEAT_TIMEOUT_MS = 3000;
 
     private final Map<UUID, ProcessMetadata> processes = new ConcurrentHashMap<>();
+    private volatile Clock clock = Clock.system();
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Register a new process or update an existing one.
@@ -139,7 +150,7 @@ public class ProcessRegistry {
             return false;
         }
 
-        var elapsed = System.currentTimeMillis() - metadata.lastHeartbeat();
+        var elapsed = clock.currentTimeMillis() - metadata.lastHeartbeat();
         return elapsed < HEARTBEAT_TIMEOUT_MS;
     }
 

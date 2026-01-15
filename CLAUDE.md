@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-**Last Updated**: 2025-12-25
+**Last Updated**: 2026-01-13
 **Status**: Current
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -26,10 +26,30 @@ Spawn multiple parallel subtasks of claude whenever applicable. Leverage the cap
 - **Single test without retries**: `mvn test -pl <module> -Dtest=TestName -Dsurefire.rerunFailingTestsCount=0`
 - **Check compilation errors**: Use `mcp jetbrains.findProjectProblems` (no need to compile when IDE is available)
 
+## CI/CD
+
+The project uses **parallel GitHub Actions workflow** for fast feedback:
+
+- **Total Runtime**: 9-12 minutes (vs 20-30+ min sequential)
+- **Compile**: 54 seconds (Maven Central first optimization)
+- **Architecture**: 1 compile job + 6 parallel test batches + 1 aggregator
+- **Test Distribution**:
+  - test-batch-1: Fast unit tests (bubble/behavior/metrics) - 1 min
+  - test-batch-2: Von/transport integration tests - 8-9 min
+  - test-batch-3: Causality/migration state machines - 4-5 min
+  - test-batch-4: Distributed systems/network/Delos - 8-9 min
+  - test-batch-5: Consensus/ghost - 45-60 sec
+  - test-other-modules: grpc, common, lucien, sentry, render, portal, dyada-java - 3-4 min
+
+**Performance Metrics**: See `.github/CI_PERFORMANCE_METRICS.md`
+**Implementation Details**: See `simulation/doc/TECHNICAL_DECISION_PARALLEL_CI.md`
+
+**Key Optimization**: Maven repositories reordered to place Maven Central first, avoiding 10-12 minute GitHub Packages dependency resolution timeouts.
+
 ## Requirements
 
-- Java 24 (uses stable FFM API)
-- Maven 3.91+
+- Java 25 (uses stable FFM API)
+- Maven 3.9.1+
 - JavaFX 24 (for visualization)
 - LWJGL 3 (for OpenGL rendering)
 - Project is licensed under AGPL v3.0
@@ -59,7 +79,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 | **sentry** | Delaunay tetrahedralization for kinetic point tracking |
 | **portal** | JavaFX 3D visualization and mesh handling |
 | **von** | Distributed spatial perception framework |
-| **simulation** | Animation and movement simulation |
+| **simulation** | Distributed simulation with deterministic testing support (Clock interface) |
 | **gpu-test-framework** | GPU testing infrastructure and benchmarking |
 | **resource** | Shared resources, shaders, and configuration files |
 | **dyada-java** | Mathematical utilities and data structures |
@@ -198,6 +218,77 @@ Historical reference:
 - **GPU Tests**: Require `dangerouslyDisableSandbox: true` since sandbox blocks GPU/OpenCL access
 - **Test Output**: Use `VERBOSE_TESTS` env var to enable test output (suppressed by default)
 - **Port Conflicts**: Design interfaces/functions so dynamic port assignments are easily configured
+- **Deterministic Testing**: Use Clock interface injection instead of System.currentTimeMillis() or System.nanoTime()
+
+### Deterministic Time Handling
+
+**CRITICAL**: Never use `System.currentTimeMillis()` or `System.nanoTime()` directly in production code.
+
+**Standard Pattern (Regular Classes)**:
+
+```java
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+
+public class MyService {
+    private volatile Clock clock = Clock.system();
+
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    public void doWork() {
+        long now = clock.currentTimeMillis();  // Not System.currentTimeMillis()
+        // ... business logic
+    }
+}
+```
+
+**Record Class Pattern**:
+
+```java
+public record MyMessage(String id, long timestamp) {
+    public MyMessage {
+        timestamp = VonMessageFactory.currentTimeMillis();  // Factory-injected time
+    }
+}
+
+// In tests:
+var testClock = new TestClock();
+testClock.setMillis(1000L);
+VonMessageFactory.setClock(testClock);
+```
+
+**Benefits**:
+
+- Reproducible time-dependent tests
+- Time-travel debugging capabilities
+- Elimination of timing-dependent flakiness
+- Consistent CI/CD results
+
+**See**: simulation/doc/H3_DETERMINISM_EPIC.md for complete architecture and patterns
+
+### Flaky Test Handling
+
+If a test is probabilistic or timing-sensitive and fails non-deterministically in CI:
+
+```java
+@DisabledIfEnvironmentVariable(
+    named = "CI",
+    matches = "true",
+    disabledReason = "Flaky: probabilistic test with 30% packet loss"
+)
+@Test
+void testFailureRecovery() {
+    // Runs locally for development, skips in CI
+}
+```
+
+**When to use**:
+
+- Probabilistic tests (random failure injection, packet loss)
+- Timing-sensitive tests (race conditions, timeout windows)
+- Resource-constrained tests (fail under CI load)
+- Non-deterministic tests (inherent randomness)
 
 ## Common Development Patterns
 

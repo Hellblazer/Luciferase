@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.simulation.metrics;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -65,6 +66,7 @@ public class ObservabilityMetrics {
     private final ConcurrentHashMap<UUID, FrameMetrics> frameMetrics;
     private final ConcurrentHashMap<UUID, NeighborMetrics> neighborMetrics;
     private final AtomicReference<Long> ghostLatencyNs;
+    private volatile Clock clock = Clock.system();
 
     /**
      * Create a new ObservabilityMetrics instance.
@@ -73,6 +75,15 @@ public class ObservabilityMetrics {
         this.frameMetrics = new ConcurrentHashMap<>();
         this.neighborMetrics = new ConcurrentHashMap<>();
         this.ghostLatencyNs = new AtomicReference<>(null);
+    }
+
+    /**
+     * Set the clock for deterministic testing.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -185,7 +196,7 @@ public class ObservabilityMetrics {
             totalNeighbors,
             latency,
             activeBubbles,
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
     }
 

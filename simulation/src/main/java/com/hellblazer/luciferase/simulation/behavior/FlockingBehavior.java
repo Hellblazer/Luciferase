@@ -143,7 +143,7 @@ public class FlockingBehavior implements EntityBehavior {
     /**
      * Swap velocity buffers at the start of each tick.
      * <p>
-     * Must be called by SimulationLoop before processing any entities.
+     * Must be called by SimulationBubble before processing any entities.
      * This ensures all entities read from the previous tick's velocities
      * while writing to the current tick's buffer.
      */

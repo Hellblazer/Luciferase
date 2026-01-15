@@ -9,7 +9,7 @@
 package com.hellblazer.luciferase.simulation.behavior;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
-import com.hellblazer.luciferase.simulation.loop.SimulationLoop;
+import com.hellblazer.luciferase.simulation.bubble.SimulationBubble;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +29,7 @@ class FlockingBehaviorTest {
 
     private EnhancedBubble bubble;
     private FlockingBehavior behavior;
-    private SimulationLoop simulation;
+    private SimulationBubble simulation;
 
     @BeforeEach
     void setUp() {
@@ -53,7 +53,7 @@ class FlockingBehaviorTest {
 
         // Run simulation with high separation weight
         behavior = new FlockingBehavior(3.0f, 0.5f, 0.5f);
-        simulation = new SimulationLoop(bubble, behavior, 10);
+        simulation = new SimulationBubble(bubble, behavior, 10);
 
         simulation.start();
         TimeUnit.MILLISECONDS.sleep(500);
@@ -98,7 +98,7 @@ class FlockingBehaviorTest {
 
         // Run simulation with high cohesion weight
         behavior = new FlockingBehavior(0.5f, 0.5f, 2.0f);
-        simulation = new SimulationLoop(bubble, behavior, 10);
+        simulation = new SimulationBubble(bubble, behavior, 10);
 
         // Measure initial spread
         float initialSpread = measureSpread(bubble);
@@ -125,7 +125,7 @@ class FlockingBehaviorTest {
         bubble.addEntity("entity-4", new Point3f(100, 100, 5), null);
         bubble.addEntity("entity-5", new Point3f(100, 100, 195), null);
 
-        simulation = new SimulationLoop(bubble, behavior, 10);
+        simulation = new SimulationBubble(bubble, behavior, 10);
 
         simulation.start();
         TimeUnit.MILLISECONDS.sleep(500);
@@ -155,7 +155,7 @@ class FlockingBehaviorTest {
         // Single entity should still move (wander behavior)
         bubble.addEntity("lonely", new Point3f(100, 100, 100), null);
 
-        simulation = new SimulationLoop(bubble, behavior, 10);
+        simulation = new SimulationBubble(bubble, behavior, 10);
         simulation.start();
         TimeUnit.MILLISECONDS.sleep(200);
         simulation.stop();

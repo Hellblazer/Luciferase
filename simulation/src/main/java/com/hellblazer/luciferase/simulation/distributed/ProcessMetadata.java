@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -55,7 +57,7 @@ public record ProcessMetadata(
      * @return ProcessMetadata with current timestamp and ready=true
      */
     public static ProcessMetadata create(UUID processId, List<UUID> bubbles) {
-        return new ProcessMetadata(processId, List.copyOf(bubbles), System.currentTimeMillis(), true);
+        return new ProcessMetadata(processId, List.copyOf(bubbles), Clock.system().currentTimeMillis(), true);
     }
 
     /**
@@ -64,7 +66,7 @@ public record ProcessMetadata(
      * @return New ProcessMetadata with updated heartbeat timestamp
      */
     public ProcessMetadata withUpdatedHeartbeat() {
-        return new ProcessMetadata(processId, bubbles, System.currentTimeMillis(), ready);
+        return new ProcessMetadata(processId, bubbles, Clock.system().currentTimeMillis(), ready);
     }
 
     /**
