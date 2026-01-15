@@ -47,7 +47,8 @@ class SimpleVONDiscoveryProtocolTest {
     void setUp() throws Exception {
         registry = LocalServerTransport.Registry.create();
         var transport = registry.register(UUID.randomUUID());
-        coordinator = new ProcessCoordinator(transport);
+        var mockView = new MockMembershipView<UUID>();
+        coordinator = new ProcessCoordinator(transport, mockView);
         coordinator.start();
         protocol = new VONDiscoveryProtocol(coordinator, coordinator.getMessageValidator());
         capturedEvents = new CopyOnWriteArrayList<>();

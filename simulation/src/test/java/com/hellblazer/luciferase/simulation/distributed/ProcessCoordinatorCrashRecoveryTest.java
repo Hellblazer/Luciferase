@@ -61,7 +61,8 @@ class ProcessCoordinatorCrashRecoveryTest {
 
         // Override WAL directory for testing
         System.setProperty("wal.base.dir", tempDir.toString());
-        coordinator = new ProcessCoordinator(transport);
+        var mockView = new MockMembershipView<UUID>();
+        coordinator = new ProcessCoordinator(transport, mockView);
     }
 
     @Test
@@ -94,7 +95,8 @@ class ProcessCoordinatorCrashRecoveryTest {
         coordinator.stop();
 
         // Second startup - should detect but not treat as crash (empty WAL)
-        var coordinator2 = new ProcessCoordinator(transport);
+        var mockView2 = new MockMembershipView<UUID>();
+        var coordinator2 = new ProcessCoordinator(transport, mockView2);
         coordinator2.start();
         assertTrue(coordinator2.isRunning());
         coordinator2.stop();
@@ -116,7 +118,8 @@ class ProcessCoordinatorCrashRecoveryTest {
         walPersistence.close();
 
         // Simulate process restart
-        var coordinator2 = new ProcessCoordinator(transport);
+        var mockView2 = new MockMembershipView<UUID>();
+        var coordinator2 = new ProcessCoordinator(transport, mockView2);
         coordinator2.start();
         assertTrue(coordinator2.isRunning());
 
@@ -166,7 +169,8 @@ class ProcessCoordinatorCrashRecoveryTest {
         walPersistence.close();
 
         // Restart and verify recovery
-        var coordinator2 = new ProcessCoordinator(transport);
+        var mockView2 = new MockMembershipView<UUID>();
+        var coordinator2 = new ProcessCoordinator(transport, mockView2);
         coordinator2.start();
 
         var walPersistence2 = coordinator2.getWalPersistence();
@@ -195,7 +199,8 @@ class ProcessCoordinatorCrashRecoveryTest {
         walPersistence.close();
 
         // Restart 1
-        var coordinator2 = new ProcessCoordinator(transport);
+        var mockView2 = new MockMembershipView<UUID>();
+        var coordinator2 = new ProcessCoordinator(transport, mockView2);
         coordinator2.start();
         var walPersistence2 = coordinator2.getWalPersistence();
 
@@ -204,7 +209,8 @@ class ProcessCoordinatorCrashRecoveryTest {
         walPersistence2.close();
 
         // Restart 2 - recovery should be idempotent (no-op)
-        var coordinator3 = new ProcessCoordinator(transport);
+        var mockView3 = new MockMembershipView<UUID>();
+        var coordinator3 = new ProcessCoordinator(transport, mockView3);
         coordinator3.start();
         var walPersistence3 = coordinator3.getWalPersistence();
 
@@ -236,7 +242,8 @@ class ProcessCoordinatorCrashRecoveryTest {
         assertTrue(sizeBeforeRecovery > 0);
 
         // Restart and recovery
-        var coordinator2 = new ProcessCoordinator(transport);
+        var mockView2 = new MockMembershipView<UUID>();
+        var coordinator2 = new ProcessCoordinator(transport, mockView2);
         coordinator2.start();
         var walPersistence2 = coordinator2.getWalPersistence();
 

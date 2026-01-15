@@ -540,7 +540,8 @@ class CrossProcessMigrationIntegrationTest {
         var processId = UUID.randomUUID();
         var transport = transportRegistry.register(processId);
 
-        var coordinator = new ProcessCoordinator(transport);
+        var mockView = new MockMembershipView<UUID>();
+        var coordinator = new ProcessCoordinator(transport, mockView);
         coordinator.start();
 
         var protocol = new VONDiscoveryProtocol(coordinator, coordinator.getMessageValidator());

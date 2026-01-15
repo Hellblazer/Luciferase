@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.distributed.MessageOrderValidator;
+import com.hellblazer.luciferase.simulation.distributed.MockMembershipView;
 import com.hellblazer.luciferase.simulation.distributed.ProcessCoordinator;
 import com.hellblazer.luciferase.simulation.distributed.VONDiscoveryProtocol;
 import com.hellblazer.luciferase.simulation.distributed.migration.MigrationProtocolMessages.*;
@@ -70,7 +71,8 @@ class MigrationCoordinatorTest {
         registry = LocalServerTransport.Registry.create();
         transport = registry.register(UUID.randomUUID());
 
-        coordinator = new ProcessCoordinator(transport);
+        var mockView = new MockMembershipView<java.util.UUID>();
+        coordinator = new ProcessCoordinator(transport, mockView);
         coordinator.start();
 
         validator = coordinator.getMessageValidator();

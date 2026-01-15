@@ -58,7 +58,8 @@ class ProcessCoordinatorTest {
         transport.listenOn(coordinatorAddress);
 
         // Create coordinator (uses transport for communication)
-        coordinator = new ProcessCoordinator(transport);
+        var mockView = new MockMembershipView<UUID>();
+        coordinator = new ProcessCoordinator(transport, mockView);
     }
 
     @AfterEach
