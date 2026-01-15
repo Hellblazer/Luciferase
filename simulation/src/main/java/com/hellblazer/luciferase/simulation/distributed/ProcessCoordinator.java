@@ -17,8 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
-import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
-import com.hellblazer.luciferase.simulation.delos.MembershipView;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.distributed.migration.MigrationLogPersistence;
 import com.hellblazer.luciferase.simulation.distributed.migration.TransactionState;
@@ -29,7 +27,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,33 +35,25 @@ import java.util.UUID;
  * <p>
  * Responsibilities:
  * - Process registration and lifecycle management
- * - Failure detection via Fireflies view changes
- * - Coordinator selection via ring ordering
+ * - Heartbeat monitoring for failure detection (DEPRECATED - use Fireflies)
  * - Topology update broadcasting
  * <p>
  * Lifecycle:
- * 1. Create ProcessCoordinator(transport, membershipView)
- * 2. start() to begin listening and initialize Fireflies monitor
+ * 1. Create ProcessCoordinator(transport)
+ * 2. start() to begin listening
  * 3. Processes register via registerProcess(id, bubbles)
- * 4. View changes automatically trigger failure handling
+ * 4. Heartbeat monitoring detects failures (DEPRECATED - use Fireflies view changes)
  * 5. stop() to shut down gracefully
- * <p>
- * Failure Detection:
- * - Uses FirefliesViewMonitor for automatic failure detection
- * - View changes trigger unregistration of failed processes
- * - No manual heartbeat monitoring needed
- * <p>
- * Coordinator Selection:
- * - Uses ring ordering (first UUID from sorted view members)
- * - Deterministic: same view always produces same coordinator
- * - Leverages Fireflies high-quality hashing with view and member ID mixin
  * <p>
  * Bucket Synchronization:
  * - BUCKET_DURATION_MS: 100ms per simulation tick
  * - TOLERANCE_MS: 50ms clock skew tolerance
  * <p>
- * Phase 4.1: Redundant code removed (CoordinatorElectionProtocol, heartbeat monitoring, heartbeat tracking)
- * Phase 4.1.4: Fireflies integration (MembershipView, FirefliesViewMonitor, ring ordering)
+ * Heartbeat Protocol (DEPRECATED - use Fireflies):
+ * - Interval: 1000ms (every second)
+ * - Timeout: 3000ms (3 missed heartbeats)
+ * <p>
+ * Phase 4.1: CoordinatorElectionProtocol deleted (redundant with Fireflies ring ordering)
  *
  * @author hal.hildebrand
  */
@@ -79,27 +68,22 @@ public class ProcessCoordinator {
     private final ProcessRegistry registry;
     private final WallClockBucketScheduler bucketScheduler;
     private final MessageOrderValidator messageValidator;
-    private final MembershipView<UUID> membershipView;
     private MigrationLogPersistence walPersistence;
-    private FirefliesViewMonitor viewMonitor;
 
     private volatile boolean running = false;
     private volatile Clock clock = Clock.system();
 
     /**
-     * Create a ProcessCoordinator with the given transport and membership view.
+     * Create a ProcessCoordinator with the given transport.
      *
-     * @param transport      VonTransport for inter-process communication
-     * @param membershipView MembershipView for Fireflies failure detection
+     * @param transport VonTransport for inter-process communication
      */
-    public ProcessCoordinator(VonTransport transport, MembershipView<UUID> membershipView) {
+    public ProcessCoordinator(VonTransport transport) {
         this.transport = transport;
-        this.membershipView = membershipView;
         this.registry = new ProcessRegistry();
         this.bucketScheduler = new WallClockBucketScheduler();
         this.messageValidator = new MessageOrderValidator();
         this.walPersistence = null; // Initialized lazily in start()
-        this.viewMonitor = null; // Initialized in start()
     }
 
     /**
@@ -112,14 +96,12 @@ public class ProcessCoordinator {
     }
 
     /**
-     * Start the coordinator: begin listening with crash recovery and Fireflies monitoring.
+     * Start the coordinator: begin listening with crash recovery.
      * <p>
      * Initiates:
      * - Crash recovery (load and recover incomplete migrations)
-     * - Fireflies view monitoring (automatic failure detection)
      * <p>
      * Phase 4.1.2: Heartbeat monitoring removed (use Fireflies view changes instead)
-     * Phase 4.1.4: FirefliesViewMonitor initialization and view change listener registration
      */
     public void start() throws Exception {
         if (running) {
@@ -136,11 +118,6 @@ public class ProcessCoordinator {
             running = false;
             throw new Exception("WAL initialization failed", e);
         }
-
-        // Initialize Fireflies view monitor (Phase 4.1.4)
-        viewMonitor = new FirefliesViewMonitor(membershipView);
-        viewMonitor.addViewChangeListener(change -> handleViewChange(change));
-        log.info("Fireflies view monitor initialized for process {}", transport.getLocalId());
 
         // Check for crash recovery
         if (isRestart()) {
@@ -413,125 +390,5 @@ public class ProcessCoordinator {
         log.debug("Ghost synchronization triggered on coordinator for process {}",
                 transport.getLocalId());
         // Actual ghost sync would be coordinated here with the bubble registry
-    }
-
-    /**
-     * Handle view change notifications from Fireflies.
-     * <p>
-     * Called when cluster membership changes (members join or leave).
-     * Automatically unregisters processes that left the view.
-     * <p>
-     * Phase 4.1.4: Replaces manual heartbeat monitoring with Fireflies view changes.
-     *
-     * @param change ViewChange with joined and left members
-     */
-    private void handleViewChange(MembershipView.ViewChange<?> change) {
-        var joined = change.joined();
-        var left = change.left();
-
-        log.info("View change detected: {} joined, {} left", joined.size(), left.size());
-
-        // Unregister processes that left the view (failure detection)
-        for (var member : left) {
-            if (member instanceof UUID processId) {
-                try {
-                    unregisterProcess(processId);
-                    log.info("Unregistered process {} (left view)", processId);
-                } catch (Exception e) {
-                    log.error("Failed to unregister process {}: {}", processId, e.getMessage(), e);
-                }
-            }
-        }
-
-        // Log joined processes (actual registration happens via registerProcess() calls)
-        for (var member : joined) {
-            if (member instanceof UUID processId) {
-                log.debug("Process {} joined view", processId);
-            }
-        }
-    }
-
-    /**
-     * Check if this process is the current coordinator.
-     * <p>
-     * Uses ring ordering for deterministic coordinator selection:
-     * the first UUID from the sorted view members becomes coordinator.
-     * <p>
-     * This leverages Fireflies' high-quality hashing with view and member ID mixin
-     * for random distribution of coordinator role.
-     * <p>
-     * Phase 4.1.4: Ring ordering replaces CoordinatorElectionProtocol.
-     *
-     * @return true if this process is the coordinator
-     */
-    public boolean isCoordinator() {
-        if (viewMonitor == null) {
-            log.warn("View monitor not initialized, cannot determine coordinator");
-            return false;
-        }
-
-        var members = viewMonitor.getCurrentMembers();
-        if (members.isEmpty()) {
-            log.warn("No members in view, cannot determine coordinator");
-            return false;
-        }
-
-        // Ring ordering: first UUID from sorted view
-        var coordinator = members.stream()
-                                 .filter(m -> m instanceof UUID)
-                                 .map(m -> (UUID) m)
-                                 .sorted(Comparator.comparing(UUID::toString))
-                                 .findFirst()
-                                 .orElse(null);
-
-        var localId = transport.getLocalId();
-        var isCoordinator = localId.equals(coordinator);
-
-        log.debug("Coordinator check: local={}, coordinator={}, isCoordinator={}",
-                 localId, coordinator, isCoordinator);
-
-        return isCoordinator;
-    }
-
-    /**
-     * Get the current coordinator process ID.
-     * <p>
-     * Uses ring ordering: first UUID from sorted view members.
-     * <p>
-     * Phase 4.1.4: Deterministic coordinator selection via ring ordering.
-     *
-     * @return UUID of current coordinator, or null if view is empty
-     */
-    public UUID getCoordinator() {
-        if (viewMonitor == null) {
-            log.warn("View monitor not initialized, cannot determine coordinator");
-            return null;
-        }
-
-        var members = viewMonitor.getCurrentMembers();
-        if (members.isEmpty()) {
-            log.warn("No members in view, cannot determine coordinator");
-            return null;
-        }
-
-        return members.stream()
-                      .filter(m -> m instanceof UUID)
-                      .map(m -> (UUID) m)
-                      .sorted(Comparator.comparing(UUID::toString))
-                      .findFirst()
-                      .orElse(null);
-    }
-
-    /**
-     * Get the Fireflies view monitor.
-     * <p>
-     * Provides access to view monitoring for testing and diagnostics.
-     * <p>
-     * Phase 4.1.4: FirefliesViewMonitor accessor.
-     *
-     * @return FirefliesViewMonitor instance (may be null if not started)
-     */
-    public FirefliesViewMonitor getViewMonitor() {
-        return viewMonitor;
     }
 }
