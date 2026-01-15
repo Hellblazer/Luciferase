@@ -278,24 +278,29 @@ class VolumeAnimatorGhostTest {
     }
 
     /**
-     * Test 6: No performance regression with 100 ghosts (< 5% overhead).
+     * Test 6: No performance regression with 100 ghosts (< 100% overhead).
      * Disabled in CI: Timing-dependent test that varies with CI runner performance.
      * Run locally with: mvn test -Dtest=VolumeAnimatorGhostTest#testNoPerformanceRegression
+     * <p>
+     * This test measures the overhead of processing 100 ghost entities compared to
+     * processing 0 ghost entities. Both baseline and with-ghosts loops call the same
+     * operations (animator.tick + bubble.tickGhosts) to ensure fair comparison.
      */
     @Test
     @DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Flaky performance test: Ghost animation overhead varies with CI runner performance")
     void testNoPerformanceRegression() {
-        // Baseline: 100 owned entities
+        // Baseline: 100 owned entities, 0 ghosts
         for (int i = 0; i < 100; i++) {
             var entityId = "owned-" + i;
             var position = new Point3f(0.1f + i * 0.005f, 0.1f, 0.1f);
             bubble.addEntity(entityId, position, "content");
         }
 
-        // Measure baseline tick time
+        // Measure baseline tick time (includes tickGhosts with 0 ghosts for fair comparison)
         long baselineStart = System.nanoTime();
         for (int i = 0; i < 1000; i++) {
             animator.tick();
+            bubble.tickGhosts(controller.getSimulationTime() + i * 10L);
         }
         long baselineDuration = System.nanoTime() - baselineStart;
 
@@ -316,7 +321,7 @@ class VolumeAnimatorGhostTest {
             bubble.getGhostStateManager().updateGhost(remoteBubbleId, event);
         }
 
-        // Measure with ghosts
+        // Measure with 100 ghosts (same operations as baseline, different ghost count)
         long withGhostsStart = System.nanoTime();
         for (int i = 0; i < 1000; i++) {
             animator.tick();
@@ -324,14 +329,14 @@ class VolumeAnimatorGhostTest {
         }
         long withGhostsDuration = System.nanoTime() - withGhostsStart;
 
-        // Calculate overhead
+        // Calculate overhead of processing 100 ghosts vs 0 ghosts
         double overhead = ((double) withGhostsDuration - baselineDuration) / Math.max(1L, baselineDuration);
 
-        // Phase 7B.4: Accept up to 100% overhead for initial implementation
+        // Phase 7B.4: Accept up to 100% overhead for processing 100 ghost entities
         // This will be optimized in future phases (7B.5+) with caching and batching
         assertTrue(overhead < 1.0,
             "Ghost animation overhead should be < 100%, was: " + (overhead * 100) + "% " +
-            "(baseline: " + (baselineDuration / 1_000_000.0) + "ms, with ghosts: " + (withGhostsDuration / 1_000_000.0) + "ms)");
+            "(baseline 0 ghosts: " + (baselineDuration / 1_000_000.0) + "ms, with 100 ghosts: " + (withGhostsDuration / 1_000_000.0) + "ms)");
     }
 
     /**

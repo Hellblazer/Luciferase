@@ -91,44 +91,33 @@ public class SimulationQueryService {
 
     /**
      * Get all entities in the simulation (both real and ghosts).
+     * <p>
+     * This method iterates over all bubbles using their TetreeKeys directly,
+     * ensuring all entities are included regardless of entity-to-bubble mapping state.
      *
      * @return List of entity snapshots
      */
     public List<EntitySnapshot> getAllEntities() {
         var snapshots = new ArrayList<EntitySnapshot>();
 
-        // Add real entities from bubbles
-        for (var bubble : bubbleGrid.getAllBubbles()) {
+        // Iterate over bubbles with their keys to ensure all entities are included
+        for (var entry : bubbleGrid.getBubblesWithKeys().entrySet()) {
+            var bubbleKey = entry.getKey();
+            var bubble = entry.getValue();
             var records = bubble.getAllEntityRecords();
-            TetreeKey<?> fallbackKey = null;
 
+            // Add all real entities from this bubble
             for (var record : records) {
-                var key = populationManager.getDistribution().getEntityToBubbleMapping().get(record.id());
-                if (key == null) {
-                    // Entity not in mapping - use fallback key if available
-                    if (fallbackKey != null) {
-                        key = fallbackKey;
-                    } else {
-                        // Skip only if no fallback key exists yet
-                        continue;
-                    }
-                }
-                if (fallbackKey == null) {
-                    fallbackKey = key;
-                }
-                snapshots.add(new EntitySnapshot(record.id(), record.position(), key, false));
+                snapshots.add(new EntitySnapshot(record.id(), record.position(), bubbleKey, false));
             }
 
             // Add ghost entities for this bubble
             var ghosts = ghostSyncAdapter.getGhostsForBubble(bubble.id());
             for (var ghost : ghosts) {
-                // Determine key for ghost (use fallback or root key)
-                var ghostKey = fallbackKey != null ? fallbackKey :
-                              TetreeKey.create((byte) 0, 0L, 0L);
                 snapshots.add(new EntitySnapshot(
                     ghost.entityId().toString(),
                     ghost.position(),
-                    ghostKey,
+                    bubbleKey,
                     true  // isGhost = true
                 ));
             }

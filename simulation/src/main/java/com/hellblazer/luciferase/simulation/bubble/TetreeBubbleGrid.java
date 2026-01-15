@@ -316,6 +316,18 @@ public class TetreeBubbleGrid {
     }
 
     /**
+     * Get all bubbles with their TetreeKeys.
+     * <p>
+     * Returns an unmodifiable view of the key-to-bubble mapping for iteration.
+     * This is useful for queries that need both the bubble and its spatial key.
+     *
+     * @return Unmodifiable map of TetreeKey to EnhancedBubble
+     */
+    public Map<TetreeKey<?>, EnhancedBubble> getBubblesWithKeys() {
+        return Collections.unmodifiableMap(bubblesByKey);
+    }
+
+    /**
      * Get the number of bubbles in the grid.
      *
      * @return Bubble count
