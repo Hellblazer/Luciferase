@@ -121,7 +121,8 @@ public class ProcessCoordinator {
                 } catch (Exception e) {
                     log.error("Failed to broadcast topology update: {}", e.getMessage(), e);
                 }
-            }
+            },
+            () -> clock.currentTimeMillis()
         );
         Kairos.setController(controller);
 
@@ -614,13 +615,22 @@ public class ProcessCoordinator {
          */
         private static final long POLL_INTERVAL_NS = 10_000_000;
 
+        /**
+         * Minimum time between topology broadcasts in milliseconds (1 second).
+         * Rate-limiting prevents broadcast storms during cluster churn.
+         * Phase 4.2.3: Rate-limiting for topology broadcasts.
+         */
+        private static final long BROADCAST_COOLDOWN_MS = 1000;
+
         // References to outer coordinator components (passed via suppliers)
         private final Supplier<Boolean> runningSupplier;
         private final Supplier<List<UUID>> topologySupplier;
         private final java.util.function.Consumer<List<UUID>> broadcastCallback;
+        private final Supplier<Long> clockSupplier;
 
         // State for topology change detection
         private List<UUID> lastBroadcastTopology = List.of();
+        private long lastBroadcastTimeMs = 0;
         private long tickCount = 0;
 
         /**
@@ -629,15 +639,18 @@ public class ProcessCoordinator {
          * @param runningSupplier    Supplier for running state
          * @param topologySupplier   Supplier for current topology (all bubbles)
          * @param broadcastCallback  Callback to broadcast topology update
+         * @param clockSupplier      Supplier for current time in milliseconds
          */
         public ProcessCoordinatorEntity(
             Supplier<Boolean> runningSupplier,
             Supplier<List<UUID>> topologySupplier,
-            java.util.function.Consumer<List<UUID>> broadcastCallback
+            java.util.function.Consumer<List<UUID>> broadcastCallback,
+            Supplier<Long> clockSupplier
         ) {
             this.runningSupplier = runningSupplier;
             this.topologySupplier = topologySupplier;
             this.broadcastCallback = broadcastCallback;
+            this.clockSupplier = clockSupplier;
         }
 
         @NonEvent
@@ -657,10 +670,11 @@ public class ProcessCoordinator {
          * <p>
          * Current responsibilities:
          * - Detect topology changes (registry modifications)
-         * - Broadcast updates when topology changes
+         * - Broadcast updates when topology changes (rate-limited to 1/second)
          * - Future: Process pending coordination tasks
          * <p>
          * Phase 4.2.1: Initial implementation with topology monitoring.
+         * Phase 4.2.3: Added rate-limiting to prevent broadcast storms.
          */
         public void coordinationTick() {
             tickCount++;
@@ -677,14 +691,26 @@ public class ProcessCoordinator {
             if (topologyChanged(currentTopology)) {
                 log.debug("Topology changed: {} bubbles (tick {})", currentTopology.size(), tickCount);
 
-                // Step 3: Broadcast topology update
-                broadcastCallback.accept(currentTopology);
+                // Step 3: Check rate-limiting before broadcasting
+                var currentTime = clockSupplier.get();
+                var timeSinceLastBroadcast = currentTime - lastBroadcastTimeMs;
 
-                // Update last broadcast
-                lastBroadcastTopology = List.copyOf(currentTopology);
+                if (timeSinceLastBroadcast >= BROADCAST_COOLDOWN_MS) {
+                    // Broadcast topology update
+                    broadcastCallback.accept(currentTopology);
 
-                log.info("Broadcasted topology update: {} bubbles (tick {})",
-                        currentTopology.size(), tickCount);
+                    // Update last broadcast time and topology
+                    lastBroadcastTimeMs = currentTime;
+                    lastBroadcastTopology = List.copyOf(currentTopology);
+
+                    log.info("Broadcasted topology update: {} bubbles (tick {})",
+                            currentTopology.size(), tickCount);
+                } else {
+                    // Skip broadcast due to rate-limiting
+                    var cooldownRemaining = BROADCAST_COOLDOWN_MS - timeSinceLastBroadcast;
+                    log.debug("Skipping topology broadcast due to rate-limiting: {}ms remaining (tick {})",
+                             cooldownRemaining, tickCount);
+                }
             }
 
             // Step 4: Process pending coordination tasks
