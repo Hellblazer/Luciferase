@@ -197,6 +197,22 @@ public class IdempotencyStore {
     }
 
     /**
+     * Remove a migration by migration key (for retry after failure).
+     *
+     * @param token Idempotency token containing migration key
+     * @return true if migration was removed, false if not found
+     */
+    public boolean removeMigration(IdempotencyToken token) {
+        var migrationKey = token.migrationKey();
+        var removed = tokens.remove(migrationKey);
+        if (removed != null) {
+            log.debug("Removed migration key: {}", migrationKey);
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Remove a token by UUID (for rollback scenarios).
      *
      * @param tokenId Token UUID to remove

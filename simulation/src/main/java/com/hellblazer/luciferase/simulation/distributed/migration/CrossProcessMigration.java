@@ -147,7 +147,8 @@ public class CrossProcessMigration {
             metrics::recordSuccess,
             metrics::recordAlreadyMigrating,
             metrics::recordRollbackFailure,
-            metrics::recordAbort
+            metrics::recordAbort,
+            dedup
         );
 
         // Set controller context and start entity
@@ -220,6 +221,7 @@ public class CrossProcessMigration {
         private       EntitySnapshot                      snapshot;
         private       IdempotencyToken                    token;
         private       UUID                                txnId;
+        private       String                              abortReason; // Track why we're aborting
 
         // Dependencies (via suppliers/callbacks)
         private final LongSupplier                        clockSupplier;
@@ -232,6 +234,7 @@ public class CrossProcessMigration {
         private final Runnable                            recordAlreadyMigrating;
         private final Runnable                            recordRollbackFailure;
         private final java.util.function.Consumer<String> recordAbort;
+        private final IdempotencyStore                    dedup;
 
         public CrossProcessMigrationEntity(
             String entityId,
@@ -248,7 +251,8 @@ public class CrossProcessMigration {
             java.util.function.Consumer<Long> recordSuccess,
             Runnable recordAlreadyMigrating,
             Runnable recordRollbackFailure,
-            java.util.function.Consumer<String> recordAbort
+            java.util.function.Consumer<String> recordAbort,
+            IdempotencyStore dedup
         ) {
             this.entityId = entityId;
             this.source = source;
@@ -265,6 +269,7 @@ public class CrossProcessMigration {
             this.recordAlreadyMigrating = recordAlreadyMigrating;
             this.recordRollbackFailure = recordRollbackFailure;
             this.recordAbort = recordAbort;
+            this.dedup = dedup;
         }
 
         /**
@@ -407,6 +412,7 @@ public class CrossProcessMigration {
                             entityId, commitElapsed, PHASE_TIMEOUT_MS);
                     recordFailure.accept("COMMIT_TIMEOUT");
                     // COMMIT failed, need to ABORT
+                    abortReason = "COMMIT_TIMEOUT";
                     currentState = State.ABORT;
                     phaseStartTime = clockSupplier.getAsLong();
                     abort();
@@ -417,6 +423,7 @@ public class CrossProcessMigration {
                     log.warn("Failed to add entity {} to destination", entityId);
                     recordFailure.accept("COMMIT_FAILED");
                     // COMMIT failed, need to ABORT
+                    abortReason = "COMMIT_FAILED";
                     currentState = State.ABORT;
                     phaseStartTime = clockSupplier.getAsLong();
                     abort();
@@ -435,6 +442,7 @@ public class CrossProcessMigration {
                 log.warn("COMMIT failed for entity {}: {}", entityId, e.getMessage());
                 recordFailure.accept("COMMIT_FAILED");
                 // COMMIT failed, need to ABORT
+                abortReason = "COMMIT_FAILED";
                 currentState = State.ABORT;
                 phaseStartTime = clockSupplier.getAsLong();
                 abort();
@@ -476,8 +484,9 @@ public class CrossProcessMigration {
                 log.debug("ABORT: Restored entity {} to source {} with epoch {}", entityId, source.getBubbleId(),
                           snapshot.epoch());
 
-                recordAbort.accept("COMMIT_FAILED");
-                failAndUnlock("ROLLBACK_COMPLETE");
+                recordAbort.accept(abortReason != null ? abortReason : "COMMIT_FAILED");
+                // Return the original failure reason, not "ROLLBACK_COMPLETE"
+                failAndUnlock(abortReason != null ? abortReason : "ROLLBACK_COMPLETE");
 
             } catch (Exception e) {
                 // C3: Log and metric rollback failures (critical error)
@@ -504,11 +513,16 @@ public class CrossProcessMigration {
 
         /**
          * Complete migration with failure and unlock.
+         * Removes migration key from dedup store to allow retries after failures.
          */
         private void failAndUnlock(String reason) {
             try {
                 migrationLock.unlock();
                 decrementConcurrent.run();
+                // Remove migration key to allow retry after failure
+                if (token != null) {
+                    dedup.removeMigration(token);
+                }
                 resultFuture.complete(MigrationResult.failure(entityId, reason));
             } catch (Exception e) {
                 log.error("Error completing migration failure for entity {}: {}", entityId, e.getMessage(), e);
