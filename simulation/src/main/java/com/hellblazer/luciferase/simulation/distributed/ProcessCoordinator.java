@@ -38,26 +38,25 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * Responsibilities:
  * - Process registration and lifecycle management
- * - Heartbeat monitoring for failure detection
- * - Coordinator election protocol integration
+ * - Heartbeat monitoring for failure detection (DEPRECATED - use Fireflies)
  * - Topology update broadcasting
  * <p>
  * Lifecycle:
  * 1. Create ProcessCoordinator(transport)
- * 2. start() to begin listening and election
+ * 2. start() to begin listening
  * 3. Processes register via registerProcess(id, bubbles)
- * 4. Heartbeat monitoring detects failures
+ * 4. Heartbeat monitoring detects failures (DEPRECATED - use Fireflies view changes)
  * 5. stop() to shut down gracefully
  * <p>
  * Bucket Synchronization:
  * - BUCKET_DURATION_MS: 100ms per simulation tick
  * - TOLERANCE_MS: 50ms clock skew tolerance
  * <p>
- * Heartbeat Protocol:
+ * Heartbeat Protocol (DEPRECATED - use Fireflies):
  * - Interval: 1000ms (every second)
  * - Timeout: 3000ms (3 missed heartbeats)
  * <p>
- * Architecture Decision D6B.5: Coordinator Election
+ * Phase 4.1: CoordinatorElectionProtocol deleted (redundant with Fireflies ring ordering)
  *
  * @author hal.hildebrand
  */
@@ -70,15 +69,12 @@ public class ProcessCoordinator {
 
     private final VonTransport transport;
     private final ProcessRegistry registry;
-    private final CoordinatorElectionProtocol election;
     private final ScheduledExecutorService heartbeatScheduler;
     private final WallClockBucketScheduler bucketScheduler;
     private final MessageOrderValidator messageValidator;
     private MigrationLogPersistence walPersistence;
 
     private volatile boolean running = false;
-    private volatile long lastElectionTime = 0;
-    private static final long MIN_ELECTION_INTERVAL_MS = 500;
     private volatile Clock clock = Clock.system();
 
     /**
@@ -89,7 +85,6 @@ public class ProcessCoordinator {
     public ProcessCoordinator(VonTransport transport) {
         this.transport = transport;
         this.registry = new ProcessRegistry();
-        this.election = new CoordinatorElectionProtocol();
         this.heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "coordinator-heartbeat-monitor");
             t.setDaemon(true);
@@ -186,9 +181,6 @@ public class ProcessCoordinator {
     public void registerProcess(UUID processId, List<UUID> bubbles) throws Exception {
         registry.register(processId, bubbles);
         log.info("Registered process {} with {} bubbles", processId, bubbles.size());
-
-        // Trigger election if needed
-        conductElection();
     }
 
     /**
@@ -199,14 +191,6 @@ public class ProcessCoordinator {
     public void unregisterProcess(UUID processId) throws Exception {
         registry.unregister(processId);
         log.info("Unregistered process {}", processId);
-
-        // Check if coordinator failed (synchronized to prevent duplicate elections)
-        synchronized (election) {
-            if (election.isElected(processId)) {
-                election.coordinatorFailed();
-                conductElection();
-            }
-        }
     }
 
     /**
@@ -235,44 +219,6 @@ public class ProcessCoordinator {
     public void broadcastTopologyUpdate(List<UUID> topology) throws Exception {
         log.debug("Broadcasting topology update: {} bubbles", topology.size());
         // Phase 6B2: Implement message broadcasting
-    }
-
-    /**
-     * Conduct coordinator election.
-     * <p>
-     * Runs election protocol with all registered processes.
-     * Lowest UUID wins (deterministic).
-     * <p>
-     * Rate-limited to prevent election storms during cascading failures.
-     * Minimum interval between elections: 500ms.
-     */
-    public void conductElection() {
-        var now = clock.currentTimeMillis();
-        if (now - lastElectionTime < MIN_ELECTION_INTERVAL_MS) {
-            log.debug("Skipping election, too soon after last election ({}ms elapsed)",
-                    now - lastElectionTime);
-            return;
-        }
-        lastElectionTime = now;
-
-        var processes = registry.getAllProcesses();
-        if (processes.isEmpty()) {
-            log.debug("No processes registered, skipping election");
-            return;
-        }
-
-        election.startElection(processes);
-        var winner = election.getWinner();
-        log.info("Coordinator elected: {}", winner);
-    }
-
-    /**
-     * Check if this process is the elected coordinator.
-     *
-     * @return true if this process won the election
-     */
-    public boolean isCoordinator() {
-        return election.isElected(transport.getLocalId());
     }
 
     /**
@@ -311,15 +257,6 @@ public class ProcessCoordinator {
      */
     public boolean isRunning() {
         return running;
-    }
-
-    /**
-     * Get the election protocol instance.
-     *
-     * @return CoordinatorElectionProtocol
-     */
-    public CoordinatorElectionProtocol getElection() {
-        return election;
     }
 
     /**
