@@ -36,10 +36,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * Test coverage:
  * - Constructor and initialization
  * - Process registration/unregistration
- * - Heartbeat monitoring
  * - Topology updates
  * - Registry queries
  * - Lifecycle (start/stop)
+ * <p>
+ * Phase 4.1.2: Heartbeat monitoring tests removed (use Fireflies view changes instead)
  *
  * @author hal.hildebrand
  */
@@ -139,41 +140,6 @@ class ProcessCoordinatorTest {
         assertEquals(2, allProcesses.size());
         assertTrue(allProcesses.contains(process1));
         assertTrue(allProcesses.contains(process2));
-    }
-
-    @Test
-    void heartbeatUpdatesTouchesTimestamp() throws Exception {
-        var processId = UUID.randomUUID();
-        coordinator.registerProcess(processId, List.of(UUID.randomUUID()));
-
-        var before = coordinator.getRegistry().getProcess(processId).lastHeartbeat();
-        Thread.sleep(10); // Ensure time difference
-
-        coordinator.processHeartbeatAck(processId);
-
-        var after = coordinator.getRegistry().getProcess(processId).lastHeartbeat();
-        assertTrue(after > before, "Heartbeat timestamp should be updated");
-    }
-
-    @Test
-    void isAliveReturnsTrueForRecentHeartbeat() throws Exception {
-        var processId = UUID.randomUUID();
-        coordinator.registerProcess(processId, List.of(UUID.randomUUID()));
-
-        // Fresh registration should be alive
-        assertTrue(coordinator.getRegistry().isAlive(processId));
-    }
-
-    @Test
-    void isAliveReturnsFalseAfterTimeout() throws Exception {
-        var processId = UUID.randomUUID();
-        coordinator.registerProcess(processId, List.of(UUID.randomUUID()));
-
-        // Wait longer than heartbeat timeout (3000ms)
-        Thread.sleep(3100);
-
-        assertFalse(coordinator.getRegistry().isAlive(processId),
-                    "Process should be considered dead after heartbeat timeout");
     }
 
     @Test

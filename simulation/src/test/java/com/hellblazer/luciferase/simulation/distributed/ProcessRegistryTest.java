@@ -121,40 +121,6 @@ class ProcessRegistryTest {
     }
 
     @Test
-    void updateHeartbeatTouchesTimestamp() throws Exception {
-        var processId = UUID.randomUUID();
-        registry.register(processId, List.of(UUID.randomUUID()));
-
-        var before = registry.getProcess(processId).lastHeartbeat();
-        Thread.sleep(10); // Ensure time difference
-
-        registry.updateHeartbeat(processId);
-
-        var after = registry.getProcess(processId).lastHeartbeat();
-        assertTrue(after > before, "Heartbeat timestamp should increase");
-    }
-
-    @Test
-    void isAliveReturnsTrueForFreshHeartbeat() {
-        var processId = UUID.randomUUID();
-        registry.register(processId, List.of(UUID.randomUUID()));
-
-        assertTrue(registry.isAlive(processId), "Freshly registered process should be alive");
-    }
-
-    @Test
-    void isAliveReturnsFalseAfterTimeout() throws Exception {
-        var processId = UUID.randomUUID();
-        registry.register(processId, List.of(UUID.randomUUID()));
-
-        // Wait longer than HEARTBEAT_TIMEOUT_MS (3000ms)
-        Thread.sleep(3100);
-
-        assertFalse(registry.isAlive(processId),
-                    "Process should be dead after heartbeat timeout");
-    }
-
-    @Test
     void concurrentRegistrationThreadSafety() throws Exception {
         var latch = new CountDownLatch(10);
         ExecutorService executor = Executors.newFixedThreadPool(10);
@@ -178,32 +144,6 @@ class ProcessRegistryTest {
         executor.shutdown();
 
         assertEquals(10, registry.getAllProcesses().size());
-    }
-
-    @Test
-    void concurrentHeartbeatUpdatesThreadSafety() throws Exception {
-        var processId = UUID.randomUUID();
-        registry.register(processId, List.of(UUID.randomUUID()));
-
-        var latch = new CountDownLatch(20);
-        ExecutorService executor = Executors.newFixedThreadPool(10);
-
-        // 20 concurrent heartbeat updates
-        for (int i = 0; i < 20; i++) {
-            executor.submit(() -> {
-                try {
-                    registry.updateHeartbeat(processId);
-                } finally {
-                    latch.countDown();
-                }
-            });
-        }
-
-        assertTrue(latch.await(5, TimeUnit.SECONDS), "All heartbeat updates should complete");
-        executor.shutdown();
-
-        // Process should still be alive after concurrent updates
-        assertTrue(registry.isAlive(processId));
     }
 
     @Test
