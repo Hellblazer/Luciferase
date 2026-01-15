@@ -19,6 +19,10 @@ package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.distributed.BubbleReference;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.primeMover.annotations.Entity;
+import com.hellblazer.primeMover.api.Kronos;
+import com.hellblazer.primeMover.controllers.RealTimeController;
+import com.hellblazer.primeMover.runtime.Kairos;
 import javafx.geometry.Point3D;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +31,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 
 /**
  * Cross-process entity migration orchestrator using 2PC protocol.
@@ -70,13 +76,17 @@ public class CrossProcessMigration {
     private static final long                  PHASE_TIMEOUT_MS      = 100;
     private static final long                  TOTAL_TIMEOUT_MS      = 300;
     private static final long                  LOCK_TIMEOUT_MS       = 50;
+    private static final long                  LOCK_RETRY_INTERVAL_NS = 5_000_000;  // 5ms
+    private static final int                   MAX_LOCK_RETRIES      = 10;  // 50ms total
     private volatile     Clock                 clock                 = Clock.system();
     private final        IdempotencyStore      dedup;
     private final        MigrationMetrics      metrics;
     // C1: Per-entity migration locks to prevent concurrent migrations
     private final        Map<String, ReentrantLock> entityMigrationLocks = new ConcurrentHashMap<>();
     // Active transactions (for cleanup and monitoring)
-    private final        Map<UUID, MigrationTransaction> activeTransactions = new ConcurrentHashMap<>();
+    private final        Map<UUID, com.hellblazer.luciferase.simulation.distributed.migration.MigrationTransaction> activeTransactions = new ConcurrentHashMap<>();
+    // Phase 4.2.2: Prime-Mover controller for event-driven execution
+    private final        RealTimeController    controller;
 
     /**
      * Set the clock source for deterministic testing.
@@ -88,306 +98,75 @@ public class CrossProcessMigration {
     public CrossProcessMigration(IdempotencyStore dedup, MigrationMetrics metrics) {
         this.dedup = dedup;
         this.metrics = metrics;
+        // Phase 4.2.2: Initialize Prime-Mover controller
+        this.controller = new RealTimeController("CrossProcessMigration");
+        this.controller.start();
     }
 
     /**
-     * Migrate an entity from source to destination bubble.
+     * Stop the controller (for cleanup).
+     */
+    public void stop() {
+        if (controller != null) {
+            controller.stop();
+        }
+    }
+
+    /**
+     * Migrate an entity from source to destination bubble (event-driven).
      * <p>
+     * Phase 4.2.2: Uses Prime-Mover @Entity for non-blocking execution.
      * Thread-safe. Uses per-entity locking to prevent concurrent migrations
      * of the same entity (C1).
      *
      * @param entityId Entity identifier
      * @param source   Source bubble reference
      * @param dest     Destination bubble reference
-     * @return CompletableFuture with MigrationResult
+     * @return CompletableFuture with MigrationResult (completed asynchronously)
      */
     public CompletableFuture<MigrationResult> migrate(String entityId, BubbleReference source, BubbleReference dest) {
-        // C1: Acquire migration lock or fail fast
+        // Create future to be completed by entity
+        var future = new CompletableFuture<MigrationResult>();
+
+        // C1: Get or create migration lock for this entity
         var lock = entityMigrationLocks.computeIfAbsent(entityId, k -> new ReentrantLock());
-        try {
-            if (!lock.tryLock(LOCK_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                metrics.recordAlreadyMigrating();
-                log.debug("Entity {} already being migrated, rejecting concurrent attempt", entityId);
-                return CompletableFuture.completedFuture(
-                MigrationResult.failure(entityId, "ALREADY_MIGRATING"));
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return CompletableFuture.completedFuture(MigrationResult.failure(entityId, "INTERRUPTED"));
-        }
 
-        // Execute entire 2PC protocol synchronously inside the lock
-        try {
-            metrics.incrementConcurrent();
-            var startTime = clock.currentTimeMillis();
+        // Create entity instance for this migration
+        var entity = new CrossProcessMigrationEntity(
+            entityId,
+            source,
+            dest,
+            future,
+            lock,
+            clock::currentTimeMillis,
+            metrics::incrementConcurrent,
+            metrics::decrementConcurrent,
+            this::checkAndStoreMigrationWrapper,
+            () -> metrics.recordDuplicateRejection(),
+            metrics::recordFailure,
+            metrics::recordSuccess,
+            metrics::recordAlreadyMigrating,
+            metrics::recordRollbackFailure,
+            metrics::recordAbort
+        );
 
-            // Execute 2PC synchronously - returns immediately completed future
-            var result = executeRemoveThenCommitSync(entityId, source, dest, startTime);
+        // Set controller context and start entity
+        Kairos.setController(controller);
+        entity.startMigration();
 
-            return CompletableFuture.completedFuture(result);
-        } finally {
-            lock.unlock();
-            metrics.decrementConcurrent();
-        }
+        // Return future (will be completed by entity when migration finishes)
+        return future;
     }
 
     /**
-     * Execute remove-then-commit 2PC protocol synchronously.
-     *
-     * @param entityId  Entity identifier
-     * @param source    Source bubble
-     * @param dest      Destination bubble
-     * @param startTime Migration start timestamp
-     * @return MigrationResult
+     * Wrapper for checkAndStoreMigration that throws exception for duplicate detection.
      */
-    private MigrationResult executeRemoveThenCommitSync(String entityId, BubbleReference source,
-                                                         BubbleReference dest, long startTime) {
-        // Generate idempotency token
-        var token = new IdempotencyToken(entityId, source.getBubbleId(), dest.getBubbleId(),
-                                         clock.currentTimeMillis(), UUID.randomUUID());
-
-        // Check for duplicate migration (application-level idempotency)
+    private void checkAndStoreMigrationWrapper(IdempotencyToken token) {
         if (!dedup.checkAndStoreMigration(token)) {
-            metrics.recordDuplicateRejection();
-            log.debug("Duplicate migration for entity {} from {} to {}, rejecting",
-                     entityId, source.getBubbleId(), dest.getBubbleId());
-            return MigrationResult.failure(entityId, "ALREADY_APPLIED");
-        }
-
-        // Create transaction
-        var txnId = UUID.randomUUID();
-        var snapshot = createEntitySnapshot(entityId, source);
-        var txn = new MigrationTransaction(txnId, token, snapshot, source, dest);
-        activeTransactions.put(txnId, txn);
-
-        try {
-            // PHASE 1: PREPARE (remove from source)
-            var prepareResult = doPrepare(txn);
-            if (!prepareResult.success()) {
-                activeTransactions.remove(txnId);
-                return prepareResult;
-            }
-
-            // Advance to COMMIT phase
-            txn = txn.advancePhase(MigrationPhase.COMMIT);
-            activeTransactions.put(txnId, txn);
-
-            // PHASE 2: COMMIT (add to destination)
-            var commitResult = doCommit(txn);
-            if (!commitResult.success()) {
-                // COMMIT failed, need to ABORT (rollback)
-                log.warn("COMMIT failed for entity {}, initiating rollback", entityId);
-                doAbort(txn);
-                activeTransactions.remove(txnId);
-                return commitResult;
-            }
-
-            // Success
-            var latency = clock.currentTimeMillis() - startTime;
-            metrics.recordSuccess(latency);
-            activeTransactions.remove(txnId);
-
-            return MigrationResult.success(entityId, dest.getBubbleId(), latency);
-
-        } catch (Exception e) {
-            log.error("Unexpected error during migration of entity {}", entityId, e);
-            activeTransactions.remove(txnId);
-            metrics.recordFailure("UNEXPECTED_ERROR: " + e.getMessage());
-            return MigrationResult.failure(entityId, "UNEXPECTED_ERROR");
+            throw new IllegalStateException("Duplicate migration");
         }
     }
 
-    /**
-     * PREPARE phase: Remove entity from source.
-     * <p>
-     * Timeout: 100ms
-     *
-     * @param txn Migration transaction
-     * @return MigrationResult indicating success or failure
-     */
-    private MigrationResult doPrepare(MigrationTransaction txn) {
-        try {
-            var source = txn.sourceRef();
-            var dest = txn.destRef();
-            var entityId = txn.entitySnapshot().entityId();
-
-            // Validate destination is reachable
-            if (dest == null || dest.getBubbleId() == null) {
-                log.warn("Destination null for entity {}", entityId);
-                metrics.recordFailure("DESTINATION_NULL");
-                return MigrationResult.failure(entityId, "UNREACHABLE");
-            }
-
-            // Check if destination is reachable (for testing)
-            if (dest instanceof com.hellblazer.luciferase.simulation.distributed.migration.TestableEntityStore testDest) {
-                if (!testDest.isReachable()) {
-                    log.warn("Destination unreachable for entity {}", entityId);
-                    metrics.recordFailure("DESTINATION_UNREACHABLE");
-                    return MigrationResult.failure(entityId, "UNREACHABLE");
-                }
-            }
-
-            // Remove entity from source with timeout check
-            var prepareStartTime = clock.currentTimeMillis();
-            boolean removed;
-            if (source instanceof com.hellblazer.luciferase.simulation.distributed.migration.TestableEntityStore testSource) {
-                removed = testSource.removeEntity(entityId);  // Delay is handled internally
-            } else {
-                // Production code would call source.asLocal().removeEntity(entityId)
-                removed = true;
-            }
-            var prepareElapsed = clock.currentTimeMillis() - prepareStartTime;
-
-            // Check per-phase timeout (not cumulative)
-            // Each phase (PREPARE, COMMIT) has independent 100ms timeout
-            if (prepareElapsed > PHASE_TIMEOUT_MS) {
-                log.warn("PREPARE phase timed out for entity {} ({}ms > {}ms)",
-                        entityId, prepareElapsed, PHASE_TIMEOUT_MS);
-                metrics.recordFailure("PREPARE_TIMEOUT");
-                return MigrationResult.failure(entityId, "TIMEOUT");
-            }
-
-            if (!removed) {
-                log.warn("Failed to remove entity {} from source", entityId);
-                metrics.recordFailure("PREPARE_FAILED");
-                return MigrationResult.failure(entityId, "PREPARE_FAILED");
-            }
-
-            log.debug("PREPARE: Removed entity {} from source {}", entityId, source.getBubbleId());
-            return MigrationResult.success(entityId, dest.getBubbleId(), 0);
-
-        } catch (Exception e) {
-            log.warn("PREPARE failed for entity {}: {}", txn.entitySnapshot().entityId(), e.getMessage());
-            metrics.recordFailure("PREPARE_FAILED");
-            return MigrationResult.failure(txn.entitySnapshot().entityId(), "PREPARE_FAILED");
-        }
-    }
-
-    /**
-     * COMMIT phase: Add entity to destination.
-     * <p>
-     * Timeout: 100ms
-     *
-     * @param txn Migration transaction
-     * @return MigrationResult indicating success or failure
-     */
-    private MigrationResult doCommit(MigrationTransaction txn) {
-        try {
-            var dest = txn.destRef();
-            var snapshot = txn.entitySnapshot();
-            var entityId = snapshot.entityId();
-
-            // Add entity to destination with timeout check
-            var commitStartTime = clock.currentTimeMillis();
-            boolean added;
-            if (dest instanceof com.hellblazer.luciferase.simulation.distributed.migration.TestableEntityStore testDest) {
-                added = testDest.addEntity(snapshot);  // Delay is handled internally
-            } else {
-                // Production code would call dest.asLocal().addEntity(snapshot)
-                added = true;
-            }
-            var commitElapsed = clock.currentTimeMillis() - commitStartTime;
-
-            // Check per-phase timeout (not cumulative)
-            // Each phase (PREPARE, COMMIT) has independent 100ms timeout
-            if (commitElapsed > PHASE_TIMEOUT_MS) {
-                log.warn("COMMIT phase timed out for entity {} ({}ms > {}ms)",
-                        entityId, commitElapsed, PHASE_TIMEOUT_MS);
-                metrics.recordFailure("COMMIT_TIMEOUT");
-                return MigrationResult.failure(entityId, "TIMEOUT");
-            }
-
-            if (!added) {
-                log.warn("Failed to add entity {} to destination", entityId);
-                metrics.recordFailure("COMMIT_FAILED");
-                return MigrationResult.failure(entityId, "COMMIT_FAILED");
-            }
-
-            log.debug("COMMIT: Added entity {} to destination {} with epoch {}", entityId, dest.getBubbleId(),
-                      snapshot.epoch() + 1);
-
-            // Persist idempotency token
-            dedup.checkAndStore(txn.idempotencyToken());
-
-            return MigrationResult.success(entityId, dest.getBubbleId(), 0);
-
-        } catch (Exception e) {
-            log.warn("COMMIT failed for entity {}: {}", txn.entitySnapshot().entityId(), e.getMessage());
-            metrics.recordFailure("COMMIT_FAILED");
-            return MigrationResult.failure(txn.entitySnapshot().entityId(), "COMMIT_FAILED");
-        }
-    }
-
-    /**
-     * ABORT phase: Rollback (restore entity to source).
-     * <p>
-     * Timeout: 100ms
-     * <p>
-     * C3: Logs rollback failures and updates metrics.
-     *
-     * @param txn Migration transaction
-     */
-    private void doAbort(MigrationTransaction txn) {
-        try {
-            var source = txn.sourceRef();
-            var snapshot = txn.entitySnapshot();
-            var entityId = snapshot.entityId();
-
-            log.info("ABORT: Rolling back entity {} to source {}", entityId, source.getBubbleId());
-
-            // Check timeout before attempting rollback
-            if (txn.isTimedOut(TOTAL_TIMEOUT_MS)) {
-                log.error("ABORT timed out for entity {} - CRITICAL: Entity may be lost", entityId);
-                metrics.recordRollbackFailure();
-                metrics.recordAbort("TIMEOUT");
-                return;
-            }
-
-            // Re-add entity to source from snapshot
-            boolean restored;
-            if (source instanceof com.hellblazer.luciferase.simulation.distributed.migration.TestableEntityStore testSource) {
-                restored = testSource.addEntity(snapshot);
-            } else {
-                // Production code would call source.asLocal().addEntity(snapshot)
-                restored = true;
-            }
-
-            if (!restored) {
-                // C3: Log and metric rollback failures (critical error)
-                log.error("ABORT/Rollback FAILED for entity {} - CRITICAL: Manual intervention required", entityId);
-                metrics.recordRollbackFailure();
-            }
-
-            log.debug("ABORT: Restored entity {} to source {} with epoch {}", entityId, source.getBubbleId(),
-                      snapshot.epoch());
-
-            // Remove migration key to allow retry
-            dedup.remove(txn.idempotencyToken().migrationKey());
-
-            metrics.recordAbort("COMMIT_FAILED");
-
-        } catch (Exception e) {
-            // C3: Log and metric rollback failures (critical error)
-            log.error("ABORT/Rollback FAILED for entity {} - CRITICAL: Manual intervention required: {}",
-                      txn.entitySnapshot().entityId(), e.getMessage(), e);
-            metrics.recordRollbackFailure();
-            metrics.recordAbort("ROLLBACK_FAILED");
-        }
-    }
-
-    /**
-     * Create entity snapshot for rollback.
-     *
-     * @param entityId Entity identifier
-     * @param source   Source bubble
-     * @return EntitySnapshot
-     */
-    private EntitySnapshot createEntitySnapshot(String entityId, BubbleReference source) {
-        // In actual implementation, would query source bubble for entity state
-        // For now, create synthetic snapshot
-        return new EntitySnapshot(entityId, new Point3D(0, 0, 0), "MockContent", source.getBubbleId(), 1L, 1L,
-                                  clock.currentTimeMillis());
-    }
 
     /**
      * Get active transaction count (for monitoring).
@@ -405,5 +184,345 @@ public class CrossProcessMigration {
      */
     public MigrationMetrics getMetrics() {
         return metrics;
+    }
+
+    /**
+     * Phase 4.2.2: Prime-Mover @Entity for event-driven migration execution.
+     * <p>
+     * Each migration creates a new entity instance that manages the 2PC state machine:
+     * ACQUIRING_LOCK → PREPARE → COMMIT → SUCCESS
+     *                           ↓ (on failure)
+     *                         ABORT → ROLLBACK_COMPLETE
+     * <p>
+     * Uses Kronos.sleep() for non-blocking retries and timeouts.
+     * Completes the provided CompletableFuture when migration finishes (success or failure).
+     *
+     * @author hal.hildebrand
+     */
+    @Entity
+    public static class CrossProcessMigrationEntity {
+
+        private enum State {
+            ACQUIRING_LOCK, PREPARE, COMMIT, ABORT
+        }
+
+        // Migration parameters
+        private final String                              entityId;
+        private final BubbleReference                     source;
+        private final BubbleReference                     dest;
+        private final CompletableFuture<MigrationResult>  resultFuture;
+        private final ReentrantLock                       migrationLock;
+
+        // State tracking
+        private       State                               currentState;
+        private       long                                phaseStartTime;
+        private       int                                 lockRetries = 0;
+        private       EntitySnapshot                      snapshot;
+        private       IdempotencyToken                    token;
+        private       UUID                                txnId;
+
+        // Dependencies (via suppliers/callbacks)
+        private final LongSupplier                        clockSupplier;
+        private final Runnable                            incrementConcurrent;
+        private final Runnable                            decrementConcurrent;
+        private final java.util.function.Consumer<com.hellblazer.luciferase.simulation.distributed.migration.IdempotencyToken> checkAndStoreMigration;
+        private final Runnable                            recordDuplicateRejection;
+        private final java.util.function.Consumer<String> recordFailure;
+        private final java.util.function.Consumer<Long>   recordSuccess;
+        private final Runnable                            recordAlreadyMigrating;
+        private final Runnable                            recordRollbackFailure;
+        private final java.util.function.Consumer<String> recordAbort;
+
+        public CrossProcessMigrationEntity(
+            String entityId,
+            BubbleReference source,
+            BubbleReference dest,
+            CompletableFuture<MigrationResult> resultFuture,
+            ReentrantLock migrationLock,
+            LongSupplier clockSupplier,
+            Runnable incrementConcurrent,
+            Runnable decrementConcurrent,
+            java.util.function.Consumer<com.hellblazer.luciferase.simulation.distributed.migration.IdempotencyToken> checkAndStoreMigration,
+            Runnable recordDuplicateRejection,
+            java.util.function.Consumer<String> recordFailure,
+            java.util.function.Consumer<Long> recordSuccess,
+            Runnable recordAlreadyMigrating,
+            Runnable recordRollbackFailure,
+            java.util.function.Consumer<String> recordAbort
+        ) {
+            this.entityId = entityId;
+            this.source = source;
+            this.dest = dest;
+            this.resultFuture = resultFuture;
+            this.migrationLock = migrationLock;
+            this.clockSupplier = clockSupplier;
+            this.incrementConcurrent = incrementConcurrent;
+            this.decrementConcurrent = decrementConcurrent;
+            this.checkAndStoreMigration = checkAndStoreMigration;
+            this.recordDuplicateRejection = recordDuplicateRejection;
+            this.recordFailure = recordFailure;
+            this.recordSuccess = recordSuccess;
+            this.recordAlreadyMigrating = recordAlreadyMigrating;
+            this.recordRollbackFailure = recordRollbackFailure;
+            this.recordAbort = recordAbort;
+        }
+
+        /**
+         * Start the migration state machine.
+         */
+        public void startMigration() {
+            currentState = State.ACQUIRING_LOCK;
+            acquireLock();
+        }
+
+        /**
+         * ACQUIRING_LOCK state: Non-blocking lock acquisition with retries.
+         */
+        private void acquireLock() {
+            if (migrationLock.tryLock()) {
+                // Lock acquired, proceed to PREPARE
+                incrementConcurrent.run();
+                currentState = State.PREPARE;
+                phaseStartTime = clockSupplier.getAsLong();
+
+                // Generate idempotency token
+                token = new IdempotencyToken(entityId, source.getBubbleId(), dest.getBubbleId(),
+                                            clockSupplier.getAsLong(), UUID.randomUUID());
+
+                // Check for duplicate migration
+                try {
+                    checkAndStoreMigration.accept(token);
+                    // If we get here, it's not a duplicate - proceed
+                    prepare();
+                } catch (IllegalStateException e) {
+                    // Duplicate migration
+                    recordDuplicateRejection.run();
+                    log.debug("Duplicate migration for entity {} from {} to {}, rejecting",
+                             entityId, source.getBubbleId(), dest.getBubbleId());
+                    failAndUnlock("ALREADY_APPLIED");
+                }
+            } else {
+                // Lock held by another migration
+                lockRetries++;
+                if (lockRetries > MAX_LOCK_RETRIES) {
+                    recordAlreadyMigrating.run();
+                    log.debug("Entity {} already being migrated, rejecting concurrent attempt", entityId);
+                    resultFuture.complete(MigrationResult.failure(entityId, "ALREADY_MIGRATING"));
+                } else {
+                    // Retry after delay
+                    Kronos.sleep(LOCK_RETRY_INTERVAL_NS);
+                    this.acquireLock();
+                }
+            }
+        }
+
+        /**
+         * PREPARE state: Remove entity from source.
+         */
+        private void prepare() {
+            try {
+                // Validate destination
+                if (dest == null || dest.getBubbleId() == null) {
+                    log.warn("Destination null for entity {}", entityId);
+                    recordFailure.accept("DESTINATION_NULL");
+                    failAndUnlock("UNREACHABLE");
+                    return;
+                }
+
+                // Check if destination is reachable (for testing)
+                if (dest instanceof TestableEntityStore testDest) {
+                    if (!testDest.isReachable()) {
+                        log.warn("Destination unreachable for entity {}", entityId);
+                        recordFailure.accept("DESTINATION_UNREACHABLE");
+                        failAndUnlock("UNREACHABLE");
+                        return;
+                    }
+                }
+
+                // Create snapshot and transaction ID
+                snapshot = createEntitySnapshot(entityId, source, clockSupplier.getAsLong());
+                txnId = UUID.randomUUID();
+                // Note: Transaction tracking removed to avoid Prime-Mover class resolution issues
+
+                // Remove entity from source
+                var prepareStart = clockSupplier.getAsLong();
+                boolean removed;
+                if (source instanceof TestableEntityStore testSource) {
+                    removed = testSource.removeEntity(entityId);
+                } else {
+                    // Production code would call source.asLocal().removeEntity(entityId)
+                    removed = true;
+                }
+                var prepareElapsed = clockSupplier.getAsLong() - prepareStart;
+
+                // Check per-phase timeout
+                if (prepareElapsed > PHASE_TIMEOUT_MS) {
+                    log.warn("PREPARE phase timed out for entity {} ({}ms > {}ms)",
+                            entityId, prepareElapsed, PHASE_TIMEOUT_MS);
+                    recordFailure.accept("PREPARE_TIMEOUT");
+                    failAndUnlock("TIMEOUT");
+                    return;
+                }
+
+                if (!removed) {
+                    log.warn("Failed to remove entity {} from source", entityId);
+                    recordFailure.accept("PREPARE_FAILED");
+                    failAndUnlock("PREPARE_FAILED");
+                    return;
+                }
+
+                log.debug("PREPARE: Removed entity {} from source {}", entityId, source.getBubbleId());
+
+                // Advance to COMMIT
+                currentState = State.COMMIT;
+                phaseStartTime = clockSupplier.getAsLong();
+                commit();
+
+            } catch (Exception e) {
+                log.warn("PREPARE failed for entity {}: {}", entityId, e.getMessage());
+                recordFailure.accept("PREPARE_FAILED");
+                failAndUnlock("PREPARE_FAILED");
+            }
+        }
+
+        /**
+         * COMMIT state: Add entity to destination.
+         */
+        private void commit() {
+            try {
+                // Add entity to destination
+                var commitStart = clockSupplier.getAsLong();
+                boolean added;
+                if (dest instanceof TestableEntityStore testDest) {
+                    added = testDest.addEntity(snapshot);
+                } else {
+                    // Production code would call dest.asLocal().addEntity(snapshot)
+                    added = true;
+                }
+                var commitElapsed = clockSupplier.getAsLong() - commitStart;
+
+                // Check per-phase timeout
+                if (commitElapsed > PHASE_TIMEOUT_MS) {
+                    log.warn("COMMIT phase timed out for entity {} ({}ms > {}ms)",
+                            entityId, commitElapsed, PHASE_TIMEOUT_MS);
+                    recordFailure.accept("COMMIT_TIMEOUT");
+                    // COMMIT failed, need to ABORT
+                    currentState = State.ABORT;
+                    phaseStartTime = clockSupplier.getAsLong();
+                    abort();
+                    return;
+                }
+
+                if (!added) {
+                    log.warn("Failed to add entity {} to destination", entityId);
+                    recordFailure.accept("COMMIT_FAILED");
+                    // COMMIT failed, need to ABORT
+                    currentState = State.ABORT;
+                    phaseStartTime = clockSupplier.getAsLong();
+                    abort();
+                    return;
+                }
+
+                log.debug("COMMIT: Added entity {} to destination {} with epoch {}", entityId, dest.getBubbleId(),
+                          snapshot.epoch() + 1);
+
+                // Success!
+                var totalLatency = clockSupplier.getAsLong() - phaseStartTime;
+                recordSuccess.accept(totalLatency);
+                succeedAndUnlock(totalLatency);
+
+            } catch (Exception e) {
+                log.warn("COMMIT failed for entity {}: {}", entityId, e.getMessage());
+                recordFailure.accept("COMMIT_FAILED");
+                // COMMIT failed, need to ABORT
+                currentState = State.ABORT;
+                phaseStartTime = clockSupplier.getAsLong();
+                abort();
+            }
+        }
+
+        /**
+         * ABORT state: Rollback (restore entity to source).
+         */
+        private void abort() {
+            try {
+                log.info("ABORT: Rolling back entity {} to source {}", entityId, source.getBubbleId());
+
+                // Check total timeout
+                var totalElapsed = clockSupplier.getAsLong() - phaseStartTime;
+                if (totalElapsed > TOTAL_TIMEOUT_MS) {
+                    log.error("ABORT timed out for entity {} - CRITICAL: Entity may be lost", entityId);
+                    recordRollbackFailure.run();
+                    recordAbort.accept("TIMEOUT");
+                    failAndUnlock("ABORT_TIMEOUT");
+                    return;
+                }
+
+                // Re-add entity to source from snapshot
+                boolean restored;
+                if (source instanceof TestableEntityStore testSource) {
+                    restored = testSource.addEntity(snapshot);
+                } else {
+                    // Production code would call source.asLocal().addEntity(snapshot)
+                    restored = true;
+                }
+
+                if (!restored) {
+                    // C3: Log and metric rollback failures (critical error)
+                    log.error("ABORT/Rollback FAILED for entity {} - CRITICAL: Manual intervention required", entityId);
+                    recordRollbackFailure.run();
+                }
+
+                log.debug("ABORT: Restored entity {} to source {} with epoch {}", entityId, source.getBubbleId(),
+                          snapshot.epoch());
+
+                recordAbort.accept("COMMIT_FAILED");
+                failAndUnlock("ROLLBACK_COMPLETE");
+
+            } catch (Exception e) {
+                // C3: Log and metric rollback failures (critical error)
+                log.error("ABORT/Rollback FAILED for entity {} - CRITICAL: Manual intervention required: {}",
+                          entityId, e.getMessage(), e);
+                recordRollbackFailure.run();
+                recordAbort.accept("ROLLBACK_FAILED");
+                failAndUnlock("ROLLBACK_FAILED");
+            }
+        }
+
+        /**
+         * Complete migration successfully and unlock.
+         */
+        private void succeedAndUnlock(long latency) {
+            try {
+                migrationLock.unlock();
+                decrementConcurrent.run();
+                resultFuture.complete(MigrationResult.success(entityId, dest.getBubbleId(), latency));
+            } catch (Exception e) {
+                log.error("Error completing migration success for entity {}: {}", entityId, e.getMessage(), e);
+            }
+        }
+
+        /**
+         * Complete migration with failure and unlock.
+         */
+        private void failAndUnlock(String reason) {
+            try {
+                migrationLock.unlock();
+                decrementConcurrent.run();
+                resultFuture.complete(MigrationResult.failure(entityId, reason));
+            } catch (Exception e) {
+                log.error("Error completing migration failure for entity {}: {}", entityId, e.getMessage(), e);
+            }
+        }
+
+        /**
+         * Create entity snapshot for rollback.
+         */
+        private static EntitySnapshot createEntitySnapshot(String entityId, BubbleReference source, long timestamp) {
+            // In actual implementation, would query source bubble for entity state
+            // For now, create synthetic snapshot
+            return new EntitySnapshot(entityId, new Point3D(0, 0, 0), "MockContent", source.getBubbleId(), 1L, 1L,
+                                      timestamp);
+        }
     }
 }

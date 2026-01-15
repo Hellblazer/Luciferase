@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.distributed.BubbleReference;
 import javafx.geometry.Point3D;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -69,6 +70,13 @@ class CrossProcessMigrationTest {
         dedup = new IdempotencyStore(300_000); // 5 min TTL
         metrics = new MigrationMetrics();
         migration = new CrossProcessMigration(dedup, metrics);
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (migration != null) {
+            migration.stop();
+        }
     }
 
     /**

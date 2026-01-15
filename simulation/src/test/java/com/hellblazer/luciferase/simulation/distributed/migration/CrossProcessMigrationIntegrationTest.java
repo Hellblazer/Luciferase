@@ -620,6 +620,7 @@ class CrossProcessMigrationIntegrationTest {
             migrationCoordinator.shutdown();
             coordinator.stop();
             protocol.shutdown();
+            crossProcessMigration.stop();
         }
     }
 
