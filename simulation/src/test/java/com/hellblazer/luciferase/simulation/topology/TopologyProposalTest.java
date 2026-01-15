@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.simulation.topology;
 
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,11 +37,13 @@ class TopologyProposalTest {
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
+    private Clock clock;
 
     @BeforeEach
     void setUp() {
         bubbleGrid = new TetreeBubbleGrid((byte) 2);
         accountant = new EntityAccountant();
+        clock = Clock.fixed(1000L);  // Fixed time for deterministic tests
     }
 
     @Test
@@ -74,7 +77,7 @@ class TopologyProposalTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -109,7 +112,7 @@ class TopologyProposalTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -130,7 +133,7 @@ class TopologyProposalTest {
             UUID.randomUUID(), // Non-existent bubble
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -170,7 +173,7 @@ class TopologyProposalTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -221,7 +224,7 @@ class TopologyProposalTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -261,7 +264,7 @@ class TopologyProposalTest {
                 bubble1.id(),
                 bubble3.id(),
                 DigestAlgorithm.DEFAULT.getOrigin(),
-                System.currentTimeMillis()
+                clock.currentTimeMillis()
             );
 
             var result = proposal.validate(bubbleGrid);
@@ -308,7 +311,7 @@ class TopologyProposalTest {
             newCenter,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -358,7 +361,7 @@ class TopologyProposalTest {
             newCenter,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -404,7 +407,7 @@ class TopologyProposalTest {
             newCenter,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);

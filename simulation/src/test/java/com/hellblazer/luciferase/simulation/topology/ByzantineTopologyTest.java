@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.simulation.topology;
 
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -37,10 +38,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class ByzantineTopologyTest {
 
     private TetreeBubbleGrid bubbleGrid;
+    private Clock clock;
 
     @BeforeEach
     void setUp() {
         bubbleGrid = new TetreeBubbleGrid((byte) 2);
+        clock = Clock.fixed(1000L);  // Fixed time for deterministic tests
     }
 
     // ========== Split Proposal Byzantine Tests ==========
@@ -53,7 +56,7 @@ class ByzantineTopologyTest {
             UUID.randomUUID(),  // Non-existent bubble
             new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), 0.0f),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -78,7 +81,7 @@ class ByzantineTopologyTest {
             bubble.id(),
             new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), 5.0f),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -104,7 +107,7 @@ class ByzantineTopologyTest {
             bubble.id(),
             null,  // Byzantine: null split plane
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -138,7 +141,7 @@ class ByzantineTopologyTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -160,7 +163,7 @@ class ByzantineTopologyTest {
             UUID.randomUUID(),  // Non-existent bubble1
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -180,7 +183,7 @@ class ByzantineTopologyTest {
             bubble1.id(),
             UUID.randomUUID(),  // Non-existent bubble2
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -212,7 +215,7 @@ class ByzantineTopologyTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -245,7 +248,7 @@ class ByzantineTopologyTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -275,7 +278,7 @@ class ByzantineTopologyTest {
             bubble1.id(),
             bubble3.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -295,7 +298,7 @@ class ByzantineTopologyTest {
             new Point3f(1.0f, 1.0f, 1.0f),
             new Point3f(2.0f, 2.0f, 2.0f),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -331,7 +334,7 @@ class ByzantineTopologyTest {
             newCenter,
             new Point3f(5.0f, 5.0f, 5.0f),  // Doesn't matter for this test
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -362,7 +365,7 @@ class ByzantineTopologyTest {
                        (float) currentCentroid.getZ() + 1.0f),
             null,  // Byzantine: null cluster centroid
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
@@ -399,7 +402,7 @@ class ByzantineTopologyTest {
                        (float) currentCentroid.getZ() + 0.1f),
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            clock.currentTimeMillis()
         );
 
         var result = proposal.validate(bubbleGrid);
