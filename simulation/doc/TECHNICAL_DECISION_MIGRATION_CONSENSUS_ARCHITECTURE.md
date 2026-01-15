@@ -1,5 +1,6 @@
 # Technical Decision: Migration/Consensus Architecture Layer Boundaries
 
+**Last Updated**: 2026-01-15
 **Date**: 2026-01-13
 **Status**: Proposed
 **Related Beads**: Luciferase-flod (M1: Create ADR for migration/consensus architecture)
