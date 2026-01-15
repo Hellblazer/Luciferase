@@ -20,6 +20,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Tracks entity locations across bubbles and validates the invariant that each
@@ -34,6 +36,7 @@ public class EntityAccountant {
     private final ConcurrentHashMap<UUID, UUID>                       entityToBubble;
     private final ConcurrentHashMap<UUID, CopyOnWriteArraySet<UUID>> bubbleToEntities;
     private final AtomicLong                                          totalOperations;
+    private final Lock                                                lock;
 
     /**
      * Creates a new EntityAccountant with empty state.
@@ -42,6 +45,7 @@ public class EntityAccountant {
         this.entityToBubble = new ConcurrentHashMap<>();
         this.bubbleToEntities = new ConcurrentHashMap<>();
         this.totalOperations = new AtomicLong(0);
+        this.lock = new ReentrantLock();
     }
 
     /**
@@ -83,76 +87,90 @@ public class EntityAccountant {
      * @param toBubble   the target bubble identifier
      * @return true if migration succeeded, false if entity was not in source bubble
      */
-    public synchronized boolean moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
-        // Validate entity is actually in source bubble (prevents TOCTOU race condition)
-        var currentBubble = entityToBubble.get(entityId);
-        if (!fromBubble.equals(currentBubble)) {
-            // Entity not in expected source - migration is invalid
-            return false;
+    public boolean moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
+        lock.lock();
+        try {
+            // Validate entity is actually in source bubble (prevents TOCTOU race condition)
+            var currentBubble = entityToBubble.get(entityId);
+            if (!fromBubble.equals(currentBubble)) {
+                // Entity not in expected source - migration is invalid
+                return false;
+            }
+
+            // Remove from source bubble
+            var sourceEntities = bubbleToEntities.get(fromBubble);
+            if (sourceEntities != null) {
+                sourceEntities.remove(entityId);
+            }
+
+            // Add to target bubble
+            bubbleToEntities.computeIfAbsent(toBubble, k -> new CopyOnWriteArraySet<>()).add(entityId);
+
+            // Update mapping
+            entityToBubble.put(entityId, toBubble);
+
+            totalOperations.incrementAndGet();
+            return true;
+        } finally {
+            lock.unlock();
         }
-
-        // Remove from source bubble
-        var sourceEntities = bubbleToEntities.get(fromBubble);
-        if (sourceEntities != null) {
-            sourceEntities.remove(entityId);
-        }
-
-        // Add to target bubble
-        bubbleToEntities.computeIfAbsent(toBubble, k -> new CopyOnWriteArraySet<>()).add(entityId);
-
-        // Update mapping
-        entityToBubble.put(entityId, toBubble);
-
-        totalOperations.incrementAndGet();
-        return true;
     }
 
     /**
      * Validates the invariant that each entity exists in exactly one bubble.
+     * <p>
+     * Uses explicit locking to prevent reading intermediate state during concurrent migrations.
+     * Without locking, CopyOnWriteArraySet snapshots could show an entity
+     * in both source and destination bubbles during migration.
      *
      * @return validation result with success status and error details
      */
     public ValidationResult validate() {
-        var errors = new ArrayList<String>();
-        var seenEntities = new HashSet<UUID>();
+        lock.lock();
+        try {
+            var errors = new ArrayList<String>();
+            var seenEntities = new HashSet<UUID>();
 
-        // Check each bubble's entities
-        for (var entry : bubbleToEntities.entrySet()) {
-            var bubbleId = entry.getKey();
-            var entities = entry.getValue();
+            // Check each bubble's entities
+            for (var entry : bubbleToEntities.entrySet()) {
+                var bubbleId = entry.getKey();
+                var entities = entry.getValue();
 
-            for (var entityId : entities) {
-                if (seenEntities.contains(entityId)) {
-                    errors.add("Entity " + entityId + " found in multiple bubbles (including " + bubbleId + ")");
-                }
-                seenEntities.add(entityId);
+                for (var entityId : entities) {
+                    if (seenEntities.contains(entityId)) {
+                        errors.add("Entity " + entityId + " found in multiple bubbles (including " + bubbleId + ")");
+                    }
+                    seenEntities.add(entityId);
 
-                // Verify bidirectional consistency
-                var mappedBubble = entityToBubble.get(entityId);
-                if (mappedBubble == null) {
-                    errors.add("Entity " + entityId + " in bubble " + bubbleId + " but not in entity-to-bubble map");
-                } else if (!mappedBubble.equals(bubbleId)) {
-                    errors.add("Entity " + entityId + " in bubble " + bubbleId
-                               + " but entity-to-bubble map shows " + mappedBubble);
-                }
-            }
-        }
-
-        // Check for entities in map but not in any bubble
-        for (var entry : entityToBubble.entrySet()) {
-            var entityId = entry.getKey();
-            var bubbleId = entry.getValue();
-
-            if (!seenEntities.contains(entityId)) {
-                var entities = bubbleToEntities.get(bubbleId);
-                if (entities == null || !entities.contains(entityId)) {
-                    errors.add("Entity " + entityId + " in entity-to-bubble map with bubble " + bubbleId
-                               + " but not in bubble's entity set");
+                    // Verify bidirectional consistency
+                    var mappedBubble = entityToBubble.get(entityId);
+                    if (mappedBubble == null) {
+                        errors.add("Entity " + entityId + " in bubble " + bubbleId + " but not in entity-to-bubble map");
+                    } else if (!mappedBubble.equals(bubbleId)) {
+                        errors.add("Entity " + entityId + " in bubble " + bubbleId
+                                   + " but entity-to-bubble map shows " + mappedBubble);
+                    }
                 }
             }
-        }
 
-        return new ValidationResult(errors.isEmpty(), errors.size(), errors);
+            // Check for entities in map but not in any bubble
+            for (var entry : entityToBubble.entrySet()) {
+                var entityId = entry.getKey();
+                var bubbleId = entry.getValue();
+
+                if (!seenEntities.contains(entityId)) {
+                    var entities = bubbleToEntities.get(bubbleId);
+                    if (entities == null || !entities.contains(entityId)) {
+                        errors.add("Entity " + entityId + " in entity-to-bubble map with bubble " + bubbleId
+                                   + " but not in bubble's entity set");
+                    }
+                }
+            }
+
+            return new ValidationResult(errors.isEmpty(), errors.size(), errors);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -168,15 +186,22 @@ public class EntityAccountant {
 
     /**
      * Returns the distribution of entities across bubbles.
+     * <p>
+     * Uses explicit locking for consistency with migration operations.
      *
      * @return map of bubble ID to entity count
      */
     public Map<UUID, Integer> getDistribution() {
-        var distribution = new HashMap<UUID, Integer>();
-        for (var entry : bubbleToEntities.entrySet()) {
-            distribution.put(entry.getKey(), entry.getValue().size());
+        lock.lock();
+        try {
+            var distribution = new HashMap<UUID, Integer>();
+            for (var entry : bubbleToEntities.entrySet()) {
+                distribution.put(entry.getKey(), entry.getValue().size());
+            }
+            return distribution;
+        } finally {
+            lock.unlock();
         }
-        return distribution;
     }
 
     /**
