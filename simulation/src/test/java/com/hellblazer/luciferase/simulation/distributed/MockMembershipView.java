@@ -18,7 +18,7 @@ package com.hellblazer.luciferase.simulation.distributed;
 
 import com.hellblazer.luciferase.simulation.delos.MembershipView;
 
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -26,7 +26,8 @@ import java.util.stream.Stream;
 /**
  * Mock MembershipView for testing (Phase 4.1.4).
  * <p>
- * Provides stub implementation of MembershipView that does nothing.
+ * Provides controllable implementation of MembershipView for testing.
+ * Allows setting members and automatically generates view change events.
  * Real Fireflies integration would use FirefliesMembershipView.
  *
  * @param <M> member type
@@ -34,15 +35,41 @@ import java.util.stream.Stream;
  */
 public class MockMembershipView<M> implements MembershipView<M> {
     private final List<Consumer<ViewChange<M>>> listeners = new CopyOnWriteArrayList<>();
+    private volatile Set<M> currentMembers = new HashSet<>();
 
     @Override
     public Stream<M> getMembers() {
-        return Stream.empty();  // No members in mock view
+        return currentMembers.stream();
     }
 
     @Override
     public void addListener(Consumer<ViewChange<M>> listener) {
         listeners.add(listener);
+    }
+
+    /**
+     * Set the members in the view and generate view change events.
+     * <p>
+     * Automatically calculates joined and left members and notifies listeners.
+     *
+     * @param newMembers the new set of members
+     */
+    public void setMembers(Set<M> newMembers) {
+        var previous = currentMembers;
+        currentMembers = new HashSet<>(newMembers);
+
+        // Calculate joined and left
+        var joined = new HashSet<>(newMembers);
+        joined.removeAll(previous);
+
+        var left = new HashSet<>(previous);
+        left.removeAll(newMembers);
+
+        // Notify listeners if there were changes
+        if (!joined.isEmpty() || !left.isEmpty()) {
+            var change = new ViewChange<>(List.copyOf(joined), List.copyOf(left));
+            listeners.forEach(listener -> listener.accept(change));
+        }
     }
 
     /**
