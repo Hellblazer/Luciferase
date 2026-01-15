@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
+import com.hellblazer.luciferase.simulation.topology.metrics.TopologyMetricsCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +49,7 @@ public class CrossProcessMigrationValidator {
     private final AtomicLong totalLatencyMs = new AtomicLong(0);
     private volatile Clock clock = Clock.system();
     private volatile boolean running = true;
+    private volatile TopologyMetricsCollector metricsCollector = null;
 
     /**
      * Creates a new migration validator.
@@ -73,6 +75,18 @@ public class CrossProcessMigrationValidator {
      */
     public void setClock(Clock clock) {
         this.clock = clock;
+    }
+
+    /**
+     * Sets the topology metrics collector for boundary stress tracking.
+     * <p>
+     * When configured, the validator will automatically record migration events
+     * in the metrics collector for boundary stress analysis.
+     *
+     * @param collector the topology metrics collector (null to disable tracking)
+     */
+    public void setTopologyMetricsCollector(TopologyMetricsCollector collector) {
+        this.metricsCollector = collector;
     }
 
     /**
@@ -120,6 +134,11 @@ public class CrossProcessMigrationValidator {
 
             // Update cluster metrics
             cluster.getMetrics().recordMigrationSuccess(latency);
+
+            // Record migration for topology metrics (boundary stress tracking)
+            if (metricsCollector != null) {
+                metricsCollector.recordMigration(sourceBubble, clock.currentTimeMillis());
+            }
 
             return new MigrationResultSummary(entityId, true, null, latency);
         } catch (Exception e) {
