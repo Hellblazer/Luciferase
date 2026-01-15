@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.topology;
 
 import com.hellblazer.delos.cryptography.Digest;
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 
 import javax.vecmath.Point3f;
@@ -135,10 +136,14 @@ record SplitProposal(
         }
 
         // Split plane validation (basic - actual split logic is more complex)
-        // Just ensure the plane intersects the bubble's bounds
-        var bounds = bubble.bounds();
-        if (!splitPlane.intersects(bounds)) {
-            return new ValidationResult(false, "Split plane does not intersect bubble bounds");
+        // Compute tight AABB from actual entity positions for Byzantine-resistant validation
+        var entityRecords = bubble.getAllEntityRecords();
+        if (entityRecords.isEmpty()) {
+            return new ValidationResult(false, "Cannot split bubble with no entities");
+        }
+
+        if (!splitPlane.intersectsEntityBounds(entityRecords)) {
+            return new ValidationResult(false, "Split plane does not intersect entity bounds");
         }
 
         return ValidationResult.success();
@@ -246,37 +251,56 @@ record MoveProposal(
             return new ValidationResult(false, "Source bubble not found: " + sourceBubble);
         }
 
-        // Validate new center is reasonable (within 2x current radius)
-        var currentBounds = bubble.bounds();
-        var currentCentroid = currentBounds.centroid();
-
-        // Estimate radius from RDGCS bounds
-        var rdgMin = currentBounds.rdgMin();
-        var rdgMax = currentBounds.rdgMax();
-        int rdgExtentX = rdgMax.x - rdgMin.x;
-        int rdgExtentY = rdgMax.y - rdgMin.y;
-        int rdgExtentZ = rdgMax.z - rdgMin.z;
-        float currentRadius = Math.max(Math.max(rdgExtentX, rdgExtentY), rdgExtentZ) / 2.0f;
-
-        float dx = newCenter.x - (float) currentCentroid.getX();
-        float dy = newCenter.y - (float) currentCentroid.getY();
-        float dz = newCenter.z - (float) currentCentroid.getZ();
-        float distance = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-        if (distance > 2.0f * currentRadius) {
-            return new ValidationResult(false,
-                                        "New center too far from current (" + distance + " > " + (2.0f * currentRadius)
-                                        + ")");
-        }
-
-        // Validate cluster centroid is reasonable
+        // Check for null values first (catch Byzantine nulls before expensive checks)
         if (clusterCentroid == null) {
             return new ValidationResult(false, "Cluster centroid cannot be null");
         }
 
-        // Check cluster centroid is within bubble bounds (basic sanity check)
-        if (!currentBounds.contains(clusterCentroid)) {
-            return new ValidationResult(false, "Cluster centroid outside bubble bounds");
+        // Use tight entity AABB for Byzantine-resistant validation
+        var entityRecords = bubble.getAllEntityRecords();
+        if (entityRecords.isEmpty()) {
+            return new ValidationResult(false, "Cannot move bubble with no entities");
+        }
+
+        // Compute tight AABB from entity positions
+        float minX = Float.POSITIVE_INFINITY, minY = Float.POSITIVE_INFINITY, minZ = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY, maxY = Float.NEGATIVE_INFINITY, maxZ = Float.NEGATIVE_INFINITY;
+
+        for (var record : entityRecords) {
+            var pos = record.position();
+            minX = Math.min(minX, pos.x);
+            minY = Math.min(minY, pos.y);
+            minZ = Math.min(minZ, pos.z);
+            maxX = Math.max(maxX, pos.x);
+            maxY = Math.max(maxY, pos.y);
+            maxZ = Math.max(maxZ, pos.z);
+        }
+
+        // Check cluster centroid is within tight entity AABB
+        if (clusterCentroid.x < minX || clusterCentroid.x > maxX ||
+            clusterCentroid.y < minY || clusterCentroid.y > maxY ||
+            clusterCentroid.z < minZ || clusterCentroid.z > maxZ) {
+            return new ValidationResult(false, "Cluster centroid outside entity bounds");
+        }
+
+        // Validate new center is reasonable (within 2x current radius)
+        float centroidX = (minX + maxX) / 2.0f;
+        float centroidY = (minY + maxY) / 2.0f;
+        float centroidZ = (minZ + maxZ) / 2.0f;
+
+        float dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
+        float diagonal = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        float currentRadius = diagonal / 2.0f;
+
+        float moveDx = newCenter.x - centroidX;
+        float moveDy = newCenter.y - centroidY;
+        float moveDz = newCenter.z - centroidZ;
+        float moveDistance = (float) Math.sqrt(moveDx * moveDx + moveDy * moveDy + moveDz * moveDz);
+
+        if (moveDistance > 2.0f * currentRadius) {
+            return new ValidationResult(false,
+                                        "New center too far from current (" + moveDistance + " > " + (2.0f * currentRadius)
+                                        + ")");
         }
 
         return ValidationResult.success();
@@ -323,21 +347,77 @@ record SplitPlane(Point3f normal, float distance) {
      * @param bounds bubble bounds to test
      * @return true if plane intersects bounds
      */
+    /**
+     * Check if split plane intersects bounds (simple RDGCS-based test for unit testing).
+     * <p>
+     * NOTE: This is kept for unit tests. Production validation should use intersectsEntityBounds().
+     *
+     * @param bounds bubble bounds to test
+     * @return true if plane intersects bounds
+     */
     boolean intersects(com.hellblazer.luciferase.simulation.bubble.BubbleBounds bounds) {
-        // Simplified intersection test: check if plane passes through bounds
-        // Real implementation would use proper bounds-plane intersection
-        var centroid = bounds.centroid();
+        // Convert RDGCS bounds to Cartesian
+        var cartMin = bounds.toCartesian(bounds.rdgMin());
+        var cartMax = bounds.toCartesian(bounds.rdgMax());
 
-        // Estimate radius from RDGCS bounds
-        var rdgMin = bounds.rdgMin();
-        var rdgMax = bounds.rdgMax();
-        int rdgExtentX = rdgMax.x - rdgMin.x;
-        int rdgExtentY = rdgMax.y - rdgMin.y;
-        int rdgExtentZ = rdgMax.z - rdgMin.z;
-        float radius = Math.max(Math.max(rdgExtentX, rdgExtentY), rdgExtentZ) / 2.0f;
+        float dx = (float) (cartMax.getX() - cartMin.getX());
+        float dy = (float) (cartMax.getY() - cartMin.getY());
+        float dz = (float) (cartMax.getZ() - cartMin.getZ());
+        float diagonal = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        float radius = diagonal / 2.0f;
+
+        var centroid = bounds.centroid();
+        float centerDist = normal.x * (float) centroid.getX() + normal.y * (float) centroid.getY() + normal.z * (float) centroid.getZ() - distance;
+
+        return Math.abs(centerDist) < radius;
+    }
+
+    /**
+     * Check if split plane intersects entity bounds (Byzantine-resistant validation).
+     * <p>
+     * Computes tight AABB from actual entity positions, not conservative RDGCS bounds.
+     * This prevents Byzantine proposals with planes far outside actual entity distribution.
+     *
+     * @param entityRecords entities to compute bounds from
+     * @return true if plane intersects the tight entity AABB
+     */
+    boolean intersectsEntityBounds(List<EnhancedBubble.EntityRecord> entityRecords) {
+        if (entityRecords.isEmpty()) {
+            return false;
+        }
+
+        // Compute tight AABB from entity positions (all Cartesian)
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float minZ = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        float maxZ = Float.NEGATIVE_INFINITY;
+
+        for (var record : entityRecords) {
+            var pos = record.position();
+            minX = Math.min(minX, pos.x);
+            minY = Math.min(minY, pos.y);
+            minZ = Math.min(minZ, pos.z);
+            maxX = Math.max(maxX, pos.x);
+            maxY = Math.max(maxY, pos.y);
+            maxZ = Math.max(maxZ, pos.z);
+        }
+
+        // Centroid of entity AABB
+        float centroidX = (minX + maxX) / 2.0f;
+        float centroidY = (minY + maxY) / 2.0f;
+        float centroidZ = (minZ + maxZ) / 2.0f;
+
+        // Radius = half of diagonal
+        float dx = maxX - minX;
+        float dy = maxY - minY;
+        float dz = maxZ - minZ;
+        float diagonal = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        float radius = diagonal / 2.0f;
 
         // Distance from plane to centroid
-        float centerDist = normal.x * (float) centroid.getX() + normal.y * (float) centroid.getY() + normal.z * (float) centroid.getZ() - distance;
+        float centerDist = normal.x * centroidX + normal.y * centroidY + normal.z * centroidZ - distance;
 
         // Check if plane within radius of centroid
         return Math.abs(centerDist) < radius;

@@ -114,7 +114,6 @@ class ByzantineTopologyTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("MVP: SplitPlane.intersects() is less strict than expected - needs tighter validation in future phase")
     void testSplitProposal_RejectsSplitPlaneOutsideBounds() {
         // Create bubble
         bubbleGrid.createBubbles(1, (byte) 1, 10);
@@ -306,7 +305,6 @@ class ByzantineTopologyTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("MVP: Bubble bounds scale varies by level - distance validation less strict than expected")
     void testMoveProposal_RejectsExcessiveDistance() {
         // Create bubble
         bubbleGrid.createBubbles(1, (byte) 1, 10);
@@ -374,7 +372,6 @@ class ByzantineTopologyTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("MVP: Bubble bounds scale varies by level - centroid validation less strict than expected")
     void testMoveProposal_RejectsClusterCentroidOutsideBubble() {
         // Create bubble
         bubbleGrid.createBubbles(1, (byte) 1, 10);
