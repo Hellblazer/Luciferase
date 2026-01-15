@@ -23,8 +23,8 @@ import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -71,6 +71,17 @@ public class SimulationBubble {
      */
     public static final long DEFAULT_TICK_INTERVAL_MS = 16;
 
+    /**
+     * Cleanup frequency: every 30 seconds at 60fps (1800 ticks).
+     * Matches SimulationLoop.CLEANUP_INTERVAL_TICKS for consistency.
+     */
+    private static final long CLEANUP_INTERVAL_TICKS = 1800;
+
+    /**
+     * Logging interval: every 10 seconds at 60fps (600 ticks).
+     */
+    private static final long LOG_INTERVAL_TICKS = 600;
+
     private final EnhancedBubble           bubble;
     private final EntityBehavior           behavior;
     private final WorldBounds              worldBounds;
@@ -78,7 +89,7 @@ public class SimulationBubble {
     private final SimulationBubbleEntity   entity;
     private       volatile Clock           clock = Clock.system();
     private       volatile boolean         running = false;
-    private final Map<String, Vector3f>    velocities = new HashMap<>();
+    private final Map<String, Vector3f>    velocities = new ConcurrentHashMap<>();
     private final SimulationMetrics        metrics = new SimulationMetrics();
 
     /**
@@ -244,10 +255,39 @@ public class SimulationBubble {
     }
 
     /**
+     * Clean up velocity entries for entities that no longer exist.
+     * <p>
+     * This prevents memory leaks in long-running simulations where entities
+     * are dynamically added and removed. Called automatically every
+     * {@link #CLEANUP_INTERVAL_TICKS} ticks by {@link SimulationBubbleEntity#physicsTick()}.
+     * <p>
+     * Complexity: O(n) where n = number of velocity entries.
+     * Thread-safe: Uses ConcurrentHashMap.keySet().retainAll().
+     */
+    void cleanupRemovedEntities() {
+        var activeIds = bubble.getAllEntityRecords().stream()
+            .map(EnhancedBubble.EntityRecord::id)
+            .collect(java.util.stream.Collectors.toSet());
+
+        int beforeSize = velocities.size();
+        velocities.keySet().retainAll(activeIds);
+        int afterSize = velocities.size();
+
+        if (beforeSize != afterSize) {
+            log.debug("Cleanup: {} velocities retained, {} removed",
+                      afterSize, beforeSize - afterSize);
+        }
+    }
+
+    /**
      * Perform a single physics tick.
      * <p>
      * This method is called from SimulationBubbleEntity.physicsTick() and performs
      * all the actual entity behavior simulation work.
+     * <p>
+     * <b>Shutdown Semantics</b>: Completes the current tick even if {@link #stop()}
+     * is called mid-execution. This ensures entities are left in a consistent state
+     * without partial updates. The event loop terminates after the current tick completes.
      *
      * @param deltaTime Time step in seconds
      */
@@ -347,10 +387,18 @@ public class SimulationBubble {
             // Delegate to outer class for actual physics work
             performPhysicsTick(deltaTime);
 
-            // Log periodically (every 10 seconds at 60fps = 600 ticks)
-            if (tickCount > 0 && tickCount % 600 == 0) {
-                var entityCount = bubble.entityCount();
-                log.debug("Tick {}: {} entities", tickCount, entityCount);
+            // Periodic maintenance
+            if (tickCount > 0) {
+                // Log periodically (every 10 seconds at 60fps)
+                if (tickCount % LOG_INTERVAL_TICKS == 0) {
+                    var entityCount = bubble.entityCount();
+                    log.debug("Tick {}: {} entities", tickCount, entityCount);
+                }
+
+                // Cleanup removed entities (every 30 seconds at 60fps)
+                if (tickCount % CLEANUP_INTERVAL_TICKS == 0) {
+                    cleanupRemovedEntities();
+                }
             }
 
             // Schedule next tick (recursive event scheduling)
