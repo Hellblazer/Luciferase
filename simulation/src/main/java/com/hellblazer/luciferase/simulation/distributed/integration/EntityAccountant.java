@@ -125,7 +125,7 @@ public class EntityAccountant {
      *
      * @return validation result with success status and error details
      */
-    public ValidationResult validate() {
+    public EntityValidationResult validate() {
         lock.lock();
         try {
             var errors = new ArrayList<String>();
@@ -167,7 +167,7 @@ public class EntityAccountant {
                 }
             }
 
-            return new ValidationResult(errors.isEmpty(), errors.size(), errors);
+            return new EntityValidationResult(errors.isEmpty(), errors.size(), errors);
         } finally {
             lock.unlock();
         }
@@ -233,12 +233,3 @@ public class EntityAccountant {
     }
 }
 
-/**
- * Result of entity location validation.
- *
- * @param success    true if all entities are in exactly one bubble
- * @param errorCount number of validation errors found
- * @param details    list of error descriptions
- */
-record ValidationResult(boolean success, int errorCount, List<String> details) {
-}

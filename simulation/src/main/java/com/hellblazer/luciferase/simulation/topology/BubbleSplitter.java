@@ -14,13 +14,12 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.simulation.topology.execution;
+package com.hellblazer.luciferase.simulation.topology;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
-import com.hellblazer.luciferase.simulation.topology.SplitPlane;
-import com.hellblazer.luciferase.simulation.topology.SplitProposal;
+import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

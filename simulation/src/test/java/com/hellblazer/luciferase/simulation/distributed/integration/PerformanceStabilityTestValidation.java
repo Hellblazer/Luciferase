@@ -124,8 +124,8 @@ class PerformanceStabilityTestValidation {
         }
 
         @Override
-        public ValidationResult validate() {
-            return new ValidationResult(true, 0, java.util.List.of());
+        public EntityValidationResult validate() {
+            return new EntityValidationResult(true, 0, java.util.List.of());
         }
     }
 }
