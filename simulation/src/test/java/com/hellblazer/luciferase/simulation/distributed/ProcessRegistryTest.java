@@ -36,9 +36,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Register/unregister cycles
  * - Concurrent registration (thread safety)
  * - getAllBubbles() correctness
- * - isAlive() timestamp checking
- * - Heartbeat updates
  * - ProcessMetadata immutability
+ * - Defensive copying
+ * <p>
+ * Phase 4.1.5: Heartbeat monitoring removed (replaced by Fireflies view changes)
  *
  * @author hal.hildebrand
  */
