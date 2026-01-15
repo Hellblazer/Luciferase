@@ -34,40 +34,64 @@ import java.util.function.BiConsumer;
 /**
  * Delos-based network transport for cross-bubble ghost delivery (Phase 7B.2).
  *
- * <p><strong>⚠️ DEPRECATED:</strong> This implementation is incomplete and superseded by
- * {@link P2PGhostChannel}, which uses the VON transport abstraction for production
- * distributed ghost synchronization. DelosSocketTransport contains 7+ "TODO Phase 7B.2"
- * placeholders and uses simulated network connections instead of actual Delos integration.
+ * <p>DelosSocketTransport implements the GhostChannel interface and provides network-based
+ * transmission of ghost entities between bubbles using Delos SocketTransport. Events are
+ * serialized using custom binary format (EntityUpdateEvent + EventSerializer) for efficient
+ * wire protocol.
  *
- * <p><strong>Migration Path:</strong>
+ * <p><strong>Architecture:</strong>
  * <ul>
- *   <li>Testing: Use {@link InMemoryGhostChannel} (deterministic, no network)</li>
- *   <li>Production: Use {@link P2PGhostChannel} (VON-based P2P distribution)</li>
+ *   <li>Implements existing GhostChannel interface (no new transport abstraction)</li>
+ *   <li>Wraps EntityUpdateEvent serialization for network transmission</li>
+ *   <li>Uses batching strategy: queue locally, flush at bucket boundaries</li>
+ *   <li>Thread-safe for concurrent ghost queuing and reception</li>
  * </ul>
  *
- * <p><strong>Removal Schedule:</strong> Month 2 of stabilization sprint (after P2PGhostChannel
- * validation complete). See ADR 001 § Ghost Channel Implementations for decision rationale.
- *
- * <p><strong>Original Intent:</strong> DelosSocketTransport was prototyped to implement
- * GhostChannel interface with network-based transmission using Delos SocketTransport and
- * EntityUpdateEvent serialization. However, the VON architecture's VonTransport abstraction
- * (used by P2PGhostChannel) provides equivalent functionality with better integration.
- *
- * <p><strong>Incomplete Features:</strong>
+ * <p><strong>Phase 7B.2 Scope:</strong>
  * <ul>
+ *   <li>✅ Implement GhostChannel interface</li>
+ *   <li>✅ EntityUpdateEvent serialization/deserialization</li>
+ *   <li>✅ In-memory network simulation for testing</li>
  *   <li>⏳ Actual Delos SocketTransport integration (TODO)</li>
- *   <li>⏳ Real network connections (currently simulated via connectTo())</li>
- *   <li>⏳ Production-grade error handling and recovery</li>
- *   <li>⏳ Velocity tracking in EntityData for dead reckoning</li>
+ * </ul>
+ *
+ * <p><strong>Phase 7B.3 (Future):</strong>
+ * <ul>
+ *   <li>Velocity tracking in EntityData for dead reckoning</li>
+ *   <li>DistributedEntityTracker integration</li>
+ * </ul>
+ *
+ * <p><strong>Usage Example:</strong>
+ * <pre>
+ * // Create transport for this bubble
+ * var transport = new DelosSocketTransport(bubbleId);
+ *
+ * // Register handler for incoming ghosts
+ * transport.onReceive((sourceBubbleId, ghosts) -&gt; {
+ *     for (var ghost : ghosts) {
+ *         bubbleGhostManager.handleGhost(ghost);
+ *     }
+ * });
+ *
+ * // Connect to remote bubble (simulated network)
+ * transport.connectTo(remoteTransport);
+ *
+ * // Queue ghosts during simulation step
+ * transport.queueGhost(targetBubbleId, ghostEntity);
+ *
+ * // Flush at bucket boundary (every 100ms)
+ * transport.flush(currentBucket);
+ * </pre>
+ *
+ * <p><strong>Thread Safety:</strong>
+ * <ul>
+ *   <li>ConcurrentHashMap for pending batches</li>
+ *   <li>CopyOnWriteArrayList for handlers and connections</li>
+ *   <li>Safe for concurrent queuing and flushing</li>
  * </ul>
  *
  * @author hal.hildebrand
- * @deprecated Use {@link P2PGhostChannel} for distributed multi-bubble ghost synchronization,
- *             or {@link InMemoryGhostChannel} for testing. This class will be removed in Month 2.
- *             See simulation/doc/ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md § Ghost Channel
- *             Implementations for migration guidance.
  */
-@Deprecated(forRemoval = true)
 public class DelosSocketTransport implements GhostChannel<StringEntityID, EntityData> {
 
     private static final Logger log = LoggerFactory.getLogger(DelosSocketTransport.class);
