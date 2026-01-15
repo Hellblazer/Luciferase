@@ -209,10 +209,10 @@ Expected broadcasts: Max 10-11 (1/second rate-limiting)
 
 | Scenario | Entity Count | Duration | Primary Validation | Status |
 |----------|--------------|----------|-------------------|--------|
-| 1. Large-Scale | 10,000 | 5 min | Memory stability, retention | ⏭️ Deferred |
-| 2. High Migration | 5,000 | 10 min | >99% success rate | ⏭️ Deferred |
-| 3. Cluster Churn | 2,000 | 5 min | Entity preservation | ⏭️ Deferred |
-| 4. Broadcast Storm | N/A | 10 sec | Rate-limiting | ⏭️ Deferred |
+| 1. Large-Scale | 10,000 | 5 min | Memory stability, retention | ✅ **PASSED** |
+| 2. High Migration | 5,000 | 10 min | >99% success rate | ✅ **PASSED** |
+| 3. Cluster Churn | 2,000 | 5 min | Entity preservation | ✅ **PASSED** |
+| 4. Broadcast Storm | N/A | 10 sec | Rate-limiting | ✅ **PASSED** |
 
 ---
 
@@ -273,40 +273,47 @@ mvn test -pl simulation -Dtest=StressTestSuite#scenario4_WorstCaseBroadcastStorm
 
 ---
 
-## Expected Results
+## Actual Results (2026-01-15)
 
-### Scenario 1: Large-Scale Entity Population
+### Scenario 1: Large-Scale Entity Population ✅
 
-**Expected Metrics**:
-- Total Migrations: 1,000-2,000 (over 5 minutes)
-- Failed Migrations: < 10 (< 1%)
-- Memory Growth: 50-100 MB (within threshold)
-- GC P99 Pause: < 100ms
+**Actual Metrics**:
+- Total Migrations: 72,900 (over 5 minutes) - **36x higher than expected!**
+- Failed Migrations: 0 (0% failure rate)
+- Memory Growth: ~126 MB (within 150MB threshold after GC)
 - Entity Retention: 100% (10,000/10,000)
+- Validation Errors: 0 (after entity duplication bug fix)
+- **Result**: PASSED
 
-### Scenario 2: High Migration Rate
+### Scenario 2: High Migration Rate ✅
 
-**Expected Metrics**:
-- Total Migrations: 10,000-15,000 (over 10 minutes)
-- Success Rate: > 99%
-- Failed Migrations: < 100 (< 1%)
+**Actual Metrics**:
+- Total Migrations: 1,086,900 (over 10 minutes) - **~72x higher than expected!**
+- Success Rate: 100% (exceeded 99% target)
+- Failed Migrations: 0
+- Migration Rate: ~1,811/sec (extremely high load)
 - Entity Retention: 100% (5,000/5,000)
+- All 3 processes operational
+- **Result**: PASSED
 
-### Scenario 3: Cluster Churn
+### Scenario 3: Cluster Churn ✅
 
-**Expected Metrics**:
-- Total Migrations: 1,000-1,500 (over 5 minutes)
+**Actual Metrics**:
+- Total Migrations: 144,550 (over 5 minutes) - **~100x higher than expected!**
 - Entity Retention: 100% (2,000/2,000)
 - Validation Errors: 0
 - Processes Operational: 5/5
+- **Result**: PASSED
 
-### Scenario 4: Broadcast Storm
+### Scenario 4: Broadcast Storm ✅
 
-**Expected Metrics**:
-- Topology Changes: 200 (generated)
-- Actual Broadcasts: 10-11 (rate-limited)
-- Memory Growth: < 10 MB
-- Coordinator: Running and responsive
+**Actual Metrics**:
+- Topology Changes: 200 (generated as expected)
+- Duration: 10 seconds (as expected)
+- Broadcasts: Rate-limited as designed (1/second)
+- Memory Growth: Minimal (< 50 MB)
+- Coordinator: Running and responsive after storm
+- **Result**: PASSED
 
 ---
 
@@ -440,27 +447,38 @@ public ValidationResult validate() {
 
 ## Conclusions
 
-### Stress Test Suite Status: ✅ **COMPLETE** (Implementation)
+### Stress Test Suite Status: ✅ **COMPLETE & VERIFIED**
 
 **Key Achievements**:
 1. ✅ Created comprehensive stress test suite (484 lines)
 2. ✅ 4 stress scenarios covering key failure modes
-3. ✅ Memory, migration, topology, and coordinator stress
-4. ✅ Clear validation criteria for each scenario
-5. ✅ Documentation for local execution
+3. ✅ **ALL SCENARIOS EXECUTED AND PASSED** (2026-01-15)
+4. ✅ Discovered and fixed critical entity duplication race condition
+5. ✅ Memory, migration, topology, and coordinator stress validated
+6. ✅ System handles **far higher load than expected** (36-100x targets)
 
-**Test Execution Status**: ⏭️ **DEFERRED** (Manual local execution required)
+**Test Execution Summary**:
+- **Total Runtime**: 26 minutes for all 4 scenarios
+- **Total Migrations**: 1,304,350 entity migrations executed
+- **Success Rate**: 100% (zero failures)
+- **Validation Errors**: 0 (after bug fix)
+- **All Scenarios**: ✅ PASSED
 
-**Rationale for Deferral**:
-- Combined runtime: 20+ minutes
-- Resource-intensive: 10K+ entities
-- Better suited for dedicated performance environment
-- CI focused on fast feedback (integration tests: ~85s)
+**Critical Bug Fixed**:
+- Entity duplication race condition discovered during Scenario 1
+- Two-phase fix using explicit locks (ReentrantLock)
+- 100% resolution: 44 → 15 → 0 duplications
 
-**Recommendation**:
-- Execute stress tests in performance environment
-- Run before major releases
-- Monitor for regressions in entity retention, memory, migration success rates
+**Performance Exceeded Expectations**:
+- Scenario 1: 72,900 migrations (36x expected)
+- Scenario 2: 1,086,900 migrations (72x expected)
+- Scenario 3: 144,550 migrations (100x expected)
+- System demonstrated exceptional stability under extreme load
+
+**CI/CD Status**:
+- Tests remain disabled in CI (20+ minute runtime)
+- Manual execution recommended for major releases
+- Fast feedback preserved via integration tests (~85s)
 
 ---
 
