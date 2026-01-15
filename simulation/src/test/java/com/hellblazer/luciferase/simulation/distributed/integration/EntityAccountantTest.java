@@ -82,7 +82,9 @@ class EntityAccountantTest {
     @Test
     void testMoveBetweenBubbles() {
         accountant.register(bubble1, entity1);
-        accountant.moveBetweenBubbles(entity1, bubble1, bubble2);
+        var moved = accountant.moveBetweenBubbles(entity1, bubble1, bubble2);
+
+        assertTrue(moved, "Move should succeed");
 
         var entitiesInBubble1 = accountant.entitiesInBubble(bubble1);
         var entitiesInBubble2 = accountant.entitiesInBubble(bubble2);
@@ -176,8 +178,10 @@ class EntityAccountantTest {
                 try {
                     for (int j = threadIdx; j < entities.size(); j += threadCount) {
                         var entity = entities.get(j);
-                        accountant.moveBetweenBubbles(entity, bubble1, bubble2);
-                        accountant.moveBetweenBubbles(entity, bubble2, bubble3);
+                        var moved1 = accountant.moveBetweenBubbles(entity, bubble1, bubble2);
+                        if (moved1) {
+                            accountant.moveBetweenBubbles(entity, bubble2, bubble3);
+                        }
                     }
                 } finally {
                     latch.countDown();

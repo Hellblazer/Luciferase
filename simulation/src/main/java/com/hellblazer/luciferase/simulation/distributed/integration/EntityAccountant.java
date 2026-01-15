@@ -73,12 +73,24 @@ public class EntityAccountant {
 
     /**
      * Moves an entity from one bubble to another atomically.
+     * <p>
+     * Validates that the entity is currently in the source bubble before proceeding.
+     * This prevents race conditions where multiple concurrent migrations could duplicate
+     * an entity across bubbles.
      *
      * @param entityId   the entity identifier
      * @param fromBubble the source bubble identifier
      * @param toBubble   the target bubble identifier
+     * @return true if migration succeeded, false if entity was not in source bubble
      */
-    public synchronized void moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
+    public synchronized boolean moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
+        // Validate entity is actually in source bubble (prevents TOCTOU race condition)
+        var currentBubble = entityToBubble.get(entityId);
+        if (!fromBubble.equals(currentBubble)) {
+            // Entity not in expected source - migration is invalid
+            return false;
+        }
+
         // Remove from source bubble
         var sourceEntities = bubbleToEntities.get(fromBubble);
         if (sourceEntities != null) {
@@ -92,6 +104,7 @@ public class EntityAccountant {
         entityToBubble.put(entityId, toBubble);
 
         totalOperations.incrementAndGet();
+        return true;
     }
 
     /**

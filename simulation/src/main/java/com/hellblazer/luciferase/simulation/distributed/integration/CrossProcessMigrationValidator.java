@@ -103,7 +103,13 @@ public class CrossProcessMigrationValidator {
             // Perform migration (simplified for validation)
             // In full implementation, this would use CrossProcessMigration
             var accountant = cluster.getEntityAccountant();
-            accountant.moveBetweenBubbles(entityId, sourceBubble, destBubble);
+            var migrationSucceeded = accountant.moveBetweenBubbles(entityId, sourceBubble, destBubble);
+
+            if (!migrationSucceeded) {
+                // Entity was not in source bubble - likely already migrated by concurrent operation
+                cluster.getMetrics().recordMigrationFailure();
+                return new MigrationResultSummary(entityId, false, "CONCURRENT_MIGRATION_CONFLICT", 0);
+            }
 
             // Update factory tracking
             updateEntityLocation(entityId, destBubble);

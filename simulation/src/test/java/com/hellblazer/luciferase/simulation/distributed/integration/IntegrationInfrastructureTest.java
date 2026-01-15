@@ -80,7 +80,8 @@ class IntegrationInfrastructureTest {
         assertTrue(newTime > currentTime, "Time should advance");
 
         // Move entity and validate
-        accountant.moveBetweenBubbles(entity1, bubble1, bubble2);
+        var moved = accountant.moveBetweenBubbles(entity1, bubble1, bubble2);
+        assertTrue(moved, "Move should succeed");
         var distribution = accountant.getDistribution();
         assertNotNull(distribution);
         assertEquals(1, distribution.get(bubble2).intValue());
@@ -147,12 +148,10 @@ class IntegrationInfrastructureTest {
             entityId -> {
                 requestCount.incrementAndGet();
                 try {
-                    // Move from bubble1 to bubble2 if still in bubble1
-                    if (accountant.entitiesInBubble(bubble1).contains(entityId)) {
-                        accountant.moveBetweenBubbles(entityId, bubble1, bubble2);
-                    }
+                    // Move from bubble1 to bubble2 (atomic check inside moveBetweenBubbles)
+                    accountant.moveBetweenBubbles(entityId, bubble1, bubble2);
                 } catch (Exception e) {
-                    // Entity may have already been moved
+                    // Handle unexpected errors
                 }
             }
         );
@@ -199,12 +198,10 @@ class IntegrationInfrastructureTest {
             entityId -> {
                 migrationCount.incrementAndGet();
                 try {
-                    // Move from bubble1 to bubble2 if still in bubble1
-                    if (accountant.entitiesInBubble(bubble1).contains(entityId)) {
-                        accountant.moveBetweenBubbles(entityId, bubble1, bubble2);
-                    }
+                    // Move from bubble1 to bubble2 (atomic check inside moveBetweenBubbles)
+                    accountant.moveBetweenBubbles(entityId, bubble1, bubble2);
                 } catch (Exception e) {
-                    // Entity may have already been moved
+                    // Handle unexpected errors
                 }
             }
         );
