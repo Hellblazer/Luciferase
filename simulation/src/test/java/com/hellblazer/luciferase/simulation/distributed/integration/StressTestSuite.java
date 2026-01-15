@@ -287,8 +287,8 @@ class StressTestSuite {
             var elapsed = (System.currentTimeMillis() - startTime) / 1000;
             if (elapsed % 60 == 0 && elapsed > 0) {
                 var successRate = (successfulMigrations.get() * 100.0) / totalMigrations.get();
-                log.info("Progress: {}m elapsed, {} migrations ({:.2f}% success)",
-                         elapsed / 60, totalMigrations.get(), successRate);
+                log.info("Progress: {}m elapsed, {} migrations ({}% success)",
+                         elapsed / 60, totalMigrations.get(), String.format("%.2f", successRate));
             }
         }
 
@@ -303,7 +303,7 @@ class StressTestSuite {
         log.info("Failed migrations: {}", failedMigrations.get());
 
         var successRate = (successfulMigrations.get() * 100.0) / totalMigrations.get();
-        log.info("Success rate: {:.2f}%", successRate);
+        log.info("Success rate: {}%", String.format("%.2f", successRate));
 
         // 1. Migration success rate >99%
         assertTrue(successRate > 99.0,
@@ -463,7 +463,7 @@ class StressTestSuite {
         log.info("=== Scenario 4 Results ===");
         log.info("Generated: 200 topology changes");
         log.info("Duration: {} ms", stormDuration);
-        log.info("Memory growth: {:.2f} MB", memoryGrowth);
+        log.info("Memory growth: {} MB", String.format("%.2f", memoryGrowth));
         log.info("Expected broadcasts: Max 10-11 (1/second rate-limiting)");
 
         // 1. Coordinator survived storm
