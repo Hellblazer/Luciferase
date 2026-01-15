@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.topology.metrics;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -53,6 +55,7 @@ public class BoundaryStressAnalyzer {
     private final long                                        windowMillis;
     private final ConcurrentHashMap<UUID, List<Long>>        migrationEvents;
     private final ConcurrentHashMap<UUID, Long>              lastCleanupTime;
+    private volatile Clock                                    clock;
 
     /**
      * Creates a boundary stress analyzer with specified window size.
@@ -68,6 +71,19 @@ public class BoundaryStressAnalyzer {
         this.windowMillis = windowMillis;
         this.migrationEvents = new ConcurrentHashMap<>();
         this.lastCleanupTime = new ConcurrentHashMap<>();
+        this.clock = Clock.system();
+    }
+
+    /**
+     * Sets the clock for deterministic simulation time.
+     * <p>
+     * IMPORTANT: Use this for PrimeMover integration. The clock should be
+     * injected to ensure simulated time is used instead of wall-clock time.
+     *
+     * @param clock the clock implementation
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -111,7 +127,7 @@ public class BoundaryStressAnalyzer {
             }
 
             // Calculate time span of events in window
-            long now = System.currentTimeMillis();
+            long now = clock.currentTimeMillis();
             long windowStart = now - windowMillis;
 
             // Filter events within window

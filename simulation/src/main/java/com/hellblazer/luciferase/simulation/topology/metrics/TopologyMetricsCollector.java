@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.simulation.topology.metrics;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 
 import java.util.ArrayList;
@@ -58,6 +59,7 @@ public class TopologyMetricsCollector {
     private final DensityMonitor         densityMonitor;
     private final ClusteringDetector     clusteringDetector;
     private final BoundaryStressAnalyzer boundaryStressAnalyzer;
+    private volatile Clock               clock;
 
     /**
      * Creates a topology metrics collector with specified configuration.
@@ -75,6 +77,21 @@ public class TopologyMetricsCollector {
         this.densityMonitor = new DensityMonitor(splitThreshold, mergeThreshold);
         this.clusteringDetector = new ClusteringDetector(minClusterSize, maxClusterDistance);
         this.boundaryStressAnalyzer = new BoundaryStressAnalyzer(boundaryStressWindowMs);
+        this.clock = Clock.system();
+    }
+
+    /**
+     * Sets the clock for deterministic simulation time.
+     * <p>
+     * IMPORTANT: Use this for PrimeMover integration. The clock should be
+     * injected to ensure simulated time is used instead of wall-clock time.
+     * Also propagates clock to BoundaryStressAnalyzer.
+     *
+     * @param clock the clock implementation
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+        this.boundaryStressAnalyzer.setClock(clock);
     }
 
     /**
@@ -96,7 +113,7 @@ public class TopologyMetricsCollector {
             throw new NullPointerException("Entity accountant cannot be null");
         }
 
-        long timestamp = System.currentTimeMillis();
+        long timestamp = clock.currentTimeMillis();
 
         // Step 1: Get entity distribution
         var distribution = entityAccountant.getDistribution();
@@ -195,12 +212,12 @@ public class TopologyMetricsCollector {
     /**
      * Records a migration event with current timestamp.
      * <p>
-     * Convenience method that uses System.currentTimeMillis() for timestamp.
+     * Convenience method that uses injected Clock for timestamp.
      *
      * @param bubbleId the bubble identifier
      */
     public void recordMigration(UUID bubbleId) {
-        recordMigration(bubbleId, System.currentTimeMillis());
+        recordMigration(bubbleId, clock.currentTimeMillis());
     }
 
     /**
