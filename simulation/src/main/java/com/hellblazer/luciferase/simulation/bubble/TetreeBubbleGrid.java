@@ -255,6 +255,67 @@ public class TetreeBubbleGrid {
     }
 
     /**
+     * Get a bubble by its UUID identifier.
+     * <p>
+     * Searches through all bubbles to find one with matching UUID.
+     * This is less efficient than getBubble(TetreeKey) but useful
+     * for scenarios where only the UUID is known.
+     *
+     * @param bubbleId UUID to search for
+     * @return EnhancedBubble with matching ID, or null if not found
+     * @throws NullPointerException if bubbleId is null
+     */
+    public EnhancedBubble getBubbleById(UUID bubbleId) {
+        Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
+
+        for (var bubble : bubblesByKey.values()) {
+            if (bubble.id().equals(bubbleId)) {
+                return bubble;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get topological neighbors of a bubble by its UUID.
+     * <p>
+     * Convenience method that first looks up the bubble by UUID,
+     * then returns its neighbors. Returns bubble UUIDs for consistency.
+     *
+     * @param bubbleId UUID of bubble to find neighbors for
+     * @return Set of neighboring bubble UUIDs
+     * @throws NoSuchElementException if no bubble with given UUID exists
+     * @throws NullPointerException   if bubbleId is null
+     */
+    public Set<UUID> getNeighbors(UUID bubbleId) {
+        Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
+
+        // Find the bubble and its key
+        TetreeKey<?> key = null;
+        for (var entry : bubblesByKey.entrySet()) {
+            if (entry.getValue().id().equals(bubbleId)) {
+                key = entry.getKey();
+                break;
+            }
+        }
+
+        if (key == null) {
+            throw new NoSuchElementException("No bubble found with ID: " + bubbleId);
+        }
+
+        // Get neighbors using the key
+        var neighborBubbles = getNeighbors(key);
+
+        // Convert to UUIDs
+        var neighborIds = new HashSet<UUID>();
+        for (var neighbor : neighborBubbles) {
+            neighborIds.add(neighbor.id());
+        }
+
+        return neighborIds;
+    }
+
+    /**
      * Get boundary neighbors for ghost synchronization.
      * <p>
      * Returns bubbles whose bounds overlap with the given location's bounds.
