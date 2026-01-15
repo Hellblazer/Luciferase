@@ -13,7 +13,6 @@ import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,7 +63,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
     private final AtomicLong tickCount = new AtomicLong(0);
     private final AtomicLong currentBucket = new AtomicLong(0);
     private final SimulationMetrics metrics = new SimulationMetrics();
-    private volatile Clock clock = Clock.system();
 
     private ScheduledFuture<?> tickTask;
 
@@ -117,15 +115,6 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
         log.info("MultiBubbleSimulation created: {} bubbles ({}x{}), {} entities",
                  gridConfig.bubbleCount(), gridConfig.rows(), gridConfig.columns(), entityCount);
-    }
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
     }
 
     /**
@@ -349,7 +338,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
     private void tick() {
         try {
-            long startNs = clock.nanoTime();
+            long startNs = System.nanoTime();
             float deltaTime = DEFAULT_TICK_INTERVAL_MS / 1000.0f;
             long bucket = currentBucket.get();
 
@@ -377,7 +366,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
             ghostSyncAdapter.onBucketComplete(bucket);
 
             // Record metrics
-            long frameTimeNs = clock.nanoTime() - startNs;
+            long frameTimeNs = System.nanoTime() - startNs;
             metrics.recordTick(frameTimeNs, totalEntities);
 
             tickCount.incrementAndGet();

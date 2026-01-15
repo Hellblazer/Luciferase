@@ -47,16 +47,6 @@ public class DistributedSimulationMetrics {
     private final Set<UUID> crashedProcesses = ConcurrentHashMap.newKeySet();
     private final Set<UUID> recoveredProcesses = ConcurrentHashMap.newKeySet();
     private final Map<String, Object> metrics = new ConcurrentHashMap<>();
-    private volatile Clock clock = Clock.system();
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     /**
      * Creates a new metrics instance.
@@ -126,7 +116,7 @@ public class DistributedSimulationMetrics {
      * Starts the metrics timer.
      */
     public void startTimer() {
-        startTimeMs = clock.currentTimeMillis();
+        startTimeMs = System.currentTimeMillis();
     }
 
     /**
@@ -202,7 +192,7 @@ public class DistributedSimulationMetrics {
         if (startTimeMs == 0) {
             return 0.0;
         }
-        var elapsedSeconds = (clock.currentTimeMillis() - startTimeMs) / 1000.0;
+        var elapsedSeconds = (System.currentTimeMillis() - startTimeMs) / 1000.0;
         return elapsedSeconds > 0 ? successfulMigrations.get() / elapsedSeconds : 0.0;
     }
 

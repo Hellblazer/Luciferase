@@ -150,7 +150,7 @@ implements SpatialIndex<Key, ID, Content> {
     protected       GhostType                                        ghostType                = GhostType.NONE;
     protected       GhostAlgorithm                                   ghostAlgorithm           = GhostAlgorithm.CONSERVATIVE;
     protected       GhostLayer<Key, ID, Content>                     ghostLayer;
-    protected       com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<Key, ID, Content> ghostBoundaryDetector;
+    protected       ElementGhostManager<Key, ID, Content>            elementGhostManager;
     protected       DistributedGhostManager<Key, ID, Content>        distributedGhostManager;
     protected       NeighborDetector<Key>                            neighborDetector;
 
@@ -4881,7 +4881,7 @@ implements SpatialIndex<Key, ID, Content> {
             this.ghostLayer = new GhostLayer<>(type);
             // Recreate ElementGhostManager with new ghost type if we have a neighbor detector
             if (this.neighborDetector != null) {
-                this.ghostBoundaryDetector = new com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<>(this, neighborDetector, type, ghostAlgorithm);
+                this.elementGhostManager = new ElementGhostManager<>(this, neighborDetector, type, ghostAlgorithm);
             }
         } finally {
             lock.writeLock().unlock();
@@ -4907,8 +4907,8 @@ implements SpatialIndex<Key, ID, Content> {
         try {
             this.ghostAlgorithm = Objects.requireNonNull(algorithm);
             // Recreate ElementGhostManager with new algorithm if we have one
-            if (this.ghostBoundaryDetector != null) {
-                this.ghostBoundaryDetector = new com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<>(this, neighborDetector, ghostType, algorithm);
+            if (this.elementGhostManager != null) {
+                this.elementGhostManager = new ElementGhostManager<>(this, neighborDetector, ghostType, algorithm);
             }
             log.debug("Set ghost creation algorithm to: {}", algorithm);
         } finally {
@@ -4931,14 +4931,14 @@ implements SpatialIndex<Key, ID, Content> {
      * for neighboring elements owned by other processes.
      */
     public void createGhostLayer() {
-        if (ghostType == GhostType.NONE || ghostBoundaryDetector == null) {
+        if (ghostType == GhostType.NONE || elementGhostManager == null) {
             return;
         }
         
         lock.writeLock().lock();
         try {
             log.debug("Creating ghost layer with type: {}", ghostType);
-            ghostBoundaryDetector.createGhostLayer();
+            elementGhostManager.createGhostLayer();
         } finally {
             lock.writeLock().unlock();
         }
@@ -4949,7 +4949,7 @@ implements SpatialIndex<Key, ID, Content> {
      * modifications to the spatial index.
      */
     public void updateGhostLayer() {
-        if (ghostType == GhostType.NONE || ghostBoundaryDetector == null) {
+        if (ghostType == GhostType.NONE || elementGhostManager == null) {
             return;
         }
         
@@ -4958,7 +4958,7 @@ implements SpatialIndex<Key, ID, Content> {
             log.debug("Updating ghost layer");
             // For now, just recreate the entire ghost layer
             // More sophisticated incremental updates could be implemented later
-            ghostBoundaryDetector.createGhostLayer();
+            elementGhostManager.createGhostLayer();
         } finally {
             lock.writeLock().unlock();
         }
@@ -5018,8 +5018,8 @@ implements SpatialIndex<Key, ID, Content> {
     protected void setNeighborDetector(NeighborDetector<Key> detector) {
         this.neighborDetector = detector;
         // Initialize ElementGhostManager now that we have a neighbor detector
-        if (detector != null && this.ghostBoundaryDetector == null) {
-            this.ghostBoundaryDetector = new com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<>(this, detector, ghostType, ghostAlgorithm);
+        if (detector != null && this.elementGhostManager == null) {
+            this.elementGhostManager = new ElementGhostManager<>(this, detector, ghostType, ghostAlgorithm);
         }
     }
     
@@ -5089,7 +5089,7 @@ implements SpatialIndex<Key, ID, Content> {
             }
             
             // Add ghost neighbors if available
-            if (ghostLayer != null && ghostBoundaryDetector != null) {
+            if (ghostLayer != null && elementGhostManager != null) {
                 // For now, iterate through all ghost elements to find those within range
                 // This could be optimized with spatial range queries later
                 for (var entry : ghostLayer.getAllGhostElements()) {
@@ -5114,7 +5114,7 @@ implements SpatialIndex<Key, ID, Content> {
      * Called after bulk insertions to trigger ghost updates if enabled.
      */
     protected void triggerGhostUpdateAfterBulkInsert() {
-        if (ghostType != GhostType.NONE && ghostBoundaryDetector != null) {
+        if (ghostType != GhostType.NONE && elementGhostManager != null) {
             log.debug("Triggering ghost update after bulk insertion");
             updateGhostLayer();
         }
@@ -5124,7 +5124,7 @@ implements SpatialIndex<Key, ID, Content> {
      * Called after tree adaptation to trigger ghost updates if enabled.
      */
     protected void triggerGhostUpdateAfterAdaptation() {
-        if (ghostType != GhostType.NONE && ghostBoundaryDetector != null) {
+        if (ghostType != GhostType.NONE && elementGhostManager != null) {
             log.debug("Triggering ghost update after tree adaptation");
             updateGhostLayer();
             
@@ -5141,7 +5141,7 @@ implements SpatialIndex<Key, ID, Content> {
     
     /**
      * Sets up distributed ghost management with the provided communication manager.
-     *
+     * 
      * @param communicationManager the gRPC communication manager
      * @param contentSerializer the content serializer
      * @param entityIdClass the entity ID class for deserialization
@@ -5155,33 +5155,27 @@ implements SpatialIndex<Key, ID, Content> {
                                       long treeId) {
         lock.writeLock().lock();
         try {
-            if (ghostBoundaryDetector == null) {
+            if (elementGhostManager == null) {
                 log.warn("Cannot setup distributed ghosts - local ghost manager not initialized");
                 return;
             }
-
-            // Create ghost channel wrapping the communication manager
-            var ghostChannel = new com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<>(
-                communicationManager, currentRank, treeId, getGhostType());
-
+            
             this.distributedGhostManager = new DistributedGhostManager<>(
-                this, ghostChannel, ghostBoundaryDetector);
-
+                this, communicationManager, elementGhostManager, contentSerializer, entityIdClass, currentRank, treeId);
+            
             log.info("Distributed ghost management enabled for rank {} tree {}", currentRank, treeId);
         } finally {
             lock.writeLock().unlock();
         }
     }
-
+    
     /**
      * Initialize the distributed ghost layer.
      * This should be called after all processes are ready.
-     *
-     * @param serviceDiscovery the service discovery to find other processes
      */
-    public void initializeDistributedGhosts(com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostServiceClient.ServiceDiscovery serviceDiscovery) {
+    public void initializeDistributedGhosts() {
         if (distributedGhostManager != null) {
-            distributedGhostManager.initialize(serviceDiscovery);
+            distributedGhostManager.initialize();
         } else {
             log.warn("Cannot initialize distributed ghosts - distributed ghost manager not set up");
         }

@@ -46,16 +46,6 @@ public class EntityMigrationLoadGenerator {
     private       ScheduledExecutorService   executor;
     private       int                        targetTPS;
     private       long                       startTime;
-    private volatile Clock clock = Clock.system();
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     /**
      * Creates a new load generator.
@@ -87,7 +77,7 @@ public class EntityMigrationLoadGenerator {
             throw new IllegalStateException("Generator already running");
         }
 
-        startTime = clock.currentTimeMillis();
+        startTime = System.currentTimeMillis();
 
         executor = Executors.newScheduledThreadPool(2, r -> {
             var thread = new Thread(r, "LoadGenerator");
@@ -145,7 +135,7 @@ public class EntityMigrationLoadGenerator {
      * @return load metrics
      */
     public LoadMetrics getMetrics() {
-        var elapsed = (clock.currentTimeMillis() - startTime) / 1000.0;
+        var elapsed = (System.currentTimeMillis() - startTime) / 1000.0;
         var actualTPS = elapsed > 0 ? totalGenerated.get() / elapsed : 0.0;
 
         return new LoadMetrics(targetTPS, actualTPS, pendingRequests.get(), totalGenerated.get(), totalFailures.get());

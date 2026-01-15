@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.von.VonMessage;
 
 import java.util.UUID;
@@ -74,7 +73,7 @@ public sealed interface MigrationProtocolMessages extends VonMessage {
                           UUID sourceId, UUID destId, long timestamp) implements MigrationProtocolMessages {
         public PrepareRequest(UUID transactionId, IdempotencyToken idempotencyToken, EntitySnapshot entitySnapshot,
                               UUID sourceId, UUID destId) {
-            this(transactionId, idempotencyToken, entitySnapshot, sourceId, destId, Clock.system().currentTimeMillis());
+            this(transactionId, idempotencyToken, entitySnapshot, sourceId, destId, System.currentTimeMillis());
         }
     }
 
@@ -92,7 +91,7 @@ public sealed interface MigrationProtocolMessages extends VonMessage {
     record PrepareResponse(UUID transactionId, boolean success, String reason, UUID destProcessId,
                            long timestamp) implements MigrationProtocolMessages {
         public PrepareResponse(UUID transactionId, boolean success, String reason, UUID destProcessId) {
-            this(transactionId, success, reason, destProcessId, Clock.system().currentTimeMillis());
+            this(transactionId, success, reason, destProcessId, System.currentTimeMillis());
         }
     }
 
@@ -112,7 +111,7 @@ public sealed interface MigrationProtocolMessages extends VonMessage {
      */
     record CommitRequest(UUID transactionId, boolean confirmed, long timestamp) implements MigrationProtocolMessages {
         public CommitRequest(UUID transactionId, boolean confirmed) {
-            this(transactionId, confirmed, Clock.system().currentTimeMillis());
+            this(transactionId, confirmed, System.currentTimeMillis());
         }
     }
 
@@ -129,7 +128,7 @@ public sealed interface MigrationProtocolMessages extends VonMessage {
     record CommitResponse(UUID transactionId, boolean success, String reason,
                           long timestamp) implements MigrationProtocolMessages {
         public CommitResponse(UUID transactionId, boolean success, String reason) {
-            this(transactionId, success, reason, Clock.system().currentTimeMillis());
+            this(transactionId, success, reason, System.currentTimeMillis());
         }
     }
 
@@ -148,7 +147,7 @@ public sealed interface MigrationProtocolMessages extends VonMessage {
      */
     record AbortRequest(UUID transactionId, String reason, long timestamp) implements MigrationProtocolMessages {
         public AbortRequest(UUID transactionId, String reason) {
-            this(transactionId, reason, Clock.system().currentTimeMillis());
+            this(transactionId, reason, System.currentTimeMillis());
         }
     }
 
@@ -163,7 +162,7 @@ public sealed interface MigrationProtocolMessages extends VonMessage {
      */
     record AbortResponse(UUID transactionId, boolean rolledBack, long timestamp) implements MigrationProtocolMessages {
         public AbortResponse(UUID transactionId, boolean rolledBack) {
-            this(transactionId, rolledBack, Clock.system().currentTimeMillis());
+            this(transactionId, rolledBack, System.currentTimeMillis());
         }
     }
 }

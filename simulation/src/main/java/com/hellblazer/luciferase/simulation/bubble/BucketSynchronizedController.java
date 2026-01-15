@@ -17,7 +17,6 @@
  */
 package com.hellblazer.luciferase.simulation.bubble;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -28,17 +27,8 @@ public class BucketSynchronizedController extends RealTimeController {
     private static final long TICKS_PER_BUCKET = 10;  // 100Hz ticks * 100ms = 10 ticks
     private static final long BUCKET_DURATION_NS = BUCKET_DURATION_MS * 1_000_000L;
 
-    private volatile Clock clock = Clock.system();
-
     private final AtomicLong currentBucket = new AtomicLong(0);
     private final AtomicLong startTimeNs = new AtomicLong(0);
-
-    /**
-     * Set the clock source for deterministic testing.
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     public BucketSynchronizedController(UUID bubbleId, String name) {
         super(bubbleId, name, 100);  // 100Hz
@@ -54,7 +44,7 @@ public class BucketSynchronizedController extends RealTimeController {
      */
     @Override
     protected void tickLoop() {
-        long startNs = clock.nanoTime();
+        long startNs = System.nanoTime();
         startTimeNs.set(startNs);
 
         while (running.get()) {
@@ -71,7 +61,7 @@ public class BucketSynchronizedController extends RealTimeController {
             }
 
             // Check if we've crossed a bucket boundary
-            long nowNs = clock.nanoTime();
+            long nowNs = System.nanoTime();
             long elapsedNs = nowNs - startTimeNs.get();
             long currentBucketNum = elapsedNs / BUCKET_DURATION_NS;
             long lastBucketNum = currentBucket.get();

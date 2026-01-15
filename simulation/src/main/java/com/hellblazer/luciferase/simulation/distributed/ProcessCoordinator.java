@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.distributed.migration.MigrationLogPersistence;
 import com.hellblazer.luciferase.simulation.distributed.migration.TransactionState;
 import com.hellblazer.luciferase.simulation.von.VonTransport;
@@ -79,7 +78,6 @@ public class ProcessCoordinator {
     private volatile boolean running = false;
     private volatile long lastElectionTime = 0;
     private static final long MIN_ELECTION_INTERVAL_MS = 500;
-    private volatile Clock clock = Clock.system();
 
     /**
      * Create a ProcessCoordinator with the given transport.
@@ -98,15 +96,6 @@ public class ProcessCoordinator {
         this.bucketScheduler = new WallClockBucketScheduler();
         this.messageValidator = new MessageOrderValidator();
         this.walPersistence = null; // Initialized lazily in start()
-    }
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
     }
 
     /**
@@ -247,7 +236,7 @@ public class ProcessCoordinator {
      * Minimum interval between elections: 500ms.
      */
     public void conductElection() {
-        var now = clock.currentTimeMillis();
+        var now = System.currentTimeMillis();
         if (now - lastElectionTime < MIN_ELECTION_INTERVAL_MS) {
             log.debug("Skipping election, too soon after last election ({}ms elapsed)",
                     now - lastElectionTime);

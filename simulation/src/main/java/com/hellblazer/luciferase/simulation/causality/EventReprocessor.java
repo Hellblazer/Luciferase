@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.causality;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.events.EntityUpdateEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -161,7 +160,6 @@ public class EventReprocessor {
      * Callback to invoke when gap timeout expires.
      */
     private volatile Runnable viewChangeCallback = null;
-    private volatile Clock clock = Clock.system();
 
     /**
      * Create an EventReprocessor with specified lookahead window.
@@ -190,15 +188,6 @@ public class EventReprocessor {
     }
 
     /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
-
-    /**
      * Queue an event for potential reprocessing if it arrives out-of-order.
      * Events are held until they can be processed sequentially.
      *
@@ -215,7 +204,7 @@ public class EventReprocessor {
             // Detect gap if not already in gap state
             if (gapState == GapState.NONE) {
                 gapState = GapState.DETECTED;
-                gapStartTimeMs = clock.currentTimeMillis();
+                gapStartTimeMs = System.currentTimeMillis();
                 totalGaps.incrementAndGet();
                 log.warn("Gap detected: queue overflow at size={}, gap#{}", config.maxQueueSize, totalGaps.get());
             }

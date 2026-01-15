@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,7 +91,6 @@ public class IdempotencyStore {
     private final AtomicLong tokensStored;
     private final AtomicLong duplicatesRejected;
     private final AtomicLong tokensExpired;
-    private volatile Clock clock = Clock.system();
 
     /**
      * Create store with default TTL (5 minutes).
@@ -115,15 +113,6 @@ public class IdempotencyStore {
     }
 
     /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
-
-    /**
      * Check if token is duplicate and store if new.
      * <p>
      * This is an atomic operation - only the first caller for a given token
@@ -136,7 +125,7 @@ public class IdempotencyStore {
      */
     public boolean checkAndStore(IdempotencyToken token) {
         var tokenId = token.toUUID();
-        var entry = new TokenEntry(clock.currentTimeMillis());
+        var entry = new TokenEntry(System.currentTimeMillis());
 
         // Atomic check-and-store: putIfAbsent returns null if key was absent
         var existing = tokens.putIfAbsent(tokenId, entry);
@@ -178,7 +167,7 @@ public class IdempotencyStore {
      */
     public boolean checkAndStoreMigration(IdempotencyToken token) {
         var migrationKey = token.migrationKey();
-        var entry = new TokenEntry(clock.currentTimeMillis());
+        var entry = new TokenEntry(System.currentTimeMillis());
 
         // Atomic check-and-store using migration key
         var existing = tokens.putIfAbsent(migrationKey, entry);
@@ -222,7 +211,7 @@ public class IdempotencyStore {
      * @return Number of tokens removed
      */
     public void cleanup() {
-        var currentTime = clock.currentTimeMillis();
+        var currentTime = System.currentTimeMillis();
         var removed = 0;
 
         // Iterate and remove expired entries

@@ -8,7 +8,6 @@
  */
 package com.hellblazer.luciferase.simulation.config;
 
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
@@ -23,7 +22,7 @@ public class SimulationMetrics {
     private final LongAdder totalTicks = new LongAdder();
     private final LongAdder totalFrameTimeNs = new LongAdder();
     private final LongAdder totalEntitiesProcessed = new LongAdder();
-    private final AtomicLong maxFrameTimeNs = new AtomicLong(0);
+    private final LongAdder maxFrameTimeNs = new LongAdder();
 
     private volatile long lastFrameTimeNs = 0;
     private volatile int lastEntityCount = 0;
@@ -41,8 +40,11 @@ public class SimulationMetrics {
         lastFrameTimeNs = frameTimeNs;
         lastEntityCount = entityCount;
 
-        // Track max frame time (thread-safe atomic update)
-        maxFrameTimeNs.updateAndGet(current -> Math.max(current, frameTimeNs));
+        // Track max frame time
+        if (frameTimeNs > maxFrameTimeNs.sum()) {
+            maxFrameTimeNs.reset();
+            maxFrameTimeNs.add(frameTimeNs);
+        }
     }
 
     /**
@@ -65,7 +67,7 @@ public class SimulationMetrics {
      * Get maximum frame time in milliseconds.
      */
     public double getMaxFrameTimeMs() {
-        return maxFrameTimeNs.get() / 1_000_000.0;
+        return maxFrameTimeNs.sum() / 1_000_000.0;
     }
 
     /**
@@ -114,7 +116,7 @@ public class SimulationMetrics {
         totalTicks.reset();
         totalFrameTimeNs.reset();
         totalEntitiesProcessed.reset();
-        maxFrameTimeNs.set(0);
+        maxFrameTimeNs.reset();
         lastFrameTimeNs = 0;
         lastEntityCount = 0;
     }

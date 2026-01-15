@@ -14,8 +14,7 @@ import com.hellblazer.luciferase.simulation.behavior.RandomWalkBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
-import com.hellblazer.luciferase.simulation.bubble.SimulationBubble;
+import com.hellblazer.luciferase.simulation.loop.SimulationLoop;
 import io.javalin.Javalin;
 import io.javalin.websocket.WsContext;
 import org.slf4j.Logger;
@@ -55,9 +54,8 @@ public class EntityVisualizationServer {
     private final Object streamingLock = new Object();
 
     private EnhancedBubble bubble;
-    private SimulationBubble simulation;
+    private SimulationLoop simulation;
     private ScheduledFuture<?> streamTask;
-    private volatile Clock clock = Clock.system();
 
     /**
      * Create server with default port.
@@ -73,15 +71,6 @@ public class EntityVisualizationServer {
     public EntityVisualizationServer(int port) {
         this.port = port;
         this.app = createApp();
-    }
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
     }
 
     private Javalin createApp() {
@@ -182,21 +171,21 @@ public class EntityVisualizationServer {
     }
 
     /**
-     * Set the simulation bubble.
+     * Set the simulation loop.
      * Also sets the bubble from the simulation.
      *
-     * @param simulation SimulationBubble to run
+     * @param simulation SimulationLoop to run
      */
-    public void setSimulation(SimulationBubble simulation) {
+    public void setSimulation(SimulationLoop simulation) {
         this.simulation = simulation;
         this.bubble = simulation.getBubble();
         log.info("Simulation set: {} entities", bubble.entityCount());
     }
 
     /**
-     * Get the simulation bubble.
+     * Get the simulation loop.
      */
-    public SimulationBubble getSimulation() {
+    public SimulationLoop getSimulation() {
         return simulation;
     }
 
@@ -388,7 +377,7 @@ public class EntityVisualizationServer {
             sb.append("\"type\":\"").append(entity.type()).append("\"}");
         }
 
-        sb.append("],\"timestamp\":").append(clock.currentTimeMillis()).append("}");
+        sb.append("],\"timestamp\":").append(System.currentTimeMillis()).append("}");
         return sb.toString();
     }
 
@@ -506,7 +495,7 @@ public class EntityVisualizationServer {
             log.info("Using FlockingBehavior (separation/alignment/cohesion)");
         }
 
-        var simulation = new SimulationBubble(bubble, behavior);
+        var simulation = new SimulationLoop(bubble, behavior);
 
         server.setSimulation(simulation);
         server.start();

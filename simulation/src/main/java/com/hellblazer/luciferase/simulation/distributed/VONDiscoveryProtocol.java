@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.von.Event;
 import javafx.geometry.Point3D;
 import org.slf4j.Logger;
@@ -59,8 +58,6 @@ public class VONDiscoveryProtocol {
 
     private static final Logger log = LoggerFactory.getLogger(VONDiscoveryProtocol.class);
 
-    private volatile Clock clock = Clock.system();
-
     private final ProcessCoordinator coordinator;
     private final MessageOrderValidator validator;
     private final CrossProcessNeighborIndex neighborIndex;
@@ -70,13 +67,6 @@ public class VONDiscoveryProtocol {
 
     // Event subscribers
     private final List<Consumer<Event>> eventSubscribers;
-
-    /**
-     * Set the clock source for deterministic testing.
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     /**
      * Create a VONDiscoveryProtocol.
@@ -126,7 +116,7 @@ public class VONDiscoveryProtocol {
         log.debug("Handling JOIN for bubble {} at {}", bubbleId, position);
 
         // Update state
-        bubbleStates.put(bubbleId, new BubbleState(bubbleId, position, clock.currentTimeMillis()));
+        bubbleStates.put(bubbleId, new BubbleState(bubbleId, position, System.currentTimeMillis()));
 
         // Emit event
         emitEvent(new Event.Join(bubbleId, position));
@@ -155,7 +145,7 @@ public class VONDiscoveryProtocol {
         log.debug("Handling MOVE for bubble {} to {}", bubbleId, newPosition);
 
         // Update state
-        bubbleStates.put(bubbleId, new BubbleState(bubbleId, newPosition, clock.currentTimeMillis()));
+        bubbleStates.put(bubbleId, new BubbleState(bubbleId, newPosition, System.currentTimeMillis()));
 
         // Emit event
         emitEvent(new Event.Move(bubbleId, newPosition, null));

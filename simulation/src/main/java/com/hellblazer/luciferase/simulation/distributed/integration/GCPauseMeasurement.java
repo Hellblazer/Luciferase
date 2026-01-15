@@ -48,16 +48,6 @@ public class GCPauseMeasurement {
     private volatile Thread pollingThread;
     private volatile boolean running;
     private long measurementStartTime;
-    private volatile Clock clock = Clock.system();
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     /**
      * Creates a GC pause measurement instance with default 1ms polling interval.
@@ -84,7 +74,7 @@ public class GCPauseMeasurement {
         }
 
         running = true;
-        measurementStartTime = clock.currentTimeMillis();
+        measurementStartTime = System.currentTimeMillis();
         pauseDurations.clear();
 
         // Start high-priority polling thread
@@ -118,7 +108,7 @@ public class GCPauseMeasurement {
      * @return duration in ms
      */
     public long getDurationMs() {
-        return clock.currentTimeMillis() - measurementStartTime;
+        return System.currentTimeMillis() - measurementStartTime;
     }
 
     /**
@@ -236,10 +226,10 @@ public class GCPauseMeasurement {
                 lastCollectionCounts[i] = gcBeans.get(i).getCollectionCount();
             }
 
-            var lastPollTime = clock.currentTimeMillis();
+            var lastPollTime = System.currentTimeMillis();
 
             while (running) {
-                var now = clock.currentTimeMillis();
+                var now = System.currentTimeMillis();
                 var timeSinceLastPoll = now - lastPollTime;
 
                 if (timeSinceLastPoll >= pollIntervalMs) {

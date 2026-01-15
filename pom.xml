@@ -45,6 +45,7 @@
     <modules>
         <module>grpc</module>
         <module>lucien</module>
+        <module>e2e-test</module>
         <module>portal</module>
         <module>common</module>
         <module>simulation</module>
@@ -598,17 +599,6 @@
     </build>
 
     <repositories>
-        <!-- Maven Central FIRST for standard dependencies (avoids GitHub Packages timeouts) -->
-        <repository>
-            <id>central</id>
-            <name>Maven Central</name>
-            <url>https://repo.maven.apache.org/maven2</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-        </repository>
-
-        <!-- GitHub Packages for custom artifacts (Prime-Mover, GPU Support, Delos) -->
         <repository>
             <id>github</id>
             <name>GPU Support GitHub Packages</name>
@@ -633,21 +623,20 @@
                 <enabled>true</enabled>
             </snapshots>
         </repository>
+        <repository>
+            <id>jzy3d-snapshots</id>
+            <name>Jzy3d Snapshots</name>
+            <url>https://maven.jzy3d.org/snapshots/</url>
+        </repository>
+        <repository>
+            <id>jzy3d-releases</id>
+            <name>Jzy3d Releases</name>
+            <url>https://maven.jzy3d.org/releases/</url>
+        </repository>
 
     </repositories>
 
     <pluginRepositories>
-        <!-- Maven Central FIRST for standard plugin dependencies -->
-        <pluginRepository>
-            <id>central</id>
-            <name>Maven Central</name>
-            <url>https://repo.maven.apache.org/maven2</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-        </pluginRepository>
-
-        <!-- GitHub Packages for custom plugins (Prime-Mover Maven plugin) -->
         <pluginRepository>
             <id>github-prime-mover</id>
             <name>Prime Mover GitHub Packages</name>

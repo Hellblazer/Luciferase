@@ -43,16 +43,6 @@ public class DistributedEntityFactory {
     private final Random random;
     private final Map<UUID, EntitySnapshot> entitySnapshots = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> entityToBubble = new ConcurrentHashMap<>();
-    private volatile Clock clock = Clock.system();
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     /**
      * Creates a factory with default round-robin distribution.
@@ -80,7 +70,7 @@ public class DistributedEntityFactory {
      * @param strategy the distribution strategy
      */
     public DistributedEntityFactory(TestProcessCluster cluster, EntityDistributionStrategy strategy) {
-        this(cluster, strategy, Clock.system().nanoTime());
+        this(cluster, strategy, System.nanoTime());
     }
 
     /**
@@ -126,7 +116,7 @@ public class DistributedEntityFactory {
                 bubbleId,
                 1L,  // epoch
                 1L,  // version
-                clock.currentTimeMillis()
+                System.currentTimeMillis()
             );
 
             // Store locally

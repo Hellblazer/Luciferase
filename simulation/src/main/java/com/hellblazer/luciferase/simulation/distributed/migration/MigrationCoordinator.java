@@ -18,7 +18,6 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.distributed.*;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.distributed.migration.MigrationProtocolMessages.*;
 import com.hellblazer.luciferase.simulation.von.VonMessage;
 import com.hellblazer.luciferase.simulation.von.VonTransport;
@@ -83,7 +82,6 @@ public class MigrationCoordinator {
     private final Map<UUID, MigrationTransaction>    pendingTransactions;
     private final ScheduledExecutorService           cleanupScheduler;
     private final MigrationMetrics                   metrics;
-    private volatile Clock clock = Clock.system();
 
     private volatile boolean running = false;
 
@@ -108,15 +106,6 @@ public class MigrationCoordinator {
             return t;
         });
         this.metrics = new MigrationMetrics();
-    }
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
     }
 
     /**
@@ -365,7 +354,7 @@ public class MigrationCoordinator {
      * Removes transactions older than TRANSACTION_TIMEOUT (300ms).
      */
     private void cleanupExpiredTransactions() {
-        var now = clock.currentTimeMillis();
+        var now = System.currentTimeMillis();
         var expiredCount = 0;
 
         var iterator = pendingTransactions.entrySet().iterator();

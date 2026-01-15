@@ -18,7 +18,6 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.distributed.BubbleReference;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import javafx.geometry.Point3D;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,20 +69,12 @@ public class CrossProcessMigration {
     private static final long                  PHASE_TIMEOUT_MS      = 100;
     private static final long                  TOTAL_TIMEOUT_MS      = 300;
     private static final long                  LOCK_TIMEOUT_MS       = 50;
-    private volatile     Clock                 clock                 = Clock.system();
     private final        IdempotencyStore      dedup;
     private final        MigrationMetrics      metrics;
     // C1: Per-entity migration locks to prevent concurrent migrations
     private final        Map<String, ReentrantLock> entityMigrationLocks = new ConcurrentHashMap<>();
     // Active transactions (for cleanup and monitoring)
     private final        Map<UUID, MigrationTransaction> activeTransactions = new ConcurrentHashMap<>();
-
-    /**
-     * Set the clock source for deterministic testing.
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     public CrossProcessMigration(IdempotencyStore dedup, MigrationMetrics metrics) {
         this.dedup = dedup;
@@ -119,7 +110,7 @@ public class CrossProcessMigration {
         // Execute entire 2PC protocol synchronously inside the lock
         try {
             metrics.incrementConcurrent();
-            var startTime = clock.currentTimeMillis();
+            var startTime = System.currentTimeMillis();
 
             // Execute 2PC synchronously - returns immediately completed future
             var result = executeRemoveThenCommitSync(entityId, source, dest, startTime);
@@ -144,7 +135,7 @@ public class CrossProcessMigration {
                                                          BubbleReference dest, long startTime) {
         // Generate idempotency token
         var token = new IdempotencyToken(entityId, source.getBubbleId(), dest.getBubbleId(),
-                                         clock.currentTimeMillis(), UUID.randomUUID());
+                                         System.currentTimeMillis(), UUID.randomUUID());
 
         // Check for duplicate migration (application-level idempotency)
         if (!dedup.checkAndStoreMigration(token)) {
@@ -183,7 +174,7 @@ public class CrossProcessMigration {
             }
 
             // Success
-            var latency = clock.currentTimeMillis() - startTime;
+            var latency = System.currentTimeMillis() - startTime;
             metrics.recordSuccess(latency);
             activeTransactions.remove(txnId);
 
@@ -228,7 +219,7 @@ public class CrossProcessMigration {
             }
 
             // Remove entity from source with timeout check
-            var prepareStartTime = clock.currentTimeMillis();
+            var prepareStartTime = System.currentTimeMillis();
             boolean removed;
             if (source instanceof com.hellblazer.luciferase.simulation.distributed.migration.TestableEntityStore testSource) {
                 removed = testSource.removeEntity(entityId);  // Delay is handled internally
@@ -236,7 +227,7 @@ public class CrossProcessMigration {
                 // Production code would call source.asLocal().removeEntity(entityId)
                 removed = true;
             }
-            var prepareElapsed = clock.currentTimeMillis() - prepareStartTime;
+            var prepareElapsed = System.currentTimeMillis() - prepareStartTime;
 
             // Check per-phase timeout (not cumulative)
             // Each phase (PREPARE, COMMIT) has independent 100ms timeout
@@ -278,7 +269,7 @@ public class CrossProcessMigration {
             var entityId = snapshot.entityId();
 
             // Add entity to destination with timeout check
-            var commitStartTime = clock.currentTimeMillis();
+            var commitStartTime = System.currentTimeMillis();
             boolean added;
             if (dest instanceof com.hellblazer.luciferase.simulation.distributed.migration.TestableEntityStore testDest) {
                 added = testDest.addEntity(snapshot);  // Delay is handled internally
@@ -286,7 +277,7 @@ public class CrossProcessMigration {
                 // Production code would call dest.asLocal().addEntity(snapshot)
                 added = true;
             }
-            var commitElapsed = clock.currentTimeMillis() - commitStartTime;
+            var commitElapsed = System.currentTimeMillis() - commitStartTime;
 
             // Check per-phase timeout (not cumulative)
             // Each phase (PREPARE, COMMIT) has independent 100ms timeout
@@ -386,7 +377,7 @@ public class CrossProcessMigration {
         // In actual implementation, would query source bubble for entity state
         // For now, create synthetic snapshot
         return new EntitySnapshot(entityId, new Point3D(0, 0, 0), "MockContent", source.getBubbleId(), 1L, 1L,
-                                  clock.currentTimeMillis());
+                                  System.currentTimeMillis());
     }
 
     /**

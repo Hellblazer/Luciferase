@@ -1,11 +1,9 @@
 # Simulation Module
 
-**Last Updated**: 2026-01-12
-**Status**: Implementation Complete + Deterministic Testing (31.9% H3 Complete)
+**Last Updated**: 2026-01-04
+**Status**: Implementation Complete
 
 Distributed animation framework for 3D spatial systems with causal consistency. Built on PrimeMover discrete event simulation with Tetree spatial indexing.
-
-**New**: Deterministic testing with Clock interface - 36 of 113 System.* calls converted (H3.7 Phase 1 complete).
 
 ## Features
 
@@ -44,41 +42,12 @@ cursor.moveTo(newPosition);
 - **Moveable**: `moveBy(delta)`, `moveTo(position)` - entity movement
 - **Cursor**: Movement tracking with spatial index integration
 
-### Deterministic Testing (H3.7 - In Progress)
-
-**Status**: Phase 1 Complete (31.9% of 113 System.* calls converted)
-
-Clock interface enables deterministic control of time in tests:
-
-```java
-// Setup deterministic clock
-var testClock = new TestClock();
-testClock.setMillis(1000L);  // Start at T=1000ms
-
-// Inject into components
-var migration = new CrossProcessMigration(dedup, metrics);
-migration.setClock(testClock);
-
-// Control time progression
-testClock.advance(500);  // Advance to T=1500ms
-```
-
-**Benefits**:
-- Eliminates timing-dependent test flakiness
-- Enables reproducible debugging
-- Supports deterministic simulation replay
-- Zero behavioral change in production (Clock.system() ≡ System.currentTimeMillis())
-
-**See**: [H3_DETERMINISM_EPIC.md](doc/H3_DETERMINISM_EPIC.md) for complete documentation.
-
 ## Architecture
 
 **See Complete Documentation**:
 
-- [doc/ARCHITECTURE_DISTRIBUTED.md](doc/ARCHITECTURE_DISTRIBUTED.md) - Complete distributed architecture
+- [doc/CONSOLIDATION_MASTER_OVERVIEW.md](doc/CONSOLIDATION_MASTER_OVERVIEW.md) - Complete architecture overview
 - [doc/SIMULATION_BUBBLES.md](doc/SIMULATION_BUBBLES.md) - Distributed simulation design
-- [doc/H3_DETERMINISM_EPIC.md](doc/H3_DETERMINISM_EPIC.md) - Deterministic testing architecture
-- [doc/TESTING_PATTERNS.md](doc/TESTING_PATTERNS.md) - Testing best practices
 
 **Key Concepts**:
 
@@ -86,7 +55,6 @@ testClock.advance(500);  // Advance to T=1500ms
 - **Causal Consistency**: Bounded rollback within interaction range (100-200ms window)
 - **Ghost Layer**: Boundary entity synchronization using Lucien's GhostZoneManager
 - **Bucket Scheduler**: Time-based coordination for distributed animation
-- **Clock Interface**: Deterministic time control for testing (H3.7)
 
 ## Implementation Status
 

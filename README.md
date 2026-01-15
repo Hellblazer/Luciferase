@@ -1,7 +1,7 @@
 # Luciferase
 
-**Last Updated**: 2026-01-12
-**Status**: H3 Phase 1 Complete | Phase 7D - Entity Migration Coordination (In Progress)
+**Last Updated**: 2026-01-09
+**Status**: Phase 7D - Entity Migration Coordination (In Progress)
 
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
 
@@ -53,7 +53,7 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 | [sentry](sentry/README.md) | Delaunay tetrahedralization for kinetic point tracking |
 | [portal](portal/README.md) | JavaFX 3D visualization and mesh handling |
 | [von](von/README.md) | Voronoi-based area-of-interest perception framework |
-| [simulation](simulation/README.md) | Distributed simulation with deterministic testing, entity migration, and simulation bubbles |
+| [simulation](simulation/README.md) | Distributed simulation with adaptive volume sharding and simulation bubbles |
 | [grpc](grpc/README.md) | Protocol buffer definitions for ghost layer synchronization |
 
 ### External Dependencies
@@ -164,39 +164,7 @@ Expected benchmark categories (with 10,000 entities):
 | Ray Intersection | Ray-tree intersection tests/sec |
 | Update | Entity position updates/sec |
 
-## Testing
-
-The project includes comprehensive testing infrastructure:
-- **Unit tests**: 2200+ tests across all modules
-- **Integration tests**: Distributed simulation scenarios
-- **Performance benchmarks**: JMH-based benchmarking with automated metric extraction
-- **Deterministic testing**: Clock interface injection for reproducible time-dependent tests
-
-### Deterministic Testing
-
-The simulation module supports deterministic testing through injectable Clock abstraction, enabling:
-- **Reproducible scenarios**: Control time progression explicitly in tests
-- **Time-travel debugging**: Set arbitrary time points for test scenarios
-- **Controllable advancement**: Eliminate timing-dependent flakiness
-- **Consistent CI results**: Remove non-deterministic timing dependencies
-
-**Progress**: H3 Determinism Epic - Phase 1 complete (36/113 calls converted, 31.9%)
-
-See [simulation/doc/H3_DETERMINISM_EPIC.md](simulation/doc/H3_DETERMINISM_EPIC.md) for architecture details and [simulation/doc/H3.7_PHASE1_COMPLETION.md](simulation/doc/H3.7_PHASE1_COMPLETION.md) for implementation progress.
-
 ## Development Status
-
-### H3 Determinism Epic (Phase 1 Complete)
-
-**Objective**: Enable deterministic, reproducible testing by eliminating non-deterministic time dependencies.
-
-**Completed**: Phase 1 (8 files, 36 calls, 31.9%)
-- ✅ Clock interface with TestClock implementation
-- ✅ VonMessageFactory pattern for record classes
-- ✅ Critical files converted (FakeNetworkChannel, GhostStateManager, EntityMigrationStateMachine, CrossProcessMigration, etc.)
-- ✅ Flaky test handling with @DisabledIfEnvironmentVariable pattern
-
-**Remaining**: Phases 2-4 (46 files, 77 calls, 68.1%)
 
 ### Phase 7D: Entity Migration Coordination (Ongoing)
 
@@ -222,29 +190,13 @@ See [PHASE_7D_DAY_BY_DAY_IMPLEMENTATION.md](simulation/doc/PHASE_7D_DAY_BY_DAY_I
 
 ## Documentation
 
-### Architecture
-- [High-Level Architecture](ARCHITECTURE.md) - System overview and design principles
-- [Lucien Architecture](lucien/doc/LUCIEN_ARCHITECTURE.md) - Spatial indexing details
-- [Simulation Architecture](simulation/doc/CONSOLIDATION_MASTER_OVERVIEW.md) - Distributed simulation design
-- [H3 Determinism Epic](simulation/doc/H3_DETERMINISM_EPIC.md) - Deterministic testing architecture
-
-### Development
-- [Contributing Guidelines](CONTRIBUTING.md) - How to contribute
-- [CLAUDE.md](CLAUDE.md) - Claude Code development guide
-- [Performance Metrics](lucien/doc/PERFORMANCE_METRICS_MASTER.md) - Benchmarking results
-
-### Current Work
-- [Phase 7D Implementation Plan](simulation/doc/PHASE_7D_DAY_BY_DAY_IMPLEMENTATION.md) - Entity Migration Coordination
-- [H3.7 Phase 1 Completion](simulation/doc/H3.7_PHASE1_COMPLETION.md) - Determinism progress
+- [Architecture Overview](lucien/doc/LUCIEN_ARCHITECTURE.md)
+- [Performance Metrics](lucien/doc/PERFORMANCE_METRICS_MASTER.md)
+- [Phase 7D Implementation Plan](simulation/doc/PHASE_7D_DAY_BY_DAY_IMPLEMENTATION.md) (Entity Migration Coordination)
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines including:
-- Code style and conventions
-- Testing requirements (including deterministic time handling)
-- Performance testing procedures
-- Pull request process
-- Architecture decision documentation
+Contributions are welcome. Please follow the project's code style and testing standards when submitting PRs.
 
 ## License
 

@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.von.VonMessage;
 
 import java.util.List;
@@ -43,6 +42,6 @@ public record RegisterProcessMessage(
 ) implements VonMessage {
 
     public RegisterProcessMessage(UUID processId, List<UUID> bubbles) {
-        this(processId, bubbles, Clock.system().currentTimeMillis());
+        this(processId, bubbles, System.currentTimeMillis());
     }
 }

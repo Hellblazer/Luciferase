@@ -19,7 +19,6 @@ package com.hellblazer.luciferase.simulation.consensus.committee;
 
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,7 +58,6 @@ public class OptimisticMigratorIntegration {
 
     private final ViewCommitteeConsensus consensus;
     private final FirefliesViewMonitor viewMonitor;
-    private volatile Clock clock = Clock.system();
 
     /**
      * Track approved migrations for diagnostics and validation.
@@ -81,15 +79,6 @@ public class OptimisticMigratorIntegration {
     public OptimisticMigratorIntegration(ViewCommitteeConsensus consensus, FirefliesViewMonitor viewMonitor) {
         this.consensus = Objects.requireNonNull(consensus, "consensus must not be null");
         this.viewMonitor = Objects.requireNonNull(viewMonitor, "viewMonitor must not be null");
-    }
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
     }
 
     /**
@@ -116,7 +105,7 @@ public class OptimisticMigratorIntegration {
             sourceId,
             targetNodeId,
             currentViewId,
-            clock.currentTimeMillis()
+            System.currentTimeMillis()
         );
 
         // Store for testing

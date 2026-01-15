@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.von.VonMessage;
 import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
 import com.hellblazer.luciferase.simulation.von.VonTransport;
@@ -52,8 +51,6 @@ public class RemoteBubbleProxy implements BubbleReference {
     private static final long DEFAULT_TIMEOUT_MS = 5000;
     private static final long DEFAULT_CACHE_TTL_MS = 10000;
 
-    private volatile Clock clock = Clock.system();
-
     private final UUID bubbleId;
     private final VonTransport transport;
     private final VonMessageFactory factory;
@@ -62,13 +59,6 @@ public class RemoteBubbleProxy implements BubbleReference {
 
     // Cache for remote bubble info
     private final ConcurrentHashMap<String, CacheEntry> cache;
-
-    /**
-     * Set the clock source for deterministic testing.
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     /**
      * Create a remote bubble proxy.
@@ -152,14 +142,14 @@ public class RemoteBubbleProxy implements BubbleReference {
         var entry = cache.get(key);
 
         // Check cache validity
-        if (entry != null && !entry.isExpired(clock)) {
+        if (entry != null && !entry.isExpired()) {
             return (T) entry.value;
         }
 
         // Try to fetch from remote
         try {
             var value = fetcher.fetch();
-            cache.put(key, new CacheEntry(value, clock.currentTimeMillis() + cacheTTL));
+            cache.put(key, new CacheEntry(value, System.currentTimeMillis() + cacheTTL));
             return value;
         } catch (Exception e) {
             log.warn("Failed to fetch {} from remote bubble {}: {}", key, bubbleId, e.getMessage());
@@ -188,8 +178,8 @@ public class RemoteBubbleProxy implements BubbleReference {
             transport.sendToNeighbor(bubbleId, query);
 
             // Wait for response (blocking with timeout)
-            var start = clock.currentTimeMillis();
-            while (clock.currentTimeMillis() - start < timeoutMs) {
+            var start = System.currentTimeMillis();
+            while (System.currentTimeMillis() - start < timeoutMs) {
                 Thread.sleep(10);
                 // In production, would use Future/CompletableFuture
                 // For now, return a placeholder
@@ -217,8 +207,8 @@ public class RemoteBubbleProxy implements BubbleReference {
             transport.sendToNeighbor(bubbleId, query);
 
             // Wait for response (blocking with timeout)
-            var start = clock.currentTimeMillis();
-            while (clock.currentTimeMillis() - start < timeoutMs) {
+            var start = System.currentTimeMillis();
+            while (System.currentTimeMillis() - start < timeoutMs) {
                 Thread.sleep(10);
                 // In production, would use Future/CompletableFuture
             }
@@ -269,8 +259,8 @@ public class RemoteBubbleProxy implements BubbleReference {
             this.expiresAt = expiresAt;
         }
 
-        boolean isExpired(Clock clock) {
-            return clock.currentTimeMillis() > expiresAt;
+        boolean isExpired() {
+            return System.currentTimeMillis() > expiresAt;
         }
     }
 

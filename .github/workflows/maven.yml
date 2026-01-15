@@ -23,17 +23,14 @@ jobs:
           distribution: 'graalvm'
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cache Maven packages and compiled artifacts
+      - name: Cache Maven packages
         uses: actions/cache@v4
         with:
           path: |
             ~/.m2/repository
-            **/target/
-          key: luciferase-maven-${{ github.sha }}
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            luciferase-maven-${{ github.ref }}-
-            luciferase-maven-refs/heads/main-
-            luciferase-maven-
+            ${{ runner.os }}-maven-
 
       - name: Configure Maven for GitHub Packages
         run: |
@@ -61,24 +58,36 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Compile all modules
+      - name: Compile with Maven
         run: ./mvnw -batch-mode clean test-compile install -DskipTests --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Save Maven cache after compile
-        uses: actions/cache@v4
+      # Upload compiled classes for test job
+      - name: Upload compiled artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-classes
+          path: |
+            **/target/classes/
+            **/target/test-classes/
+            **/target/*.jar
+          retention-days: 1
+
+      # Save cache after successful compile, even if tests fail later
+      - name: Save Maven cache
+        if: success()
+        uses: actions/cache/save@v4
         with:
           path: |
             ~/.m2/repository
-            **/target/
-          key: luciferase-maven-${{ github.sha }}
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
 
-  test-batch-1:
+  test:
     needs: compile
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -95,18 +104,21 @@ jobs:
           distribution: 'graalvm'
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Restore Maven cache from compile job
-        uses: actions/cache@v4
+      - name: Restore Maven cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.m2/repository
-            **/target/
-          key: luciferase-maven-${{ github.sha }}
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            luciferase-maven-${{ github.ref }}-
-            luciferase-maven-refs/heads/main-
-            luciferase-maven-
-          fail-on-cache-miss: false
+            ${{ runner.os }}-maven-
+
+      # Download compiled classes from compile job
+      - name: Download compiled artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: compiled-classes
+          path: .
 
       - name: Configure Maven for GitHub Packages
         run: |
@@ -139,401 +151,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
 
-      - name: Test Batch 1 (Fast unit tests - bubble, behavior, metrics, validation)
+      - name: Test with Maven
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/bubble/**/*Test,**/behavior/**/*Test,**/metrics/**/*Test,**/validation/**/*Test,**/tumbler/**/*Test,**/viz/**/*Test,**/spatial/**/*Test' --file pom.xml
+          xvfb-run -a ./mvnw -batch-mode surefire:test --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-  test-batch-2:
-    needs: compile
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      CI: true
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: graalvm/setup-graalvm@v1
-        with:
-          java-version: '25'
-          distribution: 'graalvm'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Restore Maven cache from compile job
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.m2/repository
-            **/target/
-          key: luciferase-maven-${{ github.sha }}
-          restore-keys: |
-            luciferase-maven-${{ github.ref }}-
-            luciferase-maven-refs/heads/main-
-            luciferase-maven-
-          fail-on-cache-miss: false
-
-      - name: Configure Maven for GitHub Packages
-        run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml <<EOF
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
-                                        https://maven.apache.org/xsd/settings-1.0.0.xsd">
-            <servers>
-              <server>
-                <id>github</id>
-                <username>\${env.GITHUB_ACTOR}</username>
-                <password>\${env.GITHUB_TOKEN}</password>
-              </server>
-              <server>
-                <id>github-prime-mover</id>
-                <username>\${env.GITHUB_ACTOR}</username>
-                <password>\${env.PACKAGES_TOKEN}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Install native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
-
-      - name: Test Batch 2 (VON overlay + transport + integration)
-        run: |
-          export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/von/**/*Test,**/transport/**/*Test,**/integration/**/*Test' --file pom.xml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-  test-batch-3:
-    needs: compile
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      CI: true
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: graalvm/setup-graalvm@v1
-        with:
-          java-version: '25'
-          distribution: 'graalvm'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Restore Maven cache from compile job
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.m2/repository
-            **/target/
-          key: luciferase-maven-${{ github.sha }}
-          restore-keys: |
-            luciferase-maven-${{ github.ref }}-
-            luciferase-maven-refs/heads/main-
-            luciferase-maven-
-          fail-on-cache-miss: false
-
-      - name: Configure Maven for GitHub Packages
-        run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml <<EOF
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
-                                        https://maven.apache.org/xsd/settings-1.0.0.xsd">
-            <servers>
-              <server>
-                <id>github</id>
-                <username>\${env.GITHUB_ACTOR}</username>
-                <password>\${env.GITHUB_TOKEN}</password>
-              </server>
-              <server>
-                <id>github-prime-mover</id>
-                <username>\${env.GITHUB_ACTOR}</username>
-                <password>\${env.PACKAGES_TOKEN}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Install native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
-
-      - name: Test Batch 3 (Causality + migration + grid coordination)
-        run: |
-          export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/causality/**/*Test,**/distributed/migration/**/*Test,**/distributed/grid/**/*Test' --file pom.xml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-  test-batch-4:
-    needs: compile
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      CI: true
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: graalvm/setup-graalvm@v1
-        with:
-          java-version: '25'
-          distribution: 'graalvm'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Restore Maven cache from compile job
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.m2/repository
-            **/target/
-          key: luciferase-maven-${{ github.sha }}
-          restore-keys: |
-            luciferase-maven-${{ github.ref }}-
-            luciferase-maven-refs/heads/main-
-            luciferase-maven-
-          fail-on-cache-miss: false
-
-      - name: Configure Maven for GitHub Packages
-        run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml <<EOF
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
-                                        https://maven.apache.org/xsd/settings-1.0.0.xsd">
-            <servers>
-              <server>
-                <id>github</id>
-                <username>\${env.GITHUB_ACTOR}</username>
-                <password>\${env.GITHUB_TOKEN}</password>
-              </server>
-              <server>
-                <id>github-prime-mover</id>
-                <username>\${env.GITHUB_ACTOR}</username>
-                <password>\${env.GITHUB_TOKEN}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Install native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
-
-      - name: Test Batch 4 (Distributed systems + network + Delos integration)
-        run: |
-          export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/distributed/*Test,**/distributed/integration/**/*Test,**/distributed/network/**/*Test,**/delos/**/*Test' --file pom.xml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-  test-batch-5:
-    needs: compile
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      CI: true
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: graalvm/setup-graalvm@v1
-        with:
-          java-version: '25'
-          distribution: 'graalvm'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Restore Maven cache from compile job
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.m2/repository
-            **/target/
-          key: luciferase-maven-${{ github.sha }}
-          restore-keys: |
-            luciferase-maven-${{ github.ref }}-
-            luciferase-maven-refs/heads/main-
-            luciferase-maven-
-          fail-on-cache-miss: false
-
-      - name: Configure Maven for GitHub Packages
-        run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml <<EOF
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
-                                        https://maven.apache.org/xsd/settings-1.0.0.xsd">
-            <servers>
-              <server>
-                <id>github</id>
-                <username>\${env.GITHUB_ACTOR}</username>
-                <password>\${env.GITHUB_TOKEN}</password>
-              </server>
-              <server>
-                <id>github-prime-mover</id>
-                <username>\${env.GITHUB_ACTOR}</username>
-                <password>\${env.PACKAGES_TOKEN}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Install native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
-
-      - name: Test Batch 5 (Consensus committee + demo + ghost layer)
-        run: |
-          export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/consensus/**/*Test,**/ghost/**/*Test' --file pom.xml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-  test-other-modules:
-    needs: compile
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    env:
-      CI: true
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: graalvm/setup-graalvm@v1
-        with:
-          java-version: '25'
-          distribution: 'graalvm'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Restore Maven cache from compile job
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.m2/repository
-            **/target/
-          key: luciferase-maven-${{ github.sha }}
-          restore-keys: |
-            luciferase-maven-${{ github.ref }}-
-            luciferase-maven-refs/heads/main-
-            luciferase-maven-
-          fail-on-cache-miss: false
-
-      - name: Configure Maven for GitHub Packages
-        run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml <<EOF
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
-                                        https://maven.apache.org/xsd/settings-1.0.0.xsd">
-            <servers>
-              <server>
-                <id>github</id>
-                <username>\${env.GITHUB_ACTOR}</username>
-                <password>\${env.GITHUB_TOKEN}</password>
-              </server>
-              <server>
-                <id>github-prime-mover</id>
-                <username>\${env.GITHUB_ACTOR}</username>
-                <password>\${env.PACKAGES_TOKEN}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Install native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
-
-      - name: Test Other Modules (grpc, common, lucien, sentry, render, portal, dyada-java)
-        run: |
-          export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl grpc,common,lucien,sentry,render,portal,dyada-java --file pom.xml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-
-  build-status:
-    needs: [test-batch-1, test-batch-2, test-batch-3, test-batch-4, test-batch-5, test-other-modules]
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-      - name: Check Test Results
-        run: |
-          if [ "${{ needs.test-batch-1.result }}" != "success" ] || \
-             [ "${{ needs.test-batch-2.result }}" != "success" ] || \
-             [ "${{ needs.test-batch-3.result }}" != "success" ] || \
-             [ "${{ needs.test-batch-4.result }}" != "success" ] || \
-             [ "${{ needs.test-batch-5.result }}" != "success" ] || \
-             [ "${{ needs.test-other-modules.result }}" != "success" ]; then
-            echo "❌ Build FAILED: One or more test jobs failed"
-            echo "  test-batch-1 (bubble/behavior/metrics): ${{ needs.test-batch-1.result }}"
-            echo "  test-batch-2 (von/transport): ${{ needs.test-batch-2.result }}"
-            echo "  test-batch-3 (causality/migration): ${{ needs.test-batch-3.result }}"
-            echo "  test-batch-4 (distributed): ${{ needs.test-batch-4.result }}"
-            echo "  test-batch-5 (consensus/ghost): ${{ needs.test-batch-5.result }}"
-            echo "  test-other-modules: ${{ needs.test-other-modules.result }}"
-            exit 1
-          fi
-          echo "✅ Build GREEN: All tests passed successfully"
-          echo "  test-batch-1: ✅"
-          echo "  test-batch-2: ✅"
-          echo "  test-batch-3: ✅"
-          echo "  test-batch-4: ✅"
-          echo "  test-batch-5: ✅"
-          echo "  test-other-modules: ✅"

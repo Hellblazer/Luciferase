@@ -199,7 +199,7 @@ public class CrossProcessMigrationValidator {
      * @return throughput metrics
      */
     public ThroughputMetrics measureThroughput(long durationMs, int targetCount) throws InterruptedException {
-        var startTime = clock.currentTimeMillis();
+        var startTime = System.currentTimeMillis();
         var completed = new AtomicInteger(0);
         var latch = new CountDownLatch(targetCount);
         var entities = new ArrayList<>(entityFactory.getAllEntityIds());
@@ -217,7 +217,7 @@ public class CrossProcessMigrationValidator {
         // Wait for completion or timeout
         latch.await(durationMs, TimeUnit.MILLISECONDS);
 
-        var elapsed = clock.currentTimeMillis() - startTime;
+        var elapsed = System.currentTimeMillis() - startTime;
         var actualTPS = completed.get() * 1000.0 / elapsed;
 
         return new ThroughputMetrics(targetCount, completed.get(), elapsed, actualTPS);

@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.causality;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -119,17 +118,6 @@ public class EntityMigrationStateMachine {
      */
     private final CopyOnWriteArrayList<MigrationStateListener> listeners;
 
-    /**
-     * Clock for deterministic testing.
-     */
-    private volatile Clock clock = Clock.system();
-
-    /**
-     * Set the clock source for deterministic testing.
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     /**
      * Context for an entity undergoing migration.
@@ -148,10 +136,9 @@ public class EntityMigrationStateMachine {
         public volatile int retryCount;     // Number of retries attempted
 
         // Legacy constructor for backward compatibility
-        @Deprecated
         public MigrationContext(Object entityId, long startTimeTicks, EntityMigrationState originState) {
-            var now = Clock.system().currentTimeMillis();
-            this(entityId, startTimeTicks, originState, now, now + 8000L); // Default 8s timeout
+            this(entityId, startTimeTicks, originState, System.currentTimeMillis(),
+                 System.currentTimeMillis() + 8000L); // Default 8s timeout
         }
 
         // Phase 7D.1 Part 1: New constructor with wall clock timeout
@@ -471,7 +458,7 @@ public class EntityMigrationStateMachine {
 
         // Update migration context
         if (newState.isInTransition()) {
-            var startTimeMs = clock.currentTimeMillis();
+            var startTimeMs = System.currentTimeMillis();
             var timeoutMs = startTimeMs + config.migrationTimeoutMs;
             migrationContexts.putIfAbsent(entityId,
                 new MigrationContext(entityId, 0L, currentState, startTimeMs, timeoutMs));

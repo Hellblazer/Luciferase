@@ -17,7 +17,6 @@
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -113,7 +112,6 @@ class HybridTimingControllerTest {
      * - Measures clock drift, overhead, and entity retention
      */
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Flaky timing test: Clock drift threshold varies with CI runner load")
     @Order(1)
     @Timeout(180)  // 3 minutes max
     void testHybridTimingArchitectureValidation() throws Exception {
@@ -230,7 +228,6 @@ class HybridTimingControllerTest {
      * Test 3: Clock drift P95 within threshold (quick validation)
      */
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Flaky timing test: P95 clock drift threshold varies with CI runner load")
     @Order(3)
     @Timeout(30)
     void testClockDriftP95Under10ms() throws Exception {
@@ -304,7 +301,6 @@ class HybridTimingControllerTest {
      * Test 6: Three consecutive validation cycles (stability)
      */
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Flaky timing test: Clock drift in consecutive cycles varies with CI runner load")
     @Order(6)
     @Timeout(120)
     void testThreeConsecutiveValidationCycles() throws Exception {

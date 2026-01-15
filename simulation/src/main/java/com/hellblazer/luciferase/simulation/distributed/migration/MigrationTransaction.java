@@ -18,7 +18,6 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.distributed.BubbleReference;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
 import java.util.UUID;
 
@@ -76,7 +75,7 @@ public record MigrationTransaction(UUID transactionId, IdempotencyToken idempote
     public MigrationTransaction(UUID transactionId, IdempotencyToken idempotencyToken, EntitySnapshot entitySnapshot,
                                 BubbleReference sourceRef, BubbleReference destRef) {
         this(transactionId, idempotencyToken, entitySnapshot, sourceRef, destRef, MigrationPhase.PREPARE,
-             Clock.system().currentTimeMillis());
+             System.currentTimeMillis());
     }
 
     /**
@@ -100,7 +99,7 @@ public record MigrationTransaction(UUID transactionId, IdempotencyToken idempote
      * @return True if elapsed time > timeoutMs
      */
     public boolean isTimedOut(long timeoutMs) {
-        return (Clock.system().currentTimeMillis() - startTime) > timeoutMs;
+        return (System.currentTimeMillis() - startTime) > timeoutMs;
     }
 
     /**
@@ -109,6 +108,6 @@ public record MigrationTransaction(UUID transactionId, IdempotencyToken idempote
      * @return Elapsed milliseconds
      */
     public long elapsedTime() {
-        return Clock.system().currentTimeMillis() - startTime;
+        return System.currentTimeMillis() - startTime;
     }
 }

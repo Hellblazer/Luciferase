@@ -38,16 +38,6 @@ public class HeapMonitor {
     private final CopyOnWriteArrayList<MemorySnapshot> snapshots;
     private       ScheduledExecutorService   executor;
     private       long                       peakMemory;
-    private volatile Clock clock = Clock.system();
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     /**
      * Creates a new heap monitor.
@@ -180,7 +170,7 @@ public class HeapMonitor {
 
     private void takeSnapshot() {
         var heapUsage = memoryMXBean.getHeapMemoryUsage().getUsed();
-        var timestamp = clock.currentTimeMillis();
+        var timestamp = System.currentTimeMillis();
 
         snapshots.add(new MemorySnapshot(timestamp, heapUsage));
 

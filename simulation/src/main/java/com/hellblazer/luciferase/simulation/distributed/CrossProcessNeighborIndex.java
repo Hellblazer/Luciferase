@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,7 +63,6 @@ public class CrossProcessNeighborIndex {
     private final AtomicLong cacheHits;
     private final AtomicLong cacheMisses;
     private final AtomicLong cacheEvictions;
-    private volatile Clock clock = Clock.system();
 
     /**
      * Create a CrossProcessNeighborIndex.
@@ -88,15 +86,6 @@ public class CrossProcessNeighborIndex {
         this.cacheHits = new AtomicLong(0);
         this.cacheMisses = new AtomicLong(0);
         this.cacheEvictions = new AtomicLong(0);
-    }
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
     }
 
     /**
@@ -125,7 +114,7 @@ public class CrossProcessNeighborIndex {
         var neighbors = resolveNeighbors(bubble);
 
         // Cache the result
-        cache.put(bubbleId, new CacheEntry(neighbors, clock.currentTimeMillis() + cacheTTL));
+        cache.put(bubbleId, new CacheEntry(neighbors, System.currentTimeMillis() + cacheTTL));
 
         return neighbors;
     }
@@ -209,7 +198,7 @@ public class CrossProcessNeighborIndex {
     /**
      * Cache entry with expiration.
      */
-    private class CacheEntry {
+    private static class CacheEntry {
         final Set<BubbleReference> neighbors;
         final long expiresAt;
 
@@ -219,7 +208,7 @@ public class CrossProcessNeighborIndex {
         }
 
         boolean isExpired() {
-            return clock.currentTimeMillis() > expiresAt;
+            return System.currentTimeMillis() > expiresAt;
         }
     }
 

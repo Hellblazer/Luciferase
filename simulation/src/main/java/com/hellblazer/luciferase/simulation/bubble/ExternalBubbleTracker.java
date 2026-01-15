@@ -1,7 +1,6 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,7 +33,7 @@ public class ExternalBubbleTracker {
     /**
      * Contact metadata for a discovered external bubble.
      */
-    private class BubbleContact {
+    private static class BubbleContact {
         private final UUID bubbleId;
         private final AtomicInteger interactionCount;
         private volatile long lastSeenTimestamp;
@@ -42,12 +41,12 @@ public class ExternalBubbleTracker {
         BubbleContact(UUID bubbleId) {
             this.bubbleId = bubbleId;
             this.interactionCount = new AtomicInteger(0);
-            this.lastSeenTimestamp = clock.currentTimeMillis();
+            this.lastSeenTimestamp = System.currentTimeMillis();
         }
 
         void recordInteraction() {
             interactionCount.incrementAndGet();
-            lastSeenTimestamp = clock.currentTimeMillis();
+            lastSeenTimestamp = System.currentTimeMillis();
         }
 
         int getInteractionCount() {
@@ -64,22 +63,12 @@ public class ExternalBubbleTracker {
     }
 
     private final Map<UUID, BubbleContact> contacts;
-    private volatile Clock clock = Clock.system();
 
     /**
      * Create a new external bubble tracker.
      */
     public ExternalBubbleTracker() {
         this.contacts = new ConcurrentHashMap<>();
-    }
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
     }
 
     /**

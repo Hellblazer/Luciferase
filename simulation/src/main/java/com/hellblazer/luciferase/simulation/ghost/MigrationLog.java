@@ -1,6 +1,5 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.distributed.migration.MigrationLogPersistence;
 import com.hellblazer.luciferase.simulation.distributed.migration.TransactionState;
 import com.hellblazer.luciferase.simulation.ghost.*;
@@ -75,7 +74,6 @@ public class MigrationLog {
 
     // Optional Write-Ahead Log for crash recovery (nullable)
     private final MigrationLogPersistence persistence;
-    private volatile Clock clock = Clock.system();
 
     /**
      * Create a new migration log without persistence (legacy).
@@ -95,15 +93,6 @@ public class MigrationLog {
         this.migrationHistory = new ConcurrentHashMap<>();
         this.entityTokens = new ConcurrentHashMap<>();
         this.persistence = persistence;
-    }
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
     }
 
     /**
@@ -160,7 +149,7 @@ public class MigrationLog {
                     null, // snapshot not needed for WAL
                     token,
                     TransactionState.MigrationPhase.PREPARE,
-                    clock.currentTimeMillis()
+                    System.currentTimeMillis()
                 );
                 persistence.recordPrepare(state);
             } catch (Exception e) {

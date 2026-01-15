@@ -11,7 +11,6 @@ import com.hellblazer.luciferase.simulation.causality.*;
 import com.hellblazer.luciferase.simulation.distributed.migration.*;
 import com.hellblazer.luciferase.simulation.events.*;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -181,7 +180,6 @@ class FailureRecoveryTest {
     }
 
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Flaky: timing-sensitive test with 40% packet loss - passes in isolation but fails under load")
     @DisplayName("Recovery from transient packet loss")
     void testTransientPacketLossRecovery() {
         nodeActual.setPacketLoss(0.4); // 40% loss
