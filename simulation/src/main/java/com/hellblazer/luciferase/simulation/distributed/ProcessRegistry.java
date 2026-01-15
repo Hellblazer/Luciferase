@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,7 +29,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * Manages process metadata including:
  * - Process UUIDs
  * - Bubble assignments per process
- * - Heartbeat timestamps
  * - Readiness state
  * <p>
  * Thread Safety:
@@ -38,9 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * - ProcessMetadata is immutable (record type)
  * - Defensive copying for returned collections
  * <p>
- * Heartbeat Timeout:
- * - HEARTBEAT_INTERVAL_MS: 1000ms (how often processes send heartbeats)
- * - HEARTBEAT_TIMEOUT_MS: 3000ms (max time before declaring process dead)
+ * Phase 4.1.3: Heartbeat tracking removed (use Fireflies view changes for failure detection)
  *
  * @author hal.hildebrand
  */
@@ -48,20 +44,7 @@ public class ProcessRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(ProcessRegistry.class);
 
-    public static final long HEARTBEAT_INTERVAL_MS = 1000;
-    public static final long HEARTBEAT_TIMEOUT_MS = 3000;
-
     private final Map<UUID, ProcessMetadata> processes = new ConcurrentHashMap<>();
-    private volatile Clock clock = Clock.system();
-
-    /**
-     * Set the clock for deterministic testing.
-     *
-     * @param clock Clock instance to use
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     /**
      * Register a new process or update an existing one.
@@ -117,41 +100,6 @@ public class ProcessRegistry {
      */
     public List<UUID> getAllProcesses() {
         return Collections.unmodifiableList(new ArrayList<>(processes.keySet()));
-    }
-
-    /**
-     * Update heartbeat timestamp for a process.
-     *
-     * @param processId UUID of the process
-     * @return true if heartbeat was updated, false if process not found
-     */
-    public boolean updateHeartbeat(UUID processId) {
-        var updated = new java.util.concurrent.atomic.AtomicBoolean(false);
-        processes.computeIfPresent(processId, (id, metadata) -> {
-            log.trace("Updated heartbeat for process {}", processId);
-            updated.set(true);
-            return metadata.withUpdatedHeartbeat();
-        });
-        return updated.get();
-    }
-
-    /**
-     * Check if a process is alive based on heartbeat timestamp.
-     * <p>
-     * A process is considered alive if its last heartbeat was within
-     * HEARTBEAT_TIMEOUT_MS milliseconds.
-     *
-     * @param processId UUID of the process
-     * @return true if process heartbeat is fresh (<3000ms old)
-     */
-    public boolean isAlive(UUID processId) {
-        var metadata = processes.get(processId);
-        if (metadata == null) {
-            return false;
-        }
-
-        var elapsed = clock.currentTimeMillis() - metadata.lastHeartbeat();
-        return elapsed < HEARTBEAT_TIMEOUT_MS;
     }
 
     /**

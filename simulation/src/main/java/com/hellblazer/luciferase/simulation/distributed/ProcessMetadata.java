@@ -17,8 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
-
 import java.util.List;
 import java.util.UUID;
 
@@ -26,18 +24,18 @@ import java.util.UUID;
  * Metadata for a registered process in the distributed topology.
  * <p>
  * Immutable record containing process identification, bubble assignments,
- * heartbeat tracking, and readiness state.
+ * and readiness state.
+ * <p>
+ * Phase 4.1.3: Heartbeat tracking removed (use Fireflies view changes for failure detection)
  *
- * @param processId      UUID of the process
- * @param bubbles        List of bubble UUIDs hosted by this process
- * @param lastHeartbeat  Timestamp (millis) of last heartbeat received
- * @param ready          Whether process is ready for simulation ticks
+ * @param processId UUID of the process
+ * @param bubbles   List of bubble UUIDs hosted by this process
+ * @param ready     Whether process is ready for simulation ticks
  * @author hal.hildebrand
  */
 public record ProcessMetadata(
     UUID processId,
     List<UUID> bubbles,
-    long lastHeartbeat,
     boolean ready
 ) {
     public ProcessMetadata {
@@ -54,19 +52,10 @@ public record ProcessMetadata(
      *
      * @param processId UUID of the process
      * @param bubbles   List of bubbles hosted by this process
-     * @return ProcessMetadata with current timestamp and ready=true
+     * @return ProcessMetadata with ready=true
      */
     public static ProcessMetadata create(UUID processId, List<UUID> bubbles) {
-        return new ProcessMetadata(processId, List.copyOf(bubbles), Clock.system().currentTimeMillis(), true);
-    }
-
-    /**
-     * Update heartbeat timestamp.
-     *
-     * @return New ProcessMetadata with updated heartbeat timestamp
-     */
-    public ProcessMetadata withUpdatedHeartbeat() {
-        return new ProcessMetadata(processId, bubbles, Clock.system().currentTimeMillis(), ready);
+        return new ProcessMetadata(processId, List.copyOf(bubbles), true);
     }
 
     /**
@@ -76,6 +65,6 @@ public record ProcessMetadata(
      * @return New ProcessMetadata with updated bubbles
      */
     public ProcessMetadata withBubbles(List<UUID> newBubbles) {
-        return new ProcessMetadata(processId, List.copyOf(newBubbles), lastHeartbeat, ready);
+        return new ProcessMetadata(processId, List.copyOf(newBubbles), ready);
     }
 }
