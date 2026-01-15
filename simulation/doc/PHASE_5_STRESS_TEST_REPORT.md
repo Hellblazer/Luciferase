@@ -345,38 +345,71 @@ mvn test -pl simulation -Dtest=StressTestSuite#scenario4_WorstCaseBroadcastStorm
 - Validation errors appearing at 22s, 120s, 169s, 250s intervals
 - Error pattern: "Entity X found in multiple bubbles"
 
-**Root Cause**: Time-of-Check-to-Time-of-Use (TOCTOU) race condition
-- `EntityAccountant.moveBetweenBubbles()` lacked atomic validation
+**Root Cause #1**: Time-of-Check-to-Time-of-Use (TOCTOU) race in migration logic
+- `CrossProcessMigrationValidator.migrateEntity()` checked entity location outside synchronization
 - Multiple concurrent migrations could both check entity in bubble A
 - Both migrations would succeed, placing entity in bubbles B and C simultaneously
 
-**Fix Applied**: Added atomic validation to `moveBetweenBubbles()`
+**Fix #1**: Added atomic validation to `moveBetweenBubbles()`
 ```java
-public synchronized boolean moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
-    // Atomic validation prevents TOCTOU race
-    var currentBubble = entityToBubble.get(entityId);
-    if (!fromBubble.equals(currentBubble)) {
-        return false;  // Entity not in expected source
+public boolean moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
+    lock.lock();
+    try {
+        // Atomic validation prevents TOCTOU race
+        var currentBubble = entityToBubble.get(entityId);
+        if (!fromBubble.equals(currentBubble)) {
+            return false;  // Entity not in expected source
+        }
+        // ... proceed with migration
+        return true;
+    } finally {
+        lock.unlock();
     }
-    // ... proceed with migration
-    return true;
 }
 ```
 
-**Verification**: Re-run of stress test shows zero validation errors (fix confirmed)
+**Verification #1**: 66% reduction (44 → 15 entities duplicated)
+
+**Root Cause #2**: Unsynchronized validation reading intermediate state
+- `validate()` was not locked while `moveBetweenBubbles()` was locked
+- CopyOnWriteArraySet snapshots could show entity in both source and dest during migration
+
+**Fix #2**: Added explicit locking to `validate()` and `getDistribution()`
+```java
+public ValidationResult validate() {
+    lock.lock();
+    try {
+        // Now reads atomically consistent state with moveBetweenBubbles()
+        // ... validation logic
+    } finally {
+        lock.unlock();
+    }
+}
+```
+
+**Verification #2**: 100% fix - Zero validation errors in 72,900 migrations ✅
 
 **Impact**:
-- Prevents entity duplication under high-load concurrent migrations
+- Completely eliminates entity duplication under high-load concurrent migrations
 - Makes migration operation idempotent and safe
+- Uses explicit locks (ReentrantLock) instead of synchronized for better control
 - All dependent code updated to handle return value
 
 **Files Modified**:
-- EntityAccountant.java (added atomic validation)
+- EntityAccountant.java (atomic validation, explicit locks)
 - CrossProcessMigrationValidator.java (handle return value)
 - EntityAccountantTest.java (assert successful moves)
 - IntegrationInfrastructureTest.java (assert successful moves)
 
-**Commit**: `3777a5bb` - "Fix entity duplication race condition in distributed migrations"
+**Commits**:
+- `3777a5bb` - "Fix entity duplication race condition in distributed migrations" (First fix)
+- `f218c5cd` - "Complete entity duplication fix: use explicit locks instead of synchronized" (Second fix)
+
+**Final Results**:
+- Total migrations: 72,900 in 5 minutes (~243/sec)
+- Failed migrations: 0
+- Validation errors: 0 (down from 44 → 15 → 0)
+- Test: PASSED ✅
 
 ### Memory Threshold Adjustment (2026-01-15)
 

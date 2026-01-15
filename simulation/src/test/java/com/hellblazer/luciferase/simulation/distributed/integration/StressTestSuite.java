@@ -209,7 +209,7 @@ class StressTestSuite {
 
         var finalMemory = memoryBean.getHeapMemoryUsage().getUsed();
         var memoryGrowth = (finalMemory - baselineMemory) / 1_048_576.0; // MB
-        log.info("Memory growth: {:.2f} MB (after GC hint)", memoryGrowth);
+        log.info("Memory growth: {} MB (after GC hint)", String.format("%.2f", memoryGrowth));
 
         // Allow reasonable memory growth for test infrastructure
         // 10K entities + EntityAccountant maps + TestProcessCluster (8 processes, 16 bubbles)
