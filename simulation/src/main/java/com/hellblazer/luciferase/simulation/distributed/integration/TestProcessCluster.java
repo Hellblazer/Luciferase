@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
+import com.hellblazer.luciferase.simulation.delos.MembershipView;
 import com.hellblazer.luciferase.simulation.distributed.ProcessCoordinator;
 import com.hellblazer.luciferase.simulation.von.LocalServerTransport;
 import org.slf4j.Logger;
@@ -23,6 +24,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * Manages a cluster of simulated processes for distributed simulation testing.
@@ -108,7 +112,9 @@ public class TestProcessCluster {
             var transport = registry.register(processId);
             transports.put(processId, transport);
 
-            var coordinator = new ProcessCoordinator(transport);
+            // Create mock membership view for testing (Phase 4.1.4)
+            var mockView = new MockMembershipView<UUID>();
+            var coordinator = new ProcessCoordinator(transport, mockView);
             coordinators.put(processId, coordinator);
 
             // Register this process with its bubbles
@@ -430,6 +436,41 @@ public class TestProcessCluster {
             totalEntities,
             0  // Ghost sync latency in ms
         );
+    }
+
+    /**
+     * Mock MembershipView for testing (Phase 4.1.4).
+     * <p>
+     * Provides stub implementation of MembershipView that does nothing.
+     * Real Fireflies integration would use FirefliesMembershipView.
+     *
+     * @param <M> member type
+     */
+    private static class MockMembershipView<M> implements MembershipView<M> {
+        private final List<Consumer<ViewChange<M>>> listeners = new CopyOnWriteArrayList<>();
+
+        @Override
+        public Stream<M> getMembers() {
+            return Stream.empty();  // No members in mock view
+        }
+
+        @Override
+        public void addListener(Consumer<ViewChange<M>> listener) {
+            listeners.add(listener);
+        }
+
+        /**
+         * Simulate a view change (for testing).
+         *
+         * @param joined members that joined
+         * @param left   members that left
+         */
+        public void fireViewChange(List<M> joined, List<M> left) {
+            var change = new ViewChange<>(joined, left);
+            for (var listener : listeners) {
+                listener.accept(change);
+            }
+        }
     }
 }
 
