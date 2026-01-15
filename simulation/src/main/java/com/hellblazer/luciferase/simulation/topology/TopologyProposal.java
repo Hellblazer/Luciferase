@@ -135,13 +135,14 @@ record SplitProposal(
             return new ValidationResult(false, "Split plane cannot be null");
         }
 
-        // Split plane validation (basic - actual split logic is more complex)
-        // Compute tight AABB from actual entity positions for Byzantine-resistant validation
+        // Check for empty entities early (consistency with MoveProposal)
         var entityRecords = bubble.getAllEntityRecords();
         if (entityRecords.isEmpty()) {
             return new ValidationResult(false, "Cannot split bubble with no entities");
         }
 
+        // Split plane validation (basic - actual split logic is more complex)
+        // Compute tight AABB from actual entity positions for Byzantine-resistant validation
         if (!splitPlane.intersectsEntityBounds(entityRecords)) {
             return new ValidationResult(false, "Split plane does not intersect entity bounds");
         }
@@ -276,10 +277,11 @@ record MoveProposal(
             maxZ = Math.max(maxZ, pos.z);
         }
 
-        // Check cluster centroid is within tight entity AABB
-        if (clusterCentroid.x < minX || clusterCentroid.x > maxX ||
-            clusterCentroid.y < minY || clusterCentroid.y > maxY ||
-            clusterCentroid.z < minZ || clusterCentroid.z > maxZ) {
+        // Check cluster centroid is within tight entity AABB (with epsilon tolerance for floating-point precision)
+        final float EPSILON = 1e-6f;
+        if (clusterCentroid.x < minX - EPSILON || clusterCentroid.x > maxX + EPSILON ||
+            clusterCentroid.y < minY - EPSILON || clusterCentroid.y > maxY + EPSILON ||
+            clusterCentroid.z < minZ - EPSILON || clusterCentroid.z > maxZ + EPSILON) {
             return new ValidationResult(false, "Cluster centroid outside entity bounds");
         }
 
