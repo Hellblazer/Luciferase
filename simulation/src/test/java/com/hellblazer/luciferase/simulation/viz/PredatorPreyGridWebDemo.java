@@ -16,10 +16,10 @@ import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.entity.EntityType;
 import com.hellblazer.primeMover.annotations.Entity;
-import com.hellblazer.primeMover.annotations.NonEvent;
 import com.hellblazer.primeMover.api.Kronos;
 import com.hellblazer.primeMover.controllers.RealTimeController;
 import com.hellblazer.primeMover.runtime.Kairos;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,49 +29,41 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Grand vision demo: 2x2x2 tetree grid with 1000 pack-hunting entities.
+ * Web-enabled grand vision demo: 2x2x2 tetree grid with 1000 pack-hunting entities.
  * <p>
- * Combines:
- * - PrimeMover discrete event simulation (@Entity, Kronos.sleep)
- * - 2x2x2 tetrahedral spatial grid (8 bubbles)
- * - 900 prey (flocking + flee)
- * - 100 predators (pack hunting with flanking)
- * - Real-time web visualization via WebSocket
+ * Runnable test version that works with PrimeMover bytecode transformation.
  * <p>
  * Usage:
  * <pre>
- * # PrimeMover bytecode transformation requires process-classes phase first
- * mvn process-classes exec:java -pl simulation \
- *   -Dexec.mainClass=com.hellblazer.luciferase.simulation.viz.PredatorPreyGridDemo \
- *   -Dexec.args="7081"
+ * mvn test -pl simulation -Dtest=PredatorPreyGridWebDemo
  * </pre>
  * Then open: http://localhost:7081/predator-prey-grid.html
  * <p>
- * Note: PrimeMover transforms {@code @Entity} classes during the {@code process-classes} phase.
- * Running {@code mvn exec:java} alone will fail with "should have been rewritten" error.
+ * Press Ctrl+C to stop (server will continue running until JVM shutdown).
  */
-public class PredatorPreyGridDemo {
+public class PredatorPreyGridWebDemo {
 
-    private static final Logger log = LoggerFactory.getLogger(PredatorPreyGridDemo.class);
+    private static final Logger log = LoggerFactory.getLogger(PredatorPreyGridWebDemo.class);
 
-    private static final int TOTAL_ENTITIES = 1810;
-    private static final int PREY_COUNT = 1800;
-    private static final int PREDATOR_COUNT = 10;
+    private static final int TOTAL_ENTITIES = 1000;
+    private static final int PREY_COUNT = 900;
+    private static final int PREDATOR_COUNT = 100;
     private static final long TICK_INTERVAL_NS = 50_000_000; // 50ms = 20 TPS
     private static final WorldBounds WORLD = WorldBounds.DEFAULT;
     private static final Random RANDOM = new Random(42);
 
-    public static void main(String[] args) {
-        var port = args.length > 0 ? Integer.parseInt(args[0]) : 7081;
+    @Test
+    void runWebDemo() throws Exception {
+        var port = 7081;
 
-        log.info("=== Grand Vision: Pack Hunting Predator-Prey Grid ===");
-        log.info("Vision: 4x4x4 tetree grid, 1800 prey + 10 pack-hunting predators");
+        log.info("=== Grand Vision: Pack Hunting Predator-Prey Grid (Web Demo) ===");
+        log.info("Vision: 2x2x2 tetree grid, 900 prey + 100 pack-hunting predators");
         log.info("Using PrimeMover discrete event simulation (NOT thread loops!)");
 
-        // Phase 1: Initialize 4x4x4 tetree grid
-        log.info("Phase 1: Initialize 4x4x4 Tetree Grid");
-        var bubbleGrid = new TetreeBubbleGrid((byte) 3);
-        bubbleGrid.createBubbles(24, (byte) 3, 10);
+        // Phase 1: Initialize 2x2x2 tetree grid
+        log.info("Phase 1: Initialize 2x2x2 Tetree Grid");
+        var bubbleGrid = new TetreeBubbleGrid((byte) 2);
+        bubbleGrid.createBubbles(8, (byte) 2, 10);
         var bubbles = bubbleGrid.getAllBubbles().stream().toList();
         log.info("Created {} tetrahedral bubbles", bubbles.size());
 
@@ -125,7 +117,7 @@ public class PredatorPreyGridDemo {
 
         // Phase 4: Start PrimeMover simulation
         log.info("Phase 4: Start PrimeMover Simulation");
-        var controller = new RealTimeController("PredatorPreyGridDemo");
+        var controller = new RealTimeController("PredatorPreyGridWebDemo");
         var entity = new SimulationEntity(
             bubbles,
             entityVelocities,
@@ -139,14 +131,13 @@ public class PredatorPreyGridDemo {
         entity.simulationTick();
 
         log.info("Simulation running at 20 TPS (50ms ticks)");
-        log.info("Press Ctrl+C to stop");
+        log.info("Web visualization: http://localhost:{}/predator-prey-grid.html", port);
+        log.info("Press Ctrl+C to stop (or test will run indefinitely)");
 
-        // Shutdown hook
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            log.info("Shutting down...");
-            controller.stop();
-            vizServer.stop();
-        }));
+        // Keep server and simulation running
+        // In a real test, you'd add a completion condition
+        // For demo purposes, we let it run until manual interruption
+        Thread.currentThread().join();
     }
 
     /**
@@ -178,11 +169,6 @@ public class PredatorPreyGridDemo {
             this.accountant = accountant;
         }
 
-        @NonEvent
-        public int getCurrentTick() {
-            return currentTick;
-        }
-
         /**
          * Execute one simulation tick (PrimeMover event method).
          */
@@ -204,7 +190,7 @@ public class PredatorPreyGridDemo {
 
             currentTick++;
 
-            // Schedule next tick
+            // Schedule next tick (PrimeMover recursive event scheduling)
             Kronos.sleep(TICK_INTERVAL_NS);
             this.simulationTick();
         }
