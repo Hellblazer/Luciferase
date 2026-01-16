@@ -14,6 +14,8 @@ on:
       - main
     paths:
       - '**.md'
+      - '.github/markdownlint-config.json'
+      - '.markdownlintignore'
 
 jobs:
   validate-docs:
