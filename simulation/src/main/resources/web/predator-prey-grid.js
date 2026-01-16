@@ -268,7 +268,7 @@ let bubbleBoundariesVisible = true;
 function createBubbleBoundary(bubble) {
     // If we have tetrahedral vertices, render the actual tetrahedron
     if (bubble.vertices && bubble.vertices.length === 4) {
-        return createTetrahedronBoundary(bubble.vertices);
+        return createTetrahedronBoundary(bubble.vertices, bubble.tetType || 0);
     }
 
     // Fallback to AABB rendering if no vertices provided
@@ -327,14 +327,25 @@ function createBubbleBoundary(bubble) {
     return group;
 }
 
-function createTetrahedronBoundary(vertices) {
+function createTetrahedronBoundary(vertices, tetType) {
     // Create tetrahedron geometry from 4 vertices
     const v0 = new THREE.Vector3(vertices[0].x, vertices[0].y, vertices[0].z);
     const v1 = new THREE.Vector3(vertices[1].x, vertices[1].y, vertices[1].z);
     const v2 = new THREE.Vector3(vertices[2].x, vertices[2].y, vertices[2].z);
     const v3 = new THREE.Vector3(vertices[3].x, vertices[3].y, vertices[3].z);
 
-    console.log(`Creating tetrahedron: v0=(${v0.x.toFixed(1)},${v0.y.toFixed(1)},${v0.z.toFixed(1)}) v3=(${v3.x.toFixed(1)},${v3.y.toFixed(1)},${v3.z.toFixed(1)})`);
+    // Color palette for tetrahedral types (S0-S5)
+    const typeColors = [
+        0xFF0000,  // S0: Red
+        0x00FF00,  // S1: Green
+        0x0000FF,  // S2: Blue
+        0xFFFF00,  // S3: Yellow
+        0xFF00FF,  // S4: Magenta
+        0x00FFFF   // S5: Cyan
+    ];
+    const color = typeColors[tetType % 6] || 0xFFFFFF;
+
+    console.log(`Creating tetrahedron type ${tetType}: v0=(${v0.x.toFixed(1)},${v0.y.toFixed(1)},${v0.z.toFixed(1)}) v3=(${v3.x.toFixed(1)},${v3.y.toFixed(1)},${v3.z.toFixed(1)}) color=0x${color.toString(16)}`);
 
     // Create edges: v0-v1, v0-v2, v0-v3, v1-v2, v1-v3, v2-v3
     const edgePoints = [
@@ -348,23 +359,23 @@ function createTetrahedronBoundary(vertices) {
 
     const edgeGeometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
 
-    // Create bright, highly visible lines
+    // Create bright, highly visible lines with type-based color
     const line = new THREE.LineSegments(
         edgeGeometry,
         new THREE.LineBasicMaterial({
-            color: 0x00ffff,  // Bright cyan
+            color: color,      // Type-specific color
             opacity: 0.9,      // Much more opaque
             transparent: true,
             linewidth: 4       // Thicker lines
         })
     );
 
-    // Add strong glow layer
+    // Add strong glow layer (slightly lighter version of main color)
     const glowLine = new THREE.LineSegments(
         edgeGeometry.clone(),
         new THREE.LineBasicMaterial({
-            color: 0x00ff00,   // Bright green glow
-            opacity: 0.6,      // Strong glow
+            color: color,      // Same color as main line
+            opacity: 0.4,      // Lighter glow
             transparent: true,
             linewidth: 8,      // Thick glow
             depthWrite: false

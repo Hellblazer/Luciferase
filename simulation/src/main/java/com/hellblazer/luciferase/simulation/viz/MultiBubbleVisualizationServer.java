@@ -52,6 +52,7 @@ public class MultiBubbleVisualizationServer {
 
     private List<EnhancedBubble> bubbles = new ArrayList<>();
     private Map<UUID, Point3f[]> bubbleVertices = new ConcurrentHashMap<>();
+    private Map<UUID, Byte> bubbleTypes = new ConcurrentHashMap<>();
     private ScheduledFuture<?> streamTask;
 
     /**
@@ -187,6 +188,18 @@ public class MultiBubbleVisualizationServer {
         log.info("Bubble vertices set: {} bubbles with tetrahedral geometry", vertices.size());
 
         // Re-broadcast bubble boundaries with vertices
+        broadcastBubbleBoundaries();
+    }
+
+    /**
+     * Set the tetrahedral types for each bubble (0-5 for S0-S5 subdivision).
+     * @param types Map from bubble UUID to tetrahedral type (0-5)
+     */
+    public void setBubbleTypes(Map<UUID, Byte> types) {
+        this.bubbleTypes = new ConcurrentHashMap<>(types);
+        log.info("Bubble types set: {} bubbles with type information", types.size());
+
+        // Re-broadcast bubble boundaries with types
         broadcastBubbleBoundaries();
     }
 
@@ -403,6 +416,12 @@ public class MultiBubbleVisualizationServer {
                     sb.append(",\"z\":").append(vertices[v].z).append("}");
                 }
                 sb.append("]");
+            }
+
+            // Add tetrahedral type if available (0-5 for S0-S5 subdivision)
+            var type = bubbleTypes.get(bubble.id());
+            if (type != null) {
+                sb.append(",\"tetType\":").append(type);
             }
 
             sb.append("}");

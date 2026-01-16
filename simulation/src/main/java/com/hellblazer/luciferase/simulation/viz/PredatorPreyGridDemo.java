@@ -119,9 +119,11 @@ public class PredatorPreyGridDemo {
         var vizServer = new MultiBubbleVisualizationServer(port);
         vizServer.setBubbles(bubbles);
 
-        // Extract tetrahedral vertices for proper visualization
+        // Extract tetrahedral vertices and types for proper visualization
         var bubbleVertices = extractBubbleVertices(bubbleGrid, bubbles);
+        var bubbleTypes = extractBubbleTypes(bubbleGrid, bubbles);
         vizServer.setBubbleVertices(bubbleVertices);
+        vizServer.setBubbleTypes(bubbleTypes);
 
         vizServer.start();
 
@@ -338,5 +340,31 @@ public class PredatorPreyGridDemo {
 
         log.info("Extracted tetrahedral vertices for {} bubbles", vertices.size());
         return vertices;
+    }
+
+    /**
+     * Extract tetrahedral types for visualization color-coding.
+     */
+    private static Map<UUID, Byte> extractBubbleTypes(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
+        var types = new HashMap<UUID, Byte>();
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        for (var bubble : bubbles) {
+            try {
+                for (var entry : bubblesWithKeys.entrySet()) {
+                    if (entry.getValue().id().equals(bubble.id())) {
+                        var tetreeKey = entry.getKey();
+                        var tet = tetreeKey.toTet();
+                        types.put(bubble.id(), tet.type());
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to extract type for bubble {}: {}", bubble.id(), e.getMessage());
+            }
+        }
+
+        log.info("Extracted tetrahedral types for {} bubbles", types.size());
+        return types;
     }
 }
