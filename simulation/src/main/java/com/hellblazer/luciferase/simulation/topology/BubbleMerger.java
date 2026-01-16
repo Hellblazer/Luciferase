@@ -98,10 +98,12 @@ public class BubbleMerger {
     public MergeExecutionResult execute(MergeProposal proposal) {
         java.util.Objects.requireNonNull(proposal, "proposal must not be null");
 
+        // Generate correlation ID for tracking this operation across log statements
+        var correlationId = UUID.randomUUID().toString().substring(0, 8);
         var bubble1Id = proposal.bubble1();
         var bubble2Id = proposal.bubble2();
 
-        log.debug("Executing merge: {} + {}", bubble1Id, bubble2Id);
+        log.debug("[{}] Executing merge: {} + {}", correlationId, bubble1Id, bubble2Id);
 
         // Get both bubbles
         var bubble1 = bubbleGrid.getBubbleById(bubble1Id);
@@ -119,8 +121,8 @@ public class BubbleMerger {
         int entities2Before = accountant.entitiesInBubble(bubble2Id).size();
         int totalBefore = entities1Before + entities2Before;
 
-        log.debug("Merging bubbles: {} has {} entities, {} has {} entities (total: {})",
-                 bubble1Id, entities1Before, bubble2Id, entities2Before, totalBefore);
+        log.debug("[{}] Merging bubbles: {} has {} entities, {} has {} entities (total: {})",
+                 correlationId, bubble1Id, entities1Before, bubble2Id, entities2Before, totalBefore);
 
         // Get entities from bubble2
         var entities2 = new HashSet<>(accountant.entitiesInBubble(bubble2Id));
@@ -130,8 +132,8 @@ public class BubbleMerger {
         var duplicates = new HashSet<>(entities2);
         duplicates.retainAll(entities1);
         if (!duplicates.isEmpty()) {
-            log.warn("Found {} duplicate entities between bubbles {} and {}: {}",
-                    duplicates.size(), bubble1Id, bubble2Id, duplicates);
+            log.warn("[{}] Found {} duplicate entities between bubbles {} and {}: {}",
+                    correlationId, duplicates.size(), bubble1Id, bubble2Id, duplicates);
         }
 
         // Get entity records from bubble2 for positions/content
@@ -165,8 +167,8 @@ public class BubbleMerger {
             entitiesMoved++;
         }
 
-        log.info("Merge: moved {} entities from bubble {} to bubble {}",
-                entitiesMoved, bubble2Id, bubble1Id);
+        log.info("[{}] Merge: moved {} entities from bubble {} to bubble {}",
+                correlationId, entitiesMoved, bubble2Id, bubble1Id);
 
         // Validate entity conservation
         int entities1After = accountant.entitiesInBubble(bubble1Id).size();
@@ -174,7 +176,7 @@ public class BubbleMerger {
         int totalAfter = entities1After + entities2After;
 
         if (totalAfter != totalBefore) {
-            log.error("Entity conservation violated: before={}, after={}", totalBefore, totalAfter);
+            log.error("[{}] Entity conservation violated: before={}, after={}", correlationId, totalBefore, totalAfter);
             return new MergeExecutionResult(false,
                                            "Entity count mismatch: before=" + totalBefore + ", after=" + totalAfter,
                                            totalBefore, totalAfter, duplicates.size());
@@ -182,7 +184,7 @@ public class BubbleMerger {
 
         // Validate bubble2 is now empty
         if (entities2After != 0) {
-            log.error("Bubble2 still has {} entities after merge", entities2After);
+            log.error("[{}] Bubble2 still has {} entities after merge", correlationId, entities2After);
             return new MergeExecutionResult(false,
                                            "Bubble2 still has entities: " + entities2After,
                                            totalBefore, totalAfter, duplicates.size());
@@ -191,7 +193,7 @@ public class BubbleMerger {
         // Validate no duplicates
         var validation = accountant.validate();
         if (!validation.success()) {
-            log.error("Entity validation failed after merge: {}", validation.details());
+            log.error("[{}] Entity validation failed after merge: {}", correlationId, validation.details());
             return new MergeExecutionResult(false,
                                            "Entity validation failed: " + validation.details().get(0),
                                            totalBefore, totalAfter, duplicates.size());
@@ -213,8 +215,8 @@ public class BubbleMerger {
             log.warn("Bubble {} not found in grid during removal", bubble2Id);
         }
 
-        log.info("Merge successful: bubble {} merged into {} ({} entities total)",
-                bubble2Id, bubble1Id, entities1After);
+        log.info("[{}] Merge successful: bubble {} merged into {} ({} entities total)",
+                correlationId, bubble2Id, bubble1Id, entities1After);
 
         return new MergeExecutionResult(true, "Merge successful",
                                        totalBefore, totalAfter, duplicates.size());

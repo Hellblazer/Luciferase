@@ -97,10 +97,12 @@ public class BubbleSplitter {
     public SplitExecutionResult execute(SplitProposal proposal) {
         java.util.Objects.requireNonNull(proposal, "proposal must not be null");
 
+        // Generate correlation ID for tracking this operation across log statements
+        var correlationId = UUID.randomUUID().toString().substring(0, 8);
         var sourceBubbleId = proposal.sourceBubble();
         var splitPlane = proposal.splitPlane();
 
-        log.debug("Executing split on bubble {}", sourceBubbleId);
+        log.debug("[{}] Executing split on bubble {}", correlationId, sourceBubbleId);
 
         // Get source bubble
         var sourceBubble = bubbleGrid.getBubbleById(sourceBubbleId);
@@ -110,7 +112,7 @@ public class BubbleSplitter {
 
         // Capture entity count before split
         int entitiesBeforeSplit = accountant.entitiesInBubble(sourceBubbleId).size();
-        log.debug("Source bubble {} has {} entities before split", sourceBubbleId, entitiesBeforeSplit);
+        log.debug("[{}] Source bubble {} has {} entities before split", correlationId, sourceBubbleId, entitiesBeforeSplit);
 
         // Get all entity records with positions
         var allRecords = sourceBubble.getAllEntityRecords();
@@ -153,15 +155,15 @@ public class BubbleSplitter {
             entitiesMoved++;
         }
 
-        log.info("Split bubble {}: moved {} entities to new bubble {}",
-                sourceBubbleId, entitiesMoved, newBubbleId);
+        log.info("[{}] Split bubble {}: moved {} entities to new bubble {}",
+                correlationId, sourceBubbleId, entitiesMoved, newBubbleId);
 
         // Validate entity conservation
         int entitiesAfterSplit = accountant.entitiesInBubble(sourceBubbleId).size() +
                                  accountant.entitiesInBubble(newBubbleId).size();
 
         if (entitiesAfterSplit != entitiesBeforeSplit) {
-            log.error("Entity conservation violated: before={}, after={}", entitiesBeforeSplit, entitiesAfterSplit);
+            log.error("[{}] Entity conservation violated: before={}, after={}", correlationId, entitiesBeforeSplit, entitiesAfterSplit);
             return new SplitExecutionResult(false,
                                            "Entity count mismatch: before=" + entitiesBeforeSplit
                                            + ", after=" + entitiesAfterSplit,
@@ -171,7 +173,7 @@ public class BubbleSplitter {
         // Validate no duplicates
         var validation = accountant.validate();
         if (!validation.success()) {
-            log.error("Entity validation failed after split: {}", validation.details());
+            log.error("[{}] Entity validation failed after split: {}", correlationId, validation.details());
             return new SplitExecutionResult(false,
                                            "Entity validation failed: " + validation.details().get(0),
                                            newBubbleId, entitiesBeforeSplit, entitiesAfterSplit);
@@ -192,8 +194,8 @@ public class BubbleSplitter {
             log.warn("New bubble {} has no entities, not adding to grid", newBubbleId);
         }
 
-        log.info("Split successful: bubble {} split into {} (source: {} entities, new: {} entities)",
-                sourceBubbleId, newBubbleId,
+        log.info("[{}] Split successful: bubble {} split into {} (source: {} entities, new: {} entities)",
+                correlationId, sourceBubbleId, newBubbleId,
                 accountant.entitiesInBubble(sourceBubbleId).size(),
                 accountant.entitiesInBubble(newBubbleId).size());
 

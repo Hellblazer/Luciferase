@@ -22,6 +22,8 @@ import com.hellblazer.luciferase.simulation.distributed.integration.EntityValida
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.UUID;
+
 /**
  * Executes bubble move operations to follow entity clustering.
  * <p>
@@ -92,12 +94,14 @@ public class BubbleMover {
     public MoveExecutionResult execute(MoveProposal proposal) {
         java.util.Objects.requireNonNull(proposal, "proposal must not be null");
 
+        // Generate correlation ID for tracking this operation across log statements
+        var correlationId = UUID.randomUUID().toString().substring(0, 8);
         var bubbleId = proposal.sourceBubble();
         var newCenter = proposal.newCenter();
         var clusterCentroid = proposal.clusterCentroid();
 
-        log.debug("Executing move on bubble {} to new center ({}, {}, {})",
-                 bubbleId, newCenter.x, newCenter.y, newCenter.z);
+        log.debug("[{}] Executing move on bubble {} to new center ({}, {}, {})",
+                 correlationId, bubbleId, newCenter.x, newCenter.y, newCenter.z);
 
         // Get source bubble
         var bubble = bubbleGrid.getBubbleById(bubbleId);
@@ -126,7 +130,7 @@ public class BubbleMover {
         float dz = newCenter.z - (float) currentCentroid.getZ();
         float moveDistance = (float) Math.sqrt(dx*dx + dy*dy + dz*dz);
 
-        log.info("Moving bubble {} by distance {} toward cluster", bubbleId, moveDistance);
+        log.info("[{}] Moving bubble {} by distance {} toward cluster", correlationId, bubbleId, moveDistance);
 
         // Recalculate bounds based on entity distribution
         // Note: BubbleBounds is immutable, but recalculateBounds() creates new bounds
@@ -149,8 +153,8 @@ public class BubbleMover {
         // Allow 10% tolerance for deviation (entity clustering may not perfectly match proposal)
         float tolerance = moveDistance * 0.1f;
         if (deviation > tolerance && deviation > 0.1f) {
-            log.warn("Bubble {} center deviation: expected ({}, {}, {}), actual ({}, {}, {}), deviation {}",
-                     bubbleId, newCenter.x, newCenter.y, newCenter.z,
+            log.warn("[{}] Bubble {} center deviation: expected ({}, {}, {}), actual ({}, {}, {}), deviation {}",
+                     correlationId, bubbleId, newCenter.x, newCenter.y, newCenter.z,
                      actualNewCentroid.getX(), actualNewCentroid.getY(), actualNewCentroid.getZ(),
                      deviation);
         }
@@ -161,7 +165,7 @@ public class BubbleMover {
         // Validate entity count unchanged (no entities should have been moved)
         int entitiesAfter = accountant.entitiesInBubble(bubbleId).size();
         if (entitiesAfter != entitiesBefore) {
-            log.error("Entity count changed during move: before={}, after={}", entitiesBefore, entitiesAfter);
+            log.error("[{}] Entity count changed during move: before={}, after={}", correlationId, entitiesBefore, entitiesAfter);
             return new MoveExecutionResult(false,
                                           "Entity count changed: before=" + entitiesBefore + ", after=" + entitiesAfter,
                                           entitiesBefore, entitiesAfter);
@@ -170,14 +174,14 @@ public class BubbleMover {
         // Validate no entity duplicates
         var validation = accountant.validate();
         if (!validation.success()) {
-            log.error("Entity validation failed after move: {}", validation.details());
+            log.error("[{}] Entity validation failed after move: {}", correlationId, validation.details());
             return new MoveExecutionResult(false,
                                           "Entity validation failed: " + validation.details().get(0),
                                           entitiesBefore, entitiesAfter);
         }
 
-        log.info("Move successful: bubble {} relocated (entities retained: {})",
-                bubbleId, entitiesAfter);
+        log.info("[{}] Move successful: bubble {} relocated (entities retained: {})",
+                correlationId, bubbleId, entitiesAfter);
 
         return new MoveExecutionResult(true, "Move successful - bounds recalculated from entity distribution",
                                       entitiesBefore, entitiesAfter);
