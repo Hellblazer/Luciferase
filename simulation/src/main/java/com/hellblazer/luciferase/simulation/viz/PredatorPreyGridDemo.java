@@ -118,6 +118,11 @@ public class PredatorPreyGridDemo {
         log.info("Phase 3: Start Visualization Server");
         var vizServer = new MultiBubbleVisualizationServer(port);
         vizServer.setBubbles(bubbles);
+
+        // Extract tetrahedral vertices for proper visualization
+        var bubbleVertices = extractBubbleVertices(bubbleGrid, bubbles);
+        vizServer.setBubbleVertices(bubbleVertices);
+
         vizServer.start();
 
         log.info("Visualization server running on http://localhost:{}", port);
@@ -272,5 +277,43 @@ public class PredatorPreyGridDemo {
         String hash = String.format("%032x", id.hashCode() & 0xFFFFFFFFL);
         return hash.substring(0, 8) + "-" + hash.substring(8, 12) + "-" +
                hash.substring(12, 16) + "-" + hash.substring(16, 20) + "-" + hash.substring(20, 32);
+    }
+
+    /**
+     * Extract tetrahedral vertices for each bubble from the grid.
+     * Uses getBubblesWithKeys() to get the TetreeKey for each bubble.
+     */
+    private static Map<UUID, Point3f[]> extractBubbleVertices(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
+        var vertices = new HashMap<UUID, Point3f[]>();
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        for (var bubble : bubbles) {
+            try {
+                // Find the TetreeKey for this bubble
+                for (var entry : bubblesWithKeys.entrySet()) {
+                    if (entry.getValue().id().equals(bubble.id())) {
+                        var tetreeKey = entry.getKey();
+
+                        // Get the Tet and its coordinates
+                        var tet = tetreeKey.toTet();
+                        var coords = tet.coordinates();
+
+                        // Convert to Point3f array
+                        var bubbleVertices = new Point3f[4];
+                        for (int i = 0; i < 4; i++) {
+                            bubbleVertices[i] = new Point3f(coords[i].x, coords[i].y, coords[i].z);
+                        }
+
+                        vertices.put(bubble.id(), bubbleVertices);
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to extract vertices for bubble {}: {}", bubble.id(), e.getMessage());
+            }
+        }
+
+        log.info("Extracted tetrahedral vertices for {} bubbles", vertices.size());
+        return vertices;
     }
 }

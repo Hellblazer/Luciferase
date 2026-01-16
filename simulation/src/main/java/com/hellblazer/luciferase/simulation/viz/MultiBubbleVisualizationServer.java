@@ -51,6 +51,7 @@ public class MultiBubbleVisualizationServer {
     private final Object streamingLock = new Object();
 
     private List<EnhancedBubble> bubbles = new ArrayList<>();
+    private Map<UUID, Point3f[]> bubbleVertices = new ConcurrentHashMap<>();
     private ScheduledFuture<?> streamTask;
 
     /**
@@ -162,6 +163,18 @@ public class MultiBubbleVisualizationServer {
         broadcastBubbleBoundaries();
 
         startStreamingIfNeeded();
+    }
+
+    /**
+     * Set the tetrahedral vertices for each bubble (for proper visualization).
+     * @param vertices Map from bubble UUID to array of 4 Point3f vertices
+     */
+    public void setBubbleVertices(Map<UUID, Point3f[]> vertices) {
+        this.bubbleVertices = new ConcurrentHashMap<>(vertices);
+        log.info("Bubble vertices set: {} bubbles with tetrahedral geometry", vertices.size());
+
+        // Re-broadcast bubble boundaries with vertices
+        broadcastBubbleBoundaries();
     }
 
     /**
@@ -365,6 +378,20 @@ public class MultiBubbleVisualizationServer {
             sb.append("\"z\":").append(bounds.get("maxZ"));
             sb.append("},");
             sb.append("\"entityCount\":").append(bubble.entityCount());
+
+            // Add tetrahedral vertices if available
+            var vertices = bubbleVertices.get(bubble.id());
+            if (vertices != null && vertices.length == 4) {
+                sb.append(",\"vertices\":[");
+                for (int v = 0; v < 4; v++) {
+                    if (v > 0) sb.append(",");
+                    sb.append("{\"x\":").append(vertices[v].x);
+                    sb.append(",\"y\":").append(vertices[v].y);
+                    sb.append(",\"z\":").append(vertices[v].z).append("}");
+                }
+                sb.append("]");
+            }
+
             sb.append("}");
         }
 

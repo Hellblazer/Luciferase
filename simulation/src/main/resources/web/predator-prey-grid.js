@@ -266,6 +266,12 @@ const bubbleBoundaries = [];
 let bubbleBoundariesVisible = true;
 
 function createBubbleBoundary(bubble) {
+    // If we have tetrahedral vertices, render the actual tetrahedron
+    if (bubble.vertices && bubble.vertices.length === 4) {
+        return createTetrahedronBoundary(bubble.vertices);
+    }
+
+    // Fallback to AABB rendering if no vertices provided
     const min = bubble.min;
     const max = bubble.max;
 
@@ -313,6 +319,64 @@ function createBubbleBoundary(bubble) {
     // Store animation data
     group.userData = {
         phase: Math.random() * Math.PI * 2, // Random starting phase for variation
+        baseOpacity: 0.3,
+        glowBaseOpacity: 0.15
+    };
+
+    scene.add(group);
+    return group;
+}
+
+function createTetrahedronBoundary(vertices) {
+    // Create tetrahedron geometry from 4 vertices
+    const v0 = new THREE.Vector3(vertices[0].x, vertices[0].y, vertices[0].z);
+    const v1 = new THREE.Vector3(vertices[1].x, vertices[1].y, vertices[1].z);
+    const v2 = new THREE.Vector3(vertices[2].x, vertices[2].y, vertices[2].z);
+    const v3 = new THREE.Vector3(vertices[3].x, vertices[3].y, vertices[3].z);
+
+    // Create edges: v0-v1, v0-v2, v0-v3, v1-v2, v1-v3, v2-v3
+    const edgePoints = [
+        v0, v1,  // Edge 0-1
+        v0, v2,  // Edge 0-2
+        v0, v3,  // Edge 0-3
+        v1, v2,  // Edge 1-2
+        v1, v3,  // Edge 1-3
+        v2, v3   // Edge 2-3
+    ];
+
+    const edgeGeometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
+
+    // Create artistic glowing lines
+    const line = new THREE.LineSegments(
+        edgeGeometry,
+        new THREE.LineBasicMaterial({
+            color: 0x60a5fa,
+            opacity: 0.3,
+            transparent: true,
+            linewidth: 1
+        })
+    );
+
+    // Add glow layer
+    const glowLine = new THREE.LineSegments(
+        edgeGeometry.clone(),
+        new THREE.LineBasicMaterial({
+            color: 0x3b82f6,
+            opacity: 0.15,
+            transparent: true,
+            linewidth: 3,
+            depthWrite: false
+        })
+    );
+
+    // Group both layers
+    const group = new THREE.Group();
+    group.add(line);
+    group.add(glowLine);
+
+    // Store animation data
+    group.userData = {
+        phase: Math.random() * Math.PI * 2,
         baseOpacity: 0.3,
         glowBaseOpacity: 0.15
     };
