@@ -334,6 +334,8 @@ function createTetrahedronBoundary(vertices) {
     const v2 = new THREE.Vector3(vertices[2].x, vertices[2].y, vertices[2].z);
     const v3 = new THREE.Vector3(vertices[3].x, vertices[3].y, vertices[3].z);
 
+    console.log(`Creating tetrahedron: v0=(${v0.x.toFixed(1)},${v0.y.toFixed(1)},${v0.z.toFixed(1)}) v3=(${v3.x.toFixed(1)},${v3.y.toFixed(1)},${v3.z.toFixed(1)})`);
+
     // Create edges: v0-v1, v0-v2, v0-v3, v1-v2, v1-v3, v2-v3
     const edgePoints = [
         v0, v1,  // Edge 0-1
