@@ -275,24 +275,50 @@ function createBubbleBoundary(bubble) {
 
     const geometry = new THREE.BoxGeometry(width, height, depth);
     const edges = new THREE.EdgesGeometry(geometry);
+
+    // Create artistic glowing lines with gradient effect
     const line = new THREE.LineSegments(
         edges,
         new THREE.LineBasicMaterial({
             color: 0x60a5fa,
-            opacity: 0.5,
+            opacity: 0.3,
             transparent: true,
-            linewidth: 2
+            linewidth: 1
         })
     );
 
-    line.position.set(
+    // Add a second layer with stronger glow for artistic effect
+    const glowLine = new THREE.LineSegments(
+        edges.clone(),
+        new THREE.LineBasicMaterial({
+            color: 0x3b82f6,
+            opacity: 0.15,
+            transparent: true,
+            linewidth: 3,
+            depthWrite: false
+        })
+    );
+
+    // Group both layers together
+    const group = new THREE.Group();
+    group.add(line);
+    group.add(glowLine);
+
+    group.position.set(
         min.x + width / 2,
         min.y + height / 2,
         min.z + depth / 2
     );
 
-    scene.add(line);
-    return line;
+    // Store animation data
+    group.userData = {
+        phase: Math.random() * Math.PI * 2, // Random starting phase for variation
+        baseOpacity: 0.3,
+        glowBaseOpacity: 0.15
+    };
+
+    scene.add(group);
+    return group;
 }
 
 function updateBubbleBoundaries(bubbles) {
@@ -521,6 +547,26 @@ function animate() {
         frameCount = 0;
         fpsUpdateTime = currentTime;
     }
+
+    // Animate bubble boundaries with subtle pulsing glow
+    const time = currentTime * 0.001; // Convert to seconds
+    bubbleBoundaries.forEach(boundary => {
+        if (boundary.userData && boundary.visible) {
+            const phase = boundary.userData.phase;
+            const pulse = Math.sin(time * 0.5 + phase) * 0.5 + 0.5; // 0.0 to 1.0
+
+            // Pulse the opacity for breathing effect
+            const line = boundary.children[0];
+            const glowLine = boundary.children[1];
+
+            if (line && line.material) {
+                line.material.opacity = boundary.userData.baseOpacity + pulse * 0.2;
+            }
+            if (glowLine && glowLine.material) {
+                glowLine.material.opacity = boundary.userData.glowBaseOpacity + pulse * 0.25;
+            }
+        }
+    });
 
     controls.update();
     renderer.render(scene, camera);
