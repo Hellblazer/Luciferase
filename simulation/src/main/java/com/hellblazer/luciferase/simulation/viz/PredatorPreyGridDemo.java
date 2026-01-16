@@ -71,9 +71,11 @@ public class PredatorPreyGridDemo {
         // Phase 1: Initialize 4x4x4 tetree grid
         log.info("Phase 1: Initialize 4x4x4 Tetree Grid");
         var bubbleGrid = new TetreeBubbleGrid((byte) 3);
-        bubbleGrid.createBubbles(24, (byte) 3, 10);
-        var bubbles = bubbleGrid.getAllBubbles().stream().toList();
-        log.info("Created {} tetrahedral bubbles", bubbles.size());
+
+        // Create a SPATIAL grid instead of hierarchical tree
+        // For 4x4x4 grid in world [0,200], use cell size of 50
+        var bubbles = createSpatialGrid(bubbleGrid, 4, 50f, 10);
+        log.info("Created {} spatially distributed tetrahedral bubbles", bubbles.size());
 
         // Phase 2: Spawn entities
         log.info("Phase 2: Spawn Entities");
@@ -366,5 +368,63 @@ public class PredatorPreyGridDemo {
 
         log.info("Extracted tetrahedral types for {} bubbles", types.size());
         return types;
+    }
+
+    /**
+     * Create a spatially distributed grid of bubbles instead of hierarchical tree.
+     * This creates bubbles at regular positions across the world space.
+     *
+     * @param grid TetreeBubbleGrid to add bubbles to
+     * @param gridSize Size of grid in each dimension (e.g., 4 for 4x4x4)
+     * @param cellSize Size of each grid cell in world units
+     * @param targetFrameMs Target frame time for each bubble
+     * @return List of created bubbles
+     */
+    private static List<EnhancedBubble> createSpatialGrid(TetreeBubbleGrid grid, int gridSize, float cellSize, long targetFrameMs) {
+        var bubbles = new ArrayList<EnhancedBubble>();
+
+        // For each grid position, create a bubble
+        for (int x = 0; x < gridSize; x++) {
+            for (int y = 0; y < gridSize; y++) {
+                for (int z = 0; z < gridSize; z++) {
+                    // Calculate world position
+                    float worldX = WORLD.min() + x * cellSize;
+                    float worldY = WORLD.min() + y * cellSize;
+                    float worldZ = WORLD.min() + z * cellSize;
+
+                    // Convert to Morton space coordinates
+                    final float MORTON_MAX = 1 << 21; // 2^21
+                    final float scale = MORTON_MAX / WORLD.size();
+                    int mortonX = (int) ((worldX - WORLD.min()) * scale);
+                    int mortonY = (int) ((worldY - WORLD.min()) * scale);
+                    int mortonZ = (int) ((worldZ - WORLD.min()) * scale);
+
+                    // Create a Tet at this position (use type 0, level based on cell size)
+                    // Level calculation: smaller cells = higher level
+                    byte level = (byte) Math.max(0, Math.min(20, (int) (Math.log(MORTON_MAX / (cellSize * scale)) / Math.log(2))));
+
+                    var tet = new com.hellblazer.luciferase.lucien.tetree.Tet(
+                        mortonX, mortonY, mortonZ, level, (byte) 0
+                    );
+
+                    // Create bubble and add to grid
+                    var bubble = new EnhancedBubble(UUID.randomUUID(), level, targetFrameMs);
+                    var tetreeKey = tet.tmIndex();
+
+                    // Add to grid (this will register it in the spatial index)
+                    try {
+                        grid.addBubble(bubble, tetreeKey);
+                        bubbles.add(bubble);
+                        log.debug("Created bubble at world ({},{},{}) morton ({},{},{}) level {}",
+                            (int) worldX, (int) worldY, (int) worldZ,
+                            mortonX, mortonY, mortonZ, level);
+                    } catch (Exception e) {
+                        log.warn("Failed to add bubble at ({},{},{}): {}", worldX, worldY, worldZ, e.getMessage());
+                    }
+                }
+            }
+        }
+
+        return bubbles;
     }
 }
