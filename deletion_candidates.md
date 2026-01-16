@@ -74,8 +74,8 @@ Demo code that can be removed from production build.
 | 7 | `simulation/src/main/java/.../consensus/demo/DemoMetricsCollector.java` | Demo code | LOW | None |
 | 8 | `simulation/src/main/java/.../consensus/demo/DemoValidationReport.java` | Demo code | LOW | None |
 | 9 | `simulation/src/main/java/.../consensus/demo/EntitySpawner.java` | Demo code | LOW | None |
-| 10 | `simulation/src/main/java/.../consensus/demo/FailureInjector.java` | Demo code (already deleted) | LOW | None |
-| 11 | `simulation/src/main/java/.../consensus/demo/FailureScenario.java` | Demo code (already deleted) | LOW | None |
+| 10 | `simulation/src/main/java/.../consensus/demo/FailureInjector` | Demo code (never implemented) | LOW | None |
+| 11 | `simulation/src/main/java/.../consensus/demo/FailureScenario` | Demo code (never implemented) | LOW | None |
 | 12 | `simulation/src/main/java/.../consensus/demo/FlockingEntity.java` | Demo code | LOW | None |
 | 13 | `simulation/src/main/java/.../consensus/demo/FlockingEntityFactory.java` | Demo code | LOW | None |
 | 14 | `simulation/src/main/java/.../consensus/demo/ByzantineNode.java` | Demo code | LOW | None |
