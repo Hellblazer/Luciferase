@@ -282,25 +282,25 @@ function createBubbleBoundary(bubble) {
     const geometry = new THREE.BoxGeometry(width, height, depth);
     const edges = new THREE.EdgesGeometry(geometry);
 
-    // Create artistic glowing lines with gradient effect
+    // Create bright, highly visible lines
     const line = new THREE.LineSegments(
         edges,
         new THREE.LineBasicMaterial({
-            color: 0x60a5fa,
-            opacity: 0.3,
+            color: 0x00ffff,  // Bright cyan
+            opacity: 0.9,      // Much more opaque
             transparent: true,
-            linewidth: 1
+            linewidth: 4       // Thicker lines
         })
     );
 
-    // Add a second layer with stronger glow for artistic effect
+    // Add strong glow layer
     const glowLine = new THREE.LineSegments(
         edges.clone(),
         new THREE.LineBasicMaterial({
-            color: 0x3b82f6,
-            opacity: 0.15,
+            color: 0x00ff00,   // Bright green glow
+            opacity: 0.6,      // Strong glow
             transparent: true,
-            linewidth: 3,
+            linewidth: 8,      // Thick glow
             depthWrite: false
         })
     );
@@ -316,11 +316,11 @@ function createBubbleBoundary(bubble) {
         min.z + depth / 2
     );
 
-    // Store animation data
+    // Store animation data (higher base opacity)
     group.userData = {
-        phase: Math.random() * Math.PI * 2, // Random starting phase for variation
-        baseOpacity: 0.3,
-        glowBaseOpacity: 0.15
+        phase: Math.random() * Math.PI * 2,
+        baseOpacity: 0.9,
+        glowBaseOpacity: 0.6
     };
 
     scene.add(group);
@@ -346,25 +346,25 @@ function createTetrahedronBoundary(vertices) {
 
     const edgeGeometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
 
-    // Create artistic glowing lines
+    // Create bright, highly visible lines
     const line = new THREE.LineSegments(
         edgeGeometry,
         new THREE.LineBasicMaterial({
-            color: 0x60a5fa,
-            opacity: 0.3,
+            color: 0x00ffff,  // Bright cyan
+            opacity: 0.9,      // Much more opaque
             transparent: true,
-            linewidth: 1
+            linewidth: 4       // Thicker lines
         })
     );
 
-    // Add glow layer
+    // Add strong glow layer
     const glowLine = new THREE.LineSegments(
         edgeGeometry.clone(),
         new THREE.LineBasicMaterial({
-            color: 0x3b82f6,
-            opacity: 0.15,
+            color: 0x00ff00,   // Bright green glow
+            opacity: 0.6,      // Strong glow
             transparent: true,
-            linewidth: 3,
+            linewidth: 8,      // Thick glow
             depthWrite: false
         })
     );
@@ -374,11 +374,11 @@ function createTetrahedronBoundary(vertices) {
     group.add(line);
     group.add(glowLine);
 
-    // Store animation data
+    // Store animation data (higher base opacity)
     group.userData = {
         phase: Math.random() * Math.PI * 2,
-        baseOpacity: 0.3,
-        glowBaseOpacity: 0.15
+        baseOpacity: 0.9,
+        glowBaseOpacity: 0.6
     };
 
     scene.add(group);
