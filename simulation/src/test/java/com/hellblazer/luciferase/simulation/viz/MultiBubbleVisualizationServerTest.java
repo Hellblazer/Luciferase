@@ -11,7 +11,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.WebSocket;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -170,6 +174,63 @@ class MultiBubbleVisualizationServerTest {
         }
 
         return vertices;
+    }
+
+    @Test
+    void testWebSocketBubbleBoundariesWithVertices() throws Exception {
+        // Create a small tetree grid
+        var grid = new TetreeBubbleGrid((byte) 2);
+        grid.createBubbles(4, (byte) 2, 10);
+        var bubbles = grid.getAllBubbles().stream().toList();
+
+        // Extract vertices
+        var vertices = extractBubbleVertices(grid, bubbles);
+
+        server.setBubbles(bubbles);
+        server.setBubbleVertices(vertices);
+        server.start();
+
+        // Give server time to start
+        Thread.sleep(100);
+
+        // Connect to WebSocket and capture initial bubble boundaries message
+        var messageReceived = new CompletableFuture<String>();
+        var webSocket = HttpClient.newHttpClient()
+            .newWebSocketBuilder()
+            .buildAsync(URI.create("ws://localhost:" + port + "/ws/bubbles"), new WebSocket.Listener() {
+                @Override
+                public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                    messageReceived.complete(data.toString());
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                @Override
+                public void onError(WebSocket webSocket, Throwable error) {
+                    messageReceived.completeExceptionally(error);
+                }
+            })
+            .get(5, TimeUnit.SECONDS);
+
+        // Wait for initial bubble boundaries message
+        String bubbleJson = messageReceived.get(5, TimeUnit.SECONDS);
+
+        // Verify vertices are in WebSocket JSON
+        assertTrue(bubbleJson.contains("\"bubbles\""), "WebSocket message should contain bubbles array");
+        assertTrue(bubbleJson.contains("\"vertices\""), "Bubble data should contain vertices array");
+        assertTrue(bubbleJson.contains("\"x\""), "Vertices should contain x coordinate");
+        assertTrue(bubbleJson.contains("\"y\""), "Vertices should contain y coordinate");
+        assertTrue(bubbleJson.contains("\"z\""), "Vertices should contain z coordinate");
+
+        // Count how many bubbles have vertices
+        int vertexCount = countOccurrences(bubbleJson, "\"vertices\"");
+        assertEquals(bubbles.size(), vertexCount,
+            "All bubbles should have vertices in WebSocket JSON (expected " + bubbles.size() + ", got " + vertexCount + ")");
+
+        System.out.println("✓ WebSocket test passed: All " + bubbles.size() + " bubbles have tetrahedral vertices");
+        System.out.println("Sample WebSocket JSON (first 500 chars): " + bubbleJson.substring(0, Math.min(500, bubbleJson.length())));
+
+        // Close WebSocket
+        webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "test complete").get(5, TimeUnit.SECONDS);
     }
 
     private int countOccurrences(String text, String substring) {
