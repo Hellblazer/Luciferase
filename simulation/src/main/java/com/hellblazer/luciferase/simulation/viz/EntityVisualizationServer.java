@@ -487,10 +487,10 @@ public class EntityVisualizationServer {
             composite.addBehavior(com.hellblazer.luciferase.simulation.entity.EntityType.PREY,
                                   new com.hellblazer.luciferase.simulation.behavior.PreyBehavior());
             composite.addBehavior(com.hellblazer.luciferase.simulation.entity.EntityType.PREDATOR,
-                                  new com.hellblazer.luciferase.simulation.behavior.PredatorBehavior());
+                                  new com.hellblazer.luciferase.simulation.behavior.PackHuntingBehavior());
 
             behavior = composite;
-            log.info("Using Predator-Prey behavior ({} prey, {} predators)", preyCount, predatorCount);
+            log.info("Using Pack Hunting Predator-Prey behavior ({} prey, {} predators)", preyCount, predatorCount);
 
         } else {
             // Default: flocking
