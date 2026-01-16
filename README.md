@@ -1,7 +1,7 @@
 # Luciferase
 
-**Last Updated**: 2026-01-12
-**Status**: H3 Phase 1 Complete | Phase 7D - Entity Migration Coordination (In Progress)
+**Last Updated**: 2026-01-15
+**Status**: Phase 9 Complete (Dynamic Topology) | Stabilization Sprint A (2/5 CI runs)
 
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
 
@@ -40,6 +40,15 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
   - ESVO (Efficient Sparse Voxel Octrees) core algorithms complete (Laine & Karras 2010 reference)
   - Stack-based ray traversal optimized for GPU architectures
   - Mesh generation and contour extraction
+
+- Dynamic Topology (Phase 9) 🆕
+  - Automatic bubble splitting when entity density exceeds 5000/bubble
+  - Automatic bubble merging when entity density falls below 500/bubble
+  - Boundary adaptation following entity cluster movement
+  - Byzantine-fault-tolerant consensus for topology changes
+  - 100% entity retention across all topology operations
+  - Operational metrics with Prometheus-compatible naming
+  - See [Dynamic Topology Documentation](simulation/src/test/java/com/hellblazer/luciferase/simulation/topology/README.md)
 
 ## Architecture
 
@@ -236,6 +245,40 @@ See [PHASE_7D_DAY_BY_DAY_IMPLEMENTATION.md](simulation/doc/PHASE_7D_DAY_BY_DAY_I
 ### Current Work
 - [Phase 7D Implementation Plan](simulation/doc/PHASE_7D_DAY_BY_DAY_IMPLEMENTATION.md) - Entity Migration Coordination
 - [H3.7 Phase 1 Completion](simulation/doc/H3.7_PHASE1_COMPLETION.md) - Determinism progress
+
+## Recent Milestones
+
+### Phase 9: Dynamic Topology Adaptation (2026-01-15) ✅
+
+Self-adapting spatial topology where bubble boundaries respond to entity distribution:
+- **Automatic Splitting**: Density >5000 entities triggers split with atomic redistribution
+- **Automatic Merging**: Density <500 entities triggers merge with duplicate detection
+- **Boundary Adaptation**: Bubble centers follow entity cluster movement
+- **Byzantine Consensus**: Committee voting with 30s cooldown and pre-validation
+- **100% Entity Retention**: Snapshot/rollback guarantees no entity loss
+- **Performance**: <1s splits, <500ms merges/moves, <200ms consensus
+- **Test Coverage**: 105+ tests across detection, consensus, execution, and validation
+
+[📚 Phase 9 Documentation](simulation/src/test/java/com/hellblazer/luciferase/simulation/topology/README.md) | [📋 Full Changelog](CHANGELOG.md)
+
+### Stabilization Sprint (2026-01-11 to Present) 🔄
+
+**Sprint A: Test Stabilization**
+- ✅ Converted 136 wall-clock instances to Clock interface (deterministic time)
+- ✅ Fixed TOCTTOU race conditions in test suite
+- ✅ Resolved GitHub Actions cache conflicts
+- 🔄 Achieved 2/5 consecutive clean CI runs (target: 5/5)
+
+**Sprint B: Complexity Reduction** (pending Sprint A completion)
+- Target: MultiBubbleSimulation refactoring (558 → 150 LOC facade)
+- Goal: Delete 100 files by Month 2
+- Rules: NO NEW FEATURES until health > 7/10
+
+### Phase 8: Consensus-Coordinated Migration ✅
+
+Byzantine-fault-tolerant entity migration across bubbles with 100% retention guarantees.
+
+---
 
 ## Contributing
 
