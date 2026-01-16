@@ -70,6 +70,7 @@ public class BubbleSplitter {
     private final TetreeBubbleGrid bubbleGrid;
     private final EntityAccountant accountant;
     private final OperationTracker operationTracker;
+    private final TopologyMetrics metrics;
 
     /**
      * Creates a bubble splitter.
@@ -77,12 +78,15 @@ public class BubbleSplitter {
      * @param bubbleGrid        the bubble grid
      * @param accountant        the entity accountant for atomic transfers
      * @param operationTracker  the operation tracker for rollback support
+     * @param metrics           the metrics tracker for operational monitoring
      * @throws NullPointerException if any parameter is null
      */
-    public BubbleSplitter(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant, OperationTracker operationTracker) {
+    public BubbleSplitter(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant, OperationTracker operationTracker,
+                          TopologyMetrics metrics) {
         this.bubbleGrid = java.util.Objects.requireNonNull(bubbleGrid, "bubbleGrid must not be null");
         this.accountant = java.util.Objects.requireNonNull(accountant, "accountant must not be null");
         this.operationTracker = java.util.Objects.requireNonNull(operationTracker, "operationTracker must not be null");
+        this.metrics = java.util.Objects.requireNonNull(metrics, "metrics must not be null");
     }
 
     /**
@@ -157,6 +161,9 @@ public class BubbleSplitter {
 
         log.info("[{}] Split bubble {}: moved {} entities to new bubble {}",
                 correlationId, sourceBubbleId, entitiesMoved, newBubbleId);
+
+        // Record entities moved in metrics
+        metrics.recordEntitiesMoved(entitiesMoved);
 
         // Validate entity conservation
         int entitiesAfterSplit = accountant.entitiesInBubble(sourceBubbleId).size() +

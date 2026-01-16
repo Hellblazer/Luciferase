@@ -38,13 +38,15 @@ class BubbleMoverTest {
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
+    private TopologyMetrics metrics;
     private BubbleMover mover;
 
     @BeforeEach
     void setUp() {
         bubbleGrid = new TetreeBubbleGrid((byte) 2);
         accountant = new EntityAccountant();
-        mover = new BubbleMover(bubbleGrid, accountant);
+        metrics = new TopologyMetrics();
+        mover = new BubbleMover(bubbleGrid, accountant, metrics);
     }
 
     @Test
@@ -193,15 +195,22 @@ class BubbleMoverTest {
     @Test
     void testConstructorNullBubbleGridThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new BubbleMover(null, accountant);
+            new BubbleMover(null, accountant, metrics);
         }, "Should reject null bubble grid");
     }
 
     @Test
     void testConstructorNullAccountantThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new BubbleMover(bubbleGrid, null);
+            new BubbleMover(bubbleGrid, null, metrics);
         }, "Should reject null accountant");
+    }
+
+    @Test
+    void testConstructorNullMetricsThrows() {
+        assertThrows(NullPointerException.class, () -> {
+            new BubbleMover(bubbleGrid, accountant, null);
+        }, "Should reject null metrics");
     }
 
     // Helper method

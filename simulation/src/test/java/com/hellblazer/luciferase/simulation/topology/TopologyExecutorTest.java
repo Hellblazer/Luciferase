@@ -37,13 +37,15 @@ class TopologyExecutorTest {
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
+    private TopologyMetrics metrics;
     private TopologyExecutor executor;
 
     @BeforeEach
     void setUp() {
         bubbleGrid = new TetreeBubbleGrid((byte) 2);
         accountant = new EntityAccountant();
-        executor = new TopologyExecutor(bubbleGrid, accountant);
+        metrics = new TopologyMetrics();
+        executor = new TopologyExecutor(bubbleGrid, accountant, metrics);
     }
 
     @Test
@@ -210,15 +212,22 @@ class TopologyExecutorTest {
     @Test
     void testConstructorNullBubbleGridThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new TopologyExecutor(null, accountant);
+            new TopologyExecutor(null, accountant, metrics);
         }, "Should reject null bubble grid");
     }
 
     @Test
     void testConstructorNullAccountantThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new TopologyExecutor(bubbleGrid, null);
+            new TopologyExecutor(bubbleGrid, null, metrics);
         }, "Should reject null accountant");
+    }
+
+    @Test
+    void testConstructorNullMetricsThrows() {
+        assertThrows(NullPointerException.class, () -> {
+            new TopologyExecutor(bubbleGrid, accountant, null);
+        }, "Should reject null metrics");
     }
 
     @Test

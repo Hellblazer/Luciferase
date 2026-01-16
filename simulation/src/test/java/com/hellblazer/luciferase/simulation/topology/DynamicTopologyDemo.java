@@ -48,7 +48,8 @@ class DynamicTopologyDemo {
         // Initialize 4-bubble grid
         var bubbleGrid = new TetreeBubbleGrid((byte) 2);
         var accountant = new EntityAccountant();
-        var executor = new TopologyExecutor(bubbleGrid, accountant);
+        var metrics = new TopologyMetrics();
+        var executor = new TopologyExecutor(bubbleGrid, accountant, metrics);
         var validator = new TopologyConsistencyValidator();
 
         System.out.println("Phase 1: Initial Setup");
@@ -240,7 +241,8 @@ class DynamicTopologyDemo {
 
         var bubbleGrid = new TetreeBubbleGrid((byte) 2);
         var accountant = new EntityAccountant();
-        var executor = new TopologyExecutor(bubbleGrid, accountant);
+        var metrics = new TopologyMetrics();
+        var executor = new TopologyExecutor(bubbleGrid, accountant, metrics);
 
         System.out.println("Starting with 4 bubbles...");
         bubbleGrid.createBubbles(4, (byte) 2, 10);

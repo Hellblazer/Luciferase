@@ -77,6 +77,7 @@ public class TopologyExecutor implements OperationTracker {
     private final BubbleMover mover;
     private final EntityAccountant accountant;
     private final TetreeBubbleGrid bubbleGrid;
+    private final TopologyMetrics metrics;
     private final Lock executionLock;
 
     // Thread-local operation history for tracking grid changes during execution
@@ -88,16 +89,27 @@ public class TopologyExecutor implements OperationTracker {
      *
      * @param bubbleGrid the bubble grid
      * @param accountant the entity accountant for atomic transfers
+     * @param metrics    the metrics tracker for operational monitoring
      * @throws NullPointerException if any parameter is null
      */
-    public TopologyExecutor(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant) {
+    public TopologyExecutor(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant, TopologyMetrics metrics) {
         this.bubbleGrid = java.util.Objects.requireNonNull(bubbleGrid, "bubbleGrid must not be null");
         this.accountant = java.util.Objects.requireNonNull(accountant, "accountant must not be null");
+        this.metrics = java.util.Objects.requireNonNull(metrics, "metrics must not be null");
 
-        this.splitter = new BubbleSplitter(bubbleGrid, accountant, this);
-        this.merger = new BubbleMerger(bubbleGrid, accountant, this);
-        this.mover = new BubbleMover(bubbleGrid, accountant);
+        this.splitter = new BubbleSplitter(bubbleGrid, accountant, this, metrics);
+        this.merger = new BubbleMerger(bubbleGrid, accountant, this, metrics);
+        this.mover = new BubbleMover(bubbleGrid, accountant, metrics);
         this.executionLock = new ReentrantLock();
+    }
+
+    /**
+     * Get the metrics tracker for this executor.
+     *
+     * @return topology metrics
+     */
+    public TopologyMetrics getMetrics() {
+        return metrics;
     }
 
     @Override
@@ -148,7 +160,10 @@ public class TopologyExecutor implements OperationTracker {
                     var result = splitter.execute(split);
                     success = result.success();
                     message = result.message();
-                    if (!success) {
+                    if (success) {
+                        metrics.recordSplitSuccess();
+                    } else {
+                        metrics.recordSplitFailure();
                         rollback(snapshot, "Split failed: " + message);
                     }
                 }
@@ -156,7 +171,10 @@ public class TopologyExecutor implements OperationTracker {
                     var result = merger.execute(merge);
                     success = result.success();
                     message = result.message();
-                    if (!success) {
+                    if (success) {
+                        metrics.recordMergeSuccess();
+                    } else {
+                        metrics.recordMergeFailure();
                         rollback(snapshot, "Merge failed: " + message);
                     }
                 }
@@ -164,7 +182,10 @@ public class TopologyExecutor implements OperationTracker {
                     var result = mover.execute(move);
                     success = result.success();
                     message = result.message();
-                    if (!success) {
+                    if (success) {
+                        metrics.recordMoveSuccess();
+                    } else {
+                        metrics.recordMoveFailure();
                         rollback(snapshot, "Move failed: " + message);
                     }
                 }

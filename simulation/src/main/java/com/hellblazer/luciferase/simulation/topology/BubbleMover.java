@@ -66,17 +66,20 @@ public class BubbleMover {
 
     private final TetreeBubbleGrid bubbleGrid;
     private final EntityAccountant accountant;
+    private final TopologyMetrics metrics;
 
     /**
      * Creates a bubble mover.
      *
      * @param bubbleGrid the bubble grid
      * @param accountant the entity accountant for validation
+     * @param metrics    the metrics tracker for operational monitoring
      * @throws NullPointerException if any parameter is null
      */
-    public BubbleMover(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant) {
+    public BubbleMover(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant, TopologyMetrics metrics) {
         this.bubbleGrid = java.util.Objects.requireNonNull(bubbleGrid, "bubbleGrid must not be null");
         this.accountant = java.util.Objects.requireNonNull(accountant, "accountant must not be null");
+        this.metrics = java.util.Objects.requireNonNull(metrics, "metrics must not be null");
     }
 
     /**

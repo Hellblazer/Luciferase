@@ -38,6 +38,7 @@ class TopologyEvolutionTest {
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
+    private TopologyMetrics metrics;
     private TopologyExecutor executor;
     private TopologyConsistencyValidator validator;
 
@@ -45,7 +46,8 @@ class TopologyEvolutionTest {
     void setUp() {
         bubbleGrid = new TetreeBubbleGrid((byte) 2);
         accountant = new EntityAccountant();
-        executor = new TopologyExecutor(bubbleGrid, accountant);
+        metrics = new TopologyMetrics();
+        executor = new TopologyExecutor(bubbleGrid, accountant, metrics);
         validator = new TopologyConsistencyValidator();
     }
 

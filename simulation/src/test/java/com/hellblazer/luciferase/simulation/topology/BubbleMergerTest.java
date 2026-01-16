@@ -38,13 +38,15 @@ class BubbleMergerTest {
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
+    private TopologyMetrics metrics;
     private BubbleMerger merger;
 
     @BeforeEach
     void setUp() {
         bubbleGrid = new TetreeBubbleGrid((byte) 2);
         accountant = new EntityAccountant();
-        merger = new BubbleMerger(bubbleGrid, accountant, OperationTracker.NOOP);
+        metrics = new TopologyMetrics();
+        merger = new BubbleMerger(bubbleGrid, accountant, OperationTracker.NOOP, metrics);
     }
 
     @Test
@@ -250,15 +252,22 @@ class BubbleMergerTest {
     @Test
     void testConstructorNullBubbleGridThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new BubbleMerger(null, accountant, OperationTracker.NOOP);
+            new BubbleMerger(null, accountant, OperationTracker.NOOP, metrics);
         }, "Should reject null bubble grid");
     }
 
     @Test
     void testConstructorNullAccountantThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new BubbleMerger(bubbleGrid, null, OperationTracker.NOOP);
+            new BubbleMerger(bubbleGrid, null, OperationTracker.NOOP, metrics);
         }, "Should reject null accountant");
+    }
+
+    @Test
+    void testConstructorNullMetricsThrows() {
+        assertThrows(NullPointerException.class, () -> {
+            new BubbleMerger(bubbleGrid, accountant, OperationTracker.NOOP, null);
+        }, "Should reject null metrics");
     }
 
     // Helper method

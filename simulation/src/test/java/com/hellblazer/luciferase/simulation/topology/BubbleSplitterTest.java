@@ -39,13 +39,15 @@ class BubbleSplitterTest {
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
+    private TopologyMetrics metrics;
     private BubbleSplitter splitter;
 
     @BeforeEach
     void setUp() {
         bubbleGrid = new TetreeBubbleGrid((byte) 2);
         accountant = new EntityAccountant();
-        splitter = new BubbleSplitter(bubbleGrid, accountant, OperationTracker.NOOP);
+        metrics = new TopologyMetrics();
+        splitter = new BubbleSplitter(bubbleGrid, accountant, OperationTracker.NOOP, metrics);
     }
 
     @Test
@@ -217,15 +219,22 @@ class BubbleSplitterTest {
     @Test
     void testConstructorNullBubbleGridThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new BubbleSplitter(null, accountant, OperationTracker.NOOP);
+            new BubbleSplitter(null, accountant, OperationTracker.NOOP, metrics);
         }, "Should reject null bubble grid");
     }
 
     @Test
     void testConstructorNullAccountantThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new BubbleSplitter(bubbleGrid, null, OperationTracker.NOOP);
+            new BubbleSplitter(bubbleGrid, null, OperationTracker.NOOP, metrics);
         }, "Should reject null accountant");
+    }
+
+    @Test
+    void testConstructorNullMetricsThrows() {
+        assertThrows(NullPointerException.class, () -> {
+            new BubbleSplitter(bubbleGrid, accountant, OperationTracker.NOOP, null);
+        }, "Should reject null metrics");
     }
 
     // Helper method
