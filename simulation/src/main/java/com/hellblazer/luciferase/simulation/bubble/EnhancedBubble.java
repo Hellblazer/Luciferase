@@ -134,6 +134,24 @@ public class EnhancedBubble {
     }
 
     /**
+     * Get the spatial level used for tetree refinement.
+     *
+     * @return Spatial level (tetree refinement depth)
+     */
+    public byte getSpatialLevel() {
+        return spatialLevel;
+    }
+
+    /**
+     * Get the target frame time budget in milliseconds.
+     *
+     * @return Target frame time in milliseconds
+     */
+    public long getTargetFrameMs() {
+        return frameMonitor.getTargetFrameMs();
+    }
+
+    /**
      * Get the current bounds of this bubble.
      *
      * @return BubbleBounds or null if no entities

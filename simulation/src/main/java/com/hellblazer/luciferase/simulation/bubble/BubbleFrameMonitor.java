@@ -26,6 +26,15 @@ public class BubbleFrameMonitor {
     }
 
     /**
+     * Get the target frame time budget in milliseconds.
+     *
+     * @return Target frame time in milliseconds
+     */
+    public long getTargetFrameMs() {
+        return targetFrameMs;
+    }
+
+    /**
      * Record the time taken for a simulation frame.
      *
      * @param frameTimeNs Frame time in nanoseconds

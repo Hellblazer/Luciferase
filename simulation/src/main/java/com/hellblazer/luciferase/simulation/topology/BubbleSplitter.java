@@ -124,10 +124,10 @@ public class BubbleSplitter {
                  entitiesToMove.size(), allRecords.size());
 
         // Create new child bubble
-        // Use same spatial level and target frame time as grid default
+        // Inherit spatial level and target frame time from parent bubble
         UUID newBubbleId = UUID.randomUUID();
-        byte spatialLevel = 2; // Default spatial level for new bubbles
-        long targetFrameMs = 10; // Default 10ms frame budget
+        byte spatialLevel = sourceBubble.getSpatialLevel();
+        long targetFrameMs = sourceBubble.getTargetFrameMs();
 
         var newBubble = new EnhancedBubble(newBubbleId, spatialLevel, targetFrameMs);
 
