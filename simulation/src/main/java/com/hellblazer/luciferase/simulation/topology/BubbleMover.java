@@ -134,8 +134,29 @@ public class BubbleMover {
         // the entity cluster. No explicit bounds mutation is needed.
         bubble.recalculateBounds();
 
-        log.debug("Bubble {} bounds recalculated after move (centroid shift: {} units)",
-                 bubbleId, moveDistance);
+        // Validate that the new centroid matches the expected position
+        var newBounds = bubble.bounds();
+        if (newBounds == null) {
+            return new MoveExecutionResult(false, "Bubble lost bounds after recalculation", entitiesBefore, 0);
+        }
+
+        var actualNewCentroid = newBounds.centroid();
+        float dx2 = (float) actualNewCentroid.getX() - newCenter.x;
+        float dy2 = (float) actualNewCentroid.getY() - newCenter.y;
+        float dz2 = (float) actualNewCentroid.getZ() - newCenter.z;
+        float deviation = (float) Math.sqrt(dx2*dx2 + dy2*dy2 + dz2*dz2);
+
+        // Allow 10% tolerance for deviation (entity clustering may not perfectly match proposal)
+        float tolerance = moveDistance * 0.1f;
+        if (deviation > tolerance && deviation > 0.1f) {
+            log.warn("Bubble {} center deviation: expected ({}, {}, {}), actual ({}, {}, {}), deviation {}",
+                     bubbleId, newCenter.x, newCenter.y, newCenter.z,
+                     actualNewCentroid.getX(), actualNewCentroid.getY(), actualNewCentroid.getZ(),
+                     deviation);
+        }
+
+        log.debug("Bubble {} bounds recalculated after move (centroid shift: {}, deviation: {})",
+                 bubbleId, moveDistance, deviation);
 
         // Validate entity count unchanged (no entities should have been moved)
         int entitiesAfter = accountant.entitiesInBubble(bubbleId).size();
