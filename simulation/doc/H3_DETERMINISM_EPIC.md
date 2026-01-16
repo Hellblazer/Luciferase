@@ -275,15 +275,13 @@ grep -l "private volatile Clock clock" \
 
 **Bead**: Luciferase-6fw9
 **Priority**: P1
-**Files**: 19
-**Calls**: 23 (20% of total)
+**Files**: 17
+**Calls**: 20 (17% of total)
 **Timeline**: Day 7
 
 **Subsystems**:
 
-**4A: Demo & Test Support (12 calls, 8 files)**
-- FailureScenario.java (2)
-- FailureInjector.java (1)
+**4A: Demo & Test Support (9 calls, 6 files)**
 - ExternalBubbleTracker.java (2)
 - CrossProcessNeighborIndex.java (2)
 - grid/MultiBubbleSimulation.java (2)
