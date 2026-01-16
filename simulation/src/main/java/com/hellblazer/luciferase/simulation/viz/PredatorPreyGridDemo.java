@@ -50,9 +50,9 @@ public class PredatorPreyGridDemo {
 
     private static final Logger log = LoggerFactory.getLogger(PredatorPreyGridDemo.class);
 
-    private static final int TOTAL_ENTITIES = 1000;
-    private static final int PREY_COUNT = 900;
-    private static final int PREDATOR_COUNT = 100;
+    private static final int TOTAL_ENTITIES = 2000;
+    private static final int PREY_COUNT = 1800;
+    private static final int PREDATOR_COUNT = 200;
     private static final long TICK_INTERVAL_NS = 50_000_000; // 50ms = 20 TPS
     private static final WorldBounds WORLD = WorldBounds.DEFAULT;
     private static final Random RANDOM = new Random(42);
@@ -61,13 +61,13 @@ public class PredatorPreyGridDemo {
         var port = args.length > 0 ? Integer.parseInt(args[0]) : 7081;
 
         log.info("=== Grand Vision: Pack Hunting Predator-Prey Grid ===");
-        log.info("Vision: 2x2x2 tetree grid, 900 prey + 100 pack-hunting predators");
+        log.info("Vision: 4x4x4 tetree grid, 1800 prey + 200 pack-hunting predators");
         log.info("Using PrimeMover discrete event simulation (NOT thread loops!)");
 
-        // Phase 1: Initialize 2x2x2 tetree grid
-        log.info("Phase 1: Initialize 2x2x2 Tetree Grid");
-        var bubbleGrid = new TetreeBubbleGrid((byte) 2);
-        bubbleGrid.createBubbles(8, (byte) 2, 10);
+        // Phase 1: Initialize 4x4x4 tetree grid
+        log.info("Phase 1: Initialize 4x4x4 Tetree Grid");
+        var bubbleGrid = new TetreeBubbleGrid((byte) 3);
+        bubbleGrid.createBubbles(24, (byte) 3, 10);
         var bubbles = bubbleGrid.getAllBubbles().stream().toList();
         log.info("Created {} tetrahedral bubbles", bubbles.size());
 

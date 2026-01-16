@@ -1,8 +1,9 @@
 /**
  * Grand Vision Demo - Pack Hunting Predator-Prey Grid Visualization
  *
- * Connects to MultiBubbleVisualizationServer and renders 1000 entities
- * across 8 tetrahedral bubbles in real-time using Three.js.
+ * Connects to MultiBubbleVisualizationServer and renders 2000 entities
+ * across 24 tetrahedral bubbles in a 4×4×4 grid using Three.js.
+ * Features fish-like prey and shark-like predators with velocity-based orientation.
  */
 
 import * as THREE from 'three';
@@ -12,7 +13,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Constants
 // ============================================================================
 
-const MAX_ENTITIES_PER_TYPE = 1000;
+const MAX_ENTITIES_PER_TYPE = 2500;
 const ENTITY_SIZE = 2.0;
 const WORLD_SIZE = 200;
 
@@ -97,25 +98,155 @@ worldLine.position.set(WORLD_SIZE / 2, WORLD_SIZE / 2, WORLD_SIZE / 2);
 scene.add(worldLine);
 
 // ============================================================================
-// Entity Rendering (InstancedMesh)
+// Boid Geometry Creation (Fish/Shark shapes)
 // ============================================================================
 
-const entityGeometries = {};
+/**
+ * Create a fish-like geometry for prey boids.
+ * Points forward along +Z axis.
+ */
+function createPreyGeometry(size) {
+    const geometry = new THREE.BufferGeometry();
+
+    const vertices = new Float32Array([
+        // Nose (front)
+        0, 0, size * 2,
+        // Upper body
+        -size * 0.5, size * 0.3, size * 0.5,
+        size * 0.5, size * 0.3, size * 0.5,
+        // Lower body
+        -size * 0.5, -size * 0.3, size * 0.5,
+        size * 0.5, -size * 0.3, size * 0.5,
+        // Tail
+        0, 0, -size * 1.5,
+        // Top fin
+        0, size * 0.8, size * 0.2,
+        // Side fins
+        -size * 1.2, 0, size * 0.5,
+        size * 1.2, 0, size * 0.5
+    ]);
+
+    const indices = new Uint16Array([
+        // Body triangles
+        0, 1, 2,  // top front
+        0, 3, 4,  // bottom front
+        0, 2, 4,  // right front
+        0, 4, 3,  // right front2
+        0, 3, 1,  // left front
+        // Tail
+        1, 3, 5,
+        1, 5, 2,
+        2, 5, 4,
+        4, 5, 3,
+        // Top fin
+        0, 6, 1,
+        0, 2, 6,
+        // Side fins
+        1, 7, 3,
+        2, 8, 4
+    ]);
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    geometry.computeVertexNormals();
+
+    return geometry;
+}
+
+/**
+ * Create a shark-like geometry for predator boids.
+ * Larger, more angular, more aggressive looking.
+ */
+function createPredatorGeometry(size) {
+    const geometry = new THREE.BufferGeometry();
+
+    const vertices = new Float32Array([
+        // Sharp nose
+        0, 0, size * 2.5,
+        // Upper jaw
+        -size * 0.4, size * 0.2, size * 1.5,
+        size * 0.4, size * 0.2, size * 1.5,
+        // Lower jaw
+        -size * 0.4, -size * 0.2, size * 1.5,
+        size * 0.4, -size * 0.2, size * 1.5,
+        // Wide body
+        -size * 0.6, size * 0.4, size * 0.3,
+        size * 0.6, size * 0.4, size * 0.3,
+        -size * 0.6, -size * 0.4, size * 0.3,
+        size * 0.6, -size * 0.4, size * 0.3,
+        // Tail
+        0, 0, -size * 2,
+        0, size * 0.6, -size * 2,  // Upper tail fin
+        // Dorsal fin
+        0, size * 1.2, size * 0.5,
+        // Pectoral fins (wider)
+        -size * 1.5, 0, size * 0.8,
+        size * 1.5, 0, size * 0.8
+    ]);
+
+    const indices = new Uint16Array([
+        // Head
+        0, 1, 2,
+        0, 3, 4,
+        // Upper body
+        1, 5, 6,
+        1, 6, 2,
+        2, 6, 8,
+        2, 8, 4,
+        // Lower body
+        3, 7, 5,
+        3, 5, 1,
+        4, 8, 7,
+        4, 7, 3,
+        // Tail
+        5, 7, 9,
+        6, 8, 9,
+        5, 9, 10,
+        6, 10, 9,
+        // Dorsal fin
+        5, 11, 6,
+        // Pectoral fins
+        1, 12, 5,
+        2, 13, 6
+    ]);
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    geometry.computeVertexNormals();
+
+    return geometry;
+}
+
+// ============================================================================
+// Entity Rendering (InstancedMesh with Velocity-Based Orientation)
+// ============================================================================
+
 const entityMeshes = {};
 const entityMaps = {};
+const entityVelocities = {};  // Store previous positions for velocity calculation
+const dummy = new THREE.Object3D();
 
 function createEntityMesh(type, color, size) {
-    const geometry = new THREE.SphereGeometry(size, 16, 16);
-    const material = new THREE.MeshPhongMaterial({
+    let geometry;
+    if (type === 'PREY') {
+        geometry = createPreyGeometry(size);
+    } else if (type === 'PREDATOR') {
+        geometry = createPredatorGeometry(size);
+    } else {
+        geometry = new THREE.ConeGeometry(size, size * 3, 8);
+        geometry.rotateX(Math.PI / 2);  // Point along Z axis
+    }
+
+    const material = new THREE.MeshStandardMaterial({
         color: color,
-        emissive: color,
-        emissiveIntensity: 0.2,
-        shininess: 30
+        metalness: 0.3,
+        roughness: 0.6,
+        flatShading: true
     });
 
     const mesh = new THREE.InstancedMesh(geometry, material, MAX_ENTITIES_PER_TYPE);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.count = 0; // Start with 0 visible instances
+    mesh.count = 0;
     scene.add(mesh);
 
     return mesh;
@@ -270,7 +401,7 @@ function updateEntities(entities) {
         byType[type].push(entity);
     });
 
-    // Update each type
+    // Update each type with velocity-based orientation
     for (const [type, typeEntities] of Object.entries(byType)) {
         const mesh = entityMeshes[type];
         const entityMap = entityMaps[type];
@@ -278,9 +409,41 @@ function updateEntities(entities) {
         const newMap = new Map();
 
         typeEntities.forEach((entity, index) => {
-            position.set(entity.x, entity.y, entity.z);
-            matrix.compose(position, rotation, scale);
-            mesh.setMatrixAt(index, matrix);
+            const entityId = entity.id;
+
+            // Calculate velocity from position change
+            const currentPos = new THREE.Vector3(entity.x, entity.y, entity.z);
+            let velocity = new THREE.Vector3(0, 0, 1); // Default forward
+
+            if (entityVelocities[entityId]) {
+                velocity.subVectors(currentPos, entityVelocities[entityId]);
+                if (velocity.length() > 0.01) {  // Only update if moving
+                    velocity.normalize();
+                } else {
+                    // Use previous velocity if barely moving
+                    velocity = entityVelocities[entityId + '_vel'] || velocity;
+                }
+            }
+
+            // Store current position and velocity for next frame
+            entityVelocities[entityId] = currentPos.clone();
+            entityVelocities[entityId + '_vel'] = velocity.clone();
+
+            // Set position
+            dummy.position.copy(currentPos);
+
+            // Orient boid to face movement direction
+            // The boid geometry points along +Z, so we need to rotate it to face velocity
+            const targetDir = velocity.clone().normalize();
+
+            // Create rotation that aligns +Z axis with velocity
+            // Use lookAt to orient the dummy object
+            const lookAtPos = currentPos.clone().add(targetDir);
+            dummy.lookAt(lookAtPos);
+
+            // Update matrix for this instance
+            dummy.updateMatrix();
+            mesh.setMatrixAt(index, dummy.matrix);
             newMap.set(entity.id, index);
         });
 
