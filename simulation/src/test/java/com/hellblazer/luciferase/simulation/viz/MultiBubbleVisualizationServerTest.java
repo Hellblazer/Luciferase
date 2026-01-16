@@ -206,12 +206,17 @@ class MultiBubbleVisualizationServerTest {
 
         // Connect to WebSocket and capture initial bubble boundaries message
         var messageReceived = new CompletableFuture<String>();
+        var messageBuilder = new StringBuilder();
         var webSocket = HttpClient.newHttpClient()
             .newWebSocketBuilder()
             .buildAsync(URI.create("ws://localhost:" + port + "/ws/bubbles"), new WebSocket.Listener() {
                 @Override
                 public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
-                    messageReceived.complete(data.toString());
+                    messageBuilder.append(data);
+                    if (last) {
+                        messageReceived.complete(messageBuilder.toString());
+                    }
+                    webSocket.request(1); // Request next chunk
                     return CompletableFuture.completedFuture(null);
                 }
 
@@ -242,6 +247,183 @@ class MultiBubbleVisualizationServerTest {
 
         // Close WebSocket
         webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "test complete").get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void testWebSocketBubbleBoundariesWithSpheres() throws Exception {
+        // Create a spatial grid (4x4x4 = 64 bubbles)
+        var grid = new TetreeBubbleGrid((byte) 2);
+        var bubbles = createSpatialGrid(grid, 4, 50f, 10);
+
+        // Extract vertices, types, and spheres
+        var vertices = extractBubbleVertices(grid, bubbles);
+        var types = extractBubbleTypes(grid, bubbles);
+        var spheres = extractBubbleSpheres(grid, bubbles);
+
+        server.setBubbles(bubbles);
+        server.setBubbleVertices(vertices);
+        server.setBubbleTypes(types);
+        server.setBubbleSpheres(spheres);
+        server.start();
+
+        // Give server time to start
+        Thread.sleep(100);
+
+        // Connect to WebSocket and capture initial bubble boundaries message
+        var messageReceived = new CompletableFuture<String>();
+        var messageBuilder = new StringBuilder();
+        var webSocket = HttpClient.newHttpClient()
+            .newWebSocketBuilder()
+            .buildAsync(URI.create("ws://localhost:" + port + "/ws/bubbles"), new WebSocket.Listener() {
+                @Override
+                public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                    messageBuilder.append(data);
+                    if (last) {
+                        messageReceived.complete(messageBuilder.toString());
+                    }
+                    webSocket.request(1); // Request next chunk
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                @Override
+                public void onError(WebSocket webSocket, Throwable error) {
+                    messageReceived.completeExceptionally(error);
+                }
+            })
+            .get(5, TimeUnit.SECONDS);
+
+        // Wait for initial bubble boundaries message
+        String bubbleJson = messageReceived.get(5, TimeUnit.SECONDS);
+
+        System.out.println("WebSocket JSON sample (first 1000 chars): " + bubbleJson.substring(0, Math.min(1000, bubbleJson.length())));
+
+        // Verify sphere data is in WebSocket JSON
+        assertTrue(bubbleJson.contains("\"bubbles\""), "WebSocket message should contain bubbles array");
+        assertTrue(bubbleJson.contains("\"sphere\""), "Bubble data should contain sphere object");
+        assertTrue(bubbleJson.contains("\"center\""), "Sphere should contain center");
+        assertTrue(bubbleJson.contains("\"radius\""), "Sphere should contain radius");
+        assertTrue(bubbleJson.contains("\"tetType\""), "Bubble data should contain tetType");
+
+        // Count how many bubbles have sphere data
+        int sphereCount = countOccurrences(bubbleJson, "\"sphere\"");
+        assertEquals(bubbles.size(), sphereCount,
+            "All " + bubbles.size() + " bubbles should have sphere data in WebSocket JSON (got " + sphereCount + ")");
+
+        // Count how many bubbles have tetType
+        int typeCount = countOccurrences(bubbleJson, "\"tetType\"");
+        assertEquals(bubbles.size(), typeCount,
+            "All " + bubbles.size() + " bubbles should have tetType in WebSocket JSON (got " + typeCount + ")");
+
+        System.out.println("✓ WebSocket sphere test passed: All " + bubbles.size() + " bubbles have sphere data (center, radius) and tetType");
+
+        // Close WebSocket
+        webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "test complete").get(5, TimeUnit.SECONDS);
+    }
+
+    private static List<EnhancedBubble> createSpatialGrid(TetreeBubbleGrid grid, int gridSize, float cellSize, long targetFrameMs) {
+        var bubbles = new ArrayList<EnhancedBubble>();
+
+        // Create bubbles at regular grid positions
+        for (int x = 0; x < gridSize; x++) {
+            for (int y = 0; y < gridSize; y++) {
+                for (int z = 0; z < gridSize; z++) {
+                    // Calculate Morton space coordinates
+                    final float MORTON_MAX = 1 << 21;
+                    final float WORLD_SIZE = 200f;
+                    final float scale = MORTON_MAX / WORLD_SIZE;
+
+                    float worldX = x * cellSize;
+                    float worldY = y * cellSize;
+                    float worldZ = z * cellSize;
+
+                    int mortonX = (int) (worldX * scale);
+                    int mortonY = (int) (worldY * scale);
+                    int mortonZ = (int) (worldZ * scale);
+
+                    byte level = (byte) Math.max(0, Math.min(20, (int) (Math.log(MORTON_MAX / (cellSize * scale)) / Math.log(2))));
+                    byte type = (byte) ((x + y + z) % 6);
+
+                    var tet = new com.hellblazer.luciferase.lucien.tetree.Tet(mortonX, mortonY, mortonZ, level, type);
+                    var bubble = new EnhancedBubble(UUID.randomUUID(), level, targetFrameMs);
+                    var tetreeKey = tet.tmIndex();
+
+                    grid.addBubble(bubble, tetreeKey);
+                    bubbles.add(bubble);
+                }
+            }
+        }
+
+        return bubbles;
+    }
+
+    private static Map<UUID, Byte> extractBubbleTypes(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
+        var types = new HashMap<UUID, Byte>();
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        for (var bubble : bubbles) {
+            for (var entry : bubblesWithKeys.entrySet()) {
+                if (entry.getValue().id().equals(bubble.id())) {
+                    var tetreeKey = entry.getKey();
+                    var tet = tetreeKey.toTet();
+                    types.put(bubble.id(), tet.type());
+                    break;
+                }
+            }
+        }
+
+        return types;
+    }
+
+    private static Map<UUID, Map<String, Object>> extractBubbleSpheres(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
+        var spheres = new HashMap<UUID, Map<String, Object>>();
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        final float MORTON_MAX = 1 << 21;
+        final float WORLD_SIZE = 200f;
+        final float scale = WORLD_SIZE / MORTON_MAX;
+
+        for (var bubble : bubbles) {
+            for (var entry : bubblesWithKeys.entrySet()) {
+                if (entry.getValue().id().equals(bubble.id())) {
+                    var tetreeKey = entry.getKey();
+                    var tet = tetreeKey.toTet();
+                    var coords = tet.coordinates();
+
+                    // Calculate centroid
+                    float cx = 0, cy = 0, cz = 0;
+                    for (int i = 0; i < 4; i++) {
+                        cx += coords[i].x;
+                        cy += coords[i].y;
+                        cz += coords[i].z;
+                    }
+                    cx = (cx / 4.0f) * scale;
+                    cy = (cy / 4.0f) * scale;
+                    cz = (cz / 4.0f) * scale;
+
+                    // Calculate inscribed sphere radius
+                    float edgeSum = 0;
+                    int edgeCount = 0;
+                    for (int i = 0; i < 4; i++) {
+                        for (int j = i + 1; j < 4; j++) {
+                            float dx = (coords[i].x - coords[j].x) * scale;
+                            float dy = (coords[i].y - coords[j].y) * scale;
+                            float dz = (coords[i].z - coords[j].z) * scale;
+                            edgeSum += (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            edgeCount++;
+                        }
+                    }
+                    float radius = edgeSum / (edgeCount * 4.0f);
+
+                    var sphereData = new HashMap<String, Object>();
+                    sphereData.put("center", new Point3f(cx, cy, cz));
+                    sphereData.put("radius", radius);
+                    spheres.put(bubble.id(), sphereData);
+                    break;
+                }
+            }
+        }
+
+        return spheres;
     }
 
     private int countOccurrences(String text, String substring) {

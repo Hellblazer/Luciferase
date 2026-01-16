@@ -110,6 +110,15 @@ public class PredatorPreyGridWebDemo {
         log.info("Phase 3: Start Visualization Server");
         var vizServer = new MultiBubbleVisualizationServer(port);
         vizServer.setBubbles(bubbles);
+
+        // Extract RDGCS bounding boxes, types, and inscribed spheres for proper visualization
+        var bubbleVertices = extractBubbleVertices(bubbleGrid, bubbles);
+        var bubbleTypes = extractBubbleTypes(bubbleGrid, bubbles);
+        var bubbleSpheres = extractBubbleSpheres(bubbleGrid, bubbles);
+        vizServer.setBubbleVertices(bubbleVertices);
+        vizServer.setBubbleTypes(bubbleTypes);
+        vizServer.setBubbleSpheres(bubbleSpheres);
+
         vizServer.start();
 
         log.info("Visualization server running on http://localhost:{}", port);
@@ -123,7 +132,9 @@ public class PredatorPreyGridWebDemo {
             entityVelocities,
             entityBehaviors,
             preyBehavior,
-            accountant
+            accountant,
+            bubbleGrid,
+            vizServer
         );
 
         Kairos.setController(controller);
@@ -146,12 +157,15 @@ public class PredatorPreyGridWebDemo {
     @Entity
     public static class SimulationEntity {
         private static final float DELTA_TIME = TICK_INTERVAL_NS / 1_000_000_000.0f;
+        private static final int BOX_UPDATE_INTERVAL = 30; // Update boxes every 30 ticks (~1.5 seconds at 20 TPS)
 
         private final List<EnhancedBubble> bubbles;
         private final Map<String, Vector3f> velocities;
         private final Map<String, Object> behaviors;
         private final PreyBehavior preyBehavior;
         private final EntityAccountant accountant;
+        private final TetreeBubbleGrid bubbleGrid;
+        private final MultiBubbleVisualizationServer vizServer;
 
         private int currentTick = 0;
 
@@ -160,13 +174,17 @@ public class PredatorPreyGridWebDemo {
             Map<String, Vector3f> velocities,
             Map<String, Object> behaviors,
             PreyBehavior preyBehavior,
-            EntityAccountant accountant
+            EntityAccountant accountant,
+            TetreeBubbleGrid bubbleGrid,
+            MultiBubbleVisualizationServer vizServer
         ) {
             this.bubbles = bubbles;
             this.velocities = velocities;
             this.behaviors = behaviors;
             this.preyBehavior = preyBehavior;
             this.accountant = accountant;
+            this.bubbleGrid = bubbleGrid;
+            this.vizServer = vizServer;
         }
 
         /**
@@ -179,6 +197,12 @@ public class PredatorPreyGridWebDemo {
             // Update all entities in all bubbles
             for (var bubble : bubbles) {
                 updateBubbleEntities(bubble);
+            }
+
+            // Update bounding boxes periodically (every 30 ticks ~= 1.5 seconds)
+            if (currentTick % BOX_UPDATE_INTERVAL == 0) {
+                var bubbleVertices = extractBubbleVertices(bubbleGrid, bubbles);
+                vizServer.setBubbleVertices(bubbleVertices);
             }
 
             // Log progress every 100 ticks
@@ -258,5 +282,154 @@ public class PredatorPreyGridWebDemo {
         String hash = String.format("%032x", id.hashCode() & 0xFFFFFFFFL);
         return hash.substring(0, 8) + "-" + hash.substring(8, 12) + "-" +
                hash.substring(12, 16) + "-" + hash.substring(16, 20) + "-" + hash.substring(20, 32);
+    }
+
+    /**
+     * Extract world-space bounding box corners from actual entity positions.
+     * <p>
+     * Returns 8 vertices defining the axis-aligned bounding box where entities actually live.
+     * Computed directly from entity positions in world space (NOT RDGCS/Morton conversion).
+     * <p>
+     * Box corner ordering:
+     * 0: (minX, minY, minZ)  4: (minX, minY, maxZ)
+     * 1: (maxX, minY, minZ)  5: (maxX, minY, maxZ)
+     * 2: (maxX, maxY, minZ)  6: (maxX, maxY, maxZ)
+     * 3: (minX, maxY, minZ)  7: (minX, maxY, maxZ)
+     */
+    private static Map<UUID, Point3f[]> extractBubbleVertices(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
+        var vertices = new HashMap<UUID, Point3f[]>();
+
+        for (var bubble : bubbles) {
+            try {
+                // Get all entity positions in world space
+                var entities = bubble.getAllEntityRecords();
+                if (entities.isEmpty()) {
+                    log.debug("Bubble {} has no entities yet", bubble.id());
+                    continue;
+                }
+
+                // Compute axis-aligned bounding box from actual entity positions
+                float minX = Float.POSITIVE_INFINITY;
+                float minY = Float.POSITIVE_INFINITY;
+                float minZ = Float.POSITIVE_INFINITY;
+                float maxX = Float.NEGATIVE_INFINITY;
+                float maxY = Float.NEGATIVE_INFINITY;
+                float maxZ = Float.NEGATIVE_INFINITY;
+
+                for (var entity : entities) {
+                    var pos = entity.position();
+                    minX = Math.min(minX, pos.x);
+                    minY = Math.min(minY, pos.y);
+                    minZ = Math.min(minZ, pos.z);
+                    maxX = Math.max(maxX, pos.x);
+                    maxY = Math.max(maxY, pos.y);
+                    maxZ = Math.max(maxZ, pos.z);
+                }
+
+                log.info("Bubble {} world-space AABB: ({},{},{}) to ({},{},{}) - {} entities",
+                    bubble.id(), minX, minY, minZ, maxX, maxY, maxZ, entities.size());
+
+                // Create 8 box corners in world space
+                var bubbleVertices = new Point3f[8];
+
+                // Bottom face (minZ)
+                bubbleVertices[0] = new Point3f(minX, minY, minZ);
+                bubbleVertices[1] = new Point3f(maxX, minY, minZ);
+                bubbleVertices[2] = new Point3f(maxX, maxY, minZ);
+                bubbleVertices[3] = new Point3f(minX, maxY, minZ);
+
+                // Top face (maxZ)
+                bubbleVertices[4] = new Point3f(minX, minY, maxZ);
+                bubbleVertices[5] = new Point3f(maxX, minY, maxZ);
+                bubbleVertices[6] = new Point3f(maxX, maxY, maxZ);
+                bubbleVertices[7] = new Point3f(minX, maxY, maxZ);
+
+                vertices.put(bubble.id(), bubbleVertices);
+            } catch (Exception e) {
+                log.warn("Failed to extract world-space AABB for bubble {}: {}", bubble.id(), e.getMessage());
+            }
+        }
+
+        log.info("Extracted world-space AABBs for {} bubbles", vertices.size());
+        return vertices;
+    }
+
+    /**
+     * Helper to convert JavaFX Point3D to vecmath Point3f.
+     */
+    private static Point3f toPoint3f(javafx.geometry.Point3D point) {
+        return new Point3f((float) point.getX(), (float) point.getY(), (float) point.getZ());
+    }
+
+    private static Map<UUID, Byte> extractBubbleTypes(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
+        var types = new HashMap<UUID, Byte>();
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        for (var bubble : bubbles) {
+            for (var entry : bubblesWithKeys.entrySet()) {
+                if (entry.getValue().id().equals(bubble.id())) {
+                    var tetreeKey = entry.getKey();
+                    var tet = tetreeKey.toTet();
+                    types.put(bubble.id(), tet.type());
+                    break;
+                }
+            }
+        }
+
+        log.info("Extracted tetrahedral types for {} bubbles", types.size());
+        return types;
+    }
+
+    private static Map<UUID, Map<String, Object>> extractBubbleSpheres(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
+        var spheres = new HashMap<UUID, Map<String, Object>>();
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        final float MORTON_MAX = 1 << 21;
+        final float WORLD_SIZE = WORLD.max() - WORLD.min();
+        final float scale = WORLD_SIZE / MORTON_MAX;
+
+        for (var bubble : bubbles) {
+            for (var entry : bubblesWithKeys.entrySet()) {
+                if (entry.getValue().id().equals(bubble.id())) {
+                    var tetreeKey = entry.getKey();
+                    var tet = tetreeKey.toTet();
+                    var coords = tet.coordinates();
+
+                    // Calculate centroid
+                    float cx = 0, cy = 0, cz = 0;
+                    for (int i = 0; i < 4; i++) {
+                        cx += coords[i].x;
+                        cy += coords[i].y;
+                        cz += coords[i].z;
+                    }
+                    cx = (cx / 4.0f) * scale + WORLD.min();
+                    cy = (cy / 4.0f) * scale + WORLD.min();
+                    cz = (cz / 4.0f) * scale + WORLD.min();
+
+                    // Calculate inscribed sphere radius
+                    float edgeSum = 0;
+                    int edgeCount = 0;
+                    for (int i = 0; i < 4; i++) {
+                        for (int j = i + 1; j < 4; j++) {
+                            float dx = (coords[i].x - coords[j].x) * scale;
+                            float dy = (coords[i].y - coords[j].y) * scale;
+                            float dz = (coords[i].z - coords[j].z) * scale;
+                            edgeSum += (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            edgeCount++;
+                        }
+                    }
+                    float radius = edgeSum / (edgeCount * 4.0f);
+
+                    var sphereData = new HashMap<String, Object>();
+                    sphereData.put("center", new Point3f(cx, cy, cz));
+                    sphereData.put("radius", radius);
+                    spheres.put(bubble.id(), sphereData);
+                    break;
+                }
+            }
+        }
+
+        log.info("Extracted inscribed spheres for {} bubbles", spheres.size());
+        return spheres;
     }
 }

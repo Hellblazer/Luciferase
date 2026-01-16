@@ -115,6 +115,17 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.3</version>
+                <configuration>
+                    <!-- Use test classpath so PredatorPreyGridDemo can access test resources -->
+                    <classpathScope>test</classpathScope>
+                    <!-- Critical: cleanupDaemonThreads ensures proper PrimeMover shutdown -->
+                    <cleanupDaemonThreads>false</cleanupDaemonThreads>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>

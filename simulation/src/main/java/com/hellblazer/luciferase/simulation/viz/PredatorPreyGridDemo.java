@@ -121,11 +121,13 @@ public class PredatorPreyGridDemo {
         var vizServer = new MultiBubbleVisualizationServer(port);
         vizServer.setBubbles(bubbles);
 
-        // Extract tetrahedral vertices and types for proper visualization
+        // Extract tetrahedral vertices, types, and inscribed spheres for proper visualization
         var bubbleVertices = extractBubbleVertices(bubbleGrid, bubbles);
         var bubbleTypes = extractBubbleTypes(bubbleGrid, bubbles);
+        var bubbleSpheres = extractBubbleSpheres(bubbleGrid, bubbles);
         vizServer.setBubbleVertices(bubbleVertices);
         vizServer.setBubbleTypes(bubbleTypes);
+        vizServer.setBubbleSpheres(bubbleSpheres);
 
         vizServer.start();
 
@@ -284,64 +286,83 @@ public class PredatorPreyGridDemo {
     }
 
     /**
-     * Extract tetrahedral vertices for each bubble from the grid.
-     * Uses getBubblesWithKeys() to get the TetreeKey for each bubble.
-     * Transforms vertices from Morton space to world space.
+     * Extract RDGCS bounding box corners from actual simulation volumes.
+     * <p>
+     * Returns 8 vertices defining the axis-aligned bounding box where entities actually live.
+     * This is NOT the tetrahedral spatial index - it's the actual simulation volume.
+     * <p>
+     * Box corner ordering:
+     * 0: (minX, minY, minZ)  4: (minX, minY, maxZ)
+     * 1: (maxX, minY, minZ)  5: (maxX, minY, maxZ)
+     * 2: (maxX, maxY, minZ)  6: (maxX, maxY, maxZ)
+     * 3: (minX, maxY, minZ)  7: (minX, maxY, maxZ)
      */
     private static Map<UUID, Point3f[]> extractBubbleVertices(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
         var vertices = new HashMap<UUID, Point3f[]>();
-        var bubblesWithKeys = grid.getBubblesWithKeys();
-
-        // Tetree coordinates are in Morton space [0, 2^21]
-        // World space is [0, 200]
-        final float MORTON_MAX = 1 << 21; // 2^21 = 2097152
-        final float WORLD_SIZE = WORLD.size(); // 200
-        final float scale = WORLD_SIZE / MORTON_MAX;
 
         for (var bubble : bubbles) {
             try {
-                // Find the TetreeKey for this bubble
-                for (var entry : bubblesWithKeys.entrySet()) {
-                    if (entry.getValue().id().equals(bubble.id())) {
-                        var tetreeKey = entry.getKey();
-
-                        // Get the Tet and its coordinates (in Morton space)
-                        var tet = tetreeKey.toTet();
-                        var coords = tet.coordinates();
-
-                        // Convert to Point3f array and scale to world space
-                        var bubbleVertices = new Point3f[4];
-                        for (int i = 0; i < 4; i++) {
-                            bubbleVertices[i] = new Point3f(
-                                WORLD.min() + coords[i].x * scale,
-                                WORLD.min() + coords[i].y * scale,
-                                WORLD.min() + coords[i].z * scale
-                            );
-                        }
-
-                        // Debug: log first 3 bubbles to verify coordinates
-                        if (vertices.size() < 3) {
-                            log.info("Bubble {} level {} - Morton: ({},{},{}) to ({},{},{}) - World: ({},{},{}) to ({},{},{})",
-                                vertices.size(),
-                                tet.l(),
-                                coords[0].x, coords[0].y, coords[0].z,
-                                coords[3].x, coords[3].y, coords[3].z,
-                                bubbleVertices[0].x, bubbleVertices[0].y, bubbleVertices[0].z,
-                                bubbleVertices[3].x, bubbleVertices[3].y, bubbleVertices[3].z
-                            );
-                        }
-
-                        vertices.put(bubble.id(), bubbleVertices);
-                        break;
-                    }
+                // Get all entity positions in world space
+                var entities = bubble.getAllEntityRecords();
+                if (entities.isEmpty()) {
+                    log.debug("Bubble {} has no entities yet", bubble.id());
+                    continue;
                 }
+
+                // Compute axis-aligned bounding box from actual entity positions
+                float minX = Float.POSITIVE_INFINITY;
+                float minY = Float.POSITIVE_INFINITY;
+                float minZ = Float.POSITIVE_INFINITY;
+                float maxX = Float.NEGATIVE_INFINITY;
+                float maxY = Float.NEGATIVE_INFINITY;
+                float maxZ = Float.NEGATIVE_INFINITY;
+
+                for (var entity : entities) {
+                    var pos = entity.position();
+                    minX = Math.min(minX, pos.x);
+                    minY = Math.min(minY, pos.y);
+                    minZ = Math.min(minZ, pos.z);
+                    maxX = Math.max(maxX, pos.x);
+                    maxY = Math.max(maxY, pos.y);
+                    maxZ = Math.max(maxZ, pos.z);
+                }
+
+                // Create 8 box corners in world space
+                var bubbleVertices = new Point3f[8];
+
+                // Bottom face (minZ)
+                bubbleVertices[0] = new Point3f(minX, minY, minZ);
+                bubbleVertices[1] = new Point3f(maxX, minY, minZ);
+                bubbleVertices[2] = new Point3f(maxX, maxY, minZ);
+                bubbleVertices[3] = new Point3f(minX, maxY, minZ);
+
+                // Top face (maxZ)
+                bubbleVertices[4] = new Point3f(minX, minY, maxZ);
+                bubbleVertices[5] = new Point3f(maxX, minY, maxZ);
+                bubbleVertices[6] = new Point3f(maxX, maxY, maxZ);
+                bubbleVertices[7] = new Point3f(minX, maxY, maxZ);
+
+                // Debug: log first 3 bubbles to verify coordinates
+                if (vertices.size() < 3) {
+                    log.info("Bubble {} world-space AABB: ({},{},{}) to ({},{},{}) - {} entities",
+                        vertices.size(), minX, minY, minZ, maxX, maxY, maxZ, entities.size());
+                }
+
+                vertices.put(bubble.id(), bubbleVertices);
             } catch (Exception e) {
-                log.warn("Failed to extract vertices for bubble {}: {}", bubble.id(), e.getMessage());
+                log.warn("Failed to extract world-space AABB for bubble {}: {}", bubble.id(), e.getMessage());
             }
         }
 
-        log.info("Extracted tetrahedral vertices for {} bubbles", vertices.size());
+        log.info("Extracted world-space AABBs for {} bubbles", vertices.size());
         return vertices;
+    }
+
+    /**
+     * Helper to convert JavaFX Point3D to vecmath Point3f.
+     */
+    private static Point3f toPoint3f(javafx.geometry.Point3D point) {
+        return new Point3f((float) point.getX(), (float) point.getY(), (float) point.getZ());
     }
 
     /**
@@ -371,6 +392,71 @@ public class PredatorPreyGridDemo {
     }
 
     /**
+     * Extract inscribed sphere data (center and radius) for each bubble.
+     * Returns map from bubble UUID to {center: Point3f, radius: float}
+     */
+    private static Map<UUID, Map<String, Object>> extractBubbleSpheres(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
+        var spheres = new HashMap<UUID, Map<String, Object>>();
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        // Tetree coordinates are in Morton space [0, 2^21]
+        // World space is [0, 200]
+        final float MORTON_MAX = 1 << 21;
+        final float WORLD_SIZE = WORLD.size();
+        final float scale = WORLD_SIZE / MORTON_MAX;
+
+        for (var bubble : bubbles) {
+            try {
+                for (var entry : bubblesWithKeys.entrySet()) {
+                    if (entry.getValue().id().equals(bubble.id())) {
+                        var tetreeKey = entry.getKey();
+                        var tet = tetreeKey.toTet();
+                        var coords = tet.coordinates();
+
+                        // Calculate centroid (center of inscribed sphere)
+                        float cx = 0, cy = 0, cz = 0;
+                        for (int i = 0; i < 4; i++) {
+                            cx += coords[i].x;
+                            cy += coords[i].y;
+                            cz += coords[i].z;
+                        }
+                        cx = (cx / 4.0f) * scale + WORLD.min();
+                        cy = (cy / 4.0f) * scale + WORLD.min();
+                        cz = (cz / 4.0f) * scale + WORLD.min();
+
+                        // Approximate inscribed sphere radius as distance from centroid to nearest face
+                        // For simplicity, use average edge length / 4 as a reasonable approximation
+                        float edgeSum = 0;
+                        int edgeCount = 0;
+                        for (int i = 0; i < 4; i++) {
+                            for (int j = i + 1; j < 4; j++) {
+                                float dx = (coords[i].x - coords[j].x) * scale;
+                                float dy = (coords[i].y - coords[j].y) * scale;
+                                float dz = (coords[i].z - coords[j].z) * scale;
+                                edgeSum += (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+                                edgeCount++;
+                            }
+                        }
+                        float avgEdge = edgeSum / edgeCount;
+                        float radius = avgEdge / 4.0f; // Conservative inscribed sphere approximation
+
+                        var sphereData = new HashMap<String, Object>();
+                        sphereData.put("center", new Point3f(cx, cy, cz));
+                        sphereData.put("radius", radius);
+                        spheres.put(bubble.id(), sphereData);
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to extract sphere for bubble {}: {}", bubble.id(), e.getMessage());
+            }
+        }
+
+        log.info("Extracted inscribed spheres for {} bubbles", spheres.size());
+        return spheres;
+    }
+
+    /**
      * Create a spatially distributed grid of bubbles instead of hierarchical tree.
      * This creates bubbles at regular positions across the world space.
      *
@@ -383,7 +469,7 @@ public class PredatorPreyGridDemo {
     private static List<EnhancedBubble> createSpatialGrid(TetreeBubbleGrid grid, int gridSize, float cellSize, long targetFrameMs) {
         var bubbles = new ArrayList<EnhancedBubble>();
 
-        // For each grid position, create a bubble
+        // For each grid position, create one bubble with spatially-varying type
         for (int x = 0; x < gridSize; x++) {
             for (int y = 0; y < gridSize; y++) {
                 for (int z = 0; z < gridSize; z++) {
@@ -399,12 +485,14 @@ public class PredatorPreyGridDemo {
                     int mortonY = (int) ((worldY - WORLD.min()) * scale);
                     int mortonZ = (int) ((worldZ - WORLD.min()) * scale);
 
-                    // Create a Tet at this position (use type 0, level based on cell size)
                     // Level calculation: smaller cells = higher level
                     byte level = (byte) Math.max(0, Math.min(20, (int) (Math.log(MORTON_MAX / (cellSize * scale)) / Math.log(2))));
 
+                    // Assign tetrahedral type based on position (creates colorful 3D pattern)
+                    byte type = (byte) ((x + y + z) % 6);
+
                     var tet = new com.hellblazer.luciferase.lucien.tetree.Tet(
-                        mortonX, mortonY, mortonZ, level, (byte) 0
+                        mortonX, mortonY, mortonZ, level, type
                     );
 
                     // Create bubble and add to grid
@@ -415,11 +503,11 @@ public class PredatorPreyGridDemo {
                     try {
                         grid.addBubble(bubble, tetreeKey);
                         bubbles.add(bubble);
-                        log.debug("Created bubble at world ({},{},{}) morton ({},{},{}) level {}",
-                            (int) worldX, (int) worldY, (int) worldZ,
+                        log.debug("Created bubble type {} at world ({},{},{}) morton ({},{},{}) level {}",
+                            type, (int) worldX, (int) worldY, (int) worldZ,
                             mortonX, mortonY, mortonZ, level);
                     } catch (Exception e) {
-                        log.warn("Failed to add bubble at ({},{},{}): {}", worldX, worldY, worldZ, e.getMessage());
+                        log.warn("Failed to add bubble type {} at ({},{},{}): {}", type, worldX, worldY, worldZ, e.getMessage());
                     }
                 }
             }

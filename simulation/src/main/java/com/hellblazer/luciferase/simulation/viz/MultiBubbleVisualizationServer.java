@@ -53,6 +53,7 @@ public class MultiBubbleVisualizationServer {
     private List<EnhancedBubble> bubbles = new ArrayList<>();
     private Map<UUID, Point3f[]> bubbleVertices = new ConcurrentHashMap<>();
     private Map<UUID, Byte> bubbleTypes = new ConcurrentHashMap<>();
+    private Map<UUID, Map<String, Object>> bubbleSpheres = new ConcurrentHashMap<>();
     private ScheduledFuture<?> streamTask;
 
     /**
@@ -99,14 +100,31 @@ public class MultiBubbleVisualizationServer {
                 data.put("entityCount", b.entityCount());
                 data.put("bounds", getBubbleBounds(b));
 
-                // Include tetrahedral vertices if available
+                // Include tetrahedral vertices (4) or box vertices (8) if available
                 var verts = bubbleVertices.get(b.id());
-                if (verts != null && verts.length == 4) {
+                if (verts != null && (verts.length == 4 || verts.length == 8)) {
                     var vertexList = new ArrayList<Map<String, Float>>();
                     for (var v : verts) {
                         vertexList.add(Map.of("x", v.x, "y", v.y, "z", v.z));
                     }
                     data.put("vertices", vertexList);
+                }
+
+                // Include tetrahedral type if available
+                var type = bubbleTypes.get(b.id());
+                if (type != null) {
+                    data.put("tetType", type);
+                }
+
+                // Include inscribed sphere if available
+                var sphere = bubbleSpheres.get(b.id());
+                if (sphere != null) {
+                    var center = (Point3f) sphere.get("center");
+                    var radius = (Float) sphere.get("radius");
+                    data.put("sphere", Map.of(
+                        "center", Map.of("x", center.x, "y", center.y, "z", center.z),
+                        "radius", radius
+                    ));
                 }
 
                 return data;
@@ -192,6 +210,14 @@ public class MultiBubbleVisualizationServer {
     }
 
     /**
+     * Get the current bubble vertices.
+     * @return Map from bubble UUID to vertex arrays (4 for tetrahedra, 8 for boxes)
+     */
+    public Map<UUID, Point3f[]> getBubbleVertices() {
+        return new HashMap<>(bubbleVertices);
+    }
+
+    /**
      * Set the tetrahedral types for each bubble (0-5 for S0-S5 subdivision).
      * @param types Map from bubble UUID to tetrahedral type (0-5)
      */
@@ -200,6 +226,18 @@ public class MultiBubbleVisualizationServer {
         log.info("Bubble types set: {} bubbles with type information", types.size());
 
         // Re-broadcast bubble boundaries with types
+        broadcastBubbleBoundaries();
+    }
+
+    /**
+     * Set the inscribed sphere data for each bubble (center and radius).
+     * @param spheres Map from bubble UUID to sphere data (center: Point3f, radius: float)
+     */
+    public void setBubbleSpheres(Map<UUID, Map<String, Object>> spheres) {
+        this.bubbleSpheres = new ConcurrentHashMap<>(spheres);
+        log.info("Bubble spheres set: {} bubbles with inscribed sphere data", spheres.size());
+
+        // Re-broadcast bubble boundaries with spheres
         broadcastBubbleBoundaries();
     }
 
@@ -405,11 +443,11 @@ public class MultiBubbleVisualizationServer {
             sb.append("},");
             sb.append("\"entityCount\":").append(bubble.entityCount());
 
-            // Add tetrahedral vertices if available
+            // Add tetrahedral vertices (4) or box vertices (8) if available
             var vertices = bubbleVertices.get(bubble.id());
-            if (vertices != null && vertices.length == 4) {
+            if (vertices != null && (vertices.length == 4 || vertices.length == 8)) {
                 sb.append(",\"vertices\":[");
-                for (int v = 0; v < 4; v++) {
+                for (int v = 0; v < vertices.length; v++) {
                     if (v > 0) sb.append(",");
                     sb.append("{\"x\":").append(vertices[v].x);
                     sb.append(",\"y\":").append(vertices[v].y);
@@ -422,6 +460,19 @@ public class MultiBubbleVisualizationServer {
             var type = bubbleTypes.get(bubble.id());
             if (type != null) {
                 sb.append(",\"tetType\":").append(type);
+            }
+
+            // Add inscribed sphere if available (center and radius)
+            var sphere = bubbleSpheres.get(bubble.id());
+            if (sphere != null) {
+                var center = (Point3f) sphere.get("center");
+                var radius = (Float) sphere.get("radius");
+                sb.append(",\"sphere\":{");
+                sb.append("\"center\":{\"x\":").append(center.x);
+                sb.append(",\"y\":").append(center.y);
+                sb.append(",\"z\":").append(center.z).append("}");
+                sb.append(",\"radius\":").append(radius);
+                sb.append("}");
             }
 
             sb.append("}");
