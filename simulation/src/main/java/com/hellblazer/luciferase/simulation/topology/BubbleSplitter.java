@@ -128,10 +128,6 @@ public class BubbleSplitter {
 
         var newBubble = new EnhancedBubble(newBubbleId, spatialLevel, targetFrameMs);
 
-        // TODO: Add new bubble to grid (TetreeBubbleGrid needs addBubble() method)
-        // For now, we'll log this limitation
-        log.warn("TODO: Add new bubble {} to grid (TetreeBubbleGrid.addBubble() not yet implemented)", newBubbleId);
-
         // Move entities to new bubble atomically
         int entitiesMoved = 0;
         for (var entityRecord : entitiesToMove) {
@@ -176,6 +172,20 @@ public class BubbleSplitter {
             return new SplitExecutionResult(false,
                                            "Entity validation failed: " + validation.details().get(0),
                                            newBubbleId, entitiesBeforeSplit, entitiesAfterSplit);
+        }
+
+        // Add new bubble to grid with computed TetreeKey from entity positions
+        var newBubbleRecords = newBubble.getAllEntityRecords();
+        if (!newBubbleRecords.isEmpty()) {
+            var positions = newBubbleRecords.stream()
+                                           .map(EnhancedBubble.EntityRecord::position)
+                                           .toList();
+            var bounds = com.hellblazer.luciferase.simulation.bubble.BubbleBounds.fromEntityPositions(positions);
+            var key = bounds.rootKey();
+            bubbleGrid.addBubble(newBubble, key);
+            log.debug("Added new bubble {} to grid at key {}", newBubbleId, key);
+        } else {
+            log.warn("New bubble {} has no entities, not adding to grid", newBubbleId);
         }
 
         log.info("Split successful: bubble {} split into {} (source: {} entities, new: {} entities)",

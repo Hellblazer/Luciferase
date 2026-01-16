@@ -426,6 +426,92 @@ public class TetreeBubbleGrid {
     }
 
     /**
+     * Add a dynamically created bubble to the grid.
+     * <p>
+     * This method registers a bubble that was created outside the normal
+     * createBubbles() flow, such as during a split operation. The bubble
+     * and its spatial key are added to the internal data structures.
+     * <p>
+     * The TetreeKey should be computed based on the bubble's entity
+     * distribution to ensure proper spatial indexing.
+     *
+     * @param bubble The EnhancedBubble to add
+     * @param key    The TetreeKey for spatial indexing
+     * @throws NullPointerException     if bubble or key is null
+     * @throws IllegalArgumentException if a bubble already exists at this key
+     */
+    public void addBubble(EnhancedBubble bubble, TetreeKey<?> key) {
+        Objects.requireNonNull(bubble, "Bubble cannot be null");
+        Objects.requireNonNull(key, "TetreeKey cannot be null");
+
+        if (bubblesByKey.containsKey(key)) {
+            throw new IllegalArgumentException("Bubble already exists at key: " + key);
+        }
+
+        // Add to key map
+        bubblesByKey.put(key, bubble);
+
+        // Add to spatial index
+        var tet = key.toTet();
+        var coords = tet.coordinates();
+        var location = new BubbleLocation(key, BubbleBounds.fromTetreeKey(key));
+
+        spatialIndex.insert(
+            new StringEntityID(bubble.id().toString()),
+            new javax.vecmath.Point3f(coords[0].x, coords[0].y, coords[0].z),
+            tet.l,
+            location
+        );
+
+        // Clear neighbor cache to force recomputation
+        neighborFinder.clearCache();
+    }
+
+    /**
+     * Remove a bubble from the grid by its UUID.
+     * <p>
+     * This method removes a bubble that was previously added to the grid,
+     * such as during a merge operation. The bubble is removed from all
+     * internal data structures and the neighbor cache is cleared.
+     * <p>
+     * Note: This method does NOT check if the bubble contains entities.
+     * Callers must ensure all entities are removed or migrated before
+     * calling this method.
+     *
+     * @param bubbleId The UUID of the bubble to remove
+     * @return true if the bubble was removed, false if not found
+     * @throws NullPointerException if bubbleId is null
+     */
+    public boolean removeBubble(UUID bubbleId) {
+        Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
+
+        // Find the bubble by ID
+        TetreeKey<?> keyToRemove = null;
+        for (var entry : bubblesByKey.entrySet()) {
+            if (entry.getValue().id().equals(bubbleId)) {
+                keyToRemove = entry.getKey();
+                break;
+            }
+        }
+
+        if (keyToRemove == null) {
+            return false;
+        }
+
+        // Remove from key map
+        bubblesByKey.remove(keyToRemove);
+
+        // Note: Tetree spatial index does not support remove() operation.
+        // The stale entry will not affect correctness since we check bubblesByKey
+        // for actual bubble existence in all query methods.
+
+        // Clear neighbor cache to force recomputation
+        neighborFinder.clearCache();
+
+        return true;
+    }
+
+    /**
      * Clear all bubbles from the grid.
      */
     public void clear() {

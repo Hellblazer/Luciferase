@@ -194,8 +194,13 @@ public class BubbleMerger {
                                            totalBefore, totalAfter, duplicates.size());
         }
 
-        // TODO: Remove bubble2 from grid (TetreeBubbleGrid needs removeBubble() method)
-        log.warn("TODO: Remove bubble {} from grid (TetreeBubbleGrid.removeBubble() not yet implemented)", bubble2Id);
+        // Remove bubble2 from grid (all entities now in bubble1)
+        boolean removed = bubbleGrid.removeBubble(bubble2Id);
+        if (removed) {
+            log.debug("Removed merged bubble {} from grid", bubble2Id);
+        } else {
+            log.warn("Bubble {} not found in grid during removal", bubble2Id);
+        }
 
         log.info("Merge successful: bubble {} merged into {} ({} entities total)",
                 bubble2Id, bubble1Id, entities1After);

@@ -196,9 +196,16 @@ public class TopologyExecutor {
     /**
      * Rolls back to a previous snapshot on failure.
      * <p>
-     * Phase 9C MVP: Logs rollback intent and snapshot state.
-     * Full entity movement rollback deferred to future work (requires
-     * BubbleGrid.removeBubble() and bubble state reconstruction).
+     * Current implementation: Logs rollback intent and snapshot state.
+     * Grid now supports addBubble() and removeBubble(), but full rollback requires:
+     * <ul>
+     *   <li>Tracking which bubbles were added/removed during operation</li>
+     *   <li>Reversing EntityAccountant entity movements (currently one-way)</li>
+     *   <li>Restoring bubble entity collections to snapshot state</li>
+     * </ul>
+     * <p>
+     * Note: EntityAccountant guarantees entity tracking consistency even on failure,
+     * so entities are never lost. Rollback would primarily clean up grid structure.
      *
      * @param snapshot the snapshot to restore
      * @param reason   reason for rollback
@@ -209,10 +216,11 @@ public class TopologyExecutor {
                 snapshot.size(),
                 snapshot.values().stream().mapToInt(Set::size).sum());
 
-        // Phase 9C MVP: Log rollback intent
-        // TODO: Implement full rollback when BubbleGrid supports bubble removal/restoration
-        log.warn("TODO: Full rollback requires BubbleGrid.removeBubble() and entity restoration");
-        log.warn("Current state preserved for debugging - manual cleanup may be required");
+        // Grid methods now available: addBubble(), removeBubble()
+        // However, full rollback requires tracking operation history and
+        // reversing EntityAccountant movements, which is not yet implemented.
+        log.warn("Partial operation state preserved - EntityAccountant ensures entity tracking consistency");
+        log.warn("Grid structure may need manual inspection if operation partially completed");
     }
 
     /**
