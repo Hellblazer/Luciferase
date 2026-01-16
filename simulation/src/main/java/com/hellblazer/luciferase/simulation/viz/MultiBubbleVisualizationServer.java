@@ -1,0 +1,388 @@
+/*
+ * Copyright (c) 2025, Hal Hildebrand. All rights reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ */
+package com.hellblazer.luciferase.simulation.viz;
+
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.entity.EntityType;
+import io.javalin.Javalin;
+import io.javalin.websocket.WsContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.vecmath.Point3f;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * WebSocket server for visualizing multiple bubbles with entity streaming.
+ * <p>
+ * Designed for the "grand vision" demo: 2x2x2 tetree grid with 1000 entities,
+ * pack hunting predators, and flocking prey.
+ * <p>
+ * Endpoints:
+ * - WebSocket /ws/entities - Real-time entity position stream from all bubbles
+ * - WebSocket /ws/bubbles - Bubble boundary updates
+ * - GET /api/health - Health check
+ * - GET /api/bubbles - Bubble metadata (boundaries, entity counts)
+ * <p>
+ * Static files served from /web:
+ * - predator-prey-grid.html - Three.js visualization
+ * - predator-prey-grid.js - WebSocket client
+ */
+public class MultiBubbleVisualizationServer {
+
+    private static final Logger log = LoggerFactory.getLogger(MultiBubbleVisualizationServer.class);
+    private static final int DEFAULT_PORT = 7081;
+    private static final long STREAM_INTERVAL_MS = 33; // ~30fps (lower than single bubble for performance)
+
+    private final Javalin app;
+    private final int port;
+    private final Set<WsContext> entityClients = ConcurrentHashMap.newKeySet();
+    private final Set<WsContext> bubbleClients = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean streaming = new AtomicBoolean(false);
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final Object streamingLock = new Object();
+
+    private List<EnhancedBubble> bubbles = new ArrayList<>();
+    private ScheduledFuture<?> streamTask;
+
+    /**
+     * Create server with default port.
+     */
+    public MultiBubbleVisualizationServer() {
+        this(DEFAULT_PORT);
+    }
+
+    /**
+     * Create server with specified port.
+     */
+    public MultiBubbleVisualizationServer(int port) {
+        this.port = port;
+        this.app = createApp();
+    }
+
+    private Javalin createApp() {
+        var javalin = Javalin.create(config -> {
+            config.staticFiles.add("/web");
+            config.http.defaultContentType = "application/json";
+        });
+
+        // Health check
+        javalin.get("/api/health", ctx -> {
+            ctx.json(Map.of(
+                "status", "ok",
+                "bubbles", bubbles.size(),
+                "entityClients", entityClients.size(),
+                "bubbleClients", bubbleClients.size(),
+                "streaming", streaming.get()
+            ));
+        });
+
+        // Bubble metadata
+        javalin.get("/api/bubbles", ctx -> {
+            if (bubbles.isEmpty()) {
+                ctx.status(404).json(Map.of("error", "No bubbles configured"));
+                return;
+            }
+            var bubbleData = bubbles.stream().map(b -> Map.of(
+                "id", b.id().toString(),
+                "entityCount", b.entityCount(),
+                "bounds", getBubbleBounds(b)
+            )).toList();
+            ctx.json(Map.of("bubbles", bubbleData));
+        });
+
+        // WebSocket for entity streaming
+        javalin.ws("/ws/entities", ws -> {
+            ws.onConnect(ctx -> {
+                entityClients.add(ctx);
+                log.info("Entity client connected: {} (total: {})", ctx.sessionId(), entityClients.size());
+
+                // Send initial state
+                if (!bubbles.isEmpty()) {
+                    sendEntities(ctx);
+                }
+
+                startStreamingIfNeeded();
+            });
+
+            ws.onClose(ctx -> {
+                entityClients.remove(ctx);
+                log.info("Entity client disconnected: {} (total: {})", ctx.sessionId(), entityClients.size());
+                stopStreamingIfNoClients();
+            });
+
+            ws.onError(ctx -> {
+                log.warn("Entity WebSocket error for {}: {}", ctx.sessionId(), ctx.error());
+                entityClients.remove(ctx);
+            });
+        });
+
+        // WebSocket for bubble boundaries
+        javalin.ws("/ws/bubbles", ws -> {
+            ws.onConnect(ctx -> {
+                bubbleClients.add(ctx);
+                log.info("Bubble client connected: {} (total: {})", ctx.sessionId(), bubbleClients.size());
+
+                // Send bubble boundaries
+                if (!bubbles.isEmpty()) {
+                    sendBubbleBoundaries(ctx);
+                }
+            });
+
+            ws.onClose(ctx -> {
+                bubbleClients.remove(ctx);
+                log.info("Bubble client disconnected: {} (total: {})", ctx.sessionId(), bubbleClients.size());
+            });
+
+            ws.onError(ctx -> {
+                log.warn("Bubble WebSocket error for {}: {}", ctx.sessionId(), ctx.error());
+                bubbleClients.remove(ctx);
+            });
+        });
+
+        return javalin;
+    }
+
+    /**
+     * Set the bubbles to visualize (typically from TetreeBubbleGrid).
+     */
+    public void setBubbles(List<EnhancedBubble> bubbles) {
+        this.bubbles = new ArrayList<>(bubbles);
+        log.info("Bubbles set: {} bubbles", bubbles.size());
+
+        // Broadcast bubble boundaries to connected clients
+        broadcastBubbleBoundaries();
+
+        startStreamingIfNeeded();
+    }
+
+    /**
+     * Get the configured bubbles.
+     */
+    public List<EnhancedBubble> getBubbles() {
+        return new ArrayList<>(bubbles);
+    }
+
+    /**
+     * Start the server.
+     */
+    public void start() {
+        app.start(port);
+        log.info("MultiBubbleVisualizationServer started on http://localhost:{}", port);
+        log.info("Open http://localhost:{}/predator-prey-grid.html to view", port);
+    }
+
+    /**
+     * Stop the server.
+     */
+    public void stop() {
+        stopStreamingInternal();
+        app.stop();
+        scheduler.shutdown();
+        log.info("MultiBubbleVisualizationServer stopped");
+    }
+
+    /**
+     * Get the actual port (useful when using port 0).
+     */
+    public int port() {
+        return app.port();
+    }
+
+    // ========== Streaming Methods ==========
+
+    private void startStreamingIfNeeded() {
+        synchronized (streamingLock) {
+            if (!entityClients.isEmpty() && !bubbles.isEmpty() && !streaming.get()) {
+                startStreamingInternal();
+            }
+        }
+    }
+
+    private void stopStreamingIfNoClients() {
+        synchronized (streamingLock) {
+            if (entityClients.isEmpty() && streaming.get()) {
+                stopStreamingInternal();
+            }
+        }
+    }
+
+    private void startStreamingInternal() {
+        if (streaming.compareAndSet(false, true)) {
+            streamTask = scheduler.scheduleAtFixedRate(
+                this::broadcastEntities,
+                0,
+                STREAM_INTERVAL_MS,
+                TimeUnit.MILLISECONDS
+            );
+            log.info("Multi-bubble entity streaming started ({}ms interval)", STREAM_INTERVAL_MS);
+        }
+    }
+
+    private void stopStreamingInternal() {
+        if (streaming.compareAndSet(true, false)) {
+            if (streamTask != null) {
+                streamTask.cancel(false);
+                streamTask = null;
+            }
+            log.info("Multi-bubble entity streaming stopped");
+        }
+    }
+
+    private void broadcastEntities() {
+        if (entityClients.isEmpty() || bubbles.isEmpty()) {
+            return;
+        }
+
+        var entities = getAllEntityDTOs();
+        var json = entityListToJson(entities);
+
+        var disconnected = new ArrayList<WsContext>();
+        for (var client : entityClients) {
+            try {
+                client.send(json);
+            } catch (Exception e) {
+                log.warn("Failed to send to client {}: {}", client.sessionId(), e.getMessage());
+                disconnected.add(client);
+            }
+        }
+
+        disconnected.forEach(entityClients::remove);
+    }
+
+    private void sendEntities(WsContext ctx) {
+        var entities = getAllEntityDTOs();
+        var json = entityListToJson(entities);
+        try {
+            ctx.send(json);
+        } catch (Exception e) {
+            log.warn("Failed to send initial entities to {}: {}", ctx.sessionId(), e.getMessage());
+        }
+    }
+
+    private void broadcastBubbleBoundaries() {
+        if (bubbleClients.isEmpty() || bubbles.isEmpty()) {
+            return;
+        }
+
+        var json = bubbleBoundariesToJson();
+
+        for (var client : bubbleClients) {
+            try {
+                client.send(json);
+            } catch (Exception e) {
+                log.warn("Failed to send bubble boundaries to {}: {}", client.sessionId(), e.getMessage());
+            }
+        }
+    }
+
+    private void sendBubbleBoundaries(WsContext ctx) {
+        var json = bubbleBoundariesToJson();
+        try {
+            ctx.send(json);
+        } catch (Exception e) {
+            log.warn("Failed to send bubble boundaries to {}: {}", ctx.sessionId(), e.getMessage());
+        }
+    }
+
+    // ========== JSON Serialization ==========
+
+    private List<Map<String, Object>> getAllEntityDTOs() {
+        var entities = new ArrayList<Map<String, Object>>();
+
+        for (var bubble : bubbles) {
+            var records = bubble.getAllEntityRecords();
+            for (var record : records) {
+                var dto = new HashMap<String, Object>();
+                dto.put("id", record.id());
+                dto.put("x", record.position().x);
+                dto.put("y", record.position().y);
+                dto.put("z", record.position().z);
+                dto.put("bubbleId", bubble.id().toString());
+
+                // Entity type
+                if (record.content() instanceof EntityType entityType) {
+                    dto.put("type", entityType.name());
+                } else {
+                    dto.put("type", "DEFAULT");
+                }
+
+                entities.add(dto);
+            }
+        }
+
+        return entities;
+    }
+
+    private String entityListToJson(List<Map<String, Object>> entities) {
+        var sb = new StringBuilder();
+        sb.append("{\"entities\":[");
+
+        for (int i = 0; i < entities.size(); i++) {
+            if (i > 0) sb.append(",");
+            var e = entities.get(i);
+            sb.append("{");
+            sb.append("\"id\":\"").append(e.get("id")).append("\",");
+            sb.append("\"x\":").append(e.get("x")).append(",");
+            sb.append("\"y\":").append(e.get("y")).append(",");
+            sb.append("\"z\":").append(e.get("z")).append(",");
+            sb.append("\"type\":\"").append(e.get("type")).append("\",");
+            sb.append("\"bubbleId\":\"").append(e.get("bubbleId")).append("\"");
+            sb.append("}");
+        }
+
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    private String bubbleBoundariesToJson() {
+        var sb = new StringBuilder();
+        sb.append("{\"bubbles\":[");
+
+        for (int i = 0; i < bubbles.size(); i++) {
+            if (i > 0) sb.append(",");
+            var bubble = bubbles.get(i);
+            var bounds = getBubbleBounds(bubble);
+
+            sb.append("{");
+            sb.append("\"id\":\"").append(bubble.id()).append("\",");
+            sb.append("\"min\":{");
+            sb.append("\"x\":").append(bounds.get("minX")).append(",");
+            sb.append("\"y\":").append(bounds.get("minY")).append(",");
+            sb.append("\"z\":").append(bounds.get("minZ"));
+            sb.append("},");
+            sb.append("\"max\":{");
+            sb.append("\"x\":").append(bounds.get("maxX")).append(",");
+            sb.append("\"y\":").append(bounds.get("maxY")).append(",");
+            sb.append("\"z\":").append(bounds.get("maxZ"));
+            sb.append("},");
+            sb.append("\"entityCount\":").append(bubble.entityCount());
+            sb.append("}");
+        }
+
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    private Map<String, Float> getBubbleBounds(EnhancedBubble bubble) {
+        // Approximate bubble bounds (in a real implementation, would query tetree bounds)
+        // For now, use a simple calculation based on world size
+        // TODO: Get actual tetrahedral bounds from TetreeBubbleGrid
+        return Map.of(
+            "minX", -100f,
+            "minY", -100f,
+            "minZ", -100f,
+            "maxX", 100f,
+            "maxY", 100f,
+            "maxZ", 100f
+        );
+    }
+}

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pack Hunting Grid - Grand Vision Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a1e;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #info-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 20, 40, 0.95);
+            border-radius: 12px;
+            padding: 20px;
+            min-width: 280px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(96, 165, 250, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        #info-panel h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #60a5fa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+
+        .stat-label {
+            color: #a0a0a0;
+        }
+
+        .stat-value {
+            color: #34d399;
+            font-weight: 600;
+            font-family: 'Courier New', monospace;
+        }
+
+        .stat-value.red {
+            color: #E74C3C;
+        }
+
+        .stat-value.blue {
+            color: #4A90E2;
+        }
+
+        #status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+            background: #ef4444;
+            animation: pulse 2s infinite;
+        }
+
+        #status-dot.connected {
+            background: #34d399;
+            animation: none;
+        }
+
+        #controls-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(20, 20, 40, 0.95);
+            border-radius: 12px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(96, 165, 250, 0.3);
+        }
+
+        #controls-panel h3 {
+            margin: 0 0 12px 0;
+            color: #60a5fa;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-right: 8px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        button:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .legend {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(20, 20, 40, 0.95);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(96, 165, 250, 0.3);
+            min-width: 200px;
+        }
+
+        .legend h3 {
+            font-size: 14px;
+            margin-bottom: 12px;
+            color: #60a5fa;
+            text-transform: uppercase;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            margin-right: 10px;
+            box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+        }
+
+        .vision-banner {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(20, 20, 40, 0.95);
+            border-radius: 16px;
+            padding: 40px;
+            border: 2px solid rgba(96, 165, 250, 0.5);
+            text-align: center;
+            max-width: 600px;
+            z-index: 1000;
+            opacity: 0;
+            animation: fadeIn 1s forwards, fadeOut 1s 3s forwards;
+        }
+
+        .vision-banner h1 {
+            font-size: 28px;
+            margin-bottom: 16px;
+            color: #60a5fa;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .vision-banner p {
+            font-size: 14px;
+            color: #a0a0a0;
+            line-height: 1.6;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+            to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <div class="vision-banner" id="vision-banner">
+        <h1>Grand Vision Demo</h1>
+        <p>2×2×2 Tetree Grid • 1000 Entities • Pack Hunting • PrimeMover Simulation</p>
+    </div>
+
+    <div id="info-panel">
+        <h2>Grid Simulation</h2>
+        <div class="stat-row">
+            <span class="stat-label">Status</span>
+            <span class="stat-value"><span id="status-dot"></span><span id="status-text">Connecting...</span></span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Bubbles</span>
+            <span class="stat-value" id="stat-bubbles">0</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Total Entities</span>
+            <span class="stat-value" id="stat-total">0</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Prey</span>
+            <span class="stat-value blue" id="stat-prey">0</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Predators</span>
+            <span class="stat-value red" id="stat-predators">0</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">FPS</span>
+            <span class="stat-value" id="stat-fps">0</span>
+        </div>
+    </div>
+
+    <div id="controls-panel">
+        <h3>Controls</h3>
+        <button id="btn-reset-camera">Reset Camera</button>
+        <button id="btn-toggle-bubbles">Toggle Bubbles</button>
+        <button id="btn-toggle-grid">Toggle Grid</button>
+    </div>
+
+    <div class="legend">
+        <h3>Entity Types</h3>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #4A90E2;"></div>
+            <span>Prey (Flocking)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #E74C3C; width: 20px; height: 20px;"></div>
+            <span>Predators (Pack Hunting)</span>
+        </div>
+        <div class="legend-item" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);">
+            <span style="font-size: 11px; color: #666;">Bubble boundaries show tetrahedral spatial subdivision</span>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="predator-prey-grid.js"></script>
+</body>
+</html>
