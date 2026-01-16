@@ -25,6 +25,7 @@ Spawn multiple parallel subtasks of claude whenever applicable. Leverage the cap
 - **Specific benchmark**: `mvn test -pl lucien -Dtest=OctreeVsTetreeVsPrismBenchmark`
 - **Single test without retries**: `mvn test -pl <module> -Dtest=TestName -Dsurefire.rerunFailingTestsCount=0`
 - **Check compilation errors**: Use `mcp jetbrains.findProjectProblems` (no need to compile when IDE is available)
+- **Run PrimeMover demos**: `mvn process-classes exec:java -pl simulation -Dexec.mainClass=ClassName -Dexec.args="args"` (process-classes phase required for bytecode transformation)
 
 ## CI/CD
 

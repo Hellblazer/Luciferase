@@ -40,11 +40,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * Usage:
  * <pre>
- * mvn exec:java -pl simulation \
+ * # PrimeMover bytecode transformation requires process-classes phase first
+ * mvn process-classes exec:java -pl simulation \
  *   -Dexec.mainClass=com.hellblazer.luciferase.simulation.viz.PredatorPreyGridDemo \
  *   -Dexec.args="7081"
  * </pre>
  * Then open: http://localhost:7081/predator-prey-grid.html
+ * <p>
+ * Note: PrimeMover transforms {@code @Entity} classes during the {@code process-classes} phase.
+ * Running {@code mvn exec:java} alone will fail with "should have been rewritten" error.
  */
 public class PredatorPreyGridDemo {
 
