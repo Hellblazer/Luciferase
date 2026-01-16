@@ -16,16 +16,15 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -44,17 +43,18 @@ import java.util.concurrent.locks.ReentrantLock;
  * <ol>
  *   <li>Acquire lock (prevents concurrent topology changes)</li>
  *   <li>Take entity distribution snapshot</li>
- *   <li>Delegate to BubbleSplitter/Merger/Mover</li>
+ *   <li>Delegate to BubbleSplitter/Merger/Mover (tracks operations)</li>
  *   <li>Validate entity conservation (totalBefore == totalAfter)</li>
- *   <li>On failure: Rollback to snapshot (log warning, no entity movement)</li>
+ *   <li>On failure: Rollback tracked operations in reverse order</li>
  *   <li>Release lock</li>
  * </ol>
  * <p>
  * <b>Snapshot/Rollback Strategy</b>:
  * <ul>
  *   <li>Snapshot: Capture entity-to-bubble mapping before operation</li>
- *   <li>Rollback: Log failure and snapshot (actual restoration requires bubble state rebuild)</li>
- *   <li>Phase 9C MVP: Rollback logs warning, defers full restoration to future work</li>
+ *   <li>Operation Tracking: Record grid structural changes (add/remove bubble)</li>
+ *   <li>Rollback: Undo operations in reverse order to restore grid structure</li>
+ *   <li>Limitation: Entity movements within bubbles are not reversed (EntityAccountant limitation)</li>
  * </ul>
  * <p>
  * <b>Lock-Based Serialization</b>:
@@ -68,7 +68,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * @author hal.hildebrand
  */
-public class TopologyExecutor {
+public class TopologyExecutor implements OperationTracker {
 
     private static final Logger log = LoggerFactory.getLogger(TopologyExecutor.class);
 
@@ -76,7 +76,12 @@ public class TopologyExecutor {
     private final BubbleMerger merger;
     private final BubbleMover mover;
     private final EntityAccountant accountant;
+    private final TetreeBubbleGrid bubbleGrid;
     private final Lock executionLock;
+
+    // Thread-local operation history for tracking grid changes during execution
+    // Using ThreadLocal since executionLock ensures single-threaded execution
+    private final ThreadLocal<List<GridOperation>> operationHistory = ThreadLocal.withInitial(ArrayList::new);
 
     /**
      * Creates a topology executor.
@@ -86,13 +91,25 @@ public class TopologyExecutor {
      * @throws NullPointerException if any parameter is null
      */
     public TopologyExecutor(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant) {
-        java.util.Objects.requireNonNull(bubbleGrid, "bubbleGrid must not be null");
+        this.bubbleGrid = java.util.Objects.requireNonNull(bubbleGrid, "bubbleGrid must not be null");
         this.accountant = java.util.Objects.requireNonNull(accountant, "accountant must not be null");
 
-        this.splitter = new BubbleSplitter(bubbleGrid, accountant);
-        this.merger = new BubbleMerger(bubbleGrid, accountant);
+        this.splitter = new BubbleSplitter(bubbleGrid, accountant, this);
+        this.merger = new BubbleMerger(bubbleGrid, accountant, this);
         this.mover = new BubbleMover(bubbleGrid, accountant);
         this.executionLock = new ReentrantLock();
+    }
+
+    @Override
+    public void recordBubbleAdded(UUID bubbleId) {
+        operationHistory.get().add(new BubbleAdded(bubbleId));
+        log.debug("Recorded operation: Added bubble {}", bubbleId);
+    }
+
+    @Override
+    public void recordBubbleRemoved(UUID bubbleId, EnhancedBubble bubbleSnapshot, TetreeKey<?> key) {
+        operationHistory.get().add(new BubbleRemoved(bubbleId, bubbleSnapshot, key));
+        log.debug("Recorded operation: Removed bubble {} at key {}", bubbleId, key);
     }
 
     /**
@@ -110,6 +127,9 @@ public class TopologyExecutor {
 
         executionLock.lock();
         try {
+            // Clear operation history from any previous execution
+            operationHistory.get().clear();
+
             log.info("Executing topology change: type={}, proposalId={}",
                     proposal.getClass().getSimpleName(), proposal.proposalId());
 
@@ -196,18 +216,19 @@ public class TopologyExecutor {
     /**
      * Rolls back to a previous snapshot on failure.
      * <p>
-     * Current implementation: Logs rollback intent and snapshot state.
-     * Grid now supports addBubble() and removeBubble(), but full rollback requires:
+     * Undoes all tracked grid operations in reverse order to restore grid structure.
+     * Operations are reversed using the GridOperation undo() mechanism:
      * <ul>
-     *   <li>Tracking which bubbles were added/removed during operation</li>
-     *   <li>Reversing EntityAccountant entity movements (currently one-way)</li>
-     *   <li>Restoring bubble entity collections to snapshot state</li>
+     *   <li>BubbleAdded → Remove bubble from grid</li>
+     *   <li>BubbleRemoved → Re-add bubble with saved state</li>
      * </ul>
      * <p>
-     * Note: EntityAccountant guarantees entity tracking consistency even on failure,
-     * so entities are never lost. Rollback would primarily clean up grid structure.
+     * <b>Limitation</b>: This only reverses grid structural changes. Entity movements
+     * within bubbles are NOT reversed (requires EntityAccountant API extension).
+     * EntityAccountant guarantees entity tracking consistency, so entities are never
+     * lost. Rollback primarily addresses grid structure cleanup.
      *
-     * @param snapshot the snapshot to restore
+     * @param snapshot the snapshot to restore (used for logging/validation)
      * @param reason   reason for rollback
      */
     private void rollback(Map<UUID, Set<UUID>> snapshot, String reason) {
@@ -216,11 +237,31 @@ public class TopologyExecutor {
                 snapshot.size(),
                 snapshot.values().stream().mapToInt(Set::size).sum());
 
-        // Grid methods now available: addBubble(), removeBubble()
-        // However, full rollback requires tracking operation history and
-        // reversing EntityAccountant movements, which is not yet implemented.
-        log.warn("Partial operation state preserved - EntityAccountant ensures entity tracking consistency");
-        log.warn("Grid structure may need manual inspection if operation partially completed");
+        var operations = operationHistory.get();
+        if (operations.isEmpty()) {
+            log.warn("No grid operations to rollback - operation may have failed early");
+            return;
+        }
+
+        log.warn("Rolling back {} grid operations in reverse order", operations.size());
+
+        // Undo operations in reverse order (LIFO)
+        for (int i = operations.size() - 1; i >= 0; i--) {
+            var operation = operations.get(i);
+            try {
+                log.debug("Undoing operation {}/{}: {}",
+                         operations.size() - i, operations.size(), operation.description());
+                operation.undo(bubbleGrid);
+            } catch (Exception e) {
+                log.error("Failed to undo operation '{}': {}",
+                         operation.description(), e.getMessage(), e);
+                // Continue with remaining rollback operations despite failure
+            }
+        }
+
+        log.warn("Rollback complete: Grid structure restored");
+        log.warn("Note: Entity movements within bubbles are not reversed (EntityAccountant limitation)");
+        log.warn("EntityAccountant ensures entity tracking consistency - no entities lost");
     }
 
     /**

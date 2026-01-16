@@ -44,7 +44,7 @@ class BubbleMergerTest {
     void setUp() {
         bubbleGrid = new TetreeBubbleGrid((byte) 2);
         accountant = new EntityAccountant();
-        merger = new BubbleMerger(bubbleGrid, accountant);
+        merger = new BubbleMerger(bubbleGrid, accountant, OperationTracker.NOOP);
     }
 
     @Test
@@ -250,14 +250,14 @@ class BubbleMergerTest {
     @Test
     void testConstructorNullBubbleGridThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new BubbleMerger(null, accountant);
+            new BubbleMerger(null, accountant, OperationTracker.NOOP);
         }, "Should reject null bubble grid");
     }
 
     @Test
     void testConstructorNullAccountantThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new BubbleMerger(bubbleGrid, null);
+            new BubbleMerger(bubbleGrid, null, OperationTracker.NOOP);
         }, "Should reject null accountant");
     }
 

@@ -70,17 +70,20 @@ public class BubbleMerger {
 
     private final TetreeBubbleGrid bubbleGrid;
     private final EntityAccountant accountant;
+    private final OperationTracker operationTracker;
 
     /**
      * Creates a bubble merger.
      *
-     * @param bubbleGrid the bubble grid
-     * @param accountant the entity accountant for atomic transfers
+     * @param bubbleGrid        the bubble grid
+     * @param accountant        the entity accountant for atomic transfers
+     * @param operationTracker  the operation tracker for rollback support
      * @throws NullPointerException if any parameter is null
      */
-    public BubbleMerger(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant) {
+    public BubbleMerger(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant, OperationTracker operationTracker) {
         this.bubbleGrid = java.util.Objects.requireNonNull(bubbleGrid, "bubbleGrid must not be null");
         this.accountant = java.util.Objects.requireNonNull(accountant, "accountant must not be null");
+        this.operationTracker = java.util.Objects.requireNonNull(operationTracker, "operationTracker must not be null");
     }
 
     /**
@@ -192,6 +195,14 @@ public class BubbleMerger {
             return new MergeExecutionResult(false,
                                            "Entity validation failed: " + validation.details().get(0),
                                            totalBefore, totalAfter, duplicates.size());
+        }
+
+        // Record bubble removal for rollback BEFORE removing
+        // Capture bubble state and compute key from bounds
+        var bubble2Bounds = bubble2.bounds();
+        if (bubble2Bounds != null) {
+            var bubble2Key = bubble2Bounds.rootKey();
+            operationTracker.recordBubbleRemoved(bubble2Id, bubble2, bubble2Key);
         }
 
         // Remove bubble2 from grid (all entities now in bubble1)

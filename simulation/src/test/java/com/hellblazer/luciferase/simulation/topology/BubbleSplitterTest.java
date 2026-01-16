@@ -45,7 +45,7 @@ class BubbleSplitterTest {
     void setUp() {
         bubbleGrid = new TetreeBubbleGrid((byte) 2);
         accountant = new EntityAccountant();
-        splitter = new BubbleSplitter(bubbleGrid, accountant);
+        splitter = new BubbleSplitter(bubbleGrid, accountant, OperationTracker.NOOP);
     }
 
     @Test
@@ -217,14 +217,14 @@ class BubbleSplitterTest {
     @Test
     void testConstructorNullBubbleGridThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new BubbleSplitter(null, accountant);
+            new BubbleSplitter(null, accountant, OperationTracker.NOOP);
         }, "Should reject null bubble grid");
     }
 
     @Test
     void testConstructorNullAccountantThrows() {
         assertThrows(NullPointerException.class, () -> {
-            new BubbleSplitter(bubbleGrid, null);
+            new BubbleSplitter(bubbleGrid, null, OperationTracker.NOOP);
         }, "Should reject null accountant");
     }
 

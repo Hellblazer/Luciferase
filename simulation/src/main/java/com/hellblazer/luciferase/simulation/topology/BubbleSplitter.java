@@ -69,17 +69,20 @@ public class BubbleSplitter {
 
     private final TetreeBubbleGrid bubbleGrid;
     private final EntityAccountant accountant;
+    private final OperationTracker operationTracker;
 
     /**
      * Creates a bubble splitter.
      *
-     * @param bubbleGrid the bubble grid
-     * @param accountant the entity accountant for atomic transfers
+     * @param bubbleGrid        the bubble grid
+     * @param accountant        the entity accountant for atomic transfers
+     * @param operationTracker  the operation tracker for rollback support
      * @throws NullPointerException if any parameter is null
      */
-    public BubbleSplitter(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant) {
+    public BubbleSplitter(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant, OperationTracker operationTracker) {
         this.bubbleGrid = java.util.Objects.requireNonNull(bubbleGrid, "bubbleGrid must not be null");
         this.accountant = java.util.Objects.requireNonNull(accountant, "accountant must not be null");
+        this.operationTracker = java.util.Objects.requireNonNull(operationTracker, "operationTracker must not be null");
     }
 
     /**
@@ -183,6 +186,7 @@ public class BubbleSplitter {
             var bounds = com.hellblazer.luciferase.simulation.bubble.BubbleBounds.fromEntityPositions(positions);
             var key = bounds.rootKey();
             bubbleGrid.addBubble(newBubble, key);
+            operationTracker.recordBubbleAdded(newBubbleId);
             log.debug("Added new bubble {} to grid at key {}", newBubbleId, key);
         } else {
             log.warn("New bubble {} has no entities, not adding to grid", newBubbleId);
