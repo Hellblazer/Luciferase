@@ -92,11 +92,24 @@ public class MultiBubbleVisualizationServer {
                 ctx.status(404).json(Map.of("error", "No bubbles configured"));
                 return;
             }
-            var bubbleData = bubbles.stream().map(b -> Map.of(
-                "id", b.id().toString(),
-                "entityCount", b.entityCount(),
-                "bounds", getBubbleBounds(b)
-            )).toList();
+            var bubbleData = bubbles.stream().map(b -> {
+                var data = new HashMap<String, Object>();
+                data.put("id", b.id().toString());
+                data.put("entityCount", b.entityCount());
+                data.put("bounds", getBubbleBounds(b));
+
+                // Include tetrahedral vertices if available
+                var verts = bubbleVertices.get(b.id());
+                if (verts != null && verts.length == 4) {
+                    var vertexList = new ArrayList<Map<String, Float>>();
+                    for (var v : verts) {
+                        vertexList.add(Map.of("x", v.x, "y", v.y, "z", v.z));
+                    }
+                    data.put("vertices", vertexList);
+                }
+
+                return data;
+            }).toList();
             ctx.json(Map.of("bubbles", bubbleData));
         });
 
