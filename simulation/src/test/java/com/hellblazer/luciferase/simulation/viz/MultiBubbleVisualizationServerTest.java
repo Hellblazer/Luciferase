@@ -155,6 +155,12 @@ class MultiBubbleVisualizationServerTest {
         var vertices = new HashMap<UUID, Point3f[]>();
         var bubblesWithKeys = grid.getBubblesWithKeys();
 
+        // Transform from Morton space [0, 2^20] to a normalized range for testing
+        // In tests we don't have WorldBounds, so we'll scale to a reasonable range
+        final float MORTON_MAX = 1 << 20; // 2^20 = 1048576
+        final float TARGET_SIZE = 200f; // Match production world size
+        final float scale = TARGET_SIZE / MORTON_MAX;
+
         for (var bubble : bubbles) {
             for (var entry : bubblesWithKeys.entrySet()) {
                 if (entry.getValue().id().equals(bubble.id())) {
@@ -164,7 +170,12 @@ class MultiBubbleVisualizationServerTest {
 
                     var bubbleVertices = new Point3f[4];
                     for (int i = 0; i < 4; i++) {
-                        bubbleVertices[i] = new Point3f(coords[i].x, coords[i].y, coords[i].z);
+                        // Scale from Morton space to world space
+                        bubbleVertices[i] = new Point3f(
+                            coords[i].x * scale,
+                            coords[i].y * scale,
+                            coords[i].z * scale
+                        );
                     }
 
                     vertices.put(bubble.id(), bubbleVertices);

@@ -282,10 +282,17 @@ public class PredatorPreyGridDemo {
     /**
      * Extract tetrahedral vertices for each bubble from the grid.
      * Uses getBubblesWithKeys() to get the TetreeKey for each bubble.
+     * Transforms vertices from Morton space to world space.
      */
     private static Map<UUID, Point3f[]> extractBubbleVertices(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
         var vertices = new HashMap<UUID, Point3f[]>();
         var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        // Tetree coordinates are in Morton space [0, 2^20]
+        // World space is [0, 200]
+        final float MORTON_MAX = 1 << 20; // 2^20 = 1048576
+        final float WORLD_SIZE = WORLD.size(); // 200
+        final float scale = WORLD_SIZE / MORTON_MAX;
 
         for (var bubble : bubbles) {
             try {
@@ -294,14 +301,18 @@ public class PredatorPreyGridDemo {
                     if (entry.getValue().id().equals(bubble.id())) {
                         var tetreeKey = entry.getKey();
 
-                        // Get the Tet and its coordinates
+                        // Get the Tet and its coordinates (in Morton space)
                         var tet = tetreeKey.toTet();
                         var coords = tet.coordinates();
 
-                        // Convert to Point3f array
+                        // Convert to Point3f array and scale to world space
                         var bubbleVertices = new Point3f[4];
                         for (int i = 0; i < 4; i++) {
-                            bubbleVertices[i] = new Point3f(coords[i].x, coords[i].y, coords[i].z);
+                            bubbleVertices[i] = new Point3f(
+                                WORLD.min() + coords[i].x * scale,
+                                WORLD.min() + coords[i].y * scale,
+                                WORLD.min() + coords[i].z * scale
+                            );
                         }
 
                         vertices.put(bubble.id(), bubbleVertices);
