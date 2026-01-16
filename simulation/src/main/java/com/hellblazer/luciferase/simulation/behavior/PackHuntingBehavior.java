@@ -232,7 +232,7 @@ public class PackHuntingBehavior implements EntityBehavior {
 
         // Find leader (predator closest to prey)
         var allPredators = new ArrayList<>(packMembers);
-        allPredators.add(new EnhancedBubble.EntityRecord(entityId, position, EntityType.PREDATOR));
+        allPredators.add(new EnhancedBubble.EntityRecord(entityId, position, EntityType.PREDATOR, 0L));
 
         var leader = allPredators.stream()
             .min(Comparator.comparing(p -> distance(p.position(), closestPrey.position())))

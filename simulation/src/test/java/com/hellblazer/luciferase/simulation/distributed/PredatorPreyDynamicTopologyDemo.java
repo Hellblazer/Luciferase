@@ -331,7 +331,7 @@ class PredatorPreyDynamicTopologyDemo {
          */
         private void updateBubbleEntities(EnhancedBubble bubble) {
             // Get all entities in this bubble
-            var entities = bubble.getAllEntities();
+            var entities = bubble.getAllEntityRecords();
 
             for (var entity : entities) {
                 var entityId = entity.id();
@@ -362,7 +362,7 @@ class PredatorPreyDynamicTopologyDemo {
                 newPosition.z = Math.max(WORLD.min(), Math.min(WORLD.max(), newPosition.z));
 
                 // Update entity in bubble
-                bubble.moveEntity(entityId, newPosition);
+                bubble.updateEntityPosition(entityId, newPosition);
                 velocities.put(entityId, newVelocity);
             }
         }
@@ -388,7 +388,9 @@ class PredatorPreyDynamicTopologyDemo {
             int soloHunters = 0;
 
             for (var bubble : bubbles) {
-                var predators = bubble.queryByType(EntityType.PREDATOR);
+                var predators = bubble.getAllEntityRecords().stream()
+                    .filter(e -> e.content() instanceof EntityType && e.content() == EntityType.PREDATOR)
+                    .toList();
                 for (var predator : predators) {
                     var nearbyPredators = bubble.queryRange(predator.position(), 20.0f).stream()
                         .filter(n -> !n.id().equals(predator.id()))
@@ -415,7 +417,9 @@ class PredatorPreyDynamicTopologyDemo {
             // Flock analysis (sample from one bubble for performance)
             if (!bubbles.isEmpty()) {
                 var sampleBubble = bubbles.get(0);
-                var prey = sampleBubble.queryByType(EntityType.PREY);
+                var prey = sampleBubble.getAllEntityRecords().stream()
+                    .filter(e -> e.content() instanceof EntityType && e.content() == EntityType.PREY)
+                    .toList();
                 if (!prey.isEmpty()) {
                     var samplePrey = prey.get(0);
                     var nearbyPrey = sampleBubble.queryRange(samplePrey.position(), 35.0f).stream()
