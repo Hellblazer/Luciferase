@@ -315,10 +315,24 @@ class TopologyConsensusCoordinatorTest {
 
     private SplitProposal createSplitProposal(UUID bubbleId) {
         var bubble = bubbleGrid.getBubbleById(bubbleId);
-        var centroid = bubble.bounds().centroid();
+
+        // Compute entity centroid for Byzantine-resistant validation
+        // (entities are placed from 0,0,0 to N*0.01, so centroid is at N*0.005)
+        var entityRecords = bubble.getAllEntityRecords();
+        float minX = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+
+        for (var record : entityRecords) {
+            var pos = record.position();
+            minX = Math.min(minX, pos.x);
+            maxX = Math.max(maxX, pos.x);
+        }
+
+        float entityCentroidX = (minX + maxX) / 2.0f;
+
         var splitPlane = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
-            (float) centroid.getX()
+            entityCentroidX
         );
 
         return new SplitProposal(
