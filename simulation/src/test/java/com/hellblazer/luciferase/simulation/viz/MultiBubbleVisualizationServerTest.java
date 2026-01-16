@@ -155,9 +155,9 @@ class MultiBubbleVisualizationServerTest {
         var vertices = new HashMap<UUID, Point3f[]>();
         var bubblesWithKeys = grid.getBubblesWithKeys();
 
-        // Transform from Morton space [0, 2^20] to a normalized range for testing
+        // Transform from Morton space [0, 2^21] to a normalized range for testing
         // In tests we don't have WorldBounds, so we'll scale to a reasonable range
-        final float MORTON_MAX = 1 << 20; // 2^20 = 1048576
+        final float MORTON_MAX = 1 << 21; // 2^21 = 2097152
         final float TARGET_SIZE = 200f; // Match production world size
         final float scale = TARGET_SIZE / MORTON_MAX;
 

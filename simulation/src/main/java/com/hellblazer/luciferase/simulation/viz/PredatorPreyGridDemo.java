@@ -288,9 +288,9 @@ public class PredatorPreyGridDemo {
         var vertices = new HashMap<UUID, Point3f[]>();
         var bubblesWithKeys = grid.getBubblesWithKeys();
 
-        // Tetree coordinates are in Morton space [0, 2^20]
+        // Tetree coordinates are in Morton space [0, 2^21]
         // World space is [0, 200]
-        final float MORTON_MAX = 1 << 20; // 2^20 = 1048576
+        final float MORTON_MAX = 1 << 21; // 2^21 = 2097152
         final float WORLD_SIZE = WORLD.size(); // 200
         final float scale = WORLD_SIZE / MORTON_MAX;
 
@@ -312,6 +312,18 @@ public class PredatorPreyGridDemo {
                                 WORLD.min() + coords[i].x * scale,
                                 WORLD.min() + coords[i].y * scale,
                                 WORLD.min() + coords[i].z * scale
+                            );
+                        }
+
+                        // Debug: log first 3 bubbles to verify coordinates
+                        if (vertices.size() < 3) {
+                            log.info("Bubble {} level {} - Morton: ({},{},{}) to ({},{},{}) - World: ({},{},{}) to ({},{},{})",
+                                vertices.size(),
+                                tet.l(),
+                                coords[0].x, coords[0].y, coords[0].z,
+                                coords[3].x, coords[3].y, coords[3].z,
+                                bubbleVertices[0].x, bubbleVertices[0].y, bubbleVertices[0].z,
+                                bubbleVertices[3].x, bubbleVertices[3].y, bubbleVertices[3].z
                             );
                         }
 
