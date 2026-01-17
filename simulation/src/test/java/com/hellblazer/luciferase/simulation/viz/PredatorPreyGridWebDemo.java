@@ -8,7 +8,6 @@
  */
 package com.hellblazer.luciferase.simulation.viz;
 
-import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.behavior.PackHuntingBehavior;
 import com.hellblazer.luciferase.simulation.behavior.PreyBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
@@ -16,7 +15,8 @@ import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.entity.EntityType;
-import com.hellblazer.luciferase.simulation.topology.*;
+import com.hellblazer.luciferase.simulation.topology.TopologyExecutor;
+import com.hellblazer.luciferase.simulation.topology.TopologyMetrics;
 import com.hellblazer.luciferase.simulation.topology.metrics.DensityMonitor;
 import com.hellblazer.luciferase.simulation.topology.metrics.DensityState;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
@@ -302,26 +302,88 @@ public class PredatorPreyGridWebDemo {
         }
 
         /**
-         * Check density states and execute topology changes (split/merge) when thresholds exceeded.
+         * Check density states and execute topology changes when thresholds exceeded.
          * <p>
-         * TODO: Full implementation requires SplitProposal/MergeProposal classes from Phase 9B.
-         * For now, this just logs when topology changes would occur.
+         * Executes splits when bubbles exceed 250 entities (NEEDS_SPLIT state).
+         * Executes merges when bubbles drop below 100 entities (NEEDS_MERGE state).
          */
         private void checkAndExecuteTopologyChanges() {
             var distribution = accountant.getDistribution();
             var bubbles = new ArrayList<>(bubbleGrid.getAllBubbles());
 
-            // Check each bubble for split/merge candidates
+            // Check each bubble for split candidates
             for (var bubble : bubbles) {
                 var count = distribution.getOrDefault(bubble.id(), 0);
                 var state = densityMonitor.getState(bubble.id());
 
                 if (state == DensityState.NEEDS_SPLIT && count > 250) {
-                    log.info("WOULD SPLIT: Bubble {} has {} entities (>250 threshold)", bubble.id(), count);
-                    // TODO: Execute split when SplitProposal is available
-                } else if (state == DensityState.NEEDS_MERGE && count < 100) {
-                    log.info("WOULD MERGE: Bubble {} has {} entities (<100 threshold)", bubble.id(), count);
-                    // TODO: Execute merge when MergeProposal is available
+                    log.info("EXECUTING SPLIT: Bubble {} has {} entities (>250 threshold) - state: {}",
+                             bubble.id(), count, state);
+
+                    // Create split plane through bubble centroid
+                    var centroid = bubble.bounds().centroid();
+                    var splitPlane = new SplitPlane(
+                        new Point3f(1.0f, 0.0f, 0.0f),  // X-axis normal
+                        (float) centroid.getX()
+                    );
+
+                    var splitProposal = new SplitProposal(
+                        UUID.randomUUID(),
+                        bubble.id(),
+                        splitPlane,
+                        DigestAlgorithm.DEFAULT.getOrigin(),
+                        System.currentTimeMillis()
+                    );
+
+                    var result = executor.execute(splitProposal);
+                    if (result.success()) {
+                        log.info("Split successful: {}", result.message());
+                        updateVisualizationGeometries();
+                    } else {
+                        log.warn("Split failed: {}", result.message());
+                    }
+                }
+            }
+
+            // Check for merge candidates (adjacent bubbles both below threshold)
+            bubbles = new ArrayList<>(bubbleGrid.getAllBubbles());  // Refresh after splits
+            for (int i = 0; i < bubbles.size(); i++) {
+                var bubble1 = bubbles.get(i);
+                var count1 = distribution.getOrDefault(bubble1.id(), 0);
+                var state1 = densityMonitor.getState(bubble1.id());
+
+                if (state1 == DensityState.NEEDS_MERGE && count1 < 100) {
+                    // Find adjacent bubble also needing merge
+                    var neighbors = bubbleGrid.getNeighbors(bubble1.id());
+                    for (var neighborId : neighbors) {
+                        var neighbor = bubbleGrid.getBubbleById(neighborId);
+                        if (neighbor == null) continue;
+
+                        var count2 = distribution.getOrDefault(neighborId, 0);
+                        var state2 = densityMonitor.getState(neighborId);
+
+                        if (state2 == DensityState.NEEDS_MERGE && count2 < 100) {
+                            log.info("EXECUTING MERGE: Bubbles {} ({} entities) and {} ({} entities)",
+                                     bubble1.id(), count1, neighborId, count2);
+
+                            var mergeProposal = new MergeProposal(
+                                UUID.randomUUID(),
+                                bubble1.id(),
+                                neighborId,
+                                DigestAlgorithm.DEFAULT.getOrigin(),
+                                System.currentTimeMillis()
+                            );
+
+                            var result = executor.execute(mergeProposal);
+                            if (result.success()) {
+                                log.info("Merge successful: {}", result.message());
+                                updateVisualizationGeometries();
+                                break;  // Only merge once per check
+                            } else {
+                                log.warn("Merge failed: {}", result.message());
+                            }
+                        }
+                    }
                 }
             }
         }
