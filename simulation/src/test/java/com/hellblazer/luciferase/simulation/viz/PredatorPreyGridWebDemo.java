@@ -652,16 +652,17 @@ public class PredatorPreyGridWebDemo {
                 }
 
                 // Scale to world space
+                // CRITICAL: Use Tetree size (100), not WORLD.max() (200)
                 final float MORTON_MAX = 1 << 21;
-                final float WORLD_SIZE = WORLD.max() - WORLD.min();
-                final float scale = WORLD_SIZE / MORTON_MAX;
+                final float TETREE_SIZE = 100.0f;  // Hardcoded in TetreeBubbleGrid line 69
+                final float scale = TETREE_SIZE / MORTON_MAX;
 
-                minX = minX * scale + WORLD.min();
-                minY = minY * scale + WORLD.min();
-                minZ = minZ * scale + WORLD.min();
-                maxX = maxX * scale + WORLD.min();
-                maxY = maxY * scale + WORLD.min();
-                maxZ = maxZ * scale + WORLD.min();
+                minX = minX * scale;
+                minY = minY * scale;
+                minZ = minZ * scale;
+                maxX = maxX * scale;
+                maxY = maxY * scale;
+                maxZ = maxZ * scale;
 
                 // Rejection sampling: generate random point in AABB until inside tetrahedron
                 int attempts = 0;
@@ -671,9 +672,9 @@ public class PredatorPreyGridWebDemo {
                     float z = minZ + RANDOM.nextFloat() * (maxZ - minZ);
 
                     // Convert back to Morton space for containment test
-                    float mx = (x - WORLD.min()) / scale;
-                    float my = (y - WORLD.min()) / scale;
-                    float mz = (z - WORLD.min()) / scale;
+                    float mx = x / scale;
+                    float my = y / scale;
+                    float mz = z / scale;
 
                     if (tet.containsUltraFast(mx, my, mz)) {
                         return new Point3f(x, y, z);
@@ -688,15 +689,19 @@ public class PredatorPreyGridWebDemo {
                     cy += coords[i].y;
                     cz += coords[i].z;
                 }
-                cx = (cx / 4.0f) * scale + WORLD.min();
-                cy = (cy / 4.0f) * scale + WORLD.min();
-                cz = (cz / 4.0f) * scale + WORLD.min();
+                cx = (cx / 4.0f) * scale;
+                cy = (cy / 4.0f) * scale;
+                cz = (cz / 4.0f) * scale;
                 return new Point3f(cx, cy, cz);
             }
         }
 
-        // Fallback: random position in world
-        return randomPosition();
+        // Fallback: random position in Tetree space (0-100)
+        return new Point3f(
+            RANDOM.nextFloat() * 100.0f,
+            RANDOM.nextFloat() * 100.0f,
+            RANDOM.nextFloat() * 100.0f
+        );
     }
 
     /**
@@ -712,13 +717,14 @@ public class PredatorPreyGridWebDemo {
                 var tet = tetreeKey.toTet();
 
                 // Convert world position to Morton space
+                // CRITICAL: Use Tetree size (100), not WORLD.max() (200)
                 final float MORTON_MAX = 1 << 21;
-                final float WORLD_SIZE = WORLD.max() - WORLD.min();
-                final float scale = WORLD_SIZE / MORTON_MAX;
+                final float TETREE_SIZE = 100.0f;  // Hardcoded in TetreeBubbleGrid line 69
+                final float scale = TETREE_SIZE / MORTON_MAX;
 
-                float mx = (position.x - WORLD.min()) / scale;
-                float my = (position.y - WORLD.min()) / scale;
-                float mz = (position.z - WORLD.min()) / scale;
+                float mx = position.x / scale;
+                float my = position.y / scale;
+                float mz = position.z / scale;
 
                 return tet.containsUltraFast(mx, my, mz);
             }
@@ -755,13 +761,14 @@ public class PredatorPreyGridWebDemo {
         var bubblesWithKeys = grid.getBubblesWithKeys();
 
         // Convert world position to Morton space once
+        // CRITICAL: Use Tetree size (100), not WORLD.max() (200)
         final float MORTON_MAX = 1 << 21;
-        final float WORLD_SIZE = WORLD.max() - WORLD.min();
-        final float scale = WORLD_SIZE / MORTON_MAX;
+        final float TETREE_SIZE = 100.0f;  // Hardcoded in TetreeBubbleGrid line 69
+        final float scale = TETREE_SIZE / MORTON_MAX;
 
-        float mx = (position.x - WORLD.min()) / scale;
-        float my = (position.y - WORLD.min()) / scale;
-        float mz = (position.z - WORLD.min()) / scale;
+        float mx = position.x / scale;
+        float my = position.y / scale;
+        float mz = position.z / scale;
 
         // VON SPATIAL ROUTING: Check all bubbles to find which domain contains the position
         // In distributed VON: this would be greedy forwarding through neighbors
