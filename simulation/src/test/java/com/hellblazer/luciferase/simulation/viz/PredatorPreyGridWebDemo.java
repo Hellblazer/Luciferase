@@ -426,10 +426,12 @@ public class PredatorPreyGridWebDemo {
                     position.z + newVelocity.z * DELTA_TIME
                 );
 
-                // Clamp to world bounds
-                newPosition.x = Math.max(WORLD.min(), Math.min(WORLD.max(), newPosition.x));
-                newPosition.y = Math.max(WORLD.min(), Math.min(WORLD.max(), newPosition.y));
-                newPosition.z = Math.max(WORLD.min(), Math.min(WORLD.max(), newPosition.z));
+                // Clamp to Tetree bounds (0-100, matching bubble boundaries)
+                // CRITICAL: Use Tetree size (100), not WORLD.max() (200)
+                final float TETREE_SIZE = 100.0f;
+                newPosition.x = Math.max(0f, Math.min(TETREE_SIZE, newPosition.x));
+                newPosition.y = Math.max(0f, Math.min(TETREE_SIZE, newPosition.y));
+                newPosition.z = Math.max(0f, Math.min(TETREE_SIZE, newPosition.z));
 
                 // Update position in bubble (boundary crossing simplified for demo)
                 bubble.updateEntityPosition(entityId, newPosition);
