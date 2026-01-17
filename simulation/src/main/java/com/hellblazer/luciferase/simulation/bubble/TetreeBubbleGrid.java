@@ -123,6 +123,11 @@ public class TetreeBubbleGrid {
             // Distribute remainder across first few levels
             int bubblesAtThisLevel = bubblesPerLevel + (level < remainder ? 1 : 0);
 
+            // Level 0 can only have 1 bubble maximum (hierarchical root)
+            if (level == 0) {
+                bubblesAtThisLevel = Math.min(bubblesAtThisLevel, 1);
+            }
+
             // Use a per-level index to avoid collisions
             int levelIndex = 0;
 
@@ -180,22 +185,24 @@ public class TetreeBubbleGrid {
      */
     private Tet createTetAtLevel(byte level, int index) {
         if (level == 0) {
-            // Root tetrahedron
+            // Hierarchical Tetree: Root level can only have ONE tetrahedron (type 0 at origin)
+            // For S0-S5 forest approach, use CubeForest instead
+            if (index > 0) {
+                throw new IllegalArgumentException(
+                    "Level 0 can only have 1 bubble (type 0 at origin). " +
+                    "For multiple root bubbles, use CubeForest or level 1+. Got index: " + index
+                );
+            }
             return new Tet(0, 0, 0, (byte) 0, (byte) 0);
         }
 
-        // Start from root and subdivide
+        // For level 1+: Start from S0 root and subdivide
         var current = new Tet(0, 0, 0, (byte) 0, (byte) 0);
 
-        // Encode index into path (8 children per level)
-        int remainingIndex = index;
-
-        // Subdivide down to target level
+        // Subdivide down to target level using index as path
         for (byte l = 1; l <= level; l++) {
-            // Extract child index for this level from remaining index
-            int childIndex = remainingIndex % 8;
-            remainingIndex = remainingIndex / 8;
-
+            // Extract child index for this level from index
+            int childIndex = (index >> (3 * (level - l))) & 0x7; // Extract 3 bits for this level
             current = current.child(childIndex);
         }
 
