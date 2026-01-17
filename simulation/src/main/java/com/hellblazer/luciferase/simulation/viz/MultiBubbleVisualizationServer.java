@@ -10,6 +10,8 @@ package com.hellblazer.luciferase.simulation.viz;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.entity.EntityType;
+import com.hellblazer.luciferase.simulation.topology.events.TopologyEventStream;
+import com.hellblazer.luciferase.simulation.topology.metrics.DensityMonitor;
 import io.javalin.Javalin;
 import io.javalin.websocket.WsContext;
 import org.slf4j.Logger;
@@ -29,8 +31,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Endpoints:
  * - WebSocket /ws/entities - Real-time entity position stream from all bubbles
  * - WebSocket /ws/bubbles - Bubble boundary updates
+ * - WebSocket /ws/topology - Real-time topology change events (split/merge/move)
  * - GET /api/health - Health check
  * - GET /api/bubbles - Bubble metadata (boundaries, entity counts)
+ * - GET /api/density - Density metrics (entity counts, states, ratios)
  * <p>
  * Static files served from /web:
  * - predator-prey-grid.html - Three.js visualization
@@ -46,6 +50,7 @@ public class MultiBubbleVisualizationServer {
     private final int port;
     private final Set<WsContext> entityClients = ConcurrentHashMap.newKeySet();
     private final Set<WsContext> bubbleClients = ConcurrentHashMap.newKeySet();
+    private final TopologyEventStream topologyEventStream = new TopologyEventStream();
     private final AtomicBoolean streaming = new AtomicBoolean(false);
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final Object streamingLock = new Object();
@@ -55,6 +60,7 @@ public class MultiBubbleVisualizationServer {
     private Map<UUID, Byte> bubbleTypes = new ConcurrentHashMap<>();
     private Map<UUID, Map<String, Object>> bubbleSpheres = new ConcurrentHashMap<>();
     private ScheduledFuture<?> streamTask;
+    private DensityMonitor densityMonitor;
 
     /**
      * Create server with default port.
@@ -132,6 +138,15 @@ public class MultiBubbleVisualizationServer {
             ctx.json(Map.of("bubbles", bubbleData));
         });
 
+        // Density metrics
+        javalin.get("/api/density", ctx -> {
+            if (densityMonitor == null) {
+                ctx.status(503).json(Map.of("error", "Density monitor not configured"));
+                return;
+            }
+            ctx.json(formatDensityMetrics());
+        });
+
         // WebSocket for entity streaming
         javalin.ws("/ws/entities", ws -> {
             ws.onConnect(ctx -> {
@@ -178,6 +193,26 @@ public class MultiBubbleVisualizationServer {
             ws.onError(ctx -> {
                 log.warn("Bubble WebSocket error for {}: {}", ctx.sessionId(), ctx.error());
                 bubbleClients.remove(ctx);
+            });
+        });
+
+        // WebSocket for topology events
+        javalin.ws("/ws/topology", ws -> {
+            ws.onConnect(ctx -> {
+                topologyEventStream.addClient(ctx);
+                log.debug("Topology event client connected: {} (total clients: {})",
+                         ctx.sessionId(), topologyEventStream.getClientCount());
+            });
+
+            ws.onClose(ctx -> {
+                topologyEventStream.removeClient(ctx);
+                log.debug("Topology event client disconnected: {} (total clients: {})",
+                         ctx.sessionId(), topologyEventStream.getClientCount());
+            });
+
+            ws.onError(ctx -> {
+                log.warn("Topology WebSocket error for {}: {}", ctx.sessionId(), ctx.error());
+                topologyEventStream.removeClient(ctx);
             });
         });
 
@@ -246,6 +281,32 @@ public class MultiBubbleVisualizationServer {
      */
     public List<EnhancedBubble> getBubbles() {
         return new ArrayList<>(bubbles);
+    }
+
+    /**
+     * Get the topology event stream for wiring up topology event producers.
+     * <p>
+     * Use this to register TopologyExecutor and DensityMonitor as listeners:
+     * <pre>{@code
+     * topologyExecutor.addListener(server.getTopologyEventStream());
+     * densityMonitor.addListener(server.getTopologyEventStream());
+     * }</pre>
+     *
+     * @return the topology event stream
+     */
+    public TopologyEventStream getTopologyEventStream() {
+        return topologyEventStream;
+    }
+
+    /**
+     * Set the density monitor for metrics API.
+     * <p>
+     * Enables the /api/density endpoint to return real-time density metrics.
+     *
+     * @param monitor the density monitor
+     */
+    public void setDensityMonitor(DensityMonitor monitor) {
+        this.densityMonitor = monitor;
     }
 
     /**
@@ -493,6 +554,37 @@ public class MultiBubbleVisualizationServer {
             "maxX", 100f,
             "maxY", 100f,
             "maxZ", 100f
+        );
+    }
+
+    /**
+     * Format density metrics for JSON response.
+     * <p>
+     * Returns metrics for all tracked bubbles with current density state,
+     * entity count, and density ratio.
+     *
+     * @return formatted density metrics
+     */
+    private Map<String, Object> formatDensityMetrics() {
+        var metrics = new ArrayList<Map<String, Object>>();
+
+        for (var bubble : bubbles) {
+            var bubbleId = bubble.id();
+            var state = densityMonitor.getState(bubbleId);
+            var entityCount = densityMonitor.getEntityCount(bubbleId);
+            var densityRatio = densityMonitor.getSplitRatio(bubbleId);
+
+            metrics.add(Map.of(
+                "bubbleId", bubbleId.toString(),
+                "entityCount", entityCount,
+                "state", state.name(),
+                "densityRatio", densityRatio
+            ));
+        }
+
+        return Map.of(
+            "density", metrics,
+            "timestamp", System.currentTimeMillis()
         );
     }
 }

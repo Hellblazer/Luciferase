@@ -16,6 +16,7 @@ import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.entity.EntityType;
+import com.hellblazer.luciferase.simulation.topology.metrics.DensityMonitor;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.api.Kronos;
 import com.hellblazer.primeMover.controllers.RealTimeController;
@@ -65,6 +66,9 @@ public class PredatorPreyGridWebDemo {
         var accountant = new EntityAccountant();
         var preyBehavior = new PreyBehavior();
         var predatorBehavior = new PackHuntingBehavior();
+
+        // Phase 2.5: Initialize density monitoring (topology operations require TetreeBubbleGrid)
+        var densityMonitor = new DensityMonitor(5000, 500); // Split at 5000 entities, merge at 500
 
         var entityVelocities = new ConcurrentHashMap<String, Vector3f>();
         var entityBehaviors = new ConcurrentHashMap<String, Object>();
@@ -127,6 +131,15 @@ public class PredatorPreyGridWebDemo {
         vizServer.setBubbleTypes(bubbleTypes);
         vizServer.setBubbleSpheres(bubbleSpheres);
 
+        // Wire up density monitoring (topology operations require TetreeBubbleGrid)
+        densityMonitor.addListener(vizServer.getTopologyEventStream());
+        vizServer.setDensityMonitor(densityMonitor);
+
+        log.info("Density monitoring enabled:");
+        log.info("  - WebSocket endpoint: ws://localhost:{}/ws/topology (density state changes)", port);
+        log.info("  - Density metrics API: http://localhost:{}/api/density", port);
+        log.info("Note: Full topology operations (split/merge/move) require TetreeBubbleGrid");
+
         vizServer.start();
 
         log.info("S0-S5 Forest Demo: http://localhost:{}/predator-prey-grid.html", port);
@@ -140,7 +153,8 @@ public class PredatorPreyGridWebDemo {
             preyBehavior,
             accountant,
             cubeForest,
-            vizServer
+            vizServer,
+            densityMonitor
         );
 
         Kairos.setController(controller);
@@ -160,6 +174,7 @@ public class PredatorPreyGridWebDemo {
     public static class SimulationEntity {
         private static final float DELTA_TIME = TICK_INTERVAL_NS / 1_000_000_000.0f;
         private static final int BOX_UPDATE_INTERVAL = 30; // Update boxes every 30 ticks (~1.5 seconds at 20 TPS)
+        private static final int DENSITY_UPDATE_INTERVAL = 100; // Update density every 100 ticks (~5 seconds at 20 TPS)
 
         private final List<EnhancedBubble> bubbles;
         private final Map<String, Vector3f> velocities;
@@ -168,6 +183,7 @@ public class PredatorPreyGridWebDemo {
         private final EntityAccountant accountant;
         private final CubeForest cubeForest;
         private final MultiBubbleVisualizationServer vizServer;
+        private final DensityMonitor densityMonitor;
 
         private int currentTick = 0;
 
@@ -178,7 +194,8 @@ public class PredatorPreyGridWebDemo {
             PreyBehavior preyBehavior,
             EntityAccountant accountant,
             CubeForest cubeForest,
-            MultiBubbleVisualizationServer vizServer
+            MultiBubbleVisualizationServer vizServer,
+            DensityMonitor densityMonitor
         ) {
             this.bubbles = bubbles;
             this.velocities = velocities;
@@ -187,6 +204,7 @@ public class PredatorPreyGridWebDemo {
             this.accountant = accountant;
             this.cubeForest = cubeForest;
             this.vizServer = vizServer;
+            this.densityMonitor = densityMonitor;
         }
 
         /**
@@ -205,6 +223,12 @@ public class PredatorPreyGridWebDemo {
             // When Phase 9 (dynamic topology) is implemented, this will periodically update
             // to show split/merge/boundary-shift operations
             // For now, tetrahedra and spheres remain fixed at their initial positions
+
+            // Update density metrics periodically
+            if (currentTick % DENSITY_UPDATE_INTERVAL == 0) {
+                var distribution = accountant.getDistribution();
+                densityMonitor.update(distribution);
+            }
 
             // Log progress every 100 ticks
             if (currentTick % 100 == 0) {

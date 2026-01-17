@@ -159,6 +159,116 @@
             box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
         }
 
+        #density-panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(20, 20, 40, 0.95);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(96, 165, 250, 0.3);
+            min-width: 320px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        #density-panel h3 {
+            font-size: 14px;
+            margin-bottom: 16px;
+            color: #60a5fa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .bubble-density {
+            background: rgba(40, 40, 60, 0.5);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-left: 4px solid #666;
+            transition: all 0.3s;
+        }
+
+        .bubble-density.normal {
+            border-left-color: #34d399;
+        }
+
+        .bubble-density.approaching-split {
+            border-left-color: #fbbf24;
+        }
+
+        .bubble-density.needs-split {
+            border-left-color: #ef4444;
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .bubble-density.approaching-merge {
+            border-left-color: #60a5fa;
+        }
+
+        .bubble-density.needs-merge {
+            border-left-color: #8b5cf6;
+            box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+        }
+
+        .bubble-id {
+            font-size: 11px;
+            color: #a0a0a0;
+            margin-bottom: 6px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .density-bar-container {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            height: 8px;
+            margin: 8px 0;
+            overflow: hidden;
+        }
+
+        .density-bar {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s, background 0.3s;
+            background: linear-gradient(90deg, #34d399 0%, #fbbf24 50%, #ef4444 100%);
+        }
+
+        .density-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+        }
+
+        .density-state {
+            color: #34d399;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+        }
+
+        .density-state.approaching-split {
+            color: #fbbf24;
+        }
+
+        .density-state.needs-split {
+            color: #ef4444;
+        }
+
+        .density-state.approaching-merge {
+            color: #60a5fa;
+        }
+
+        .density-state.needs-merge {
+            color: #8b5cf6;
+        }
+
+        .density-count {
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+        }
+
         .vision-banner {
             position: fixed;
             top: 50%;
@@ -330,6 +440,16 @@
         </div>
         <div class="legend-item" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);">
             <span style="font-size: 11px; color: #666;">Bubble boundaries show tetrahedral spatial subdivision</span>
+        </div>
+    </div>
+
+    <div id="density-panel">
+        <h3>Bubble Density Metrics</h3>
+        <div id="density-bubbles">
+            <!-- Density metrics will be populated via WebSocket -->
+            <div style="text-align: center; color: #666; padding: 20px 0; font-size: 12px;">
+                Waiting for density data...
+            </div>
         </div>
     </div>
 

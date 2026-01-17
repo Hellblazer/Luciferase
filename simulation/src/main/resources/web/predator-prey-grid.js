@@ -578,11 +578,13 @@ function updateBubbleBoundaries(bubbles) {
     bubbleSpheres.length = 0;
     bubbleSphereLabels.forEach(label => scene.remove(label));
     bubbleSphereLabels.length = 0;
+    bubbleBoundaryMap.clear();
 
     // Create new boundaries and spheres with labels
     bubbles.forEach((bubble, index) => {
         const boundary = createBubbleBoundary(bubble);
         bubbleBoundaries.push(boundary);
+        bubbleBoundaryMap.set(bubble.id, boundary); // Store mapping for state updates
 
         const sphere = createBubbleSphere(bubble, index);
         if (sphere) {
@@ -602,8 +604,13 @@ const wsHost = window.location.host;
 
 let entityWs = null;
 let bubbleWs = null;
+let topologyWs = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
+
+// Density metrics tracking
+let densityMetrics = new Map();
+let bubbleBoundaryMap = new Map(); // Maps bubble ID to boundary object
 
 function connectWebSockets() {
     // Entity stream
@@ -650,6 +657,23 @@ function connectWebSockets() {
     bubbleWs.onerror = (error) => {
         console.error('Bubble WebSocket error:', error);
     };
+
+    // Topology events stream
+    topologyWs = new WebSocket(`${wsProtocol}//${wsHost}/ws/topology`);
+
+    topologyWs.onopen = () => {
+        console.log('Topology WebSocket connected');
+        fetchDensityMetrics(); // Fetch initial density data
+    };
+
+    topologyWs.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleTopologyEvent(data);
+    };
+
+    topologyWs.onerror = (error) => {
+        console.error('Topology WebSocket error:', error);
+    };
 }
 
 function attemptReconnect() {
@@ -662,6 +686,128 @@ function attemptReconnect() {
         console.error('Max reconnection attempts reached');
         updateStatus(false);
     }
+}
+
+// ============================================================================
+// Topology Events & Density Metrics
+// ============================================================================
+
+function fetchDensityMetrics() {
+    fetch(`${window.location.protocol}//${window.location.host}/api/density`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.density) {
+                updateDensityPanel(data.density);
+            }
+        })
+        .catch(error => {
+            console.error('Failed to fetch density metrics:', error);
+        });
+
+    // Poll for updates every 5 seconds
+    setInterval(() => {
+        fetch(`${window.location.protocol}//${window.location.host}/api/density`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.density) {
+                    updateDensityPanel(data.density);
+                }
+            })
+            .catch(error => {
+                console.error('Failed to fetch density metrics:', error);
+            });
+    }, 5000);
+}
+
+function handleTopologyEvent(event) {
+    console.log('Topology event:', event);
+
+    switch (event.eventType) {
+        case 'split':
+            console.log(`Split: Bubble ${event.sourceBubbleId} → ${event.newBubbleId} (${event.entitiesMoved} entities)`);
+            // TODO: Trigger split animation
+            break;
+        case 'merge':
+            console.log(`Merge: Bubble ${event.sourceBubbleId} → ${event.targetBubbleId} (${event.entitiesMoved} entities)`);
+            // TODO: Trigger merge animation
+            break;
+        case 'move':
+            console.log(`Move: Bubble ${event.bubbleId} relocated`);
+            // TODO: Trigger move animation
+            break;
+        case 'density_state_change':
+            console.log(`Density state change: Bubble ${event.bubbleId} ${event.oldState} → ${event.newState}`);
+            // Update density metrics immediately
+            fetchDensityMetrics();
+            // TODO: Update bubble visual indicator
+            break;
+        case 'consensus_vote':
+            console.log(`Consensus vote: ${event.vote} on proposal ${event.proposalId} (${event.quorum}/${event.needed})`);
+            break;
+    }
+}
+
+function updateDensityPanel(metrics) {
+    const container = document.getElementById('density-bubbles');
+    container.innerHTML = '';
+
+    metrics.forEach(bubble => {
+        const stateClass = bubble.state.toLowerCase().replace('_', '-');
+        const densityPercent = Math.min(bubble.densityRatio * 100, 100);
+
+        const bubbleDiv = document.createElement('div');
+        bubbleDiv.className = `bubble-density ${stateClass}`;
+        bubbleDiv.innerHTML = `
+            <div class="bubble-id">Bubble ${bubble.bubbleId.substring(0, 8)}</div>
+            <div class="density-stats">
+                <span class="density-state ${stateClass}">${bubble.state.replace(/_/g, ' ')}</span>
+                <span class="density-count">${bubble.entityCount} entities</span>
+            </div>
+            <div class="density-bar-container">
+                <div class="density-bar" style="width: ${densityPercent}%"></div>
+            </div>
+        `;
+
+        container.appendChild(bubbleDiv);
+
+        // Store metrics for bubble visual updates
+        densityMetrics.set(bubble.bubbleId, bubble);
+
+        // Update bubble boundary color based on density state
+        updateBubbleBoundaryColor(bubble.bubbleId, bubble.state);
+    });
+}
+
+function updateBubbleBoundaryColor(bubbleId, densityState) {
+    const boundary = bubbleBoundaryMap.get(bubbleId);
+    if (!boundary) return;
+
+    // Color mapping for density states
+    const stateColors = {
+        'NORMAL': 0x34d399,           // Green
+        'APPROACHING_SPLIT': 0xfbbf24, // Yellow
+        'NEEDS_SPLIT': 0xef4444,       // Red (pulsing)
+        'APPROACHING_MERGE': 0x60a5fa, // Blue
+        'NEEDS_MERGE': 0x8b5cf6        // Purple (pulsing)
+    };
+
+    const color = stateColors[densityState] || 0x34d399;
+
+    // Update all line materials in the boundary group
+    boundary.traverse((child) => {
+        if (child.material && child.material.color) {
+            child.material.color.setHex(color);
+
+            // Add pulsing animation for critical states
+            if (densityState === 'NEEDS_SPLIT' || densityState === 'NEEDS_MERGE') {
+                child.userData.pulsePhase = child.userData.pulsePhase || 0;
+                child.userData.isPulsing = true;
+            } else {
+                child.userData.isPulsing = false;
+                child.material.opacity = child.userData.baseOpacity || 0.9;
+            }
+        }
+    });
 }
 
 // ============================================================================
@@ -1013,6 +1159,16 @@ function animate() {
     bubbleBoundaries.forEach(boundary => {
         if (boundary.userData && boundary.visible) {
             const phase = boundary.userData.phase;
+
+            // Apply density state pulsing animation
+            boundary.traverse((child) => {
+                if (child.userData && child.userData.isPulsing && child.material) {
+                    // Faster, more prominent pulsing for critical states
+                    child.userData.pulsePhase = (child.userData.pulsePhase || 0) + deltaTime * 0.003;
+                    const pulse = 0.5 + Math.sin(child.userData.pulsePhase * Math.PI * 2) * 0.4;
+                    child.material.opacity = (child.userData.baseOpacity || 0.9) * (0.6 + pulse * 0.4);
+                }
+            });
             const pulse = Math.sin(time * 0.5 + phase) * 0.5 + 0.5; // 0.0 to 1.0
 
             // Pulse the opacity for breathing effect

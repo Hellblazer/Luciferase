@@ -228,8 +228,8 @@ public class TopologyExecutor implements OperationTracker {
                     fireEvent(new MergeEvent(
                         UUID.randomUUID(),
                         System.currentTimeMillis(),
-                        merge.sourceBubbleId(),
-                        merge.targetBubbleId(),
+                        merge.bubble1(),
+                        merge.bubble2(),
                         entitiesMoved,
                         success
                     ));
@@ -245,7 +245,7 @@ public class TopologyExecutor implements OperationTracker {
                         rollback(snapshot, "Move failed: " + message);
                     }
                     // Fire move event (using current bubble centroid)
-                    var bubble = bubbleGrid.getBubble(move.bubbleKey());
+                    var bubble = bubbleGrid.getBubbleById(move.sourceBubble());
                     var centroid = bubble.bounds().centroid();
                     // Note: We don't have the old centroid, so using current for both (visualization will handle)
                     fireEvent(new MoveEvent(
