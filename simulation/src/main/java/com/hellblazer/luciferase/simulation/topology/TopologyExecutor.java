@@ -20,11 +20,13 @@ import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
+import com.hellblazer.luciferase.simulation.topology.events.*;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -79,6 +81,7 @@ public class TopologyExecutor implements OperationTracker {
     private final TetreeBubbleGrid bubbleGrid;
     private final TopologyMetrics metrics;
     private final Lock executionLock;
+    private final Set<TopologyEventListener> listeners = ConcurrentHashMap.newKeySet();
 
     // Thread-local operation history for tracking grid changes during execution
     // Using ThreadLocal since executionLock ensures single-threaded execution
@@ -110,6 +113,39 @@ public class TopologyExecutor implements OperationTracker {
      */
     public TopologyMetrics getMetrics() {
         return metrics;
+    }
+
+    /**
+     * Add a topology event listener.
+     *
+     * @param listener the listener to add
+     */
+    public void addListener(TopologyEventListener listener) {
+        listeners.add(listener);
+    }
+
+    /**
+     * Remove a topology event listener.
+     *
+     * @param listener the listener to remove
+     */
+    public void removeListener(TopologyEventListener listener) {
+        listeners.remove(listener);
+    }
+
+    /**
+     * Fire a topology event to all registered listeners.
+     *
+     * @param event the event to fire
+     */
+    private void fireEvent(TopologyEvent event) {
+        for (var listener : listeners) {
+            try {
+                listener.onTopologyEvent(event);
+            } catch (Exception e) {
+                log.warn("Topology event listener threw exception: {}", e.getMessage(), e);
+            }
+        }
     }
 
     @Override
@@ -166,6 +202,16 @@ public class TopologyExecutor implements OperationTracker {
                         metrics.recordSplitFailure();
                         rollback(snapshot, "Split failed: " + message);
                     }
+                    // Fire split event (calculate entities moved)
+                    int entitiesMoved = result.entitiesAfter() - result.entitiesBefore();
+                    fireEvent(new SplitEvent(
+                        UUID.randomUUID(),
+                        System.currentTimeMillis(),
+                        split.sourceBubble(),
+                        result.newBubbleId(),
+                        Math.abs(entitiesMoved),
+                        success
+                    ));
                 }
                 case MergeProposal merge -> {
                     var result = merger.execute(merge);
@@ -177,6 +223,16 @@ public class TopologyExecutor implements OperationTracker {
                         metrics.recordMergeFailure();
                         rollback(snapshot, "Merge failed: " + message);
                     }
+                    // Fire merge event (calculate entities moved)
+                    int entitiesMoved = Math.abs(result.entitiesAfter() - result.entitiesBefore());
+                    fireEvent(new MergeEvent(
+                        UUID.randomUUID(),
+                        System.currentTimeMillis(),
+                        merge.sourceBubbleId(),
+                        merge.targetBubbleId(),
+                        entitiesMoved,
+                        success
+                    ));
                 }
                 case MoveProposal move -> {
                     var result = mover.execute(move);
@@ -188,6 +244,18 @@ public class TopologyExecutor implements OperationTracker {
                         metrics.recordMoveFailure();
                         rollback(snapshot, "Move failed: " + message);
                     }
+                    // Fire move event (using current bubble centroid)
+                    var bubble = bubbleGrid.getBubble(move.bubbleKey());
+                    var centroid = bubble.bounds().centroid();
+                    // Note: We don't have the old centroid, so using current for both (visualization will handle)
+                    fireEvent(new MoveEvent(
+                        UUID.randomUUID(),
+                        System.currentTimeMillis(),
+                        bubble.id(),
+                        (float) centroid.getX(), (float) centroid.getY(), (float) centroid.getZ(),
+                        (float) centroid.getX(), (float) centroid.getY(), (float) centroid.getZ(),
+                        success
+                    ));
                 }
             }
 

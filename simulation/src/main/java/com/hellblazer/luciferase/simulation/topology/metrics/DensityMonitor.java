@@ -16,7 +16,13 @@
  */
 package com.hellblazer.luciferase.simulation.topology.metrics;
 
+import com.hellblazer.luciferase.simulation.topology.events.DensityStateChangeEvent;
+import com.hellblazer.luciferase.simulation.topology.events.TopologyEventListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -48,12 +54,15 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class DensityMonitor {
 
+    private static final Logger log = LoggerFactory.getLogger(DensityMonitor.class);
+
     private final int                                splitThreshold;
     private final int                                mergeThreshold;
     private final float                              approachingSplitThreshold; // 90% of split
     private final float                              approachingMergeThreshold; // 110% of merge
     private final ConcurrentHashMap<UUID, Integer>   entityCounts;
     private final ConcurrentHashMap<UUID, DensityState> states;
+    private final Set<TopologyEventListener>         listeners = ConcurrentHashMap.newKeySet();
 
     /**
      * Creates a density monitor with specified thresholds.
@@ -101,6 +110,39 @@ public class DensityMonitor {
     }
 
     /**
+     * Add a topology event listener.
+     *
+     * @param listener the listener to add
+     */
+    public void addListener(TopologyEventListener listener) {
+        listeners.add(listener);
+    }
+
+    /**
+     * Remove a topology event listener.
+     *
+     * @param listener the listener to remove
+     */
+    public void removeListener(TopologyEventListener listener) {
+        listeners.remove(listener);
+    }
+
+    /**
+     * Fire a density state change event to all registered listeners.
+     *
+     * @param event the event to fire
+     */
+    private void fireEvent(DensityStateChangeEvent event) {
+        for (var listener : listeners) {
+            try {
+                listener.onTopologyEvent(event);
+            } catch (Exception e) {
+                log.warn("Density event listener threw exception: {}", e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
      * Updates the state for a single bubble based on entity count.
      *
      * @param bubbleId    the bubble identifier
@@ -112,6 +154,17 @@ public class DensityMonitor {
 
         if (newState != currentState) {
             states.put(bubbleId, newState);
+            // Fire density state change event
+            var densityRatio = (float) entityCount / splitThreshold;
+            fireEvent(new DensityStateChangeEvent(
+                UUID.randomUUID(),
+                System.currentTimeMillis(),
+                bubbleId,
+                currentState,
+                newState,
+                entityCount,
+                densityRatio
+            ));
         }
     }
 
