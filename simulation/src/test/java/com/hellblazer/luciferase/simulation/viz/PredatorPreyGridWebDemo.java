@@ -332,12 +332,25 @@ public class PredatorPreyGridWebDemo {
 
                     try {
                         // Create split plane through bubble centroid
-                        var centroid = bubble.bounds().centroid();
-                        log.info("  Split plane: centroid=({},{},{})", centroid.getX(), centroid.getY(), centroid.getZ());
+                        // CRITICAL: bubble.bounds().centroid() returns MORTON SPACE coordinates
+                        // Must scale to WORLD SPACE (0-100) where entities actually exist
+                        var mortonCentroid = bubble.bounds().centroid();
+                        final float MORTON_MAX = 1 << 21;
+                        final float TETREE_SIZE = 100.0f;
+                        final float scale = TETREE_SIZE / MORTON_MAX;
+
+                        var worldCentroid = new Point3f(
+                            (float) mortonCentroid.getX() * scale,
+                            (float) mortonCentroid.getY() * scale,
+                            (float) mortonCentroid.getZ() * scale
+                        );
+
+                        log.info("  Morton centroid: ({},{},{})", mortonCentroid.getX(), mortonCentroid.getY(), mortonCentroid.getZ());
+                        log.info("  World centroid: ({},{},{})", worldCentroid.x, worldCentroid.y, worldCentroid.z);
 
                         var splitPlane = new SplitPlane(
                             new Point3f(1.0f, 0.0f, 0.0f),  // X-axis normal
-                            (float) centroid.getX()
+                            worldCentroid.x  // Use world space coordinate!
                         );
 
                         var splitProposal = new SplitProposal(
