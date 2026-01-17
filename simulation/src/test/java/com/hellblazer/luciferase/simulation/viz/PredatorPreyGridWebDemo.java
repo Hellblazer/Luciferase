@@ -433,8 +433,29 @@ public class PredatorPreyGridWebDemo {
                 newPosition.y = Math.max(0f, Math.min(TETREE_SIZE, newPosition.y));
                 newPosition.z = Math.max(0f, Math.min(TETREE_SIZE, newPosition.z));
 
-                // Update position in bubble (boundary crossing simplified for demo)
-                bubble.updateEntityPosition(entityId, newPosition);
+                // VON-STYLE BOUNDARY CROSSING: Check if entity crossed into different bubble's domain
+                var allBubbles = new ArrayList<>(bubbleGrid.getAllBubbles());
+                var owningBubble = findOwningBubble(bubbleGrid, allBubbles, newPosition);
+
+                if (owningBubble != null && !owningBubble.id().equals(bubble.id())) {
+                    // Entity crossed bubble boundary - migrate to new bubble
+                    var entityUUID = UUID.fromString(padToUUID(entityId));
+                    try {
+                        accountant.moveBetweenBubbles(bubble.id(), owningBubble.id(), entityUUID);
+                        bubble.removeEntity(entityId);
+                        owningBubble.addEntity(entityId, newPosition, bubble.getEntityType(entityId));
+                        log.debug("Entity {} migrated from bubble {} to bubble {}",
+                                 entityId, bubble.id(), owningBubble.id());
+                    } catch (Exception e) {
+                        log.warn("Failed to migrate entity {} between bubbles: {}", entityId, e.getMessage());
+                        // Keep entity in original bubble on migration failure
+                        bubble.updateEntityPosition(entityId, newPosition);
+                    }
+                } else {
+                    // Entity stayed in same bubble - just update position
+                    bubble.updateEntityPosition(entityId, newPosition);
+                }
+
                 velocities.put(entityId, newVelocity);
             }
         }
