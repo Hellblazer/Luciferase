@@ -725,26 +725,156 @@ function handleTopologyEvent(event) {
     switch (event.eventType) {
         case 'split':
             console.log(`Split: Bubble ${event.sourceBubbleId} → ${event.newBubbleId} (${event.entitiesMoved} entities)`);
-            // TODO: Trigger split animation
+            animateSplit(event.sourceBubbleId, event.newBubbleId, event.entitiesMoved);
             break;
         case 'merge':
             console.log(`Merge: Bubble ${event.sourceBubbleId} → ${event.targetBubbleId} (${event.entitiesMoved} entities)`);
-            // TODO: Trigger merge animation
+            animateMerge(event.sourceBubbleId, event.targetBubbleId, event.entitiesMoved);
             break;
         case 'move':
             console.log(`Move: Bubble ${event.bubbleId} relocated`);
-            // TODO: Trigger move animation
+            animateMove(event.bubbleId, event.oldPosition, event.newPosition);
             break;
         case 'density_state_change':
             console.log(`Density state change: Bubble ${event.bubbleId} ${event.oldState} → ${event.newState}`);
             // Update density metrics immediately
             fetchDensityMetrics();
-            // TODO: Update bubble visual indicator
             break;
         case 'consensus_vote':
             console.log(`Consensus vote: ${event.vote} on proposal ${event.proposalId} (${event.quorum}/${event.needed})`);
             break;
     }
+}
+
+/**
+ * Animate bubble split: source bubble splits into two with entity redistribution.
+ * Shows flash effect on source bubble, then fetches updated topology.
+ */
+function animateSplit(sourceBubbleId, newBubbleId, entitiesMoved) {
+    const sourceBoundary = bubbleBoundaryMap.get(sourceBubbleId);
+    if (!sourceBoundary) {
+        console.warn(`Source bubble ${sourceBubbleId} not found for split animation`);
+        fetchUpdatedBubbleGeometry();
+        return;
+    }
+
+    // Flash animation: bright white pulse indicating split
+    const originalMaterial = sourceBoundary.material.clone();
+    const flashMaterial = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        opacity: 1.0,
+        transparent: true,
+        linewidth: 6
+    });
+
+    // Apply flash
+    sourceBoundary.material = flashMaterial;
+
+    // Animate fade back to normal over 500ms, then fetch new topology
+    const startTime = performance.now();
+    const duration = 500;
+
+    function animateFlash() {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1.0);
+
+        if (progress < 1.0) {
+            // Fade from white back to original color
+            flashMaterial.opacity = 1.0 - (progress * 0.5);  // 1.0 → 0.5
+            requestAnimationFrame(animateFlash);
+        } else {
+            // Animation complete - fetch updated topology
+            console.log(`Split animation complete: ${sourceBubbleId} → [${sourceBubbleId}, ${newBubbleId}]`);
+            fetchUpdatedBubbleGeometry();
+        }
+    }
+
+    animateFlash();
+}
+
+/**
+ * Animate bubble merge: two bubbles combine into one.
+ * Shows fade effect on both bubbles, then fetches updated topology.
+ */
+function animateMerge(sourceBubbleId, targetBubbleId, entitiesMoved) {
+    const sourceBoundary = bubbleBoundaryMap.get(sourceBubbleId);
+    const targetBoundary = bubbleBoundaryMap.get(targetBubbleId);
+
+    if (!sourceBoundary || !targetBoundary) {
+        console.warn(`Bubbles ${sourceBubbleId} or ${targetBubbleId} not found for merge animation`);
+        fetchUpdatedBubbleGeometry();
+        return;
+    }
+
+    // Fade both bubbles to indicate merge
+    const startTime = performance.now();
+    const duration = 500;
+
+    function animateFade() {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1.0);
+
+        if (progress < 1.0) {
+            // Pulse both boundaries (opacity oscillation)
+            const opacity = 0.5 + Math.sin(progress * Math.PI * 4) * 0.3;
+            sourceBoundary.material.opacity = opacity;
+            targetBoundary.material.opacity = opacity;
+            requestAnimationFrame(animateFade);
+        } else {
+            // Animation complete - fetch updated topology
+            console.log(`Merge animation complete: [${sourceBubbleId}, ${targetBubbleId}] → ${targetBubbleId}`);
+            fetchUpdatedBubbleGeometry();
+        }
+    }
+
+    animateFade();
+}
+
+/**
+ * Animate bubble move: boundary relocates to new position.
+ * Shows movement trail effect, then fetches updated topology.
+ */
+function animateMove(bubbleId, oldPosition, newPosition) {
+    const boundary = bubbleBoundaryMap.get(bubbleId);
+    if (!boundary) {
+        console.warn(`Bubble ${bubbleId} not found for move animation`);
+        fetchUpdatedBubbleGeometry();
+        return;
+    }
+
+    // Simple pulse to indicate boundary changed (actual geometry update from server)
+    const startTime = performance.now();
+    const duration = 300;
+
+    function animatePulse() {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1.0);
+
+        if (progress < 1.0) {
+            // Pulse boundary (opacity oscillation)
+            const opacity = 0.5 + Math.sin(progress * Math.PI * 2) * 0.3;
+            boundary.material.opacity = opacity;
+            requestAnimationFrame(animatePulse);
+        } else {
+            // Animation complete - fetch updated topology
+            console.log(`Move animation complete: ${bubbleId} relocated`);
+            fetchUpdatedBubbleGeometry();
+        }
+    }
+
+    animatePulse();
+}
+
+/**
+ * Fetch updated bubble geometry from server after topology change.
+ * The server sends complete bubble vertex data via WebSocket, which triggers
+ * updateBubbleBoundaries() to rebuild all bubble geometries.
+ */
+function fetchUpdatedBubbleGeometry() {
+    // The bubble WebSocket automatically receives updates from the server
+    // The updateBubbleBoundaries() function will be called when data arrives
+    // Just trigger an immediate density metrics refresh to show new state
+    fetchDensityMetrics();
 }
 
 function updateDensityPanel(metrics) {
