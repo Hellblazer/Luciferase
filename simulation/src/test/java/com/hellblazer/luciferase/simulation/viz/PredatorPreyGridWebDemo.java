@@ -443,7 +443,7 @@ public class PredatorPreyGridWebDemo {
                     try {
                         accountant.moveBetweenBubbles(bubble.id(), owningBubble.id(), entityUUID);
                         bubble.removeEntity(entityId);
-                        owningBubble.addEntity(entityId, newPosition, bubble.getEntityType(entityId));
+                        owningBubble.addEntity(entityId, newPosition, entity.content());
                         log.debug("Entity {} migrated from bubble {} to bubble {}",
                                  entityId, bubble.id(), owningBubble.id());
                     } catch (Exception e) {
