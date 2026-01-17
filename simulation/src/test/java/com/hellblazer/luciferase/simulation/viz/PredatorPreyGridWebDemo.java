@@ -495,9 +495,10 @@ public class PredatorPreyGridWebDemo {
         var vertices = new HashMap<UUID, Point3f[]>();
         var bubblesWithKeys = grid.getBubblesWithKeys();
 
+        // CRITICAL: Use Tetree size (100), not WORLD.max() (200)
         final float MORTON_MAX = 1 << 21;
-        final float WORLD_SIZE = WORLD.max() - WORLD.min();
-        final float scale = WORLD_SIZE / MORTON_MAX;
+        final float TETREE_SIZE = 100.0f;  // Hardcoded in TetreeBubbleGrid line 69
+        final float scale = TETREE_SIZE / MORTON_MAX;
 
         log.info("extractBubbleVertices: Processing {} bubbles (S0-S5 non-overlapping partition)", bubbles.size());
 
@@ -510,12 +511,12 @@ public class PredatorPreyGridWebDemo {
                         var tet = tetreeKey.toTet();
                         var coords = tet.coordinates();
 
-                        // Convert Morton space coordinates to world space
+                        // Convert Morton space coordinates to world space (0-100 range)
                         var bubbleVertices = new Point3f[4];
                         for (int i = 0; i < 4; i++) {
-                            float x = coords[i].x * scale + WORLD.min();
-                            float y = coords[i].y * scale + WORLD.min();
-                            float z = coords[i].z * scale + WORLD.min();
+                            float x = coords[i].x * scale;
+                            float y = coords[i].y * scale;
+                            float z = coords[i].z * scale;
                             bubbleVertices[i] = new Point3f(x, y, z);
                         }
 
@@ -567,9 +568,10 @@ public class PredatorPreyGridWebDemo {
         var spheres = new HashMap<UUID, Map<String, Object>>();
         var bubblesWithKeys = grid.getBubblesWithKeys();
 
+        // CRITICAL: Use Tetree size (100), not WORLD.max() (200)
         final float MORTON_MAX = 1 << 21;
-        final float WORLD_SIZE = WORLD.max() - WORLD.min();
-        final float scale = WORLD_SIZE / MORTON_MAX;
+        final float TETREE_SIZE = 100.0f;  // Hardcoded in TetreeBubbleGrid line 69
+        final float scale = TETREE_SIZE / MORTON_MAX;
 
         log.info("extractBubbleSpheres: Computing domain centers for {} bubbles (S0-S5 partition)", bubbles.size());
 
@@ -582,16 +584,16 @@ public class PredatorPreyGridWebDemo {
                     var tet = tetreeKey.toTet();
                     var coords = tet.coordinates();
 
-                    // Calculate tetrahedron centroid: (v0+v1+v2+v3)/4
+                    // Calculate tetrahedron centroid: (v0+v1+v2+v3)/4 in world space (0-100 range)
                     float cx = 0, cy = 0, cz = 0;
                     for (int i = 0; i < 4; i++) {
                         cx += coords[i].x;
                         cy += coords[i].y;
                         cz += coords[i].z;
                     }
-                    cx = (cx / 4.0f) * scale + WORLD.min();
-                    cy = (cy / 4.0f) * scale + WORLD.min();
-                    cz = (cz / 4.0f) * scale + WORLD.min();
+                    cx = (cx / 4.0f) * scale;
+                    cy = (cy / 4.0f) * scale;
+                    cz = (cz / 4.0f) * scale;
 
                     // Calculate inscribed sphere radius (avg edge length / 4)
                     float edgeSum = 0;
