@@ -115,7 +115,7 @@ public class PredatorPreyGridWebDemo {
 
             for (int i = 0; i < preyForThisBubble; i++) {
                 var entityId = "prey-" + preyDistributed++;
-                var position = randomPosition();
+                var position = randomPositionInBubble(bubbleGrid, bubble);
                 var velocity = randomVelocity(preyBehavior.getMaxSpeed());
 
                 bubble.addEntity(entityId, position, EntityType.PREY);
@@ -136,7 +136,7 @@ public class PredatorPreyGridWebDemo {
 
             for (int i = 0; i < predatorsForThisBubble; i++) {
                 var entityId = "predator-" + predatorDistributed++;
-                var position = randomPosition();
+                var position = randomPositionInBubble(bubbleGrid, bubble);
                 var velocity = randomVelocity(predatorBehavior.getMaxSpeed());
 
                 bubble.addEntity(entityId, position, EntityType.PREDATOR);
