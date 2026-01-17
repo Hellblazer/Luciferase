@@ -118,12 +118,6 @@ public class PredatorPreyGridWebDemo {
                 var position = randomPositionInBubble(bubbleGrid, bubble);
                 var velocity = randomVelocity(preyBehavior.getMaxSpeed());
 
-                // DEBUG: Log first few entity positions
-                if (preyDistributed <= 5) {
-                    log.info("Spawned {} at position ({}, {}, {}) in bubble {}",
-                            entityId, position.x, position.y, position.z, bubble.id());
-                }
-
                 bubble.addEntity(entityId, position, EntityType.PREY);
                 accountant.register(bubble.id(), UUID.fromString(padToUUID(entityId)));
                 entityVelocities.put(entityId, velocity);
@@ -432,34 +426,40 @@ public class PredatorPreyGridWebDemo {
                     position.z + newVelocity.z * DELTA_TIME
                 );
 
-                // Clamp to Tetree bounds (0-100, matching bubble boundaries)
-                // CRITICAL: Use Tetree size (100), not WORLD.max() (200)
-                final float TETREE_SIZE = 100.0f;
-                newPosition.x = Math.max(0f, Math.min(TETREE_SIZE, newPosition.x));
-                newPosition.y = Math.max(0f, Math.min(TETREE_SIZE, newPosition.y));
-                newPosition.z = Math.max(0f, Math.min(TETREE_SIZE, newPosition.z));
-
-                // VON-STYLE BOUNDARY CROSSING: Check if entity crossed into different bubble's domain
+                // VON-STYLE BOUNDARY CROSSING: Check which bubble's tetrahedral domain contains the new position
                 var allBubbles = new ArrayList<>(bubbleGrid.getAllBubbles());
                 var owningBubble = findOwningBubble(bubbleGrid, allBubbles, newPosition);
 
-                if (owningBubble != null && !owningBubble.id().equals(bubble.id())) {
-                    // Entity crossed bubble boundary - migrate to new bubble
-                    var entityUUID = UUID.fromString(padToUUID(entityId));
-                    try {
-                        accountant.moveBetweenBubbles(bubble.id(), owningBubble.id(), entityUUID);
-                        bubble.removeEntity(entityId);
-                        owningBubble.addEntity(entityId, newPosition, entity.content());
-                        log.debug("Entity {} migrated from bubble {} to bubble {}",
-                                 entityId, bubble.id(), owningBubble.id());
-                    } catch (Exception e) {
-                        log.warn("Failed to migrate entity {} between bubbles: {}", entityId, e.getMessage());
-                        // Keep entity in original bubble on migration failure
+                if (owningBubble != null) {
+                    // Position is inside a tetrahedral domain
+                    if (!owningBubble.id().equals(bubble.id())) {
+                        // Entity crossed bubble boundary - migrate to new bubble
+                        var entityUUID = UUID.fromString(padToUUID(entityId));
+                        try {
+                            accountant.moveBetweenBubbles(bubble.id(), owningBubble.id(), entityUUID);
+                            bubble.removeEntity(entityId);
+                            owningBubble.addEntity(entityId, newPosition, entity.content());
+                            log.debug("Entity {} migrated from bubble {} to bubble {}",
+                                     entityId, bubble.id(), owningBubble.id());
+                        } catch (Exception e) {
+                            log.warn("Failed to migrate entity {} between bubbles: {}", entityId, e.getMessage());
+                            // Keep entity in original bubble on migration failure
+                            bubble.updateEntityPosition(entityId, newPosition);
+                        }
+                    } else {
+                        // Entity stayed in same bubble - update position
                         bubble.updateEntityPosition(entityId, newPosition);
                     }
                 } else {
-                    // Entity stayed in same bubble - just update position
-                    bubble.updateEntityPosition(entityId, newPosition);
+                    // Position is OUTSIDE all tetrahedral domains - reflect back into current bubble
+                    // This handles entities that escape through gaps or numerical errors
+                    log.debug("Entity {} escaped all tetrahedra at ({},{},{}), keeping in bubble {}",
+                             entityId, newPosition.x, newPosition.y, newPosition.z, bubble.id());
+                    // Use old position (stay at boundary)
+                    bubble.updateEntityPosition(entityId, position);
+                    // Reverse velocity to bounce back
+                    velocities.put(entityId, new Vector3f(-newVelocity.x, -newVelocity.y, -newVelocity.z));
+                    continue; // Skip velocity update below
                 }
 
                 velocities.put(entityId, newVelocity);
