@@ -330,27 +330,36 @@ public class PredatorPreyGridWebDemo {
                     log.info("EXECUTING SPLIT: Bubble {} has {} entities (>250 threshold) - state: {}",
                              bubble.id(), count, state);
 
-                    // Create split plane through bubble centroid
-                    var centroid = bubble.bounds().centroid();
-                    var splitPlane = new SplitPlane(
-                        new Point3f(1.0f, 0.0f, 0.0f),  // X-axis normal
-                        (float) centroid.getX()
-                    );
+                    try {
+                        // Create split plane through bubble centroid
+                        var centroid = bubble.bounds().centroid();
+                        log.info("  Split plane: centroid=({},{},{})", centroid.getX(), centroid.getY(), centroid.getZ());
 
-                    var splitProposal = new SplitProposal(
-                        UUID.randomUUID(),
-                        bubble.id(),
-                        splitPlane,
-                        DigestAlgorithm.DEFAULT.getOrigin(),
-                        System.currentTimeMillis()
-                    );
+                        var splitPlane = new SplitPlane(
+                            new Point3f(1.0f, 0.0f, 0.0f),  // X-axis normal
+                            (float) centroid.getX()
+                        );
 
-                    var result = executor.execute(splitProposal);
-                    if (result.success()) {
-                        log.info("Split successful: {}", result.message());
-                        updateVisualizationGeometries();
-                    } else {
-                        log.warn("Split failed: {}", result.message());
+                        var splitProposal = new SplitProposal(
+                            UUID.randomUUID(),
+                            bubble.id(),
+                            splitPlane,
+                            DigestAlgorithm.DEFAULT.getOrigin(),
+                            System.currentTimeMillis()
+                        );
+
+                        log.info("  Calling executor.execute()...");
+                        var result = executor.execute(splitProposal);
+                        log.info("  Executor returned: success={}, message={}", result.success(), result.message());
+
+                        if (result.success()) {
+                            log.info("Split successful: {}", result.message());
+                            updateVisualizationGeometries();
+                        } else {
+                            log.warn("Split failed: {}", result.message());
+                        }
+                    } catch (Exception e) {
+                        log.error("Exception during split execution: {}", e.getMessage(), e);
                     }
                 }
             }
