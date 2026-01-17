@@ -129,13 +129,50 @@ public class BubbleSplitter {
         log.debug("Split plane partitions {} entities to new bubble (out of {})",
                  entitiesToMove.size(), allRecords.size());
 
+        if (entitiesToMove.isEmpty()) {
+            return new SplitExecutionResult(false, "No entities to move based on split plane", null, entitiesBeforeSplit, entitiesBeforeSplit);
+        }
+
         // Create new child bubble
-        // Inherit spatial level and target frame time from parent bubble
+        // Child bubble should be one level deeper in the tetree hierarchy
         UUID newBubbleId = UUID.randomUUID();
-        byte spatialLevel = sourceBubble.getSpatialLevel();
+        byte parentLevel = sourceBubble.getSpatialLevel();
+        byte childLevel = (byte) Math.min(parentLevel + 1, 21);  // Cap at max tetree level
         long targetFrameMs = sourceBubble.getTargetFrameMs();
 
-        var newBubble = new EnhancedBubble(newBubbleId, spatialLevel, targetFrameMs);
+        // IMPORTANT: Compute target key BEFORE moving entities to detect collisions early
+        var positions = entitiesToMove.stream()
+                                      .map(EnhancedBubble.EntityRecord::position)
+                                      .toList();
+        float cx = (float) positions.stream().mapToDouble(p -> p.x).average().orElseThrow();
+        float cy = (float) positions.stream().mapToDouble(p -> p.y).average().orElseThrow();
+        float cz = (float) positions.stream().mapToDouble(p -> p.z).average().orElseThrow();
+
+        // Locate tetrahedron containing centroid at CHILD LEVEL
+        var tet = com.hellblazer.luciferase.lucien.tetree.Tet.locatePointBeyRefinementFromRoot(cx, cy, cz, childLevel);
+        if (tet == null) {
+            log.error("[{}] Failed to locate tetrahedron for centroid ({},{},{}) at level {}",
+                     correlationId, cx, cy, cz, childLevel);
+            return new SplitExecutionResult(false,
+                                           "Failed to locate tetrahedron for child bubble centroid",
+                                           null, entitiesBeforeSplit, entitiesBeforeSplit);
+        }
+
+        var targetKey = tet.tmIndex();
+
+        // Check for key collision BEFORE moving any entities
+        if (bubbleGrid.containsBubble(targetKey)) {
+            log.warn("[{}] Bubble already exists at key {} - split would cause collision, aborting",
+                    correlationId, targetKey);
+            return new SplitExecutionResult(false,
+                                           "Bubble already exists at target key: " + targetKey,
+                                           null, entitiesBeforeSplit, entitiesBeforeSplit);
+        }
+
+        log.debug("[{}] Target key {} is available for new bubble at level {}",
+                 correlationId, targetKey, childLevel);
+
+        var newBubble = new EnhancedBubble(newBubbleId, childLevel, targetFrameMs);
 
         // Move entities to new bubble atomically
         int entitiesMoved = 0;
@@ -186,17 +223,12 @@ public class BubbleSplitter {
                                            newBubbleId, entitiesBeforeSplit, entitiesAfterSplit);
         }
 
-        // Add new bubble to grid with computed TetreeKey from entity positions
-        var newBubbleRecords = newBubble.getAllEntityRecords();
-        if (!newBubbleRecords.isEmpty()) {
-            var positions = newBubbleRecords.stream()
-                                           .map(EnhancedBubble.EntityRecord::position)
-                                           .toList();
-            var bounds = com.hellblazer.luciferase.simulation.bubble.BubbleBounds.fromEntityPositions(positions);
-            var key = bounds.rootKey();
-            bubbleGrid.addBubble(newBubble, key);
+        // Add new bubble to grid using pre-computed targetKey (collision already checked)
+        if (entitiesMoved > 0) {
+            bubbleGrid.addBubble(newBubble, targetKey);
             operationTracker.recordBubbleAdded(newBubbleId);
-            log.debug("Added new bubble {} to grid at key {}", newBubbleId, key);
+            log.debug("[{}] Added new bubble {} to grid at level {} key {}",
+                     correlationId, newBubbleId, childLevel, targetKey);
         } else {
             log.warn("New bubble {} has no entities, not adding to grid", newBubbleId);
         }

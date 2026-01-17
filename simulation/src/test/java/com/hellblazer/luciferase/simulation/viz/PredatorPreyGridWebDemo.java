@@ -434,6 +434,11 @@ public class PredatorPreyGridWebDemo {
             vizServer.setBubbleVertices(newBubbleVertices);
             vizServer.setBubbleTypes(newBubbleTypes);
             vizServer.setBubbleSpheres(newBubbleSpheres);
+
+            // CRITICAL: Update bubble list so JavaScript knows about new/removed bubbles
+            var updatedBubbles = new ArrayList<>(bubbleGrid.getAllBubbles());
+            vizServer.setBubbles(updatedBubbles);
+            log.info("Updated visualization: {} bubbles now active", updatedBubbles.size());
         }
 
         private void updateBubbleEntities(EnhancedBubble bubble) {
