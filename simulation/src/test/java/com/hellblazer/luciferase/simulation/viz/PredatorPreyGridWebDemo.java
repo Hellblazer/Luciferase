@@ -311,6 +311,16 @@ public class PredatorPreyGridWebDemo {
             var distribution = accountant.getDistribution();
             var bubbles = new ArrayList<>(bubbleGrid.getAllBubbles());
 
+            // Log current densities every 10 ticks for debugging
+            if (currentTick % 10 == 0) {
+                log.info("=== Density Check (tick {}) ===", currentTick);
+                for (var bubble : bubbles) {
+                    var count = distribution.getOrDefault(bubble.id(), 0);
+                    var state = densityMonitor.getState(bubble.id());
+                    log.info("  Bubble {}: {} entities, state={}", bubble.id(), count, state);
+                }
+            }
+
             // Check each bubble for split candidates
             for (var bubble : bubbles) {
                 var count = distribution.getOrDefault(bubble.id(), 0);
@@ -426,9 +436,23 @@ public class PredatorPreyGridWebDemo {
                     position.z + newVelocity.z * DELTA_TIME
                 );
 
-                // VON-STYLE BOUNDARY CROSSING: Check which bubble's tetrahedral domain contains the new position
-                var allBubbles = new ArrayList<>(bubbleGrid.getAllBubbles());
-                var owningBubble = findOwningBubble(bubbleGrid, allBubbles, newPosition);
+                // PERFORMANCE: Only check containment if entity moved significantly
+                // This avoids 60,000 containment tests/sec (1000 entities × 60 fps)
+                float distanceMoved = (float) Math.sqrt(
+                    (newPosition.x - position.x) * (newPosition.x - position.x) +
+                    (newPosition.y - position.y) * (newPosition.y - position.y) +
+                    (newPosition.z - position.z) * (newPosition.z - position.z)
+                );
+
+                EnhancedBubble owningBubble = null;
+                if (distanceMoved > 0.1f) {  // Only check if moved more than 0.1 units
+                    // VON-STYLE BOUNDARY CROSSING: Check which bubble's tetrahedral domain contains the new position
+                    var allBubbles = new ArrayList<>(bubbleGrid.getAllBubbles());
+                    owningBubble = findOwningBubble(bubbleGrid, allBubbles, newPosition);
+                } else {
+                    // Entity barely moved - assume it's still in same bubble
+                    owningBubble = bubble;
+                }
 
                 if (owningBubble != null) {
                     // Position is inside a tetrahedral domain
