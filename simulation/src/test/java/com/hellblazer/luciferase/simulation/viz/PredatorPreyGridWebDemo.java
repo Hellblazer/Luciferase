@@ -114,14 +114,16 @@ public class PredatorPreyGridWebDemo {
             );
 
             for (int i = 0; i < preyForThisBubble; i++) {
-                var entityId = "prey-" + preyDistributed++;
+                // Use actual UUID as entity ID (required by BubbleSplitter/Merger)
+                var entityId = UUID.randomUUID().toString();
                 var position = randomPositionInBubble(bubbleGrid, bubble);
                 var velocity = randomVelocity(preyBehavior.getMaxSpeed());
 
                 bubble.addEntity(entityId, position, EntityType.PREY);
-                accountant.register(bubble.id(), UUID.fromString(padToUUID(entityId)));
+                accountant.register(bubble.id(), UUID.fromString(entityId));
                 entityVelocities.put(entityId, velocity);
                 entityBehaviors.put(entityId, preyBehavior);
+                preyDistributed++;
             }
         }
 
@@ -135,14 +137,16 @@ public class PredatorPreyGridWebDemo {
             );
 
             for (int i = 0; i < predatorsForThisBubble; i++) {
-                var entityId = "predator-" + predatorDistributed++;
+                // Use actual UUID as entity ID (required by BubbleSplitter/Merger)
+                var entityId = UUID.randomUUID().toString();
                 var position = randomPositionInBubble(bubbleGrid, bubble);
                 var velocity = randomVelocity(predatorBehavior.getMaxSpeed());
 
                 bubble.addEntity(entityId, position, EntityType.PREDATOR);
-                accountant.register(bubble.id(), UUID.fromString(padToUUID(entityId)));
+                accountant.register(bubble.id(), UUID.fromString(entityId));
                 entityVelocities.put(entityId, velocity);
                 entityBehaviors.put(entityId, predatorBehavior);
+                predatorDistributed++;
             }
         }
 
@@ -480,9 +484,9 @@ public class PredatorPreyGridWebDemo {
                     // Position is inside a tetrahedral domain
                     if (!owningBubble.id().equals(bubble.id())) {
                         // Entity crossed bubble boundary - migrate to new bubble
-                        var entityUUID = UUID.fromString(padToUUID(entityId));
+                        var entityUUID = UUID.fromString(entityId);
                         try {
-                            accountant.moveBetweenBubbles(bubble.id(), owningBubble.id(), entityUUID);
+                            accountant.moveBetweenBubbles(entityUUID, bubble.id(), owningBubble.id());
                             bubble.removeEntity(entityId);
                             owningBubble.addEntity(entityId, newPosition, entity.content());
                             log.debug("Entity {} migrated from bubble {} to bubble {}",
@@ -532,12 +536,6 @@ public class PredatorPreyGridWebDemo {
             speed * (float) (Math.sin(phi) * Math.sin(theta)),
             speed * (float) Math.cos(phi)
         );
-    }
-
-    private static String padToUUID(String id) {
-        String hash = String.format("%032x", id.hashCode() & 0xFFFFFFFFL);
-        return hash.substring(0, 8) + "-" + hash.substring(8, 12) + "-" +
-               hash.substring(12, 16) + "-" + hash.substring(16, 20) + "-" + hash.substring(20, 32);
     }
 
     // Wrapper methods for TetreeBubbleGrid extraction
