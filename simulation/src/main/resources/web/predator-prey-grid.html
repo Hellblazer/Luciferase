@@ -203,10 +203,76 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+
+        /* Recording button styles */
+        #btn-record {
+            background: #ef4444;
+        }
+
+        #btn-record:hover {
+            background: #dc2626;
+        }
+
+        #btn-record-window {
+            background: #f97316;
+        }
+
+        #btn-record-window:hover {
+            background: #ea580c;
+        }
+
+        #btn-stop-record {
+            display: none;
+            background: #dc2626;
+            animation: pulse 1.5s infinite;
+        }
+
+        #btn-stop-record:hover {
+            background: #b91c1c;
+        }
+
+        #btn-stop-record-window {
+            display: none;
+            background: #ea580c;
+            animation: pulse 1.5s infinite;
+        }
+
+        #btn-stop-record-window:hover {
+            background: #c2410c;
+        }
+
+        #recording-status {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(220, 38, 38, 0.95);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 16px rgba(220, 38, 38, 0.4);
+            z-index: 1001;
+        }
+
+        #recording-status::before {
+            content: '●';
+            display: inline-block;
+            margin-right: 8px;
+            animation: pulse 1.5s infinite;
+        }
     </style>
 </head>
 <body>
     <div id="canvas-container"></div>
+
+    <!-- Recording status indicator -->
+    <div id="recording-status">
+        REC <span id="recording-time">00:00</span>
+    </div>
 
     <div class="vision-banner" id="vision-banner">
         <h1>Grand Vision Demo</h1>
@@ -246,6 +312,10 @@
         <button id="btn-reset-camera">Reset Camera</button>
         <button id="btn-toggle-bubbles">Toggle Bubbles</button>
         <button id="btn-toggle-grid">Toggle Grid</button>
+        <button id="btn-record">🔴 Record Canvas</button>
+        <button id="btn-stop-record">⏹ Stop</button>
+        <button id="btn-record-window">🎬 Record Window</button>
+        <button id="btn-stop-record-window">⏹ Stop</button>
     </div>
 
     <div class="legend">

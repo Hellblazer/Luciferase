@@ -10,6 +10,7 @@ package com.hellblazer.luciferase.simulation.viz;
 
 import com.hellblazer.luciferase.simulation.behavior.PackHuntingBehavior;
 import com.hellblazer.luciferase.simulation.behavior.PreyBehavior;
+import com.hellblazer.luciferase.simulation.bubble.CubeForest;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
@@ -56,19 +57,11 @@ public class PredatorPreyGridWebDemo {
     void runWebDemo() throws Exception {
         var port = 7081;
 
-        log.info("=== Grand Vision: Pack Hunting Predator-Prey Grid (Web Demo) ===");
-        log.info("Vision: 2x2x2 tetree grid, 900 prey + 100 pack-hunting predators");
-        log.info("Using PrimeMover discrete event simulation (NOT thread loops!)");
-
-        // Phase 1: Initialize 2x2x2 tetree grid
-        log.info("Phase 1: Initialize 2x2x2 Tetree Grid");
-        var bubbleGrid = new TetreeBubbleGrid((byte) 2);
-        bubbleGrid.createBubbles(8, (byte) 2, 10);
-        var bubbles = bubbleGrid.getAllBubbles().stream().toList();
-        log.info("Created {} tetrahedral bubbles", bubbles.size());
+        // Phase 1: Initialize S0-S5 cube decomposition forest
+        var cubeForest = new CubeForest(WORLD.min(), WORLD.max(), (byte) 10, 10);
+        var bubbles = new ArrayList<>(cubeForest.getAllBubbles());
 
         // Phase 2: Spawn entities
-        log.info("Phase 2: Spawn Entities");
         var accountant = new EntityAccountant();
         var preyBehavior = new PreyBehavior();
         var predatorBehavior = new PackHuntingBehavior();
@@ -76,56 +69,69 @@ public class PredatorPreyGridWebDemo {
         var entityVelocities = new ConcurrentHashMap<String, Vector3f>();
         var entityBehaviors = new ConcurrentHashMap<String, Object>();
 
-        // Spawn prey
-        log.info("Spawning {} prey entities...", PREY_COUNT);
+        // VON ENTITY SPAWNING: Spatially route entities to correct bubble domains
         for (int i = 0; i < PREY_COUNT; i++) {
-            var bubble = bubbles.get(RANDOM.nextInt(bubbles.size()));
+            var bubble = bubbles.get(i % bubbles.size()); // Distribute evenly across bubbles
             var entityId = "prey-" + i;
+
+            // VON JOIN: Generate random position in world, classify to find accepting bubble
+            // This follows VON principles: entity position determines which bubble accepts it
             var position = randomPosition();
+            // Verify position is in correct bubble domain
+            var acceptingBubble = cubeForest.getBubbleForPosition(position);
+            if (!acceptingBubble.id().equals(bubble.id())) {
+                // Reassign to correct bubble
+                bubble = acceptingBubble;
+            }
             var velocity = randomVelocity(preyBehavior.getMaxSpeed());
 
+            // Add entity to the accepting bubble (the one whose domain contains the position)
             bubble.addEntity(entityId, position, EntityType.PREY);
             accountant.register(bubble.id(), UUID.fromString(padToUUID(entityId)));
             entityVelocities.put(entityId, velocity);
             entityBehaviors.put(entityId, preyBehavior);
         }
 
-        // Spawn predators
-        log.info("Spawning {} predator entities...", PREDATOR_COUNT);
+        // VON ENTITY SPAWNING: Spatially route predators to correct bubble domains
         for (int i = 0; i < PREDATOR_COUNT; i++) {
-            var bubble = bubbles.get(RANDOM.nextInt(bubbles.size()));
+            var bubble = bubbles.get(i % bubbles.size()); // Distribute evenly across bubbles
             var entityId = "predator-" + i;
+
+            // VON JOIN: Generate random position in world, classify to find accepting bubble
+            // This follows VON principles: entity position determines which bubble accepts it
             var position = randomPosition();
+            // Verify position is in correct bubble domain
+            var acceptingBubble = cubeForest.getBubbleForPosition(position);
+            if (!acceptingBubble.id().equals(bubble.id())) {
+                // Reassign to correct bubble
+                bubble = acceptingBubble;
+            }
             var velocity = randomVelocity(predatorBehavior.getMaxSpeed());
 
+            // Add entity to the accepting bubble (the one whose domain contains the position)
             bubble.addEntity(entityId, position, EntityType.PREDATOR);
             accountant.register(bubble.id(), UUID.fromString(padToUUID(entityId)));
             entityVelocities.put(entityId, velocity);
             entityBehaviors.put(entityId, predatorBehavior);
         }
 
-        log.info("Spawned {} total entities", TOTAL_ENTITIES);
-
         // Phase 3: Start visualization server
-        log.info("Phase 3: Start Visualization Server");
         var vizServer = new MultiBubbleVisualizationServer(port);
         vizServer.setBubbles(bubbles);
 
-        // Extract RDGCS bounding boxes, types, and inscribed spheres for proper visualization
-        var bubbleVertices = extractBubbleVertices(bubbleGrid, bubbles);
-        var bubbleTypes = extractBubbleTypes(bubbleGrid, bubbles);
-        var bubbleSpheres = extractBubbleSpheres(bubbleGrid, bubbles);
+        // Extract S0-S5 tetrahedral geometries for visualization
+        var bubbleVertices = extractS0S5Vertices(cubeForest);
+        var bubbleTypes = extractS0S5Types(cubeForest);
+        var bubbleSpheres = extractS0S5Spheres(cubeForest);
         vizServer.setBubbleVertices(bubbleVertices);
         vizServer.setBubbleTypes(bubbleTypes);
         vizServer.setBubbleSpheres(bubbleSpheres);
 
         vizServer.start();
 
-        log.info("Visualization server running on http://localhost:{}", port);
-        log.info("Open http://localhost:{}/predator-prey-grid.html to view", port);
+        log.info("S0-S5 Forest Demo: http://localhost:{}/predator-prey-grid.html", port);
 
         // Phase 4: Start PrimeMover simulation
-        log.info("Phase 4: Start PrimeMover Simulation");
         var controller = new RealTimeController("PredatorPreyGridWebDemo");
         var entity = new SimulationEntity(
             bubbles,
@@ -133,17 +139,13 @@ public class PredatorPreyGridWebDemo {
             entityBehaviors,
             preyBehavior,
             accountant,
-            bubbleGrid,
+            cubeForest,
             vizServer
         );
 
         Kairos.setController(controller);
         controller.start();
         entity.simulationTick();
-
-        log.info("Simulation running at 20 TPS (50ms ticks)");
-        log.info("Web visualization: http://localhost:{}/predator-prey-grid.html", port);
-        log.info("Press Ctrl+C to stop (or test will run indefinitely)");
 
         // Keep server and simulation running
         // In a real test, you'd add a completion condition
@@ -164,7 +166,7 @@ public class PredatorPreyGridWebDemo {
         private final Map<String, Object> behaviors;
         private final PreyBehavior preyBehavior;
         private final EntityAccountant accountant;
-        private final TetreeBubbleGrid bubbleGrid;
+        private final CubeForest cubeForest;
         private final MultiBubbleVisualizationServer vizServer;
 
         private int currentTick = 0;
@@ -175,7 +177,7 @@ public class PredatorPreyGridWebDemo {
             Map<String, Object> behaviors,
             PreyBehavior preyBehavior,
             EntityAccountant accountant,
-            TetreeBubbleGrid bubbleGrid,
+            CubeForest cubeForest,
             MultiBubbleVisualizationServer vizServer
         ) {
             this.bubbles = bubbles;
@@ -183,7 +185,7 @@ public class PredatorPreyGridWebDemo {
             this.behaviors = behaviors;
             this.preyBehavior = preyBehavior;
             this.accountant = accountant;
-            this.bubbleGrid = bubbleGrid;
+            this.cubeForest = cubeForest;
             this.vizServer = vizServer;
         }
 
@@ -199,11 +201,10 @@ public class PredatorPreyGridWebDemo {
                 updateBubbleEntities(bubble);
             }
 
-            // Update bounding boxes periodically (every 30 ticks ~= 1.5 seconds)
-            if (currentTick % BOX_UPDATE_INTERVAL == 0) {
-                var bubbleVertices = extractBubbleVertices(bubbleGrid, bubbles);
-                vizServer.setBubbleVertices(bubbleVertices);
-            }
+            // NOTE: Spatial domains (tetrahedra) are currently STATIC
+            // When Phase 9 (dynamic topology) is implemented, this will periodically update
+            // to show split/merge/boundary-shift operations
+            // For now, tetrahedra and spheres remain fixed at their initial positions
 
             // Log progress every 100 ticks
             if (currentTick % 100 == 0) {
@@ -221,6 +222,7 @@ public class PredatorPreyGridWebDemo {
 
         private void updateBubbleEntities(EnhancedBubble bubble) {
             var entities = bubble.getAllEntityRecords();
+            var entitiesToMigrate = new ArrayList<String>();
 
             for (var entity : entities) {
                 var entityId = entity.id();
@@ -250,9 +252,55 @@ public class PredatorPreyGridWebDemo {
                 newPosition.y = Math.max(WORLD.min(), Math.min(WORLD.max(), newPosition.y));
                 newPosition.z = Math.max(WORLD.min(), Math.min(WORLD.max(), newPosition.z));
 
-                // Update
+                // VON BOUNDARY CROSSING DETECTION: S0-S5 classification to detect domain changes
+                // Use deterministic classification: position determines which S0-S5 tet owns it
+                var newBubble = cubeForest.getBubbleForPosition(newPosition);
+                if (!newBubble.id().equals(bubble.id())) {
+                    // VON MOVE: Entity crossed S0-S5 tetrahedral boundary - spatial routing
+                    // This follows VON principles: position determines ownership
+                    // Mark for migration (can't modify collection during iteration)
+                    entitiesToMigrate.add(entityId);
+                    log.debug("VON MIGRATION: Entity {} from bubble {} to {} (boundary crossing at ({},{},{}))",
+                        entityId, bubble.id(), newBubble.id(),
+                        newPosition.x, newPosition.y, newPosition.z);
+                }
+
+                // Update position in current bubble (will be migrated after loop)
                 bubble.updateEntityPosition(entityId, newPosition);
                 velocities.put(entityId, newVelocity);
+            }
+
+            // VON MIGRATION PROTOCOL: Execute entity transfers between bubbles
+            // This implements VON MOVE semantics at the entity level
+            int migrationsExecuted = 0;
+            for (var entityId : entitiesToMigrate) {
+                var entityRecord = bubble.getAllEntityRecords().stream()
+                    .filter(e -> e.id().equals(entityId))
+                    .findFirst();
+
+                if (entityRecord.isPresent()) {
+                    var position = entityRecord.get().position();
+                    var content = entityRecord.get().content();
+
+                    // VON SPATIAL ROUTING: S0-S5 classification finds new acceptor bubble
+                    var newBubble = cubeForest.getBubbleForPosition(position);
+
+                    if (!newBubble.id().equals(bubble.id())) {
+                        // VON HANDOFF: Atomic entity transfer with accountant tracking
+                        // 1. Remove from old bubble (leave)
+                        // 2. Add to new bubble (join)
+                        // 3. Update accountant (ownership transfer)
+                        bubble.removeEntity(entityId);
+                        newBubble.addEntity(entityId, position, content);
+                        accountant.moveBetweenBubbles(UUID.fromString(padToUUID(entityId)), bubble.id(), newBubble.id());
+                        migrationsExecuted++;
+                    }
+                }
+            }
+
+            if (migrationsExecuted > 0) {
+                log.debug("VON MIGRATION SUMMARY: {} entities migrated from bubble {}",
+                    migrationsExecuted, bubble.id());
             }
         }
     }
@@ -285,72 +333,58 @@ public class PredatorPreyGridWebDemo {
     }
 
     /**
-     * Extract world-space bounding box corners from actual entity positions.
+     * Extract tetrahedral vertices defining each bubble's EXCLUSIVE SPATIAL DOMAIN.
      * <p>
-     * Returns 8 vertices defining the axis-aligned bounding box where entities actually live.
-     * Computed directly from entity positions in world space (NOT RDGCS/Morton conversion).
+     * Returns 4 vertices of the tetrahedron from the spatial partition (TetreeKey).
+     * These regions are NON-OVERLAPPING and tile the simulation space using S0-S5
+     * characteristic tetrahedra. This shows which region each bubble OWNS for load
+     * balancing, not where entities happen to be.
      * <p>
-     * Box corner ordering:
-     * 0: (minX, minY, minZ)  4: (minX, minY, maxZ)
-     * 1: (maxX, minY, minZ)  5: (maxX, minY, maxZ)
-     * 2: (maxX, maxY, minZ)  6: (maxX, maxY, maxZ)
-     * 3: (minX, maxY, minZ)  7: (minX, maxY, maxZ)
+     * Vertex ordering: V0, V1, V2, V3 (tetrahedron corners)
      */
     private static Map<UUID, Point3f[]> extractBubbleVertices(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
         var vertices = new HashMap<UUID, Point3f[]>();
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        final float MORTON_MAX = 1 << 21;
+        final float WORLD_SIZE = WORLD.max() - WORLD.min();
+        final float scale = WORLD_SIZE / MORTON_MAX;
+
+        log.info("extractBubbleVertices: Processing {} bubbles (S0-S5 non-overlapping partition)", bubbles.size());
 
         for (var bubble : bubbles) {
             try {
-                // Get all entity positions in world space
-                var entities = bubble.getAllEntityRecords();
-                if (entities.isEmpty()) {
-                    log.debug("Bubble {} has no entities yet", bubble.id());
-                    continue;
+                // Find the TetreeKey for this bubble
+                for (var entry : bubblesWithKeys.entrySet()) {
+                    if (entry.getValue().id().equals(bubble.id())) {
+                        var tetreeKey = entry.getKey();
+                        var tet = tetreeKey.toTet();
+                        var coords = tet.coordinates();
+
+                        // Convert Morton space coordinates to world space
+                        var bubbleVertices = new Point3f[4];
+                        for (int i = 0; i < 4; i++) {
+                            float x = coords[i].x * scale + WORLD.min();
+                            float y = coords[i].y * scale + WORLD.min();
+                            float z = coords[i].z * scale + WORLD.min();
+                            bubbleVertices[i] = new Point3f(x, y, z);
+                        }
+
+                        vertices.put(bubble.id(), bubbleVertices);
+
+                        log.info("Bubble {} (type {}) spatial domain: V0=({},{},{}) → V3=({},{},{})",
+                            bubble.id(), tet.type(),
+                            bubbleVertices[0].x, bubbleVertices[0].y, bubbleVertices[0].z,
+                            bubbleVertices[3].x, bubbleVertices[3].y, bubbleVertices[3].z);
+                        break;
+                    }
                 }
-
-                // Compute axis-aligned bounding box from actual entity positions
-                float minX = Float.POSITIVE_INFINITY;
-                float minY = Float.POSITIVE_INFINITY;
-                float minZ = Float.POSITIVE_INFINITY;
-                float maxX = Float.NEGATIVE_INFINITY;
-                float maxY = Float.NEGATIVE_INFINITY;
-                float maxZ = Float.NEGATIVE_INFINITY;
-
-                for (var entity : entities) {
-                    var pos = entity.position();
-                    minX = Math.min(minX, pos.x);
-                    minY = Math.min(minY, pos.y);
-                    minZ = Math.min(minZ, pos.z);
-                    maxX = Math.max(maxX, pos.x);
-                    maxY = Math.max(maxY, pos.y);
-                    maxZ = Math.max(maxZ, pos.z);
-                }
-
-                log.info("Bubble {} world-space AABB: ({},{},{}) to ({},{},{}) - {} entities",
-                    bubble.id(), minX, minY, minZ, maxX, maxY, maxZ, entities.size());
-
-                // Create 8 box corners in world space
-                var bubbleVertices = new Point3f[8];
-
-                // Bottom face (minZ)
-                bubbleVertices[0] = new Point3f(minX, minY, minZ);
-                bubbleVertices[1] = new Point3f(maxX, minY, minZ);
-                bubbleVertices[2] = new Point3f(maxX, maxY, minZ);
-                bubbleVertices[3] = new Point3f(minX, maxY, minZ);
-
-                // Top face (maxZ)
-                bubbleVertices[4] = new Point3f(minX, minY, maxZ);
-                bubbleVertices[5] = new Point3f(maxX, minY, maxZ);
-                bubbleVertices[6] = new Point3f(maxX, maxY, maxZ);
-                bubbleVertices[7] = new Point3f(minX, maxY, maxZ);
-
-                vertices.put(bubble.id(), bubbleVertices);
             } catch (Exception e) {
-                log.warn("Failed to extract world-space AABB for bubble {}: {}", bubble.id(), e.getMessage());
+                log.warn("Failed to extract tetrahedral domain for bubble {}: {}", bubble.id(), e.getMessage());
             }
         }
 
-        log.info("Extracted world-space AABBs for {} bubbles", vertices.size());
+        log.info("Extracted spatial domains for {} bubbles (non-overlapping S0-S5 partition)", vertices.size());
         return vertices;
     }
 
@@ -376,7 +410,7 @@ public class PredatorPreyGridWebDemo {
             }
         }
 
-        log.info("Extracted tetrahedral types for {} bubbles", types.size());
+        log.info("Extracted tetrahedral types (S0-S5) for {} bubbles", types.size());
         return types;
     }
 
@@ -388,6 +422,10 @@ public class PredatorPreyGridWebDemo {
         final float WORLD_SIZE = WORLD.max() - WORLD.min();
         final float scale = WORLD_SIZE / MORTON_MAX;
 
+        log.info("extractBubbleSpheres: Computing domain centers for {} bubbles (S0-S5 partition)", bubbles.size());
+
+        // Compute inscribed sphere of each tetrahedral spatial domain
+        // This shows the center of each bubble's SPATIAL REGION (not entity distribution)
         for (var bubble : bubbles) {
             for (var entry : bubblesWithKeys.entrySet()) {
                 if (entry.getValue().id().equals(bubble.id())) {
@@ -395,7 +433,7 @@ public class PredatorPreyGridWebDemo {
                     var tet = tetreeKey.toTet();
                     var coords = tet.coordinates();
 
-                    // Calculate centroid
+                    // Calculate tetrahedron centroid: (v0+v1+v2+v3)/4
                     float cx = 0, cy = 0, cz = 0;
                     for (int i = 0; i < 4; i++) {
                         cx += coords[i].x;
@@ -406,7 +444,7 @@ public class PredatorPreyGridWebDemo {
                     cy = (cy / 4.0f) * scale + WORLD.min();
                     cz = (cz / 4.0f) * scale + WORLD.min();
 
-                    // Calculate inscribed sphere radius
+                    // Calculate inscribed sphere radius (avg edge length / 4)
                     float edgeSum = 0;
                     int edgeCount = 0;
                     for (int i = 0; i < 4; i++) {
@@ -424,12 +462,271 @@ public class PredatorPreyGridWebDemo {
                     sphereData.put("center", new Point3f(cx, cy, cz));
                     sphereData.put("radius", radius);
                     spheres.put(bubble.id(), sphereData);
+
+                    log.info("Bubble {} (type {}) domain center: ({},{},{}) radius={}",
+                        bubble.id(), tet.type(),
+                        String.format("%.1f", cx), String.format("%.1f", cy), String.format("%.1f", cz),
+                        String.format("%.1f", radius));
                     break;
                 }
             }
         }
 
-        log.info("Extracted inscribed spheres for {} bubbles", spheres.size());
+        log.info("Extracted domain centers for {} bubbles (S0-S5 non-overlapping partition)", spheres.size());
+        return spheres;
+    }
+
+    /**
+     * Generate a random position inside a bubble's tetrahedral domain.
+     * Uses rejection sampling: generate random point in AABB, accept if inside tetrahedron.
+     */
+    private static Point3f randomPositionInBubble(TetreeBubbleGrid grid, EnhancedBubble bubble) {
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        // Find the TetreeKey for this bubble
+        for (var entry : bubblesWithKeys.entrySet()) {
+            if (entry.getValue().id().equals(bubble.id())) {
+                var tetreeKey = entry.getKey();
+                var tet = tetreeKey.toTet();
+                var coords = tet.coordinates();
+
+                // Compute AABB of tetrahedron
+                float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+                float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
+                for (int i = 0; i < 4; i++) {
+                    minX = Math.min(minX, coords[i].x);
+                    minY = Math.min(minY, coords[i].y);
+                    minZ = Math.min(minZ, coords[i].z);
+                    maxX = Math.max(maxX, coords[i].x);
+                    maxY = Math.max(maxY, coords[i].y);
+                    maxZ = Math.max(maxZ, coords[i].z);
+                }
+
+                // Scale to world space
+                final float MORTON_MAX = 1 << 21;
+                final float WORLD_SIZE = WORLD.max() - WORLD.min();
+                final float scale = WORLD_SIZE / MORTON_MAX;
+
+                minX = minX * scale + WORLD.min();
+                minY = minY * scale + WORLD.min();
+                minZ = minZ * scale + WORLD.min();
+                maxX = maxX * scale + WORLD.min();
+                maxY = maxY * scale + WORLD.min();
+                maxZ = maxZ * scale + WORLD.min();
+
+                // Rejection sampling: generate random point in AABB until inside tetrahedron
+                int attempts = 0;
+                while (attempts < 100) {
+                    float x = minX + RANDOM.nextFloat() * (maxX - minX);
+                    float y = minY + RANDOM.nextFloat() * (maxY - minY);
+                    float z = minZ + RANDOM.nextFloat() * (maxZ - minZ);
+
+                    // Convert back to Morton space for containment test
+                    float mx = (x - WORLD.min()) / scale;
+                    float my = (y - WORLD.min()) / scale;
+                    float mz = (z - WORLD.min()) / scale;
+
+                    if (tet.containsUltraFast(mx, my, mz)) {
+                        return new Point3f(x, y, z);
+                    }
+                    attempts++;
+                }
+
+                // Fallback: use tetrahedron centroid
+                float cx = 0, cy = 0, cz = 0;
+                for (int i = 0; i < 4; i++) {
+                    cx += coords[i].x;
+                    cy += coords[i].y;
+                    cz += coords[i].z;
+                }
+                cx = (cx / 4.0f) * scale + WORLD.min();
+                cy = (cy / 4.0f) * scale + WORLD.min();
+                cz = (cz / 4.0f) * scale + WORLD.min();
+                return new Point3f(cx, cy, cz);
+            }
+        }
+
+        // Fallback: random position in world
+        return randomPosition();
+    }
+
+    /**
+     * Check if a position is inside a bubble's tetrahedral domain.
+     */
+    private static boolean isPositionInBubble(TetreeBubbleGrid grid, EnhancedBubble bubble, Point3f position) {
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        // Find the TetreeKey for this bubble
+        for (var entry : bubblesWithKeys.entrySet()) {
+            if (entry.getValue().id().equals(bubble.id())) {
+                var tetreeKey = entry.getKey();
+                var tet = tetreeKey.toTet();
+
+                // Convert world position to Morton space
+                final float MORTON_MAX = 1 << 21;
+                final float WORLD_SIZE = WORLD.max() - WORLD.min();
+                final float scale = WORLD_SIZE / MORTON_MAX;
+
+                float mx = (position.x - WORLD.min()) / scale;
+                float my = (position.y - WORLD.min()) / scale;
+                float mz = (position.z - WORLD.min()) / scale;
+
+                return tet.containsUltraFast(mx, my, mz);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * VON-STYLE SPATIAL ROUTING: Find which bubble owns a given position.
+     * <p>
+     * This implements the core VON principle of spatial routing - given a position,
+     * find which bubble's domain contains it using the tetrahedral spatial index.
+     * <p>
+     * VON Architecture:
+     * - Each bubble owns an exclusive tetrahedral spatial domain
+     * - Entities spawn/migrate based on which domain contains their position
+     * - This routing method is the foundation for entity join/move operations
+     * <p>
+     * In a distributed system, this would involve:
+     * 1. Greedy forwarding through neighbor bubbles (routing hops)
+     * 2. Eventually reaching the bubble whose domain contains the position
+     * 3. That bubble becomes the "acceptor" and takes ownership
+     * <p>
+     * In this single-process demo, we can directly check all bubbles,
+     * but the principle is the same: spatial domain ownership determines routing.
+     *
+     * @param grid     The tetree grid managing spatial domains
+     * @param bubbles  All bubbles in the system
+     * @param position The position to route to
+     * @return The bubble whose domain contains this position (the acceptor)
+     */
+    private static EnhancedBubble findOwningBubble(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles, Point3f position) {
+        var bubblesWithKeys = grid.getBubblesWithKeys();
+
+        // Convert world position to Morton space once
+        final float MORTON_MAX = 1 << 21;
+        final float WORLD_SIZE = WORLD.max() - WORLD.min();
+        final float scale = WORLD_SIZE / MORTON_MAX;
+
+        float mx = (position.x - WORLD.min()) / scale;
+        float my = (position.y - WORLD.min()) / scale;
+        float mz = (position.z - WORLD.min()) / scale;
+
+        // VON SPATIAL ROUTING: Check all bubbles to find which domain contains the position
+        // In distributed VON: this would be greedy forwarding through neighbors
+        // In single-process: we can directly check all bubbles
+        for (var bubble : bubbles) {
+            for (var entry : bubblesWithKeys.entrySet()) {
+                if (entry.getValue().id().equals(bubble.id())) {
+                    var tetreeKey = entry.getKey();
+                    var tet = tetreeKey.toTet();
+
+                    // Tetrahedral containment test - the "acceptor" check
+                    if (tet.containsUltraFast(mx, my, mz)) {
+                        return bubble; // This bubble's domain contains the position
+                    }
+                    break;
+                }
+            }
+        }
+
+        return null; // Position not in any bubble (shouldn't happen with complete partition)
+    }
+
+    /**
+     * Extract S0-S5 tetrahedral vertices for visualization.
+     * Uses the documented S0-S5 cube decomposition where all 6 tetrahedra share V0 and V7.
+     */
+    private static Map<UUID, Point3f[]> extractS0S5Vertices(CubeForest cubeForest) {
+        var vertices = new HashMap<UUID, Point3f[]>();
+        var bubblesByType = cubeForest.getBubblesByType();
+        float[] bounds = cubeForest.getWorldBounds();
+        float min = bounds[0];
+        float max = bounds[1];
+
+        // S0-S5 characteristic tetrahedra (all share V0=(0,0,0) and V7=(h,h,h))
+        // Type 0 (S0): {0,1,3,7} = {(0,0,0), (h,0,0), (h,h,0), (h,h,h)}
+        // Type 1 (S1): {0,2,3,7} = {(0,0,0), (0,h,0), (h,h,0), (h,h,h)}
+        // Type 2 (S2): {0,4,5,7} = {(0,0,0), (0,0,h), (h,0,h), (h,h,h)}
+        // Type 3 (S3): {0,4,6,7} = {(0,0,0), (0,0,h), (0,h,h), (h,h,h)}
+        // Type 4 (S4): {0,1,5,7} = {(0,0,0), (h,0,0), (h,0,h), (h,h,h)}
+        // Type 5 (S5): {0,2,6,7} = {(0,0,0), (0,h,0), (0,h,h), (h,h,h)}
+
+        Point3f[][] typeVertices = {
+            {new Point3f(min, min, min), new Point3f(max, min, min), new Point3f(max, max, min), new Point3f(max, max, max)}, // S0
+            {new Point3f(min, min, min), new Point3f(min, max, min), new Point3f(max, max, min), new Point3f(max, max, max)}, // S1
+            {new Point3f(min, min, min), new Point3f(min, min, max), new Point3f(max, min, max), new Point3f(max, max, max)}, // S2
+            {new Point3f(min, min, min), new Point3f(min, min, max), new Point3f(min, max, max), new Point3f(max, max, max)}, // S3
+            {new Point3f(min, min, min), new Point3f(max, min, min), new Point3f(max, min, max), new Point3f(max, max, max)}, // S4
+            {new Point3f(min, min, min), new Point3f(min, max, min), new Point3f(min, max, max), new Point3f(max, max, max)}  // S5
+        };
+
+        for (byte type = 0; type < 6; type++) {
+            var bubble = bubblesByType.get(type);
+            vertices.put(bubble.id(), typeVertices[type]);
+        }
+
+        return vertices;
+    }
+
+    /**
+     * Extract S0-S5 types for visualization.
+     */
+    private static Map<UUID, Byte> extractS0S5Types(CubeForest cubeForest) {
+        var types = new HashMap<UUID, Byte>();
+        var bubblesByType = cubeForest.getBubblesByType();
+
+        for (byte type = 0; type < 6; type++) {
+            var bubble = bubblesByType.get(type);
+            types.put(bubble.id(), type);
+        }
+
+        return types;
+    }
+
+    /**
+     * Extract S0-S5 tetrahedral centroids (inscribed spheres) for visualization.
+     */
+    private static Map<UUID, Map<String, Object>> extractS0S5Spheres(CubeForest cubeForest) {
+        var spheres = new HashMap<UUID, Map<String, Object>>();
+        var bubblesByType = cubeForest.getBubblesByType();
+        float[] bounds = cubeForest.getWorldBounds();
+        float min = bounds[0];
+        float max = bounds[1];
+        float h = max - min;
+
+        for (byte type = 0; type < 6; type++) {
+            var bubble = bubblesByType.get(type);
+
+            // Tetrahedron centroid = average of 4 vertices
+            // All S0-S5 share V0=(0,0,0) and V7=(h,h,h), differ in V1 and V2
+            // Centroid for any S0-S5 tet = (V0 + V1 + V2 + V7) / 4
+
+            Point3f[] verts = null;
+            switch (type) {
+                case 0 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(max,min,min), new Point3f(max,max,min), new Point3f(max,max,max)};
+                case 1 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(min,max,min), new Point3f(max,max,min), new Point3f(max,max,max)};
+                case 2 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(min,min,max), new Point3f(max,min,max), new Point3f(max,max,max)};
+                case 3 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(min,min,max), new Point3f(min,max,max), new Point3f(max,max,max)};
+                case 4 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(max,min,min), new Point3f(max,min,max), new Point3f(max,max,max)};
+                case 5 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(min,max,min), new Point3f(min,max,max), new Point3f(max,max,max)};
+            }
+
+            float cx = (verts[0].x + verts[1].x + verts[2].x + verts[3].x) / 4.0f;
+            float cy = (verts[0].y + verts[1].y + verts[2].y + verts[3].y) / 4.0f;
+            float cz = (verts[0].z + verts[1].z + verts[2].z + verts[3].z) / 4.0f;
+
+            // Inscribed sphere radius = avg edge length / 4
+            float radius = h / 4.0f;
+
+            var sphereData = new HashMap<String, Object>();
+            sphereData.put("center", new Point3f(cx, cy, cz));
+            sphereData.put("radius", radius);
+            spheres.put(bubble.id(), sphereData);
+        }
+
         return spheres;
     }
 }

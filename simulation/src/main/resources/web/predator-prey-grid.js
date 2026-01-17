@@ -263,15 +263,23 @@ for (const [type, color] of Object.entries(ENTITY_COLORS)) {
 // ============================================================================
 
 const bubbleBoundaries = [];
+const bubbleSpheres = [];
+const bubbleSphereLabels = [];
 let bubbleBoundariesVisible = true;
+let bubbleSpheresVisible = false; // Start hidden, user can toggle with 'S' key
 
 function createBubbleBoundary(bubble) {
-    // If we have tetrahedral vertices, render the actual tetrahedron
+    // If we have RDGCS bounding box (8 vertices), render the actual simulation volume
+    if (bubble.vertices && bubble.vertices.length === 8) {
+        return createBoxBoundary(bubble.vertices, bubble.tetType || 0);
+    }
+
+    // If we have tetrahedral vertices (4), render the spatial index tetrahedron
     if (bubble.vertices && bubble.vertices.length === 4) {
         return createTetrahedronBoundary(bubble.vertices, bubble.tetType || 0);
     }
 
-    // Fallback to AABB rendering if no vertices provided
+    // Fallback to generic AABB if no vertices provided
     const min = bubble.min;
     const max = bubble.max;
 
@@ -317,6 +325,103 @@ function createBubbleBoundary(bubble) {
     );
 
     // Store animation data (higher base opacity)
+    group.userData = {
+        phase: Math.random() * Math.PI * 2,
+        baseOpacity: 0.9,
+        glowBaseOpacity: 0.6
+    };
+
+    scene.add(group);
+    return group;
+}
+
+/**
+ * Create bounding box wireframe from 8 RDGCS box corners.
+ * This represents the actual simulation volume where entities live.
+ *
+ * Vertex ordering:
+ * 0: (minX, minY, minZ)  4: (minX, minY, maxZ)
+ * 1: (maxX, minY, minZ)  5: (maxX, minY, maxZ)
+ * 2: (maxX, maxY, minZ)  6: (maxX, maxY, maxZ)
+ * 3: (minX, maxY, minZ)  7: (minX, maxY, maxZ)
+ */
+function createBoxBoundary(vertices, tetType) {
+    // Create box geometry from 8 vertices
+    const v0 = new THREE.Vector3(vertices[0].x, vertices[0].y, vertices[0].z);
+    const v1 = new THREE.Vector3(vertices[1].x, vertices[1].y, vertices[1].z);
+    const v2 = new THREE.Vector3(vertices[2].x, vertices[2].y, vertices[2].z);
+    const v3 = new THREE.Vector3(vertices[3].x, vertices[3].y, vertices[3].z);
+    const v4 = new THREE.Vector3(vertices[4].x, vertices[4].y, vertices[4].z);
+    const v5 = new THREE.Vector3(vertices[5].x, vertices[5].y, vertices[5].z);
+    const v6 = new THREE.Vector3(vertices[6].x, vertices[6].y, vertices[6].z);
+    const v7 = new THREE.Vector3(vertices[7].x, vertices[7].y, vertices[7].z);
+
+    // Color palette for tetrahedral types (S0-S5)
+    const typeColors = [
+        0xFF0000,  // S0: Red
+        0x00FF00,  // S1: Green
+        0x0000FF,  // S2: Blue
+        0xFFFF00,  // S3: Yellow
+        0xFF00FF,  // S4: Magenta
+        0x00FFFF   // S5: Cyan
+    ];
+    const color = typeColors[tetType % 6] || 0xFFFFFF;
+
+    console.log(`Creating RDGCS box type ${tetType}: min=(${v0.x.toFixed(1)},${v0.y.toFixed(1)},${v0.z.toFixed(1)}) max=(${v6.x.toFixed(1)},${v6.y.toFixed(1)},${v6.z.toFixed(1)}) color=0x${color.toString(16)}`);
+
+    // Create 12 edges for box wireframe
+    // Bottom face (4 edges)
+    // Top face (4 edges)
+    // Vertical edges (4 edges)
+    const edgePoints = [
+        // Bottom face (minZ)
+        v0, v1,  // 0-1
+        v1, v2,  // 1-2
+        v2, v3,  // 2-3
+        v3, v0,  // 3-0
+        // Top face (maxZ)
+        v4, v5,  // 4-5
+        v5, v6,  // 5-6
+        v6, v7,  // 6-7
+        v7, v4,  // 7-4
+        // Vertical edges
+        v0, v4,  // 0-4
+        v1, v5,  // 1-5
+        v2, v6,  // 2-6
+        v3, v7   // 3-7
+    ];
+
+    const edgeGeometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
+
+    // Create bright, highly visible lines with type-based color
+    const line = new THREE.LineSegments(
+        edgeGeometry,
+        new THREE.LineBasicMaterial({
+            color: color,      // Type-specific color
+            opacity: 0.9,      // Much more opaque
+            transparent: true,
+            linewidth: 4       // Thicker lines
+        })
+    );
+
+    // Add strong glow layer
+    const glowLine = new THREE.LineSegments(
+        edgeGeometry.clone(),
+        new THREE.LineBasicMaterial({
+            color: color,      // Same color as main line
+            opacity: 0.4,      // Lighter glow
+            transparent: true,
+            linewidth: 8,      // Thick glow
+            depthWrite: false
+        })
+    );
+
+    // Group both layers
+    const group = new THREE.Group();
+    group.add(line);
+    group.add(glowLine);
+
+    // Store animation data
     group.userData = {
         phase: Math.random() * Math.PI * 2,
         baseOpacity: 0.9,
@@ -398,18 +503,94 @@ function createTetrahedronBoundary(vertices, tetType) {
     return group;
 }
 
-function updateBubbleBoundaries(bubbles) {
-    // Remove old boundaries
-    bubbleBoundaries.forEach(boundary => scene.remove(boundary));
-    bubbleBoundaries.length = 0;
+/**
+ * Create a translucent sphere inscribed in the tetrahedral simulation volume.
+ */
+function createTextSprite(message, color = 'rgba(255, 255, 255, 1.0)') {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 256;
+    canvas.height = 128;
 
-    // Create new boundaries
-    bubbles.forEach(bubble => {
-        const boundary = createBubbleBoundary(bubble);
-        bubbleBoundaries.push(boundary);
+    context.font = 'Bold 80px Arial';
+    context.fillStyle = color;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(message, canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(10, 5, 1);
+    return sprite;
+}
+
+function createBubbleSphere(bubble, index) {
+    if (!bubble.sphere) {
+        return null;
+    }
+
+    const center = bubble.sphere.center;
+    const radius = bubble.sphere.radius;
+    const tetType = bubble.tetType || 0;
+
+    // Color based on tetType (matching tetrahedron colors)
+    const typeColors = [
+        0xFF0000,  // S0: Red
+        0x00FF00,  // S1: Green
+        0x0000FF,  // S2: Blue
+        0xFFFF00,  // S3: Yellow
+        0xFF00FF,  // S4: Magenta
+        0x00FFFF   // S5: Cyan
+    ];
+    const color = typeColors[tetType % 6] || 0xFFFFFF;
+
+    const geometry = new THREE.SphereGeometry(radius, 16, 16);
+    const material = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.15,
+        side: THREE.DoubleSide,
+        depthWrite: false
     });
 
-    console.log(`Updated ${bubbles.length} bubble boundaries`);
+    const sphere = new THREE.Mesh(geometry, material);
+    sphere.position.set(center.x, center.y, center.z);
+    sphere.visible = bubbleSpheresVisible;
+
+    scene.add(sphere);
+
+    // Add text label
+    const label = createTextSprite(index.toString());
+    label.position.set(center.x, center.y, center.z);
+    label.visible = bubbleSpheresVisible;
+    scene.add(label);
+    bubbleSphereLabels.push(label);
+
+    return sphere;
+}
+
+function updateBubbleBoundaries(bubbles) {
+    // Remove old boundaries, spheres, and labels
+    bubbleBoundaries.forEach(boundary => scene.remove(boundary));
+    bubbleBoundaries.length = 0;
+    bubbleSpheres.forEach(sphere => scene.remove(sphere));
+    bubbleSpheres.length = 0;
+    bubbleSphereLabels.forEach(label => scene.remove(label));
+    bubbleSphereLabels.length = 0;
+
+    // Create new boundaries and spheres with labels
+    bubbles.forEach((bubble, index) => {
+        const boundary = createBubbleBoundary(bubble);
+        bubbleBoundaries.push(boundary);
+
+        const sphere = createBubbleSphere(bubble, index);
+        if (sphere) {
+            bubbleSpheres.push(sphere);
+        }
+    });
+
+    console.log(`Updated ${bubbles.length} bubble boundaries and ${bubbleSpheres.length} inscribed spheres with labels`);
 }
 
 // ============================================================================
@@ -602,6 +783,208 @@ document.getElementById('btn-toggle-grid').addEventListener('click', () => {
 });
 
 // ============================================================================
+// Video Recording
+// ============================================================================
+
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordingStartTime = 0;
+let recordingTimerInterval = null;
+
+let windowMediaRecorder = null;
+let windowRecordedChunks = [];
+let windowRecordingStartTime = 0;
+let windowRecordingTimerInterval = null;
+
+document.getElementById('btn-record').addEventListener('click', () => {
+    try {
+        // Capture canvas stream at 60fps
+        const stream = renderer.domElement.captureStream(60);
+
+        // Create MediaRecorder with high quality settings
+        const options = {
+            mimeType: 'video/webm;codecs=vp9',
+            videoBitsPerSecond: 8000000 // 8 Mbps for high quality
+        };
+
+        // Fallback to vp8 if vp9 not supported
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            options.mimeType = 'video/webm;codecs=vp8';
+        }
+
+        mediaRecorder = new MediaRecorder(stream, options);
+        recordedChunks = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        };
+
+        mediaRecorder.onstop = () => {
+            // Create blob and download
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `luciferase-s0s5-forest-${Date.now()}.webm`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            console.log('Recording saved:', a.download);
+        };
+
+        // Start recording
+        mediaRecorder.start(100); // Collect data every 100ms
+        recordingStartTime = Date.now();
+
+        // Update UI
+        document.getElementById('btn-record').style.display = 'none';
+        document.getElementById('btn-stop-record').style.display = 'inline-block';
+        document.getElementById('recording-status').style.display = 'block';
+
+        // Start timer
+        recordingTimerInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const seconds = (elapsed % 60).toString().padStart(2, '0');
+            document.getElementById('recording-time').textContent = `${minutes}:${seconds}`;
+        }, 1000);
+
+        console.log('Recording started');
+
+    } catch (err) {
+        console.error('Failed to start recording:', err);
+        alert('Failed to start recording. Check console for details.');
+    }
+});
+
+document.getElementById('btn-stop-record').addEventListener('click', () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+
+        // Stop all tracks
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+
+        // Clear timer
+        if (recordingTimerInterval) {
+            clearInterval(recordingTimerInterval);
+            recordingTimerInterval = null;
+        }
+
+        // Update UI
+        document.getElementById('btn-record').style.display = 'inline-block';
+        document.getElementById('btn-stop-record').style.display = 'none';
+        document.getElementById('recording-status').style.display = 'none';
+        document.getElementById('recording-time').textContent = '00:00';
+
+        console.log('Recording stopped');
+    }
+});
+
+// Full Window Recording (captures entire browser window with UI)
+document.getElementById('btn-record-window').addEventListener('click', async () => {
+    try {
+        // Request screen/window capture
+        const displayStream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+                cursor: 'always',
+                displaySurface: 'window'
+            },
+            audio: false
+        });
+
+        // Create MediaRecorder with high quality settings
+        const options = {
+            mimeType: 'video/webm;codecs=vp9',
+            videoBitsPerSecond: 10000000 // 10 Mbps for full window
+        };
+
+        // Fallback to vp8 if vp9 not supported
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            options.mimeType = 'video/webm;codecs=vp8';
+        }
+
+        windowMediaRecorder = new MediaRecorder(displayStream, options);
+        windowRecordedChunks = [];
+
+        windowMediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                windowRecordedChunks.push(event.data);
+            }
+        };
+
+        windowMediaRecorder.onstop = () => {
+            // Create blob and download
+            const blob = new Blob(windowRecordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `luciferase-s0s5-fullwindow-${Date.now()}.webm`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            console.log('Window recording saved:', a.download);
+        };
+
+        // Handle user stopping the share (via browser UI)
+        displayStream.getVideoTracks()[0].addEventListener('ended', () => {
+            document.getElementById('btn-stop-record-window').click();
+        });
+
+        // Start recording
+        windowMediaRecorder.start(100);
+        windowRecordingStartTime = Date.now();
+
+        // Update UI
+        document.getElementById('btn-record-window').style.display = 'none';
+        document.getElementById('btn-stop-record-window').style.display = 'inline-block';
+        document.getElementById('recording-status').style.display = 'block';
+
+        // Start timer
+        windowRecordingTimerInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - windowRecordingStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const seconds = (elapsed % 60).toString().padStart(2, '0');
+            document.getElementById('recording-time').textContent = `${minutes}:${seconds}`;
+        }, 1000);
+
+        console.log('Window recording started');
+
+    } catch (err) {
+        console.error('Failed to start window recording:', err);
+        if (err.name === 'NotAllowedError') {
+            alert('Screen capture permission denied. Please allow screen sharing to record the window.');
+        } else {
+            alert('Failed to start window recording. Check console for details.');
+        }
+    }
+});
+
+document.getElementById('btn-stop-record-window').addEventListener('click', () => {
+    if (windowMediaRecorder && windowMediaRecorder.state !== 'inactive') {
+        windowMediaRecorder.stop();
+
+        // Stop all tracks
+        windowMediaRecorder.stream.getTracks().forEach(track => track.stop());
+
+        // Clear timer
+        if (windowRecordingTimerInterval) {
+            clearInterval(windowRecordingTimerInterval);
+            windowRecordingTimerInterval = null;
+        }
+
+        // Update UI
+        document.getElementById('btn-record-window').style.display = 'inline-block';
+        document.getElementById('btn-stop-record-window').style.display = 'none';
+        document.getElementById('recording-status').style.display = 'none';
+        document.getElementById('recording-time').textContent = '00:00';
+
+        console.log('Window recording stopped');
+    }
+});
+
+// ============================================================================
 // Animation Loop
 // ============================================================================
 
@@ -660,6 +1043,31 @@ window.addEventListener('resize', () => {
 });
 
 // ============================================================================
+// Keyboard Controls
+// ============================================================================
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 's' || event.key === 'S') {
+        // Toggle sphere visibility
+        bubbleSpheresVisible = !bubbleSpheresVisible;
+        bubbleSpheres.forEach(sphere => {
+            sphere.visible = bubbleSpheresVisible;
+        });
+        bubbleSphereLabels.forEach(label => {
+            label.visible = bubbleSpheresVisible;
+        });
+        console.log(`Bubble spheres ${bubbleSpheresVisible ? 'shown' : 'hidden'} (press 'S' to toggle, showing ${bubbleSpheres.length} spheres with labels)`);
+    } else if (event.key === 'b' || event.key === 'B') {
+        // Toggle boundary visibility
+        bubbleBoundariesVisible = !bubbleBoundariesVisible;
+        bubbleBoundaries.forEach(boundary => {
+            boundary.visible = bubbleBoundariesVisible;
+        });
+        console.log(`Bubble boundaries ${bubbleBoundariesVisible ? 'shown' : 'hidden'} (press 'B' to toggle)`);
+    }
+});
+
+// ============================================================================
 // Initialization
 // ============================================================================
 
@@ -678,3 +1086,4 @@ setTimeout(() => {
 console.log('Grand Vision Demo initialized');
 console.log('Prey: Blue spheres | Predators: Red spheres (larger)');
 console.log('Camera: Left mouse to rotate, right mouse to pan, scroll to zoom');
+console.log('Keyboard: Press \'S\' to toggle inscribed spheres, \'B\' to toggle boundaries');

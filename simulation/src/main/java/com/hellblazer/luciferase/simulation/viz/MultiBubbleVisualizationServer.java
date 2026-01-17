@@ -136,7 +136,7 @@ public class MultiBubbleVisualizationServer {
         javalin.ws("/ws/entities", ws -> {
             ws.onConnect(ctx -> {
                 entityClients.add(ctx);
-                log.info("Entity client connected: {} (total: {})", ctx.sessionId(), entityClients.size());
+                log.debug("Entity client connected: {} (total: {})", ctx.sessionId(), entityClients.size());
 
                 // Send initial state
                 if (!bubbles.isEmpty()) {
@@ -148,7 +148,7 @@ public class MultiBubbleVisualizationServer {
 
             ws.onClose(ctx -> {
                 entityClients.remove(ctx);
-                log.info("Entity client disconnected: {} (total: {})", ctx.sessionId(), entityClients.size());
+                log.debug("Entity client disconnected: {} (total: {})", ctx.sessionId(), entityClients.size());
                 stopStreamingIfNoClients();
             });
 
@@ -162,7 +162,7 @@ public class MultiBubbleVisualizationServer {
         javalin.ws("/ws/bubbles", ws -> {
             ws.onConnect(ctx -> {
                 bubbleClients.add(ctx);
-                log.info("Bubble client connected: {} (total: {})", ctx.sessionId(), bubbleClients.size());
+                log.debug("Bubble client connected: {} (total: {})", ctx.sessionId(), bubbleClients.size());
 
                 // Send bubble boundaries
                 if (!bubbles.isEmpty()) {
@@ -172,7 +172,7 @@ public class MultiBubbleVisualizationServer {
 
             ws.onClose(ctx -> {
                 bubbleClients.remove(ctx);
-                log.info("Bubble client disconnected: {} (total: {})", ctx.sessionId(), bubbleClients.size());
+                log.debug("Bubble client disconnected: {} (total: {})", ctx.sessionId(), bubbleClients.size());
             });
 
             ws.onError(ctx -> {
@@ -189,7 +189,7 @@ public class MultiBubbleVisualizationServer {
      */
     public void setBubbles(List<EnhancedBubble> bubbles) {
         this.bubbles = new ArrayList<>(bubbles);
-        log.info("Bubbles set: {} bubbles", bubbles.size());
+        log.debug("Bubbles set: {} bubbles", bubbles.size());
 
         // Broadcast bubble boundaries to connected clients
         broadcastBubbleBoundaries();
@@ -203,7 +203,7 @@ public class MultiBubbleVisualizationServer {
      */
     public void setBubbleVertices(Map<UUID, Point3f[]> vertices) {
         this.bubbleVertices = new ConcurrentHashMap<>(vertices);
-        log.info("Bubble vertices set: {} bubbles with tetrahedral geometry", vertices.size());
+        log.debug("Bubble vertices set: {} bubbles with tetrahedral geometry", vertices.size());
 
         // Re-broadcast bubble boundaries with vertices
         broadcastBubbleBoundaries();
@@ -223,7 +223,7 @@ public class MultiBubbleVisualizationServer {
      */
     public void setBubbleTypes(Map<UUID, Byte> types) {
         this.bubbleTypes = new ConcurrentHashMap<>(types);
-        log.info("Bubble types set: {} bubbles with type information", types.size());
+        log.debug("Bubble types set: {} bubbles with type information", types.size());
 
         // Re-broadcast bubble boundaries with types
         broadcastBubbleBoundaries();
@@ -235,7 +235,7 @@ public class MultiBubbleVisualizationServer {
      */
     public void setBubbleSpheres(Map<UUID, Map<String, Object>> spheres) {
         this.bubbleSpheres = new ConcurrentHashMap<>(spheres);
-        log.info("Bubble spheres set: {} bubbles with inscribed sphere data", spheres.size());
+        log.debug("Bubble spheres set: {} bubbles with inscribed sphere data", spheres.size());
 
         // Re-broadcast bubble boundaries with spheres
         broadcastBubbleBoundaries();
@@ -300,7 +300,7 @@ public class MultiBubbleVisualizationServer {
                 STREAM_INTERVAL_MS,
                 TimeUnit.MILLISECONDS
             );
-            log.info("Multi-bubble entity streaming started ({}ms interval)", STREAM_INTERVAL_MS);
+            log.debug("Multi-bubble entity streaming started ({}ms interval)", STREAM_INTERVAL_MS);
         }
     }
 
@@ -310,7 +310,7 @@ public class MultiBubbleVisualizationServer {
                 streamTask.cancel(false);
                 streamTask = null;
             }
-            log.info("Multi-bubble entity streaming stopped");
+            log.debug("Multi-bubble entity streaming stopped");
         }
     }
 
