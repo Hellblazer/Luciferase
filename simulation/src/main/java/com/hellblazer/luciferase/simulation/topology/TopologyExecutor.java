@@ -362,19 +362,3 @@ public class TopologyExecutor implements OperationTracker {
         return accountant.getDistribution().values().stream().mapToInt(Integer::intValue).sum();
     }
 }
-
-/**
- * Result of a topology change execution.
- *
- * @param success         true if execution succeeded
- * @param message         description of result or error
- * @param entitiesBefore  entity count before operation
- * @param entitiesAfter   entity count after operation
- */
-record TopologyExecutionResult(
-    boolean success,
-    String message,
-    int entitiesBefore,
-    int entitiesAfter
-) {
-}
