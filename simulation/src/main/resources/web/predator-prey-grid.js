@@ -50,15 +50,16 @@ const camera = new THREE.PerspectiveCamera(
     1,
     2000
 );
-camera.position.set(400, 300, 400);
-camera.lookAt(100, 100, 100);
+// CRITICAL: Tetree space is 0-100, so center is at (50,50,50) not (100,100,100)
+camera.position.set(200, 150, 200);
+camera.lookAt(50, 50, 50);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-controls.target.set(100, 100, 100);
-controls.minDistance = 100;
-controls.maxDistance = 800;
+controls.target.set(50, 50, 50);
+controls.minDistance = 50;
+controls.maxDistance = 400;
 controls.update();
 
 // ============================================================================
@@ -1041,8 +1042,9 @@ function updateStatus(connected) {
 }
 
 document.getElementById('btn-reset-camera').addEventListener('click', () => {
-    camera.position.set(400, 300, 400);
-    controls.target.set(100, 100, 100);
+    // CRITICAL: Tetree space is 0-100, center at (50,50,50)
+    camera.position.set(200, 150, 200);
+    controls.target.set(50, 50, 50);
     controls.update();
 });
 

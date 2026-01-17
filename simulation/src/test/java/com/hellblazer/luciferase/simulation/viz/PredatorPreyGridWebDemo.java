@@ -118,6 +118,12 @@ public class PredatorPreyGridWebDemo {
                 var position = randomPositionInBubble(bubbleGrid, bubble);
                 var velocity = randomVelocity(preyBehavior.getMaxSpeed());
 
+                // DEBUG: Log first few entity positions
+                if (preyDistributed <= 5) {
+                    log.info("Spawned {} at position ({}, {}, {}) in bubble {}",
+                            entityId, position.x, position.y, position.z, bubble.id());
+                }
+
                 bubble.addEntity(entityId, position, EntityType.PREY);
                 accountant.register(bubble.id(), UUID.fromString(padToUUID(entityId)));
                 entityVelocities.put(entityId, velocity);
