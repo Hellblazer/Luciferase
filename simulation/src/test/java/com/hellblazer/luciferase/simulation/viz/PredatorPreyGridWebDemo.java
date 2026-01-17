@@ -68,14 +68,39 @@ public class PredatorPreyGridWebDemo {
         var predatorBehavior = new PackHuntingBehavior();
 
         // Phase 2.5: Initialize density monitoring (topology operations require TetreeBubbleGrid)
-        var densityMonitor = new DensityMonitor(5000, 500); // Split at 5000 entities, merge at 500
+        // Realistic thresholds for 1000 entities across 6 bubbles (avg ~166 per bubble):
+        // - Split threshold: 250 entities (1.5x average, triggers NEEDS_SPLIT)
+        // - Approaching split: 225 entities (90% of split, triggers APPROACHING_SPLIT)
+        // - Merge threshold: 100 entities (0.6x average, triggers NEEDS_MERGE)
+        // - Approaching merge: 110 entities (110% of merge, triggers APPROACHING_MERGE)
+        var densityMonitor = new DensityMonitor(250, 100);
 
         var entityVelocities = new ConcurrentHashMap<String, Vector3f>();
         var entityBehaviors = new ConcurrentHashMap<String, Object>();
 
+        // Create intentionally uneven distribution to showcase density states:
+        // Bubble 0: 300 entities (NEEDS_SPLIT - red pulsing)
+        // Bubble 1: 230 entities (APPROACHING_SPLIT - yellow)
+        // Bubble 2: 180 entities (NORMAL - green)
+        // Bubble 3: 150 entities (NORMAL - green)
+        // Bubble 4: 105 entities (APPROACHING_MERGE - blue)
+        // Bubble 5: 85 entities (NEEDS_MERGE - purple pulsing)
+        int[] targetCounts = {300, 230, 180, 150, 105, 85}; // Total: 1050
+        int[] currentCounts = new int[6];
+
         // VON ENTITY SPAWNING: Spatially route entities to correct bubble domains
         for (int i = 0; i < PREY_COUNT; i++) {
-            var bubble = bubbles.get(i % bubbles.size()); // Distribute evenly across bubbles
+            // Find next bubble with capacity
+            int bubbleIndex = 0;
+            for (int b = 0; b < bubbles.size(); b++) {
+                if (currentCounts[b] < targetCounts[b]) {
+                    bubbleIndex = b;
+                    break;
+                }
+            }
+            currentCounts[bubbleIndex]++;
+
+            var bubble = bubbles.get(bubbleIndex);
             var entityId = "prey-" + i;
 
             // VON JOIN: Generate random position in world, classify to find accepting bubble
@@ -97,8 +122,19 @@ public class PredatorPreyGridWebDemo {
         }
 
         // VON ENTITY SPAWNING: Spatially route predators to correct bubble domains
+        // Distribute remaining entities (predators) to reach target counts
         for (int i = 0; i < PREDATOR_COUNT; i++) {
-            var bubble = bubbles.get(i % bubbles.size()); // Distribute evenly across bubbles
+            // Find next bubble with capacity
+            int bubbleIndex = 0;
+            for (int b = 0; b < bubbles.size(); b++) {
+                if (currentCounts[b] < targetCounts[b]) {
+                    bubbleIndex = b;
+                    break;
+                }
+            }
+            currentCounts[bubbleIndex]++;
+
+            var bubble = bubbles.get(bubbleIndex);
             var entityId = "predator-" + i;
 
             // VON JOIN: Generate random position in world, classify to find accepting bubble
@@ -135,7 +171,25 @@ public class PredatorPreyGridWebDemo {
         densityMonitor.addListener(vizServer.getTopologyEventStream());
         vizServer.setDensityMonitor(densityMonitor);
 
-        log.info("Density monitoring enabled:");
+        // Log initial distribution
+        log.info("=== Initial Entity Distribution (Intentionally Uneven) ===");
+        var initialDistribution = accountant.getDistribution();
+        for (int i = 0; i < bubbles.size(); i++) {
+            var bubble = bubbles.get(i);
+            var count = initialDistribution.getOrDefault(bubble.id(), 0);
+            var state = densityMonitor.getState(bubble.id());
+            log.info("Bubble {}: {} entities - State: {}", i, count, state);
+        }
+        log.info("Expected states: [NEEDS_SPLIT, APPROACHING_SPLIT, NORMAL, NORMAL, APPROACHING_MERGE, NEEDS_MERGE]");
+
+        // Trigger initial density update
+        densityMonitor.update(initialDistribution);
+
+        log.info("=== Density Monitoring Configuration ===");
+        log.info("  - Split threshold: 250 entities (NEEDS_SPLIT triggers red pulsing)");
+        log.info("  - Approaching split: 225 entities (90% of split, yellow borders)");
+        log.info("  - Merge threshold: 100 entities (NEEDS_MERGE triggers purple pulsing)");
+        log.info("  - Approaching merge: 110 entities (110% of merge, blue borders)");
         log.info("  - WebSocket endpoint: ws://localhost:{}/ws/topology (density state changes)", port);
         log.info("  - Density metrics API: http://localhost:{}/api/density", port);
         log.info("Note: Full topology operations (split/merge/move) require TetreeBubbleGrid");
@@ -230,11 +284,23 @@ public class PredatorPreyGridWebDemo {
                 densityMonitor.update(distribution);
             }
 
-            // Log progress every 100 ticks
+            // Log progress every 100 ticks with density states
             if (currentTick % 100 == 0) {
                 var distribution = accountant.getDistribution();
                 int total = distribution.values().stream().mapToInt(Integer::intValue).sum();
                 log.info("Tick {}: {} entities across {} bubbles", currentTick, total, bubbles.size());
+
+                // Log current density states
+                var statesSummary = new StringBuilder("Density states: [");
+                for (int i = 0; i < bubbles.size(); i++) {
+                    var bubble = bubbles.get(i);
+                    var count = distribution.getOrDefault(bubble.id(), 0);
+                    var state = densityMonitor.getState(bubble.id());
+                    if (i > 0) statesSummary.append(", ");
+                    statesSummary.append(String.format("B%d:%d-%s", i, count, state));
+                }
+                statesSummary.append("]");
+                log.info(statesSummary.toString());
             }
 
             currentTick++;
