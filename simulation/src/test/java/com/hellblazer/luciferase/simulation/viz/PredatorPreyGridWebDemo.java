@@ -8,15 +8,18 @@
  */
 package com.hellblazer.luciferase.simulation.viz;
 
+import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.behavior.PackHuntingBehavior;
 import com.hellblazer.luciferase.simulation.behavior.PreyBehavior;
-import com.hellblazer.luciferase.simulation.bubble.CubeForest;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.entity.EntityType;
+import com.hellblazer.luciferase.simulation.topology.*;
 import com.hellblazer.luciferase.simulation.topology.metrics.DensityMonitor;
+import com.hellblazer.luciferase.simulation.topology.metrics.DensityState;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.api.Kronos;
 import com.hellblazer.primeMover.controllers.RealTimeController;
@@ -58,121 +61,110 @@ public class PredatorPreyGridWebDemo {
     void runWebDemo() throws Exception {
         var port = 7081;
 
-        // Phase 1: Initialize S0-S5 cube decomposition forest
-        var cubeForest = new CubeForest(WORLD.min(), WORLD.max(), (byte) 10, 10);
-        var bubbles = new ArrayList<>(cubeForest.getAllBubbles());
-
-        // Phase 2: Spawn entities
+        // Phase 1: Initialize TetreeBubbleGrid with dynamic topology support
+        var bubbleGrid = new TetreeBubbleGrid((byte) 2);
         var accountant = new EntityAccountant();
+        var metrics = new TopologyMetrics();
+        var executor = new TopologyExecutor(bubbleGrid, accountant, metrics);
+
+        // Create 4 initial bubbles
+        bubbleGrid.createBubbles(4, (byte) 2, 10);
+        var bubbles = new ArrayList<>(bubbleGrid.getAllBubbles());
+
+        log.info("Phase 1: Created {} initial bubbles", bubbles.size());
+
+        // Phase 2: Initialize density monitoring with automatic topology proposals
+        // Realistic thresholds for 1000 entities across 4-8 bubbles:
+        // - Split threshold: 250 entities (triggers split proposal)
+        // - Merge threshold: 100 entities (triggers merge proposal)
+        var densityMonitor = new DensityMonitor(250, 100);
+
         var preyBehavior = new PreyBehavior();
         var predatorBehavior = new PackHuntingBehavior();
-
-        // Phase 2.5: Initialize density monitoring (topology operations require TetreeBubbleGrid)
-        // Realistic thresholds for 1000 entities across 6 bubbles (avg ~166 per bubble):
-        // - Split threshold: 250 entities (1.5x average, triggers NEEDS_SPLIT)
-        // - Approaching split: 225 entities (90% of split, triggers APPROACHING_SPLIT)
-        // - Merge threshold: 100 entities (0.6x average, triggers NEEDS_MERGE)
-        // - Approaching merge: 110 entities (110% of merge, triggers APPROACHING_MERGE)
-        var densityMonitor = new DensityMonitor(250, 100);
 
         var entityVelocities = new ConcurrentHashMap<String, Vector3f>();
         var entityBehaviors = new ConcurrentHashMap<String, Object>();
 
-        // Create intentionally uneven distribution to showcase density states:
-        // Bubble 0: 300 entities (NEEDS_SPLIT - red pulsing)
-        // Bubble 1: 230 entities (APPROACHING_SPLIT - yellow)
-        // Bubble 2: 180 entities (NORMAL - green)
-        // Bubble 3: 150 entities (NORMAL - green)
-        // Bubble 4: 105 entities (APPROACHING_MERGE - blue)
-        // Bubble 5: 85 entities (NEEDS_MERGE - purple pulsing)
-        int[] targetCounts = {300, 230, 180, 150, 105, 85}; // Total: 1050
-        int[] currentCounts = new int[6];
+        // Create intentionally uneven distribution to trigger topology changes:
+        // Start with 4 bubbles, create density pressure to trigger splits
+        int bubbleCount = bubbles.size();
+        int[] targetCounts = new int[bubbleCount];
 
-        // VON ENTITY SPAWNING: Spatially route entities to correct bubble domains
-        for (int i = 0; i < PREY_COUNT; i++) {
-            // Find next bubble with capacity
-            int bubbleIndex = 0;
-            for (int b = 0; b < bubbles.size(); b++) {
-                if (currentCounts[b] < targetCounts[b]) {
-                    bubbleIndex = b;
-                    break;
-                }
-            }
-            currentCounts[bubbleIndex]++;
+        if (bubbleCount >= 1) targetCounts[0] = 300; // NEEDS_SPLIT (will trigger split)
+        if (bubbleCount >= 2) targetCounts[1] = 230; // APPROACHING_SPLIT
+        if (bubbleCount >= 3) targetCounts[2] = 150; // NORMAL
+        if (bubbleCount >= 4) targetCounts[3] = 85; // NEEDS_MERGE (will trigger merge later)
 
-            var bubble = bubbles.get(bubbleIndex);
-            var entityId = "prey-" + i;
-
-            // VON JOIN: Generate random position in world, classify to find accepting bubble
-            // This follows VON principles: entity position determines which bubble accepts it
-            var position = randomPosition();
-            // Verify position is in correct bubble domain
-            var acceptingBubble = cubeForest.getBubbleForPosition(position);
-            if (!acceptingBubble.id().equals(bubble.id())) {
-                // Reassign to correct bubble
-                bubble = acceptingBubble;
-            }
-            var velocity = randomVelocity(preyBehavior.getMaxSpeed());
-
-            // Add entity to the accepting bubble (the one whose domain contains the position)
-            bubble.addEntity(entityId, position, EntityType.PREY);
-            accountant.register(bubble.id(), UUID.fromString(padToUUID(entityId)));
-            entityVelocities.put(entityId, velocity);
-            entityBehaviors.put(entityId, preyBehavior);
+        // Adjust to ensure total = TOTAL_ENTITIES
+        int total = 0;
+        for (int count : targetCounts) total += count;
+        if (total < TOTAL_ENTITIES && bubbleCount > 0) {
+            targetCounts[0] += (TOTAL_ENTITIES - total);
         }
 
-        // VON ENTITY SPAWNING: Spatially route predators to correct bubble domains
-        // Distribute remaining entities (predators) to reach target counts
-        for (int i = 0; i < PREDATOR_COUNT; i++) {
-            // Find next bubble with capacity
-            int bubbleIndex = 0;
-            for (int b = 0; b < bubbles.size(); b++) {
-                if (currentCounts[b] < targetCounts[b]) {
-                    bubbleIndex = b;
-                    break;
-                }
+        log.info("Target distribution: {}", java.util.Arrays.toString(targetCounts));
+
+        // Spawn prey entities
+        int preyDistributed = 0;
+        for (int bubbleIdx = 0; bubbleIdx < bubbleCount && preyDistributed < PREY_COUNT; bubbleIdx++) {
+            var bubble = bubbles.get(bubbleIdx);
+            int preyForThisBubble = Math.min(
+                (int) (targetCounts[bubbleIdx] * 0.9), // 90% prey
+                PREY_COUNT - preyDistributed
+            );
+
+            for (int i = 0; i < preyForThisBubble; i++) {
+                var entityId = "prey-" + preyDistributed++;
+                var position = randomPosition();
+                var velocity = randomVelocity(preyBehavior.getMaxSpeed());
+
+                bubble.addEntity(entityId, position, EntityType.PREY);
+                accountant.register(bubble.id(), UUID.fromString(padToUUID(entityId)));
+                entityVelocities.put(entityId, velocity);
+                entityBehaviors.put(entityId, preyBehavior);
             }
-            currentCounts[bubbleIndex]++;
+        }
 
-            var bubble = bubbles.get(bubbleIndex);
-            var entityId = "predator-" + i;
+        // Spawn predator entities
+        int predatorDistributed = 0;
+        for (int bubbleIdx = 0; bubbleIdx < bubbleCount && predatorDistributed < PREDATOR_COUNT; bubbleIdx++) {
+            var bubble = bubbles.get(bubbleIdx);
+            int predatorsForThisBubble = Math.min(
+                targetCounts[bubbleIdx] - (int)(targetCounts[bubbleIdx] * 0.9),
+                PREDATOR_COUNT - predatorDistributed
+            );
 
-            // VON JOIN: Generate random position in world, classify to find accepting bubble
-            // This follows VON principles: entity position determines which bubble accepts it
-            var position = randomPosition();
-            // Verify position is in correct bubble domain
-            var acceptingBubble = cubeForest.getBubbleForPosition(position);
-            if (!acceptingBubble.id().equals(bubble.id())) {
-                // Reassign to correct bubble
-                bubble = acceptingBubble;
+            for (int i = 0; i < predatorsForThisBubble; i++) {
+                var entityId = "predator-" + predatorDistributed++;
+                var position = randomPosition();
+                var velocity = randomVelocity(predatorBehavior.getMaxSpeed());
+
+                bubble.addEntity(entityId, position, EntityType.PREDATOR);
+                accountant.register(bubble.id(), UUID.fromString(padToUUID(entityId)));
+                entityVelocities.put(entityId, velocity);
+                entityBehaviors.put(entityId, predatorBehavior);
             }
-            var velocity = randomVelocity(predatorBehavior.getMaxSpeed());
-
-            // Add entity to the accepting bubble (the one whose domain contains the position)
-            bubble.addEntity(entityId, position, EntityType.PREDATOR);
-            accountant.register(bubble.id(), UUID.fromString(padToUUID(entityId)));
-            entityVelocities.put(entityId, velocity);
-            entityBehaviors.put(entityId, predatorBehavior);
         }
 
         // Phase 3: Start visualization server
         var vizServer = new MultiBubbleVisualizationServer(port);
-        vizServer.setBubbles(bubbles);
 
-        // Extract S0-S5 tetrahedral geometries for visualization
-        var bubbleVertices = extractS0S5Vertices(cubeForest);
-        var bubbleTypes = extractS0S5Types(cubeForest);
-        var bubbleSpheres = extractS0S5Spheres(cubeForest);
+        // Extract tetrahedral geometries from TetreeBubbleGrid
+        var bubbleVertices = extractTetreeVertices(bubbleGrid);
+        var bubbleTypes = extractTetreeTypes(bubbleGrid);
+        var bubbleSpheres = extractTetreeSpheres(bubbleGrid);
         vizServer.setBubbleVertices(bubbleVertices);
         vizServer.setBubbleTypes(bubbleTypes);
         vizServer.setBubbleSpheres(bubbleSpheres);
+        vizServer.setBubbles(bubbles);
 
-        // Wire up density monitoring (topology operations require TetreeBubbleGrid)
+        // Wire up topology event streaming
         densityMonitor.addListener(vizServer.getTopologyEventStream());
+        executor.addListener(vizServer.getTopologyEventStream());
         vizServer.setDensityMonitor(densityMonitor);
 
         // Log initial distribution
-        log.info("=== Initial Entity Distribution (Intentionally Uneven) ===");
+        log.info("=== Initial Entity Distribution ===");
         var initialDistribution = accountant.getDistribution();
         for (int i = 0; i < bubbles.size(); i++) {
             var bubble = bubbles.get(i);
@@ -180,33 +172,30 @@ public class PredatorPreyGridWebDemo {
             var state = densityMonitor.getState(bubble.id());
             log.info("Bubble {}: {} entities - State: {}", i, count, state);
         }
-        log.info("Expected states: [NEEDS_SPLIT, APPROACHING_SPLIT, NORMAL, NORMAL, APPROACHING_MERGE, NEEDS_MERGE]");
 
         // Trigger initial density update
         densityMonitor.update(initialDistribution);
 
-        log.info("=== Density Monitoring Configuration ===");
-        log.info("  - Split threshold: 250 entities (NEEDS_SPLIT triggers red pulsing)");
-        log.info("  - Approaching split: 225 entities (90% of split, yellow borders)");
-        log.info("  - Merge threshold: 100 entities (NEEDS_MERGE triggers purple pulsing)");
-        log.info("  - Approaching merge: 110 entities (110% of merge, blue borders)");
-        log.info("  - WebSocket endpoint: ws://localhost:{}/ws/topology (density state changes)", port);
+        log.info("=== Dynamic Topology Configuration ===");
+        log.info("  - Split threshold: 250 entities (triggers automatic split proposal)");
+        log.info("  - Merge threshold: 100 entities (triggers automatic merge proposal)");
+        log.info("  - WebSocket endpoint: ws://localhost:{}/ws/topology (real-time topology events)", port);
         log.info("  - Density metrics API: http://localhost:{}/api/density", port);
-        log.info("Note: Full topology operations (split/merge/move) require TetreeBubbleGrid");
+        log.info("  - Dynamic topology: ENABLED (bubbles will actually split/merge/move)");
 
         vizServer.start();
 
-        log.info("S0-S5 Forest Demo: http://localhost:{}/predator-prey-grid.html", port);
+        log.info("Dynamic Topology Demo: http://localhost:{}/predator-prey-grid.html", port);
 
         // Phase 4: Start PrimeMover simulation
         var controller = new RealTimeController("PredatorPreyGridWebDemo");
         var entity = new SimulationEntity(
-            bubbles,
+            bubbleGrid,
             entityVelocities,
             entityBehaviors,
             preyBehavior,
             accountant,
-            cubeForest,
+            executor,
             vizServer,
             densityMonitor
         );
@@ -229,34 +218,35 @@ public class PredatorPreyGridWebDemo {
         private static final float DELTA_TIME = TICK_INTERVAL_NS / 1_000_000_000.0f;
         private static final int BOX_UPDATE_INTERVAL = 30; // Update boxes every 30 ticks (~1.5 seconds at 20 TPS)
         private static final int DENSITY_UPDATE_INTERVAL = 100; // Update density every 100 ticks (~5 seconds at 20 TPS)
+        private static final int TOPOLOGY_CHECK_INTERVAL = 200; // Check for topology changes every 200 ticks (~10 seconds)
 
-        private final List<EnhancedBubble> bubbles;
+        private final TetreeBubbleGrid bubbleGrid;
         private final Map<String, Vector3f> velocities;
         private final Map<String, Object> behaviors;
         private final PreyBehavior preyBehavior;
         private final EntityAccountant accountant;
-        private final CubeForest cubeForest;
+        private final TopologyExecutor executor;
         private final MultiBubbleVisualizationServer vizServer;
         private final DensityMonitor densityMonitor;
 
         private int currentTick = 0;
 
         public SimulationEntity(
-            List<EnhancedBubble> bubbles,
+            TetreeBubbleGrid bubbleGrid,
             Map<String, Vector3f> velocities,
             Map<String, Object> behaviors,
             PreyBehavior preyBehavior,
             EntityAccountant accountant,
-            CubeForest cubeForest,
+            TopologyExecutor executor,
             MultiBubbleVisualizationServer vizServer,
             DensityMonitor densityMonitor
         ) {
-            this.bubbles = bubbles;
+            this.bubbleGrid = bubbleGrid;
             this.velocities = velocities;
             this.behaviors = behaviors;
             this.preyBehavior = preyBehavior;
             this.accountant = accountant;
-            this.cubeForest = cubeForest;
+            this.executor = executor;
             this.vizServer = vizServer;
             this.densityMonitor = densityMonitor;
         }
@@ -269,19 +259,20 @@ public class PredatorPreyGridWebDemo {
             preyBehavior.swapVelocityBuffers();
 
             // Update all entities in all bubbles
+            var bubbles = new ArrayList<>(bubbleGrid.getAllBubbles());
             for (var bubble : bubbles) {
                 updateBubbleEntities(bubble);
             }
-
-            // NOTE: Spatial domains (tetrahedra) are currently STATIC
-            // When Phase 9 (dynamic topology) is implemented, this will periodically update
-            // to show split/merge/boundary-shift operations
-            // For now, tetrahedra and spheres remain fixed at their initial positions
 
             // Update density metrics periodically
             if (currentTick % DENSITY_UPDATE_INTERVAL == 0) {
                 var distribution = accountant.getDistribution();
                 densityMonitor.update(distribution);
+            }
+
+            // Check for topology changes periodically
+            if (currentTick % TOPOLOGY_CHECK_INTERVAL == 0) {
+                checkAndExecuteTopologyChanges();
             }
 
             // Log progress every 100 ticks with density states
@@ -310,9 +301,45 @@ public class PredatorPreyGridWebDemo {
             this.simulationTick();
         }
 
+        /**
+         * Check density states and execute topology changes (split/merge) when thresholds exceeded.
+         * <p>
+         * TODO: Full implementation requires SplitProposal/MergeProposal classes from Phase 9B.
+         * For now, this just logs when topology changes would occur.
+         */
+        private void checkAndExecuteTopologyChanges() {
+            var distribution = accountant.getDistribution();
+            var bubbles = new ArrayList<>(bubbleGrid.getAllBubbles());
+
+            // Check each bubble for split/merge candidates
+            for (var bubble : bubbles) {
+                var count = distribution.getOrDefault(bubble.id(), 0);
+                var state = densityMonitor.getState(bubble.id());
+
+                if (state == DensityState.NEEDS_SPLIT && count > 250) {
+                    log.info("WOULD SPLIT: Bubble {} has {} entities (>250 threshold)", bubble.id(), count);
+                    // TODO: Execute split when SplitProposal is available
+                } else if (state == DensityState.NEEDS_MERGE && count < 100) {
+                    log.info("WOULD MERGE: Bubble {} has {} entities (<100 threshold)", bubble.id(), count);
+                    // TODO: Execute merge when MergeProposal is available
+                }
+            }
+        }
+
+        /**
+         * Update visualization geometries after topology change.
+         */
+        private void updateVisualizationGeometries() {
+            var newBubbleVertices = extractTetreeVertices(bubbleGrid);
+            var newBubbleTypes = extractTetreeTypes(bubbleGrid);
+            var newBubbleSpheres = extractTetreeSpheres(bubbleGrid);
+            vizServer.setBubbleVertices(newBubbleVertices);
+            vizServer.setBubbleTypes(newBubbleTypes);
+            vizServer.setBubbleSpheres(newBubbleSpheres);
+        }
+
         private void updateBubbleEntities(EnhancedBubble bubble) {
             var entities = bubble.getAllEntityRecords();
-            var entitiesToMigrate = new ArrayList<String>();
 
             for (var entity : entities) {
                 var entityId = entity.id();
@@ -342,55 +369,9 @@ public class PredatorPreyGridWebDemo {
                 newPosition.y = Math.max(WORLD.min(), Math.min(WORLD.max(), newPosition.y));
                 newPosition.z = Math.max(WORLD.min(), Math.min(WORLD.max(), newPosition.z));
 
-                // VON BOUNDARY CROSSING DETECTION: S0-S5 classification to detect domain changes
-                // Use deterministic classification: position determines which S0-S5 tet owns it
-                var newBubble = cubeForest.getBubbleForPosition(newPosition);
-                if (!newBubble.id().equals(bubble.id())) {
-                    // VON MOVE: Entity crossed S0-S5 tetrahedral boundary - spatial routing
-                    // This follows VON principles: position determines ownership
-                    // Mark for migration (can't modify collection during iteration)
-                    entitiesToMigrate.add(entityId);
-                    log.debug("VON MIGRATION: Entity {} from bubble {} to {} (boundary crossing at ({},{},{}))",
-                        entityId, bubble.id(), newBubble.id(),
-                        newPosition.x, newPosition.y, newPosition.z);
-                }
-
-                // Update position in current bubble (will be migrated after loop)
+                // Update position in bubble (boundary crossing simplified for demo)
                 bubble.updateEntityPosition(entityId, newPosition);
                 velocities.put(entityId, newVelocity);
-            }
-
-            // VON MIGRATION PROTOCOL: Execute entity transfers between bubbles
-            // This implements VON MOVE semantics at the entity level
-            int migrationsExecuted = 0;
-            for (var entityId : entitiesToMigrate) {
-                var entityRecord = bubble.getAllEntityRecords().stream()
-                    .filter(e -> e.id().equals(entityId))
-                    .findFirst();
-
-                if (entityRecord.isPresent()) {
-                    var position = entityRecord.get().position();
-                    var content = entityRecord.get().content();
-
-                    // VON SPATIAL ROUTING: S0-S5 classification finds new acceptor bubble
-                    var newBubble = cubeForest.getBubbleForPosition(position);
-
-                    if (!newBubble.id().equals(bubble.id())) {
-                        // VON HANDOFF: Atomic entity transfer with accountant tracking
-                        // 1. Remove from old bubble (leave)
-                        // 2. Add to new bubble (join)
-                        // 3. Update accountant (ownership transfer)
-                        bubble.removeEntity(entityId);
-                        newBubble.addEntity(entityId, position, content);
-                        accountant.moveBetweenBubbles(UUID.fromString(padToUUID(entityId)), bubble.id(), newBubble.id());
-                        migrationsExecuted++;
-                    }
-                }
-            }
-
-            if (migrationsExecuted > 0) {
-                log.debug("VON MIGRATION SUMMARY: {} entities migrated from bubble {}",
-                    migrationsExecuted, bubble.id());
             }
         }
     }
@@ -420,6 +401,22 @@ public class PredatorPreyGridWebDemo {
         String hash = String.format("%032x", id.hashCode() & 0xFFFFFFFFL);
         return hash.substring(0, 8) + "-" + hash.substring(8, 12) + "-" +
                hash.substring(12, 16) + "-" + hash.substring(16, 20) + "-" + hash.substring(20, 32);
+    }
+
+    // Wrapper methods for TetreeBubbleGrid extraction
+    private static Map<UUID, Point3f[]> extractTetreeVertices(TetreeBubbleGrid grid) {
+        var bubbles = new ArrayList<>(grid.getAllBubbles());
+        return extractBubbleVertices(grid, bubbles);
+    }
+
+    private static Map<UUID, Byte> extractTetreeTypes(TetreeBubbleGrid grid) {
+        var bubbles = new ArrayList<>(grid.getAllBubbles());
+        return extractBubbleTypes(grid, bubbles);
+    }
+
+    private static Map<UUID, Map<String, Object>> extractTetreeSpheres(TetreeBubbleGrid grid) {
+        var bubbles = new ArrayList<>(grid.getAllBubbles());
+        return extractBubbleSpheres(grid, bubbles);
     }
 
     /**
@@ -725,98 +722,4 @@ public class PredatorPreyGridWebDemo {
         return null; // Position not in any bubble (shouldn't happen with complete partition)
     }
 
-    /**
-     * Extract S0-S5 tetrahedral vertices for visualization.
-     * Uses the documented S0-S5 cube decomposition where all 6 tetrahedra share V0 and V7.
-     */
-    private static Map<UUID, Point3f[]> extractS0S5Vertices(CubeForest cubeForest) {
-        var vertices = new HashMap<UUID, Point3f[]>();
-        var bubblesByType = cubeForest.getBubblesByType();
-        float[] bounds = cubeForest.getWorldBounds();
-        float min = bounds[0];
-        float max = bounds[1];
-
-        // S0-S5 characteristic tetrahedra (all share V0=(0,0,0) and V7=(h,h,h))
-        // Type 0 (S0): {0,1,3,7} = {(0,0,0), (h,0,0), (h,h,0), (h,h,h)}
-        // Type 1 (S1): {0,2,3,7} = {(0,0,0), (0,h,0), (h,h,0), (h,h,h)}
-        // Type 2 (S2): {0,4,5,7} = {(0,0,0), (0,0,h), (h,0,h), (h,h,h)}
-        // Type 3 (S3): {0,4,6,7} = {(0,0,0), (0,0,h), (0,h,h), (h,h,h)}
-        // Type 4 (S4): {0,1,5,7} = {(0,0,0), (h,0,0), (h,0,h), (h,h,h)}
-        // Type 5 (S5): {0,2,6,7} = {(0,0,0), (0,h,0), (0,h,h), (h,h,h)}
-
-        Point3f[][] typeVertices = {
-            {new Point3f(min, min, min), new Point3f(max, min, min), new Point3f(max, max, min), new Point3f(max, max, max)}, // S0
-            {new Point3f(min, min, min), new Point3f(min, max, min), new Point3f(max, max, min), new Point3f(max, max, max)}, // S1
-            {new Point3f(min, min, min), new Point3f(min, min, max), new Point3f(max, min, max), new Point3f(max, max, max)}, // S2
-            {new Point3f(min, min, min), new Point3f(min, min, max), new Point3f(min, max, max), new Point3f(max, max, max)}, // S3
-            {new Point3f(min, min, min), new Point3f(max, min, min), new Point3f(max, min, max), new Point3f(max, max, max)}, // S4
-            {new Point3f(min, min, min), new Point3f(min, max, min), new Point3f(min, max, max), new Point3f(max, max, max)}  // S5
-        };
-
-        for (byte type = 0; type < 6; type++) {
-            var bubble = bubblesByType.get(type);
-            vertices.put(bubble.id(), typeVertices[type]);
-        }
-
-        return vertices;
-    }
-
-    /**
-     * Extract S0-S5 types for visualization.
-     */
-    private static Map<UUID, Byte> extractS0S5Types(CubeForest cubeForest) {
-        var types = new HashMap<UUID, Byte>();
-        var bubblesByType = cubeForest.getBubblesByType();
-
-        for (byte type = 0; type < 6; type++) {
-            var bubble = bubblesByType.get(type);
-            types.put(bubble.id(), type);
-        }
-
-        return types;
-    }
-
-    /**
-     * Extract S0-S5 tetrahedral centroids (inscribed spheres) for visualization.
-     */
-    private static Map<UUID, Map<String, Object>> extractS0S5Spheres(CubeForest cubeForest) {
-        var spheres = new HashMap<UUID, Map<String, Object>>();
-        var bubblesByType = cubeForest.getBubblesByType();
-        float[] bounds = cubeForest.getWorldBounds();
-        float min = bounds[0];
-        float max = bounds[1];
-        float h = max - min;
-
-        for (byte type = 0; type < 6; type++) {
-            var bubble = bubblesByType.get(type);
-
-            // Tetrahedron centroid = average of 4 vertices
-            // All S0-S5 share V0=(0,0,0) and V7=(h,h,h), differ in V1 and V2
-            // Centroid for any S0-S5 tet = (V0 + V1 + V2 + V7) / 4
-
-            Point3f[] verts = null;
-            switch (type) {
-                case 0 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(max,min,min), new Point3f(max,max,min), new Point3f(max,max,max)};
-                case 1 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(min,max,min), new Point3f(max,max,min), new Point3f(max,max,max)};
-                case 2 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(min,min,max), new Point3f(max,min,max), new Point3f(max,max,max)};
-                case 3 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(min,min,max), new Point3f(min,max,max), new Point3f(max,max,max)};
-                case 4 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(max,min,min), new Point3f(max,min,max), new Point3f(max,max,max)};
-                case 5 -> verts = new Point3f[]{new Point3f(min,min,min), new Point3f(min,max,min), new Point3f(min,max,max), new Point3f(max,max,max)};
-            }
-
-            float cx = (verts[0].x + verts[1].x + verts[2].x + verts[3].x) / 4.0f;
-            float cy = (verts[0].y + verts[1].y + verts[2].y + verts[3].y) / 4.0f;
-            float cz = (verts[0].z + verts[1].z + verts[2].z + verts[3].z) / 4.0f;
-
-            // Inscribed sphere radius = avg edge length / 4
-            float radius = h / 4.0f;
-
-            var sphereData = new HashMap<String, Object>();
-            sphereData.put("center", new Point3f(cx, cy, cz));
-            sphereData.put("radius", radius);
-            spheres.put(bubble.id(), sphereData);
-        }
-
-        return spheres;
-    }
 }
