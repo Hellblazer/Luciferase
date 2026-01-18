@@ -132,169 +132,37 @@ public class SFCArrayIndex<ID extends EntityID, Content> extends AbstractSpatial
      * due to the RSFC (Recursive Space-Filling Curve) property: axis-aligned
      * hypercubes map to contiguous intervals.
      *
-     * This implementation uses the LITMAX/BIGMIN algorithm for optimal interval count.
+     * This method delegates to the unified {@link LitmaxBigmin} algorithm
+     * for optimal interval computation.
      *
      * @param queryBounds the query region bounds
      * @param level       the refinement level for the query
      * @return list of MortonKey intervals (start, end pairs)
      */
     public List<MortonKeyInterval> cellsQ(VolumeBounds queryBounds, byte level) {
-        // Use LITMAX/BIGMIN algorithm for optimal interval count
-        return cellsQLitmaxBigmin(queryBounds, level);
-    }
-
-    /**
-     * LITMAX/BIGMIN algorithm for computing optimal Morton intervals.
-     *
-     * This algorithm exploits the Z-order curve structure to find contiguous
-     * intervals with minimal gaps. For a 3D query box, it produces at most
-     * 2^3 = 8 intervals.
-     *
-     * Algorithm:
-     * 1. Start at minMorton (lower-left-front corner of query)
-     * 2. Find LITMAX: largest Morton code < current that's still in query
-     * 3. If LITMAX exists and is less than current-1, there's a gap - emit interval
-     * 4. Find BIGMIN: smallest Morton code > current that's in query
-     * 5. Continue until we've covered the entire query
-     */
-    private List<MortonKeyInterval> cellsQLitmaxBigmin(VolumeBounds queryBounds, byte level) {
-        var intervals = new ArrayList<MortonKeyInterval>();
         var cellSize = Constants.lengthAtLevel(level);
 
         // Compute integer bounds (grid cell coordinates)
-        var minX = (int) Math.floor(queryBounds.minX() / cellSize);
-        var minY = (int) Math.floor(queryBounds.minY() / cellSize);
-        var minZ = (int) Math.floor(queryBounds.minZ() / cellSize);
-        var maxX = (int) Math.floor(queryBounds.maxX() / cellSize);
-        var maxY = (int) Math.floor(queryBounds.maxY() / cellSize);
-        var maxZ = (int) Math.floor(queryBounds.maxZ() / cellSize);
+        var minX = Math.max(0, (int) Math.floor(queryBounds.minX() / cellSize));
+        var minY = Math.max(0, (int) Math.floor(queryBounds.minY() / cellSize));
+        var minZ = Math.max(0, (int) Math.floor(queryBounds.minZ() / cellSize));
+        var maxX = Math.max(0, (int) Math.floor(queryBounds.maxX() / cellSize));
+        var maxY = Math.max(0, (int) Math.floor(queryBounds.maxY() / cellSize));
+        var maxZ = Math.max(0, (int) Math.floor(queryBounds.maxZ() / cellSize));
 
-        // Clamp to valid ranges
-        minX = Math.max(0, minX);
-        minY = Math.max(0, minY);
-        minZ = Math.max(0, minZ);
-        maxX = Math.max(0, maxX);
-        maxY = Math.max(0, maxY);
-        maxZ = Math.max(0, maxZ);
+        // Use unified LITMAX/BIGMIN algorithm
+        var sfcIntervals = LitmaxBigmin.computeIntervals(minX, minY, minZ, maxX, maxY, maxZ);
 
-        // Start with the minimum Morton code in the query region
-        var minMorton = MortonCurve.encode(minX, minY, minZ);
-        var maxMorton = MortonCurve.encode(maxX, maxY, maxZ);
-
-        if (minMorton > maxMorton) {
-            var temp = minMorton;
-            minMorton = maxMorton;
-            maxMorton = temp;
-        }
-
-        // Iterate through the Morton range, finding intervals
-        var current = minMorton;
-        while (current <= maxMorton) {
-            // Find the start of the next interval (first code in query >= current)
-            var intervalStart = findNextInQuery(current, minX, minY, minZ, maxX, maxY, maxZ, maxMorton);
-            if (intervalStart < 0) {
-                break; // No more codes in query
-            }
-
-            // Find the end of this interval (last contiguous code in query)
-            var intervalEnd = findIntervalEnd(intervalStart, minX, minY, minZ, maxX, maxY, maxZ, maxMorton);
-
+        // Convert to MortonKeyInterval for backward compatibility
+        var intervals = new ArrayList<MortonKeyInterval>(sfcIntervals.size());
+        for (var interval : sfcIntervals) {
             intervals.add(new MortonKeyInterval(
-                new MortonKey(intervalStart, level),
-                new MortonKey(intervalEnd, level)
+                new MortonKey(interval.start(), level),
+                new MortonKey(interval.end(), level)
             ));
-
-            // Move past this interval
-            current = intervalEnd + 1;
         }
 
         return intervals;
-    }
-
-    /**
-     * Find the next Morton code >= start that's inside the query box.
-     */
-    private long findNextInQuery(long start, int minX, int minY, int minZ,
-                                  int maxX, int maxY, int maxZ, long maxMorton) {
-        var current = start;
-        while (current <= maxMorton) {
-            var coords = MortonCurve.decode(current);
-            if (coords[0] >= minX && coords[0] <= maxX &&
-                coords[1] >= minY && coords[1] <= maxY &&
-                coords[2] >= minZ && coords[2] <= maxZ) {
-                return current;
-            }
-
-            // Use BIGMIN to jump to the next potentially valid Morton code
-            current = bigmin(current, minX, minY, minZ, maxX, maxY, maxZ);
-            if (current < 0 || current > maxMorton) {
-                return -1;
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * Find the end of the contiguous interval starting at intervalStart.
-     */
-    private long findIntervalEnd(long intervalStart, int minX, int minY, int minZ,
-                                  int maxX, int maxY, int maxZ, long maxMorton) {
-        var current = intervalStart;
-        while (current < maxMorton) {
-            var next = current + 1;
-            var coords = MortonCurve.decode(next);
-
-            // Check if next is still in query
-            if (coords[0] >= minX && coords[0] <= maxX &&
-                coords[1] >= minY && coords[1] <= maxY &&
-                coords[2] >= minZ && coords[2] <= maxZ) {
-                current = next;
-            } else {
-                break;
-            }
-        }
-        return current;
-    }
-
-    /**
-     * BIGMIN: Find the smallest Morton code > current that could be in the query box.
-     *
-     * This exploits the Morton curve structure to skip large ranges that are
-     * definitely outside the query box.
-     */
-    private long bigmin(long current, int minX, int minY, int minZ,
-                        int maxX, int maxY, int maxZ) {
-        var coords = MortonCurve.decode(current);
-        var x = coords[0];
-        var y = coords[1];
-        var z = coords[2];
-
-        // Find the dimension that's most "behind" the query box
-        // and compute the next Morton code that enters the query
-        long nextMorton = current + 1;
-
-        // Simple implementation: just increment
-        // A full BIGMIN would compute the next valid Morton code more efficiently
-        // by analyzing bit patterns, but this is correct
-        if (x < minX || y < minY || z < minZ) {
-            // Current is before query in some dimension
-            // Jump to the corner of the query
-            nextMorton = MortonCurve.encode(
-                Math.max(x, minX),
-                Math.max(y, minY),
-                Math.max(z, minZ)
-            );
-            if (nextMorton <= current) {
-                nextMorton = current + 1;
-            }
-        } else if (x > maxX || y > maxY || z > maxZ) {
-            // Current is past query in some dimension
-            // Need to find next entry point - this is the complex case
-            // For now, use incremental search with early termination
-            return -1; // Signal to stop searching
-        }
-
-        return nextMorton;
     }
 
     /**

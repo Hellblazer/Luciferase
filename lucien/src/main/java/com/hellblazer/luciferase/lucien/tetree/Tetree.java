@@ -2399,12 +2399,14 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
      * This uses Morton codes for grid cell identification, which allows efficient
      * range queries even though TetreeKeys themselves don't follow Morton order.
      *
+     * This method delegates to the unified {@link com.hellblazer.luciferase.lucien.sfc.LitmaxBigmin}
+     * algorithm for optimal interval computation.
+     *
      * @param queryBounds the query region bounds
      * @param level       the refinement level for the query
      * @return list of grid cell Morton code intervals
      */
     public List<GridCellInterval> cellsQ(VolumeBounds queryBounds, byte level) {
-        var intervals = new ArrayList<GridCellInterval>();
         var cellSize = Constants.lengthAtLevel(level);
 
         // Compute grid cell coordinates
@@ -2415,103 +2417,17 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         var maxY = Math.max(0, (int) Math.floor(queryBounds.maxY() / cellSize));
         var maxZ = Math.max(0, (int) Math.floor(queryBounds.maxZ() / cellSize));
 
-        // Compute Morton code range
-        var minMorton = MortonCurve.encode(minX, minY, minZ);
-        var maxMorton = MortonCurve.encode(maxX, maxY, maxZ);
+        // Use unified LITMAX/BIGMIN algorithm
+        var sfcIntervals = com.hellblazer.luciferase.lucien.sfc.LitmaxBigmin.computeIntervals(
+            minX, minY, minZ, maxX, maxY, maxZ);
 
-        if (minMorton > maxMorton) {
-            var temp = minMorton;
-            minMorton = maxMorton;
-            maxMorton = temp;
-        }
-
-        // Use LITMAX/BIGMIN to find contiguous intervals
-        var current = minMorton;
-        while (current <= maxMorton) {
-            var intervalStart = findNextGridCellInQuery(current, minX, minY, minZ, maxX, maxY, maxZ, maxMorton);
-            if (intervalStart < 0) {
-                break;
-            }
-
-            var intervalEnd = findGridCellIntervalEnd(intervalStart, minX, minY, minZ, maxX, maxY, maxZ, maxMorton);
-            intervals.add(new GridCellInterval(intervalStart, intervalEnd, level));
-            current = intervalEnd + 1;
+        // Convert to GridCellInterval (includes level)
+        var intervals = new ArrayList<GridCellInterval>(sfcIntervals.size());
+        for (var interval : sfcIntervals) {
+            intervals.add(new GridCellInterval(interval.start(), interval.end(), level));
         }
 
         return intervals;
-    }
-
-    /**
-     * Find the next Morton code >= start that's inside the query box.
-     */
-    private long findNextGridCellInQuery(long start, int minX, int minY, int minZ,
-                                         int maxX, int maxY, int maxZ, long maxMorton) {
-        var current = start;
-        while (current <= maxMorton) {
-            var coords = MortonCurve.decode(current);
-            if (coords[0] >= minX && coords[0] <= maxX &&
-                coords[1] >= minY && coords[1] <= maxY &&
-                coords[2] >= minZ && coords[2] <= maxZ) {
-                return current;
-            }
-
-            // Use BIGMIN to jump to next potentially valid Morton code
-            current = gridCellBigmin(current, minX, minY, minZ, maxX, maxY, maxZ);
-            if (current < 0 || current > maxMorton) {
-                return -1;
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * Find the end of the contiguous interval starting at intervalStart.
-     */
-    private long findGridCellIntervalEnd(long intervalStart, int minX, int minY, int minZ,
-                                         int maxX, int maxY, int maxZ, long maxMorton) {
-        var current = intervalStart;
-        while (current < maxMorton) {
-            var next = current + 1;
-            var coords = MortonCurve.decode(next);
-
-            if (coords[0] >= minX && coords[0] <= maxX &&
-                coords[1] >= minY && coords[1] <= maxY &&
-                coords[2] >= minZ && coords[2] <= maxZ) {
-                current = next;
-            } else {
-                break;
-            }
-        }
-        return current;
-    }
-
-    /**
-     * BIGMIN for grid cells: Find the smallest Morton code > current that could be in the query box.
-     */
-    private long gridCellBigmin(long current, int minX, int minY, int minZ,
-                                int maxX, int maxY, int maxZ) {
-        var coords = MortonCurve.decode(current);
-        var x = coords[0];
-        var y = coords[1];
-        var z = coords[2];
-
-        long nextMorton = current + 1;
-
-        if (x < minX || y < minY || z < minZ) {
-            // Current is before query in some dimension - jump to query corner
-            nextMorton = MortonCurve.encode(
-                Math.max(x, minX),
-                Math.max(y, minY),
-                Math.max(z, minZ)
-            );
-            if (nextMorton <= current) {
-                nextMorton = current + 1;
-            }
-        } else if (x > maxX || y > maxY || z > maxZ) {
-            return -1; // Signal to stop searching
-        }
-
-        return nextMorton;
     }
 
     /**

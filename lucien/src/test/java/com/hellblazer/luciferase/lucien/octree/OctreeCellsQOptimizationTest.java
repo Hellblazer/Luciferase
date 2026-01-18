@@ -40,13 +40,14 @@ public class OctreeCellsQOptimizationTest {
         byte level = 8;
         var octree = new Octree<>(new SequentialLongIDGenerator(), 10, level);
 
-        // A small query box at origin should produce a small number of intervals
+        // A 2x2x2 query box at origin should produce optimal intervals
+        // Use cellSize * 2 - 1 to ensure we cover exactly cells 0 and 1 in each dimension
         var cellSize = Constants.lengthAtLevel(level);
-        var smallQuery = new VolumeBounds(0, 0, 0, cellSize * 2, cellSize * 2, cellSize * 2);
+        var smallQuery = new VolumeBounds(0, 0, 0, cellSize * 2 - 1, cellSize * 2 - 1, cellSize * 2 - 1);
 
         var intervals = octree.cellsQ(smallQuery, level);
 
-        // Small 2x2x2 query should produce <=8 intervals (optimal for Morton curve)
+        // 2x2x2 query at origin should produce exactly 1 interval (Morton codes 0-7 are contiguous)
         assertTrue(intervals.size() <= 8,
             "2x2x2 query should produce ≤8 intervals, got " + intervals.size());
     }
@@ -164,11 +165,12 @@ public class OctreeCellsQOptimizationTest {
         var cellSize = Constants.lengthAtLevel(level);
 
         // 2x2x2 cube at origin (aligned)
-        var alignedCube = new VolumeBounds(0, 0, 0, cellSize * 2, cellSize * 2, cellSize * 2);
+        // Use cellSize * 2 - 1 to ensure we cover exactly cells 0 and 1 in each dimension
+        var alignedCube = new VolumeBounds(0, 0, 0, cellSize * 2 - 1, cellSize * 2 - 1, cellSize * 2 - 1);
         var intervals = octree.cellsQ(alignedCube, level);
 
-        // With LITMAX/BIGMIN, aligned 2^k cubes should produce optimal intervals
-        // The number depends on the specific Morton encoding but should be minimal
+        // With LITMAX/BIGMIN, aligned 2^k cubes at origin produce exactly 1 interval
+        // because Morton codes 0-7 are contiguous
         assertTrue(intervals.size() <= 8,
             "2x2x2 aligned cube should produce ≤8 intervals (optimal), got " + intervals.size());
     }
