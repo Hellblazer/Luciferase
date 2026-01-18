@@ -325,6 +325,9 @@ public class PredatorPreyGridWebDemo {
                 }
             }
 
+            // Get the stable key->bubble mapping for proper centroid calculation
+            var bubblesWithKeys = bubbleGrid.getBubblesWithKeys();
+
             // Check each bubble for split candidates
             for (var bubble : bubbles) {
                 var count = distribution.getOrDefault(bubble.id(), 0);
@@ -335,21 +338,31 @@ public class PredatorPreyGridWebDemo {
                              bubble.id(), count, state);
 
                     try {
-                        // Create split plane through bubble centroid
-                        // CRITICAL: bubble.bounds().centroid() returns MORTON SPACE coordinates
-                        // Must scale to WORLD SPACE (0-100) where entities actually exist
-                        var mortonCentroid = bubble.bounds().centroid();
+                        // CRITICAL FIX: Use stable TetreeKey-based centroid, NOT entity-derived bounds
+                        // Entity-derived bounds change as entities move, causing incorrect split planes
+                        // TetreeKey is stable for the bubble's spatial location in the grid
+                        var tetreeKey = findKeyForBubble(bubblesWithKeys, bubble.id());
+                        if (tetreeKey == null) {
+                            log.error("  Cannot find TetreeKey for bubble {} - skipping split", bubble.id());
+                            continue;
+                        }
+
+                        // Compute centroid from the tetrahedron's 4 vertices (stable Morton coordinates)
+                        var tet = tetreeKey.toTet();
+                        var coords = tet.coordinates();
+                        float mortonX = (coords[0].x + coords[1].x + coords[2].x + coords[3].x) / 4.0f;
+                        float mortonY = (coords[0].y + coords[1].y + coords[2].y + coords[3].y) / 4.0f;
+                        float mortonZ = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4.0f;
+
+                        // Scale Morton space (0 to 2^21) to World space (0 to 100)
                         final float MORTON_MAX = 1 << 21;
                         final float TETREE_SIZE = 100.0f;
                         final float scale = TETREE_SIZE / MORTON_MAX;
 
-                        var worldCentroid = new Point3f(
-                            (float) mortonCentroid.getX() * scale,
-                            (float) mortonCentroid.getY() * scale,
-                            (float) mortonCentroid.getZ() * scale
-                        );
+                        var worldCentroid = new Point3f(mortonX * scale, mortonY * scale, mortonZ * scale);
 
-                        log.info("  Morton centroid: ({},{},{})", mortonCentroid.getX(), mortonCentroid.getY(), mortonCentroid.getZ());
+                        log.info("  TetreeKey: {}, Tet level: {}", tetreeKey, tet.l);
+                        log.info("  Morton centroid: ({},{},{})", mortonX, mortonY, mortonZ);
                         log.info("  World centroid: ({},{},{})", worldCentroid.x, worldCentroid.y, worldCentroid.z);
 
                         var splitPlane = new SplitPlane(
@@ -422,6 +435,19 @@ public class PredatorPreyGridWebDemo {
                     }
                 }
             }
+        }
+
+        /**
+         * Find the TetreeKey for a given bubble by its UUID.
+         */
+        private com.hellblazer.luciferase.lucien.tetree.TetreeKey<?> findKeyForBubble(
+            Map<com.hellblazer.luciferase.lucien.tetree.TetreeKey<?>, EnhancedBubble> bubblesWithKeys, UUID bubbleId) {
+            for (var entry : bubblesWithKeys.entrySet()) {
+                if (entry.getValue().id().equals(bubbleId)) {
+                    return entry.getKey();
+                }
+            }
+            return null;
         }
 
         /**
