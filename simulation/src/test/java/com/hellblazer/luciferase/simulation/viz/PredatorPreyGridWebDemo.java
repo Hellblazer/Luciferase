@@ -384,6 +384,10 @@ public class PredatorPreyGridWebDemo {
 
                         if (result.success()) {
                             log.info("Split successful: {}", result.message());
+                            // CRITICAL: Update density monitor immediately so UI shows correct entity counts
+                            var updatedDistribution = accountant.getDistribution();
+                            densityMonitor.update(updatedDistribution);
+                            log.info("  Updated density monitor with {} bubbles", updatedDistribution.size());
                             updateVisualizationGeometries();
                         } else {
                             log.warn("Split failed: {}", result.message());
