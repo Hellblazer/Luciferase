@@ -11,6 +11,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -46,23 +47,34 @@ public class BubbleDynamicsManager<ID extends EntityID> {
 
     /**
      * Merge threshold: cross-bubble affinity must exceed this.
+     * @deprecated Use {@link BubbleDynamicsConfig#mergeThreshold()} instead
      */
-    public static final float MERGE_THRESHOLD = 0.6f;
+    @Deprecated(forRemoval = false)
+    public static final float MERGE_THRESHOLD = BubbleDynamicsConfig.DEFAULT_MERGE_THRESHOLD;
 
     /**
      * Drift threshold: entity affinity below this triggers transfer.
+     * @deprecated Use {@link BubbleDynamicsConfig#driftThreshold()} instead
      */
-    public static final float DRIFT_THRESHOLD = 0.5f;
+    @Deprecated(forRemoval = false)
+    public static final float DRIFT_THRESHOLD = BubbleDynamicsConfig.DEFAULT_DRIFT_THRESHOLD;
 
     /**
      * Partition threshold: NC below this indicates partition.
+     * @deprecated Use {@link BubbleDynamicsConfig#partitionThreshold()} instead
      */
-    public static final float PARTITION_THRESHOLD = 0.5f;
+    @Deprecated(forRemoval = false)
+    public static final float PARTITION_THRESHOLD = BubbleDynamicsConfig.DEFAULT_PARTITION_THRESHOLD;
 
     /**
      * Recovery threshold: NC above this indicates partition recovered.
+     * @deprecated Use {@link BubbleDynamicsConfig#recoveryThreshold()} instead
      */
-    public static final float RECOVERY_THRESHOLD = 0.9f;
+    @Deprecated(forRemoval = false)
+    public static final float RECOVERY_THRESHOLD = BubbleDynamicsConfig.DEFAULT_RECOVERY_THRESHOLD;
+
+    // Configuration
+    private final BubbleDynamicsConfig config;
 
     // Dependencies
     private final ExternalBubbleTracker bubbleTracker;
@@ -80,8 +92,11 @@ public class BubbleDynamicsManager<ID extends EntityID> {
     private boolean inPartition;
     private long partitionStartBucket;
 
+    // Pluggable UUID supplier for deterministic testing - defaults to random UUIDs
+    private volatile Supplier<UUID> uuidSupplier = UUID::randomUUID;
+
     /**
-     * Create bubble dynamics manager.
+     * Create bubble dynamics manager with default configuration.
      *
      * @param bubbleTracker External bubble tracker for merge detection
      * @param health        Ghost layer health monitor
@@ -96,6 +111,28 @@ public class BubbleDynamicsManager<ID extends EntityID> {
         StockNeighborList stockNeighbors,
         Consumer<BubbleEvent> eventEmitter
     ) {
+        this(bubbleTracker, health, migrationLog, stockNeighbors, eventEmitter, BubbleDynamicsConfig.defaults());
+    }
+
+    /**
+     * Create bubble dynamics manager with custom configuration.
+     *
+     * @param bubbleTracker  External bubble tracker for merge detection
+     * @param health         Ghost layer health monitor
+     * @param migrationLog   Migration log for idempotency
+     * @param stockNeighbors Stock neighbor list for partition recovery
+     * @param eventEmitter   Callback for bubble events
+     * @param config         Configuration for thresholds
+     */
+    public BubbleDynamicsManager(
+        ExternalBubbleTracker bubbleTracker,
+        GhostLayerHealth health,
+        MigrationLog migrationLog,
+        StockNeighborList stockNeighbors,
+        Consumer<BubbleEvent> eventEmitter,
+        BubbleDynamicsConfig config
+    ) {
+        this.config = Objects.requireNonNull(config, "config must not be null");
         this.bubbleTracker = bubbleTracker;
         this.health = health;
         this.migrationLog = migrationLog;
@@ -106,6 +143,28 @@ public class BubbleDynamicsManager<ID extends EntityID> {
         this.entityBubbles = new ConcurrentHashMap<>();
         this.inPartition = false;
         this.partitionStartBucket = 0L;
+    }
+
+    /**
+     * Get the current configuration.
+     *
+     * @return Configuration for thresholds
+     */
+    public BubbleDynamicsConfig getConfig() {
+        return config;
+    }
+
+    /**
+     * Sets the UUID supplier to use for generating new bubble IDs.
+     * <p>
+     * For deterministic testing, inject a {@link com.hellblazer.luciferase.simulation.distributed.integration.SeededUuidSupplier}
+     * to ensure reproducible UUID generation.
+     *
+     * @param uuidSupplier the UUID supplier to use (must not be null)
+     * @throws NullPointerException if uuidSupplier is null
+     */
+    public void setUuidSupplier(Supplier<UUID> uuidSupplier) {
+        this.uuidSupplier = Objects.requireNonNull(uuidSupplier, "uuidSupplier must not be null");
     }
 
     /**
@@ -287,7 +346,7 @@ public class BubbleDynamicsManager<ID extends EntityID> {
 
         // Create new bubbles for remaining components
         for (int i = 1; i < componentSets.size(); i++) {
-            var newBubble = UUID.randomUUID();
+            var newBubble = uuidSupplier.get();
             var componentEntities = componentSets.get(i);
 
             registerBubble(newBubble, componentEntities);
@@ -321,7 +380,7 @@ public class BubbleDynamicsManager<ID extends EntityID> {
     ) {
         transferEntityWithToken(
             entityId, sourceBubble, targetBubble, affinity,
-            UUID.randomUUID(),  // Generate new token
+            uuidSupplier.get(),  // Generate new token
             bucket
         );
     }
@@ -456,7 +515,7 @@ public class BubbleDynamicsManager<ID extends EntityID> {
     private void checkPartitionState(long bucket) {
         float nc = health.neighborConsistency();
 
-        if (!inPartition && nc < PARTITION_THRESHOLD) {
+        if (!inPartition && nc < config.partitionThreshold()) {
             // Partition detected
             inPartition = true;
             partitionStartBucket = bucket;
@@ -468,7 +527,7 @@ public class BubbleDynamicsManager<ID extends EntityID> {
                 nc
             ));
 
-        } else if (inPartition && nc >= RECOVERY_THRESHOLD) {
+        } else if (inPartition && nc >= config.recoveryThreshold()) {
             // Partition recovered
             inPartition = false;
             long duration = bucket - partitionStartBucket;

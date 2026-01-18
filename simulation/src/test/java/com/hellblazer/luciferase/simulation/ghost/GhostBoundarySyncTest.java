@@ -460,6 +460,81 @@ class GhostBoundarySyncTest {
                     "Expired ghosts should be cleared");
     }
 
+    // ===== Epoch/Version Derivation Tests (Task 2.2.1) =====
+
+    @Test
+    void testEpochDerivationFromBucket() {
+        var neighborId = UUID.randomUUID();
+        var sourceBubbleId = UUID.randomUUID();
+
+        // Bucket 50 -> epoch 0 (bucket / 100)
+        var entityId1 = new TestEntityID("entity-epoch0");
+        sync.addGhost(createGhostEntity(entityId1, 0.1f), sourceBubbleId, neighborId, 50L);
+        sync.onBucketComplete(50L);
+
+        assertEquals(1, receivedGhosts.size());
+        assertEquals(0L, receivedGhosts.get(0).epoch(),
+                    "Bucket 50 should derive epoch 0 (50 / 100 = 0)");
+
+        receivedGhosts.clear();
+
+        // Bucket 150 -> epoch 1
+        var entityId2 = new TestEntityID("entity-epoch1");
+        sync.addGhost(createGhostEntity(entityId2, 0.2f), sourceBubbleId, neighborId, 150L);
+        sync.onBucketComplete(150L);
+
+        var ghosts = receivedGhosts.stream()
+            .filter(g -> g.entityId().toDebugString().equals("entity-epoch1"))
+            .toList();
+        assertEquals(1, ghosts.size());
+        assertEquals(1L, ghosts.get(0).epoch(),
+                    "Bucket 150 should derive epoch 1 (150 / 100 = 1)");
+    }
+
+    @Test
+    void testVersionCounterMonotonicallyIncreases() {
+        var neighborId = UUID.randomUUID();
+        var sourceBubbleId = UUID.randomUUID();
+
+        // Add 5 ghosts and verify versions increase
+        for (int i = 0; i < 5; i++) {
+            var entityId = new TestEntityID("entity-v" + i);
+            sync.addGhost(createGhostEntity(entityId, i * 0.1f), sourceBubbleId, neighborId, 100L);
+        }
+
+        sync.onBucketComplete(100L);
+
+        assertEquals(5, receivedGhosts.size());
+
+        // Extract versions - should be monotonically increasing
+        var versions = receivedGhosts.stream()
+            .map(SimulationGhostEntity::version)
+            .toList();
+
+        for (int i = 1; i < versions.size(); i++) {
+            assertTrue(versions.get(i) > versions.get(i - 1),
+                      "Version " + versions.get(i) + " should be > " + versions.get(i - 1));
+        }
+    }
+
+    @Test
+    void testGetGhostsByNeighborAlsoUsesEpochVersion() {
+        var neighborId = UUID.randomUUID();
+        var sourceBubbleId = UUID.randomUUID();
+
+        // Add ghost at bucket 250 -> epoch 2
+        var entityId = new TestEntityID("entity-query");
+        sync.addGhost(createGhostEntity(entityId, 0.5f), sourceBubbleId, neighborId, 250L);
+
+        var ghosts = sync.getGhostsByNeighbor(neighborId);
+
+        assertEquals(1, ghosts.size());
+        assertEquals(2L, ghosts.get(0).epoch(),
+                    "Bucket 250 should derive epoch 2 (250 / 100 = 2)");
+        assertTrue(ghosts.get(0).version() > 0,
+                  "Version should be positive (monotonic counter)");
+    }
+
     // Helper method to create ghost entity
     private GhostZoneManager.GhostEntity<TestEntityID, TestContent> createGhostEntity(
         TestEntityID entityId,

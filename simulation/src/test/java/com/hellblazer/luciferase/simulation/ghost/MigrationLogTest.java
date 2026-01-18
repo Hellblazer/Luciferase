@@ -8,7 +8,11 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ConcurrentModificationException;
 import java.util.UUID;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -469,5 +473,179 @@ class MigrationLogTest {
         assertEquals(1, migrations.size(),
                     "Only entity2 migration in range [150, 250]");
         assertEquals(entity2, migrations.get(0).entityId());
+    }
+
+    @Test
+    void testConcurrentReadWriteNoDeadlock() throws Exception {
+        int writerCount = 5;
+        int readerCount = 5;
+        int iterations = 100;
+        var executor = Executors.newFixedThreadPool(writerCount + readerCount);
+        var latch = new CountDownLatch(writerCount + readerCount);
+        var deadlock = new AtomicBoolean(false);
+
+        try {
+            // Writer threads
+            for (int w = 0; w < writerCount; w++) {
+                final int writerId = w;
+                executor.submit(() -> {
+                    try {
+                        for (int i = 0; i < iterations; i++) {
+                            var entityId = new TestEntityID("w" + writerId + "-e" + i);
+                            migrationLog.recordMigration(
+                                entityId, UUID.randomUUID(),
+                                UUID.randomUUID(), UUID.randomUUID(),
+                                100L + i
+                            );
+                        }
+                    } catch (Exception e) {
+                        deadlock.set(true);
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+
+            // Reader threads
+            for (int r = 0; r < readerCount; r++) {
+                executor.submit(() -> {
+                    try {
+                        for (int i = 0; i < iterations; i++) {
+                            migrationLog.getMigrationCount();
+                            migrationLog.getMigrationsBetween(0, 1000);
+                            migrationLog.getUniqueEntityCount();
+                        }
+                    } catch (Exception e) {
+                        deadlock.set(true);
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+
+            boolean completed = latch.await(10, TimeUnit.SECONDS);
+            assertTrue(completed, "Should complete without deadlock");
+            assertFalse(deadlock.get(), "Should not throw exceptions");
+        } finally {
+            executor.shutdown();
+        }
+    }
+
+    @Test
+    void testConcurrentCleanupNoDeadlock() throws Exception {
+        int threadCount = 10;
+        var executor = Executors.newFixedThreadPool(threadCount);
+        var startLatch = new CountDownLatch(1);
+        var endLatch = new CountDownLatch(threadCount);
+        var errors = new AtomicInteger(0);
+
+        // Pre-populate with migrations
+        for (int i = 0; i < 100; i++) {
+            var entityId = new TestEntityID("e" + i);
+            migrationLog.recordMigration(
+                entityId, UUID.randomUUID(),
+                UUID.randomUUID(), UUID.randomUUID(),
+                i * 10L
+            );
+        }
+
+        try {
+            for (int t = 0; t < threadCount; t++) {
+                final int threadId = t;
+                executor.submit(() -> {
+                    try {
+                        startLatch.await();
+
+                        // Mix of operations
+                        for (int i = 0; i < 50; i++) {
+                            // Record new migrations
+                            var entityId = new TestEntityID("t" + threadId + "-e" + i);
+                            migrationLog.recordMigration(
+                                entityId, UUID.randomUUID(),
+                                UUID.randomUUID(), UUID.randomUUID(),
+                                i * 10L
+                            );
+
+                            // Cleanup old
+                            if (i % 10 == 0) {
+                                migrationLog.cleanupBefore(i * 5L);
+                            }
+
+                            // Read history
+                            migrationLog.getMigrationHistory(entityId);
+                        }
+                    } catch (Exception e) {
+                        errors.incrementAndGet();
+                    } finally {
+                        endLatch.countDown();
+                    }
+                });
+            }
+
+            startLatch.countDown();
+            boolean completed = endLatch.await(30, TimeUnit.SECONDS);
+            assertTrue(completed, "All threads should complete");
+            assertEquals(0, errors.get(), "No errors should occur");
+        } finally {
+            executor.shutdown();
+        }
+    }
+
+    @Test
+    void testIterationDuringModificationSafe() throws Exception {
+        int threadCount = 5;
+        var executor = Executors.newFixedThreadPool(threadCount);
+        var running = new AtomicBoolean(true);
+        var errors = new AtomicInteger(0);
+
+        // Writer thread adds migrations continuously
+        var writerFuture = executor.submit(() -> {
+            int count = 0;
+            while (running.get() && count < 1000) {
+                try {
+                    var entityId = new TestEntityID("e" + count);
+                    migrationLog.recordMigration(
+                        entityId, UUID.randomUUID(),
+                        UUID.randomUUID(), UUID.randomUUID(),
+                        count
+                    );
+                    count++;
+                } catch (Exception e) {
+                    errors.incrementAndGet();
+                }
+            }
+        });
+
+        // Reader threads iterate continuously
+        var readerFutures = new CopyOnWriteArrayList<Future<?>>();
+        for (int i = 0; i < threadCount - 1; i++) {
+            readerFutures.add(executor.submit(() -> {
+                while (running.get()) {
+                    try {
+                        // These should not throw ConcurrentModificationException
+                        var migrations = migrationLog.getMigrationsBetween(0, Long.MAX_VALUE);
+                        var count = migrationLog.getMigrationCount();
+                        var entities = migrationLog.getAllMigratedEntities();
+                    } catch (ConcurrentModificationException e) {
+                        errors.incrementAndGet();
+                    } catch (Exception e) {
+                        // Other exceptions are OK (e.g., timing issues)
+                    }
+                }
+            }));
+        }
+
+        // Let them run for a bit
+        Thread.sleep(500);
+        running.set(false);
+
+        writerFuture.get(5, TimeUnit.SECONDS);
+        for (var future : readerFutures) {
+            future.get(5, TimeUnit.SECONDS);
+        }
+
+        executor.shutdown();
+
+        assertEquals(0, errors.get(), "No ConcurrentModificationException should occur");
     }
 }

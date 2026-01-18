@@ -6,6 +6,9 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Synchronization barrier for bucket-based simulation coordination across distributed nodes.
@@ -72,8 +75,9 @@ public class BucketBarrier {
 
     private final Set<UUID> expectedNeighbors;
     private final Map<UUID, Long> neighborBuckets;  // neighbor -> bucket they're on
-    private volatile CountDownLatch latch;
-    private volatile long currentBucket;
+    private final AtomicReference<CountDownLatch> latchRef;
+    private final AtomicLong currentBucketRef;
+    private final ReentrantLock latchLock;
 
     /**
      * Create a bucket barrier for the specified neighbors.
@@ -83,8 +87,9 @@ public class BucketBarrier {
     public BucketBarrier(Set<UUID> expectedNeighbors) {
         this.expectedNeighbors = Set.copyOf(expectedNeighbors);
         this.neighborBuckets = new ConcurrentHashMap<>();
-        this.currentBucket = -1;
-        this.latch = new CountDownLatch(expectedNeighbors.size());
+        this.currentBucketRef = new AtomicLong(-1);
+        this.latchRef = new AtomicReference<>(new CountDownLatch(expectedNeighbors.size()));
+        this.latchLock = new ReentrantLock();
     }
 
     /**
@@ -101,11 +106,10 @@ public class BucketBarrier {
 
         neighborBuckets.put(neighborId, bucket);
 
-        // Count down latch if this neighbor is ready for current bucket
-        synchronized (this) {
-            if (bucket >= currentBucket && latch != null) {
-                latch.countDown();
-            }
+        // Lock-free countdown: read atomic references and countdown if appropriate
+        var latch = latchRef.get();
+        if (latch != null && bucket >= currentBucketRef.get()) {
+            latch.countDown();
         }
     }
 
@@ -119,21 +123,30 @@ public class BucketBarrier {
      * @return WaitOutcome indicating success or missing neighbors
      */
     public WaitOutcome waitForNeighbors(long bucket, long timeoutMs) {
-        synchronized (this) {
+        CountDownLatch latch;
+
+        // Short lock for latch creation only
+        latchLock.lock();
+        try {
             // Reset for new bucket
-            if (bucket != currentBucket) {
-                currentBucket = bucket;
-                latch = new CountDownLatch(expectedNeighbors.size());
+            if (bucket != currentBucketRef.get()) {
+                currentBucketRef.set(bucket);
+                var newLatch = new CountDownLatch(expectedNeighbors.size());
+                latchRef.set(newLatch);
 
                 // Count down for neighbors already at this bucket
                 for (var entry : neighborBuckets.entrySet()) {
                     if (entry.getValue() >= bucket) {
-                        latch.countDown();
+                        newLatch.countDown();
                     }
                 }
             }
+            latch = latchRef.get();
+        } finally {
+            latchLock.unlock();
         }
 
+        // Await outside lock to allow concurrent countdowns
         try {
             boolean allReady = latch.await(timeoutMs, TimeUnit.MILLISECONDS);
 
@@ -182,7 +195,7 @@ public class BucketBarrier {
      * @return Current bucket number
      */
     public long getCurrentBucket() {
-        return currentBucket;
+        return currentBucketRef.get();
     }
 
     /**
@@ -193,7 +206,7 @@ public class BucketBarrier {
      */
     public boolean isNeighborReady(UUID neighborId) {
         Long bucket = neighborBuckets.get(neighborId);
-        return bucket != null && bucket >= currentBucket;
+        return bucket != null && bucket >= currentBucketRef.get();
     }
 
     /**
@@ -208,9 +221,10 @@ public class BucketBarrier {
 
     @Override
     public String toString() {
+        long bucket = currentBucketRef.get();
         return String.format("BucketBarrier{bucket=%d, neighbors=%d/%d}",
-                            currentBucket,
-                            neighborBuckets.values().stream().filter(b -> b >= currentBucket).count(),
+                            bucket,
+                            neighborBuckets.values().stream().filter(b -> b >= bucket).count(),
                             expectedNeighbors.size());
     }
 }

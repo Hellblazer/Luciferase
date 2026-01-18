@@ -9,6 +9,7 @@
 package com.hellblazer.luciferase.simulation.viz;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.entity.EntityType;
 import com.hellblazer.luciferase.simulation.topology.events.TopologyEventStream;
 import com.hellblazer.luciferase.simulation.topology.metrics.DensityMonitor;
@@ -62,6 +63,9 @@ public class MultiBubbleVisualizationServer {
     private ScheduledFuture<?> streamTask;
     private DensityMonitor densityMonitor;
 
+    // Pluggable clock for deterministic testing - defaults to system time
+    private volatile Clock clock = Clock.system();
+
     /**
      * Create server with default port.
      */
@@ -75,6 +79,19 @@ public class MultiBubbleVisualizationServer {
     public MultiBubbleVisualizationServer(int port) {
         this.port = port;
         this.app = createApp();
+    }
+
+    /**
+     * Sets the clock to use for timestamps in API responses.
+     * <p>
+     * For deterministic testing, inject a {@link com.hellblazer.luciferase.simulation.distributed.integration.TestClock}
+     * to control time progression.
+     *
+     * @param clock the clock to use (must not be null)
+     * @throws NullPointerException if clock is null
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     private Javalin createApp() {
@@ -584,7 +601,7 @@ public class MultiBubbleVisualizationServer {
 
         return Map.of(
             "density", metrics,
-            "timestamp", System.currentTimeMillis()
+            "timestamp", clock.currentTimeMillis()
         );
     }
 }

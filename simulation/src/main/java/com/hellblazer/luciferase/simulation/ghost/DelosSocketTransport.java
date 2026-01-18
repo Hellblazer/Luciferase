@@ -29,6 +29,7 @@ import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 
 /**
@@ -71,6 +72,27 @@ import java.util.function.BiConsumer;
 public class DelosSocketTransport implements GhostChannel<StringEntityID, EntityData> {
 
     private static final Logger log = LoggerFactory.getLogger(DelosSocketTransport.class);
+
+    /**
+     * Epoch size in buckets (epoch = bucket / EPOCH_SIZE).
+     */
+    public static final int EPOCH_SIZE = 100;
+
+    /**
+     * Monotonic version counter for ghost versioning.
+     */
+    private final AtomicLong versionCounter = new AtomicLong(0);
+
+    /**
+     * Derive epoch from bucket number.
+     * Epoch changes every EPOCH_SIZE buckets (10 seconds @ 100ms/bucket).
+     *
+     * @param bucket Bucket number
+     * @return Epoch number
+     */
+    private long deriveEpoch(long bucket) {
+        return bucket / EPOCH_SIZE;
+    }
 
     /**
      * This bubble's identifier (source for outgoing ghosts)
@@ -331,12 +353,13 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
         // Note: GhostEntity sets timestamp internally, we use event.timestamp() for SimulationGhostEntity
 
         // Wrap in SimulationGhostEntity with metadata
+        var bucket = event.lamportClock();
         return new SimulationGhostEntity<>(
             ghostEntity,
             sourceBubbleId,
-            event.lamportClock(), // bucket (using lamport clock as bucket)
-            0L, // epoch (not transmitted in Phase 7B.2)
-            1L  // version
+            bucket,
+            deriveEpoch(bucket),             // epoch from bucket
+            versionCounter.incrementAndGet() // monotonic version
         );
     }
 

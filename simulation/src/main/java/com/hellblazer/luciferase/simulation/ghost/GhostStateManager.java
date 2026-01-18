@@ -32,6 +32,7 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Ghost state manager for tracking and updating ghost entities with dead reckoning (Phase 7B.3).
@@ -78,6 +79,27 @@ import java.util.concurrent.ConcurrentHashMap;
 public class GhostStateManager {
 
     private static final Logger log = LoggerFactory.getLogger(GhostStateManager.class);
+
+    /**
+     * Epoch size in buckets (epoch = bucket / EPOCH_SIZE).
+     */
+    public static final int EPOCH_SIZE = 100;
+
+    /**
+     * Monotonic version counter for ghost versioning.
+     */
+    private final AtomicLong versionCounter = new AtomicLong(0);
+
+    /**
+     * Derive epoch from bucket number.
+     * Epoch changes every EPOCH_SIZE buckets (10 seconds @ 100ms/bucket).
+     *
+     * @param bucket Bucket number
+     * @return Epoch number
+     */
+    private long deriveEpoch(long bucket) {
+        return bucket / EPOCH_SIZE;
+    }
 
     /**
      * Per-ghost state tracking (position, velocity for dead reckoning).
@@ -399,9 +421,9 @@ public class GhostStateManager {
         return new SimulationGhostEntity<>(
             ghostEntity,
             sourceBubbleId,
-            bucket,     // bucket (using lamport clock as bucket)
-            0L,         // epoch (not transmitted in Phase 7B.2)
-            1L          // version
+            bucket,
+            deriveEpoch(bucket),             // epoch from bucket
+            versionCounter.incrementAndGet() // monotonic version
         );
     }
 

@@ -9,6 +9,7 @@ import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
@@ -56,6 +57,27 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
      * Maximum ghosts per neighbor (memory limit).
      */
     public static final int MAX_GHOSTS_PER_NEIGHBOR = 1000;
+
+    /**
+     * Epoch size in buckets (epoch = bucket / EPOCH_SIZE).
+     */
+    public static final int EPOCH_SIZE = 100;
+
+    /**
+     * Monotonic version counter for ghost versioning.
+     */
+    private final AtomicLong versionCounter = new AtomicLong(0);
+
+    /**
+     * Derive epoch from bucket number.
+     * Epoch changes every EPOCH_SIZE buckets (10 seconds @ 100ms/bucket).
+     *
+     * @param bucket Bucket number
+     * @return Epoch number
+     */
+    private long deriveEpoch(long bucket) {
+        return bucket / EPOCH_SIZE;
+    }
 
     /**
      * Ghost entry with metadata.
@@ -147,8 +169,8 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
                     e.ghost,
                     e.sourceBubbleId,
                     e.bucket,
-                    0L,  // epoch (placeholder)
-                    0L   // version (placeholder)
+                    deriveEpoch(e.bucket),           // epoch from bucket
+                    versionCounter.incrementAndGet() // monotonic version
                 ))
                 .collect(Collectors.toList());
 
@@ -250,8 +272,8 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
                 e.ghost,
                 e.sourceBubbleId,
                 e.bucket,
-                0L,  // epoch
-                0L   // version
+                deriveEpoch(e.bucket),           // epoch from bucket
+                versionCounter.incrementAndGet() // monotonic version
             ))
             .collect(Collectors.toList());
     }

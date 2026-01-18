@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 /**
@@ -125,27 +126,22 @@ public class MigrationLog {
         UUID targetBubble,
         long bucket
     ) {
-        // Check for duplicate token
+        // Atomic check-then-add for duplicate token detection
+        // ConcurrentHashMap.newKeySet().add() returns false if element already exists
         var tokens = entityTokens.computeIfAbsent(entityId, k -> ConcurrentHashMap.newKeySet());
-
-        synchronized (tokens) {
-            if (tokens.contains(token)) {
-                return false;  // Duplicate - already recorded
-            }
-            tokens.add(token);
+        if (!tokens.add(token)) {
+            return false;  // Duplicate - already recorded
         }
 
-        // Record migration
+        // Record migration - CopyOnWriteArrayList is thread-safe
         var record = new MigrationRecord(entityId, token, sourceBubble, targetBubble, bucket);
 
         var history = migrationHistory.computeIfAbsent(
             entityId,
-            k -> Collections.synchronizedList(new ArrayList<>())
+            k -> new CopyOnWriteArrayList<>()
         );
 
-        synchronized (history) {
-            history.add(record);
-        }
+        history.add(record);
 
         // Optionally persist to WAL for crash recovery
         if (persistence != null) {
@@ -181,12 +177,8 @@ public class MigrationLog {
      */
     public boolean isDuplicate(EntityID entityId, UUID token) {
         var tokens = entityTokens.get(entityId);
-        if (tokens == null) {
-            return false;
-        }
-        synchronized (tokens) {
-            return tokens.contains(token);
-        }
+        // ConcurrentHashMap.newKeySet().contains() is thread-safe
+        return tokens != null && tokens.contains(token);
     }
 
     /**
@@ -202,10 +194,8 @@ public class MigrationLog {
         if (history == null) {
             return List.of();
         }
-
-        synchronized (history) {
-            return new ArrayList<>(history);  // Defensive copy
-        }
+        // CopyOnWriteArrayList is thread-safe for iteration
+        return new ArrayList<>(history);  // Defensive copy
     }
 
     /**
@@ -219,11 +209,9 @@ public class MigrationLog {
         if (history == null || history.isEmpty()) {
             return Optional.empty();
         }
-
-        synchronized (history) {
-            // History is already in chronological order, get last
-            return Optional.of(history.get(history.size() - 1));
-        }
+        // CopyOnWriteArrayList is thread-safe for access
+        // History is already in chronological order, get last
+        return Optional.of(history.get(history.size() - 1));
     }
 
     /**
@@ -243,16 +231,15 @@ public class MigrationLog {
             var entityId = entry.getKey();
             var history = entry.getValue();
 
-            synchronized (history) {
-                // Remove records before bucket
-                var beforeCleanup = history.size();
-                history.removeIf(record -> record.bucket < bucket);
-                removed += (beforeCleanup - history.size());
+            // CopyOnWriteArrayList.removeIf is thread-safe
+            // Note: Not atomic with size check but acceptable for cleanup
+            var beforeCleanup = history.size();
+            history.removeIf(record -> record.bucket < bucket);
+            removed += (beforeCleanup - history.size());
 
-                // If no history left, mark entity for removal
-                if (history.isEmpty()) {
-                    entitiesToRemove.add(entityId);
-                }
+            // If no history left, mark entity for removal
+            if (history.isEmpty()) {
+                entitiesToRemove.add(entityId);
             }
         }
 
@@ -279,12 +266,9 @@ public class MigrationLog {
      * @return Total migration count across all entities
      */
     public int getMigrationCount() {
+        // CopyOnWriteArrayList.size() is thread-safe
         return migrationHistory.values().stream()
-            .mapToInt(history -> {
-                synchronized (history) {
-                    return history.size();
-                }
-            })
+            .mapToInt(List::size)
             .sum();
     }
 
@@ -314,12 +298,9 @@ public class MigrationLog {
      * @return List of migration records in range
      */
     public List<MigrationRecord> getMigrationsBetween(long startBucket, long endBucket) {
+        // CopyOnWriteArrayList.stream() is thread-safe for iteration
         return migrationHistory.values().stream()
-            .flatMap(history -> {
-                synchronized (history) {
-                    return history.stream();
-                }
-            })
+            .flatMap(List::stream)
             .filter(record -> record.bucket >= startBucket && record.bucket <= endBucket)
             .collect(Collectors.toList());
     }

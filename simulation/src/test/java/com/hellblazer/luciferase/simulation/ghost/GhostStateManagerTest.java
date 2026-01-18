@@ -289,4 +289,103 @@ class GhostStateManagerTest {
         // Bounds clamping is tested implicitly - position is returned successfully
         // Even if extrapolation goes outside bounds, it should be clamped back in
     }
+
+    // ===== Epoch/Version Derivation Tests (Task 2.2.1) =====
+
+    @Test
+    void testEpochDerivationFromBucket() {
+        // Bucket 50 -> epoch 0 (bucket / 100)
+        var entityId1 = new StringEntityID("entity-epoch0");
+        var event1 = new EntityUpdateEvent(
+            entityId1,
+            new Point3f(0.0f, 0.0f, 0.0f),
+            new Point3f(0.0f, 0.0f, 0.0f),
+            1000L,
+            50L  // bucket = 50 -> epoch = 0
+        );
+        manager.updateGhost(sourceBubbleId, event1);
+
+        var ghost1 = manager.getGhost(entityId1);
+        assertNotNull(ghost1);
+        assertEquals(0L, ghost1.epoch(),
+                    "Bucket 50 should derive epoch 0 (50 / 100 = 0)");
+
+        // Bucket 150 -> epoch 1
+        var entityId2 = new StringEntityID("entity-epoch1");
+        var event2 = new EntityUpdateEvent(
+            entityId2,
+            new Point3f(1.0f, 0.0f, 0.0f),
+            new Point3f(0.0f, 0.0f, 0.0f),
+            1000L,
+            150L  // bucket = 150 -> epoch = 1
+        );
+        manager.updateGhost(sourceBubbleId, event2);
+
+        var ghost2 = manager.getGhost(entityId2);
+        assertNotNull(ghost2);
+        assertEquals(1L, ghost2.epoch(),
+                    "Bucket 150 should derive epoch 1 (150 / 100 = 1)");
+
+        // Bucket 999 -> epoch 9
+        var entityId3 = new StringEntityID("entity-epoch9");
+        var event3 = new EntityUpdateEvent(
+            entityId3,
+            new Point3f(2.0f, 0.0f, 0.0f),
+            new Point3f(0.0f, 0.0f, 0.0f),
+            1000L,
+            999L  // bucket = 999 -> epoch = 9
+        );
+        manager.updateGhost(sourceBubbleId, event3);
+
+        var ghost3 = manager.getGhost(entityId3);
+        assertNotNull(ghost3);
+        assertEquals(9L, ghost3.epoch(),
+                    "Bucket 999 should derive epoch 9 (999 / 100 = 9)");
+    }
+
+    @Test
+    void testVersionCounterMonotonicallyIncreases() {
+        // Add 3 ghosts and verify versions increase
+        var versions = new long[3];
+
+        for (int i = 0; i < 3; i++) {
+            var entityId = new StringEntityID("entity-v" + i);
+            var event = new EntityUpdateEvent(
+                entityId,
+                new Point3f(i, 0.0f, 0.0f),
+                new Point3f(0.0f, 0.0f, 0.0f),
+                1000L,
+                100L
+            );
+            manager.updateGhost(sourceBubbleId, event);
+
+            var ghost = manager.getGhost(entityId);
+            assertNotNull(ghost);
+            versions[i] = ghost.version();
+        }
+
+        // Verify versions are monotonically increasing
+        assertTrue(versions[1] > versions[0],
+                  "Version " + versions[1] + " should be > " + versions[0]);
+        assertTrue(versions[2] > versions[1],
+                  "Version " + versions[2] + " should be > " + versions[1]);
+    }
+
+    @Test
+    void testVersionsArePositive() {
+        var entityId = new StringEntityID("entity-positive-version");
+        var event = new EntityUpdateEvent(
+            entityId,
+            new Point3f(0.0f, 0.0f, 0.0f),
+            new Point3f(0.0f, 0.0f, 0.0f),
+            1000L,
+            100L
+        );
+        manager.updateGhost(sourceBubbleId, event);
+
+        var ghost = manager.getGhost(entityId);
+        assertNotNull(ghost);
+        assertTrue(ghost.version() > 0,
+                  "Version should be positive (monotonic counter starts at 0, increment gives 1+)");
+    }
 }

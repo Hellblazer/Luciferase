@@ -25,7 +25,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * Executes bubble split operations with atomic entity redistribution.
@@ -72,6 +74,9 @@ public class BubbleSplitter {
     private final OperationTracker operationTracker;
     private final TopologyMetrics metrics;
 
+    // Pluggable UUID supplier for deterministic testing - defaults to random UUIDs
+    private volatile Supplier<UUID> uuidSupplier = UUID::randomUUID;
+
     /**
      * Creates a bubble splitter.
      *
@@ -87,6 +92,19 @@ public class BubbleSplitter {
         this.accountant = java.util.Objects.requireNonNull(accountant, "accountant must not be null");
         this.operationTracker = java.util.Objects.requireNonNull(operationTracker, "operationTracker must not be null");
         this.metrics = java.util.Objects.requireNonNull(metrics, "metrics must not be null");
+    }
+
+    /**
+     * Sets the UUID supplier to use for generating new bubble IDs.
+     * <p>
+     * For deterministic testing, inject a {@link com.hellblazer.luciferase.simulation.distributed.integration.SeededUuidSupplier}
+     * to ensure reproducible UUID generation.
+     *
+     * @param uuidSupplier the UUID supplier to use (must not be null)
+     * @throws NullPointerException if uuidSupplier is null
+     */
+    public void setUuidSupplier(Supplier<UUID> uuidSupplier) {
+        this.uuidSupplier = Objects.requireNonNull(uuidSupplier, "uuidSupplier must not be null");
     }
 
     /**
@@ -135,7 +153,7 @@ public class BubbleSplitter {
 
         // Create new child bubble
         // Child bubble should be one level deeper in the tetree hierarchy
-        UUID newBubbleId = UUID.randomUUID();
+        UUID newBubbleId = uuidSupplier.get();
         byte parentLevel = sourceBubble.getSpatialLevel();
         byte childLevel = (byte) Math.min(parentLevel + 1, 21);  // Cap at max tetree level
         long targetFrameMs = sourceBubble.getTargetFrameMs();

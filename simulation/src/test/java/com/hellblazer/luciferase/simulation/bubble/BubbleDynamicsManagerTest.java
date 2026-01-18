@@ -7,6 +7,7 @@ import com.hellblazer.luciferase.simulation.spatial.*;
 import com.hellblazer.luciferase.simulation.bubble.*;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.simulation.distributed.integration.SeededUuidSupplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -484,5 +485,298 @@ class BubbleDynamicsManagerTest {
 
         assertEquals(100, manager.getBubbleCount(),
                     "All 100 bubbles should be registered (thread-safe)");
+    }
+
+    @Test
+    void testDeterministicSplitBubbleIds() {
+        // Test that split creates deterministic bubble IDs when using SeededUuidSupplier
+        long seed = 12345L;
+        var uuidSupplier = new SeededUuidSupplier(seed);
+        manager.setUuidSupplier(uuidSupplier);
+
+        var sourceBubble = UUID.randomUUID();
+        var entity1 = new TestEntityID("e1");
+        var entity2 = new TestEntityID("e2");
+        var entity3 = new TestEntityID("e3");
+        var entity4 = new TestEntityID("e4");
+
+        manager.registerBubble(sourceBubble, Set.of(entity1, entity2, entity3, entity4));
+
+        // Split into 3 components - first uses source, next 2 get new UUIDs
+        var component1 = Set.of(entity1);
+        var component2 = Set.of(entity2);
+        var component3 = Set.of(entity3, entity4);
+
+        var components = manager.splitBubble(
+            sourceBubble,
+            List.of(component1, component2, component3),
+            100L
+        );
+
+        // Verify we got 3 component bubbles
+        assertEquals(3, components.size());
+
+        // First component should be source bubble
+        assertEquals(sourceBubble, components.get(0));
+
+        // Second and third components should have deterministic IDs from seeded supplier
+        var newBubble1 = components.get(1);
+        var newBubble2 = components.get(2);
+
+        // Create a new supplier with same seed and verify same IDs would be generated
+        var uuidSupplier2 = new SeededUuidSupplier(seed);
+        assertEquals(uuidSupplier2.get(), newBubble1, "First new bubble ID should match seeded supplier");
+        assertEquals(uuidSupplier2.get(), newBubble2, "Second new bubble ID should match seeded supplier");
+    }
+
+    @Test
+    void testDeterministicSplitBubbleIdsReproducible() {
+        // Run same split scenario twice, verify identical bubble IDs
+        long seed = 99999L;
+
+        // Helper to create manager with same dependencies
+        java.util.function.Supplier<BubbleDynamicsManager<TestEntityID>> createManager = () -> {
+            return new BubbleDynamicsManager<>(
+                new ExternalBubbleTracker(),
+                new GhostLayerHealth(),
+                new MigrationLog(),
+                new StockNeighborList(10),
+                e -> {}  // Discard events
+            );
+        };
+
+        // First run
+        var manager1 = createManager.get();
+        manager1.setUuidSupplier(new SeededUuidSupplier(seed));
+
+        var sourceBubble1 = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        manager1.registerBubble(sourceBubble1, Set.of(
+            new TestEntityID("e1"), new TestEntityID("e2"), new TestEntityID("e3")
+        ));
+
+        var components1 = manager1.splitBubble(
+            sourceBubble1,
+            List.of(Set.of(new TestEntityID("e1")), Set.of(new TestEntityID("e2"), new TestEntityID("e3"))),
+            100L
+        );
+
+        // Second run with same seed
+        var manager2 = createManager.get();
+        manager2.setUuidSupplier(new SeededUuidSupplier(seed));
+
+        var sourceBubble2 = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        manager2.registerBubble(sourceBubble2, Set.of(
+            new TestEntityID("e1"), new TestEntityID("e2"), new TestEntityID("e3")
+        ));
+
+        var components2 = manager2.splitBubble(
+            sourceBubble2,
+            List.of(Set.of(new TestEntityID("e1")), Set.of(new TestEntityID("e2"), new TestEntityID("e3"))),
+            100L
+        );
+
+        // Verify both runs produced same new bubble IDs (index 1 is the new bubble)
+        assertEquals(components1.get(1), components2.get(1),
+                    "New bubble IDs should be identical across runs with same seed");
+    }
+
+    @Test
+    void testSetUuidSupplierNullThrows() {
+        assertThrows(NullPointerException.class, () -> {
+            manager.setUuidSupplier(null);
+        }, "Should reject null UUID supplier");
+    }
+
+    // ===== Configuration Tests (Task 3.1.1) =====
+
+    @Test
+    void testDefaultConfiguration() {
+        var config = manager.getConfig();
+        assertNotNull(config, "Config should not be null");
+        assertEquals(0.6f, config.mergeThreshold(), "Default merge threshold");
+        assertEquals(0.5f, config.driftThreshold(), "Default drift threshold");
+        assertEquals(0.5f, config.partitionThreshold(), "Default partition threshold");
+        assertEquals(0.9f, config.recoveryThreshold(), "Default recovery threshold");
+    }
+
+    @Test
+    void testCustomConfiguration() {
+        var customConfig = new BubbleDynamicsConfig(0.7f, 0.4f, 0.6f, 0.95f);
+
+        var customManager = new BubbleDynamicsManager<TestEntityID>(
+            bubbleTracker,
+            health,
+            migrationLog,
+            stockNeighbors,
+            capturedEvents::add,
+            customConfig
+        );
+
+        var config = customManager.getConfig();
+        assertEquals(0.7f, config.mergeThreshold());
+        assertEquals(0.4f, config.driftThreshold());
+        assertEquals(0.6f, config.partitionThreshold());
+        assertEquals(0.95f, config.recoveryThreshold());
+    }
+
+    @Test
+    void testConfigDefaults() {
+        var config = BubbleDynamicsConfig.defaults();
+        assertEquals(0.6f, config.mergeThreshold());
+        assertEquals(0.5f, config.driftThreshold());
+        assertEquals(0.5f, config.partitionThreshold());
+        assertEquals(0.9f, config.recoveryThreshold());
+    }
+
+    @Test
+    void testConfigWithMethods() {
+        var config = BubbleDynamicsConfig.defaults()
+            .withMergeThreshold(0.8f)
+            .withDriftThreshold(0.3f);
+
+        assertEquals(0.8f, config.mergeThreshold(), "Modified merge threshold");
+        assertEquals(0.3f, config.driftThreshold(), "Modified drift threshold");
+        assertEquals(0.5f, config.partitionThreshold(), "Unmodified partition threshold");
+        assertEquals(0.9f, config.recoveryThreshold(), "Unmodified recovery threshold");
+    }
+
+    @Test
+    void testConfigValidation() {
+        // Valid config
+        assertDoesNotThrow(() -> new BubbleDynamicsConfig(0.5f, 0.5f, 0.5f, 0.9f));
+
+        // Invalid merge threshold
+        assertThrows(IllegalArgumentException.class, () ->
+            new BubbleDynamicsConfig(-0.1f, 0.5f, 0.5f, 0.9f));
+        assertThrows(IllegalArgumentException.class, () ->
+            new BubbleDynamicsConfig(1.1f, 0.5f, 0.5f, 0.9f));
+
+        // Invalid drift threshold
+        assertThrows(IllegalArgumentException.class, () ->
+            new BubbleDynamicsConfig(0.5f, -0.1f, 0.5f, 0.9f));
+        assertThrows(IllegalArgumentException.class, () ->
+            new BubbleDynamicsConfig(0.5f, 1.1f, 0.5f, 0.9f));
+
+        // Invalid partition threshold
+        assertThrows(IllegalArgumentException.class, () ->
+            new BubbleDynamicsConfig(0.5f, 0.5f, -0.1f, 0.9f));
+        assertThrows(IllegalArgumentException.class, () ->
+            new BubbleDynamicsConfig(0.5f, 0.5f, 1.1f, 0.9f));
+
+        // Invalid recovery threshold
+        assertThrows(IllegalArgumentException.class, () ->
+            new BubbleDynamicsConfig(0.5f, 0.5f, 0.5f, -0.1f));
+        assertThrows(IllegalArgumentException.class, () ->
+            new BubbleDynamicsConfig(0.5f, 0.5f, 0.5f, 1.1f));
+
+        // Recovery < partition (would cause oscillation)
+        assertThrows(IllegalArgumentException.class, () ->
+            new BubbleDynamicsConfig(0.5f, 0.5f, 0.9f, 0.5f),
+            "Should reject recovery < partition");
+    }
+
+    @Test
+    void testPartitionDetectionWithCustomThreshold() {
+        var customConfig = new BubbleDynamicsConfig(0.6f, 0.5f, 0.7f, 0.95f);
+        var customManager = new BubbleDynamicsManager<TestEntityID>(
+            bubbleTracker,
+            health,
+            migrationLog,
+            stockNeighbors,
+            capturedEvents::add,
+            customConfig
+        );
+
+        health.setExpectedNeighbors(10);
+
+        // With NC = 0.6 (60%), should NOT trigger partition with custom 0.7 threshold
+        // (but would trigger with default 0.5 threshold)
+        for (int i = 0; i < 6; i++) {
+            health.recordGhostSource(UUID.randomUUID());
+        }
+        assertEquals(0.6f, health.neighborConsistency(), 0.01f);
+
+        customManager.processBucket(100L);
+
+        // No partition event should be emitted (NC 0.6 >= custom threshold 0.7 is false,
+        // but 0.6 < 0.7 is true, so partition IS detected with custom threshold)
+        var partitionEvents = capturedEvents.stream()
+            .filter(e -> e instanceof BubbleEvent.PartitionDetected)
+            .toList();
+
+        assertEquals(1, partitionEvents.size(),
+                    "Should detect partition when NC (0.6) < custom threshold (0.7)");
+    }
+
+    @Test
+    void testPartitionRecoveryWithCustomThreshold() {
+        var customConfig = new BubbleDynamicsConfig(0.6f, 0.5f, 0.4f, 0.8f);
+        var customManager = new BubbleDynamicsManager<TestEntityID>(
+            bubbleTracker,
+            health,
+            migrationLog,
+            stockNeighbors,
+            capturedEvents::add,
+            customConfig
+        );
+
+        health.setExpectedNeighbors(10);
+
+        // First, trigger partition (NC = 0.3 < 0.4 threshold)
+        for (int i = 0; i < 3; i++) {
+            health.recordGhostSource(UUID.randomUUID());
+        }
+        customManager.processBucket(100L);
+
+        // Verify partition detected
+        var partitionEvents = capturedEvents.stream()
+            .filter(e -> e instanceof BubbleEvent.PartitionDetected)
+            .count();
+        assertEquals(1, partitionEvents);
+
+        // Now recover (add more neighbors to reach NC = 0.8 >= recovery threshold 0.8)
+        for (int i = 0; i < 5; i++) {
+            health.recordGhostSource(UUID.randomUUID());
+        }
+        assertEquals(0.8f, health.neighborConsistency(), 0.01f);
+
+        customManager.processBucket(200L);
+
+        // Verify partition recovered
+        var recoveryEvents = capturedEvents.stream()
+            .filter(e -> e instanceof BubbleEvent.PartitionRecovered)
+            .count();
+        assertEquals(1, recoveryEvents,
+                    "Should detect recovery when NC (0.8) >= custom threshold (0.8)");
+    }
+
+    @Test
+    void testStaticConstantsBackwardCompatibility() {
+        // Verify static constants still work (backward compatibility)
+        assertEquals(0.6f, BubbleDynamicsManager.MERGE_THRESHOLD);
+        assertEquals(0.5f, BubbleDynamicsManager.DRIFT_THRESHOLD);
+        assertEquals(0.5f, BubbleDynamicsManager.PARTITION_THRESHOLD);
+        assertEquals(0.9f, BubbleDynamicsManager.RECOVERY_THRESHOLD);
+
+        // Verify they match config defaults
+        var defaults = BubbleDynamicsConfig.defaults();
+        assertEquals(BubbleDynamicsManager.MERGE_THRESHOLD, defaults.mergeThreshold());
+        assertEquals(BubbleDynamicsManager.DRIFT_THRESHOLD, defaults.driftThreshold());
+        assertEquals(BubbleDynamicsManager.PARTITION_THRESHOLD, defaults.partitionThreshold());
+        assertEquals(BubbleDynamicsManager.RECOVERY_THRESHOLD, defaults.recoveryThreshold());
+    }
+
+    @Test
+    void testNullConfigThrows() {
+        assertThrows(NullPointerException.class, () -> {
+            new BubbleDynamicsManager<TestEntityID>(
+                bubbleTracker,
+                health,
+                migrationLog,
+                stockNeighbors,
+                capturedEvents::add,
+                null
+            );
+        }, "Should reject null config");
     }
 }

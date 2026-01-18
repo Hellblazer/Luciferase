@@ -253,9 +253,81 @@ class DelosSocketTransportTest {
         // not the original simulation timestamp. The simulation time is in the bucket field.
         assertEquals(42L, received.bucket(), "Bucket (simulation time) should be preserved");
 
-        // Epoch is not transmitted in Phase 7B.2 (hardcoded to 0L on receiver)
-        // Phase 7B.3 will add full authority tracking
-        assertEquals(0L, received.epoch(), "Epoch hardcoded to 0L in Phase 7B.2");
+        // Epoch is now derived from bucket: epoch = bucket / 100
+        // Bucket 42 -> epoch 0 (42 / 100 = 0)
+        assertEquals(0L, received.epoch(), "Bucket 42 should derive epoch 0 (42 / 100 = 0)");
+
+        // Version should be positive (monotonic counter)
+        assertTrue(received.version() > 0, "Version should be positive (from AtomicLong counter)");
+    }
+
+    /**
+     * Test 11: Epoch Derivation from Bucket
+     * Verify that epoch is correctly derived from bucket: epoch = bucket / EPOCH_SIZE (100).
+     */
+    @Test
+    void testEpochDerivationFromBucket() throws InterruptedException {
+        var latch = new CountDownLatch(1);
+        var receivedGhosts = new ArrayList<SimulationGhostEntity<StringEntityID, EntityData>>();
+
+        transport2.onReceive((sourceBubbleId, ghosts) -> {
+            receivedGhosts.addAll(ghosts);
+            latch.countDown();
+        });
+
+        transport1.connectTo(transport2);
+
+        // Send ghost with bucket 250 -> epoch should be 2 (250 / 100 = 2)
+        var ghost = createTestGhost("epoch-test", 10f, 20f, 30f, 1000L, 250L, 0L);
+        transport1.queueGhost(bubbleId2, ghost);
+        transport1.flush(1L);
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertEquals(1, receivedGhosts.size());
+
+        var received = receivedGhosts.get(0);
+        assertEquals(2L, received.epoch(),
+                    "Bucket 250 should derive epoch 2 (250 / 100 = 2)");
+    }
+
+    /**
+     * Test 12: Version Counter Monotonically Increases
+     * Verify that version numbers increase across multiple transmissions.
+     */
+    @Test
+    void testVersionCounterMonotonicallyIncreases() throws InterruptedException {
+        var latch = new CountDownLatch(1);
+        var receivedGhosts = new CopyOnWriteArrayList<SimulationGhostEntity<StringEntityID, EntityData>>();
+
+        transport2.onReceive((sourceBubbleId, ghosts) -> {
+            receivedGhosts.addAll(ghosts);
+            if (receivedGhosts.size() >= 3) {
+                latch.countDown();
+            }
+        });
+
+        transport1.connectTo(transport2);
+
+        // Send 3 ghosts - versions should increase
+        for (int i = 0; i < 3; i++) {
+            var ghost = createTestGhost("version-test-" + i, i * 10f, 0f, 0f, 1000L, 100L, 0L);
+            transport1.queueGhost(bubbleId2, ghost);
+        }
+        transport1.flush(1L);
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertEquals(3, receivedGhosts.size());
+
+        // Extract versions
+        var versions = receivedGhosts.stream()
+            .map(SimulationGhostEntity::version)
+            .toList();
+
+        // Verify monotonically increasing
+        for (int i = 1; i < versions.size(); i++) {
+            assertTrue(versions.get(i) > versions.get(i - 1),
+                      "Version " + versions.get(i) + " should be > " + versions.get(i - 1));
+        }
     }
 
     /**

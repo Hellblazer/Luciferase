@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.simulation.topology;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
 import com.hellblazer.luciferase.simulation.topology.events.*;
@@ -29,6 +30,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 /**
  * Orchestrates topology change execution with snapshot/rollback capability.
@@ -83,6 +85,12 @@ public class TopologyExecutor implements OperationTracker {
     private final Lock executionLock;
     private final Set<TopologyEventListener> listeners = ConcurrentHashMap.newKeySet();
 
+    // Pluggable clock for deterministic testing - defaults to system time
+    private volatile Clock clock = Clock.system();
+
+    // Pluggable UUID supplier for deterministic event IDs - defaults to random UUIDs
+    private volatile Supplier<UUID> uuidSupplier = UUID::randomUUID;
+
     // Thread-local operation history for tracking grid changes during execution
     // Using ThreadLocal since executionLock ensures single-threaded execution
     private final ThreadLocal<List<GridOperation>> operationHistory = ThreadLocal.withInitial(ArrayList::new);
@@ -113,6 +121,32 @@ public class TopologyExecutor implements OperationTracker {
      */
     public TopologyMetrics getMetrics() {
         return metrics;
+    }
+
+    /**
+     * Sets the clock to use for event timestamps.
+     * <p>
+     * For deterministic testing, inject a {@link com.hellblazer.luciferase.simulation.distributed.integration.TestClock}
+     * to control time progression.
+     *
+     * @param clock the clock to use (must not be null)
+     * @throws NullPointerException if clock is null
+     */
+    public void setClock(Clock clock) {
+        this.clock = java.util.Objects.requireNonNull(clock, "clock must not be null");
+    }
+
+    /**
+     * Sets the UUID supplier to use for generating event IDs.
+     * <p>
+     * For deterministic testing, inject a {@link com.hellblazer.luciferase.simulation.distributed.integration.SeededUuidSupplier}
+     * to ensure reproducible event ID generation.
+     *
+     * @param uuidSupplier the UUID supplier to use (must not be null)
+     * @throws NullPointerException if uuidSupplier is null
+     */
+    public void setUuidSupplier(Supplier<UUID> uuidSupplier) {
+        this.uuidSupplier = java.util.Objects.requireNonNull(uuidSupplier, "uuidSupplier must not be null");
     }
 
     /**
@@ -205,8 +239,8 @@ public class TopologyExecutor implements OperationTracker {
                     // Fire split event (calculate entities moved)
                     int entitiesMoved = result.entitiesAfter() - result.entitiesBefore();
                     fireEvent(new SplitEvent(
-                        UUID.randomUUID(),
-                        System.currentTimeMillis(),
+                        uuidSupplier.get(),
+                        clock.currentTimeMillis(),
                         split.sourceBubble(),
                         result.newBubbleId(),
                         Math.abs(entitiesMoved),
@@ -226,8 +260,8 @@ public class TopologyExecutor implements OperationTracker {
                     // Fire merge event (calculate entities moved)
                     int entitiesMoved = Math.abs(result.entitiesAfter() - result.entitiesBefore());
                     fireEvent(new MergeEvent(
-                        UUID.randomUUID(),
-                        System.currentTimeMillis(),
+                        uuidSupplier.get(),
+                        clock.currentTimeMillis(),
                         merge.bubble1(),
                         merge.bubble2(),
                         entitiesMoved,
@@ -249,8 +283,8 @@ public class TopologyExecutor implements OperationTracker {
                     var centroid = bubble.bounds().centroid();
                     // Note: We don't have the old centroid, so using current for both (visualization will handle)
                     fireEvent(new MoveEvent(
-                        UUID.randomUUID(),
-                        System.currentTimeMillis(),
+                        uuidSupplier.get(),
+                        clock.currentTimeMillis(),
                         bubble.id(),
                         (float) centroid.getX(), (float) centroid.getY(), (float) centroid.getZ(),
                         (float) centroid.getX(), (float) centroid.getY(), (float) centroid.getZ(),

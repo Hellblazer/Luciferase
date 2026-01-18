@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.simulation.scheduling;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.annotations.NonEvent;
 import com.hellblazer.primeMover.api.Kronos;
@@ -8,6 +9,7 @@ import com.hellblazer.primeMover.runtime.Kairos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.LongConsumer;
@@ -101,6 +103,9 @@ public class BucketScheduler<ID extends EntityID, Content> {
     private final BucketSchedulerEntity entity;
     private volatile boolean running = false;
 
+    // Pluggable clock for deterministic testing - defaults to system time
+    private volatile Clock clock = Clock.system();
+
     /**
      * Create a bucket scheduler with event-driven advancement.
      *
@@ -184,6 +189,21 @@ public class BucketScheduler<ID extends EntityID, Content> {
     @NonEvent
     public boolean isRunning() {
         return running;
+    }
+
+    /**
+     * Sets the clock to use for barrier timing.
+     * <p>
+     * For deterministic testing, inject a {@link com.hellblazer.luciferase.simulation.distributed.integration.TestClock}
+     * to control time progression.
+     *
+     * @param clock the clock to use (must not be null)
+     * @throws NullPointerException if clock is null
+     */
+    @NonEvent
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        entity.setClock(clock);
     }
 
     /**
@@ -339,6 +359,9 @@ public class BucketScheduler<ID extends EntityID, Content> {
         private final LongConsumer physicsCallback;
         private final java.util.function.Supplier<Boolean> runningSupplier;
 
+        // Pluggable clock for deterministic testing
+        private volatile Clock clock = Clock.system();
+
         private long currentBucket = 0;
         private long barrierStartTime = 0;
         private boolean waitingForBarrier = false;
@@ -369,6 +392,16 @@ public class BucketScheduler<ID extends EntityID, Content> {
         }
 
         /**
+         * Sets the clock to use for barrier timing.
+         *
+         * @param clock the clock to use
+         */
+        @NonEvent
+        public void setClock(Clock clock) {
+            this.clock = clock;
+        }
+
+        /**
          * Execute a single bucket advancement cycle.
          * <p>
          * Prime-Mover event method that drives bucket coordination.
@@ -392,7 +425,7 @@ public class BucketScheduler<ID extends EntityID, Content> {
                 checkpointCallback.accept(currentBucket);
 
                 // Step 2: Begin barrier synchronization
-                barrierStartTime = System.currentTimeMillis();
+                barrierStartTime = clock.currentTimeMillis();
                 waitingForBarrier = true;
 
                 log.debug("Bucket {}: checkpoint created, waiting for barrier", currentBucket);
@@ -413,7 +446,7 @@ public class BucketScheduler<ID extends EntityID, Content> {
                          previousBucket, currentBucket);
             } else {
                 // Check timeout
-                long elapsed = System.currentTimeMillis() - barrierStartTime;
+                long elapsed = clock.currentTimeMillis() - barrierStartTime;
                 if (elapsed > BARRIER_TIMEOUT_MS) {
                     // Timeout: proceed anyway (graceful degradation)
                     handleBarrierTimeout(currentBucket);
