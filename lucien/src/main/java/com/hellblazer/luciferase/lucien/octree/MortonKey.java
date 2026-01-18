@@ -67,8 +67,8 @@ public final class MortonKey implements SpatialKey<MortonKey> {
     }
 
     /**
-     * Factory method to create a MortonKey from coordinates and level. This is a convenience method that delegates to
-     * Morton curve calculation.
+     * Factory method to create a MortonKey from world coordinates and level.
+     * The coordinates are raw world coordinates that will be quantized to the cell grid at the given level.
      *
      * @param x     the x coordinate (must be non-negative)
      * @param y     the y coordinate (must be non-negative)
@@ -84,11 +84,53 @@ public final class MortonKey implements SpatialKey<MortonKey> {
                 String.format("Negative coordinates not supported: (%d,%d,%d)", x, y, z)
             );
         }
-        
-        // Use the Constants method which properly handles level encoding
-        var point = new javax.vecmath.Point3f(x, y, z);
-        var mortonCode = Constants.calculateMortonIndex(point, level);
-        return new MortonKey(mortonCode);
+
+        // Quantize to cell boundaries at this level
+        var cellSize = Constants.lengthAtLevel(level);
+        var quantizedX = (x / cellSize) * cellSize;
+        var quantizedY = (y / cellSize) * cellSize;
+        var quantizedZ = (z / cellSize) * cellSize;
+
+        // Encode to Morton code and preserve the level
+        var mortonCode = com.hellblazer.luciferase.geometry.MortonCurve.encode(quantizedX, quantizedY, quantizedZ);
+        return new MortonKey(mortonCode, level);
+    }
+
+    /**
+     * Factory method to create a MortonKey from cell indices at a given level.
+     * The coordinates are cell indices (0, 1, 2, ...), not world coordinates.
+     *
+     * @param cellX the x cell index (must be non-negative)
+     * @param cellY the y cell index (must be non-negative)
+     * @param cellZ the z cell index (must be non-negative)
+     * @param level the hierarchical level
+     * @return a new MortonKey
+     * @throws IllegalArgumentException if any coordinate is negative or out of bounds
+     */
+    public static MortonKey fromCellIndices(int cellX, int cellY, int cellZ, byte level) {
+        // Validate coordinates are non-negative
+        if (cellX < 0 || cellY < 0 || cellZ < 0) {
+            throw new IllegalArgumentException(
+                String.format("Negative cell indices not supported: (%d,%d,%d)", cellX, cellY, cellZ)
+            );
+        }
+
+        // Convert cell indices to world coordinates
+        var cellSize = Constants.lengthAtLevel(level);
+        var worldX = cellX * cellSize;
+        var worldY = cellY * cellSize;
+        var worldZ = cellZ * cellSize;
+
+        // Validate bounds
+        if (worldX > Constants.MAX_COORD || worldY > Constants.MAX_COORD || worldZ > Constants.MAX_COORD) {
+            throw new IllegalArgumentException(
+                String.format("Cell indices (%d,%d,%d) at level %d exceed maximum bounds", cellX, cellY, cellZ, level)
+            );
+        }
+
+        // Encode to Morton code and preserve the level
+        var mortonCode = com.hellblazer.luciferase.geometry.MortonCurve.encode(worldX, worldY, worldZ);
+        return new MortonKey(mortonCode, level);
     }
 
     public static MortonKey getRoot() {
@@ -239,6 +281,128 @@ public final class MortonKey implements SpatialKey<MortonKey> {
         return base64.substring(firstNonA);
     }
     
+    /**
+     * Get the neighbor of this Morton key in a specific direction.
+     * This provides O(1) neighbor lookup using pre-computed offset tables and bit manipulation.
+     *
+     * @param direction the direction to find the neighbor
+     * @return the neighbor MortonKey, or null if the neighbor would be out of bounds
+     */
+    public MortonKey neighbor(Direction direction) {
+        // Decode current coordinates
+        int[] coords = com.hellblazer.luciferase.geometry.MortonCurve.decode(mortonCode);
+        var cellSize = Constants.lengthAtLevel(level);
+
+        // Apply direction offset
+        var offset = direction.getOffset();
+        var nx = coords[0] + offset[0] * cellSize;
+        var ny = coords[1] + offset[1] * cellSize;
+        var nz = coords[2] + offset[2] * cellSize;
+
+        // Check bounds - coordinates must be >= 0 and < MAX_COORD
+        if (nx < 0 || nx > Constants.MAX_COORD ||
+            ny < 0 || ny > Constants.MAX_COORD ||
+            nz < 0 || nz > Constants.MAX_COORD) {
+            return null; // Out of bounds
+        }
+
+        // Encode neighbor Morton code
+        var neighborCode = com.hellblazer.luciferase.geometry.MortonCurve.encode(nx, ny, nz);
+        return new MortonKey(neighborCode, level);
+    }
+
+    /**
+     * Direction enum for 26 possible 3D neighbor directions.
+     *
+     * Layout:
+     * - 6 face neighbors (share a face, codimension 1)
+     * - 12 edge neighbors (share an edge, codimension 2)
+     * - 8 vertex neighbors (share a vertex, codimension 3)
+     */
+    public enum Direction {
+        // === Face neighbors (6) ===
+        POSITIVE_X(1, 0, 0),
+        NEGATIVE_X(-1, 0, 0),
+        POSITIVE_Y(0, 1, 0),
+        NEGATIVE_Y(0, -1, 0),
+        POSITIVE_Z(0, 0, 1),
+        NEGATIVE_Z(0, 0, -1),
+
+        // === Edge neighbors (12) ===
+        POS_X_POS_Y(1, 1, 0),
+        POS_X_NEG_Y(1, -1, 0),
+        NEG_X_POS_Y(-1, 1, 0),
+        NEG_X_NEG_Y(-1, -1, 0),
+
+        POS_X_POS_Z(1, 0, 1),
+        POS_X_NEG_Z(1, 0, -1),
+        NEG_X_POS_Z(-1, 0, 1),
+        NEG_X_NEG_Z(-1, 0, -1),
+
+        POS_Y_POS_Z(0, 1, 1),
+        POS_Y_NEG_Z(0, 1, -1),
+        NEG_Y_POS_Z(0, -1, 1),
+        NEG_Y_NEG_Z(0, -1, -1),
+
+        // === Vertex neighbors (8) ===
+        POS_X_POS_Y_POS_Z(1, 1, 1),
+        POS_X_POS_Y_NEG_Z(1, 1, -1),
+        POS_X_NEG_Y_POS_Z(1, -1, 1),
+        POS_X_NEG_Y_NEG_Z(1, -1, -1),
+        NEG_X_POS_Y_POS_Z(-1, 1, 1),
+        NEG_X_POS_Y_NEG_Z(-1, 1, -1),
+        NEG_X_NEG_Y_POS_Z(-1, -1, 1),
+        NEG_X_NEG_Y_NEG_Z(-1, -1, -1);
+
+        private final int[] offset;
+
+        Direction(int dx, int dy, int dz) {
+            this.offset = new int[] { dx, dy, dz };
+        }
+
+        public int[] getOffset() {
+            return offset;
+        }
+
+        /**
+         * Get the opposite direction.
+         */
+        public Direction opposite() {
+            return switch (this) {
+                case POSITIVE_X -> NEGATIVE_X;
+                case NEGATIVE_X -> POSITIVE_X;
+                case POSITIVE_Y -> NEGATIVE_Y;
+                case NEGATIVE_Y -> POSITIVE_Y;
+                case POSITIVE_Z -> NEGATIVE_Z;
+                case NEGATIVE_Z -> POSITIVE_Z;
+
+                case POS_X_POS_Y -> NEG_X_NEG_Y;
+                case POS_X_NEG_Y -> NEG_X_POS_Y;
+                case NEG_X_POS_Y -> POS_X_NEG_Y;
+                case NEG_X_NEG_Y -> POS_X_POS_Y;
+
+                case POS_X_POS_Z -> NEG_X_NEG_Z;
+                case POS_X_NEG_Z -> NEG_X_POS_Z;
+                case NEG_X_POS_Z -> POS_X_NEG_Z;
+                case NEG_X_NEG_Z -> POS_X_POS_Z;
+
+                case POS_Y_POS_Z -> NEG_Y_NEG_Z;
+                case POS_Y_NEG_Z -> NEG_Y_POS_Z;
+                case NEG_Y_POS_Z -> POS_Y_NEG_Z;
+                case NEG_Y_NEG_Z -> POS_Y_POS_Z;
+
+                case POS_X_POS_Y_POS_Z -> NEG_X_NEG_Y_NEG_Z;
+                case POS_X_POS_Y_NEG_Z -> NEG_X_NEG_Y_POS_Z;
+                case POS_X_NEG_Y_POS_Z -> NEG_X_POS_Y_NEG_Z;
+                case POS_X_NEG_Y_NEG_Z -> NEG_X_POS_Y_POS_Z;
+                case NEG_X_POS_Y_POS_Z -> POS_X_NEG_Y_NEG_Z;
+                case NEG_X_POS_Y_NEG_Z -> POS_X_NEG_Y_POS_Z;
+                case NEG_X_NEG_Y_POS_Z -> POS_X_POS_Y_NEG_Z;
+                case NEG_X_NEG_Y_NEG_Z -> POS_X_POS_Y_POS_Z;
+            };
+        }
+    }
+
     /**
      * Convert this MortonKey to its protobuf representation.
      */
