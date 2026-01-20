@@ -399,8 +399,7 @@ public class OuterClass {
 @Test
 void testTimeBasedBehavior() {
     // Setup deterministic clock
-    var testClock = new TestClock();
-    testClock.setMillis(1000L);
+    var testClock = new TestClock(1000L);  // Start at T=1000ms
 
     var service = new MyService();
     service.setClock(testClock);
