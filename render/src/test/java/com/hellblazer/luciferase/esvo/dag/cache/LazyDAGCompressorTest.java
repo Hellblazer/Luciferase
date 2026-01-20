@@ -26,6 +26,7 @@ import com.hellblazer.luciferase.sparse.core.PointerAddressingMode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.nio.ByteBuffer;
 import java.time.Duration;
