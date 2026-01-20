@@ -255,4 +255,63 @@ public interface SparseVoxelData<N extends SparseVoxelNode> extends SpatialData 
         int count = nodeCount();
         return count > 0 ? (float) sizeInBytes() / count : 0.0f;
     }
+
+    // === Pointer Addressing ===
+
+    /**
+     * Get the pointer addressing mode used by this data structure.
+     *
+     * <p>This determines how child indices are computed:
+     * <ul>
+     * <li>{@link PointerAddressingMode#RELATIVE}: SVO-style relative addressing
+     *     (childIndex = parentIdx + childPtr + sparseIdx)</li>
+     * <li>{@link PointerAddressingMode#ABSOLUTE}: DAG-style absolute addressing
+     *     (childIndex = childPtr + sparseIdx)</li>
+     * </ul>
+     *
+     * <p>Default implementation returns {@link PointerAddressingMode#RELATIVE}
+     * for backward compatibility with existing SVO implementations.
+     *
+     * @return the addressing mode (never null)
+     */
+    default PointerAddressingMode getAddressingMode() {
+        return PointerAddressingMode.RELATIVE;
+    }
+
+    /**
+     * Resolve the child index for a given parent node and octant.
+     *
+     * <p>The resolution strategy depends on {@link #getAddressingMode()}:
+     * <ul>
+     * <li><b>RELATIVE</b>: {@code childIndex = parentIdx + childPtr + sparseIdx}</li>
+     * <li><b>ABSOLUTE</b>: {@code childIndex = childPtr + sparseIdx}</li>
+     * </ul>
+     *
+     * <p>Where {@code sparseIdx} is the number of set bits in the childMask
+     * below the target octant.
+     *
+     * <p>Default implementation uses RELATIVE addressing. DAG implementations
+     * should override to use ABSOLUTE addressing.
+     *
+     * @param parentIdx parent node index
+     * @param node parent node
+     * @param octant child octant [0-7]
+     * @return child node index
+     * @throws IndexOutOfBoundsException if octant is not in [0, 7]
+     */
+    default int resolveChildIndex(int parentIdx, N node, int octant) {
+        if (octant < 0 || octant > 7) {
+            throw new IndexOutOfBoundsException("Octant must be in [0, 7], got: " + octant);
+        }
+
+        int sparseIdx = Integer.bitCount(node.getChildMask() & ((1 << octant) - 1));
+
+        if (getAddressingMode() == PointerAddressingMode.ABSOLUTE) {
+            // DAG: absolute addressing
+            return node.getChildPtr() + sparseIdx;
+        } else {
+            // SVO: relative addressing (default)
+            return parentIdx + node.getChildPtr() + sparseIdx;
+        }
+    }
 }
