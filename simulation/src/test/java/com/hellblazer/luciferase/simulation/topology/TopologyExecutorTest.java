@@ -63,7 +63,7 @@ class TopologyExecutorTest {
         int totalBefore = accountant.entitiesInBubble(bubble.id()).size();
 
         // Create split proposal
-        var centroid = bubble.bounds().centroid();
+        var centroid = bubble.centroid();
         var splitPlane = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
             (float) centroid.getX()
@@ -184,7 +184,7 @@ class TopologyExecutorTest {
         int totalBefore = getTotalEntityCount();
 
         // Create split proposal
-        var centroid = bubble.bounds().centroid();
+        var centroid = bubble.centroid();
         var splitPlane = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
             (float) centroid.getX()
@@ -243,7 +243,7 @@ class TopologyExecutorTest {
         addEntities(bubble, 5100);
 
         // Create split proposal
-        var centroid = bubble.bounds().centroid();
+        var centroid = bubble.centroid();
         var splitPlane = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
             (float) centroid.getX()

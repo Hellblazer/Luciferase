@@ -81,7 +81,7 @@ class DynamicTopologyDemo {
         var bubble0 = bubbles.get(0);
         System.out.println("Bubble " + bubble0.id().toString().substring(0, 8) + " has 5200 entities (>5000 threshold)");
 
-        var centroid0 = bubble0.bounds().centroid();
+        var centroid0 = bubble0.centroid();
         var splitPlane0 = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
             (float) centroid0.getX()
@@ -111,7 +111,7 @@ class DynamicTopologyDemo {
 
         addEntities(bubble1, accountant, 300, "Push above threshold");
 
-        var centroid1 = bubble1.bounds().centroid();
+        var centroid1 = bubble1.centroid();
         var splitPlane1 = new SplitPlane(
             new Point3f(0.0f, 1.0f, 0.0f),
             (float) centroid1.getY()
@@ -265,7 +265,7 @@ class DynamicTopologyDemo {
         for (var bubble : initialBubbles) {
             int bubbleEntities = accountant.entitiesInBubble(bubble.id()).size();
             if (bubbleEntities > SPLIT_THRESHOLD) {
-                var centroid = bubble.bounds().centroid();
+                var centroid = bubble.centroid();
                 var splitPlane = new SplitPlane(
                     new Point3f(1.0f, 0.0f, 0.0f),
                     (float) centroid.getX()

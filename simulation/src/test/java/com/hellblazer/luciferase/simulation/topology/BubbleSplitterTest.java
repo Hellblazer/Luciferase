@@ -61,7 +61,7 @@ class BubbleSplitterTest {
         assertEquals(5100, entitiesBefore, "Should have 5100 entities before split");
 
         // Create split proposal
-        var centroid = bubble.bounds().centroid();
+        var centroid = bubble.centroid();
         var splitPlane = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
             (float) centroid.getX()
@@ -183,7 +183,7 @@ class BubbleSplitterTest {
 
         int entitiesBefore = accountant.entitiesInBubble(bubble.id()).size();
 
-        var centroid = bubble.bounds().centroid();
+        var centroid = bubble.centroid();
         var splitPlane = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
             (float) centroid.getX()

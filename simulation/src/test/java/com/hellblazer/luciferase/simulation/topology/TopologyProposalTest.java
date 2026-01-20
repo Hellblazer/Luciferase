@@ -101,7 +101,7 @@ class TopologyProposalTest {
             accountant.register(bubble.id(), entityId);
         }
 
-        var centroid2 = bubble.bounds().centroid();
+        var centroid2 = bubble.centroid();
         var splitPlane = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
             (float) centroid2.getX()

@@ -64,7 +64,7 @@ class TopologyEvolutionTest {
         int totalEntitiesBefore = getTotalEntityCount();
 
         // Trigger split
-        var centroid = bubble.bounds().centroid();
+        var centroid = bubble.centroid();
         var splitPlane = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
             (float) centroid.getX()
@@ -207,7 +207,7 @@ class TopologyEvolutionTest {
         assertEquals(5300, totalEntitiesBefore, "Should start with 5300 entities");
 
         // Step 1: Split bubble1
-        var centroid = bubble1.bounds().centroid();
+        var centroid = bubble1.centroid();
         var splitPlane = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
             (float) centroid.getX()
@@ -254,7 +254,7 @@ class TopologyEvolutionTest {
         assertEquals(5600, initialTotal, "Should start with 5600 entities");
 
         // Execute split on bubble1
-        var centroid = bubble1.bounds().centroid();
+        var centroid = bubble1.centroid();
         var splitPlane = new SplitPlane(
             new Point3f(1.0f, 0.0f, 0.0f),
             (float) centroid.getX()
