@@ -105,7 +105,7 @@ testClock.advance(500);  // Advance to T=1500ms
 
 ## Dependencies
 
-- **PrimeMover 1.0.5**: Discrete event simulation (`RealTimeController`, `Kronos`, `@Entity`)
+- **PrimeMover 1.0.6**: Discrete event simulation (`RealTimeController`, `Kronos`, `@Entity`) with improved virtual time, clock drift fixes, and enhanced bytecode transformation
 - **Lucien**: `Tetree` spatial indexing, `GhostZoneManager`, `Forest` multi-tree support
 
 ## Usage

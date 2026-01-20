@@ -82,8 +82,8 @@ TestClock extends Clock for deterministic testing with controllable time progres
 
 ```java
 var testClock = new TestClock();
-testClock.setMillis(1000L);  // Set to 1 second since epoch
-testClock.advance(500);       // Advance by 500ms
+testClock.setTime(1000L);    // Set absolute time to 1 second since epoch
+testClock.advance(500);      // Advance by 500ms
 assert testClock.currentTimeMillis() == 1500L;
 
 // Nanos maintain 1:1,000,000 ratio
@@ -92,26 +92,34 @@ assert testClock.nanoTime() == 1_500_000_000L;
 
 ### VonMessageFactory Pattern (Record Classes)
 
-For Java record classes that cannot have mutable Clock fields, VonMessageFactory provides time injection at creation.
+For Java record classes that cannot have mutable Clock fields, VonMessageFactory provides time injection via factory methods.
 
 **Pattern**:
 ```java
-public record VonMessage(String id, long timestamp, String payload) {
-    // Compact constructor uses factory-injected time
-    public VonMessage {
-        timestamp = VonMessageFactory.currentTimeMillis();
-    }
+public record JoinRequest(UUID joinerId, Point3D position, BubbleBounds bounds, long timestamp) {
+    // No constructor logic - factory methods inject timestamp
+}
+
+public record Move(UUID nodeId, Point3D newPosition, BubbleBounds newBounds, long timestamp) {
+    // Timestamp provided by factory, not generated here
 }
 
 // Factory controls time source
-VonMessageFactory.setClock(testClock);
-var msg = new VonMessage("id", 0, "payload");  // timestamp from testClock
+// Production:
+var factory = VonMessageFactory.system();
+var msg = factory.createJoinRequest(joinerId, position, bounds);
+
+// Testing:
+var testClock = new TestClock(1000L);
+var factory = new VonMessageFactory(testClock);
+var msg = factory.createJoinRequest(joinerId, position, bounds);  // timestamp = 1000L
 ```
 
 **When to Use**:
 - Java record classes (cannot have mutable fields)
 - Immutable value objects requiring timestamps
 - Message classes with timestamp generation
+- Factory pattern provides clean DI without mutable state
 
 ---
 
@@ -328,7 +336,7 @@ public class MyService {
 
 ### Record Class Pattern (VonMessageFactory)
 
-For Java records that cannot have mutable fields:
+For Java records that cannot have mutable fields, use VonMessageFactory to inject timestamps:
 
 ```java
 public record MigrationMessage(
@@ -336,26 +344,32 @@ public record MigrationMessage(
     long timestamp,
     Point3D position
 ) {
-    public MigrationMessage {
-        // Compact constructor uses factory-injected time
-        timestamp = VonMessageFactory.currentTimeMillis();
-    }
+    // Factory pattern - no constructor logic needed
 }
 
 // In tests
 @BeforeEach
 void setup() {
-    var testClock = new TestClock();
-    testClock.setMillis(1000L);
-    VonMessageFactory.setClock(testClock);
+    testClock = new TestClock(1000L);  // Absolute time at 1000ms
+    factory = new VonMessageFactory(testClock);
 }
 
 @Test
 void testMessageTimestamp() {
-    var msg = new MigrationMessage("entity1", 0, position);
+    var msg = factory.createMigrationMessage("entity1", position);
     assertEquals(1000L, msg.timestamp());  // Deterministic!
+
+    testClock.advance(500);
+    var msg2 = factory.createMigrationMessage("entity1", position);
+    assertEquals(1500L, msg2.timestamp());  // Time advanced
 }
 ```
+
+**Key Points**:
+- Records remain immutable (no constructor logic)
+- Factory injects timestamp at message creation time
+- Test controls time via TestClock
+- Better than static factory pattern (instance-based DI)
 
 ### Inner Class / Lambda Pattern
 

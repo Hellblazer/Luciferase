@@ -1,6 +1,6 @@
 # Lucien Module Architecture
 
-**Last Updated**: 2025-12-25
+**Last Updated**: 2026-01-20
 **Status**: Current
 
 ## Overview
@@ -13,7 +13,7 @@ The Luciferase codebase underwent architectural simplification in 2025, focusing
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 185 Java files organized across 17 packages, providing a comprehensive spatial indexing system
+The module consists of 195 Java files organized across 18 packages, providing a comprehensive spatial indexing system
 with advanced features including collision detection, tree balancing, visitor patterns, forest management, and distributed
 ghost support. All core features are complete, including the S0-S5 tetrahedral subdivision, anisotropic prism subdivision,
 and full ghost layer implementation with gRPC communication.
@@ -23,18 +23,22 @@ and full ghost layer implementation with gRPC communication.
 ```text
 
 com.hellblazer.luciferase.lucien/
-├── Root package (29 classes + 2 images)
-│   ├── Core abstractions: SpatialIndex, AbstractSpatialIndex, 
+├── Root package (30 classes + 2 images)
+│   ├── Core abstractions: SpatialIndex, AbstractSpatialIndex,
 │   │                      SpatialNodeStorage, SpatialNodeImpl, SpatialKey
-│   ├── Spatial types: Spatial, VolumeBounds, SpatialIndexSet
+│   ├── Spatial types: Spatial, VolumeBounds, SpatialIndexSet, SpatialIndexFactory
 │   ├── Geometry: Frustum3D, Plane3D, Ray3D, Simplex, FrustumIntersection, PlaneIntersection
+│   ├── Distance: SpatialDistanceCalculator
 │   ├── Performance: BulkOperationConfig, BulkOperationProcessor, DeferredSubdivisionManager,
 │   │                ParallelBulkOperations, SpatialNodePool, FineGrainedLockingStrategy
-│   ├── Utilities: Constants, VisibilitySearch, LevelSelector, NodeEstimator, 
+│   ├── Utilities: Constants, VisibilitySearch, LevelSelector, NodeEstimator, FrameManager,
 │   │              BatchInsertionResult, StackBasedTreeBuilder, SubdivisionStrategy
 │   └── Resources: reference-cube.png, reference-simplexes.png
+├── cache/ (2 classes) NEW - K-NN Query Optimization
+│   ├── KNNCache - Query result caching
+│   └── KNNQueryKey - Cache key for k-NN queries
 ├── entity/ (13 classes)
-│   ├── Core: Entity, EntityBounds, EntityData, EntityDistance
+│   ├── Core: Entity, EntityBounds, EntityData, EntityDistance, EntityDynamics
 │   ├── Identity: EntityID, EntityIDGenerator
 │   ├── Management: EntityManager, EntitySpanningPolicy
 │   └── Implementations: LongEntityID, UUIDEntityID,
@@ -46,9 +50,12 @@ com.hellblazer.luciferase.lucien/
 │   ├── OctreeSubdivisionStrategy - Subdivision policy
 │   ├── Octant - Octant enumeration
 │   └── internal/NodeDistance - Node distance utilities
-├── sfc/ (2 classes)
+├── sfc/ (5 classes)
 │   ├── SFCArrayIndex - Flat SFC-sorted array index (2.9x faster insertions)
-│   └── MortonKeyInterval - Morton code range for cells(Q) algorithm
+│   ├── SFCInterval - SFC interval representation
+│   ├── SFCTraversal - SFC traversal algorithm
+│   ├── MortonTraversal - Morton code traversal
+│   └── LitmaxBigmin - LITMAX/BIGMIN optimization for SFC range queries
 ├── tetree/ (34 classes)
 │   ├── Core: Tetree, Tet, TetrahedralGeometry, TetrahedralSearchBase
 │   ├── Keys: TetreeKey, CompactTetreeKey, LazyTetreeKey
@@ -60,18 +67,17 @@ com.hellblazer.luciferase.lucien/
 │   ├── Advanced: TetreeSFCRayTraversal, TetreeValidator, TetreeValidationUtils, 
 │   │             PluckerCoordinate, TetOptimized
 │   └── internal/TetDistance - Distance utilities
-├── prism/ (8 classes)
-│   ├── Core: Prism, PrismKey, PrismGeometry
+├── prism/ (9 classes)
+│   ├── Core: Prism, PrismKey, PrismGeometry, PrismSubdivisionStrategy
 │   ├── Primitives: Line, Triangle
 │   ├── Collision: PrismCollisionDetector
 │   ├── Intersection: PrismRayIntersector
 │   └── Navigation: PrismNeighborFinder
-├── balancing/ (4 classes)
+├── balancing/ (3 classes)
 │   ├── TreeBalancer - Main balancing interface
 │   ├── TreeBalancingStrategy - Strategy pattern
-│   ├── DefaultBalancingStrategy - Default implementation
-│   └── TetreeBalancer - Tetree-specific balancing
-├── collision/ (29 classes)
+│   └── DefaultBalancingStrategy - Default implementation
+├── collision/ (30 classes)
 │   ├── Main: CollisionSystem, CollisionShape, CollisionResponse, etc. (18 classes)
 │   ├── ccd/ - Continuous collision detection (4 classes)
 │   ├── physics/ - Physics integration (4 classes)
@@ -81,29 +87,21 @@ com.hellblazer.luciferase.lucien/
 │   ├── AbstractTreeVisitor - Base implementation
 │   ├── Concrete: EntityCollectorVisitor, NodeCountVisitor
 │   └── Support: TraversalContext, TraversalStrategy
-├── forest/ (28 classes total: 8 core + 11 ghost + 9 other)
-│   ├── Core: Forest, TreeNode, TreeMetadata, TreeLocation
-│   ├── Configuration: ForestConfig
-│   ├── Management: DynamicForestManager, ForestEntityManager, ForestLoadBalancer
+├── forest/ (26 classes total: 15 core + 11 ghost)
+│   ├── Core: Forest, TreeNode, TreeMetadata, TreeLocation, ForestConfig
+│   ├── Management: DynamicForestManager, ForestEntityManager, ForestLoadBalancer, AdaptiveForestEntityManager
 │   ├── Specialized: GridForest, AdaptiveForest, HierarchicalForest
 │   ├── Spatial Queries: ForestQuery, ForestSpatialQueries
 │   ├── Connectivity: TreeConnectivityManager
 │   └── ghost/ (11 classes)
-│       ├── Core: GhostElement, GhostType, GhostLayer, GhostZoneManager
-│       ├── Management: ElementGhostManager, DistributedGhostManager
-│       ├── Communication: GhostExchangeServiceImpl, GhostServiceClient, 
-│       │                  GhostCommunicationManager
-│       ├── Serialization: ProtobufConverters, ContentSerializer, 
-│       │                  ContentSerializerRegistry
-│       └── Discovery: SimpleServiceDiscovery
+│       ├── Core: GhostElement, GhostType, GhostLayer, GhostZoneManager, GhostAlgorithm
+│       ├── Management: ElementGhostManager, DistributedGhostManager, GhostBoundaryDetector
+│       ├── Communication: GrpcGhostChannel
+│       └── Serialization: ContentSerializer, ContentSerializerRegistry
 ├── neighbor/ (3 classes)
 │   ├── NeighborDetector - Interface for topological neighbor detection
 │   ├── MortonNeighborDetector - Octree neighbor detection
 │   └── TetreeNeighborDetector - Tetree neighbor detection
-├── lockfree/ (3 classes)
-│   ├── LockFreeEntityMover - Atomic movement protocol (264K movements/sec)
-│   ├── AtomicSpatialNode - Lock-free spatial node using atomic collections
-│   └── VersionedEntityState - Immutable versioned state for optimistic concurrency
 ├── internal/ (4 classes)
 │   ├── EntityCache - Entity caching system
 │   ├── IndexedEntity - Indexed entity utilities
@@ -114,12 +112,9 @@ com.hellblazer.luciferase.lucien/
 ├── occlusion/ (11 classes)
 │   ├── Core: HierarchicalZBuffer, HierarchicalOcclusionCuller
 │   ├── Configuration: DSOCConfiguration, AdaptiveZBufferConfig
-│   ├── Management: VisibilityStateManager, FrameManager
-│   ├── TBV: TemporalBoundingVolume, TBVManager
-│   ├── Strategies: TBVStrategy, AdaptiveTBVStrategy, 
-│   │               FixedDurationTBVStrategy, VelocityBasedTBVStrategy
-│   ├── State: VisibilityState, EntityVisibilityInfo, OcclusionType
-│   └── Statistics: OcclusionStatistics
+│   ├── Management: VisibilityStateManager, LCAMovementOptimizer
+│   ├── TBV: TemporalBoundingVolume, TBVStrategy, AdaptiveTBVStrategy, FixedDurationTBVStrategy
+│   └── Special: OcclusionAwareSpatialNode
 ├── debug/ (4 classes)
 │   ├── SpatialIndexDebugger - Base debugging utilities
 │   ├── OctreeDebugger - Octree-specific debugging
@@ -129,8 +124,8 @@ com.hellblazer.luciferase.lucien/
 │   └── SpatialIndexConverter - Converts between spatial index types
 ├── profiler/ (1 class)
 │   └── SpatialIndexProfiler - Performance profiling utilities
-└── index/ (0 classes)
-    └── [Empty directory]
+└── simd/ (1 class) NEW - SIMD Optimization
+    └── SIMDMortonEncoder - SIMD-optimized Morton code encoding
 ```
 
 ## Class Hierarchy
@@ -553,7 +548,7 @@ TBVs enable efficient handling of dynamic objects by predicting future positions
 - **LongEntityID**, **UUIDEntityID** - Concrete ID types
 - **SequentialLongIDGenerator**, **UUIDGenerator** - ID generators
 
-### Occlusion Package (15)
+### Occlusion Package (11)
 
 Dynamic Scene Occlusion Culling components:
 
@@ -561,25 +556,13 @@ Dynamic Scene Occlusion Culling components:
 - **HierarchicalOcclusionCuller** - Generic occlusion culling implementation
 - **DSOCConfiguration** - Fluent API configuration system
 - **VisibilityStateManager** - Entity visibility state tracking
-- **FrameManager** - Frame counting and synchronization
+- **LCAMovementOptimizer** - Optimization for movement tracking
 - **TemporalBoundingVolume** - TBV representation for occluded entities
-- **TBVManager** - TBV lifecycle management
 - **TBVStrategy** - Abstract strategy for TBV creation
 - **AdaptiveTBVStrategy** - Adapts TBV parameters based on entity behavior
 - **FixedDurationTBVStrategy** - Fixed duration TBVs
-- **VelocityBasedTBVStrategy** - TBVs based on entity velocity
-- **VisibilityState** - Enumeration of visibility states
-- **EntityVisibilityInfo** - Per-entity visibility metadata
-- **OcclusionType** - Types of occlusion (frustum, depth, etc.)
-- **OcclusionStatistics** - Performance metrics collection
-
-### Lock-Free Package (3) - July 2025
-
-High-performance concurrent operations using atomic protocols:
-
-- **LockFreeEntityMover** - Four-phase atomic movement protocol achieving 264K movements/sec with 4 threads
-- **AtomicSpatialNode** - Lock-free spatial node using CopyOnWriteArraySet and atomic operations
-- **VersionedEntityState** - Immutable versioned state for optimistic concurrency control with ABA prevention
+- **OcclusionAwareSpatialNode** - Spatial node with occlusion awareness
+- **AdaptiveZBufferConfig** - Configuration for adaptive Z-buffer sizing
 
 ### Octree Package (6)
 

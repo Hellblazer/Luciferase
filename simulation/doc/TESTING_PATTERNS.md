@@ -42,7 +42,7 @@ class MyServiceTest {
     @BeforeEach
     void setUp() {
         testClock = new TestClock();
-        testClock.setMillis(1000L);  // Start at T=1000ms
+        testClock.setTime(1000L);  // Start at T=1000ms (absolute time)
 
         service = new MyService();
         service.setClock(testClock);  // Inject deterministic clock
@@ -70,7 +70,7 @@ class MyServiceTest {
 ```java
 @Test
 void testTimeoutDetection() {
-    testClock.setMillis(1000L);
+    testClock.setTime(1000L);
     service.setClock(testClock);
 
     var operation = service.startOperation();
@@ -88,14 +88,14 @@ void testTimeoutDetection() {
 ```java
 @Test
 void testBucketScheduling() {
-    testClock.setMillis(0L);
+    testClock.setTime(0L);
     scheduler.setClock(testClock);
 
     // Schedule for 100ms bucket
     scheduler.schedule(event, 100);
 
     // Advance to bucket boundary
-    testClock.setMillis(100);
+    testClock.setTime(100);
 
     // Verify event executed
     assertTrue(event.wasExecuted());
@@ -105,10 +105,10 @@ void testBucketScheduling() {
 ### TestClock Capabilities
 
 **Time Control**:
-- `setMillis(long)` - Set absolute milliseconds since epoch
-- `setNanos(long)` - Set absolute nanoseconds
+- `setTime(long)` - Set absolute milliseconds since epoch (absolute mode)
+- `setSkew(long)` - Set time skew offset from system clock (relative mode)
 - `advance(long)` - Advance milliseconds by delta
-- `advanceNanos(long)` - Advance nanoseconds by delta
+- `advanceNanos(long)` - Advance nanoseconds by delta (maintains 1:1,000,000 ratio)
 
 **Modes**:
 - **Absolute mode** (default): Returns exact set time
@@ -298,7 +298,7 @@ void testNetworkFailureRecovery() {
 @Test
 void testLatencyHandling() {
     var testClock = new TestClock();
-    testClock.setMillis(0L);
+    testClock.setTime(0L);  // Start at T=0
 
     var fakeNetwork = new FakeNetworkChannel("node1", "node2");
     fakeNetwork.setClock(testClock);
@@ -308,11 +308,11 @@ void testLatencyHandling() {
     fakeNetwork.send(message);
 
     // Advance to T=50ms (message in flight)
-    testClock.setMillis(50);
+    testClock.advance(50);
     assertNull(fakeNetwork.receive());  // Not delivered yet
 
     // Advance to T=100ms (message delivered)
-    testClock.setMillis(100);
+    testClock.advance(50);  // Total 100ms
     assertNotNull(fakeNetwork.receive());  // Now delivered
 }
 ```
@@ -330,8 +330,7 @@ Migration tests verify entity migration between bubbles using 2PC protocol.
 ```java
 @Test
 void testMigrationTimeout() {
-    var testClock = new TestClock();
-    testClock.setMillis(1000L);
+    var testClock = new TestClock(1000L);  // Start at T=1000ms
 
     var migration = new CrossProcessMigration(dedup, metrics);
     migration.setClock(testClock);
@@ -399,8 +398,7 @@ Ghost layer synchronization requires careful time control for boundary updates.
 ```java
 @Test
 void testGhostStateLifecycle() {
-    var testClock = new TestClock();
-    testClock.setMillis(1000L);
+    var testClock = new TestClock(1000L);  // Start at T=1000ms
 
     var ghostManager = new GhostStateManager();
     ghostManager.setClock(testClock);
@@ -432,7 +430,7 @@ void testGhostBoundarySynchronization() {
     ghostManager.setGhostBoundary(boundary);
 
     // Entity at T=1000ms moves into ghost zone
-    testClock.setMillis(1000L);
+    testClock.setTime(1000L);
     ghostManager.updatePosition(entityId, insideGhostZone);
 
     // Verify ghost state activated

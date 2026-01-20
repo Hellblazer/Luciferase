@@ -1,6 +1,6 @@
 # Lucien Architecture Summary
 
-**Last Updated**: 2026-01-04
+**Last Updated**: 2026-01-20
 **Status**: Current
 
 ## Purpose
@@ -16,29 +16,31 @@ subdivision. The module uses inheritance to maximize code reuse while maintainin
 approach. All core features are complete, including S0-S5 tetrahedral subdivision with 100% geometric containment and
 anisotropic prism subdivision with triangular/linear spatial indexing.
 
-**Total Classes: 185 Java files** organized across 17 packages (including ghost and neighbor detection)
+**Total Classes: 195 Java files** organized across 18 packages (including cache, simd, ghost, and neighbor detection)
 
 ## Package Overview
 
 For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.md](./LUCIEN_ARCHITECTURE.md).
 
-- **Root Package (29 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
-- **Entity Package (13 classes)**: Complete entity management infrastructure
+- **Root Package (30 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization, SpatialIndexFactory
+- **Cache Package (2 classes)**: K-NN query result caching optimization (NEW)
+- **Entity Package (13 classes)**: Complete entity management infrastructure with EntityDynamics support
 - **Octree Package (6 classes)**: Morton curve-based cubic spatial subdivision with internal utilities
+- **SFC Package (5 classes)**: Space-filling curve flat array index with LITMAX/BIGMIN optimization
 - **Tetree Package (34 classes)**: Tetrahedral spatial subdivision with 21-level support, extensive optimizations, and lazy evaluation
-- **Prism Package (8 classes)**: Anisotropic spatial subdivision with Line/Triangle elements
-- **Balancing Package (4 classes)**: Tree balancing strategies
-- **Collision Package (29 classes)**: Comprehensive collision detection system with CCD and physics subpackages
+- **Prism Package (9 classes)**: Anisotropic spatial subdivision with Line/Triangle elements and PrismSubdivisionStrategy
+- **Balancing Package (3 classes)**: Tree balancing strategies
+- **Collision Package (30 classes)**: Comprehensive collision detection system with CCD and physics subpackages
 - **Visitor Package (6 classes)**: Tree traversal visitor pattern implementation
-- **Forest Package (27 classes)**: Multi-tree coordination with ghost layer for distributed spatial indexing
+- **Forest Package (26 classes)**: Multi-tree coordination with ghost layer for distributed spatial indexing
 - **Neighbor Package (3 classes)**: Topological neighbor detection for spatial indices
-- **Lockfree Package (3 classes)**: Lock-free concurrent operations with atomic protocols
 - **Internal Package (4 classes)**: Entity caching and object pool utilities
 - **Geometry Package (1 class)**: AABB intersection utilities
-- **Occlusion Package (9+ classes)**: Dynamic Scene Occlusion Culling (DSOC) with TBVs and hierarchical Z-buffer
+- **Occlusion Package (11 classes)**: Dynamic Scene Occlusion Culling (DSOC) with TBVs and hierarchical Z-buffer
 - **Debug Package (4 classes)**: Debugging utilities for all spatial index types
 - **Migration Package (1 class)**: Spatial index type conversion utilities
 - **Profiler Package (1 class)**: Performance profiling utilities
+- **SIMD Package (1 class)**: SIMD-optimized Morton code encoding (NEW)
 
 ## Key Architecture Components
 
@@ -49,10 +51,10 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.
 SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
   └── AbstractSpatialIndex<Key, ID, Content> (base class with ~95% shared functionality)
       ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
+      ├── SFCArrayIndex<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
       ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
       └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
-
-```text
+```
 
 ### Spatial Subdivision Strategies
 
