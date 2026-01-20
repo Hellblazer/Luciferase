@@ -110,9 +110,9 @@ public class DAGDeserializer {
             }
             String json = new String(jsonBuffer.array(), StandardCharsets.UTF_8);
 
-            // Reconstruct metadata
-            var hashAlgorithm = HashAlgorithm.SHA256;
-            var strategy = CompressionStrategy.BALANCED;
+            // Reconstruct metadata from header values
+            var hashAlgorithm = HashAlgorithm.values()[hashAlgoOrd];
+            var strategy = CompressionStrategy.values()[strategyOrd];
 
             var metadata = new DAGMetadata(
                 nodeCount,
