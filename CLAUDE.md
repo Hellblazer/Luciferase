@@ -152,6 +152,29 @@ Historical reference:
 - **JMH**: Benchmarking framework
 - **PrimeMover**: Custom simulation framework dependency
 
+## PrimeMover 1.0.6 Upgrade
+
+**Current Version**: 1.0.6 (updated from 1.0.5, January 2026)
+
+**Key Improvements in 1.0.6**:
+- **Clock Drift Fixes**: InjectableClockTest now passing, improved deterministic time handling
+- **Virtual Time Improvements**: Enhanced RealTimeController with better synchronization
+- **Bytecode Transformation Enhancements**: Improved ClassFile API transformation reliability and performance
+- **Better Error Handling**: Improved exception propagation in event evaluation
+
+**Configuration** (in pom.xml):
+```xml
+<prime-mover.version>1.0.6</prime-mover.version>
+```
+
+**Usage in Simulation Module**:
+- `RealTimeController`: Wall-clock-correlated simulation timing
+- `Kronos.sleep()` / `Kronos.blockingSleep()`: Deterministic time advancement
+- `@Entity` annotation: Transform classes into simulation entities
+- `@Blocking`: Mark methods as blocking with continuation support
+
+**See Also**: Prime-Mover GitHub repository for complete documentation and examples
+
 ## Performance Testing
 
 - **Process**: Follow `lucien/doc/PERFORMANCE_METRICS_MASTER.md` for standardized benchmarking
@@ -215,11 +238,25 @@ Historical reference:
 
 ## Testing Configuration
 
+**Comprehensive Test Framework Documentation**: See `TEST_FRAMEWORK_GUIDE.md` for complete guidance on:
+- Performance test thresholds (recent adjustments for PrimeMover 1.0.6)
+- Flaky test handling patterns
+- Concurrent test constraints
+- CI/CD test distribution and optimization
+
+**Quick Reference**:
 - **Dynamic Ports**: Always use dynamic (random) listening ports in tests to avoid port conflicts
 - **GPU Tests**: Require `dangerouslyDisableSandbox: true` since sandbox blocks GPU/OpenCL access
 - **Test Output**: Use `VERBOSE_TESTS` env var to enable test output (suppressed by default)
 - **Port Conflicts**: Design interfaces/functions so dynamic port assignments are easily configured
 - **Deterministic Testing**: Use Clock interface injection instead of System.currentTimeMillis() or System.nanoTime()
+
+**Recent Performance Test Adjustments** (PrimeMover 1.0.6):
+- ForestConcurrencyTest: Reduced to 5 threads, 30 ops/thread (high lock contention)
+- VolumeAnimatorGhostTest: Disabled in CI (189% overhead under test load)
+- MultiBubbleLoadTest: P99 threshold relaxed to 50ms from 25ms (system contention)
+
+See TEST_FRAMEWORK_GUIDE.md for full threshold values and justifications.
 
 ### Deterministic Time Handling
 
@@ -244,19 +281,22 @@ public class MyService {
 }
 ```
 
-**Record Class Pattern**:
+**Record Class Pattern (VonMessageFactory)**:
 
 ```java
-public record MyMessage(String id, long timestamp) {
-    public MyMessage {
-        timestamp = VonMessageFactory.currentTimeMillis();  // Factory-injected time
-    }
+public record JoinRequest(UUID joinerId, Point3D position, BubbleBounds bounds, long timestamp) {
+    // Factory injects timestamp - no constructor logic needed
 }
+
+// Production usage:
+var factory = VonMessageFactory.system();
+var msg = factory.createJoinRequest(joinerId, position, bounds);  // timestamp injected
 
 // In tests:
 var testClock = new TestClock();
-testClock.setMillis(1000L);
-VonMessageFactory.setClock(testClock);
+testClock.setTime(1000L);  // Absolute time mode
+var factory = new VonMessageFactory(testClock);
+var msg = factory.createJoinRequest(id, pos, bounds);  // timestamp from testClock
 ```
 
 **Benefits**:
@@ -270,26 +310,36 @@ VonMessageFactory.setClock(testClock);
 
 ### Flaky Test Handling
 
-If a test is probabilistic or timing-sensitive and fails non-deterministically in CI:
+**Pattern**: Use `@DisabledIfEnvironmentVariable` for tests with inherent non-determinism
 
 ```java
 @DisabledIfEnvironmentVariable(
     named = "CI",
     matches = "true",
-    disabledReason = "Flaky: probabilistic test with 30% packet loss"
+    disabledReason = "Flaky: [specific reason - must be actionable]"
 )
 @Test
-void testFailureRecovery() {
+void testProbabilisticBehavior() {
     // Runs locally for development, skips in CI
 }
 ```
 
-**When to use**:
+**Real examples from codebase**:
+- VolumeAnimatorGhostTest: "Ghost animation performance test: 189% overhead varies with CI runner speed"
+- MultiBubbleLoadTest::testHeavyLoad500Entities: "P99 tick latency exceeds required <25ms threshold in CI environment"
+- testFailureRecovery: "Flaky: probabilistic test with 30% packet loss"
 
+**When to use**:
 - Probabilistic tests (random failure injection, packet loss)
+- Performance tests (overhead varies with system load)
 - Timing-sensitive tests (race conditions, timeout windows)
-- Resource-constrained tests (fail under CI load)
-- Non-deterministic tests (inherent randomness)
+- System-resource tests (fail under CI contention)
+
+**When NOT to use**:
+- Tests with fixable non-determinism (missing Clock injection, race conditions)
+- Tests that should be refactored (use TestClock instead)
+
+See TEST_FRAMEWORK_GUIDE.md §Flaky Test Handling for diagnostic procedure.
 
 ## Common Development Patterns
 
