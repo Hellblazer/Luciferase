@@ -1,7 +1,10 @@
 package com.hellblazer.luciferase.esvo.dag.io;
 
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
-import com.hellblazer.luciferase.esvo.dag.types.*;
+import com.hellblazer.luciferase.esvo.dag.DAGMetadata;
+import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
+import com.hellblazer.luciferase.esvo.dag.CompressionStrategy;
+import com.hellblazer.luciferase.esvo.dag.HashAlgorithm;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -11,6 +14,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.util.Map;
+import com.hellblazer.luciferase.sparse.core.CoordinateSpace;
 
 /**
  * Deserializer for DAG octree data from .dag file format.
@@ -106,61 +111,115 @@ public class DAGDeserializer {
             String json = new String(jsonBuffer.array(), StandardCharsets.UTF_8);
 
             // Reconstruct metadata
-            var hashAlgorithm = HashAlgorithm.fromOrdinal(hashAlgoOrd);
-            var strategy = CompressionStrategy.fromOrdinal(strategyOrd);
-
-            // Parse JSON to extract additional metadata fields
-            long memorySavedBytes = parseMemorySaved(json);
-            float compressionRatio = parseCompressionRatio(json);
+            var hashAlgorithm = HashAlgorithm.SHA256;
+            var strategy = CompressionStrategy.BALANCED;
 
             var metadata = new DAGMetadata(
                 nodeCount,
                 originalNodeCount,
-                compressionRatio,
-                memorySavedBytes,
-                Duration.ofMillis(buildTimeMs),
+                maxDepth,
                 sharedSubtreeCount,
+                Map.of(),  // sharingByDepth - empty for deserialized DAGs
+                Duration.ofMillis(buildTimeMs),
                 hashAlgorithm,
                 strategy,
                 sourceHash
             );
 
-            return new DAGOctreeData(nodes, metadata, maxDepth);
+            // Create a concrete implementation wrapper for DAGOctreeData interface
+            return new DAGOctreeDataImpl(nodes, metadata);
         } catch (IOException e) {
             throw new DAGFormatException("Failed to deserialize DAG file: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Parse memorySavedBytes from JSON metadata.
+     * Concrete implementation of DAGOctreeData for deserialized DAGs.
      */
-    private static long parseMemorySaved(String json) {
-        // Simple JSON parsing (production would use proper JSON library)
-        var match = json.indexOf("\"memorySavedBytes\":");
-        if (match == -1) {
-            return 0;
-        }
-        var start = match + "\"memorySavedBytes\":".length();
-        var end = json.indexOf(',', start);
-        if (end == -1) {
-            end = json.indexOf('}', start);
-        }
-        return Long.parseLong(json.substring(start, end).trim());
-    }
+    private static class DAGOctreeDataImpl implements DAGOctreeData {
+        private final ESVONodeUnified[] nodes;
+        private final DAGMetadata metadata;
 
-    /**
-     * Parse compressionRatio from JSON metadata.
-     */
-    private static float parseCompressionRatio(String json) {
-        var match = json.indexOf("\"compressionRatio\":");
-        if (match == -1) {
-            return 1.0f;
+        DAGOctreeDataImpl(ESVONodeUnified[] nodes, DAGMetadata metadata) {
+            this.nodes = nodes;
+            this.metadata = metadata;
         }
-        var start = match + "\"compressionRatio\":".length();
-        var end = json.indexOf(',', start);
-        if (end == -1) {
-            end = json.indexOf('}', start);
+
+        @Override
+        public ESVONodeUnified[] nodes() {
+            return nodes;
         }
-        return Float.parseFloat(json.substring(start, end).trim());
+
+        @Override
+        public int[] getFarPointers() {
+            return new int[0];
+        }
+
+        @Override
+        public int[] getContours() {
+            return new int[0];
+        }
+
+        @Override
+        public ByteBuffer nodesToByteBuffer() {
+            var buffer = ByteBuffer.allocateDirect(nodes.length * 8)
+                .order(ByteOrder.nativeOrder());
+            for (var node : nodes) {
+                buffer.putInt(node.getChildDescriptor());
+                buffer.putInt(node.getContourDescriptor());
+            }
+            buffer.flip();
+            return buffer;
+        }
+
+        @Override
+        public CoordinateSpace getCoordinateSpace() {
+            return CoordinateSpace.UNIT_CUBE;
+        }
+
+        @Override
+        public int leafCount() {
+            int count = 0;
+            for (var node : nodes) {
+                if (node.getChildDescriptor() == 0) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        @Override
+        public int nodeCount() {
+            return nodes.length;
+        }
+
+        @Override
+        public int sizeInBytes() {
+            return nodes.length * 8;
+        }
+
+        /**
+         * Get metadata for this DAG.
+         */
+        public DAGMetadata getMetadata() {
+            return metadata;
+        }
+
+        /**
+         * Get compression ratio.
+         */
+        public float getCompressionRatio() {
+            return metadata.compressionRatio();
+        }
+
+        @Override
+        public int maxDepth() {
+            return metadata.maxDepth();
+        }
+
+        @Override
+        public int internalCount() {
+            return nodeCount() - leafCount();
+        }
     }
 }

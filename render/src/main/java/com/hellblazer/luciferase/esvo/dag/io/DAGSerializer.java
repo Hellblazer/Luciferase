@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.esvo.dag.io;
 
-import com.hellblazer.luciferase.esvo.dag.types.DAGOctreeData;
+import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -45,8 +45,8 @@ public class DAGSerializer {
                 .order(ByteOrder.LITTLE_ENDIAN);
             header.putInt(MAGIC_NUMBER);
             header.put(VERSION);
-            header.put((byte) dag.getMetadata().hashAlgorithm().getOrdinal());
-            header.put((byte) dag.getMetadata().strategy().getOrdinal());
+            header.put((byte) dag.getMetadata().hashAlgorithm().ordinal());
+            header.put((byte) dag.getMetadata().strategy().ordinal());
             header.put((byte) 0); // reserved
             header.putInt(dag.nodeCount());
             header.putInt(dag.getMetadata().originalNodeCount());
