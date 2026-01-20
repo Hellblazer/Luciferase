@@ -93,7 +93,7 @@ class CompressibleOctreeDataTest {
     private static class TestCompressibleOctreeData implements CompressibleOctreeData {
         @Override
         public CoordinateSpace getCoordinateSpace() {
-            return CoordinateSpace.UNIT_CUBE_CENTERED;
+            return CoordinateSpace.UNIT_CUBE;
         }
 
         @Override
@@ -102,33 +102,49 @@ class CompressibleOctreeDataTest {
         }
 
         @Override
-        public SparseVoxelNode getNode(int index) {
+        public ESVONodeUnified getNode(int index) {
             return null;
         }
 
         @Override
-        public int getTotalNodeCount() {
+        public ESVONodeUnified[] nodes() {
+            return new ESVONodeUnified[0];
+        }
+
+        @Override
+        public int[] getFarPointers() {
+            return new int[0];
+        }
+
+        @Override
+        public ByteBuffer nodesToByteBuffer() {
+            return ByteBuffer.allocate(0);
+        }
+
+
+        @Override
+        public int nodeCount() {
             return 0;
         }
 
         @Override
-        public int resolveChildIndex(int parentIdx, SparseVoxelNode node, int octant) {
+        public int maxDepth() {
             return 0;
         }
 
         @Override
-        public String getName() {
-            return "test";
-        }
-
-        @Override
-        public int getMaxDepth() {
+        public int leafCount() {
             return 0;
         }
 
         @Override
-        public ByteBuffer serialize() {
-            return null;
+        public int internalCount() {
+            return 0;
+        }
+
+        @Override
+        public int sizeInBytes() {
+            return 0;
         }
     }
 
@@ -138,7 +154,7 @@ class CompressibleOctreeDataTest {
     private static class AnotherTestImplementation implements CompressibleOctreeData {
         @Override
         public CoordinateSpace getCoordinateSpace() {
-            return CoordinateSpace.UNIT_CUBE_POSITIVE_OCTANT;
+            return CoordinateSpace.UNIT_CUBE;
         }
 
         @Override
@@ -147,33 +163,49 @@ class CompressibleOctreeDataTest {
         }
 
         @Override
-        public SparseVoxelNode getNode(int index) {
+        public ESVONodeUnified getNode(int index) {
             return null;
         }
 
         @Override
-        public int getTotalNodeCount() {
+        public ESVONodeUnified[] nodes() {
+            return new ESVONodeUnified[0];
+        }
+
+        @Override
+        public int[] getFarPointers() {
+            return new int[0];
+        }
+
+        @Override
+        public ByteBuffer nodesToByteBuffer() {
+            return ByteBuffer.allocate(0);
+        }
+
+
+        @Override
+        public int nodeCount() {
             return 0;
         }
 
         @Override
-        public int resolveChildIndex(int parentIdx, SparseVoxelNode node, int octant) {
+        public int maxDepth() {
             return 0;
         }
 
         @Override
-        public String getName() {
-            return "another";
-        }
-
-        @Override
-        public int getMaxDepth() {
+        public int leafCount() {
             return 0;
         }
 
         @Override
-        public ByteBuffer serialize() {
-            return null;
+        public int internalCount() {
+            return 0;
+        }
+
+        @Override
+        public int sizeInBytes() {
+            return 0;
         }
     }
 }

@@ -72,7 +72,7 @@ class DAGPipelineAdapterTest {
         var result = adapter.compress(testOctree);
 
         // Then: Node count is reduced or same
-        assertTrue(result.getTotalNodeCount() <= testOctree.getTotalNodeCount());
+        assertTrue(result.nodeCount() <= testOctree.nodeCount());
     }
 
     @Test
@@ -105,7 +105,7 @@ class DAGPipelineAdapterTest {
         var metrics = capturedMetrics.get();
         assertNotNull(metrics);
         assertTrue(metrics.compressionRatio() >= 1.0f);
-        assertTrue(metrics.buildDuration().toMillis() >= 0);
+        assertTrue(metrics.buildTime().toMillis() >= 0);
     }
 
     @Test
@@ -186,7 +186,7 @@ class DAGPipelineAdapterTest {
         // Given: Custom configuration
         var config = CompressionConfiguration.builder()
             .strategy(CompressionStrategy.AGGRESSIVE)
-            .hashAlgorithm(HashAlgorithm.MURMUR3)
+            .hashAlgorithm(HashAlgorithm.SHA256)
             .enableMetrics(true)
             .build();
         var adapter = new DAGPipelineAdapter(config);
@@ -211,6 +211,6 @@ class DAGPipelineAdapterTest {
         assertNotSame(result1, result2);
 
         // But: Same structure (node counts match)
-        assertEquals(result1.getTotalNodeCount(), result2.getTotalNodeCount());
+        assertEquals(result1.nodeCount(), result2.nodeCount());
     }
 }

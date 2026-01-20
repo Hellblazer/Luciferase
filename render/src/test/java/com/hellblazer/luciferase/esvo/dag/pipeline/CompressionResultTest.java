@@ -16,11 +16,11 @@
  */
 package com.hellblazer.luciferase.esvo.dag.pipeline;
 
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.esvo.dag.CompressionStrategy;
 import com.hellblazer.luciferase.sparse.core.CoordinateSpace;
 import com.hellblazer.luciferase.sparse.core.PointerAddressingMode;
 import com.hellblazer.luciferase.sparse.core.SparseVoxelData;
-import com.hellblazer.luciferase.sparse.core.SparseVoxelNode;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
@@ -73,7 +73,7 @@ class CompressionResultTest {
         var compressed = createMockCompressibleData(200);
 
         // When: Create result with calculated ratio
-        var compressionRatio = (float) original.getTotalNodeCount() / compressed.getTotalNodeCount();
+        var compressionRatio = (float) original.nodeCount() / compressed.nodeCount();
         var result = new CompressionResult(
             original,
             compressed,
@@ -95,7 +95,7 @@ class CompressionResultTest {
         var bytesPerNode = 8L;
 
         // When: Calculate memory saved
-        var memorySaved = (original.getTotalNodeCount() - compressed.getTotalNodeCount()) * bytesPerNode;
+        var memorySaved = (original.nodeCount() - compressed.nodeCount()) * bytesPerNode;
         var result = new CompressionResult(
             original,
             compressed,
@@ -245,10 +245,10 @@ class CompressionResultTest {
     // === Helper Methods ===
 
     private SparseVoxelData<?> createMockSparseVoxelData(int nodeCount) {
-        return new SparseVoxelData<>() {
+        return new SparseVoxelData<ESVONodeUnified>() {
             @Override
             public CoordinateSpace getCoordinateSpace() {
-                return CoordinateSpace.UNIT_CUBE_CENTERED;
+                return CoordinateSpace.UNIT_CUBE;
             }
 
             @Override
@@ -257,33 +257,48 @@ class CompressionResultTest {
             }
 
             @Override
-            public SparseVoxelNode getNode(int index) {
+            public ESVONodeUnified getNode(int index) {
                 return null;
             }
 
             @Override
-            public int getTotalNodeCount() {
+            public ESVONodeUnified[] nodes() {
+                return new ESVONodeUnified[0];
+            }
+
+            @Override
+            public int[] getFarPointers() {
+                return new int[0];
+            }
+
+            @Override
+            public ByteBuffer nodesToByteBuffer() {
+                return ByteBuffer.allocate(0);
+            }
+
+            @Override
+            public int nodeCount() {
                 return nodeCount;
             }
 
             @Override
-            public int resolveChildIndex(int parentIdx, SparseVoxelNode node, int octant) {
-                return 0;
-            }
-
-            @Override
-            public String getName() {
-                return "original";
-            }
-
-            @Override
-            public int getMaxDepth() {
+            public int maxDepth() {
                 return 10;
             }
 
             @Override
-            public ByteBuffer serialize() {
-                return null;
+            public int leafCount() {
+                return 0;
+            }
+
+            @Override
+            public int internalCount() {
+                return nodeCount;
+            }
+
+            @Override
+            public int sizeInBytes() {
+                return nodeCount * ESVONodeUnified.SIZE_BYTES;
             }
         };
     }
@@ -292,7 +307,7 @@ class CompressionResultTest {
         return new CompressibleOctreeData() {
             @Override
             public CoordinateSpace getCoordinateSpace() {
-                return CoordinateSpace.UNIT_CUBE_CENTERED;
+                return CoordinateSpace.UNIT_CUBE;
             }
 
             @Override
@@ -301,33 +316,48 @@ class CompressionResultTest {
             }
 
             @Override
-            public SparseVoxelNode getNode(int index) {
+            public ESVONodeUnified getNode(int index) {
                 return null;
             }
 
             @Override
-            public int getTotalNodeCount() {
+            public ESVONodeUnified[] nodes() {
+                return new ESVONodeUnified[0];
+            }
+
+            @Override
+            public int[] getFarPointers() {
+                return new int[0];
+            }
+
+            @Override
+            public ByteBuffer nodesToByteBuffer() {
+                return ByteBuffer.allocate(0);
+            }
+
+            @Override
+            public int nodeCount() {
                 return nodeCount;
             }
 
             @Override
-            public int resolveChildIndex(int parentIdx, SparseVoxelNode node, int octant) {
-                return 0;
-            }
-
-            @Override
-            public String getName() {
-                return "compressed";
-            }
-
-            @Override
-            public int getMaxDepth() {
+            public int maxDepth() {
                 return 10;
             }
 
             @Override
-            public ByteBuffer serialize() {
-                return null;
+            public int leafCount() {
+                return 0;
+            }
+
+            @Override
+            public int internalCount() {
+                return nodeCount;
+            }
+
+            @Override
+            public int sizeInBytes() {
+                return nodeCount * ESVONodeUnified.SIZE_BYTES;
             }
         };
     }

@@ -259,4 +259,25 @@ public class ESVOOctreeData implements SpatialData, CompressibleOctreeData {
     public int[] getContours() {
         return new int[0]; // ESVO contours are stored separately
     }
+
+    // === Factory Methods ===
+
+    /**
+     * Create ESVOOctreeData from an array of nodes.
+     *
+     * <p>Useful for testing and constructing octree data programmatically.
+     *
+     * @param nodes array of nodes in depth-first order (index 0 = root)
+     * @return new ESVOOctreeData containing the nodes
+     */
+    public static ESVOOctreeData fromNodes(ESVONodeUnified[] nodes) {
+        var data = new ESVOOctreeData(nodes.length * ESVONodeUnified.SIZE_BYTES);
+
+        for (int i = 0; i < nodes.length; i++) {
+            data.setNode(i, nodes[i]);
+        }
+
+        data.updateStatistics();
+        return data;
+    }
 }
