@@ -162,24 +162,24 @@ public final class DAGBuilder {
 
         // Phase 3: Compaction (66-90%)
         reportProgress(BuildPhase.COMPACTION, 66);
-        var compactedDAG = buildCompactedDAG();
+        var dagResult = buildCompactedDAG();
         reportProgress(BuildPhase.COMPACTION, 90);
 
         // Phase 4: Optional validation (90-100%)
         if (validateResult) {
             reportProgress(BuildPhase.VALIDATION, 90);
-            validateDAG(compactedDAG);
+            validateDAG(dagResult.nodes());
             reportProgress(BuildPhase.VALIDATION, 100);
         }
 
         // Build metadata
         var buildTime = Duration.between(startTime, Instant.now());
-        var metadata = buildMetadata(compactedDAG, buildTime);
+        var metadata = buildMetadata(dagResult.nodes(), dagResult.childPointers(), buildTime);
 
         // Complete
         reportProgress(BuildPhase.COMPLETE, 100);
 
-        return new DAGOctreeDataImpl(compactedDAG, metadata);
+        return new DAGOctreeDataImpl(dagResult.nodes(), dagResult.childPointers(), metadata);
     }
 
     /**
@@ -264,7 +264,12 @@ public final class DAGBuilder {
      *
      * @return array of compacted nodes with absolute pointers
      */
-    private ESVONodeUnified[] buildCompactedDAG() {
+    /**
+     * Result of DAG compaction: nodes + child pointer indirection array.
+     */
+    private record CompactedDAGResult(ESVONodeUnified[] nodes, int[] childPointers) {}
+
+    private CompactedDAGResult buildCompactedDAG() {
         var indices = source.getNodeIndices();
 
         // Find max index for array sizing
@@ -292,7 +297,10 @@ public final class DAGBuilder {
             }
         }
 
-        // Step 2: Build compacted node array with rewritten pointers
+        // Step 2: Count total child pointers needed
+        var childPointerList = new ArrayList<Integer>();
+
+        // Step 3: Build compacted node array with child pointer indirection
         var compacted = new ESVONodeUnified[canonicalNodes.size()];
         for (int newIdx = 0; newIdx < canonicalNodes.size(); newIdx++) {
             var oldIdx = canonicalNodes.get(newIdx);
@@ -304,18 +312,32 @@ public final class DAGBuilder {
                 oldNode.getContourDescriptor()
             );
 
-            // Rewrite child pointer to absolute addressing
+            // Build child pointer indirection
             if (oldNode.getChildMask() != 0) {
-                // Find the first child's new index
+                // childPtr points to the start of this node's children in the childPointers array
+                newNode.setChildPtr(childPointerList.size());
+                newNode.setFar(false);
+
+                // Add all children to the child pointer array
                 for (int octant = 0; octant < 8; octant++) {
                     if (oldNode.hasChild(octant)) {
                         var oldChildIdx = oldNode.getChildIndex(octant, oldIdx, source.getFarPointers());
-                        var newChildIdx = oldToNew[oldChildIdx];
 
-                        // Set absolute pointer to first child
-                        newNode.setChildPtr(newChildIdx);
-                        newNode.setFar(false); // DAG uses absolute addressing, no far pointers
-                        break;
+                        // Bounds check
+                        if (oldChildIdx < 0 || oldChildIdx >= oldToNew.length) {
+                            throw new DAGBuildException.InvalidInputException(
+                                "Child index " + oldChildIdx + " out of bounds [0, " + oldToNew.length + ")"
+                            );
+                        }
+
+                        var newChildIdx = oldToNew[oldChildIdx];
+                        if (newChildIdx < 0) {
+                            throw new DAGBuildException.ValidationFailedException(
+                                "Child node " + oldChildIdx + " was not assigned a new index (unmapped node)"
+                            );
+                        }
+
+                        childPointerList.add(newChildIdx);
                     }
                 }
             }
@@ -323,7 +345,10 @@ public final class DAGBuilder {
             compacted[newIdx] = newNode;
         }
 
-        return compacted;
+        // Convert child pointer list to array
+        var childPointers = childPointerList.stream().mapToInt(Integer::intValue).toArray();
+
+        return new CompactedDAGResult(compacted, childPointers);
     }
 
     /**
@@ -357,7 +382,7 @@ public final class DAGBuilder {
     /**
      * Build comprehensive metadata for the constructed DAG.
      */
-    private DAGMetadata buildMetadata(ESVONodeUnified[] compactedNodes, Duration buildTime) {
+    private DAGMetadata buildMetadata(ESVONodeUnified[] compactedNodes, int[] childPointers, Duration buildTime) {
         var uniqueCount = compactedNodes.length;
         var originalCount = source.getNodeCount();
 
@@ -375,7 +400,7 @@ public final class DAGBuilder {
         var sourceHash = (long) source.getNodeCount();
 
         // Estimate max depth
-        var maxDepth = estimateMaxDepth(compactedNodes);
+        var maxDepth = estimateMaxDepth(compactedNodes, childPointers);
 
         return new DAGMetadata(
             uniqueCount,
@@ -396,7 +421,7 @@ public final class DAGBuilder {
      * <p>Traverses from root to find the deepest path using iterative approach
      * to avoid stack overflow with shared nodes.
      */
-    private int estimateMaxDepth(ESVONodeUnified[] nodes) {
+    private int estimateMaxDepth(ESVONodeUnified[] nodes, int[] childPointers) {
         if (nodes.length == 0) return 0;
         if (nodes.length == 1) return 0;
 
@@ -424,15 +449,19 @@ public final class DAGBuilder {
                 continue; // Leaf node
             }
 
-            // Add all children to queue
+            // Add all children to queue using child pointer indirection
             for (int octant = 0; octant < 8; octant++) {
                 if (node.hasChild(octant)) {
-                    var childBase = node.getChildPtr();
-                    var childOffset = node.getChildOffset(octant);
-                    var childIdx = childBase + childOffset;
+                    // Use child pointer indirection array
+                    var sparseIdx = node.getChildOffset(octant);
+                    var childPtrArrayIdx = node.getChildPtr() + sparseIdx;
 
-                    if (childIdx >= 0 && childIdx < nodes.length && !visited.contains(childIdx)) {
-                        queue.offer(new int[]{childIdx, depth + 1});
+                    if (childPtrArrayIdx >= 0 && childPtrArrayIdx < childPointers.length) {
+                        var childIdx = childPointers[childPtrArrayIdx];
+
+                        if (childIdx >= 0 && childIdx < nodes.length && !visited.contains(childIdx)) {
+                            queue.offer(new int[]{childIdx, depth + 1});
+                        }
                     }
                 }
             }
@@ -455,10 +484,12 @@ public final class DAGBuilder {
      */
     private static class DAGOctreeDataImpl implements DAGOctreeData {
         private final ESVONodeUnified[] nodes;
+        private final int[] childPointers;  // Indirection array for child node indices
         private final DAGMetadata metadata;
 
-        DAGOctreeDataImpl(ESVONodeUnified[] nodes, DAGMetadata metadata) {
+        DAGOctreeDataImpl(ESVONodeUnified[] nodes, int[] childPointers, DAGMetadata metadata) {
             this.nodes = nodes;
+            this.childPointers = childPointers;
             this.metadata = metadata;
         }
 
@@ -500,7 +531,29 @@ public final class DAGBuilder {
 
         @Override
         public int[] getFarPointers() {
-            return new int[0]; // DAGs use absolute addressing, no far pointers needed
+            return childPointers; // Repurpose for child pointer indirection array
+        }
+
+        @Override
+        public int resolveChildIndex(int parentIdx, ESVONodeUnified node, int octant) {
+            if (octant < 0 || octant > 7) {
+                throw new IndexOutOfBoundsException("Octant must be in [0, 7], got: " + octant);
+            }
+
+            // Compute sparse index (how many children come before this octant)
+            int sparseIdx = Integer.bitCount(node.getChildMask() & ((1 << octant) - 1));
+
+            // childPtr is an index into the childPointers array
+            // childPointers[childPtr + sparseIdx] contains the actual node index
+            int childPtrArrayIdx = node.getChildPtr() + sparseIdx;
+
+            if (childPtrArrayIdx < 0 || childPtrArrayIdx >= childPointers.length) {
+                throw new IndexOutOfBoundsException(
+                    "Child pointer index " + childPtrArrayIdx + " out of bounds [0, " + childPointers.length + ")"
+                );
+            }
+
+            return childPointers[childPtrArrayIdx];
         }
 
         // SpatialData interface methods

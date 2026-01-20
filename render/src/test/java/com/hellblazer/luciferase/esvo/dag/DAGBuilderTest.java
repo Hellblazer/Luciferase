@@ -638,11 +638,11 @@ class DAGBuilderTest {
         root.setChildPtr(1);
         octree.setNode(0, root);
 
-        // Each node is unique (different child masks)
+        // Each node is unique (different contour descriptors, all leaves)
         for (int i = 1; i <= 3; i++) {
-            var node = new ESVONodeUnified();
+            var node = new ESVONodeUnified(0, i); // Different contour = unique
             node.setValid(true);
-            node.setChildMask(i); // Different mask for each node
+            node.setChildMask(0); // Leaves
             octree.setNode(i, node);
         }
 
