@@ -275,7 +275,25 @@ public class BubbleSplitter {
 
         var entitiesToMove = new ArrayList<EnhancedBubble.EntityRecord>();
 
+        // Debug: log split plane and first few entity positions
+        if (log.isDebugEnabled() && !entityRecords.isEmpty()) {
+            var firstPos = entityRecords.get(0).position();
+            var lastPos = entityRecords.get(Math.min(2, entityRecords.size() - 1)).position();
+            log.debug("Split plane: normal={}, distance={}", splitPlane.normal(), splitPlane.distance());
+            log.debug("First entity position: {}", firstPos);
+            if (entityRecords.size() > 2) {
+                log.debug("Sample entity position: {}", lastPos);
+            }
+        }
+
+        int positiveSide = 0, negativeSide = 0;
         for (var record : entityRecords) {
+            // Skip null positions
+            if (record.position() == null) {
+                log.warn("Entity {} has null position, skipping", record.id());
+                continue;
+            }
+
             // Calculate signed distance from plane
             float signedDistance = splitPlane.normal().x * record.position().x +
                                   splitPlane.normal().y * record.position().y +
@@ -285,8 +303,13 @@ public class BubbleSplitter {
             // Move entities on positive side of plane to new bubble
             if (signedDistance >= 0) {
                 entitiesToMove.add(record);
+                positiveSide++;
+            } else {
+                negativeSide++;
             }
         }
+
+        log.debug("Partition result: {} on positive side, {} on negative side", positiveSide, negativeSide);
 
         return entitiesToMove;
     }
