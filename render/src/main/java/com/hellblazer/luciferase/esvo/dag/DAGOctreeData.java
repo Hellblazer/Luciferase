@@ -17,13 +17,14 @@
 package com.hellblazer.luciferase.esvo.dag;
 
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
+import com.hellblazer.luciferase.esvo.dag.pipeline.CompressibleOctreeData;
 import com.hellblazer.luciferase.sparse.core.PointerAddressingMode;
 import com.hellblazer.luciferase.sparse.core.SparseVoxelData;
 
 /**
  * DAG (Directed Acyclic Graph) Octree Data interface.
  *
- * <p>Extends {@link SparseVoxelData} with DAG-specific semantics:
+ * <p>Extends {@link CompressibleOctreeData} with DAG-specific semantics:
  *
  * <h3>Absolute Pointer Addressing</h3>
  * <p>Unlike SVOs which use relative addressing, DAGs use absolute addressing:
@@ -62,7 +63,7 @@ import com.hellblazer.luciferase.sparse.core.SparseVoxelData;
  * @see PointerAddressingMode
  * @see DAGMetadata
  */
-public interface DAGOctreeData extends SparseVoxelData<ESVONodeUnified> {
+public interface DAGOctreeData extends CompressibleOctreeData {
 
     /**
      * Get the addressing mode for this data structure.

@@ -16,6 +16,7 @@ package com.hellblazer.luciferase.esvo.dag;
  * <ul>
  * <li>{@link InvalidInputException} - Invalid input SVO (null, empty, malformed)</li>
  * <li>{@link OutOfMemoryException} - Insufficient memory during DAG build</li>
+ * <li>{@link MemoryBudgetExceededException} - Memory budget exceeded during compression</li>
  * <li>{@link BuildTimeoutException} - DAG build exceeded time limit</li>
  * <li>{@link CorruptedDataException} - Input SVO is corrupted (invalid pointers, circular refs)</li>
  * <li>{@link ValidationFailedException} - DAG validation failed (compression ratio, structural integrity)</li>
@@ -24,6 +25,7 @@ package com.hellblazer.luciferase.esvo.dag;
 public sealed class DAGBuildException extends RuntimeException
     permits DAGBuildException.InvalidInputException,
             DAGBuildException.OutOfMemoryException,
+            DAGBuildException.MemoryBudgetExceededException,
             DAGBuildException.BuildTimeoutException,
             DAGBuildException.CorruptedDataException,
             DAGBuildException.ValidationFailedException {
@@ -188,6 +190,48 @@ public sealed class DAGBuildException extends RuntimeException
          */
         public CorruptedDataException(String message, Throwable cause) {
             super(message, cause);
+        }
+    }
+
+    /**
+     * Memory budget exceeded exception.
+     * <p>
+     * Thrown when compression would exceed the configured memory budget.
+     */
+    public static final class MemoryBudgetExceededException extends DAGBuildException {
+        private final long budgetBytes;
+        private final long estimatedBytes;
+
+        /**
+         * Constructs a new memory budget exceeded exception with budget information.
+         *
+         * @param budget    configured memory budget in bytes
+         * @param estimated estimated memory usage in bytes
+         */
+        public MemoryBudgetExceededException(long budget, long estimated) {
+            super(String.format(
+                "Memory budget exceeded: budget=%,d bytes (%.1fGB), estimated=%,d bytes (%.1fGB)",
+                budget, budget / 1e9, estimated, estimated / 1e9));
+            this.budgetBytes = budget;
+            this.estimatedBytes = estimated;
+        }
+
+        /**
+         * Gets the configured memory budget.
+         *
+         * @return budget in bytes
+         */
+        public long getBudgetBytes() {
+            return budgetBytes;
+        }
+
+        /**
+         * Gets the estimated memory usage.
+         *
+         * @return estimated usage in bytes
+         */
+        public long getEstimatedBytes() {
+            return estimatedBytes;
         }
     }
 

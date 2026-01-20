@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.esvo.core;
 
+import com.hellblazer.luciferase.esvo.dag.pipeline.CompressibleOctreeData;
 import com.hellblazer.luciferase.render.inspector.SpatialData;
 import com.hellblazer.luciferase.sparse.core.CoordinateSpace;
 import com.hellblazer.luciferase.sparse.core.SparseVoxelData;
@@ -13,15 +14,15 @@ import java.util.Map;
  * ESVO Octree Data container for file I/O.
  *
  * <p>Manages octree nodes for serialization/deserialization. Implements both
- * {@link SpatialData} for inspector compatibility and {@link SparseVoxelData}
- * for the generic optimization pipeline.
+ * {@link SpatialData} for inspector compatibility and {@link CompressibleOctreeData}
+ * for the DAG compression pipeline.
  *
  * <p>Note: This implementation uses a Map-based storage internally but provides
  * array-based access through the {@link SparseVoxelData} interface.
  *
  * @author hal.hildebrand
  */
-public class ESVOOctreeData implements SpatialData, SparseVoxelData<ESVONodeUnified> {
+public class ESVOOctreeData implements SpatialData, CompressibleOctreeData {
     private final Map<Integer, ESVONodeUnified> nodes;
     private final int maxSizeBytes;
     private int maxDepth = 0;
