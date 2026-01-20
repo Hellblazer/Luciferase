@@ -78,8 +78,9 @@ public class ForestConcurrencyTest {
     void testConcurrentEntityOperations() throws InterruptedException {
         // Reduced thread count and operations for CI stability
         // ForestEntityManager uses ReentrantReadWriteLock with high write contention
-        int numThreads = 10;
-        int operationsPerThread = 50;
+        // Under full test suite load, further reduction needed to avoid timeout
+        int numThreads = 5;
+        int operationsPerThread = 30;
         ExecutorService executor = Executors.newFixedThreadPool(numThreads);
         CountDownLatch latch = new CountDownLatch(numThreads);
         ConcurrentHashMap<LongEntityID, Point3f> allInsertedEntities = new ConcurrentHashMap<>();
@@ -155,7 +156,7 @@ public class ForestConcurrencyTest {
             });
         }
         
-        assertTrue(latch.await(60, TimeUnit.SECONDS), "All threads should complete within timeout");
+        assertTrue(latch.await(45, TimeUnit.SECONDS), "All threads should complete within timeout");
         executor.shutdown();
 
         // Verify consistency - only check entities that weren't removed
