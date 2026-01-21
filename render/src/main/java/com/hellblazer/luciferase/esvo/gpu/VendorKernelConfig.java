@@ -148,7 +148,7 @@ public class VendorKernelConfig {
         // Replace fabs() usage with conditional check
         // Example: if (fabs(x) < EPSILON) -> if (x < EPSILON && x > -EPSILON)
         var modified = kernelSource.replaceAll(
-            "fabs\\s*\\(\\s*([^)]+)\\s*\\)\\s*<\\s*([^;]+)",
+            "fabs\\s*\\(\\s*([^)]+)\\s*\\)\\s*<\\s*([^\\s);]+)",
             "($1 < $2 && $1 > -$2)"
         );
 

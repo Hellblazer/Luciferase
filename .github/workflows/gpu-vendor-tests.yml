@@ -1,0 +1,388 @@
+name: Multi-Vendor GPU Testing
+
+# P4.3: Multi-Vendor GPU Validation Matrix
+#
+# 3-Tier Testing Strategy:
+# - Tier 1 (CI): Kernel compilation tests (no GPU needed) - runs on every push
+# - Tier 2 (Local): GPU execution tests (conditional on RUN_GPU_TESTS=true)
+# - Tier 3 (Nightly): Vendor-specific tests (conditional on GPU_VENDOR env var)
+#
+# Target: >90% consistency across NVIDIA, AMD, Intel, Apple GPUs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'render/src/main/java/com/hellblazer/luciferase/esvo/gpu/**'
+      - 'render/src/test/java/com/hellblazer/luciferase/esvo/gpu/**'
+      - 'render/src/main/resources/kernels/**'
+      - '.github/workflows/gpu-vendor-tests.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'render/src/main/java/com/hellblazer/luciferase/esvo/gpu/**'
+      - 'render/src/test/java/com/hellblazer/luciferase/esvo/gpu/**'
+      - 'render/src/main/resources/kernels/**'
+  schedule:
+    # Run nightly at 2 AM UTC (Tier 3 tests on self-hosted runners)
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      run_gpu_tests:
+        description: 'Run Tier 2 GPU execution tests (requires GPU hardware)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  # ==================== Tier 1: CI Compilation Tests (Always runs, no GPU needed) ====================
+
+  tier1-compilation-tests:
+    name: Tier 1 - Kernel Compilation Tests (No GPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: luciferase-maven-gpu-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            luciferase-maven-gpu-
+            luciferase-maven-
+
+      - name: Configure Maven for GitHub Packages
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                                        https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <id>github</id>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.GITHUB_TOKEN}</password>
+              </server>
+              <server>
+                <id>github-prime-mover</id>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.GITHUB_TOKEN}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Tier 1 Compilation Tests (NVIDIA, AMD, Intel, Apple)
+        run: |
+          ./mvnw -batch-mode test -pl render \
+            -Dtest="DAGOpenCLRendererVendorTest#testNvidiaKernelCompilation,DAGOpenCLRendererVendorTest#testAmdKernelCompilation,DAGOpenCLRendererVendorTest#testIntelKernelCompilation,DAGOpenCLRendererVendorTest#testAppleKernelCompilation" \
+            -Dsurefire.rerunFailingTestsCount=0 \
+            --file pom.xml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI: true
+
+      - name: Validate MultiVendorConsistencyReport
+        run: |
+          ./mvnw -batch-mode test -pl render \
+            -Dtest="MultiVendorConsistencyReportTest" \
+            -Dsurefire.rerunFailingTestsCount=0 \
+            --file pom.xml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI: true
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier1-test-results
+          path: render/target/surefire-reports/
+
+  # ==================== Tier 2: Local GPU Execution Tests (Conditional, requires GPU hardware) ====================
+  #
+  # NOTE: These jobs require actual GPU hardware. They are skipped by default unless:
+  # - Workflow dispatch: run_gpu_tests=true
+  # - Self-hosted runners with GPU labels are available
+  #
+  # To enable:
+  # 1. Set up self-hosted runners with GPU hardware
+  # 2. Add runner labels: self-hosted, gpu-nvidia, gpu-amd, gpu-intel, or gpu-apple
+  # 3. Uncomment and configure the jobs below
+
+  # tier2-nvidia-gpu-execution:
+  #   name: Tier 2 - NVIDIA GPU Execution Tests
+  #   runs-on: [self-hosted, gpu-nvidia]
+  #   if: github.event.inputs.run_gpu_tests == 'true' || github.event_name == 'schedule'
+  #   timeout-minutes: 15
+  #   env:
+  #     RUN_GPU_TESTS: true
+  #     GPU_VENDOR: NVIDIA
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: graalvm/setup-graalvm@v1
+  #       with:
+  #         java-version: '25'
+  #         distribution: 'graalvm'
+  #     - name: Run NVIDIA GPU Tests
+  #       run: |
+  #         ./mvnw -batch-mode test -pl render \
+  #           -Dtest="DAGOpenCLRendererVendorTest#testNvidiaRTX4090Execution,DAGOpenCLRendererVendorTest#testNvidiaRTX3060Execution" \
+  #           -Dsurefire.rerunFailingTestsCount=0
+  #     - name: Upload NVIDIA Results
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: tier2-nvidia-results
+  #         path: render/target/surefire-reports/
+
+  # tier2-amd-gpu-execution:
+  #   name: Tier 2 - AMD GPU Execution Tests
+  #   runs-on: [self-hosted, gpu-amd]
+  #   if: github.event.inputs.run_gpu_tests == 'true' || github.event_name == 'schedule'
+  #   timeout-minutes: 15
+  #   env:
+  #     RUN_GPU_TESTS: true
+  #     GPU_VENDOR: AMD
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: graalvm/setup-graalvm@v1
+  #       with:
+  #         java-version: '25'
+  #         distribution: 'graalvm'
+  #     - name: Run AMD GPU Tests
+  #       run: |
+  #         ./mvnw -batch-mode test -pl render \
+  #           -Dtest="DAGOpenCLRendererVendorTest#testAmdRX6900XTExecution,DAGOpenCLRendererVendorTest#testAmdRX6700XTExecution" \
+  #           -Dsurefire.rerunFailingTestsCount=0
+  #     - name: Upload AMD Results
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: tier2-amd-results
+  #         path: render/target/surefire-reports/
+
+  # tier2-intel-gpu-execution:
+  #   name: Tier 2 - Intel GPU Execution Tests
+  #   runs-on: [self-hosted, gpu-intel]
+  #   if: github.event.inputs.run_gpu_tests == 'true' || github.event_name == 'schedule'
+  #   timeout-minutes: 15
+  #   env:
+  #     RUN_GPU_TESTS: true
+  #     GPU_VENDOR: Intel
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: graalvm/setup-graalvm@v1
+  #       with:
+  #         java-version: '25'
+  #         distribution: 'graalvm'
+  #     - name: Run Intel GPU Tests
+  #       run: |
+  #         ./mvnw -batch-mode test -pl render \
+  #           -Dtest="DAGOpenCLRendererVendorTest#testIntelArcA770Execution,DAGOpenCLRendererVendorTest#testIntelArcA380Execution" \
+  #           -Dsurefire.rerunFailingTestsCount=0
+  #     - name: Upload Intel Results
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: tier2-intel-results
+  #         path: render/target/surefire-reports/
+
+  # tier2-apple-gpu-execution:
+  #   name: Tier 2 - Apple GPU Execution Tests
+  #   runs-on: [self-hosted, macos, gpu-apple]
+  #   if: github.event.inputs.run_gpu_tests == 'true' || github.event_name == 'schedule'
+  #   timeout-minutes: 15
+  #   env:
+  #     RUN_GPU_TESTS: true
+  #     GPU_VENDOR: Apple
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: graalvm/setup-graalvm@v1
+  #       with:
+  #         java-version: '25'
+  #         distribution: 'graalvm'
+  #     - name: Run Apple GPU Tests
+  #       run: |
+  #         ./mvnw -batch-mode test -pl render \
+  #           -Dtest="DAGOpenCLRendererVendorTest#testAppleM2MaxExecution,DAGOpenCLRendererVendorTest#testAppleM3MaxExecution" \
+  #           -Dsurefire.rerunFailingTestsCount=0
+  #     - name: Upload Apple Results
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: tier2-apple-results
+  #         path: render/target/surefire-reports/
+
+  # ==================== Tier 3: Nightly Vendor-Specific Tests (Full test suite per vendor) ====================
+  #
+  # NOTE: Tier 3 tests run the full vendor-specific test suite (8-12 tests per vendor)
+  # Only triggered on schedule (nightly) and requires self-hosted runners with GPU labels
+  #
+  # Uncomment when self-hosted runners are available
+
+  # tier3-nvidia-full-suite:
+  #   name: Tier 3 - NVIDIA Full Validation Suite
+  #   runs-on: [self-hosted, gpu-nvidia]
+  #   if: github.event_name == 'schedule'
+  #   timeout-minutes: 30
+  #   env:
+  #     GPU_VENDOR: NVIDIA
+  #     RUN_GPU_TESTS: true
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: graalvm/setup-graalvm@v1
+  #       with:
+  #         java-version: '25'
+  #         distribution: 'graalvm'
+  #     - name: Run NVIDIA Full Test Suite
+  #       run: |
+  #         ./mvnw -batch-mode test -pl render \
+  #           -Dtest="DAGOpenCLRendererVendorTest" \
+  #           -Dsurefire.rerunFailingTestsCount=0
+  #     - name: Upload NVIDIA Full Results
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: tier3-nvidia-full-results
+  #         path: render/target/surefire-reports/
+
+  # tier3-amd-full-suite:
+  #   name: Tier 3 - AMD Full Validation Suite
+  #   runs-on: [self-hosted, gpu-amd]
+  #   if: github.event_name == 'schedule'
+  #   timeout-minutes: 30
+  #   env:
+  #     GPU_VENDOR: AMD
+  #     RUN_GPU_TESTS: true
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: graalvm/setup-graalvm@v1
+  #       with:
+  #         java-version: '25'
+  #         distribution: 'graalvm'
+  #     - name: Run AMD Full Test Suite
+  #       run: |
+  #         ./mvnw -batch-mode test -pl render \
+  #           -Dtest="DAGOpenCLRendererVendorTest" \
+  #           -Dsurefire.rerunFailingTestsCount=0
+  #     - name: Upload AMD Full Results
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: tier3-amd-full-results
+  #         path: render/target/surefire-reports/
+
+  # tier3-intel-full-suite:
+  #   name: Tier 3 - Intel Full Validation Suite
+  #   runs-on: [self-hosted, gpu-intel]
+  #   if: github.event_name == 'schedule'
+  #   timeout-minutes: 30
+  #   env:
+  #     GPU_VENDOR: Intel
+  #     RUN_GPU_TESTS: true
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: graalvm/setup-graalvm@v1
+  #       with:
+  #         java-version: '25'
+  #         distribution: 'graalvm'
+  #     - name: Run Intel Full Test Suite
+  #       run: |
+  #         ./mvnw -batch-mode test -pl render \
+  #           -Dtest="DAGOpenCLRendererVendorTest" \
+  #           -Dsurefire.rerunFailingTestsCount=0
+  #     - name: Upload Intel Full Results
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: tier3-intel-full-results
+  #         path: render/target/surefire-reports/
+
+  # tier3-apple-full-suite:
+  #   name: Tier 3 - Apple Full Validation Suite
+  #   runs-on: [self-hosted, macos, gpu-apple]
+  #   if: github.event_name == 'schedule'
+  #   timeout-minutes: 30
+  #   env:
+  #     GPU_VENDOR: Apple
+  #     RUN_GPU_TESTS: true
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: graalvm/setup-graalvm@v1
+  #       with:
+  #         java-version: '25'
+  #         distribution: 'graalvm'
+  #     - name: Run Apple Full Test Suite
+  #       run: |
+  #         ./mvnw -batch-mode test -pl render \
+  #           -Dtest="DAGOpenCLRendererVendorTest" \
+  #           -Dsurefire.rerunFailingTestsCount=0
+  #     - name: Upload Apple Full Results
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: tier3-apple-full-results
+  #         path: render/target/surefire-reports/
+
+  # ==================== Consistency Report Generation ====================
+  #
+  # Aggregates results from all vendor tests and generates consistency report
+  # Uncomment when Tier 2/3 GPU tests are enabled
+
+  # generate-consistency-report:
+  #   name: Generate Multi-Vendor Consistency Report
+  #   needs: [tier2-nvidia-gpu-execution, tier2-amd-gpu-execution, tier2-intel-gpu-execution, tier2-apple-gpu-execution]
+  #   runs-on: ubuntu-latest
+  #   if: always() && (github.event.inputs.run_gpu_tests == 'true' || github.event_name == 'schedule')
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Download All Vendor Results
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         pattern: tier2-*-results
+  #         path: vendor-results/
+  #
+  #     - name: Generate Consistency Report
+  #       run: |
+  #         # Parse test results and generate consistency report
+  #         # This would invoke a Java class that:
+  #         # 1. Parses Surefire XML reports from vendor-results/
+  #         # 2. Creates VendorResult records for each vendor
+  #         # 3. Generates MultiVendorConsistencyReport
+  #         # 4. Outputs markdown report
+  #         echo "Consistency report generation would run here"
+  #         echo "Target: >90% consistency across all vendors"
+  #
+  #     - name: Upload Consistency Report
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: multi-vendor-consistency-report
+  #         path: consistency-report.md
+  #
+  #     - name: Check Consistency Target
+  #       run: |
+  #         # Fail workflow if consistency < 90%
+  #         echo "Checking if consistency meets 90% target..."
