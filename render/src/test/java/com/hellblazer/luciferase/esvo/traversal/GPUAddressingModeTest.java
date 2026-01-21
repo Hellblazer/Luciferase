@@ -27,6 +27,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.condition.EnabledIf;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -43,6 +44,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 @DisplayName("GPU Addressing Mode Tests")
+@DisabledIfEnvironmentVariable(
+    named = "CI",
+    matches = "true",
+    disabledReason = "GPU tests require OpenGL context and OpenCL hardware not available in CI"
+)
 @EnabledIf("isGPUAvailable")
 class GPUAddressingModeTest {
 
@@ -227,14 +233,17 @@ class GPUAddressingModeTest {
         nodes[0] = new ESVONodeUnified();
         nodes[0].setChildMask(0b10000001);
         nodes[0].setChildPtr(1);
+        nodes[0].setValid(true);
 
         nodes[1] = new ESVONodeUnified();
         nodes[1].setChildMask(0);
         nodes[1].setLeafMask(0xFF);
+        nodes[1].setValid(true);
 
         nodes[2] = new ESVONodeUnified();
         nodes[2].setChildMask(0);
         nodes[2].setLeafMask(0xFF);
+        nodes[2].setValid(true);
 
         return ESVOOctreeData.fromNodes(nodes);
     }

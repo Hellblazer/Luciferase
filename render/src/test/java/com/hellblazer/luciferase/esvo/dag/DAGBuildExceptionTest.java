@@ -62,7 +62,7 @@ class DAGBuildExceptionTest {
     void testSealedHierarchy() {
         assertTrue(DAGBuildException.class.isSealed());
         var permittedSubclasses = DAGBuildException.class.getPermittedSubclasses();
-        assertEquals(5, permittedSubclasses.length);
+        assertEquals(6, permittedSubclasses.length);
     }
 
     @Test

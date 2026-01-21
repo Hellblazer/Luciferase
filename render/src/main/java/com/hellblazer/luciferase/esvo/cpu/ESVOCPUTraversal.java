@@ -195,7 +195,9 @@ public class ESVOCPUTraversal {
             }
         }
         
-        // Write results
+        // Write results - always record iterations regardless of hit
+        result.iterations = iterations;
+
         if (hitVoxel != 0) {
             result.hit = 1;
             result.t = closestHit;
@@ -204,9 +206,8 @@ public class ESVOCPUTraversal {
             result.normalZ = 0;
             result.voxelValue = hitVoxel;
             result.nodeIndex = 0; // Would need to track
-            result.iterations = iterations;
         }
-        
+
         return result;
     }
     

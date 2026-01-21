@@ -114,6 +114,14 @@ public class ESVOCompressionCoordinator {
             throw new IllegalArgumentException("Octree not found: " + octreeName);
         }
 
+        // Register all untracked scene octrees as ORIGINAL
+        for (var entry : scene.entrySet()) {
+            if (!statusMap.containsKey(entry.getKey())) {
+                originalCache.put(entry.getKey(), entry.getValue());
+                statusMap.put(entry.getKey(), CompressionStatus.ORIGINAL);
+            }
+        }
+
         // Check if already compressed
         var currentStatus = statusMap.getOrDefault(octreeName, CompressionStatus.PENDING);
         if (currentStatus == CompressionStatus.COMPRESSED) {

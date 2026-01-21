@@ -128,7 +128,7 @@ class DAGPipelineAdapterTest {
         // Given: Adapter with STRICT policy and tiny budget
         var config = CompressionConfiguration.builder()
             .memoryPolicy(MemoryPolicy.STRICT)
-            .memoryBudgetBytes(10L)  // Impossibly small budget
+            .memoryBudgetBytes(1L)  // Impossibly small budget (1 byte < 8 bytes per node)
             .build();
         var adapter = new DAGPipelineAdapter(config);
 

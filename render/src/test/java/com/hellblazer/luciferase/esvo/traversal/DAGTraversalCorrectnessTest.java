@@ -249,16 +249,19 @@ class DAGTraversalCorrectnessTest {
         nodes[0] = new ESVONodeUnified();
         nodes[0].setChildMask(0b10000001);  // children at 0 and 7
         nodes[0].setChildPtr(1);  // children start at index 1
+        nodes[0].setValid(true);
 
-        // Child 0 (leaf)
+        // Child 0 (leaf with specific mask pattern)
         nodes[1] = new ESVONodeUnified();
         nodes[1].setChildMask(0);  // no children
-        nodes[1].setLeafMask(0xFF);  // all leaf
+        nodes[1].setLeafMask(0x0F);  // lower 4 voxels
+        nodes[1].setValid(true);
 
-        // Child 7 (leaf)
+        // Child 7 (leaf with different mask pattern)
         nodes[2] = new ESVONodeUnified();
         nodes[2].setChildMask(0);  // no children
-        nodes[2].setLeafMask(0xFF);  // all leaf
+        nodes[2].setLeafMask(0xF0);  // upper 4 voxels (different from child 0)
+        nodes[2].setValid(true);
 
         return ESVOOctreeData.fromNodes(nodes);
     }
@@ -290,10 +293,13 @@ class DAGTraversalCorrectnessTest {
 
         // Ensure node exists
         while (nodes.size() <= nodeIdx) {
-            nodes.add(new ESVONodeUnified());
+            var newNode = new ESVONodeUnified();
+            newNode.setValid(true);
+            nodes.add(newNode);
         }
 
         var node = nodes.get(nodeIdx);
+        node.setValid(true);
 
         // Add children at alternating octants (0, 2, 4, 6)
         node.setChildMask(0b01010101);
@@ -304,7 +310,9 @@ class DAGTraversalCorrectnessTest {
         for (int i = 0; i < 8; i++) {
             if ((node.getChildMask() & (1 << i)) != 0) {
                 int childIdx = nodes.size();
-                nodes.add(new ESVONodeUnified());
+                var childNode = new ESVONodeUnified();
+                childNode.setValid(true);
+                nodes.add(childNode);
 
                 // Recursively build child subtree
                 buildTree(nodes, currentDepth + 1, maxDepth, childIdx);
@@ -320,6 +328,7 @@ class DAGTraversalCorrectnessTest {
         nodes[0] = new ESVONodeUnified();
         nodes[0].setChildMask(0);  // no children
         nodes[0].setLeafMask(0xFF);  // all leaf
+        nodes[0].setValid(true);
         return ESVOOctreeData.fromNodes(nodes);
     }
 

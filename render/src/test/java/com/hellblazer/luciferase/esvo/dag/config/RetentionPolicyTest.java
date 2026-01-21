@@ -52,10 +52,17 @@ class RetentionPolicyTest {
         assertNotEquals(retain, cache);
     }
 
+    /**
+     * Verifies RETAIN is the default policy.
+     * RETAIN is the safe default because:
+     * - It allows decompression operations to work correctly
+     * - It preserves original data for comparison/validation
+     * - Users can explicitly choose DISCARD if they need to free memory after compression
+     */
     @Test
-    void testDefaultPolicyReturnsDiscard() {
-        assertEquals(RetentionPolicy.DISCARD, RetentionPolicy.defaultPolicy(),
-                     "Default retention policy should be DISCARD");
+    void testDefaultPolicyReturnsRetain() {
+        assertEquals(RetentionPolicy.RETAIN, RetentionPolicy.defaultPolicy(),
+                     "Default retention policy should be RETAIN (safe default preserving original data)");
     }
 
     @Test

@@ -200,17 +200,25 @@ class ESVOCPUTraversalUpdateTest {
     private ESVOOctreeData createTestSVO() {
         var nodes = new ESVONodeUnified[3];
 
+        // Root node with two children (corners 0 and 7)
         nodes[0] = new ESVONodeUnified();
         nodes[0].setChildMask(0b10000001);
         nodes[0].setChildPtr(1);
+        nodes[0].setValid(true);
 
+        // Leaf node at corner 0 with voxel data
         nodes[1] = new ESVONodeUnified();
         nodes[1].setChildMask(0);
         nodes[1].setLeafMask(0xFF);
+        nodes[1].setContourPtr(1);  // Non-zero attributes for hit detection
+        nodes[1].setValid(true);
 
+        // Leaf node at corner 7 with voxel data
         nodes[2] = new ESVONodeUnified();
         nodes[2].setChildMask(0);
         nodes[2].setLeafMask(0xFF);
+        nodes[2].setContourPtr(1);  // Non-zero attributes for hit detection
+        nodes[2].setValid(true);
 
         return ESVOOctreeData.fromNodes(nodes);
     }
@@ -234,17 +242,26 @@ class ESVOCPUTraversalUpdateTest {
         }
 
         while (nodes.size() <= nodeIdx) {
-            nodes.add(new ESVONodeUnified());
+            var newNode = new ESVONodeUnified();
+            newNode.setValid(true);
+            nodes.add(newNode);
         }
 
         var node = nodes.get(nodeIdx);
         node.setChildMask(0b11111111);  // full node
+        node.setValid(true);
         int childPtr = nodes.size();
         node.setChildPtr(childPtr - nodeIdx);
 
         for (int i = 0; i < 8; i++) {
             int childIdx = nodes.size();
-            nodes.add(new ESVONodeUnified());
+            var childNode = new ESVONodeUnified();
+            childNode.setValid(true);
+            // Mark leaf nodes with non-zero attributes
+            if (currentDepth + 1 >= maxDepth) {
+                childNode.setContourPtr(1);
+            }
+            nodes.add(childNode);
             buildTree(nodes, currentDepth + 1, maxDepth, childIdx);
         }
     }

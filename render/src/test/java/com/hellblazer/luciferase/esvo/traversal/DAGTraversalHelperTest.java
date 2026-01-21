@@ -201,15 +201,18 @@ class DAGTraversalHelperTest {
         nodes[0] = new ESVONodeUnified();
         nodes[0].setChildMask(0b10000001);
         nodes[0].setChildPtr(1);
+        nodes[0].setValid(true);
 
         // Children (leaves)
         nodes[1] = new ESVONodeUnified();
         nodes[1].setChildMask(0);
         nodes[1].setLeafMask(0xFF);
+        nodes[1].setValid(true);
 
         nodes[2] = new ESVONodeUnified();
         nodes[2].setChildMask(0);
         nodes[2].setLeafMask(0xFF);
+        nodes[2].setValid(true);
 
         return ESVOOctreeData.fromNodes(nodes);
     }
@@ -236,18 +239,23 @@ class DAGTraversalHelperTest {
         }
 
         while (nodes.size() <= nodeIdx) {
-            nodes.add(new ESVONodeUnified());
+            var newNode = new ESVONodeUnified();
+            newNode.setValid(true);
+            nodes.add(newNode);
         }
 
         var node = nodes.get(nodeIdx);
         node.setChildMask(0b01010101);  // alternating octants
+        node.setValid(true);
         int childPtr = nodes.size();
         node.setChildPtr(childPtr - nodeIdx);
 
         for (int i = 0; i < 8; i++) {
             if ((node.getChildMask() & (1 << i)) != 0) {
                 int childIdx = nodes.size();
-                nodes.add(new ESVONodeUnified());
+                var childNode = new ESVONodeUnified();
+                childNode.setValid(true);
+                nodes.add(childNode);
                 buildTree(nodes, currentDepth + 1, maxDepth, childIdx);
             }
         }
@@ -261,6 +269,7 @@ class DAGTraversalHelperTest {
         nodes[0] = new ESVONodeUnified();
         nodes[0].setChildMask(0);
         nodes[0].setLeafMask(0xFF);
+        nodes[0].setValid(true);
         return ESVOOctreeData.fromNodes(nodes);
     }
 }

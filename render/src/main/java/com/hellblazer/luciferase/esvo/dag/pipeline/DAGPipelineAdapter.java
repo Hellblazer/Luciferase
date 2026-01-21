@@ -168,7 +168,7 @@ public class DAGPipelineAdapter {
         // Conservative estimate: assume 20% deduplication for typical scenes
         // (actual compression varies from 5x-15x depending on structure)
         var estimatedRatio = 1.25f; // Conservative estimate
-        var estimatedUniqueNodes = (long) (nodeCount / estimatedRatio);
+        var estimatedUniqueNodes = Math.max(1L, (long) (nodeCount / estimatedRatio));
         var bytesPerNode = 8L; // ESVONodeUnified size
         var estimatedMemorySaved = (nodeCount - estimatedUniqueNodes) * bytesPerNode;
 

@@ -33,9 +33,9 @@ public enum RetentionPolicy {
     CACHE;
 
     /**
-     * @return the default retention policy (DISCARD)
+     * @return the default retention policy (RETAIN)
      */
     public static RetentionPolicy defaultPolicy() {
-        return DISCARD;
+        return RETAIN;
     }
 }

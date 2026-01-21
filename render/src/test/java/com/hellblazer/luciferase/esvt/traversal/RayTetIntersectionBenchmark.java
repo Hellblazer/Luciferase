@@ -130,14 +130,23 @@ public class RayTetIntersectionBenchmark {
 
     /**
      * Sign correction for each edge in each face.
-     * +1 = use as-is, -1 = flip sign to match face orientation.
-     * For CCW edge ordering around each face (as viewed from outside).
+     * +1 = use as-is, -1 = flip sign to match face CCW orientation when viewed from outside.
+     *
+     * Face orientation derivation (CCW when viewed from opposite vertex):
+     *   Face 0 (opp v0, verts v1,v2,v3): v1→v2→v3→v1
+     *     edges[3]=1-2(+1), edges[4]=1-3(need 3→1 so -1), edges[5]=2-3(+1)
+     *   Face 1 (opp v1, verts v0,v2,v3): v0→v3→v2→v0
+     *     edges[1]=0-2(need 2→0 so -1), edges[2]=0-3(+1), edges[5]=2-3(need 3→2 so -1)
+     *   Face 2 (opp v2, verts v0,v1,v3): v0→v1→v3→v0
+     *     edges[0]=0-1(+1), edges[2]=0-3(need 3→0 so -1), edges[4]=1-3(+1)
+     *   Face 3 (opp v3, verts v0,v1,v2): v0→v1→v2→v0
+     *     edges[0]=0-1(+1), edges[1]=0-2(need 2→0 so -1), edges[3]=1-2(+1)
      */
     private static final int[][] FACE_EDGE_SIGNS = {
-        {+1, -1, +1},  // Face 0: 1→2, 3→1(flip 1→3), 2→3
-        {+1, -1, -1},  // Face 1: 0→2, 3→0(flip 0→3), 3→2(flip 2→3)
-        {+1, +1, +1},  // Face 2: 0→1, 0→3, 1→3
-        {+1, +1, -1}   // Face 3: 0→1, 0→2, 2→1(flip 1→2)
+        {+1, -1, +1},  // Face 0: edges 3,4,5 -> 1→2(+), 3→1(-), 2→3(+)
+        {-1, +1, -1},  // Face 1: edges 1,2,5 -> 2→0(-), 0→3(+), 3→2(-)
+        {+1, -1, +1},  // Face 2: edges 0,2,4 -> 0→1(+), 3→0(-), 1→3(+)
+        {+1, -1, +1}   // Face 3: edges 0,1,3 -> 0→1(+), 2→0(-), 1→2(+)
     };
 
     /**
@@ -164,16 +173,21 @@ public class RayTetIntersectionBenchmark {
     /**
      * Plücker ray-tetrahedron intersection test.
      *
-     * <p>Uses precomputed edge Plückers with type-specific flip corrections
-     * for consistent edge orientation.
+     * <p>Uses the face-by-face algorithm from Platis & Theoharis (2003).
+     * A ray intersects the tetrahedron if and only if it passes through at least
+     * one face, which occurs when all 3 edge products for that face have the same sign.
+     *
+     * <p>IMPORTANT: Edge products must be corrected for consistent face orientation.
+     * The FACE_EDGE_SIGNS table provides corrections so each face's edges are
+     * oriented consistently (CCW when viewed from outside the tetrahedron).
      *
      * <p><b>Operation Count (with precomputed edges):</b>
      * <ul>
      *   <li>Ray Plücker setup: 1 cross product = 9 ops</li>
-     *   <li>Per edge: 2 dot products + 1 add + 1 flip = 12 ops</li>
-     *   <li>6 edges: 72 ops</li>
-     *   <li>Sign checking: ~14 ops</li>
-     *   <li><b>Total: 9 + 72 + 14 = 95 ops</b></li>
+     *   <li>Per edge: 2 dot products + 1 add = 11 ops</li>
+     *   <li>6 edges: 66 ops</li>
+     *   <li>Face sign checking: ~20 ops</li>
+     *   <li><b>Total: 9 + 66 + 20 = 95 ops</b></li>
      * </ul>
      *
      * @return true if ray intersects tetrahedron
@@ -184,27 +198,41 @@ public class RayTetIntersectionBenchmark {
             float rayDx, float rayDy, float rayDz,  // Ray direction
             float rayVx, float rayVy, float rayVz)  // Precomputed ray moment (D × O)
     {
-        int[] flips = EDGE_FLIP_TABLE[type];
-        int positiveCount = 0;
-        int negativeCount = 0;
-
+        // Compute all 6 edge products first
+        float[] products = new float[6];
         for (int e = 0; e < 6; e++) {
             float[] edge = PLUCKER_EDGES[type][e];
 
             // Permuted inner product: U_ray · V_edge + U_edge · V_ray
             float dotRayEdge = rayDx * edge[3] + rayDy * edge[4] + rayDz * edge[5];
             float dotEdgeRay = edge[0] * rayVx + edge[1] * rayVy + edge[2] * rayVz;
-            float product = (dotRayEdge + dotEdgeRay) * flips[e];
+            products[e] = dotRayEdge + dotEdgeRay;
+        }
 
-            if (product > EPSILON) {
-                positiveCount++;
-            } else if (product < -EPSILON) {
-                negativeCount++;
+        // Check each face: ray intersects tetrahedron if ANY face has all same-sign products
+        // Products must be adjusted by FACE_EDGE_SIGNS for consistent edge orientation
+        for (int f = 0; f < 4; f++) {
+            int[] faceEdges = FACE_EDGES[f];
+            int[] edgeSigns = FACE_EDGE_SIGNS[f];
+
+            // Apply sign corrections for consistent CCW edge orientation around face
+            float p0 = products[faceEdges[0]] * edgeSigns[0];
+            float p1 = products[faceEdges[1]] * edgeSigns[1];
+            float p2 = products[faceEdges[2]] * edgeSigns[2];
+
+            // Count signs for this face's edges
+            int pos = 0, neg = 0;
+            if (p0 > EPSILON) pos++; else if (p0 < -EPSILON) neg++;
+            if (p1 > EPSILON) pos++; else if (p1 < -EPSILON) neg++;
+            if (p2 > EPSILON) pos++; else if (p2 < -EPSILON) neg++;
+
+            // All same sign (or zero) means ray passes through this face
+            if ((pos == 0 || neg == 0) && (pos + neg > 0)) {
+                return true;
             }
         }
 
-        // Ray intersects if all non-zero products have same sign
-        return (positiveCount == 0 || negativeCount == 0) && (positiveCount + negativeCount > 0);
+        return false;
     }
 
     /**
@@ -406,6 +434,7 @@ public class RayTetIntersectionBenchmark {
             // Count sign patterns for hitting rays
             java.util.Map<String, Integer> patternCounts = new java.util.TreeMap<>();
             int allSame = 0;
+            int faceWise = 0;
             int total = 0;
 
             for (int i = 0; i < 1000; i++) {
@@ -427,12 +456,14 @@ public class RayTetIntersectionBenchmark {
                     total++;
                     StringBuilder sb = new StringBuilder();
                     int posCount = 0, negCount = 0;
+                    float[] products = new float[6];
 
                     for (int e = 0; e < 6; e++) {
                         float[] edge = PLUCKER_EDGES[type][e];
                         float dotRayEdge = dx * edge[3] + dy * edge[4] + dz * edge[5];
                         float dotEdgeRay = edge[0] * vx + edge[1] * vy + edge[2] * vz;
                         float product = dotRayEdge + dotEdgeRay;
+                        products[e] = product;
 
                         if (product > EPSILON) { sb.append('+'); posCount++; }
                         else if (product < -EPSILON) { sb.append('-'); negCount++; }
@@ -445,16 +476,55 @@ public class RayTetIntersectionBenchmark {
                     if ((posCount == 0 || negCount == 0) && (posCount + negCount > 0)) {
                         allSame++;
                     }
+
+                    // Check face-by-face criterion
+                    boolean anyFaceAllSame = false;
+                    for (int[] faceEdges : FACE_EDGES) {
+                        float p0 = products[faceEdges[0]];
+                        float p1 = products[faceEdges[1]];
+                        float p2 = products[faceEdges[2]];
+                        int facePos = 0, faceNeg = 0;
+                        if (p0 > EPSILON) facePos++; else if (p0 < -EPSILON) faceNeg++;
+                        if (p1 > EPSILON) facePos++; else if (p1 < -EPSILON) faceNeg++;
+                        if (p2 > EPSILON) facePos++; else if (p2 < -EPSILON) faceNeg++;
+                        if ((facePos == 0 || faceNeg == 0) && (facePos + faceNeg > 0)) {
+                            anyFaceAllSame = true;
+                            break;
+                        }
+                    }
+                    if (anyFaceAllSame) {
+                        faceWise++;
+                    }
                 }
             }
 
-            System.out.printf("\nType %d: %d/%d rays have all-same-sign (%.1f%%)%n",
-                type, allSame, total, 100.0 * allSame / total);
+            System.out.printf("\nType %d: all-same-sign %d/%d (%.1f%%), face-wise %d/%d (%.1f%%)%n",
+                type, allSame, total, 100.0 * allSame / total,
+                faceWise, total, 100.0 * faceWise / total);
             System.out.println("  Top patterns:");
             patternCounts.entrySet().stream()
                 .sorted((a, b) -> b.getValue() - a.getValue())
                 .limit(5)
-                .forEach(e -> System.out.printf("    %s: %d%n", e.getKey(), e.getValue()));
+                .forEach(e -> {
+                    String pat = e.getKey();
+                    // Check which faces pass for this pattern
+                    StringBuilder faces = new StringBuilder(" [faces: ");
+                    for (int f = 0; f < 4; f++) {
+                        int[] fe = FACE_EDGES[f];
+                        char c0 = pat.charAt(fe[0]);
+                        char c1 = pat.charAt(fe[1]);
+                        char c2 = pat.charAt(fe[2]);
+                        int fp = 0, fn = 0;
+                        if (c0 == '+') fp++; else if (c0 == '-') fn++;
+                        if (c1 == '+') fp++; else if (c1 == '-') fn++;
+                        if (c2 == '+') fp++; else if (c2 == '-') fn++;
+                        if ((fp == 0 || fn == 0) && (fp + fn > 0)) {
+                            faces.append(f).append("(").append(c0).append(c1).append(c2).append(") ");
+                        }
+                    }
+                    faces.append("]");
+                    System.out.printf("    %s: %d%s%n", e.getKey(), e.getValue(), faces);
+                });
         }
     }
 
