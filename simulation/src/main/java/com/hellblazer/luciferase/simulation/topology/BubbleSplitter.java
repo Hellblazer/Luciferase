@@ -111,6 +111,9 @@ public class BubbleSplitter {
      * Executes a split operation on a bubble.
      * <p>
      * Partitions entities based on split plane and creates new child bubble.
+     * If key collision occurs at the initial child level, automatically retries
+     * at progressively deeper levels (up to tetree max level 21) to find an
+     * unoccupied key while preserving spatial locality and entity interactions.
      *
      * @param proposal the split proposal with source bubble and split plane
      * @return execution result with success status and details
@@ -155,7 +158,6 @@ public class BubbleSplitter {
         // Child bubble should be one level deeper in the tetree hierarchy
         UUID newBubbleId = uuidSupplier.get();
         byte parentLevel = sourceBubble.getSpatialLevel();
-        byte childLevel = (byte) Math.min(parentLevel + 1, 21);  // Cap at max tetree level
         long targetFrameMs = sourceBubble.getTargetFrameMs();
 
         // IMPORTANT: Compute target key BEFORE moving entities to detect collisions early
@@ -166,28 +168,23 @@ public class BubbleSplitter {
         float cy = (float) positions.stream().mapToDouble(p -> p.y).average().orElseThrow();
         float cz = (float) positions.stream().mapToDouble(p -> p.z).average().orElseThrow();
 
-        // Locate tetrahedron containing centroid at CHILD LEVEL
-        var tet = com.hellblazer.luciferase.lucien.tetree.Tet.locatePointBeyRefinementFromRoot(cx, cy, cz, childLevel);
-        if (tet == null) {
-            log.error("[{}] Failed to locate tetrahedron for centroid ({},{},{}) at level {}",
-                     correlationId, cx, cy, cz, childLevel);
+        // Try to find an unoccupied key, starting at child level and going deeper if collisions occur
+        byte startLevel = (byte) Math.min(parentLevel + 1, 21);  // Start one level deeper
+        var keyLevelResult = findAvailableKey(cx, cy, cz, startLevel, correlationId);
+
+        if (keyLevelResult == null) {
+            log.error("[{}] Could not find available key at any level from {} to 21 for centroid ({},{},{})",
+                     correlationId, startLevel, cx, cy, cz);
             return new SplitExecutionResult(false,
-                                           "Failed to locate tetrahedron for child bubble centroid",
+                                           "Could not find available key for split bubble after retrying deeper levels",
                                            null, entitiesBeforeSplit, entitiesBeforeSplit);
         }
 
-        var targetKey = tet.tmIndex();
+        // Extract the available key and the level at which it was found
+        var targetKey = keyLevelResult.key();
+        byte childLevel = keyLevelResult.level();
 
-        // Check for key collision BEFORE moving any entities
-        if (bubbleGrid.containsBubble(targetKey)) {
-            log.warn("[{}] Bubble already exists at key {} - split would cause collision, aborting",
-                    correlationId, targetKey);
-            return new SplitExecutionResult(false,
-                                           "Bubble already exists at target key: " + targetKey,
-                                           null, entitiesBeforeSplit, entitiesBeforeSplit);
-        }
-
-        log.debug("[{}] Target key {} is available for new bubble at level {}",
+        log.debug("[{}] Found available key {} for new bubble at level {} (after collision retry if needed)",
                  correlationId, targetKey, childLevel);
 
         var newBubble = new EnhancedBubble(newBubbleId, childLevel, targetFrameMs);
@@ -261,6 +258,43 @@ public class BubbleSplitter {
     }
 
     /**
+     * Finds an available TetreeKey at the centroid, retrying at deeper levels if collisions occur.
+     * <p>
+     * Preserves spatial locality by using the same (cx, cy, cz) coordinates across all levels,
+     * but moves deeper in the tree hierarchy to find unoccupied key space.
+     *
+     * @param cx the X coordinate of the entity centroid
+     * @param cy the Y coordinate of the entity centroid
+     * @param cz the Z coordinate of the entity centroid
+     * @param startLevel the starting level to search
+     * @param correlationId tracking ID for logging
+     * @return a KeyLevel record containing the available key and the level at which it was found, or null if no available key
+     */
+    private KeyLevel findAvailableKey(float cx, float cy, float cz, byte startLevel, String correlationId) {
+        for (byte level = startLevel; level <= 21; level++) {
+            var tet = com.hellblazer.luciferase.lucien.tetree.Tet.locatePointBeyRefinementFromRoot(cx, cy, cz, level);
+            if (tet == null) {
+                log.debug("[{}] Could not locate tetrahedron at level {}", correlationId, level);
+                continue;
+            }
+
+            var key = tet.tmIndex();
+
+            // Check if this key is available
+            if (!bubbleGrid.containsBubble(key)) {
+                log.debug("[{}] Found available key {} at level {}", correlationId, key, level);
+                return new KeyLevel(key, level);
+            }
+
+            // Collision at this level, try next level
+            log.debug("[{}] Key collision at level {} (key={}), trying deeper level", correlationId, level, key);
+        }
+
+        // Exhausted all levels up to 21
+        return null;
+    }
+
+    /**
      * Partitions entities based on split plane.
      * <p>
      * Uses signed distance test: entities on positive side of plane are moved to new bubble.
@@ -313,6 +347,19 @@ public class BubbleSplitter {
 
         return entitiesToMove;
     }
+}
+
+/**
+ * Represents a TetreeKey and the tree level at which it was found.
+ * Used to track available keys when collision retry logic searches deeper levels.
+ *
+ * @param key   the available TetreeKey
+ * @param level the tetree level at which this key was found
+ */
+record KeyLevel(
+    com.hellblazer.luciferase.lucien.tetree.TetreeKey key,
+    byte level
+) {
 }
 
 /**
