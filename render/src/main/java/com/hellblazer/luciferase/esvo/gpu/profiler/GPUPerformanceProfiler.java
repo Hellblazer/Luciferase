@@ -118,7 +118,7 @@ public class GPUPerformanceProfiler {
      */
     public PerformanceComparison compare(PerformanceMetrics baseline, PerformanceMetrics optimized) {
         var improvement = optimized.compareToBaseline(baseline);
-        log.info("Performance comparison: {:.2f}% improvement", improvement);
+        log.info("Performance comparison: {}% improvement", String.format("%.2f", improvement));
         return new PerformanceComparison(baseline, optimized, improvement);
     }
 

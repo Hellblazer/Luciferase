@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.esvo.gpu;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -31,7 +30,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@Disabled("D1: GPUVendorDetector not yet implemented - will be enabled when class is created")
 @DisplayName("F3.1.4 D1: GPUVendorDetector Tests")
 class GPUVendorDetectorTest {
 
