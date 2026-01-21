@@ -87,8 +87,10 @@ class TopologyEvolutionTest {
         assertEquals(5100, getTotalEntityCount(), "Entity count should be conserved");
 
         // Verify natural evolution: 1 bubble → 2 bubbles
-        // Note: We can't verify bubble count increase because TetreeBubbleGrid.addBubble() not implemented
-        // This is logged as TODO in BubbleSplitter
+        int bubbleCountAfter = bubbleGrid.getAllBubbles().size();
+        assertEquals(bubbleCountBefore + 1, bubbleCountAfter,
+            "Bubble count should increase from " + bubbleCountBefore + " to " + (bubbleCountBefore + 1) +
+            " after split (got " + bubbleCountAfter + ")");
 
         // Verify entity conservation
         var validation = accountant.validate();
@@ -221,8 +223,14 @@ class TopologyEvolutionTest {
             System.currentTimeMillis()
         );
 
+        int bubbleCountBefore = bubbleGrid.getAllBubbles().size();
         var splitResult = executor.execute(splitProposal);
         assertTrue(splitResult.success(), "Split should succeed");
+
+        // Verify bubble count increased after split
+        int bubbleCountAfter = bubbleGrid.getAllBubbles().size();
+        assertEquals(bubbleCountBefore + 1, bubbleCountAfter,
+            "Bubble count should increase from " + bubbleCountBefore + " to " + (bubbleCountBefore + 1));
 
         // Verify entity conservation after split
         assertEquals(5300, getTotalEntityCount(), "Entity count should be conserved after split");
@@ -268,7 +276,13 @@ class TopologyEvolutionTest {
             System.currentTimeMillis()
         );
 
+        int bubbleCountBefore = bubbleGrid.getAllBubbles().size();
         executor.execute(splitProposal);
+
+        // Verify bubble count increased after split
+        int bubbleCountAfterSplit = bubbleGrid.getAllBubbles().size();
+        assertEquals(bubbleCountBefore + 1, bubbleCountAfterSplit,
+            "Bubble count should increase from " + bubbleCountBefore + " to " + (bubbleCountBefore + 1) + " after split");
 
         // Verify conservation after split
         assertEquals(initialTotal, getTotalEntityCount(), "Entity count should be conserved after split");
@@ -283,6 +297,11 @@ class TopologyEvolutionTest {
         );
 
         executor.execute(mergeProposal);
+
+        // Verify bubble count decreased after merge
+        int bubbleCountAfterMerge = bubbleGrid.getAllBubbles().size();
+        assertEquals(bubbleCountAfterSplit - 1, bubbleCountAfterMerge,
+            "Bubble count should decrease from " + bubbleCountAfterSplit + " to " + (bubbleCountAfterSplit - 1) + " after merge");
 
         // Verify conservation after merge
         assertEquals(initialTotal, getTotalEntityCount(), "Entity count should be conserved after merge");
