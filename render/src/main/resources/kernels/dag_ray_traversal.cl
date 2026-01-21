@@ -6,11 +6,22 @@
  *
  * Phase 3 GPU Acceleration Implementation
  * Target: 10x-25x speedup over CPU DAG traversal
+ *
+ * Tuning Parameters (can be overridden at compile time):
+ * - MAX_TRAVERSAL_DEPTH: Stack depth [8, 32], default 16
+ *   - Lower depth: higher occupancy, faster
+ *   - Sufficient for 2^depth voxels per dimension
+ *   - 16 = 65K³ resolution (typical maximum)
+ *   - Override with: -D MAX_TRAVERSAL_DEPTH=24
  */
 
 // ==================== Constants ====================
 
-#define MAX_TRAVERSAL_DEPTH 16    // Stream A: Reduced from 32 for better occupancy
+// Can be overridden at compile time: -D MAX_TRAVERSAL_DEPTH=16
+#ifndef MAX_TRAVERSAL_DEPTH
+#define MAX_TRAVERSAL_DEPTH 16    // Default: Stream A optimized for occupancy
+#endif
+
 #define EPSILON 1e-6f
 #define INFINITY 1e30f
 

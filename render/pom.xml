@@ -100,6 +100,12 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
+        <!-- JSON Serialization -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
         <!-- Test Dependencies -->
         <dependency>
             <groupId>com.hellblazer.gpu-support</groupId>

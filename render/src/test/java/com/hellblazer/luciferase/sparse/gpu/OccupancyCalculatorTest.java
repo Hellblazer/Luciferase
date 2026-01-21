@@ -68,8 +68,8 @@ class OccupancyCalculatorTest {
         // TDD: Excessive LDS usage should result in 0% occupancy
         var caps = new GPUCapabilities(32, 32768, 65536, GPUVendor.NVIDIA, "RTX 3060", 32);
 
-        // Require 64KB LDS but only have 32KB available
-        var occupancy = OccupancyCalculator.calculateOccupancy(caps, 256, 32, 128);
+        // Require 64KB LDS (256 threads * 64 depth * 4 bytes = 65536) but only have 32KB available
+        var occupancy = OccupancyCalculator.calculateOccupancy(caps, 256, 64, 128);
 
         assertEquals(0.0, occupancy, "Occupancy should be 0 when LDS exceeds capacity");
     }

@@ -22,6 +22,10 @@ import com.hellblazer.luciferase.resource.compute.ComputeKernel;
 import com.hellblazer.luciferase.sparse.core.CoordinateSpace;
 import com.hellblazer.luciferase.sparse.core.PointerAddressingMode;
 import com.hellblazer.luciferase.sparse.gpu.AbstractOpenCLRenderer;
+import com.hellblazer.luciferase.sparse.gpu.GPUAutoTuner;
+import com.hellblazer.luciferase.sparse.gpu.GPUTuningProfileLoader;
+import com.hellblazer.luciferase.sparse.gpu.GPUVendor;
+import com.hellblazer.luciferase.sparse.gpu.WorkgroupConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +46,13 @@ import static org.lwjgl.system.MemoryUtil.*;
 public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, DAGOctreeData> {
     private static final Logger log = LoggerFactory.getLogger(DAGOpenCLRenderer.class);
 
+    // Stream B: GPU Auto-Tuning Infrastructure
+    private com.hellblazer.luciferase.sparse.gpu.GPUCapabilities gpuCapabilities;
+    private WorkgroupConfig tuningConfig;
+    private GPUAutoTuner autoTuner;
+    private GPUTuningProfileLoader profileLoader;
+    private final String cacheDirectory;
+
     // Raw cl_mem handle for ByteBuffer upload
     private long clNodeBuffer;
 
@@ -54,7 +65,16 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
      * Create a DAG-aware GPU renderer with specified output dimensions
      */
     public DAGOpenCLRenderer(int width, int height) {
+        this(width, height, System.getProperty("user.home") + "/.cache/luciferase/gpu-tuning");
+    }
+
+    /**
+     * Create renderer with custom cache directory (for testing)
+     */
+    public DAGOpenCLRenderer(int width, int height, String cacheDirectory) {
         super(width, height);
+        this.cacheDirectory = cacheDirectory;
+        this.profileLoader = new GPUTuningProfileLoader();
     }
 
     @Override
@@ -177,5 +197,110 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
             clReleaseMemObject(clNodeBuffer);
             clNodeBuffer = 0;
         }
+    }
+
+    /**
+     * Stream B Phase 8: Optimize renderer for detected GPU device
+     *
+     * Called during initialization to:
+     * 1. Detect GPU capabilities
+     * 2. Load or generate optimal tuning configuration
+     * 3. Log tuning metrics
+     *
+     * Future enhancement: Pass tuning parameters to kernel compilation
+     * (requires gpu-support framework enhancement for build options)
+     */
+    public void optimizeForDevice() {
+        // Detect GPU capabilities (placeholder - would use OpenCL device queries)
+        gpuCapabilities = detectGPUCapabilities();
+        log.info("Detected GPU: {} {}", gpuCapabilities.vendor().getDisplayName(), gpuCapabilities.model());
+
+        // Try to load cached configuration first
+        autoTuner = new GPUAutoTuner(gpuCapabilities, cacheDirectory);
+        var cachedConfig = autoTuner.loadFromCache();
+
+        if (cachedConfig.isPresent()) {
+            tuningConfig = cachedConfig.get();
+            log.info("Loaded tuning from cache: {}", tuningConfig.notes());
+        } else {
+            // Try to load from predefined profiles
+            var profileConfig = profileLoader.loadProfileForDevice(gpuCapabilities);
+
+            if (profileConfig.isPresent()) {
+                tuningConfig = profileConfig.get();
+                log.info("Loaded tuning from profile: {}", tuningConfig.notes());
+
+                // Cache the profile for future use
+                autoTuner.cacheConfiguration(tuningConfig);
+            } else {
+                // Generate configuration using occupancy calculator
+                tuningConfig = autoTuner.selectOptimalConfigFromProfiles();
+                log.info("Auto-tuned configuration: {}", tuningConfig.notes());
+
+                // Cache for future use
+                autoTuner.cacheConfiguration(tuningConfig);
+            }
+        }
+
+        // Log tuning metrics for monitoring
+        logTuningMetrics();
+
+        // NOTE: Kernel recompilation with build options would happen here
+        // Example: recompileKernelWithParameters(tuningConfig);
+        // Requires gpu-support framework enhancement
+    }
+
+    /**
+     * Detect GPU capabilities from OpenCL device
+     *
+     * This is a simplified implementation. Production code would query:
+     * - CL_DEVICE_VENDOR
+     * - CL_DEVICE_NAME
+     * - CL_DEVICE_COMPUTE_UNITS
+     * - CL_DEVICE_LOCAL_MEM_SIZE
+     * - CL_DEVICE_MAX_WORK_GROUP_SIZE
+     */
+    private com.hellblazer.luciferase.sparse.gpu.GPUCapabilities detectGPUCapabilities() {
+        // Placeholder: would use context.getDeviceInfo() from gpu-support
+        // For now, return default NVIDIA configuration for demonstration
+        return new com.hellblazer.luciferase.sparse.gpu.GPUCapabilities(
+            32,      // compute units (placeholder)
+            65536,   // local memory bytes
+            65536,   // max registers
+            GPUVendor.NVIDIA,
+            "Generic GPU",
+            32       // wavefront size
+        );
+    }
+
+    /**
+     * Log tuning metrics for monitoring and debugging
+     */
+    private void logTuningMetrics() {
+        if (tuningConfig == null) {
+            log.warn("No tuning configuration available");
+            return;
+        }
+
+        log.info("GPU Workgroup Tuning Metrics:");
+        log.info("  Workgroup Size: {}", tuningConfig.workgroupSize());
+        log.info("  Max Traversal Depth: {}", tuningConfig.maxTraversalDepth());
+        log.info("  Expected Occupancy: {}%", String.format("%.1f", tuningConfig.expectedOccupancy() * 100));
+        log.info("  Expected Throughput: {} rays/μs", String.format("%.2f", tuningConfig.expectedThroughput()));
+        log.info("  LDS Usage: {} bytes", tuningConfig.calculateLdsUsage());
+    }
+
+    /**
+     * Get current tuning configuration (for testing)
+     */
+    public WorkgroupConfig getTuningConfig() {
+        return tuningConfig;
+    }
+
+    /**
+     * Get GPU capabilities (for testing)
+     */
+    public com.hellblazer.luciferase.sparse.gpu.GPUCapabilities getGPUCapabilities() {
+        return gpuCapabilities;
     }
 }

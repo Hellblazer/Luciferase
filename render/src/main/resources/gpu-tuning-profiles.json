@@ -1,0 +1,74 @@
+{
+  "gpu_profiles": {
+    "NVIDIA_RTX_3060": {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.75,
+      "expectedThroughput": 2.5,
+      "notes": "GeForce RTX 3060 - 3584 CUDA cores, 12GB VRAM"
+    },
+    "NVIDIA_RTX_4090": {
+      "workgroupSize": 128,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.8,
+      "expectedThroughput": 4.2,
+      "notes": "GeForce RTX 4090 - 16384 CUDA cores, 24GB VRAM"
+    },
+    "NVIDIA_RTX_3080": {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.75,
+      "expectedThroughput": 3.1,
+      "notes": "GeForce RTX 3080 - 8704 CUDA cores, 10GB VRAM"
+    },
+    "AMD_RX_6700": {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.7,
+      "expectedThroughput": 2.1,
+      "notes": "AMD Radeon RX 6700 - 2304 stream processors"
+    },
+    "AMD_RX_6900": {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.75,
+      "expectedThroughput": 3.8,
+      "notes": "AMD Radeon RX 6900 XT - 5120 stream processors"
+    },
+    "AMD_RX_7900": {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.78,
+      "expectedThroughput": 4.5,
+      "notes": "AMD Radeon RX 7900 XTX - 6144 stream processors, RDNA 3"
+    },
+    "INTEL_ARC_A770": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.65,
+      "expectedThroughput": 1.8,
+      "notes": "Intel Arc A770 - 32 Xe-Cores, 16GB VRAM"
+    },
+    "INTEL_ARC_A750": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.65,
+      "expectedThroughput": 1.6,
+      "notes": "Intel Arc A750 - 28 Xe-Cores, 8GB VRAM"
+    },
+    "APPLE_M2_MAX": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.7,
+      "expectedThroughput": 1.5,
+      "notes": "Apple M2 Max - 10-core GPU"
+    },
+    "APPLE_M3_PRO": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.72,
+      "expectedThroughput": 1.7,
+      "notes": "Apple M3 Pro - 14-core GPU"
+    }
+  }
+}
