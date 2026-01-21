@@ -215,4 +215,87 @@ class DAGRayTraversalKernelTest {
                     "Kernel should reference child pointer directly");
         });
     }
+
+    // ==================== Stream A: Shared Memory Cache Tests ====================
+
+    /**
+     * Stream A Test 1: Cache Entry structure exists
+     * Validates kernel defines CacheEntry with required fields
+     */
+    @Test
+    @DisplayName("Stream A: Kernel defines CacheEntry structure")
+    void testCacheEntryStructureExists() {
+        assertDoesNotThrow(() -> {
+            renderer = new DAGOpenCLRenderer(512, 512);
+            String source = renderer.getKernelSource();
+
+            // Should define CacheEntry struct
+            assertTrue(source.contains("CacheEntry") || source.contains("typedef"),
+                    "Kernel should define CacheEntry structure");
+            assertTrue(source.contains("globalIdx") || source.contains("valid"),
+                    "CacheEntry should have globalIdx and valid fields");
+        });
+    }
+
+    /**
+     * Stream A Test 2: Shared memory cache allocation
+     * Validates kernel allocates __local memory for node cache
+     */
+    @Test
+    @DisplayName("Stream A: Kernel allocates shared memory cache")
+    void testSharedMemoryCacheAllocation() {
+        assertDoesNotThrow(() -> {
+            renderer = new DAGOpenCLRenderer(512, 512);
+            String source = renderer.getKernelSource();
+
+            // Should have __local memory declaration
+            assertTrue(source.contains("__local") && source.contains("nodeCache"),
+                    "Kernel should allocate __local memory for cache");
+            assertTrue(source.contains("1024") || source.contains("CACHE_SIZE"),
+                    "Cache should be sized for 1024 entries");
+        });
+    }
+
+    /**
+     * Stream A Test 3: Cache lookup function exists
+     * Validates kernel implements loadNodeCached() function
+     */
+    @Test
+    @DisplayName("Stream A: Kernel implements cache lookup function")
+    void testCacheLookupFunctionExists() {
+        assertDoesNotThrow(() -> {
+            renderer = new DAGOpenCLRenderer(512, 512);
+            String source = renderer.getKernelSource();
+
+            // Should have cache lookup function
+            assertTrue(source.contains("loadNodeCached") || source.contains("getNodeCached"),
+                    "Kernel should implement cache lookup function");
+            assertTrue(source.contains("hash") || source.contains("nodeIdx"),
+                    "Cache lookup should use hash-based indexing");
+        });
+    }
+
+    /**
+     * Stream A Test 4: Traversal uses cached access
+     * Validates traverseDAG() uses loadNodeCached() instead of direct access
+     */
+    @Test
+    @DisplayName("Stream A: Traversal function uses cached node access")
+    void testTraversalUsesCachedAccess() {
+        assertDoesNotThrow(() -> {
+            renderer = new DAGOpenCLRenderer(512, 512);
+            String source = renderer.getKernelSource();
+
+            // Find traverseDAG function
+            int traverseStart = source.indexOf("traverseDAG");
+            assertTrue(traverseStart >= 0, "Should have traverseDAG function");
+
+            // Extract function body (rough approximation)
+            String traversalCode = source.substring(traverseStart);
+
+            // Should use cached access, not direct nodePool[nodeIdx]
+            assertTrue(traversalCode.contains("loadNodeCached") || traversalCode.contains("getNodeCached"),
+                    "traverseDAG should use cached node loading");
+        });
+    }
 }

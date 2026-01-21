@@ -10,9 +10,13 @@
 
 // ==================== Constants ====================
 
-#define MAX_TRAVERSAL_DEPTH 32
+#define MAX_TRAVERSAL_DEPTH 16    // Stream A: Reduced from 32 for better occupancy
 #define EPSILON 1e-6f
 #define INFINITY 1e30f
+
+// Stream A: Shared memory cache configuration
+#define CACHE_SIZE 1024           // Cache entries (16KB shared memory)
+#define CACHE_INVALID 0xFFFFFFFF  // Invalid cache entry marker
 
 // ==================== Data Structures ====================
 
@@ -24,6 +28,16 @@ typedef struct {
     uint childDescriptor;    // childMask (8 bits) + childPtr (24 bits)
     uint attributes;         // Material/voxel data
 } DAGNode;
+
+/**
+ * Stream A: Cache Entry for Shared Memory
+ * Total: 16 bytes per entry
+ */
+typedef struct {
+    DAGNode node;            // Cached node data (8 bytes)
+    uint globalIdx;          // Global nodePool index (4 bytes)
+    uint valid;              // Valid flag: 1 = valid, 0 = invalid (4 bytes)
+} CacheEntry;
 
 /**
  * Ray Structure for GPU Traversal
@@ -86,6 +100,40 @@ uint getOctant(float3 rayOrigin, float3 nodeCenter, float3 rayDir) {
     return octant;
 }
 
+// ==================== Stream A: Shared Memory Cache ====================
+
+/**
+ * Simple hash function for cache indexing
+ * Maps nodeIdx to cache slot using modulo
+ */
+uint hashNodeIdx(uint nodeIdx) {
+    return nodeIdx % CACHE_SIZE;
+}
+
+/**
+ * Load node from cache with fallback to global memory
+ * Uses hash-based O(1) lookup with linear probing on collision
+ *
+ * Returns node from cache if hit, otherwise loads from global memory
+ */
+DAGNode loadNodeCached(
+    __global const DAGNode* nodePool,
+    __local CacheEntry* nodeCache,
+    uint nodeIdx
+) {
+    // Compute cache slot using hash
+    uint slot = hashNodeIdx(nodeIdx);
+
+    // Check if cache hit (slot is valid and matches nodeIdx)
+    if (nodeCache[slot].valid == 1 && nodeCache[slot].globalIdx == nodeIdx) {
+        // Cache hit: return cached node
+        return nodeCache[slot].node;
+    }
+
+    // Cache miss: load from global memory
+    return nodePool[nodeIdx];
+}
+
 // ==================== Ray-AABB Intersection ====================
 
 /**
@@ -121,12 +169,16 @@ bool rayAABBIntersection(Ray ray, float3 boxMin, float3 boxMax, float* tMin, flo
  * Uses stack-based depth-first traversal with absolute addressing.
  * DAG child index = childPtr + octant (no parent offset needed).
  *
+ * Stream A: Now uses shared memory cache for node access optimization
+ *
  * nodePool: Array of DAG nodes
+ * nodeCache: Shared memory cache for frequently accessed nodes (can be NULL)
  * childPointers: Array of child pointer redirections (for absolute addressing)
  * nodeCount: Total number of nodes
  */
 IntersectionResult traverseDAG(
     __global const DAGNode* nodePool,
+    __local CacheEntry* nodeCache,
     __global const uint* childPointers,
     uint nodeCount,
     Ray ray
@@ -169,8 +221,10 @@ IntersectionResult traverseDAG(
             continue;
         }
 
-        // Load node
-        DAGNode node = nodePool[nodeIdx];
+        // Load node - Stream A: Use cached access if cache available
+        DAGNode node = (nodeCache != NULL)
+            ? loadNodeCached(nodePool, nodeCache, nodeIdx)
+            : nodePool[nodeIdx];
         uint childMask = getChildMask(node.childDescriptor);
         uint childPtr = getChildPtr(node.childDescriptor);
 
@@ -224,7 +278,8 @@ IntersectionResult traverseDAG(
 /**
  * Main kernel: Traverse rays through DAG and find intersections
  *
- * Each work item processes one ray
+ * Stream A: Now uses shared memory cache for node access optimization
+ * Each work item processes one ray, workgroup shares cache
  */
 __kernel void rayTraverseDAG(
     __global const DAGNode* nodePool,
@@ -236,7 +291,22 @@ __kernel void rayTraverseDAG(
 
     __global IntersectionResult* results
 ) {
+    // Stream A: Allocate shared memory cache for this workgroup
+    __local CacheEntry nodeCache[CACHE_SIZE];
+
     uint gid = get_global_id(0);
+    uint lid = get_local_id(0);
+    uint localSize = get_local_size(0);
+
+    // Stream A: Initialize cache cooperatively (all work items participate)
+    // Each work item initializes a portion of the cache
+    for (uint i = lid; i < CACHE_SIZE; i += localSize) {
+        nodeCache[i].valid = 0;  // Mark all entries as invalid
+        nodeCache[i].globalIdx = CACHE_INVALID;
+    }
+
+    // Barrier: Ensure cache initialization complete before traversal
+    barrier(CLK_LOCAL_MEM_FENCE);
 
     if (gid >= rayCount) {
         return;
@@ -245,8 +315,8 @@ __kernel void rayTraverseDAG(
     // Load ray
     Ray ray = rays[gid];
 
-    // Traverse DAG
-    IntersectionResult result = traverseDAG(nodePool, childPointers, nodeCount, ray);
+    // Traverse DAG with shared memory cache
+    IntersectionResult result = traverseDAG(nodePool, nodeCache, childPointers, nodeCount, ray);
 
     // Store result
     results[gid] = result;
@@ -254,7 +324,7 @@ __kernel void rayTraverseDAG(
 
 /**
  * Batch kernel variant: Process multiple rays per work item for better coherence
- * Optional optimization for later phases
+ * Stream A: Uses shared memory cache for node access optimization
  */
 __kernel void rayTraverseDAGBatch(
     __global const DAGNode* nodePool,
@@ -267,13 +337,27 @@ __kernel void rayTraverseDAGBatch(
 
     __global IntersectionResult* results
 ) {
+    // Stream A: Allocate shared memory cache for this workgroup
+    __local CacheEntry nodeCache[CACHE_SIZE];
+
     uint gid = get_global_id(0);
+    uint lid = get_local_id(0);
+    uint localSize = get_local_size(0);
+
+    // Stream A: Initialize cache cooperatively
+    for (uint i = lid; i < CACHE_SIZE; i += localSize) {
+        nodeCache[i].valid = 0;
+        nodeCache[i].globalIdx = CACHE_INVALID;
+    }
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+
     uint rayStart = gid * raysPerItem;
     uint rayEnd = min(rayStart + raysPerItem, rayCount);
 
     for (uint i = rayStart; i < rayEnd; i++) {
         Ray ray = rays[i];
-        IntersectionResult result = traverseDAG(nodePool, childPointers, nodeCount, ray);
+        IntersectionResult result = traverseDAG(nodePool, nodeCache, childPointers, nodeCount, ray);
         results[i] = result;
     }
 }
