@@ -207,8 +207,9 @@ public class RayCoherenceAnalyzer {
         // Store stats
         sceneStats.put(sceneName, new CoherenceStats(avg, min, max, recentCoherenceValues.size()));
 
-        log.info("Coherence metrics for {}: avg={:.3f}, min={:.3f}, max={:.3f}, samples={}",
-                 sceneName, avg, min, max, recentCoherenceValues.size());
+        log.info("Coherence metrics for {}: avg={}, min={}, max={}, samples={}",
+                 sceneName, String.format("%.3f", avg), String.format("%.3f", min),
+                 String.format("%.3f", max), recentCoherenceValues.size());
     }
 
     /**

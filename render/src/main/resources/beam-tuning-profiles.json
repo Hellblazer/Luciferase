@@ -1,0 +1,72 @@
+{
+  "_comment": "Beam optimization tuning profiles for different GPU vendors",
+  "_description": "Configuration for Stream C beam optimization. Parameters control when and how batch ray traversal is enabled based on GPU architecture.",
+
+  "default": {
+    "description": "Conservative defaults for unknown GPUs",
+    "enabled": false,
+    "raysPerWorkItem": 4,
+    "maxBeamWidth": 32,
+    "coherenceThreshold": 0.6,
+    "latencyThresholdMicroseconds": 100.0,
+    "comment": "Disabled by default - enable only after profiling"
+  },
+
+  "nvidia": {
+    "description": "NVIDIA GPUs (CUDA cores, high warp efficiency)",
+    "enabled": true,
+    "raysPerWorkItem": 8,
+    "maxBeamWidth": 64,
+    "coherenceThreshold": 0.5,
+    "latencyThresholdMicroseconds": 100.0,
+    "comment": "NVIDIA benefits from larger beam widths due to warp scheduling"
+  },
+
+  "amd": {
+    "description": "AMD GPUs (wavefront-based execution)",
+    "enabled": true,
+    "raysPerWorkItem": 4,
+    "maxBeamWidth": 64,
+    "coherenceThreshold": 0.55,
+    "latencyThresholdMicroseconds": 100.0,
+    "comment": "AMD wavefronts work well with moderate beam widths"
+  },
+
+  "intel": {
+    "description": "Intel GPUs (execution units, lower coherence tolerance)",
+    "enabled": true,
+    "raysPerWorkItem": 4,
+    "maxBeamWidth": 32,
+    "coherenceThreshold": 0.6,
+    "latencyThresholdMicroseconds": 100.0,
+    "comment": "Intel GPUs prefer smaller beams, higher coherence requirement"
+  },
+
+  "apple_m_series": {
+    "description": "Apple Silicon (unified memory, tile-based)",
+    "enabled": true,
+    "raysPerWorkItem": 8,
+    "maxBeamWidth": 64,
+    "coherenceThreshold": 0.5,
+    "latencyThresholdMicroseconds": 100.0,
+    "comment": "Apple GPUs benefit from unified memory and large beam widths"
+  },
+
+  "performance_targets": {
+    "description": "Performance targets for beam optimization decision",
+    "baseline_100k_rays_microseconds": 500.0,
+    "target_100k_rays_microseconds": 100.0,
+    "expected_speedup_factor": 1.3,
+    "comment": "Beam optimization should provide ~30% node traversal reduction"
+  },
+
+  "experimental": {
+    "description": "Experimental aggressive settings for testing",
+    "enabled": false,
+    "raysPerWorkItem": 16,
+    "maxBeamWidth": 128,
+    "coherenceThreshold": 0.4,
+    "latencyThresholdMicroseconds": 100.0,
+    "comment": "Use only for profiling - may cause register pressure"
+  }
+}
