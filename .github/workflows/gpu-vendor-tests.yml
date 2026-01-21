@@ -102,6 +102,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI: true
 
+      - name: Run Vendor Configuration Tests
+        run: |
+          ./mvnw -batch-mode test -pl render \
+            -Dtest="GPUVendorDetectorTest,MultiVendorConsistencyTest" \
+            -Dsurefire.rerunFailingTestsCount=0 \
+            --file pom.xml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI: true
+
       - name: Validate MultiVendorConsistencyReport
         run: |
           ./mvnw -batch-mode test -pl render \
@@ -236,7 +246,7 @@ jobs:
 
   # ==================== Tier 3: Nightly Vendor-Specific Tests (Full test suite per vendor) ====================
   #
-  # NOTE: Tier 3 tests run the full vendor-specific test suite (8-12 tests per vendor)
+  # NOTE: Tier 3 tests run the full vendor-specific test suite (16+ tests per vendor)
   # Only triggered on schedule (nightly) and requires self-hosted runners with GPU labels
   #
   # Uncomment when self-hosted runners are available
@@ -259,7 +269,7 @@ jobs:
   #     - name: Run NVIDIA Full Test Suite
   #       run: |
   #         ./mvnw -batch-mode test -pl render \
-  #           -Dtest="DAGOpenCLRendererVendorTest" \
+  #           -Dtest="NvidiaGPUTest,DAGOpenCLRendererVendorTest" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload NVIDIA Full Results
   #       uses: actions/upload-artifact@v4
@@ -285,7 +295,7 @@ jobs:
   #     - name: Run AMD Full Test Suite
   #       run: |
   #         ./mvnw -batch-mode test -pl render \
-  #           -Dtest="DAGOpenCLRendererVendorTest" \
+  #           -Dtest="AmdGPUTest,DAGOpenCLRendererVendorTest" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload AMD Full Results
   #       uses: actions/upload-artifact@v4
@@ -311,7 +321,7 @@ jobs:
   #     - name: Run Intel Full Test Suite
   #       run: |
   #         ./mvnw -batch-mode test -pl render \
-  #           -Dtest="DAGOpenCLRendererVendorTest" \
+  #           -Dtest="IntelGPUTest,DAGOpenCLRendererVendorTest" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload Intel Full Results
   #       uses: actions/upload-artifact@v4
@@ -337,7 +347,7 @@ jobs:
   #     - name: Run Apple Full Test Suite
   #       run: |
   #         ./mvnw -batch-mode test -pl render \
-  #           -Dtest="DAGOpenCLRendererVendorTest" \
+  #           -Dtest="AppleGPUTest,DAGOpenCLRendererVendorTest" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload Apple Full Results
   #       uses: actions/upload-artifact@v4
