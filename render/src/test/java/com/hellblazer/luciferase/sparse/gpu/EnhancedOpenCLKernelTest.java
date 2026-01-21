@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.sparse.gpu;
 import com.hellblazer.luciferase.resource.compute.ComputeKernel;
 import com.hellblazer.luciferase.sparse.gpu.EnhancedOpenCLKernel;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -36,9 +36,11 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>Fallback behavior on compilation failure</li>
  * </ul>
  *
+ * <p>Tests requiring actual GPU hardware are conditional on RUN_GPU_TESTS environment variable.
+ * They will be skipped in CI/CD environments without GPU access and run locally on developer machines.
+ *
  * @author hal.hildebrand
  */
-@EnabledIf("isOpenCLAvailable")
 @DisplayName("Enhanced OpenCL Kernel Compilation")
 class EnhancedOpenCLKernelTest {
 
@@ -100,6 +102,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Kernel compiles with default parameters (no build options)")
     void testDefaultCompilation() throws Exception {
@@ -110,6 +113,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Kernel compiles with custom ARRAY_SIZE via -D flag")
     void testCustomArraySize() throws Exception {
@@ -120,6 +124,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Kernel compiles with multiple -D flags")
     void testMultipleDefines() throws Exception {
@@ -130,6 +135,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Kernel compiles with MAX_TRAVERSAL_DEPTH override")
     void testTraversalDepthOverride() throws Exception {
@@ -140,6 +146,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Kernel compiles with WORKGROUP_SIZE override")
     void testWorkgroupSizeOverride() throws Exception {
@@ -150,6 +157,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Kernel recompiles with new MAX_TRAVERSAL_DEPTH")
     void testRecompilationWithNewDepth() throws Exception {
@@ -165,6 +173,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Multiple recompilations work correctly")
     void testMultipleRecompilations() throws Exception {
@@ -186,6 +195,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Cannot compile an already-compiled kernel")
     void testCannotCompileTwice() throws Exception {
@@ -203,6 +213,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Invalid build options cause compilation failure")
     void testInvalidBuildOptions() {
@@ -219,6 +230,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Kernel handle available after compilation")
     void testKernelHandleAvailability() throws Exception {
@@ -230,6 +242,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Kernel handle throws before compilation")
     void testKernelHandleBeforeCompilation() {
@@ -242,6 +255,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Closed kernel throws on operations")
     void testClosedKernelThrows() throws Exception {
@@ -262,6 +276,7 @@ class EnhancedOpenCLKernelTest {
         );
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Kernel name and metadata accessible")
     void testKernelMetadata() {
@@ -273,6 +288,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Recompilation without initial compilation fails")
     void testRecompileWithoutInitialCompile() {
@@ -283,6 +299,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Optimization flags compile successfully")
     void testOptimizationFlags() throws Exception {
@@ -293,6 +310,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Combined defines and optimization flags work")
     void testCombinedOptions() throws Exception {
@@ -303,6 +321,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Empty build options equivalent to no options")
     void testEmptyBuildOptions() throws Exception {
@@ -320,6 +339,7 @@ class EnhancedOpenCLKernelTest {
         }
     }
 
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     @Test
     @DisplayName("Null build options handled gracefully")
     void testNullBuildOptions() throws Exception {
