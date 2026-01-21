@@ -118,6 +118,9 @@ bool rayAABBIntersection(Ray ray, float3 boxMin, float3 boxMax, float* tMin, flo
 /**
  * Traverse DAG from root to find ray intersection
  *
+ * Uses stack-based depth-first traversal with absolute addressing.
+ * DAG child index = childPtr + octant (no parent offset needed).
+ *
  * nodePool: Array of DAG nodes
  * childPointers: Array of child pointer redirections (for absolute addressing)
  * nodeCount: Total number of nodes
@@ -133,43 +136,81 @@ IntersectionResult traverseDAG(
     result.t = INFINITY;
     result.iterations = 0;
     result.nodeIndex = 0;
+    result.normal = (float3)(0.0f, 1.0f, 0.0f);
 
-    // Stack-based traversal
+    // Early exit for invalid ray
+    if (ray.tMax <= ray.tMin || ray.tMax < 0.0f) {
+        return result;
+    }
+
+    // Stack-based DFS traversal
     uint stack[MAX_TRAVERSAL_DEPTH];
     uint stackPtr = 0;
 
-    // Start with root node (index 0)
+    // Initialize traversal from root at origin in unit cube [0,1]^3
     stack[stackPtr++] = 0;
 
-    // Traverse until stack empty or hit found
-    while (stackPtr > 0 && stackPtr < MAX_TRAVERSAL_DEPTH) {
+    // Node dimensions at each level (voxel size halves with each level)
+    float nodeSize = 1.0f;
+    float3 nodeMin = (float3)(0.0f, 0.0f, 0.0f);
+
+    // Traverse until stack empty
+    while (stackPtr > 0 && result.hit == 0) {
+        // Stack limit check
+        if (stackPtr >= MAX_TRAVERSAL_DEPTH) {
+            break;
+        }
+
         uint nodeIdx = stack[--stackPtr];
         result.iterations++;
 
+        // Bounds check
         if (nodeIdx >= nodeCount) {
-            continue; // Invalid node index
+            continue;
         }
 
+        // Load node
         DAGNode node = nodePool[nodeIdx];
         uint childMask = getChildMask(node.childDescriptor);
         uint childPtr = getChildPtr(node.childDescriptor);
 
-        // If leaf node, record intersection
+        // Check if leaf node (no children)
         if (childMask == 0) {
+            // Found intersection with leaf
             result.hit = 1;
             result.voxelValue = node.attributes;
             result.nodeIndex = nodeIdx;
-            // In real implementation, compute t and normal here
+            result.t = ray.tMin; // Simplified: actual distance computation needed
             break;
         }
 
-        // Internal node: push children to stack
+        // Internal node: check ray-AABB intersection with children
+        // and push intersecting children to stack
+
+        float halfSize = nodeSize * 0.5f;
+
         for (uint octant = 0; octant < 8; octant++) {
             if (hasChild(childMask, octant)) {
-                // Absolute addressing: direct array lookup
-                uint childIdx = childPtr + octant;
-                if (childIdx < nodeCount && stackPtr < MAX_TRAVERSAL_DEPTH) {
-                    stack[stackPtr++] = childIdx;
+                // Compute child AABB
+                float3 offset = (float3)(
+                    (octant & 1) ? halfSize : 0.0f,
+                    (octant & 2) ? halfSize : 0.0f,
+                    (octant & 4) ? halfSize : 0.0f
+                );
+
+                float3 childMin = nodeMin + offset;
+                float3 childMax = childMin + (float3)(halfSize, halfSize, halfSize);
+
+                // Ray-AABB intersection test
+                float tMin = ray.tMin;
+                float tMax = ray.tMax;
+
+                if (rayAABBIntersection(ray, childMin, childMax, &tMin, &tMax)) {
+                    // Intersects: push to stack using absolute addressing
+                    uint childIdx = childPtr + octant;
+                    if (childIdx < nodeCount && stackPtr < MAX_TRAVERSAL_DEPTH) {
+                        stack[stackPtr++] = childIdx;
+                    }
                 }
             }
         }
