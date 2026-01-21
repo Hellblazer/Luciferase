@@ -25,6 +25,7 @@ import com.hellblazer.luciferase.sparse.core.PointerAddressingMode;
 import javax.vecmath.Vector3f;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
@@ -86,6 +87,7 @@ class GPUAddressingModeTest {
      */
     @Test
     @DisplayName("GPU kernel compiles with RELATIVE addressing (SVO)")
+    @Disabled("GPU tests require OpenCL hardware not available in CI")
     void testGPUCompilationRelativeMode() {
         var svo = createTestSVO();
 
@@ -117,6 +119,7 @@ class GPUAddressingModeTest {
      */
     @Test
     @DisplayName("GPU kernel runs on SVO data")
+    @Disabled("GPU tests require OpenCL hardware not available in CI")
     void testGPUExecutionOnSVO() {
         var svo = createTestSVO();
 
@@ -152,6 +155,7 @@ class GPUAddressingModeTest {
      */
     @Test
     @DisplayName("GPU SVO rendering from multiple views")
+    @Disabled("GPU tests require OpenCL hardware not available in CI")
     void testGPUSVOMultipleViews() {
         var svo = createTestSVO();
         renderer.uploadData(svo);
@@ -174,6 +178,7 @@ class GPUAddressingModeTest {
      */
     @Test
     @DisplayName("Multiple renders from different camera positions")
+    @Disabled("GPU tests require OpenCL hardware not available in CI")
     void testMultipleRenders() {
         var svo = createTestSVO();
         renderer.uploadData(svo);

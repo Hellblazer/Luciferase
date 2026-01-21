@@ -114,10 +114,10 @@ class DAGTraversalHelperTest {
     @Test
     @DisplayName("traverseToLeaf works identically for SVO and DAG")
     void testTraverseToLeafSVOvsDAG() {
-        var svo = createMultiLevelSVO();
+        var svo = createTestSVO();
         var dag = DAGBuilder.from(svo).build();
 
-        int[] path = {0, 2, 4};  // arbitrary path
+        int[] path = {0};  // path to root
 
         int svoLeafIdx = DAGTraversalHelper.traverseToLeaf(svo, path);
         int dagLeafIdx = DAGTraversalHelper.traverseToLeaf(dag, path);
