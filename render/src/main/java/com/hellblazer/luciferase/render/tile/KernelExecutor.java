@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.render.tile;
 
+import com.hellblazer.luciferase.esvo.gpu.beam.Ray;
+
 /**
  * Abstraction for executing ray intersection kernels. Supports both batch and single-ray execution
  * modes for adaptive tile-based rendering strategies.
@@ -32,11 +34,4 @@ public interface KernelExecutor {
      * @return RayResult containing intersection data
      */
     RayResult getResult(int rayIndex);
-
-    /**
-     * Placeholder for Ray type. Will be replaced with actual Ray class in Phase 2.
-     */
-    interface Ray {
-        // Placeholder interface for now
-    }
 }
