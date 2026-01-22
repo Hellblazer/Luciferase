@@ -57,8 +57,9 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     private GPUTuningProfileLoader profileLoader;
     private final String cacheDirectory;
 
-    // Raw cl_mem handle for ByteBuffer upload
+    // Raw cl_mem handles for ByteBuffer upload
     private long clNodeBuffer;
+    private long clDummyChildPointersBuffer; // Minimal buffer for absolute addressing (unused in kernel)
     private int nodeCount; // Number of nodes in DAG (for kernel arg2)
 
     // Scene bounds derived from coordinate space (ESVO uses [0,1] normalized coordinates)
@@ -221,8 +222,9 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
 
     @Override
     protected void allocateTypeSpecificBuffers() {
-        // Initialize empty node buffer
+        // Initialize empty buffers
         clNodeBuffer = 0;
+        clDummyChildPointersBuffer = 0;
     }
 
     @Override
@@ -232,9 +234,12 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
             throw new IllegalArgumentException("DAG must use absolute addressing");
         }
 
-        // Release old node buffer if exists
+        // Release old buffers if exist
         if (clNodeBuffer != 0) {
             clReleaseMemObject(clNodeBuffer);
+        }
+        if (clDummyChildPointersBuffer != 0) {
+            clReleaseMemObject(clDummyChildPointersBuffer);
         }
 
         // Store node count for kernel arguments (Phase 4.2.2a)
@@ -248,6 +253,15 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
 
         // Create buffer with raw OpenCL API for ByteBuffer compatibility
         clNodeBuffer = createRawBuffer(nodeData, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
+
+        // Phase 4.2.2a: Create minimal dummy buffer for childPointers parameter
+        // For absolute addressing, childPointers is not actually used by the kernel
+        // (child pointers come from node.childDescriptor), but the kernel signature
+        // expects it. This minimal 1-uint buffer satisfies the parameter requirement.
+        var dummyPointerData = memAlloc(4);
+        dummyPointerData.putInt(0);
+        dummyPointerData.flip();
+        clDummyChildPointersBuffer = createRawBuffer(dummyPointerData, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
     }
 
     /**
@@ -302,7 +316,7 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
 
             // Set common arguments for both kernels
             setRawBufferArg(0, clNodeBuffer);                      // arg0: nodePool
-            setRawBufferArg(1, clNodeBuffer);                      // arg1: childPointers (same as nodePool for absolute addressing)
+            setRawBufferArg(1, clDummyChildPointersBuffer);        // arg1: childPointers (minimal dummy for absolute addressing)
             activeKernel.setIntArg(2, nodeCount);                  // arg2: nodeCount
             activeKernel.setBufferArg(3, rayBuffer, ComputeKernel.BufferAccess.READ);  // arg3: rays
             activeKernel.setIntArg(4, rayCount);                   // arg4: rayCount
@@ -368,6 +382,12 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         if (clNodeBuffer != 0) {
             clReleaseMemObject(clNodeBuffer);
             clNodeBuffer = 0;
+        }
+
+        // Phase 4.2.2a: Release dummy childPointers buffer
+        if (clDummyChildPointersBuffer != 0) {
+            clReleaseMemObject(clDummyChildPointersBuffer);
+            clDummyChildPointersBuffer = 0;
         }
 
         // Phase 4.2.2b: Dispose batch kernel
