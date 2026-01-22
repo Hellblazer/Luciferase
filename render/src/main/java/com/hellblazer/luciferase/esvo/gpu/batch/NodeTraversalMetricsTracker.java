@@ -172,4 +172,32 @@ public class NodeTraversalMetricsTracker {
     public void logMetrics() {
         log.debug(generateMetricsReport());
     }
+
+    /**
+     * Get single-ray total accesses (for testing).
+     */
+    int getSingleRayTotalAccesses() {
+        return singleRayTotalAccesses;
+    }
+
+    /**
+     * Get single-ray unique nodes (for testing).
+     */
+    int getSingleRayUniqueNodes() {
+        return singleRayUniqueNodes;
+    }
+
+    /**
+     * Get batch total accesses (for testing).
+     */
+    int getBatchTotalAccesses() {
+        return batchTotalAccesses;
+    }
+
+    /**
+     * Get batch unique nodes (for testing).
+     */
+    int getBatchUniqueNodes() {
+        return batchUniqueNodes;
+    }
 }
