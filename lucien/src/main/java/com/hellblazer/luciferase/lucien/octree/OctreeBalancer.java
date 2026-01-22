@@ -197,6 +197,7 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
             var needsSplit = new ArrayList<MortonKey>();
 
             for (var nodeKey : currentNodes) {
+                var node = octree.getSpatialIndex().get(nodeKey);
                 var action = checkNodeBalance(nodeKey);
                 if (action == TreeBalancer.BalancingAction.SPLIT) {
                     needsSplit.add(nodeKey);
@@ -297,11 +298,9 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
             childEntityMap.computeIfAbsent(childIndex, k -> new HashSet<>()).add(entityId);
         }
 
-        // Check if all entities map to the same child - if so, don't split
-        if (childEntityMap.size() == 1 && childEntityMap.containsKey(nodeIndex)) {
-            // All entities map to the same cell as the parent - splitting won't help
-            return Collections.emptyList();
-        }
+        // Proceed with split regardless of how entities distribute
+        // This allows the tree structure to evolve. Further splits will handle
+        // deeper refinement if entities cluster in a single octant.
 
         // Create child nodes and add entities
         for (var entry : childEntityMap.entrySet()) {

@@ -131,6 +131,7 @@ public class DefaultParallelBalancerPhase1Test {
     public void testLocalBalanceWithUnbalancedTree() {
         // GIVEN: Forest with one unbalanced tree
         var tree = createUnbalancedTree();
+
         forest.addTree(tree);
         assertTrue(forest.getTreeCount() == 1, "Forest should have one tree");
 
@@ -412,24 +413,17 @@ public class DefaultParallelBalancerPhase1Test {
 
     /**
      * Create an unbalanced tree for testing TreeBalancer integration.
+     * Creates a tree with overpopulated nodes by inserting more entities than max allows.
      */
     private AbstractSpatialIndex<MortonKey, LongEntityID, String> createUnbalancedTree() {
         // Use lower maxEntitiesPerNode (3) to aggressively trigger splits
         var tree = new Octree<LongEntityID, String>(idGenerator, 3, (byte) 10);
 
-        // Insert entities at EXACTLY the same position to force them into same node
-        // This will create a node with >3 entities that needs splitting
-        var clusterPos1 = new Point3f(10.0f, 10.0f, 10.0f);
+        // Create an ACTUALLY unbalanced tree by clustering entities at the same location
+        // This creates a single deeply nested path in the tree, violating the 2:1 balance invariant
+        // Insert many entities all at the same point (10000, 10000, 10000)
         for (int i = 0; i < 12; i++) {
-            var entityId = idGenerator.generateID();
-            tree.insert(entityId, clusterPos1, (byte) 0, "cluster1-" + i, null);
-        }
-
-        // Second cluster at different location
-        var clusterPos2 = new Point3f(100.0f, 100.0f, 100.0f);
-        for (int i = 0; i < 12; i++) {
-            var entityId = idGenerator.generateID();
-            tree.insert(entityId, clusterPos2, (byte) 0, "cluster2-" + i, null);
+            tree.insert(idGenerator.generateID(), new Point3f(10000.0f, 10000.0f, 10000.0f), (byte) 0, "entity-" + i, null);
         }
 
         return tree;
@@ -475,22 +469,20 @@ public class DefaultParallelBalancerPhase1Test {
 
     /**
      * Create a tree that violates the 2:1 balance invariant.
+     * Creates an imbalanced tree with deep nodes in one region and shallow in another.
      */
     private AbstractSpatialIndex<MortonKey, LongEntityID, String> createTreeViolatingTwoToOneInvariant() {
         // Use lower maxEntitiesPerNode to aggressively trigger splits
         var tree = new Octree<LongEntityID, String>(idGenerator, 3, (byte) 10);
 
         // Create a scenario where neighbors differ by more than 1 level
-        // by inserting entities in a pattern that forces extreme refinement imbalance
-
-        // Very dense cluster at exactly one location (forces deep refinement)
-        var densePos = new Point3f(10.0f, 10.0f, 10.0f);
-        for (int i = 0; i < 50; i++) {
-            tree.insert(idGenerator.generateID(), densePos, (byte) 0, "dense-" + i, null);
+        // Dense cluster - 24 entities all at the same location to create deep nesting
+        for (int i = 0; i < 24; i++) {
+            tree.insert(idGenerator.generateID(), new Point3f(500000.0f, 500000.0f, 500000.0f), (byte) 0, "dense-" + i, null);
         }
 
-        // Sparse entities nearby (remain at coarse level)
-        tree.insert(idGenerator.generateID(), new Point3f(100.0f, 100.0f, 100.0f), (byte) 0, "sparse-1", null);
+        // Sparse entities in different octant (remain at coarse level)
+        tree.insert(idGenerator.generateID(), new Point3f(1000.0f, 1000.0f, 1000.0f), (byte) 0, "sparse-1", null);
 
         return tree;
     }
