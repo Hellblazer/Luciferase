@@ -18,7 +18,11 @@ package com.hellblazer.luciferase.esvo.gpu;
 
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
+import com.hellblazer.luciferase.esvo.gpu.beam.BeamOptimizationGate;
+import com.hellblazer.luciferase.esvo.gpu.beam.RayCoherenceAnalyzer;
+import com.hellblazer.luciferase.esvo.gpu.beam.StreamCActivationDecision;
 import com.hellblazer.luciferase.resource.compute.ComputeKernel;
+import com.hellblazer.luciferase.resource.compute.opencl.OpenCLKernel;
 import com.hellblazer.luciferase.sparse.core.CoordinateSpace;
 import com.hellblazer.luciferase.sparse.core.PointerAddressingMode;
 import com.hellblazer.luciferase.sparse.gpu.AbstractOpenCLRenderer;
@@ -55,11 +59,24 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
 
     // Raw cl_mem handle for ByteBuffer upload
     private long clNodeBuffer;
+    private int nodeCount; // Number of nodes in DAG (for kernel arg2)
 
     // Scene bounds derived from coordinate space (ESVO uses [0,1] normalized coordinates)
     private static final CoordinateSpace COORD_SPACE = CoordinateSpace.UNIT_CUBE;
     private final float[] sceneMin = {COORD_SPACE.getMin(), COORD_SPACE.getMin(), COORD_SPACE.getMin()};
     private final float[] sceneMax = {COORD_SPACE.getMax(), COORD_SPACE.getMax(), COORD_SPACE.getMax()};
+
+    // Phase 4.2.2b: Batch kernel support
+    protected OpenCLKernel batchKernel;
+    private volatile boolean useBatchKernel = false;
+    private volatile int currentRaysPerItem = 1;
+
+    // Phase 4.2.2c: Coherence analysis infrastructure
+    private RayCoherenceAnalyzer coherenceAnalyzer;
+    private StreamCActivationDecision activationDecision;
+    private DAGOctreeData lastDAGData;
+    private int coherenceSampleInterval = 10;
+    private int framesSinceCoherenceSample = 0;
 
     /**
      * Create a DAG-aware GPU renderer with specified output dimensions
@@ -89,7 +106,77 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
 
     @Override
     protected String getKernelEntryPoint() {
-        return "rayTraverseDAG";
+        return "rayTraverseDAG";  // Primary kernel; batch kernel created separately
+    }
+
+    /**
+     * Phase 4.2.2b: Initialize batch kernel after main kernel is compiled.
+     * Called from subclass initialization hook.
+     */
+    protected void initializeBatchKernel() {
+        if (kernel == null) {
+            throw new IllegalStateException("Main kernel must be initialized first");
+        }
+
+        try {
+            // Create batch kernel from same source with same build options
+            // Both kernels come from the same source file (dag_ray_traversal.cl)
+            var kernelSource = getKernelSource();
+            var buildOptions = getBuildOptions();
+
+            // Create a new kernel instance for batch processing
+            batchKernel = com.hellblazer.luciferase.resource.compute.opencl.OpenCLKernel.create("rayTraverseDAGBatch");
+            if (buildOptions != null && !buildOptions.isEmpty()) {
+                batchKernel.compile(kernelSource, "rayTraverseDAGBatch", buildOptions);
+            } else {
+                batchKernel.compile(kernelSource, "rayTraverseDAGBatch");
+            }
+            log.info("Batch kernel compiled successfully");
+        } catch (Exception e) {
+            log.warn("Failed to compile batch kernel, batch mode disabled", e);
+            batchKernel = null;
+            useBatchKernel = false;
+        }
+    }
+
+    /**
+     * Phase 4.2.2c: Initialize coherence analysis infrastructure.
+     * Must be called after DAG data is available.
+     */
+    protected void initializeCoherenceAnalysis() {
+        if (coherenceAnalyzer == null) {
+            coherenceAnalyzer = new RayCoherenceAnalyzer();
+            activationDecision = new StreamCActivationDecision();
+            log.info("Coherence analysis infrastructure initialized");
+        }
+    }
+
+    /**
+     * Phase 4.2.2c: Update coherence analysis and kernel selection if needed.
+     * Samples every N frames to avoid overhead.
+     */
+    private void updateCoherenceIfNeeded() {
+        if (coherenceAnalyzer == null || lastDAGData == null) {
+            return;
+        }
+
+        framesSinceCoherenceSample++;
+        if (framesSinceCoherenceSample < coherenceSampleInterval) {
+            return;
+        }
+        framesSinceCoherenceSample = 0;
+
+        // Log current mode
+        log.debug("Coherence sampling frame: batch={}, raysPerItem={}",
+                  useBatchKernel, currentRaysPerItem);
+    }
+
+    /**
+     * Phase 4.2.2c: Calculate optimal raysPerItem from coherence score.
+     * Linear scaling: 0.5 coherence -> 8 rays/item, 1.0 coherence -> 16 rays/item
+     */
+    private int calculateRaysPerItem(double coherenceScore) {
+        return Math.max(1, Math.min(16, (int) Math.ceil(coherenceScore * 16.0)));
     }
 
     @Override
@@ -114,6 +201,12 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         if (clNodeBuffer != 0) {
             clReleaseMemObject(clNodeBuffer);
         }
+
+        // Store node count for kernel arguments (Phase 4.2.2a)
+        this.nodeCount = data.nodeCount();
+
+        // Store DAG data for coherence analysis (Phase 4.2.2c)
+        this.lastDAGData = data;
 
         // Convert DAG data to ByteBuffer
         var nodeData = dagToByteBuffer(data);
@@ -150,19 +243,63 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     }
 
     @Override
+    protected void executeKernel() throws ComputeKernel.KernelExecutionException {
+        // Phase 4.2.2a: Fix kernel argument alignment - override to set correct order
+        // Kernel expects: nodePool, childPointers, nodeCount, rays, rayCount, results[, raysPerItem for batch]
+
+        // Phase 4.2.2c: Initialize and update coherence analysis
+        if (coherenceAnalyzer == null && batchKernel != null) {
+            initializeCoherenceAnalysis();
+        }
+        updateCoherenceIfNeeded();
+
+        var activeKernel = useBatchKernel ? batchKernel : kernel;
+        if (activeKernel == null) {
+            throw new IllegalStateException("Kernel not initialized");
+        }
+
+        // Phase 4.2.2a: Set kernel arguments in correct order for dag_ray_traversal.cl
+        // Use temporary kernel swap to set arguments on both kernels with same interface
+        var originalKernel = kernel;
+        try {
+            // Temporarily swap kernel to set arguments on the active one
+            kernel = activeKernel;
+
+            // Set common arguments for both kernels
+            setRawBufferArg(0, clNodeBuffer);                      // arg0: nodePool
+            setRawBufferArg(1, clNodeBuffer);                      // arg1: childPointers (same as nodePool for absolute addressing)
+            activeKernel.setIntArg(2, nodeCount);                  // arg2: nodeCount
+            activeKernel.setBufferArg(3, rayBuffer, ComputeKernel.BufferAccess.READ);  // arg3: rays
+            activeKernel.setIntArg(4, rayCount);                   // arg4: rayCount
+
+            if (useBatchKernel) {
+                // Batch kernel: raysPerItem then results
+                activeKernel.setIntArg(5, currentRaysPerItem);     // arg5: raysPerItem
+                activeKernel.setBufferArg(6, resultBuffer, ComputeKernel.BufferAccess.WRITE); // arg6: results
+
+                // Adjust global work size for batch kernel
+                int workItems = (rayCount + currentRaysPerItem - 1) / currentRaysPerItem;
+                long adjustedGlobal = ((workItems + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
+                activeKernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
+            } else {
+                // Single-ray kernel
+                activeKernel.setBufferArg(5, resultBuffer, ComputeKernel.BufferAccess.WRITE); // arg5: results
+
+                long adjustedGlobal = ((rayCount + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
+                activeKernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
+            }
+
+            activeKernel.finish();
+        } finally {
+            // Restore original kernel
+            kernel = originalKernel;
+        }
+    }
+
+    @Override
     protected void setKernelArguments() {
-        // Set node buffer (arg 1)
-        setRawBufferArg(1, clNodeBuffer);
-
-        // Set result buffer (arg 2)
-        kernel.setBufferArg(2, resultBuffer, ComputeKernel.BufferAccess.WRITE);
-
-        // Set maxDepth (arg 3)
-        kernel.setIntArg(3, maxDepth);
-
-        // Set scene bounds (args 4, 5)
-        setFloat3Arg(4, sceneMin[0], sceneMin[1], sceneMin[2]);
-        setFloat3Arg(5, sceneMax[0], sceneMax[1], sceneMax[2]);
+        // Phase 4.2.2a: Arguments now set in executeKernel() - this hook is unused
+        // but must remain for compatibility with AbstractOpenCLRenderer contract
     }
 
     @Override
@@ -196,6 +333,16 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         if (clNodeBuffer != 0) {
             clReleaseMemObject(clNodeBuffer);
             clNodeBuffer = 0;
+        }
+
+        // Phase 4.2.2b: Dispose batch kernel
+        if (batchKernel != null) {
+            try {
+                batchKernel.close();
+            } catch (Exception e) {
+                log.error("Error closing batch kernel", e);
+            }
+            batchKernel = null;
         }
     }
 
