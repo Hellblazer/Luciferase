@@ -182,8 +182,58 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
 
     @Override
     public TreeBalancer.RebalancingResult rebalanceTree() {
-        // Not implemented for octree
-        return new TreeBalancer.RebalancingResult(0, 0, 0, 0, 0, 0, true);
+        var startTime = System.nanoTime();
+        var nodesCreated = 0;
+        var nodesRemoved = 0;
+        var nodesMerged = 0;
+        var nodesSplit = 0;
+        var entitiesRelocated = 0;
+
+        try {
+            // Get current nodes (snapshot to avoid concurrent modification)
+            var currentNodes = new ArrayList<>(octree.getSpatialIndex().keySet());
+
+            // Check each node for balance violations
+            var needsSplit = new ArrayList<MortonKey>();
+
+            for (var nodeKey : currentNodes) {
+                var action = checkNodeBalance(nodeKey);
+                if (action == TreeBalancer.BalancingAction.SPLIT) {
+                    needsSplit.add(nodeKey);
+                }
+                // Note: MERGE operations are handled separately and not part of Phase 1
+            }
+
+            // Perform splits (creates finer granularity for overpopulated nodes)
+            for (var nodeKey : needsSplit) {
+                var childrenCreated = splitNode(nodeKey, nodeKey.getLevel());
+                if (!childrenCreated.isEmpty()) {
+                    nodesSplit++;
+                    nodesCreated += childrenCreated.size();
+
+                    // Count entities relocated
+                    var node = octree.getSpatialIndex().get(nodeKey);
+                    if (node != null) {
+                        entitiesRelocated += node.getEntityCount();
+                    }
+                }
+            }
+
+            var timeTaken = System.nanoTime() - startTime;
+            return new TreeBalancer.RebalancingResult(
+                nodesCreated,
+                nodesRemoved,
+                nodesMerged,
+                nodesSplit,
+                entitiesRelocated,
+                timeTaken,
+                true
+            );
+
+        } catch (Exception e) {
+            var timeTaken = System.nanoTime() - startTime;
+            return new TreeBalancer.RebalancingResult(0, 0, 0, 0, 0, timeTaken, false);
+        }
     }
 
     @Override

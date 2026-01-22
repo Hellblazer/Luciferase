@@ -414,13 +414,22 @@ public class DefaultParallelBalancerPhase1Test {
      * Create an unbalanced tree for testing TreeBalancer integration.
      */
     private AbstractSpatialIndex<MortonKey, LongEntityID, String> createUnbalancedTree() {
-        var tree = new Octree<LongEntityID, String>(idGenerator);
+        // Use lower maxEntitiesPerNode (3) to aggressively trigger splits
+        var tree = new Octree<LongEntityID, String>(idGenerator, 3, (byte) 10);
 
-        // Insert entities that will create imbalance
-        for (int i = 0; i < 50; i++) {
+        // Insert entities at EXACTLY the same position to force them into same node
+        // This will create a node with >3 entities that needs splitting
+        var clusterPos1 = new Point3f(10.0f, 10.0f, 10.0f);
+        for (int i = 0; i < 12; i++) {
             var entityId = idGenerator.generateID();
-            var position = new Point3f(i * 2.0f, i * 2.0f, i * 2.0f);
-            tree.insert(entityId, position, (byte) 0, "entity-" + i, null);
+            tree.insert(entityId, clusterPos1, (byte) 0, "cluster1-" + i, null);
+        }
+
+        // Second cluster at different location
+        var clusterPos2 = new Point3f(100.0f, 100.0f, 100.0f);
+        for (int i = 0; i < 12; i++) {
+            var entityId = idGenerator.generateID();
+            tree.insert(entityId, clusterPos2, (byte) 0, "cluster2-" + i, null);
         }
 
         return tree;
@@ -468,19 +477,20 @@ public class DefaultParallelBalancerPhase1Test {
      * Create a tree that violates the 2:1 balance invariant.
      */
     private AbstractSpatialIndex<MortonKey, LongEntityID, String> createTreeViolatingTwoToOneInvariant() {
-        var tree = new Octree<LongEntityID, String>(idGenerator);
+        // Use lower maxEntitiesPerNode to aggressively trigger splits
+        var tree = new Octree<LongEntityID, String>(idGenerator, 3, (byte) 10);
 
         // Create a scenario where neighbors differ by more than 1 level
         // by inserting entities in a pattern that forces extreme refinement imbalance
 
-        // Very dense cluster at one location (forces deep refinement)
-        for (int i = 0; i < 100; i++) {
-            var offset = i * 0.01f;
-            tree.insert(idGenerator.generateID(), new Point3f(10.0f + offset, 10.0f + offset, 10.0f), (byte) 3, "dense-" + i, null);
+        // Very dense cluster at exactly one location (forces deep refinement)
+        var densePos = new Point3f(10.0f, 10.0f, 10.0f);
+        for (int i = 0; i < 50; i++) {
+            tree.insert(idGenerator.generateID(), densePos, (byte) 0, "dense-" + i, null);
         }
 
         // Sparse entities nearby (remain at coarse level)
-        tree.insert(idGenerator.generateID(), new Point3f(20.0f, 20.0f, 20.0f), (byte) 0, "sparse-1", null);
+        tree.insert(idGenerator.generateID(), new Point3f(100.0f, 100.0f, 100.0f), (byte) 0, "sparse-1", null);
 
         return tree;
     }

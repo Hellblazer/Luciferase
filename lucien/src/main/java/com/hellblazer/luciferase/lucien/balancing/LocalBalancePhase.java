@@ -93,34 +93,40 @@ public class LocalBalancePhase<Key extends SpatialKey<Key>, ID extends EntityID,
             var trees = forest.getAllTrees();
             log.debug("Processing {} trees", trees.size());
 
-            for (var treeNode : trees) {
-                var spatialIndex = treeNode.getSpatialIndex();
+            // Only proceed if there are trees to balance
+            if (!trees.isEmpty()) {
+                for (var treeNode : trees) {
+                    var spatialIndex = treeNode.getSpatialIndex();
 
-                // Rebalance the tree directly (AbstractSpatialIndex provides this method)
-                var rebalanceResult = spatialIndex.rebalanceTree();
+                    // Rebalance the tree directly (AbstractSpatialIndex provides this method)
+                    var rebalanceResult = spatialIndex.rebalanceTree();
 
-                // Track refinements
-                if (rebalanceResult.successful()) {
-                    refinementsApplied += rebalanceResult.totalModifications();
+                    // Track refinements
+                    if (rebalanceResult.successful()) {
+                        refinementsApplied += rebalanceResult.totalModifications();
 
-                    // Record each refinement in metrics
-                    for (int i = 0; i < rebalanceResult.totalModifications(); i++) {
-                        metrics.recordRefinementApplied();
+                        // Record each refinement in metrics
+                        for (int i = 0; i < rebalanceResult.totalModifications(); i++) {
+                            metrics.recordRefinementApplied();
+                        }
+
+                        log.debug("Tree {} balanced: {} modifications",
+                                 treeNode.getTreeId(), rebalanceResult.totalModifications());
+                    } else {
+                        log.warn("Tree {} balancing did not complete successfully", treeNode.getTreeId());
                     }
 
-                    log.debug("Tree {} balanced: {} modifications",
-                             treeNode.getTreeId(), rebalanceResult.totalModifications());
-                } else {
-                    log.warn("Tree {} balancing did not complete successfully", treeNode.getTreeId());
+                    // Extract boundary elements as ghosts for this tree
+                    extractBoundaryGhostsFromTree(spatialIndex);
                 }
 
-                // Extract boundary elements as ghosts for this tree
-                extractBoundaryGhostsFromTree(spatialIndex);
+                // Record round metrics only if we processed trees
+                var roundDuration = Duration.between(startTime, Instant.now());
+                metrics.recordRound(roundDuration);
             }
 
-            // Record round metrics
+            // Calculate total duration for result
             var duration = Duration.between(startTime, Instant.now());
-            metrics.recordRound(duration);
 
             log.debug("Local balance completed: {} refinements, {} boundary ghosts",
                      refinementsApplied, boundaryGhosts.size());
