@@ -59,6 +59,11 @@
             <artifactId>grpc-netty-shaded</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Performance reporting dependencies -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

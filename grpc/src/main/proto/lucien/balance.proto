@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.hellblazer.luciferase.lucien.balancing.proto";
+option java_outer_classname = "BalanceProto";
+option objc_class_prefix = "Balance";
+
+package lucien.balance;
+
+import "lucien/ghost.proto";
+
+// Refinement request for cross-partition balance
+message RefinementRequest {
+    int32 requester_rank = 1;
+    int64 requester_tree_id = 2;
+    int32 round_number = 3;
+    int32 tree_level = 4;  // Level at which refinement needed
+    repeated lucien.ghost.SpatialKey boundary_keys = 5;
+    int64 timestamp = 6;  // Request timestamp for coordination
+}
+
+// Refinement response with ghost elements
+message RefinementResponse {
+    int32 responder_rank = 1;
+    int64 responder_tree_id = 2;
+    int32 round_number = 3;
+    repeated lucien.ghost.GhostElement ghost_elements = 4;
+    bool needs_further_refinement = 5;
+    int64 timestamp = 6;
+}
+
+// Balance coordination request
+message BalanceCoordinationRequest {
+    int32 initiator_rank = 1;
+    int64 initiator_tree_id = 2;
+    int32 total_partitions = 3;
+    int32 max_rounds = 4;
+    float refinement_threshold = 5;  // Imbalance tolerance (default 0.2)
+}
+
+// Balance coordination response
+message BalanceCoordinationResponse {
+    bool coordination_accepted = 1;
+    int32 assigned_round = 2;
+    string error_message = 3;
+}
+
+// Balance statistics for monitoring
+message BalanceStatistics {
+    int32 total_rounds_completed = 1;
+    int32 total_refinements_requested = 2;
+    int32 total_refinements_applied = 3;
+    int64 total_time_micros = 4;
+    repeated int64 round_times_micros = 5;
+    map<int32, int32> refinements_per_rank = 6;
+}
+
+// Balance coordinator service
+service BalanceCoordinator {
+    // Request refinement from remote partition
+    rpc RequestRefinement(RefinementRequest) returns (RefinementResponse);
+
+    // Coordinate balance across partitions (one-way initiation)
+    rpc CoordinateBalance(BalanceCoordinationRequest) returns (BalanceCoordinationResponse);
+
+    // Stream balance progress updates
+    rpc StreamBalanceUpdates(stream BalanceStatistics) returns (stream BalanceStatistics);
+
+    // Query balance statistics
+    rpc GetBalanceStatistics(BalanceCoordinationRequest) returns (BalanceStatistics);
+}

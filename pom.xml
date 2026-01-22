@@ -233,6 +233,11 @@
                 <artifactId>grpc-servlet</artifactId>
                 <version>${grpc.version}</version>
             </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-testing</artifactId>
+                <version>${grpc.version}</version>
+            </dependency>
 
             <!-- JavaFX Stuff -->
             <dependency>
