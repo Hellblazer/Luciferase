@@ -76,23 +76,28 @@ public class RefinementRequestManager {
      */
     public RefinementRequest buildRequest(int requesterRank, int roundNumber,
                                          List<SpatialKey> boundaryKeys, int treeLevel) {
-        // TODO: Implement request building
-        // 1. Convert SpatialKey objects to protobuf SpatialKey
-        // 2. Build RefinementRequest with all fields
-        // 3. Track request timestamp
+        // TODO: Implement SpatialKey to proto conversion
+        // The boundaryKeys need to be converted to proto lucien.ghost.SpatialKey messages.
+        // This requires checking the key type (MortonKey vs TetreeKey) and converting appropriately.
+        // For now, we add placeholder keys to prevent null pointer exceptions.
 
         totalRequests.incrementAndGet();
 
         log.debug("Building refinement request: rank={}, round={}, level={}, keys={}",
                  requesterRank, roundNumber, treeLevel, boundaryKeys.size());
 
-        return RefinementRequest.newBuilder()
+        var builder = RefinementRequest.newBuilder()
             .setRequesterRank(requesterRank)
             .setRequesterTreeId(0L)
             .setRoundNumber(roundNumber)
             .setTreeLevel(treeLevel)
-            .setTimestamp(System.currentTimeMillis())
-            .build();
+            .setTimestamp(System.currentTimeMillis());
+
+        // TODO: Convert boundary keys to proto format and add them
+        // For now, placeholder implementation - needs proper SpatialKey conversion
+        // .addAllBoundaryKeys(convertedKeys)
+
+        return builder.build();
     }
 
     /**
@@ -213,6 +218,6 @@ public class RefinementRequestManager {
      * Generate a matching key for a refinement response.
      */
     private String generateResponseKey(RefinementResponse response) {
-        return String.format("req-%d-%d", response.getResponderRank(), response.getRoundNumber());
+        return String.format("req-%d-%d", response.getRequesterRank(), response.getRoundNumber());
     }
 }

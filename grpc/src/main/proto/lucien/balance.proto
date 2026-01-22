@@ -21,12 +21,13 @@ message RefinementRequest {
 
 // Refinement response with ghost elements
 message RefinementResponse {
-    int32 responder_rank = 1;
-    int64 responder_tree_id = 2;
-    int32 round_number = 3;
-    repeated lucien.ghost.GhostElement ghost_elements = 4;
-    bool needs_further_refinement = 5;
-    int64 timestamp = 6;
+    int32 requester_rank = 1;  // Original requester (for request matching)
+    int32 responder_rank = 2;
+    int64 responder_tree_id = 3;
+    int32 round_number = 4;
+    repeated lucien.ghost.GhostElement ghost_elements = 5;
+    bool needs_further_refinement = 6;
+    int64 timestamp = 7;
 }
 
 // Balance coordination request
