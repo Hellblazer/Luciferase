@@ -111,8 +111,17 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     }
 
     /**
+     * Phase 4.2.2b: Hook called after main kernel compilation.
+     * Initializes batch kernel for coherence-based switching.
+     */
+    @Override
+    protected void onKernelCompiled() {
+        initializeBatchKernel();
+    }
+
+    /**
      * Phase 4.2.2b: Initialize batch kernel after main kernel is compiled.
-     * Called from subclass initialization hook.
+     * Called from onKernelCompiled() hook.
      */
     protected void initializeBatchKernel() {
         if (kernel == null) {
@@ -138,6 +147,34 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
             batchKernel = null;
             useBatchKernel = false;
         }
+    }
+
+    /**
+     * Phase 4.2.2b: Check if batch kernel is available for dynamic selection.
+     * Used for testing and debugging kernel initialization.
+     *
+     * @return true if batch kernel compiled successfully
+     */
+    public boolean isBatchKernelAvailable() {
+        return batchKernel != null;
+    }
+
+    /**
+     * Get the main kernel for testing and debugging.
+     *
+     * @return main ray traversal kernel (never null after initialization)
+     */
+    public ComputeKernel getKernel() {
+        return kernel;
+    }
+
+    /**
+     * Check if renderer has been initialized and is ready for rendering.
+     *
+     * @return true if initialize() completed successfully
+     */
+    public boolean isInitialized() {
+        return initialized;
     }
 
     /**

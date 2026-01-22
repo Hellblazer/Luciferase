@@ -164,6 +164,9 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
             // Compile kernel
             compileKernel();
 
+            // Phase 4.2.2b: Hook for subclasses to initialize additional kernels
+            onKernelCompiled();
+
             // Allocate common buffers
             allocateCommonBuffers();
 
@@ -785,6 +788,18 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
         } catch (ComputeKernel.KernelCompilationException e) {
             throw new RuntimeException("Kernel recompilation failed", e);
         }
+    }
+
+    /**
+     * Phase 4.2.2b: Hook called after main kernel is compiled.
+     *
+     * <p>Subclasses can override to initialize additional kernels (e.g., batch kernels)
+     * or perform other post-compilation setup. Default implementation does nothing.
+     *
+     * <p>Called from {@link #initialize()} after {@link #compileKernel()} completes.
+     */
+    protected void onKernelCompiled() {
+        // Default: no additional kernels. Subclasses override to initialize batch kernels.
     }
 
     /**
