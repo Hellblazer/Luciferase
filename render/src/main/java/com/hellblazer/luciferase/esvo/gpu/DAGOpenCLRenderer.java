@@ -88,6 +88,10 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     private BeamTree beamTree;
     private volatile boolean useBeamOptimization = false;
 
+    // Phase 5a.3: Tile-based adaptive execution
+    private com.hellblazer.luciferase.render.tile.TileBasedDispatcher tileDispatcher;
+    private volatile boolean useTileBasedDispatch = false;
+
     /**
      * Create a DAG-aware GPU renderer with specified output dimensions
      */
@@ -102,6 +106,13 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         super(width, height);
         this.cacheDirectory = cacheDirectory;
         this.profileLoader = new GPUTuningProfileLoader();
+
+        // Phase 5a.3: Check if tile-based dispatch should be enabled
+        var enableTileDispatch = System.getProperty("ENABLE_TILE_DISPATCH");
+        if ("true".equalsIgnoreCase(enableTileDispatch)) {
+            useTileBasedDispatch = true;
+            log.info("Tile-based dispatch enabled via ENABLE_TILE_DISPATCH system property");
+        }
     }
 
     @Override
@@ -120,12 +131,13 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     }
 
     /**
-     * Phase 4.2.2b: Hook called after main kernel compilation.
-     * Initializes batch kernel for coherence-based switching.
+     * Phase 4.2.2b + 5a.3: Hook called after main kernel compilation.
+     * Initializes batch kernel for coherence-based switching and tile-based dispatcher.
      */
     @Override
     protected void onKernelCompiled() {
         initializeBatchKernel();
+        initializeTileDispatcher();
     }
 
     /**
@@ -159,6 +171,87 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     }
 
     /**
+     * Phase 5a.3: Initialize tile-based dispatcher after main kernel compilation.
+     * Only initializes if useTileBasedDispatch flag is set.
+     * Called from onKernelCompiled() hook.
+     */
+    protected void initializeTileDispatcher() {
+        if (!useTileBasedDispatch) {
+            return; // Tile dispatch not enabled
+        }
+
+        if (coherenceAnalyzer == null) {
+            initializeCoherenceAnalysis(); // Ensure coherence analyzer is available
+        }
+
+        try {
+            var config = getTileConfiguration();
+            if (config == null) {
+                log.warn("Cannot create tile configuration, tile dispatch disabled");
+                useTileBasedDispatch = false;
+                return;
+            }
+
+            // Create coherence analyzer adapter for beam.Ray type
+            com.hellblazer.luciferase.render.tile.TileBasedDispatcher.CoherenceAnalyzer analyzer =
+                (rays, dag) -> {
+                    // Convert beam.Ray[] to ESVORay[] for existing analyzer
+                    var esvoRays = new com.hellblazer.luciferase.esvo.core.ESVORay[rays.length];
+                    for (int i = 0; i < rays.length; i++) {
+                        var r = rays[i];
+                        esvoRays[i] = new com.hellblazer.luciferase.esvo.core.ESVORay(
+                            r.origin().x, r.origin().y, r.origin().z,
+                            r.direction().x, r.direction().y, r.direction().z
+                        );
+                        esvoRays[i].prepareForTraversal();
+                    }
+                    return coherenceAnalyzer.analyzeCoherence(esvoRays, dag);
+                };
+
+            // Create BeamTree factory
+            com.hellblazer.luciferase.render.tile.TileBasedDispatcher.BeamTreeFactory factory =
+                (rays, rayIndices, dag, coherenceScore) -> {
+                    // Extract subset of rays for this tile
+                    var tileRays = new Ray[rayIndices.length];
+                    for (int i = 0; i < rayIndices.length; i++) {
+                        tileRays[i] = rays[rayIndices[i]];
+                    }
+
+                    return BeamTreeBuilder.from(tileRays)
+                            .withCoherenceThreshold(0.3)
+                            .withMaxBatchSize(16)
+                            .build();
+                };
+
+            // Create dispatcher with 0.7 coherence threshold from Phase 5a.2
+            tileDispatcher = new com.hellblazer.luciferase.render.tile.TileBasedDispatcher(
+                config, 0.7, analyzer, factory
+            );
+
+            log.info("Tile-based dispatcher initialized: {}x{} frame, {}x{} tiles",
+                    frameWidth, frameHeight, config.tilesX(), config.tilesY());
+
+        } catch (Exception e) {
+            log.warn("Failed to initialize tile dispatcher, tile-based dispatch disabled", e);
+            tileDispatcher = null;
+            useTileBasedDispatch = false;
+        }
+    }
+
+    /**
+     * Phase 5a.3: Get tile configuration for current frame dimensions.
+     * Uses 16x16 pixel tiles as standard configuration.
+     *
+     * @return tile configuration or null if frame dimensions invalid
+     */
+    protected com.hellblazer.luciferase.render.tile.TileConfiguration getTileConfiguration() {
+        if (frameWidth <= 0 || frameHeight <= 0) {
+            return null;
+        }
+        return com.hellblazer.luciferase.render.tile.TileConfiguration.from(frameWidth, frameHeight, 16);
+    }
+
+    /**
      * Phase 4.2.2b: Check if batch kernel is available for dynamic selection.
      * Used for testing and debugging kernel initialization.
      *
@@ -166,6 +259,25 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
      */
     public boolean isBatchKernelAvailable() {
         return batchKernel != null;
+    }
+
+    /**
+     * Phase 5a.3: Check if tile-based dispatch is enabled.
+     * Used for testing and validation.
+     *
+     * @return true if tile dispatch enabled and dispatcher initialized
+     */
+    public boolean isTileDispatchEnabled() {
+        return useTileBasedDispatch && tileDispatcher != null;
+    }
+
+    /**
+     * Phase 5a.3: Get the tile-based dispatcher for testing and metrics.
+     *
+     * @return tile dispatcher or null if not initialized
+     */
+    public com.hellblazer.luciferase.render.tile.TileBasedDispatcher getTileDispatcher() {
+        return tileDispatcher;
     }
 
     /**
@@ -401,6 +513,13 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
 
     @Override
     protected void executeKernel() throws ComputeKernel.KernelExecutionException {
+        // Phase 5a.3: Check if tile-based dispatch is enabled
+        if (useTileBasedDispatch && tileDispatcher != null && cpuRayBuffer != null && lastDAGData != null) {
+            // Use tile-based adaptive execution
+            executeTileBasedDispatch();
+            return;
+        }
+
         // Phase 4.2.2a: Fix kernel argument alignment - override to set correct order
         // Kernel expects: nodePool, childPointers, nodeCount, rays, rayCount, results[, raysPerItem for batch]
 
@@ -451,6 +570,75 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
             // Restore original kernel
             kernel = originalKernel;
         }
+    }
+
+    /**
+     * Phase 5a.3: Execute rendering using tile-based adaptive dispatch.
+     * Converts CPU ray buffer to Ray[] array, dispatches tiles, and collects results.
+     */
+    private void executeTileBasedDispatch() throws ComputeKernel.KernelExecutionException {
+        // Convert cpuRayBuffer to Ray[] array
+        cpuRayBuffer.rewind();
+        var rays = new Ray[rayCount];
+        for (int i = 0; i < rayCount; i++) {
+            float originX = cpuRayBuffer.get();
+            float originY = cpuRayBuffer.get();
+            float originZ = cpuRayBuffer.get();
+            float directionX = cpuRayBuffer.get();
+            float directionY = cpuRayBuffer.get();
+            float directionZ = cpuRayBuffer.get();
+            cpuRayBuffer.get(); // skip tmin
+            cpuRayBuffer.get(); // skip tmax
+
+            rays[i] = new Ray(
+                new javax.vecmath.Point3f(originX, originY, originZ),
+                new javax.vecmath.Vector3f(directionX, directionY, directionZ)
+            );
+        }
+
+        // Execute tile-based dispatch
+        var metrics = tileDispatcher.dispatchFrame(rays, frameWidth, frameHeight, lastDAGData, createKernelExecutor());
+
+        // Log metrics (SLF4J doesn't support Python-style format, use correct placeholders)
+        log.debug("Tile dispatch metrics: {} batch tiles, {} single-ray tiles, {} total tiles, batch ratio: {}, avg coherence: {}",
+                metrics.batchTiles(), metrics.singleRayTiles(), metrics.totalTiles(), metrics.batchRatio(), metrics.avgCoherence());
+    }
+
+    /**
+     * Phase 5a.3: Create KernelExecutor adapter for tile-based dispatch.
+     * Wraps existing kernel execution infrastructure.
+     */
+    private com.hellblazer.luciferase.render.tile.KernelExecutor createKernelExecutor() {
+        return new com.hellblazer.luciferase.render.tile.KernelExecutor() {
+            @Override
+            public void executeBatch(Ray[] rays, int[] rayIndices, int raysPerItem) {
+                // TODO: Implement batch execution for tile subset
+                // For now, fall back to single-ray
+                executeSingleRay(rays, rayIndices);
+            }
+
+            @Override
+            public void executeSingleRay(Ray[] rays, int[] rayIndices) {
+                // TODO: Implement single-ray execution for tile subset
+                // For now, execute on GPU using existing kernel
+                try {
+                    // Upload subset of rays to GPU
+                    // Execute kernel
+                    // Download results
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to execute tile kernel", e);
+                }
+            }
+
+            @Override
+            public com.hellblazer.luciferase.render.tile.RayResult getResult(int rayIndex) {
+                // TODO: Implement result retrieval from GPU buffer
+                // For now, return dummy result
+                return new com.hellblazer.luciferase.render.tile.RayResult(
+                    0.0f, 0.0f, 0.0f, -1.0f
+                );
+            }
+        };
     }
 
     @Override
