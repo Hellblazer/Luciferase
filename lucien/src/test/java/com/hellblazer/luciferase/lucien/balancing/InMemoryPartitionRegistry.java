@@ -104,6 +104,15 @@ public class InMemoryPartitionRegistry {
     }
 
     /**
+     * Get the total number of partitions in this registry.
+     *
+     * @return the partition count
+     */
+    public int getPartitionCount() {
+        return partitionCount;
+    }
+
+    /**
      * Get current refinement round number.
      *
      * @return the round number

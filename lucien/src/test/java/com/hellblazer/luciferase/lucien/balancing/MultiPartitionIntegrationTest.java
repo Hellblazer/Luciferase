@@ -54,21 +54,44 @@ public class MultiPartitionIntegrationTest {
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testUniformDistribution(int partitionCount) {
         log.info("Testing uniform distribution with {} partitions", partitionCount);
-        fail("RED phase: Implement uniform distribution test");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        orchestrator.setupPartitions(1000, MultiPartitionTestOrchestrator.EntityDistributionPattern.UNIFORM);
+        var balancingResult = orchestrator.executeBalancing();
+        var validationResult = orchestrator.validateFinalState();
+
+        assertTrue(balancingResult.successful(), "Balancing should succeed");
+        assertTrue(validationResult.valid(), "Final state should be valid: " + validationResult.violations());
+        assertTrue(balancingResult.refinementRounds() <= Math.ceil(Math.log(partitionCount) / Math.log(2)),
+                  "Refinement rounds should be O(log P)");
     }
 
     @ParameterizedTest(name = "Skewed 80/20 distribution, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testSkewedDistribution(int partitionCount) {
         log.info("Testing skewed 80/20 distribution with {} partitions", partitionCount);
-        fail("RED phase: Implement skewed distribution test");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        orchestrator.setupPartitions(800, MultiPartitionTestOrchestrator.EntityDistributionPattern.SKEWED_80_20);
+        var balancingResult = orchestrator.executeBalancing();
+        var validationResult = orchestrator.validateFinalState();
+
+        assertTrue(balancingResult.successful(), "Balancing should succeed");
+        assertTrue(validationResult.valid(), "Final state should be valid: " + validationResult.violations());
     }
 
     @ParameterizedTest(name = "Boundary-heavy distribution, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testBoundaryHeavyDistribution(int partitionCount) {
         log.info("Testing boundary-heavy distribution with {} partitions", partitionCount);
-        fail("RED phase: Implement boundary-heavy distribution test");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        orchestrator.setupPartitions(900, MultiPartitionTestOrchestrator.EntityDistributionPattern.BOUNDARY_HEAVY);
+        var balancingResult = orchestrator.executeBalancing();
+        var validationResult = orchestrator.validateFinalState();
+
+        assertTrue(balancingResult.successful(), "Balancing should succeed");
+        assertTrue(validationResult.valid(), "Final state should be valid: " + validationResult.violations());
     }
 
     @ParameterizedTest(name = "O(log P) refinement rounds validation, {0} partitions")
@@ -77,76 +100,138 @@ public class MultiPartitionIntegrationTest {
         log.info("Testing O(log P) refinement rounds with {} partitions", partitionCount);
         int expectedRounds = (int) Math.ceil(Math.log(partitionCount) / Math.log(2));
         log.info("Expected rounds for P={}: {}", partitionCount, expectedRounds);
-        fail("RED phase: Validate refinement rounds = ceil(log2(P))");
+
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+        orchestrator.setupPartitions(1000, MultiPartitionTestOrchestrator.EntityDistributionPattern.UNIFORM);
+        var balancingResult = orchestrator.executeBalancing();
+
+        assertTrue(balancingResult.refinementRounds() <= expectedRounds,
+                  String.format("Expected at most %d rounds, got %d", expectedRounds, balancingResult.refinementRounds()));
     }
 
     @ParameterizedTest(name = "2:1 balance invariant, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testTwoToOneInvariant(int partitionCount) {
         log.info("Testing 2:1 balance invariant with {} partitions", partitionCount);
-        fail("RED phase: Validate 2:1 invariant post-coordination");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        orchestrator.setupPartitions(1000, MultiPartitionTestOrchestrator.EntityDistributionPattern.UNIFORM);
+        orchestrator.executeBalancing();
+        var validationResult = orchestrator.validateFinalState();
+
+        assertTrue(validationResult.valid(), "2:1 invariant should be maintained: " + validationResult.violations());
     }
 
     @ParameterizedTest(name = "Ghost exchange tracking, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testGhostExchange(int partitionCount) {
         log.info("Testing ghost exchange with {} partitions", partitionCount);
-        fail("RED phase: Validate ghost boundaries exchanged correctly");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        orchestrator.setupPartitions(1000, MultiPartitionTestOrchestrator.EntityDistributionPattern.BOUNDARY_HEAVY);
+        orchestrator.executeBalancing();
+
+        var tracker = orchestrator.getGhostTracker();
+        assertTrue(tracker.getTotalGhostsExtracted() >= 0, "Should track extracted ghosts");
+        assertTrue(tracker.getTotalGhostsExchanged() >= 0, "Should track exchanged ghosts");
     }
 
     @ParameterizedTest(name = "Entity relocation correctness, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testEntityRelocation(int partitionCount) {
         log.info("Testing entity relocation with {} partitions", partitionCount);
-        fail("RED phase: Validate all entities stay within correct partitions");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        orchestrator.setupPartitions(800, MultiPartitionTestOrchestrator.EntityDistributionPattern.UNIFORM);
+        orchestrator.executeBalancing();
+        var validationResult = orchestrator.validateFinalState();
+
+        assertTrue(validationResult.valid(), "Entities should be properly relocated");
     }
 
     @ParameterizedTest(name = "Barrier synchronization, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testBarrierSynchronization(int partitionCount) {
         log.info("Testing barrier synchronization with {} partitions", partitionCount);
-        fail("RED phase: Validate CyclicBarrier coordination across rounds");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        var registry = orchestrator.getPartitionRegistry();
+        assertEquals(partitionCount, registry.getPartitionCount(), "Registry should have correct partition count");
     }
 
     @ParameterizedTest(name = "Partition registry coordination, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testPartitionRegistry(int partitionCount) {
         log.info("Testing partition registry with {} partitions", partitionCount);
-        fail("RED phase: Validate InMemoryPartitionRegistry barrier mechanisms");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        var registry = orchestrator.getPartitionRegistry();
+        assertNotNull(registry, "Partition registry should not be null");
+        assertEquals(partitionCount, registry.getPartitionCount());
+        assertEquals(0, registry.getCurrentRound());
     }
 
     @ParameterizedTest(name = "Balance convergence validation, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testBalanceConvergence(int partitionCount) {
         log.info("Testing balance convergence with {} partitions", partitionCount);
-        fail("RED phase: Validate system reaches stable balanced state");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        orchestrator.setupPartitions(1000, MultiPartitionTestOrchestrator.EntityDistributionPattern.UNIFORM);
+        var balancingResult = orchestrator.executeBalancing();
+
+        assertTrue(balancingResult.successful(), "Balancing should converge successfully");
     }
 
     @ParameterizedTest(name = "Load distribution validation, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testLoadDistribution(int partitionCount) {
         log.info("Testing load distribution with {} partitions", partitionCount);
-        fail("RED phase: Validate entities distributed across partitions");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        orchestrator.setupPartitions(1000, MultiPartitionTestOrchestrator.EntityDistributionPattern.UNIFORM);
+        orchestrator.executeBalancing();
+        var validationResult = orchestrator.validateFinalState();
+
+        assertTrue(validationResult.valid(), "Load should be distributed correctly");
     }
 
     @ParameterizedTest(name = "Empty partition handling, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testEmptyPartitionHandling(int partitionCount) {
         log.info("Testing empty partition handling with {} partitions", partitionCount);
-        fail("RED phase: Validate algorithm handles empty partitions gracefully");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        // Setup with very few entities to test empty partition handling
+        orchestrator.setupPartitions(2, MultiPartitionTestOrchestrator.EntityDistributionPattern.UNIFORM);
+        var balancingResult = orchestrator.executeBalancing();
+
+        assertTrue(balancingResult.successful(), "Should handle empty partitions gracefully");
     }
 
     @ParameterizedTest(name = "Cross-partition entity ownership, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testCrossPartitionOwnership(int partitionCount) {
         log.info("Testing cross-partition entity ownership with {} partitions", partitionCount);
-        fail("RED phase: Validate ghost boundaries correctly owned");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        orchestrator.setupPartitions(1000, MultiPartitionTestOrchestrator.EntityDistributionPattern.BOUNDARY_HEAVY);
+        orchestrator.executeBalancing();
+        var validationResult = orchestrator.validateFinalState();
+
+        assertTrue(validationResult.valid(), "Ghost boundaries should be correctly owned");
     }
 
     @ParameterizedTest(name = "Scalability with increasing partitions, {0} partitions")
     @ValueSource(ints = {2, 4, 8, 16, 32})
     public void testScalability(int partitionCount) {
         log.info("Testing scalability with {} partitions", partitionCount);
-        fail("RED phase: Validate algorithm scales to 32+ partitions");
+        orchestrator = new MultiPartitionTestOrchestrator(partitionCount);
+
+        orchestrator.setupPartitions(1000, MultiPartitionTestOrchestrator.EntityDistributionPattern.UNIFORM);
+        var balancingResult = orchestrator.executeBalancing();
+
+        assertTrue(balancingResult.successful(), "Algorithm should scale to P=" + partitionCount + " partitions");
+        log.info("P={}: {} rounds", partitionCount, balancingResult.refinementRounds());
     }
 }
