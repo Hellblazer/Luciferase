@@ -312,24 +312,26 @@ public class BeamTreeBuilder {
      * Phase 2: Analyze coherence and compute shared nodes.
      */
     private void analyzeCoherence(BeamNode node) {
-        if (node == null || dag == null) {
+        if (node == null) {
             return;
         }
 
         // Compute shared nodes for this beam
         var rayIndices = node.getRayIndices();
         if (rayIndices.length > 0) {
-            // Simplified coherence: store number of rays for now
-            // Full implementation would traverse DAG
+            // Compute coherence based on ray similarity
+            var coherenceScore = computeCoherence(rayIndices);
+            var sharedNodeCount = Math.max(1, (int) (rayIndices.length * coherenceScore));
+
             var metadata = new CoherenceMetadata(
-                    Math.min(1.0, rayIndices.length / 8.0),
+                    coherenceScore,
+                    sharedNodeCount,
                     rayIndices.length,
-                    rayIndices.length,
-                    Math.min(1.0, rayIndices.length / 8.0)
+                    coherenceScore
             );
             node.setCoherence(metadata);
 
-            for (int i = 0; i < Math.min(rayIndices.length, 10); i++) {
+            for (int i = 0; i < Math.min(sharedNodeCount, rayIndices.length); i++) {
                 node.addSharedNode(i);
             }
         }
@@ -341,6 +343,46 @@ public class BeamTreeBuilder {
                 analyzeCoherence(child);
             }
         }
+    }
+
+    /**
+     * Compute coherence score for rays based on spatial/directional similarity.
+     */
+    private double computeCoherence(int[] rayIndices) {
+        if (rayIndices.length <= 1) {
+            return 1.0;
+        }
+
+        // Use first ray as reference
+        var refRay = rays[rayIndices[0]];
+        var refOrigin = refRay.origin();
+        var refDir = refRay.direction();
+
+        double totalSimilarity = 0.0;
+        int count = 0;
+
+        for (int i = 1; i < rayIndices.length; i++) {
+            var ray = rays[rayIndices[i]];
+            var origin = ray.origin();
+            var direction = ray.direction();
+
+            // Spatial similarity: normalized distance
+            var dx = origin.x - refOrigin.x;
+            var dy = origin.y - refOrigin.y;
+            var dz = origin.z - refOrigin.z;
+            var distSq = dx * dx + dy * dy + dz * dz;
+            var spatialSim = Math.exp(-distSq * 50.0);  // e^(-50*distSq)
+
+            // Directional similarity: dot product
+            var dirSim = Math.abs(refDir.dot(direction));
+
+            // Combined coherence for this ray pair
+            totalSimilarity += (spatialSim * 0.5 + dirSim * 0.5);
+            count++;
+        }
+
+        var avgSimilarity = count > 0 ? totalSimilarity / count : 1.0;
+        return Math.max(0.0, Math.min(1.0, avgSimilarity));
     }
 
     /**

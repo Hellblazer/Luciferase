@@ -18,7 +18,11 @@ package com.hellblazer.luciferase.esvo.gpu;
 
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
+import com.hellblazer.luciferase.esvo.gpu.beam.BeamKernelSelector;
 import com.hellblazer.luciferase.esvo.gpu.beam.BeamOptimizationGate;
+import com.hellblazer.luciferase.esvo.gpu.beam.BeamTree;
+import com.hellblazer.luciferase.esvo.gpu.beam.BeamTreeBuilder;
+import com.hellblazer.luciferase.esvo.gpu.beam.Ray;
 import com.hellblazer.luciferase.esvo.gpu.beam.RayCoherenceAnalyzer;
 import com.hellblazer.luciferase.esvo.gpu.beam.StreamCActivationDecision;
 import com.hellblazer.luciferase.resource.compute.ComputeKernel;
@@ -78,6 +82,11 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     private DAGOctreeData lastDAGData;
     private int coherenceSampleInterval = 10;
     private int framesSinceCoherenceSample = 0;
+
+    // Phase 5a.2: Beam Tree and Kernel Selection
+    private BeamKernelSelector beamKernelSelector;
+    private BeamTree beamTree;
+    private volatile boolean useBeamOptimization = false;
 
     /**
      * Create a DAG-aware GPU renderer with specified output dimensions
@@ -190,8 +199,11 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     }
 
     /**
-     * Phase 4.2.2c: Update coherence analysis and kernel selection if needed.
+     * Phase 4.2.2c + Phase 5a.2: Update coherence analysis and kernel selection if needed.
      * Samples every N frames to avoid overhead.
+     *
+     * Phase 5a.2 enhancement: Builds BeamTree and uses BeamKernelSelector for intelligent
+     * kernel choice based on ray coherence and spatial organization.
      */
     private void updateCoherenceIfNeeded() {
         if (coherenceAnalyzer == null || lastDAGData == null || cpuRayBuffer == null) {
@@ -204,10 +216,11 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         }
         framesSinceCoherenceSample = 0;
 
-        // Convert FloatBuffer to ESVORay array for coherence analysis
+        // Convert FloatBuffer to ray arrays for both coherence analysis and beam tree
         // Buffer layout: originX, originY, originZ, directionX, directionY, directionZ, tmin, tmax
         cpuRayBuffer.rewind();
-        var rays = new com.hellblazer.luciferase.esvo.core.ESVORay[rayCount];
+        var esvoRays = new com.hellblazer.luciferase.esvo.core.ESVORay[rayCount];
+        var beamRays = new Ray[rayCount];
 
         for (int i = 0; i < rayCount; i++) {
             float originX = cpuRayBuffer.get();
@@ -219,29 +232,87 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
             cpuRayBuffer.get(); // skip tmin
             cpuRayBuffer.get(); // skip tmax
 
-            rays[i] = new com.hellblazer.luciferase.esvo.core.ESVORay(
+            // Create ESVO ray for legacy coherence analysis
+            esvoRays[i] = new com.hellblazer.luciferase.esvo.core.ESVORay(
                 originX, originY, originZ,
                 directionX, directionY, directionZ
             );
-            rays[i].prepareForTraversal();
+            esvoRays[i].prepareForTraversal();
+
+            // Create beam ray for BeamTree (Phase 5a.2)
+            beamRays[i] = new Ray(
+                new javax.vecmath.Point3f(originX, originY, originZ),
+                new javax.vecmath.Vector3f(directionX, directionY, directionZ)
+            );
         }
 
-        // Measure coherence of ray batch
-        double coherence = coherenceAnalyzer.analyzeCoherence(rays, lastDAGData);
+        // Measure coherence of ray batch (existing infrastructure)
+        double coherence = coherenceAnalyzer.analyzeCoherence(esvoRays, lastDAGData);
 
-        // Activate batch kernel if coherence threshold met (>= 0.5)
-        boolean shouldUseBatch = (coherence >= 0.5);
-        useBatchKernel = shouldUseBatch;
+        // Phase 5a.2: Build BeamTree and use BeamKernelSelector for kernel decision
+        try {
+            beamTree = BeamTreeBuilder.from(beamRays)
+                    .withCoherenceThreshold(0.3)
+                    .withMaxBatchSize(currentRaysPerItem > 0 ? currentRaysPerItem : 16)
+                    .build();
 
-        // Calculate optimal rays per item based on coherence
-        if (shouldUseBatch) {
-            currentRaysPerItem = calculateRaysPerItem(coherence);
-        } else {
-            currentRaysPerItem = 1; // Single-ray mode
+            if (beamKernelSelector == null) {
+                beamKernelSelector = new BeamKernelSelector();
+            }
+
+            var kernelChoice = beamKernelSelector.selectKernel(beamTree);
+            useBatchKernel = (kernelChoice == BeamKernelSelector.KernelChoice.BATCH);
+            useBeamOptimization = useBatchKernel;
+
+            // Calculate optimal rays per item based on coherence
+            if (useBatchKernel) {
+                currentRaysPerItem = calculateRaysPerItem(coherence);
+            } else {
+                currentRaysPerItem = 1; // Single-ray mode
+            }
+
+            log.debug("Coherence + BeamTree analysis: score={:.3f}, kernel={}, raysPerItem={}, beams={}",
+                    coherence, useBatchKernel ? "BATCH" : "SINGLE_RAY", currentRaysPerItem,
+                    beamTree.getStatistics().totalBeams());
+
+        } catch (Exception e) {
+            log.warn("BeamTree construction failed, falling back to threshold-based selection", e);
+            // Fallback to simple threshold-based selection
+            useBatchKernel = (coherence >= 0.5);
+            if (useBatchKernel) {
+                currentRaysPerItem = calculateRaysPerItem(coherence);
+            } else {
+                currentRaysPerItem = 1;
+            }
+            useBeamOptimization = false;
         }
+    }
 
-        log.debug("Coherence analysis: score={:.3f}, batch={}, raysPerItem={}",
-                  coherence, useBatchKernel, currentRaysPerItem);
+    /**
+     * Phase 5a.2: Get current BeamTree for testing and metrics collection.
+     *
+     * @return current BeamTree or null if not yet built
+     */
+    public BeamTree getBeamTree() {
+        return beamTree;
+    }
+
+    /**
+     * Phase 5a.2: Get kernel selection metrics.
+     *
+     * @return selection metrics or null if selector not initialized
+     */
+    public BeamKernelSelector.SelectionMetrics getBeamKernelMetrics() {
+        return beamKernelSelector != null ? beamKernelSelector.getMetrics() : null;
+    }
+
+    /**
+     * Phase 5a.2: Check if beam optimization is enabled.
+     *
+     * @return true if BeamTree optimization is active
+     */
+    public boolean isBeamOptimizationEnabled() {
+        return useBeamOptimization;
     }
 
     /**
