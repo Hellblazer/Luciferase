@@ -82,14 +82,15 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
 
         log.debug("Starting Phase 1: Local balance");
 
-        // TODO: Implement Phase 1 - Local balance using TreeBalancer
-        // This is a skeleton that returns a placeholder result
-
         // Execute local balance phase
         var phaseResult = localBalancePhase.execute(forest);
 
-        // Return placeholder result (will be replaced in implementation)
-        return BalanceResult.success(metrics.snapshot(), 0);
+        // Build result based on phase outcome
+        if (phaseResult.successful()) {
+            return BalanceResult.success(metrics.snapshot(), phaseResult.refinementsApplied());
+        } else {
+            return BalanceResult.failure(metrics.snapshot(), "Local balance failed");
+        }
     }
 
     @Override
@@ -98,17 +99,18 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
 
         log.debug("Starting Phase 2: Ghost exchange");
 
-        // TODO: Implement Phase 2 - Ghost exchange with level tracking
-        // This is a skeleton that does nothing
-
         // Extract boundary ghosts from local balance
         var boundaryGhosts = localBalancePhase.extractBoundaryGhosts();
+        log.debug("Extracted {} boundary ghosts for exchange", boundaryGhosts.size());
 
         // Exchange with neighbors
         var exchangeResult = ghostExchangePhase.exchange(boundaryGhosts, ghostManager);
 
         // Apply received ghosts
         ghostExchangePhase.applyReceivedGhosts(exchangeResult.receivedGhosts());
+
+        log.debug("Ghost exchange completed: sent {}, received {}",
+                 exchangeResult.ghostsSent(), exchangeResult.ghostsReceived());
     }
 
     @Override

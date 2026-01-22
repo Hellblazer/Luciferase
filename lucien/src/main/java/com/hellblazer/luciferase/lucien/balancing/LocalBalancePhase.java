@@ -86,27 +86,44 @@ public class LocalBalancePhase<Key extends SpatialKey<Key>, ID extends EntityID,
         var refinementsApplied = 0;
 
         try {
-            // TODO: Implement local balance logic
-            // 1. Iterate through each tree in the forest
-            // 2. Use TreeBalancer to balance each tree
-            // 3. Collect refinement counts
-            // 4. Extract boundary elements as ghosts
-
-            // Placeholder: simulate some work
-            var treeCount = forest.getTreeCount();
-            log.debug("Processing {} trees", treeCount);
-
-            // Extract boundary ghosts (placeholder)
+            // Clear previous boundary ghosts
             boundaryGhosts.clear();
-            // TODO: Identify boundary elements and add to boundaryGhosts list
+
+            // Iterate through each tree in the forest
+            var trees = forest.getAllTrees();
+            log.debug("Processing {} trees", trees.size());
+
+            for (var treeNode : trees) {
+                var spatialIndex = treeNode.getSpatialIndex();
+
+                // Rebalance the tree directly (AbstractSpatialIndex provides this method)
+                var rebalanceResult = spatialIndex.rebalanceTree();
+
+                // Track refinements
+                if (rebalanceResult.successful()) {
+                    refinementsApplied += rebalanceResult.totalModifications();
+
+                    // Record each refinement in metrics
+                    for (int i = 0; i < rebalanceResult.totalModifications(); i++) {
+                        metrics.recordRefinementApplied();
+                    }
+
+                    log.debug("Tree {} balanced: {} modifications",
+                             treeNode.getTreeId(), rebalanceResult.totalModifications());
+                } else {
+                    log.warn("Tree {} balancing did not complete successfully", treeNode.getTreeId());
+                }
+
+                // Extract boundary elements as ghosts for this tree
+                extractBoundaryGhostsFromTree(spatialIndex);
+            }
 
             // Record round metrics
             var duration = Duration.between(startTime, Instant.now());
             metrics.recordRound(duration);
 
-            for (int i = 0; i < refinementsApplied; i++) {
-                metrics.recordRefinementApplied();
-            }
+            log.debug("Local balance completed: {} refinements, {} boundary ghosts",
+                     refinementsApplied, boundaryGhosts.size());
 
             return new LocalBalanceResult(true, refinementsApplied, duration);
 
@@ -126,10 +143,37 @@ public class LocalBalancePhase<Key extends SpatialKey<Key>, ID extends EntityID,
      * @return the list of boundary ghost elements
      */
     public List<GhostElement<Key, ID, Content>> extractBoundaryGhosts() {
-        // TODO: Implement boundary extraction logic
-        // Should use GhostLayer or GhostBoundaryDetector to identify boundaries
-
         return new ArrayList<>(boundaryGhosts);
+    }
+
+    /**
+     * Extract boundary elements from a single tree as ghost elements.
+     *
+     * <p><b>Note</b>: Stub implementation for Phase 1. Full boundary detection
+     * requires AbstractSpatialIndex API extensions for key extraction.
+     *
+     * @param spatialIndex the spatial index to extract ghosts from
+     */
+    private void extractBoundaryGhostsFromTree(com.hellblazer.luciferase.lucien.AbstractSpatialIndex<Key, ID, Content> spatialIndex) {
+        // Stub: Query boundary regions to verify the API works
+        // Full implementation will be added when AbstractSpatialIndex provides key extraction methods
+        var boundaryRegions = List.of(
+            new com.hellblazer.luciferase.lucien.Spatial.Cube(0, 0, 0, 5),
+            new com.hellblazer.luciferase.lucien.Spatial.Cube(95, 0, 0, 5),
+            new com.hellblazer.luciferase.lucien.Spatial.Cube(0, 95, 0, 5),
+            new com.hellblazer.luciferase.lucien.Spatial.Cube(0, 0, 95, 5)
+        );
+
+        for (var region : boundaryRegions) {
+            try {
+                var entities = spatialIndex.entitiesInRegion(region);
+                log.trace("Found {} entities in boundary region", entities.size());
+            } catch (Exception e) {
+                log.trace("Error querying boundary region: {}", e.getMessage());
+            }
+        }
+
+        log.trace("Boundary ghost extraction stub: {} ghosts", boundaryGhosts.size());
     }
 
     /**

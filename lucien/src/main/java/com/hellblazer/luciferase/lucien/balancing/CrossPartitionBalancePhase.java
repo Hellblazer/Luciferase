@@ -104,18 +104,40 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
 
         log.info("Starting cross-partition balance: initiator={}, partitions={}", initiatorRank, totalPartitions);
 
-        // TODO: Implement O(log P) refinement rounds
-        // 1. Calculate rounds = min(ceil(log₂(P)), config.maxRounds())
-        // 2. For each round:
-        //    a. Identify refinement needs at boundaries
-        //    b. Send refinement requests to neighbors
-        //    c. Receive and apply responses
-        //    d. Synchronize via barrier
-        //    e. Check convergence
-        // 3. Return BalanceResult with metrics
-
         var metrics = new BalanceMetrics();
-        return BalanceResult.success(metrics.snapshot(), 0);
+
+        try {
+            // Coordinate refinement across all partitions
+            var result = coordinator.coordinateRefinement(
+                totalPartitions,
+                config.maxRounds(),
+                initiatorRank,
+                registry
+            );
+
+            // Record metrics for each round
+            for (int i = 0; i < result.roundsExecuted(); i++) {
+                // Approximate round duration
+                var avgRoundDuration = java.time.Duration.ofMillis(
+                    result.totalTimeMillis() / Math.max(1, result.roundsExecuted())
+                );
+                metrics.recordRound(avgRoundDuration);
+            }
+
+            // Record refinements
+            for (int i = 0; i < result.refinementsApplied(); i++) {
+                metrics.recordRefinementApplied();
+            }
+
+            log.info("Cross-partition balance complete: rounds={}, refinements={}, converged={}",
+                    result.roundsExecuted(), result.refinementsApplied(), result.converged());
+
+            return BalanceResult.success(metrics.snapshot(), result.refinementsApplied());
+
+        } catch (Exception e) {
+            log.error("Cross-partition balance failed", e);
+            return BalanceResult.failure(metrics.snapshot(), e.getMessage());
+        }
     }
 
     /**
