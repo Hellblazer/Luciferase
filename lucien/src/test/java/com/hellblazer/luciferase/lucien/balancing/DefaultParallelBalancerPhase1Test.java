@@ -41,6 +41,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * TDD tests for F4.1.3 Local Balance Integration (Phase 1).
@@ -491,7 +492,25 @@ public class DefaultParallelBalancerPhase1Test {
         private boolean exchangeCalled = false;
 
         public MockDistributedGhostManager() {
-            super(null, null, null); // Null dependencies for testing
+            super(createMockSpatialIndex(), createMockGhostChannel(), createMockGhostBoundaryDetector());
+        }
+
+        private static Octree<LongEntityID, String> createMockSpatialIndex() {
+            return new Octree<>(new SequentialLongIDGenerator());
+        }
+
+        @SuppressWarnings("unchecked")
+        private static com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<MortonKey, LongEntityID, String> createMockGhostChannel() {
+            // Use Mockito to create a mock that satisfies the non-null requirement
+            return (com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<MortonKey, LongEntityID, String>)
+                mock(com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel.class);
+        }
+
+        @SuppressWarnings("unchecked")
+        private static com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<MortonKey, LongEntityID, String> createMockGhostBoundaryDetector() {
+            // Use Mockito to create a mock that satisfies the non-null requirement
+            return (com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<MortonKey, LongEntityID, String>)
+                mock(com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector.class);
         }
 
         @Override
