@@ -156,7 +156,7 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
      * Samples every N frames to avoid overhead.
      */
     private void updateCoherenceIfNeeded() {
-        if (coherenceAnalyzer == null || lastDAGData == null) {
+        if (coherenceAnalyzer == null || lastDAGData == null || cpuRayBuffer == null) {
             return;
         }
 
@@ -166,9 +166,44 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         }
         framesSinceCoherenceSample = 0;
 
-        // Log current mode
-        log.debug("Coherence sampling frame: batch={}, raysPerItem={}",
-                  useBatchKernel, currentRaysPerItem);
+        // Convert FloatBuffer to ESVORay array for coherence analysis
+        // Buffer layout: originX, originY, originZ, directionX, directionY, directionZ, tmin, tmax
+        cpuRayBuffer.rewind();
+        var rays = new com.hellblazer.luciferase.esvo.core.ESVORay[rayCount];
+
+        for (int i = 0; i < rayCount; i++) {
+            float originX = cpuRayBuffer.get();
+            float originY = cpuRayBuffer.get();
+            float originZ = cpuRayBuffer.get();
+            float directionX = cpuRayBuffer.get();
+            float directionY = cpuRayBuffer.get();
+            float directionZ = cpuRayBuffer.get();
+            cpuRayBuffer.get(); // skip tmin
+            cpuRayBuffer.get(); // skip tmax
+
+            rays[i] = new com.hellblazer.luciferase.esvo.core.ESVORay(
+                originX, originY, originZ,
+                directionX, directionY, directionZ
+            );
+            rays[i].prepareForTraversal();
+        }
+
+        // Measure coherence of ray batch
+        double coherence = coherenceAnalyzer.analyzeCoherence(rays, lastDAGData);
+
+        // Activate batch kernel if coherence threshold met (>= 0.5)
+        boolean shouldUseBatch = (coherence >= 0.5);
+        useBatchKernel = shouldUseBatch;
+
+        // Calculate optimal rays per item based on coherence
+        if (shouldUseBatch) {
+            currentRaysPerItem = calculateRaysPerItem(coherence);
+        } else {
+            currentRaysPerItem = 1; // Single-ray mode
+        }
+
+        log.debug("Coherence analysis: score={:.3f}, batch={}, raysPerItem={}",
+                  coherence, useBatchKernel, currentRaysPerItem);
     }
 
     /**
