@@ -174,6 +174,37 @@ public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUni
         }
     }
 
+    /**
+     * Build OpenCL options for ESVO traversal kernel.
+     *
+     * Returns preprocessor defines and compiler flags optimized for ESVO relative addressing:
+     * - ESVO_MODE=1 (enables ESVO-specific code paths in kernel)
+     * - RELATIVE_ADDRESSING=1 (uses childPtr relative to parent node index)
+     * - MAX_DEPTH=maxDepth (configures stack depth for relative addressing)
+     * - Vendor-specific compiler flags for GPU optimization
+     *
+     * @return OpenCL build options string for ESVO-optimized kernel
+     */
+    public String buildOptionsForESVOTraversal() {
+        var options = new StringBuilder();
+
+        // ESVO-specific defines
+        options.append("-DESVO_MODE=1 ");
+        options.append("-DRELATIVE_ADDRESSING=1 ");
+        options.append("-DMAX_DEPTH=").append(maxDepth).append(" ");
+
+        // Add vendor-specific compiler flags for GPU optimization
+        // (No tuning config in ESVO renderer currently, just vendor-specific)
+        options.append("-cl-fast-relaxed-math ");
+
+        return options.toString().trim();
+    }
+
+    @Override
+    protected String getBuildOptions() {
+        return buildOptionsForESVOTraversal();
+    }
+
     @Override
     protected void disposeTypeSpecificBuffers() {
         if (clNodeBuffer != 0) {

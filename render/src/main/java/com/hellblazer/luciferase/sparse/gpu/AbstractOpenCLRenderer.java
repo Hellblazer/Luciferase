@@ -189,9 +189,17 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
 
         // Create and compile kernel
         kernel = OpenCLKernel.create(getRendererName());
-        kernel.compile(kernelSource, getKernelEntryPoint());
 
-        log.info("{} kernel compiled successfully", getRendererName());
+        // Get build options from subclass (may be null for default compilation)
+        var buildOptions = getBuildOptions();
+        if (buildOptions != null && !buildOptions.isEmpty()) {
+            kernel.compile(kernelSource, getKernelEntryPoint(), buildOptions);
+            log.info("{} kernel compiled successfully with build options: {}",
+                    getRendererName(), buildOptions);
+        } else {
+            kernel.compile(kernelSource, getKernelEntryPoint());
+            log.info("{} kernel compiled successfully", getRendererName());
+        }
     }
 
     private void allocateCommonBuffers() {
@@ -739,6 +747,45 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
      */
     protected abstract int computePixelColor(float hitX, float hitY, float hitZ,
                                               float distance, float[] extraData);
+
+    /**
+     * Get OpenCL build options for kernel compilation.
+     *
+     * <p>Subclasses override this to provide custom build options such as
+     * preprocessor defines (-DDAG_TRAVERSAL=1) or compiler flags (-cl-fast-relaxed-math).
+     *
+     * @return build options string, or null for default compilation
+     */
+    protected String getBuildOptions() {
+        return null; // Default: no build options
+    }
+
+    /**
+     * Recompile the kernel with new build options.
+     *
+     * <p>Enables runtime kernel recompilation for GPU optimization based on
+     * profiler feedback or scene characteristics. The new kernel takes effect
+     * on the next render call.
+     *
+     * @param newBuildOptions new build options for recompilation
+     * @throws IllegalStateException if renderer not initialized or kernel null
+     */
+    public void recompileKernel(String newBuildOptions) {
+        if (!initialized) {
+            throw new IllegalStateException("Renderer not initialized");
+        }
+        if (kernel == null) {
+            throw new IllegalStateException("Kernel not compiled");
+        }
+
+        try {
+            var kernelSource = getKernelSource();
+            kernel.recompile(kernelSource, getKernelEntryPoint(), newBuildOptions);
+            log.info("{} kernel recompiled with options: {}", getRendererName(), newBuildOptions);
+        } catch (ComputeKernel.KernelCompilationException e) {
+            throw new RuntimeException("Kernel recompilation failed", e);
+        }
+    }
 
     /**
      * Dispose type-specific GPU resources.

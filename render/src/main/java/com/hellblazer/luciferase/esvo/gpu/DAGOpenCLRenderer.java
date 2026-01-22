@@ -200,15 +200,65 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     }
 
     /**
+     * Build OpenCL options for DAG traversal kernel.
+     *
+     * Returns preprocessor defines and compiler flags optimized for DAG absolute addressing:
+     * - DAG_TRAVERSAL=1 (enables DAG-specific code paths in kernel)
+     * - ABSOLUTE_ADDRESSING=1 (uses childPtr directly without parent offset)
+     * - MAX_DEPTH=maxDepth (configures stack depth)
+     * - Workgroup size from tuning config if available
+     * - Vendor-specific compiler flags (e.g., -D__CUDA_ARCH__ for NVIDIA)
+     *
+     * @return OpenCL build options string for DAG-optimized kernel
+     */
+    public String buildOptionsForDAGTraversal() {
+        var options = new StringBuilder();
+
+        // DAG-specific defines
+        options.append("-DDAG_TRAVERSAL=1 ");
+        options.append("-DABSOLUTE_ADDRESSING=1 ");
+        options.append("-DMAX_DEPTH=").append(maxDepth).append(" ");
+
+        // Add workgroup size from tuning config if available
+        if (tuningConfig != null) {
+            options.append("-DWORKGROUP_SIZE=").append(tuningConfig.workgroupSize()).append(" ");
+        }
+
+        // Add vendor-specific compiler flags
+        if (gpuCapabilities != null) {
+            switch (gpuCapabilities.vendor()) {
+                case NVIDIA:
+                    options.append("-D__CUDA_ARCH__=700 ");
+                    options.append("-cl-mad-enable ");
+                    break;
+                case AMD:
+                    options.append("-D__GCN__ ");
+                    options.append("-cl-fast-relaxed-math ");
+                    break;
+                case INTEL:
+                    options.append("-cl-fast-relaxed-math ");
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        return options.toString().trim();
+    }
+
+    @Override
+    protected String getBuildOptions() {
+        return buildOptionsForDAGTraversal();
+    }
+
+    /**
      * Stream B Phase 8: Optimize renderer for detected GPU device
      *
      * Called during initialization to:
      * 1. Detect GPU capabilities
      * 2. Load or generate optimal tuning configuration
      * 3. Log tuning metrics
-     *
-     * Future enhancement: Pass tuning parameters to kernel compilation
-     * (requires gpu-support framework enhancement for build options)
+     * 4. Recompile kernel with GPU-optimized build options
      */
     public void optimizeForDevice() {
         // Detect GPU capabilities (placeholder - would use OpenCL device queries)
