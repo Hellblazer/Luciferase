@@ -52,6 +52,8 @@ message GhostElement {
     int32 owner_rank = 6;
     int64 global_tree_id = 7;
     google.protobuf.Timestamp timestamp = 8;
+    int32 level = 9;  // Tree level for balance operations
+    bool needs_refinement = 10;  // Flag for refinement requirement
 }
 
 // Batch of ghost elements
