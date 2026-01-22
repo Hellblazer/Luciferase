@@ -1,4 +1,15 @@
 // ESVO Ray Traversal Kernel - OpenCL Implementation
+//
+// Stream A Phase 5 Optimization:
+// - MAX_TRAVERSAL_DEPTH: Stack depth [8, 32], default 16
+// - Configurable via: -D MAX_TRAVERSAL_DEPTH=16
+// - Controls occupancy: 4 bytes × depth × threads
+// - Override with: -D MAX_TRAVERSAL_DEPTH=24
+
+// Can be overridden at compile time: -D MAX_TRAVERSAL_DEPTH=16
+#ifndef MAX_TRAVERSAL_DEPTH
+#define MAX_TRAVERSAL_DEPTH 16    // Default: Stream A optimized for occupancy
+#endif
 
 typedef struct {
     float3 origin;
@@ -84,10 +95,14 @@ __kernel void traverseOctree(
     if (!intersectAABB(ray, sceneBounds, &tEntry, &tExit)) {
         return;
     }
-    
-    // Stack for traversal
-    __local StackEntry stack[32];
+
+    // Stack for traversal - size configurable via MAX_TRAVERSAL_DEPTH
+    // Reduced from hardcoded 32 for occupancy optimization (Stream A Phase 5)
+    __local StackEntry stack[MAX_TRAVERSAL_DEPTH];
     int stackPtr = 0;
+
+    // Track stack overflow (graceful termination on overflow)
+    bool stackOverflowed = false;
     
     // Initialize root
     stack[0].nodeIdx = 0;
@@ -160,7 +175,14 @@ __kernel void traverseOctree(
             float childTEntry, childTExit;
             
             if (intersectAABB(ray, childBox, &childTEntry, &childTExit)) {
-                if (childTEntry < closestHit && stackPtr < 31) {
+                if (childTEntry < closestHit) {
+                    // Check for stack overflow - graceful termination if depth exceeded
+                    if (stackPtr >= MAX_TRAVERSAL_DEPTH - 1) {
+                        stackOverflowed = true;
+                        // Continue ray traversal with best hit found so far
+                        // This prevents crashes and allows graceful degradation
+                        continue;
+                    }
                     // CUDA reference sparse indexing: parent_ptr + popcount(child_masks & ((1 << i) - 1))
                     uint childIdx = childPtr + popcount(childMask & ((1 << i) - 1));
                     stack[stackPtr].nodeIdx = childIdx;
