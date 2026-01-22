@@ -116,12 +116,15 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
             );
 
             // Record metrics for coordination result
+            // Record each round that was executed
             if (result.roundsExecuted() > 0) {
-                // Record average round duration once
                 var avgRoundDuration = java.time.Duration.ofMillis(
                     result.totalTimeMillis() / result.roundsExecuted()
                 );
-                metrics.recordRound(avgRoundDuration);
+                // Record one entry per round executed
+                for (int i = 0; i < result.roundsExecuted(); i++) {
+                    metrics.recordRound(avgRoundDuration);
+                }
             }
 
             // Record refinements
