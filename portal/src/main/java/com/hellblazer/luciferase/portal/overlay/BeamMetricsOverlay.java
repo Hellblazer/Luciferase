@@ -35,6 +35,7 @@ public class BeamMetricsOverlay extends StackPane {
     private final FrameTimePane frameTime;
     private final GPUMemoryPane memory;
     private final VBox content;
+    private OverlayPosition currentPosition;
 
     /**
      * Creates a new beam metrics overlay with default position and styling.
@@ -99,8 +100,19 @@ public class BeamMetricsOverlay extends StackPane {
             return;
         }
 
+        this.currentPosition = position;
+
         // Set alignment for this StackPane's child (content VBox)
         StackPane.setAlignment(content, position.getAlignment());
+    }
+
+    /**
+     * Gets the current overlay position.
+     *
+     * @return Current position
+     */
+    public OverlayPosition getPosition() {
+        return currentPosition;
     }
 
     /**
