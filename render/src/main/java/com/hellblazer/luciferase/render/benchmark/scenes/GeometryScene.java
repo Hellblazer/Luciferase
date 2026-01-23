@@ -68,11 +68,16 @@ public class GeometryScene extends SceneGenerator {
                 // Ray origin at pixel position
                 var origin = new Point3f(screenX, screenY, 0.0f);
 
-                // Direction radiates outward from center
+                // Generate low-coherence rays using sin/cos with varied frequencies
+                // This creates diverse ray directions that vary across the frame
+                float angle1 = (float) (x * Math.PI / frameWidth);
+                float angle2 = (float) (y * Math.PI / frameHeight);
+                float angle3 = (float) ((x + y) * Math.PI / (frameWidth + frameHeight));
+
                 var direction = new Vector3f(
-                    screenX - CENTER.x,
-                    screenY - CENTER.y,
-                    -CENTER.z  // Negative to point away from viewer
+                    (float) Math.sin(angle1) * (float) Math.cos(angle2),
+                    (float) Math.cos(angle1) * (float) Math.sin(angle2),
+                    (float) Math.sin(angle3) - 0.5f
                 );
                 direction.normalize();
 

@@ -156,10 +156,10 @@ class CoherenceCorrelationTest {
         var records = new ArrayList<TileExecutionRecord>();
 
         // Create 100 points with perfect positive correlation
-        // Higher coherence -> lower execution time
+        // Both coherence and execution time increase together
         for (int i = 0; i < 100; i++) {
             double coherence = i / 100.0;  // 0.00 to 0.99
-            double execTime = 50.0 - (coherence * 40.0);  // 50ms to 10ms
+            double execTime = 10.0 + (coherence * 40.0);  // 10ms to 50ms (both increase)
             records.add(new TileExecutionRecord(0, i % 16, i / 16, coherence, execTime, 256, coherence >= 0.7));
         }
 

@@ -157,8 +157,9 @@ public class CoherenceCorrelationAnalyzer {
 
         // t = r * sqrt(n - 2) / sqrt(1 - r^2)
         double rSquared = r * r;
-        if (rSquared >= 1.0) {
-            return r == 1.0 ? 0.0 : 1.0;
+        if (rSquared >= 0.9999) {
+            // Perfect or near-perfect correlation (r = ±1.0) is always significant
+            return 0.0;
         }
 
         double t = r * Math.sqrt(n - 2) / Math.sqrt(1 - rSquared);
