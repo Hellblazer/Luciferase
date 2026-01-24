@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.lucien.balancing;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
+import com.hellblazer.luciferase.lucien.balancing.fault.InFlightOperationTracker;
 import com.hellblazer.luciferase.lucien.balancing.grpc.BalanceCoordinatorClient;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
@@ -60,6 +61,7 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
     private final BalanceMetrics metrics;
     private final LocalBalancePhase<Key, ID, Content> localBalancePhase;
     private final GhostExchangePhase<Key, ID, Content> ghostExchangePhase;
+    private final InFlightOperationTracker operationTracker;
 
     // Context for current balance cycle (set during balance() execution)
     private volatile Forest<Key, ID, Content> currentForest;
@@ -76,8 +78,20 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
      * @throws NullPointerException if configuration is null
      */
     public DefaultParallelBalancer(BalanceConfiguration configuration) {
+        this(configuration, null);
+    }
+
+    /**
+     * Create a new default parallel balancer with the specified configuration and operation tracker.
+     *
+     * @param configuration the balance configuration
+     * @param operationTracker the operation tracker for pause support (null = create new)
+     * @throws NullPointerException if configuration is null
+     */
+    public DefaultParallelBalancer(BalanceConfiguration configuration, InFlightOperationTracker operationTracker) {
         this.configuration = Objects.requireNonNull(configuration, "Configuration cannot be null");
         this.metrics = new BalanceMetrics();
+        this.operationTracker = operationTracker != null ? operationTracker : new InFlightOperationTracker();
 
         // Create phase executors (skeleton implementations)
         this.localBalancePhase = new LocalBalancePhase<>(configuration, metrics);
@@ -194,36 +208,45 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
     public BalanceResult balance(DistributedForest<Key, ID, Content> distributedForest) {
         Objects.requireNonNull(distributedForest, "Distributed forest cannot be null");
 
-        log.info("Starting full parallel balance cycle");
+        // Check if paused - skip gracefully
+        var tokenOpt = operationTracker.tryBeginOperation();
+        if (tokenOpt.isEmpty()) {
+            log.info("Balance skipped - operations paused for recovery");
+            return BalanceResult.success(metrics.snapshot(), 0);
+        }
 
-        try {
-            // Store context for use in balance phases
-            this.currentForest = distributedForest.getLocalForest();
-            this.currentGhostManager = distributedForest.getGhostManager();
+        try (var token = tokenOpt.get()) {
+            log.info("Starting full parallel balance cycle");
 
-            // Phase 1: Local balance
-            var localResult = localBalance(currentForest);
-            if (!localResult.successful()) {
-                return localResult;
+            try {
+                // Store context for use in balance phases
+                this.currentForest = distributedForest.getLocalForest();
+                this.currentGhostManager = distributedForest.getGhostManager();
+
+                // Phase 1: Local balance
+                var localResult = localBalance(currentForest);
+                if (!localResult.successful()) {
+                    return localResult;
+                }
+
+                // Phase 2: Ghost exchange
+                exchangeGhosts(currentGhostManager);
+
+                // Phase 3: Cross-partition balance
+                var crossPartitionResult = crossPartitionBalance(distributedForest.getPartitionRegistry());
+
+                // Return final result
+                return crossPartitionResult;
+
+            } catch (Exception e) {
+                log.error("Balance cycle failed with exception", e);
+                return BalanceResult.failure(metrics.snapshot(), "Exception during balance: " + e.getMessage());
+            } finally {
+                // Clear context after balance cycle
+                this.currentForest = null;
+                this.currentGhostManager = null;
+                this.crossPartitionPhase = null;
             }
-
-            // Phase 2: Ghost exchange
-            exchangeGhosts(currentGhostManager);
-
-            // Phase 3: Cross-partition balance
-            var crossPartitionResult = crossPartitionBalance(distributedForest.getPartitionRegistry());
-
-            // Return final result
-            return crossPartitionResult;
-
-        } catch (Exception e) {
-            log.error("Balance cycle failed with exception", e);
-            return BalanceResult.failure(metrics.snapshot(), "Exception during balance: " + e.getMessage());
-        } finally {
-            // Clear context after balance cycle
-            this.currentForest = null;
-            this.currentGhostManager = null;
-            this.crossPartitionPhase = null;
         }
     }
 
@@ -257,6 +280,15 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
     public void resumeCrossPartitionBalance() {
         crossPartitionBalancePaused = false;
         log.info("Cross-partition balance resumed after recovery");
+    }
+
+    /**
+     * Check if balancer is currently paused.
+     *
+     * @return true if paused, false otherwise
+     */
+    public boolean isPaused() {
+        return operationTracker.isPaused();
     }
 
     /**

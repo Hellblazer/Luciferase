@@ -124,6 +124,10 @@ public class RecoveryCoordinatorLock {
      *   <li>Semaphore timeout → returns false after timeout</li>
      * </ul>
      *
+     * <p><b>Thread Safety</b>: This method is synchronized to prevent race conditions
+     * where two threads could acquire the lock for the same partition simultaneously.
+     * The synchronization ensures atomic check-and-add semantics.
+     *
      * @param partitionId partition to recover
      * @param topology current partition topology
      * @param timeout lock acquisition timeout
@@ -131,11 +135,11 @@ public class RecoveryCoordinatorLock {
      * @return true if lock acquired, false if quorum lost or timeout
      * @throws InterruptedException if interrupted while waiting for semaphore
      */
-    public boolean acquireRecoveryLock(UUID partitionId, PartitionTopology topology,
-                                       long timeout, TimeUnit unit)
+    public synchronized boolean acquireRecoveryLock(UUID partitionId, PartitionTopology topology,
+                                                    long timeout, TimeUnit unit)
         throws InterruptedException {
 
-        // Check quorum
+        // Check quorum (safe inside synchronized)
         int active = topology.activeRanks().size();
         int total = topology.totalPartitions();
 
@@ -143,19 +147,31 @@ public class RecoveryCoordinatorLock {
             return false; // Cannot recover without majority
         }
 
-        // Already recovering this partition?
+        // Atomic check-and-reserve
+        // Check if already recovering this partition
         if (activeRecoveries.contains(partitionId)) {
             return false;
         }
 
-        // Acquire semaphore permit
-        if (!recoverySemaphore.tryAcquire(timeout, unit)) {
-            return false;
-        }
-
-        // Add to active recoveries
+        // Optimistically add partition to reserve the slot
+        // This prevents other threads from proceeding even if we're waiting on semaphore
         activeRecoveries.add(partitionId);
-        return true;
+
+        // Acquire semaphore permit (may wait)
+        try {
+            if (!recoverySemaphore.tryAcquire(timeout, unit)) {
+                // Failed to get permit - rollback the reservation
+                activeRecoveries.remove(partitionId);
+                return false;
+            }
+
+            return true;
+
+        } catch (InterruptedException e) {
+            // Rollback on interruption
+            activeRecoveries.remove(partitionId);
+            throw e;
+        }
     }
 
     /**
