@@ -1,4 +1,4 @@
-package com.hellblazer.luciferase.lucien.balancing.fault;
+package com.hellblazer.luciferase.lucien.balancing.fault.profiling;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

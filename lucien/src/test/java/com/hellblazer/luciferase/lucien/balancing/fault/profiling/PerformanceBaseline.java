@@ -1,4 +1,4 @@
-package com.hellblazer.luciferase.lucien.balancing.fault;
+package com.hellblazer.luciferase.lucien.balancing.fault.profiling;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
