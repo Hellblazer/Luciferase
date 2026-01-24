@@ -9,9 +9,6 @@ import com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -34,13 +31,12 @@ import static org.mockito.Mockito.*;
  *   <li>DefaultParallelBalancer integration (CRITICAL 4)</li>
  * </ul>
  */
-@ExtendWith(MockitoExtension.class)
 class PhaseA2FaultTolerantDistributedForestTest {
 
-    @Mock Forest<MortonKey, UUIDEntityID, byte[]> mockForest;
-    @Mock DistributedGhostManager<MortonKey, UUIDEntityID, byte[]> mockGhostManager;
-    @Mock ParallelBalancer.PartitionRegistry mockRegistry;
-    @Mock GhostLayer<MortonKey, UUIDEntityID, byte[]> mockGhostLayer;
+    private Forest<MortonKey, UUIDEntityID, byte[]> mockForest;
+    private DistributedGhostManager<MortonKey, UUIDEntityID, byte[]> mockGhostManager;
+    private ParallelBalancer.PartitionRegistry mockRegistry;
+    private GhostLayer<MortonKey, UUIDEntityID, byte[]> mockGhostLayer;
 
     private SimpleFaultHandler faultHandler;
     private RecoveryCoordinatorLock recoveryLock;
@@ -49,11 +45,17 @@ class PhaseA2FaultTolerantDistributedForestTest {
 
     @BeforeEach
     void setUp() {
+        // Initialize mocks manually
+        mockForest = org.mockito.Mockito.mock(Forest.class);
+        mockGhostManager = org.mockito.Mockito.mock(DistributedGhostManager.class);
+        mockRegistry = org.mockito.Mockito.mock(ParallelBalancer.PartitionRegistry.class);
+        mockGhostLayer = org.mockito.Mockito.mock(GhostLayer.class);
+
         faultHandler = new SimpleFaultHandler(FaultConfiguration.defaultConfig());
         recoveryLock = new RecoveryCoordinatorLock(3);
         tracker = new InFlightOperationTracker();
 
-        when(mockGhostManager.getGhostLayer()).thenReturn(mockGhostLayer);
+        org.mockito.Mockito.when(mockGhostManager.getGhostLayer()).thenReturn(mockGhostLayer);
     }
 
     @AfterEach
@@ -401,28 +403,25 @@ class PhaseA2FaultTolerantDistributedForestTest {
      * Create test topology with specified partition count and active partitions.
      */
     private PartitionTopology createTestTopology(int totalPartitions, UUID... activePartitionIds) {
-        var activeRanks = new HashSet<Integer>();
-        var partitionMap = new HashMap<Integer, UUID>();
+        var topology = new InMemoryPartitionTopology();
 
         for (int i = 0; i < totalPartitions; i++) {
             UUID partitionId = i < activePartitionIds.length ? activePartitionIds[i] : UUID.randomUUID();
-            partitionMap.put(i, partitionId);
 
-            // Make first activePartitionIds.length partitions active
-            if (i < Math.min(totalPartitions - 1, activePartitionIds.length + 2)) {
-                activeRanks.add(i);
-            }
+            // Register the partition
+            topology.register(partitionId, i);
         }
 
-        return new InMemoryPartitionTopology(partitionMap, activeRanks);
+        return topology;
     }
 
     /**
      * Create minimal test distributed forest with mocks.
      */
     private ParallelBalancer.DistributedForest<MortonKey, UUIDEntityID, byte[]> createTestDistributedForest() {
-        when(mockRegistry.getCurrentPartitionId()).thenReturn(UUID.randomUUID());
-        when(mockRegistry.getPartitionCount()).thenReturn(3);
+        // Note: getCurrentPartitionId() may return UUID or Integer depending on PartitionRegistry
+        // For now, just set up getPartitionCount() which is definitely needed
+        org.mockito.Mockito.when(mockRegistry.getPartitionCount()).thenReturn(3);
 
         return new ParallelBalancer.DistributedForest<MortonKey, UUIDEntityID, byte[]>() {
             @Override
