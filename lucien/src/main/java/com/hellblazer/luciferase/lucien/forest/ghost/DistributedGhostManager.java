@@ -265,14 +265,32 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
     
     /**
      * Set the synchronization interval in milliseconds.
-     * 
+     *
      * @param intervalMs the sync interval in milliseconds
      */
     public void setSyncInterval(long intervalMs) {
         this.syncIntervalMs = intervalMs;
         log.info("Sync interval set to {} ms", intervalMs);
     }
-    
+
+    /**
+     * Pause automatic ghost synchronization during recovery.
+     * Prevents new sync operations from starting.
+     */
+    public void pauseAutoSync() {
+        setAutoSyncEnabled(false);
+        log.info("Ghost auto-sync paused for recovery");
+    }
+
+    /**
+     * Resume automatic ghost synchronization after recovery.
+     * Re-enables periodic sync operations.
+     */
+    public void resumeAutoSync() {
+        setAutoSyncEnabled(true);
+        log.info("Ghost auto-sync resumed after recovery");
+    }
+
     /**
      * Get statistics about the distributed ghost layer.
      *

@@ -66,6 +66,9 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
     private volatile DistributedGhostManager<Key, ID, Content> currentGhostManager;
     private volatile CrossPartitionBalancePhase<Key, ID, Content> crossPartitionPhase;
 
+    // Recovery support: pause cross-partition balance during recovery
+    private volatile boolean crossPartitionBalancePaused = false;
+
     /**
      * Create a new default parallel balancer with the specified configuration.
      *
@@ -128,6 +131,12 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
     public BalanceResult crossPartitionBalance(PartitionRegistry registry) {
         if (registry == null) {
             throw new IllegalArgumentException("Partition registry cannot be null");
+        }
+
+        // Check if cross-partition balance is paused (during recovery)
+        if (crossPartitionBalancePaused) {
+            log.debug("Cross-partition balance skipped (paused for recovery)");
+            return BalanceResult.success(metrics.snapshot(), 0);
         }
 
         log.debug("Starting Phase 3: Cross-partition balance");
@@ -230,6 +239,24 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
      */
     public BalanceConfiguration getConfiguration() {
         return configuration;
+    }
+
+    /**
+     * Pause cross-partition balance during recovery.
+     * Prevents new cross-partition balance rounds from starting.
+     * In-flight balance operations are allowed to complete.
+     */
+    public void pauseCrossPartitionBalance() {
+        crossPartitionBalancePaused = true;
+        log.info("Cross-partition balance paused for recovery");
+    }
+
+    /**
+     * Resume cross-partition balance after recovery.
+     */
+    public void resumeCrossPartitionBalance() {
+        crossPartitionBalancePaused = false;
+        log.info("Cross-partition balance resumed after recovery");
     }
 
     /**

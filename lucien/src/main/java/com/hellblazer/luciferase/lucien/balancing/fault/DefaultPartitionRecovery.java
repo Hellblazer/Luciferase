@@ -1,5 +1,8 @@
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -48,6 +51,7 @@ import java.util.function.Consumer;
  */
 public class DefaultPartitionRecovery implements PartitionRecovery {
 
+    private static final Logger log = LoggerFactory.getLogger(DefaultPartitionRecovery.class);
     private static final String STRATEGY_NAME = "default-recovery";
 
     private final UUID partitionId;
@@ -59,6 +63,9 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
     private volatile long stateTransitionTime;
     private volatile int retryCount = 0;
     private final List<Consumer<RecoveryPhase>> listeners = new CopyOnWriteArrayList<>();
+
+    // Ghost layer integration for validation
+    private com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager<?, ?, ?> ghostManager;
 
     /**
      * Create recovery coordinator with configuration.
@@ -160,8 +167,9 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
                 var failedRankOpt = topology.rankFor(partitionId);
                 var failedRank = failedRankOpt.orElse(-1);
 
-                // For now, use a simple mock ghost layer (TODO: use real ghost layer)
-                var validationResult = validator.validate(new Object(), activeRanks, failedRank);
+                // Use real ghost layer if available, otherwise use mock for backwards compatibility
+                var ghostLayer = ghostManager != null ? ghostManager.getGhostLayer() : new Object();
+                var validationResult = validator.validate(ghostLayer, activeRanks, failedRank);
                 if (!validationResult.valid()) {
                     throw new RecoveryException(
                         "Ghost layer validation failed: " + validationResult.errors()
@@ -271,6 +279,19 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
     public void retryRecovery() {
         retryCount++;
         transitionPhase(RecoveryPhase.IDLE);
+    }
+
+    /**
+     * Set the ghost manager for ghost layer validation.
+     * <p>
+     * This allows recovery to use the real ghost layer for validation
+     * instead of a mock object.
+     *
+     * @param ghostManager the distributed ghost manager
+     */
+    public void setGhostManager(com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager<?, ?, ?> ghostManager) {
+        this.ghostManager = ghostManager;
+        log.debug("Ghost manager injected for recovery");
     }
 
     /**
