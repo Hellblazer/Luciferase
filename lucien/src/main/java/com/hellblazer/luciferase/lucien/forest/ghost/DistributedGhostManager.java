@@ -95,6 +95,14 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
     }
     
     /**
+     * Get the ghost layer for this distributed manager.
+     * @return the ghost layer for boundary violation checking
+     */
+    public GhostLayer<Key, ID, Content> getGhostLayer() {
+        return localGhostManager.getGhostLayer();
+    }
+
+    /**
      * Initialize the distributed ghost layer by discovering other processes
      * and performing initial synchronization.
      *

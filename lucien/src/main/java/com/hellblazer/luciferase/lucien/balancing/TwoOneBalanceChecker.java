@@ -21,6 +21,9 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +45,8 @@ import java.util.List;
  * @author hal.hildebrand
  */
 public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
+
+    private static final Logger log = LoggerFactory.getLogger(TwoOneBalanceChecker.class);
 
     /**
      * Record representing a 2:1 balance constraint violation.
@@ -115,27 +120,61 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             var ghostKey = ghost.getSpatialKey();
             int ghostLevel = ghostKey.getLevel();
 
-            // Check local elements for violation with this ghost
-            // In a concrete implementation with specific key types (MortonKey, TetreeKey),
-            // this would iterate through neighbors using direction-based navigation.
-            // For now, the violation detection logic is deferred to Phase 2 implementation.
-            //
-            // The pattern would be:
-            // for (var direction : MortonKey.Direction.values()) {
-            //     var neighborKey = ghostKey.neighbor(direction);
-            //     if (neighborKey != null) {
-            //         var localElement = forest.get(neighborKey);
-            //         if (localElement != null) {
-            //             int levelDiff = Math.abs(neighborKey.getLevel() - ghostLevel);
-            //             if (levelDiff > 1) { // Violation!
-            //                 violations.add(...);
-            //             }
-            //         }
-            //     }
-            // }
+            // Check each neighbor of this ghost element
+            // For MortonKey, use Direction-based neighbor iteration
+            if (ghostKey instanceof MortonKey mortonGhost) {
+                checkMortonNeighborsForViolations(mortonGhost, ghostLevel, forest,
+                                                 ghost.getOwnerRank(), violations);
+            }
+            // Additional key types (TetreeKey, etc.) would be handled similarly
         }
 
+        log.debug("Found {} violations in ghost layer with {} ghost elements",
+                 violations.size(), ghostLayer.getNumGhostElements());
+
         return violations;
+    }
+
+    /**
+     * Check MortonKey neighbors for 2:1 balance violations.
+     */
+    @SuppressWarnings("unchecked")
+    private void checkMortonNeighborsForViolations(
+        MortonKey ghostKey,
+        int ghostLevel,
+        Forest<Key, ID, Content> forest,
+        int sourceRank,
+        List<BalanceViolation<Key>> violations
+    ) {
+        // Iterate through all possible directions
+        for (var direction : MortonKey.Direction.values()) {
+            MortonKey neighborKey = ghostKey.neighbor(direction);
+            if (neighborKey == null) continue;
+
+            // Check if neighbor exists in any tree in the forest
+            boolean foundNeighbor = false;
+            for (var tree : forest.getAllTrees()) {
+                var spatialIndex = tree.getSpatialIndex();
+                if (spatialIndex.containsSpatialKey((Key) neighborKey)) {
+                    foundNeighbor = true;
+                    break;
+                }
+            }
+
+            if (foundNeighbor) {
+                int localLevel = neighborKey.getLevel();
+                int levelDiff = Math.abs(localLevel - ghostLevel);
+
+                // Violation detected if level difference > 1
+                if (levelDiff > 1) {
+                    violations.add(new BalanceViolation<>((Key) neighborKey, (Key) ghostKey,
+                                                         localLevel, ghostLevel,
+                                                         levelDiff, sourceRank));
+                    log.trace("Violation: local level {} vs ghost level {} (diff={})",
+                             localLevel, ghostLevel, levelDiff);
+                }
+            }
+        }
     }
 
     /**
