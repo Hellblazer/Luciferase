@@ -124,9 +124,19 @@ public class RecoveryCoordinatorLock {
      *   <li>Semaphore timeout → returns false after timeout</li>
      * </ul>
      *
-     * <p><b>Thread Safety</b>: This method is synchronized to prevent race conditions
-     * where two threads could acquire the lock for the same partition simultaneously.
-     * The synchronization ensures atomic check-and-add semantics.
+     * <p><b>Thread Safety & Concurrency</b>:
+     * This method uses a two-phase approach to maximize concurrency:
+     * <ol>
+     *   <li><b>Phase 1 (synchronized)</b>: Quick quorum check and slot reservation
+     *       Only holds lock during fast operations</li>
+     *   <li><b>Phase 2 (NOT synchronized)</b>: Semaphore acquisition
+     *       Multiple threads can wait on semaphore concurrently without serializing</li>
+     *   <li><b>Phase 3 (synchronized)</b>: Rollback on failure
+     *       Brief lock to remove partition from active set if semaphore times out</li>
+     * </ol>
+     *
+     * <p>This design prevents serialization bottleneck at method entry when waiting
+     * for semaphore permits, enabling N concurrent recoveries instead of 1.
      *
      * @param partitionId partition to recover
      * @param topology current partition topology
@@ -135,33 +145,39 @@ public class RecoveryCoordinatorLock {
      * @return true if lock acquired, false if quorum lost or timeout
      * @throws InterruptedException if interrupted while waiting for semaphore
      */
-    public synchronized boolean acquireRecoveryLock(UUID partitionId, PartitionTopology topology,
-                                                    long timeout, TimeUnit unit)
+    public boolean acquireRecoveryLock(UUID partitionId, PartitionTopology topology,
+                                       long timeout, TimeUnit unit)
         throws InterruptedException {
 
-        // Check quorum (safe inside synchronized)
-        int active = topology.activeRanks().size();
-        int total = topology.totalPartitions();
+        // Phase 1: Atomic check-and-reserve (synchronized - brief)
+        synchronized (this) {
+            // Check quorum
+            int active = topology.activeRanks().size();
+            int total = topology.totalPartitions();
 
-        if (!hasQuorum(active, total)) {
-            return false; // Cannot recover without majority
+            if (!hasQuorum(active, total)) {
+                return false; // Cannot recover without majority
+            }
+
+            // Check if already recovering this partition
+            if (activeRecoveries.contains(partitionId)) {
+                return false;
+            }
+
+            // Optimistically add partition to reserve the slot
+            // This prevents other threads from proceeding even if we're waiting on semaphore
+            activeRecoveries.add(partitionId);
         }
+        // Exit synchronized block
 
-        // Atomic check-and-reserve
-        // Check if already recovering this partition
-        if (activeRecoveries.contains(partitionId)) {
-            return false;
-        }
-
-        // Optimistically add partition to reserve the slot
-        // This prevents other threads from proceeding even if we're waiting on semaphore
-        activeRecoveries.add(partitionId);
-
-        // Acquire semaphore permit (may wait)
+        // Phase 2: Acquire semaphore permit (NOT synchronized - allows concurrency)
         try {
             if (!recoverySemaphore.tryAcquire(timeout, unit)) {
                 // Failed to get permit - rollback the reservation
-                activeRecoveries.remove(partitionId);
+                // Phase 3: Rollback (synchronized - brief)
+                synchronized (this) {
+                    activeRecoveries.remove(partitionId);
+                }
                 return false;
             }
 
@@ -169,7 +185,10 @@ public class RecoveryCoordinatorLock {
 
         } catch (InterruptedException e) {
             // Rollback on interruption
-            activeRecoveries.remove(partitionId);
+            // Phase 3: Rollback (synchronized - brief)
+            synchronized (this) {
+                activeRecoveries.remove(partitionId);
+            }
             throw e;
         }
     }
@@ -231,5 +250,20 @@ public class RecoveryCoordinatorLock {
      */
     public Set<UUID> getActiveRecoveries() {
         return Set.copyOf(activeRecoveries);
+    }
+
+    /**
+     * Get count of in-progress recovery acquisitions.
+     *
+     * <p>Used by livelock recovery to calculate potential quorum including
+     * in-progress recoveries that will complete in the near future.
+     *
+     * <p>Potential quorum = activePartitions + inProgressRecoveryCount
+     * If potential quorum exists, queue recovery for retry when quorum restored.
+     *
+     * @return number of active recovery acquisitions (permits held)
+     */
+    public int getInProgressRecoveryCount() {
+        return activeRecoveries.size();
     }
 }
