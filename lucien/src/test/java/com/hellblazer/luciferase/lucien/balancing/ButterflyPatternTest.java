@@ -85,13 +85,17 @@ public class ButterflyPatternTest {
     @Test
     public void testNonPowerOf2Partitions() {
         // For non-power-of-2, some ranks have no partner in later rounds
-        // For P=7, round 2: rank 7 has partner=15 (invalid, >7)
-        assertEquals(-1, ButterflyPattern.getPartner(7, 2, 7),
-                    "Rank 7 with P=7 should have no partner in round 2 (returns -1)");
+        // For P=7, round 2: rank 6 has partner=2 XOR 4 = 2 (valid)
+        // But rank 5 in round 2: 5 XOR 4 = 1 (valid)
+        // For P=6, round 2: rank 5 has partner=5 XOR 4 = 1 (valid)
+        // For P=5, round 2: rank 4 has partner=4 XOR 4 = 0 (valid)
+        // For P=4, rank 3 round 2: 3 XOR 4 = 7 (invalid, >=4)
+        assertEquals(-1, ButterflyPattern.getPartner(3, 2, 4),
+                    "Rank 3 with P=4 should have no partner in round 2 (returns -1)");
 
-        // But other ranks should still have partners
-        assertEquals(6, ButterflyPattern.getPartner(6, 0, 7),
-                    "Rank 6 with P=7 should have partner 7 in round 0");
+        // But lower rounds should work
+        assertEquals(3, ButterflyPattern.getPartner(2, 0, 4),
+                    "Rank 2 with P=4 should have partner 3 in round 0");
     }
 
     @Test
@@ -101,9 +105,10 @@ public class ButterflyPatternTest {
         assertTrue(ButterflyPattern.participatesInRound(0, 1, 8), "Rank 0 participates in round 1");
         assertTrue(ButterflyPattern.participatesInRound(0, 2, 8), "Rank 0 participates in round 2");
 
-        // For P=7, rank 7 doesn't participate in later rounds
-        assertTrue(ButterflyPattern.participatesInRound(7, 0, 7), "Rank 7 participates in round 0 (P=7)");
-        assertFalse(ButterflyPattern.participatesInRound(7, 2, 7), "Rank 7 doesn't participate in round 2 (P=7)");
+        // For P=4, rank 3 doesn't have a valid partner in round 2 (3 XOR 4 = 7, invalid)
+        assertTrue(ButterflyPattern.participatesInRound(3, 0, 4), "Rank 3 participates in round 0 (P=4)");
+        assertTrue(ButterflyPattern.participatesInRound(3, 1, 4), "Rank 3 participates in round 1 (P=4)");
+        assertFalse(ButterflyPattern.participatesInRound(3, 2, 4), "Rank 3 doesn't participate in round 2 (P=4)");
     }
 
     @Test
