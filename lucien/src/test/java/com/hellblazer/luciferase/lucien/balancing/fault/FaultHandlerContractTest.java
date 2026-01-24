@@ -276,7 +276,34 @@ public abstract class FaultHandlerContractTest {
         Thread.sleep(100);
 
         var recoveryCompleted = new CompletableFuture<Boolean>();
-        PartitionRecovery recovery = failedRank -> recoveryCompleted;
+        PartitionRecovery recovery = new PartitionRecovery() {
+            @Override
+            public CompletableFuture<Boolean> initiateRecovery(UUID failedPartitionId) {
+                return recoveryCompleted;
+            }
+
+            @Override
+            public CompletableFuture<RecoveryResult> recover(UUID partitionId, FaultHandler handler) {
+                return CompletableFuture.completedFuture(
+                    RecoveryResult.success(partitionId, 0, "test", 1)
+                );
+            }
+
+            @Override
+            public boolean canRecover(UUID partitionId, FaultHandler handler) {
+                return true;
+            }
+
+            @Override
+            public String getStrategyName() {
+                return "test";
+            }
+
+            @Override
+            public FaultConfiguration getConfiguration() {
+                return FaultConfiguration.defaultConfig();
+            }
+        };
 
         handler.registerRecovery(partition1, recovery);
 

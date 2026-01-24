@@ -315,5 +315,28 @@ class SimpleFaultHandlerTest extends FaultHandlerContractTest {
         public java.util.concurrent.CompletableFuture<Boolean> initiateRecovery(UUID failedPartitionId) {
             return java.util.concurrent.CompletableFuture.completedFuture(willSucceed);
         }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<RecoveryResult> recover(UUID partitionId, FaultHandler handler) {
+            var result = willSucceed
+                ? RecoveryResult.success(partitionId, 0, "test-recovery", 1)
+                : RecoveryResult.failure(partitionId, 0, "test-recovery", 1, "Test failure", null);
+            return java.util.concurrent.CompletableFuture.completedFuture(result);
+        }
+
+        @Override
+        public boolean canRecover(UUID partitionId, FaultHandler handler) {
+            return true;
+        }
+
+        @Override
+        public String getStrategyName() {
+            return "test-recovery";
+        }
+
+        @Override
+        public FaultConfiguration getConfiguration() {
+            return FaultConfiguration.defaultConfig();
+        }
     }
 }

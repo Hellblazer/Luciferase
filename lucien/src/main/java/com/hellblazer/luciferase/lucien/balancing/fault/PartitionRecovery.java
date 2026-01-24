@@ -4,61 +4,153 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Interface for partition recovery strategies.
+ * Recovery strategy for a failed partition.
  * <p>
- * Implementations coordinate data redistribution, ghost layer synchronization,
- * and rebalancing when a partition fails. This interface is called by
- * FaultHandler after failure detection and confirmation.
+ * Implementations define how to restore a partition to healthy state. Recovery
+ * may involve barrier synchronization, state restoration, cascading recovery,
+ * or other mechanisms.
+ * <p>
+ * This interface follows the Strategy pattern, allowing different recovery
+ * approaches to be plugged into the fault tolerance system. Common strategies
+ * include:
+ * <ul>
+ *   <li><b>Barrier Recovery</b>: Synchronize via barrier and restore state</li>
+ *   <li><b>Cascading Recovery</b>: Multi-level recovery with fallback strategies</li>
+ *   <li><b>NoOp Recovery</b>: Testing stub that immediately succeeds</li>
+ * </ul>
  * <p>
  * Recovery typically proceeds through these phases:
  * <ol>
- *   <li>DETECTING - Confirm partition failure</li>
- *   <li>REDISTRIBUTING - Move data from failed partition to survivors</li>
- *   <li>REBALANCING - Trigger global rebalancing</li>
- *   <li>VALIDATING - Verify data consistency</li>
- *   <li>COMPLETE - Recovery finished successfully</li>
+ *   <li>Prepare recovery (validate state, acquire locks)</li>
+ *   <li>Execute recovery action (barrier sync, state transfer, etc.)</li>
+ *   <li>Verify restoration (validation checks)</li>
+ *   <li>Complete or fail</li>
  * </ol>
  * <p>
- * Example usage:
+ * <b>Example Usage</b>:
  * <pre>{@code
- * PartitionRecovery recovery = new DefaultPartitionRecovery(
- *     ghostManager,
- *     balancer,
- *     config
- * );
+ * // Create recovery strategy
+ * var config = FaultConfiguration.defaultConfig();
+ * PartitionRecovery recovery = new BarrierRecoveryImpl(config);
  *
+ * // Register with fault handler
  * faultHandler.registerRecovery(partitionId, recovery);
  *
- * // On failure detection:
- * recovery.initiateRecovery(failedPartitionId)
- *     .thenAccept(success -> {
- *         if (success) {
- *             log.info("Recovery succeeded");
- *         } else {
- *             log.error("Recovery failed");
- *         }
- *     });
+ * // Check if recovery is possible
+ * if (recovery.canRecover(partitionId, faultHandler)) {
+ *     // Initiate recovery
+ *     recovery.recover(partitionId, faultHandler)
+ *         .thenAccept(result -> {
+ *             if (result.success()) {
+ *                 log.info("Recovery succeeded in {}ms after {} attempts",
+ *                     result.durationMs(), result.attemptsNeeded());
+ *             } else {
+ *                 log.error("Recovery failed: {}", result.statusMessage());
+ *             }
+ *         });
+ * }
  * }</pre>
+ *
+ * @see BarrierRecoveryImpl
+ * @see CascadingRecoveryImpl
+ * @see NoOpRecoveryImpl
  */
 public interface PartitionRecovery {
 
     /**
-     * Initiate recovery for a failed partition.
+     * Recover the partition asynchronously.
      * <p>
-     * This method starts an asynchronous recovery process that:
+     * Execution flow:
+     * <ol>
+     *   <li>Prepare recovery (validate state, acquire locks)</li>
+     *   <li>Execute recovery action (barrier sync, state transfer, etc.)</li>
+     *   <li>Verify restoration (validation checks)</li>
+     *   <li>Complete or fail</li>
+     * </ol>
+     * <p>
+     * The returned CompletableFuture completes with a {@link RecoveryResult}
+     * containing detailed outcome information including success status, duration,
+     * number of attempts, and status messages.
+     * <p>
+     * Recovery executes asynchronously. Callers should not block on the future
+     * in performance-critical paths.
+     *
+     * @param partitionId partition to recover
+     * @param handler FaultHandler for coordination and state queries
+     * @return CompletableFuture&lt;RecoveryResult&gt; - detailed recovery outcome
+     * @throws IllegalStateException if partition not in recoverable state
+     * @throws IllegalArgumentException if partitionId or handler is null
+     */
+    CompletableFuture<RecoveryResult> recover(UUID partitionId, FaultHandler handler);
+
+    /**
+     * Validate that partition can be recovered.
+     * <p>
+     * Used before initiating recovery to check prerequisites. Verifies:
      * <ul>
-     *   <li>Removes the failed partition from ghost layer</li>
-     *   <li>Redistributes boundary entities to surviving partitions</li>
-     *   <li>Triggers global rebalancing</li>
-     *   <li>Validates data consistency</li>
+     *   <li>Partition is in SUSPECTED or FAILED state</li>
+     *   <li>Sufficient healthy partitions exist (quorum)</li>
+     *   <li>No conflicting recovery in progress</li>
+     *   <li>Resources available (network, memory, etc.)</li>
      * </ul>
      * <p>
-     * The returned CompletableFuture completes with {@code true} if recovery
-     * succeeded, {@code false} if recovery failed. The future may complete
-     * exceptionally if recovery cannot be initiated (e.g., majority failure).
+     * This is a non-blocking check that does not modify state. Call before
+     * {@link #recover} to avoid unnecessary recovery attempts.
+     *
+     * @param partitionId partition to validate
+     * @param handler FaultHandler for state queries
+     * @return true if partition can be recovered now, false otherwise
+     * @throws IllegalArgumentException if partitionId or handler is null
+     */
+    boolean canRecover(UUID partitionId, FaultHandler handler);
+
+    /**
+     * Get human-readable name of recovery strategy.
+     * <p>
+     * Used for logging, metrics, debugging, and strategy selection. Examples:
+     * <ul>
+     *   <li>"barrier-recovery" - Barrier synchronization strategy</li>
+     *   <li>"cascading-recovery" - Multi-level fallback strategy</li>
+     *   <li>"noop-recovery" - Testing stub strategy</li>
+     * </ul>
+     *
+     * @return strategy name (never null or blank)
+     */
+    String getStrategyName();
+
+    /**
+     * Get recovery configuration if available.
+     * <p>
+     * Returns the {@link FaultConfiguration} used by this recovery strategy,
+     * or null if using system defaults. Configuration includes timeout values,
+     * retry limits, and cascading thresholds.
+     *
+     * @return FaultConfiguration or null if using default
+     */
+    FaultConfiguration getConfiguration();
+
+    /**
+     * Initiate recovery for a failed partition (legacy method).
+     * <p>
+     * This method provides backward compatibility with existing code. New code
+     * should use {@link #recover(UUID, FaultHandler)} for detailed results.
+     * <p>
+     * Default implementation delegates to {@link #recover} and converts result
+     * to boolean (true for success, false for failure).
      *
      * @param failedPartitionId UUID of the partition that failed
      * @return CompletableFuture that completes when recovery finishes
+     * @deprecated Use {@link #recover(UUID, FaultHandler)} for detailed results
      */
-    CompletableFuture<Boolean> initiateRecovery(UUID failedPartitionId);
+    @Deprecated(since = "1.0", forRemoval = false)
+    default CompletableFuture<Boolean> initiateRecovery(UUID failedPartitionId) {
+        // Provide basic implementation that requires recovery to be invoked
+        // with proper FaultHandler via recover() method
+        return CompletableFuture.failedFuture(
+            new UnsupportedOperationException(
+                "initiateRecovery(UUID) is deprecated. Use recover(UUID, FaultHandler) instead."
+            )
+        );
+    }
 }
+
