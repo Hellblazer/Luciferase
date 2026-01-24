@@ -334,4 +334,32 @@ public class IntegrationTestFixture {
     public boolean isCleanedUp() {
         return cleanedUp;
     }
+
+    /**
+     * Get current distributed forest.
+     *
+     * @return current TestDistributedForest instance
+     * @throws IllegalStateException if forest not configured
+     */
+    public TestDistributedForest getForest() {
+        if (currentForest == null) {
+            throw new IllegalStateException("Forest not configured - call setupForestWithPartitions first");
+        }
+        return currentForest;
+    }
+
+    /**
+     * Update all components with new clock time.
+     * <p>
+     * Advances TestClock if currently set, otherwise no-op.
+     *
+     * @param clock TestClock with updated time
+     */
+    public void updateClock(TestClock clock) {
+        if (testClock != null && clock != null) {
+            // TestClock is immutable in terms of time, so we just update reference
+            testClock = clock;
+            resources.put("clock", testClock);
+        }
+    }
 }
