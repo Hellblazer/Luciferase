@@ -290,18 +290,44 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
 
     /**
      * Pause cross-partition balance during recovery.
-     * Prevents new cross-partition balance rounds from starting.
-     * In-flight balance operations are allowed to complete.
+     *
+     * <p>This method coordinates with the InFlightOperationTracker to create a synchronous barrier:
+     * <ol>
+     *   <li>Sets paused flag to prevent new balance operations</li>
+     *   <li>Calls pauseAndWait() to block until all in-flight operations complete (5 second timeout)</li>
+     *   <li>Returns only when system is quiescent (safe for recovery)</li>
+     * </ol>
+     *
+     * <p><b>Thread Safety</b>: This method blocks the caller until in-flight operations complete.
+     * It is designed to be called from recovery coordination logic, not from balance operation threads.
+     *
+     * @throws IllegalStateException if pauseAndWait() times out (recovery may still proceed)
+     * @see InFlightOperationTracker#pauseAndWait(long, java.util.concurrent.TimeUnit)
      */
     public void pauseCrossPartitionBalance() {
         crossPartitionBalancePaused = true;
-        log.info("Cross-partition balance paused for recovery");
+        log.info("Cross-partition balance paused for recovery, waiting for in-flight operations");
+
+        try {
+            // Synchronous barrier: wait for all in-flight balance operations to complete
+            // Timeout: 5 seconds (from FaultConfiguration default recovery window)
+            operationTracker.pauseAndWait(5, java.util.concurrent.TimeUnit.SECONDS);
+            log.info("Cross-partition balance paused and quiesced");
+        } catch (InterruptedException e) {
+            log.warn("Interrupted waiting for balance operations to complete during pause", e);
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
      * Resume cross-partition balance after recovery.
+     *
+     * <p>Clears the paused flag and resumes the operation tracker to allow new balance operations.
+     *
+     * @see InFlightOperationTracker#resume()
      */
     public void resumeCrossPartitionBalance() {
+        operationTracker.resume();
         crossPartitionBalancePaused = false;
         log.info("Cross-partition balance resumed after recovery");
     }
