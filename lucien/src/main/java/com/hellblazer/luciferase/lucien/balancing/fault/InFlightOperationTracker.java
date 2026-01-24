@@ -44,16 +44,21 @@ public class InFlightOperationTracker {
     /**
      * Begin tracking an operation. Call this at the START of balance()/sync().
      *
+     * <p><b>TOCTOU Race Fix</b>: Increment FIRST, then check paused flag.
+     * This ensures that if pause thread runs between increment and check,
+     * it will see the non-zero activeOperations count.
+     *
      * @return token that MUST be closed when operation completes
      * @throws IllegalStateException if operations are paused
      */
     public OperationToken beginOperation() {
+        int count = activeOperations.incrementAndGet();
         if (paused) {
+            activeOperations.decrementAndGet();  // Rollback immediately
             log.debug("Operation rejected: tracker is paused");
             throw new IllegalStateException("Operations are paused for recovery");
         }
 
-        int count = activeOperations.incrementAndGet();
         log.debug("Operation started, active count: {}", count);
         return new OperationToken(this);
     }
@@ -61,12 +66,19 @@ public class InFlightOperationTracker {
     /**
      * Try to begin an operation, returning empty if paused.
      * Use when caller wants to skip rather than throw.
+     *
+     * <p><b>TOCTOU Race Fix</b>: Increment FIRST, then check paused flag,
+     * same as beginOperation() but returns Optional instead of throwing.
      */
     public Optional<OperationToken> tryBeginOperation() {
+        int count = activeOperations.incrementAndGet();
         if (paused) {
+            activeOperations.decrementAndGet();  // Rollback immediately
             return Optional.empty();
         }
-        return Optional.of(beginOperation());
+
+        log.debug("Operation started (try), active count: {}", count);
+        return Optional.of(new OperationToken(this));
     }
 
     /**
