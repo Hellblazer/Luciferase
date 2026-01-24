@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 /**
  * TDD tests for ParallelBalancer interface and implementations.
@@ -54,11 +55,11 @@ public class ParallelBalancerTest {
     public void setUp() {
         // Create mock dependencies
         mockForest = new Forest<>(ForestConfig.defaultConfig());
-        mockGhostManager = null; // Will need real implementation or mock
+        mockGhostManager = new MockGhostManager();
         mockRegistry = new MockPartitionRegistry();
 
-        // Create balancer instance - THIS WILL FAIL until implementation exists
-        // balancer = new DefaultParallelBalancer<>(BalanceConfiguration.defaultConfig());
+        // Create balancer instance - TDD GREEN PHASE enabled
+        balancer = new DefaultParallelBalancer<>(BalanceConfiguration.defaultConfig());
     }
 
     @Test
@@ -331,6 +332,49 @@ public class ParallelBalancerTest {
         @Override
         public int getPendingRefinements() {
             return refinementRequests.get();
+        }
+    }
+
+    private static class MockGhostManager extends DistributedGhostManager<MortonKey, LongEntityID, String> {
+
+        public MockGhostManager() {
+            super(createMockSpatialIndex(), createMockGhostChannel(), createMockGhostBoundaryDetector());
+        }
+
+        private static com.hellblazer.luciferase.lucien.octree.Octree<LongEntityID, String> createMockSpatialIndex() {
+            return new com.hellblazer.luciferase.lucien.octree.Octree<>(
+                new com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator()
+            );
+        }
+
+        @SuppressWarnings("unchecked")
+        private static com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<MortonKey, LongEntityID, String> createMockGhostChannel() {
+            // Use Mockito to create a mock GhostCommunicationManager
+            var mockCommManager = mock(com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostCommunicationManager.class);
+
+            // Create GrpcGhostChannel with the mock
+            return new com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<MortonKey, LongEntityID, String>(
+                mockCommManager,
+                0,    // currentRank
+                0L,   // treeId
+                com.hellblazer.luciferase.lucien.forest.ghost.GhostType.NONE
+            );
+        }
+
+        private static com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<MortonKey, LongEntityID, String> createMockGhostBoundaryDetector() {
+            // Create a minimal stub using Forest constructor
+            var mockForest = new com.hellblazer.luciferase.lucien.forest.Forest<MortonKey, LongEntityID, String>(
+                com.hellblazer.luciferase.lucien.forest.ForestConfig.defaultConfig()
+            );
+            return new com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<>(
+                mockForest,
+                0.0f // ghostDepth - not used in tests
+            );
+        }
+
+        @Override
+        public void synchronizeWithAllProcesses() {
+            // Mock implementation - no-op for testing
         }
     }
 
