@@ -70,6 +70,9 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
     private volatile boolean autoSyncEnabled = true;
     private volatile long lastSyncTime = 0;
     private volatile long syncIntervalMs = 30000; // 30 seconds default
+
+    // Fault detection callback for sync operations
+    private volatile Object syncCallback = null;
     
     /**
      * Create a distributed ghost manager.
@@ -355,6 +358,31 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
             currentRank,
             treeId
         );
+    }
+
+    /**
+     * Register a sync callback for fault detection during ghost synchronization.
+     *
+     * <p>The callback will be invoked on sync success/failure events to enable
+     * fault detection and recovery coordination. Use {@link com.hellblazer.luciferase.lucien.balancing.GhostSyncFaultAdapter}
+     * to adapt sync events to fault handler notifications.
+     *
+     * @param callback the sync callback to register (typically GhostSyncFaultAdapter)
+     */
+    public void registerSyncCallback(Object callback) {
+        this.syncCallback = callback;
+        if (callback != null) {
+            log.debug("Registered sync callback for rank {}", currentRank);
+        }
+    }
+
+    /**
+     * Get the registered sync callback.
+     *
+     * @return the sync callback, or null if not registered
+     */
+    public Object getSyncCallback() {
+        return syncCallback;
     }
 
     private boolean shouldPerformSync() {
