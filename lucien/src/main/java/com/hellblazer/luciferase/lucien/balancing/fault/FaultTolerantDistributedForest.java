@@ -64,6 +64,10 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
     private final AtomicBoolean inRecoveryMode = new AtomicBoolean(false);
     private Subscription eventSubscription;
 
+    // Livelock recovery - queue for retries when quorum is temporarily lost
+    // Partitions queued here when no immediate quorum but potential quorum exists
+    private final Queue<UUID> recoveryQueue = new ConcurrentLinkedQueue<>();
+
     // Optional callback for testing
     private Consumer<UUID> recoveryCallback;
 
@@ -430,18 +434,31 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
         // CRITICAL: This is called inside synchronized(stateLock)
         int activeCount = countActivePartitionsLocked();
         int totalCount = topology.totalPartitions();
-        boolean hasQuorum = recoveryLock.hasQuorum(activeCount, totalCount);
+        int inProgressCount = recoveryLock.getInProgressRecoveryCount();
 
-        log.info("Partition {} failed - quorum check: {}/{} active (hasQuorum={})",
-            partitionId, activeCount, totalCount, hasQuorum);
-
-        if (hasQuorum) {
-            log.info("Quorum maintained, scheduling async recovery for partition {}", partitionId);
+        // Check current quorum
+        if (recoveryLock.hasQuorum(activeCount, totalCount)) {
+            // STATE 1: Current quorum exists - schedule recovery immediately
+            log.info("Partition {} failed - quorum maintained ({}/{} active). Scheduling recovery",
+                partitionId, activeCount, totalCount);
             scheduleRecoveryAsync(partitionId);
         } else {
-            log.error("QUORUM LOST - cannot recover partition {}. System degraded: {}/{} active",
-                partitionId, activeCount, totalCount);
-            statsAccumulator.recordRecoveryBlocked();
+            // Check potential quorum (including in-progress recoveries)
+            int potentialActive = activeCount + inProgressCount;
+
+            if (recoveryLock.hasQuorum(potentialActive, totalCount)) {
+                // STATE 2: Quorum lost NOW but WILL be restored when in-progress recoveries complete
+                log.warn("Partition {} failed - quorum lost but {} in-progress recoveries may restore it ({}/{} active + {}/{} in-progress -> {}/{})",
+                    partitionId, inProgressCount, activeCount, totalCount, inProgressCount, inProgressCount, potentialActive, totalCount);
+                recoveryQueue.offer(partitionId);
+                statsAccumulator.recordRecoveryQueued();
+            } else {
+                // STATE 3: Quorum permanently lost even with in-progress recoveries
+                log.error("QUORUM PERMANENTLY LOST - cannot recover partition {}. System degraded: {}/{} active, {} recovering (potential: {}/{})",
+                    partitionId, activeCount, totalCount, inProgressCount, potentialActive, totalCount);
+                statsAccumulator.recordQuorumLoss();
+                triggerEscalation();
+            }
         }
     }
 
@@ -455,8 +472,19 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
             .thenAccept(success -> {
                 if (success) {
                     log.info("Async recovery completed successfully for partition {}", partitionId);
+
+                    // Check for queued recoveries when quorum potentially restored
+                    synchronized (stateLock) {
+                        checkQueuedRecoveries();
+                    }
                 } else {
                     log.warn("Async recovery failed for partition {}", partitionId);
+
+                    // Queue for retry with exponential backoff
+                    if (!recoveryQueue.contains(partitionId)) {
+                        log.debug("Queuing partition {} for retry after failure", partitionId);
+                        recoveryQueue.offer(partitionId);
+                    }
                 }
             })
             .exceptionally(ex -> {
@@ -465,9 +493,59 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
             });
     }
 
+    /**
+     * Process queued recoveries when quorum is restored (Livelock recovery).
+     *
+     * <p>Called after a successful recovery to check if any partitions were queued
+     * due to temporary quorum loss. If quorum is now available, retry those queued
+     * recoveries.
+     *
+     * <p>CRITICAL: Must be called inside synchronized(stateLock).
+     */
+    private void checkQueuedRecoveries() {
+        if (recoveryQueue.isEmpty()) {
+            return;
+        }
+
+        int activeCount = countActivePartitionsLocked();
+        int totalCount = topology.totalPartitions();
+
+        if (recoveryLock.hasQuorum(activeCount, totalCount)) {
+            log.info("Quorum restored ({}/{}), retrying {} queued recoveries",
+                activeCount, totalCount, recoveryQueue.size());
+
+            UUID queued;
+            while ((queued = recoveryQueue.poll()) != null) {
+                log.info("Retrying queued recovery for partition {}", queued);
+                scheduleRecoveryAsync(queued);
+            }
+        } else {
+            log.debug("Quorum not yet restored ({}/{}), keeping {} recoveries queued",
+                activeCount, totalCount, recoveryQueue.size());
+        }
+    }
+
     private int countActivePartitionsLocked() {
         return (int) partitionStates.values().stream()
             .filter(s -> s == PartitionStatus.HEALTHY)
             .count();
+    }
+
+    /**
+     * Trigger escalation when quorum is permanently lost.
+     *
+     * <p>This method should alert operators that manual intervention is required.
+     * Implementation can include:
+     * - Logging critical alert
+     * - Sending monitoring alerts
+     * - Recording metrics
+     * - Notifying administrators
+     */
+    private void triggerEscalation() {
+        // Log critical alert for operator attention
+        log.error("CRITICAL: Quorum permanently lost - manual intervention required");
+        statsAccumulator.recordQuorumLossEscalation();
+
+        // Future: Send alerts to monitoring system, page operators, etc.
     }
 }

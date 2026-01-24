@@ -36,6 +36,8 @@ public record FaultTolerantForestStats(
         private final AtomicLong recoveriesAttempted = new AtomicLong();
         private final AtomicLong recoveriesSucceeded = new AtomicLong();
         private final AtomicLong recoveriesBlocked = new AtomicLong();
+        private final AtomicLong recoveriesQueued = new AtomicLong();  // Queued due to quorum loss
+        private final AtomicLong quorumLosses = new AtomicLong();      // Permanent quorum loss events
         private final AtomicLong totalDetectionLatency = new AtomicLong();
         private final AtomicLong totalRecoveryLatency = new AtomicLong();
 
@@ -91,6 +93,41 @@ public record FaultTolerantForestStats(
          */
         public long getRecoveriesBlocked() {
             return recoveriesBlocked.get();
+        }
+
+        /**
+         * Record a recovery queued due to temporary quorum loss (livelock recovery).
+         */
+        public void recordRecoveryQueued() {
+            recoveriesQueued.incrementAndGet();
+        }
+
+        /**
+         * Record a permanent quorum loss event (requires operator escalation).
+         */
+        public void recordQuorumLoss() {
+            quorumLosses.incrementAndGet();
+        }
+
+        /**
+         * Record escalation to operators due to permanent quorum loss.
+         */
+        public void recordQuorumLossEscalation() {
+            // Can be used for alerting metrics
+        }
+
+        /**
+         * Get count of recoveries queued.
+         */
+        public long getRecoveriesQueued() {
+            return recoveriesQueued.get();
+        }
+
+        /**
+         * Get count of permanent quorum loss events.
+         */
+        public long getQuorumLosses() {
+            return quorumLosses.get();
         }
     }
 }
