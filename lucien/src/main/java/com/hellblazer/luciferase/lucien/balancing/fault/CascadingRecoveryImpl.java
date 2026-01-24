@@ -20,7 +20,7 @@ import java.util.concurrent.Executors;
  *   <li><b>Level 3: Full Rebuild</b> - If state transfer fails, trigger full partition rebuild</li>
  * </ol>
  * <p>
- * Each level is attempted up to {@link FaultConfiguration#maxRetries()} times
+ * Each level is attempted up to {@link FaultConfiguration#maxRecoveryRetries()} times
  * before escalating to the next level. This provides robust recovery with
  * graceful degradation.
  * <p>
@@ -203,7 +203,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         long startTime,
         int previousAttempts
     ) {
-        var maxRetries = config.maxRetries();
+        var maxRetries = config.maxRecoveryRetries();
 
         for (var attempt = 1; attempt <= maxRetries; attempt++) {
             log.debug("Recovery level {} attempt {}/{} for partition {}",

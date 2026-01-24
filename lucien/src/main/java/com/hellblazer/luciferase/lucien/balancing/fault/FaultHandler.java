@@ -19,15 +19,16 @@ import java.util.function.Consumer;
  * <b>Thread Safety</b>: All methods must be thread-safe. Status updates may occur concurrently
  * from barrier threads, ghost sync threads, and heartbeat monitors.
  * <p>
- * <b>State Transitions</b>:
+ * <b>State Transitions</b> (PartitionStatus):
  * <pre>
  * HEALTHY → SUSPECTED (barrier timeout, sync failure, heartbeat miss)
  * SUSPECTED → HEALTHY (false alarm, partition recovers)
  * SUSPECTED → FAILED (failure confirmation threshold exceeded)
- * FAILED → RECOVERING (recovery initiated)
- * RECOVERING → HEALTHY (recovery successful)
- * RECOVERING → FAILED (recovery failed after retries)
+ * FAILED → HEALTHY (recovery successful - coordinated by PartitionRecovery)
  * </pre>
+ * <p>
+ * <b>Note</b>: Recovery phases are tracked separately via {@link RecoveryPhase}.
+ * PartitionStatus only tracks fault detection state (HEALTHY, SUSPECTED, FAILED).
  * <p>
  * <b>Example Usage</b>:
  * <pre>{@code
@@ -173,8 +174,8 @@ public interface FaultHandler {
     /**
      * Initiate recovery for failed partition.
      * <p>
-     * Only valid from SUSPECTED or FAILED states. Transitions partition to
-     * RECOVERING and invokes registered PartitionRecovery implementation.
+     * Only valid from SUSPECTED or FAILED states. Invokes registered PartitionRecovery
+     * implementation. Recovery phases are tracked separately via {@link RecoveryPhase}.
      * <p>
      * Returns immediately with future that completes when recovery finishes.
      * Future completes with {@code true} if recovery succeeded, {@code false}
@@ -192,8 +193,8 @@ public interface FaultHandler {
      * Called by recovery implementations to signal recovery outcome. Updates
      * partition status and metrics:
      * <ul>
-     *   <li>Success: RECOVERING → HEALTHY</li>
-     *   <li>Failure: RECOVERING → FAILED</li>
+     *   <li>Success: FAILED → HEALTHY</li>
+     *   <li>Failure: remains FAILED</li>
      * </ul>
      *
      * @param partitionId recovered partition

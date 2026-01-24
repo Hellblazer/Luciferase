@@ -130,7 +130,8 @@ public class MockFaultHandler implements FaultHandler {
     @Override
     public CompletableFuture<Boolean> initiateRecovery(UUID partitionId) {
         incrementCallCount("initiateRecovery");
-        transitionStatus(partitionId, PartitionStatus.RECOVERING, "recovery initiated");
+        // TODO Phase 4.2: Implement proper recovery coordination
+        // transitionStatus(partitionId, PartitionStatus.RECOVERING, "recovery initiated");
 
         var recovery = recoveryStrategies.get(partitionId);
         if (recovery == null) {

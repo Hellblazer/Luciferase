@@ -1,46 +1,39 @@
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
 /**
- * Status of a partition in the distributed forest.
- * <p>
- * State transitions:
+ * Status of a partition in the distributed forest (REVISED Phase 4.1 specification).
+ *
+ * <p>Represents the fault detection state for a partition. State transitions follow
+ * a fault detection workflow:
+ *
  * <ul>
- *   <li>HEALTHY → SUSPECTED (heartbeat/barrier timeout detected)</li>
+ *   <li>HEALTHY → SUSPECTED (barrier timeout detected)</li>
  *   <li>SUSPECTED → FAILED (failure confirmation threshold exceeded)</li>
  *   <li>SUSPECTED → HEALTHY (false alarm, partition responds)</li>
- *   <li>FAILED → RECOVERING (recovery process initiated)</li>
- *   <li>RECOVERING → HEALTHY (recovery successful)</li>
- *   <li>RECOVERING → DEGRADED (partial recovery, reduced functionality)</li>
- *   <li>DEGRADED → HEALTHY (full functionality restored)</li>
  * </ul>
+ *
+ * <p>Recovery state is tracked separately in {@link RecoveryPhase}.
+ *
+ * @see RecoveryPhase
  */
 public enum PartitionStatus {
     /**
-     * Partition is responding normally to heartbeats and barriers.
+     * Partition is responding normally to barriers and health checks.
      */
     HEALTHY,
 
     /**
-     * Partition missed heartbeat or barrier timeout detected.
-     * Under observation, may be false alarm or network delay.
+     * Partition missed barrier timeout - under observation.
+     * <p>
+     * May be a false alarm or network delay. Requires confirmation
+     * before transitioning to FAILED.
      */
     SUSPECTED,
 
     /**
-     * Partition confirmed as failed by consensus.
-     * Recovery process should be triggered.
+     * Partition confirmed as failed (consecutive timeouts exceeded threshold).
+     * <p>
+     * Recovery process should be triggered via {@link PartitionRecovery}.
      */
-    FAILED,
-
-    /**
-     * Active recovery in progress for this partition.
-     * Data is being redistributed to surviving partitions.
-     */
-    RECOVERING,
-
-    /**
-     * Partition operational but with partial functionality.
-     * Used for recovery strategies that restore incrementally.
-     */
-    DEGRADED
+    FAILED
 }

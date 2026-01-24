@@ -25,7 +25,7 @@ import java.util.concurrent.Executors;
  *   <li><b>Completion</b>: Mark partition HEALTHY if successful</li>
  * </ol>
  * <p>
- * <b>Retry Logic</b>: Retries up to {@link FaultConfiguration#maxRetries()}
+ * <b>Retry Logic</b>: Retries up to {@link FaultConfiguration#maxRecoveryRetries()}
  * times if barrier timeout occurs. Uses exponential backoff between attempts.
  * <p>
  * <b>Thread Safety</b>: This class is thread-safe. Multiple concurrent
@@ -137,7 +137,7 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
         FaultHandler handler,
         long startTime
     ) {
-        var maxRetries = config.maxRetries();
+        var maxRetries = config.maxRecoveryRetries();
         var attempt = 1;
 
         while (attempt <= maxRetries) {

@@ -58,6 +58,7 @@ class Phase42FaultAwarePartitionRegistryTest {
             mockHandler,
             500 // 500ms timeout
         );
+        // Import the TestClock and pass it to setClock - it has currentTimeMillis() method
         faultAwareRegistry.setClock(clock);
     }
 

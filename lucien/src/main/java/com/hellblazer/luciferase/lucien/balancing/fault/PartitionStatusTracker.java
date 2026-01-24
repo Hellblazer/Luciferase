@@ -68,7 +68,7 @@ public interface PartitionStatusTracker extends FaultHandler {
     /**
      * Get total count of status transitions for a partition.
      *
-     * <p>Includes transitions to HEALTHY, SUSPECTED, FAILED, RECOVERING, and DEGRADED.
+     * <p>Includes transitions to HEALTHY, SUSPECTED, and FAILED.
      *
      * @param partitionId ID of the partition
      * @return number of status transitions recorded

@@ -164,12 +164,14 @@ public class MockPartitionView implements PartitionView {
     }
 
     /**
-     * Simulate partition recovery by setting status to RECOVERING.
+     * Simulate partition recovery (Phase 4.2: Recovery tracked separately).
      *
      * @return this mock for chaining
      */
     public MockPartitionView simulateRecovery() {
-        this.status = PartitionStatus.RECOVERING;
+        // TODO Phase 4.2: Track recovery via RecoveryPhase instead
+        // this.status = PartitionStatus.RECOVERING;
+        // Keep status as FAILED for now
         return this;
     }
 

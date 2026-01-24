@@ -330,21 +330,22 @@ public class SimpleFaultHandler implements FaultHandler {
             );
         }
 
-        // Transition to RECOVERING
+        // Transition to recovery (Phase 4.1: Recovery tracked separately via RecoveryPhase)
         var oldStatus = state.status;
         if (oldStatus == PartitionStatus.FAILED || oldStatus == PartitionStatus.SUSPECTED) {
-            state.updateStatus(PartitionStatus.RECOVERING);
+            // TODO Phase 4.2: Implement proper recovery coordination
+            // state.updateStatus(PartitionStatus.RECOVERING);
             state.recordRecoveryAttempt();
 
             notifySubscribers(new PartitionChangeEvent(
                 partitionId,
                 oldStatus,
-                PartitionStatus.RECOVERING,
+                oldStatus, // TEMP: Keep same status until Phase 4.2
                 System.currentTimeMillis(),
                 "Recovery initiated"
             ));
 
-            log.info("Partition {} transitioned {} -> RECOVERING", partitionId, oldStatus);
+            log.info("Partition {} initiating recovery (Phase 4.2)", partitionId);
 
             // Delegate to recovery strategy
             return recovery.initiateRecovery(partitionId);

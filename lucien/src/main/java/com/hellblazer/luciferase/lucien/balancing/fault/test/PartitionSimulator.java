@@ -163,15 +163,16 @@ public class PartitionSimulator {
     }
 
     /**
-     * Simulate recovery in progress.
+     * Simulate recovery in progress (Phase 4.2: Recovery tracked separately).
      * <p>
-     * Transitions to RECOVERING and schedules completion after specified duration.
+     * Schedules completion after specified duration.
      *
      * @param recoveryDurationMs time to complete recovery
      */
     public void simulateRecoveryInProgress(int recoveryDurationMs) {
         cancelCurrentTask();
-        transitionTo(PartitionStatus.RECOVERING, "recovery initiated");
+        // TODO Phase 4.2: Track via RecoveryPhase instead
+        // transitionTo(PartitionStatus.RECOVERING, "recovery initiated");
 
         currentTask = executor.schedule(
             () -> transitionTo(PartitionStatus.HEALTHY, "recovery completed"),
@@ -189,11 +190,13 @@ public class PartitionSimulator {
     }
 
     /**
-     * Simulate recovery failure (transition to DEGRADED).
+     * Simulate recovery failure (Phase 4.2: DEGRADED state removed).
      */
     public void simulateRecoveryFailure() {
         cancelCurrentTask();
-        transitionTo(PartitionStatus.DEGRADED, "recovery failed, running degraded");
+        // TODO Phase 4.2: DEGRADED state removed, keep as FAILED
+        // transitionTo(PartitionStatus.DEGRADED, "recovery failed, running degraded");
+        transitionTo(PartitionStatus.FAILED, "recovery failed");
     }
 
     /**

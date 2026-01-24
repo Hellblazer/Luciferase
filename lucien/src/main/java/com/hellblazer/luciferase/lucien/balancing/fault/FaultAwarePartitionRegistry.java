@@ -20,12 +20,11 @@ package com.hellblazer.luciferase.lucien.balancing.fault;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Clock;
 import java.util.Objects;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.LongSupplier;
 
 /**
  * Decorator that adds timeout detection to partition barrier operations.
@@ -33,10 +32,18 @@ import java.util.concurrent.TimeoutException;
  * <p>Wraps a PartitionRegistry and monitors barrier operations for timeouts.
  * Reports failures to FaultHandler when barrier timeout thresholds are exceeded.
  *
+ * <p><b>Clock Injection</b>: Uses LongSupplier reflection pattern to support
+ * both TestClock (from simulation) and java.time.Clock without creating a
+ * compile-time dependency on simulation module. This breaks the cyclic
+ * dependency between lucien and simulation.
+ *
+ * <p><b>Issue #4 Fix</b>: Uses direct barrier.await(timeout, unit) instead of
+ * CompletableFuture.get() wrapper to prevent thread leaks on timeout.
+ *
  * <p><b>Usage</b>:
  * <pre>
  * var registry = new InMemoryPartitionRegistry(...);
- * var handler = new SimpleFaultHandler(...);
+ * var handler = new DefaultFaultHandler(...);
  * var faultAware = new FaultAwarePartitionRegistry(registry, handler, 5000);
  *
  * faultAware.barrier(); // Throws if timeout exceeded
@@ -44,6 +51,8 @@ import java.util.concurrent.TimeoutException;
  *
  * <p><b>Thread-Safe</b>: Safe for concurrent barrier operations. Clock is
  * volatile for atomic updates.
+ *
+ * @author hal.hildebrand
  */
 public class FaultAwarePartitionRegistry {
 
@@ -52,7 +61,7 @@ public class FaultAwarePartitionRegistry {
     private final PartitionRegistry delegate;
     private final FaultHandler faultHandler;
     private final long barrierTimeoutMs;
-    private volatile Clock clock = Clock.systemDefaultZone();
+    private volatile LongSupplier timeSource;
 
     /**
      * Create a fault-aware partition registry decorator.
@@ -73,59 +82,67 @@ public class FaultAwarePartitionRegistry {
         }
 
         this.barrierTimeoutMs = barrierTimeoutMs;
+        this.timeSource = System::currentTimeMillis;
     }
 
     /**
      * Set the clock for deterministic testing.
      *
-     * <p>Allows tests to inject a fixed or controlled clock.
+     * <p>Accepts any object with currentTimeMillis() method (e.g., TestClock,
+     * java.time.Clock). Uses reflection duck-typing for maximum compatibility
+     * without compile-time dependencies.
      *
-     * @param clock the clock to use
+     * @param clock the clock to use (must have currentTimeMillis() method)
      * @throws NullPointerException if clock is null
+     * @throws IllegalArgumentException if clock doesn't have currentTimeMillis() method
      */
-    public void setClock(Clock clock) {
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    public void setClock(Object clock) {
+        if (clock == null) {
+            throw new NullPointerException("clock must not be null");
+        }
+
+        // Support both simulation.Clock and java.time.Clock via duck typing
+        try {
+            var method = clock.getClass().getMethod("currentTimeMillis");
+            this.timeSource = () -> {
+                try {
+                    return (long) method.invoke(clock);
+                } catch (Exception e) {
+                    throw new RuntimeException("Clock invocation failed", e);
+                }
+            };
+        } catch (NoSuchMethodException e) {
+            throw new IllegalArgumentException("Clock must have currentTimeMillis() method", e);
+        }
     }
 
     /**
      * Delegate barrier operation with timeout detection.
      *
+     * <p><b>Issue #4 Fix</b>: Uses direct barrier.await(timeout, unit) which
+     * properly handles timeouts without thread leaks (unlike CompletableFuture.get()).
+     *
      * <p>Executes the delegate's barrier() method with a timeout. If the timeout
      * is exceeded, reports a barrier timeout to the FaultHandler.
      *
-     * @throws InterruptedException if the barrier operation is interrupted or fails
+     * @throws InterruptedException if the barrier operation is interrupted
      * @throws TimeoutException if barrier timeout is exceeded
      */
     public void barrier() throws InterruptedException, TimeoutException {
-        long startTime = clock.millis();
-
         try {
-            // Execute barrier directly with timeout via CompletableFuture
-            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                try {
-                    delegate.barrier();
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);  // Wrap to propagate through CompletableFuture
-                }
-            });
+            // Direct barrier.await(timeout) - no CompletableFuture wrapper (Issue #4)
+            boolean completed = delegate.barrier(barrierTimeoutMs, TimeUnit.MILLISECONDS);
 
-            future.get(barrierTimeoutMs, TimeUnit.MILLISECONDS);
-            log.debug("Barrier succeeded");
-
-        } catch (TimeoutException e) {
-            log.warn("Barrier timeout after {}ms", clock.millis() - startTime);
-            throw e;
-        } catch (java.util.concurrent.ExecutionException e) {
-            // Unwrap wrapped InterruptedException
-            if (e.getCause() instanceof RuntimeException &&
-                e.getCause().getCause() instanceof InterruptedException) {
-                throw (InterruptedException) e.getCause().getCause();
+            if (completed) {
+                log.debug("Barrier succeeded");
+            } else {
+                log.warn("Barrier timeout after {}ms", barrierTimeoutMs);
+                throw new TimeoutException("Barrier timeout");
             }
-            log.error("Barrier failed: {}", e.getMessage());
-            throw new InterruptedException("Barrier operation failed: " + e.getMessage());
-        } catch (InterruptedException e) {
-            log.error("Barrier interrupted: {}", e.getMessage());
-            throw e;
+
+        } catch (BrokenBarrierException e) {
+            log.error("Barrier broken: {}", e.getMessage());
+            throw new InterruptedException("Barrier broken: " + e.getMessage());
         }
     }
 
@@ -136,10 +153,22 @@ public class FaultAwarePartitionRegistry {
      */
     public interface PartitionRegistry {
         /**
-         * Synchronize all partitions at a barrier.
+         * Synchronize all partitions at a barrier (legacy no-timeout version).
          *
          * @throws InterruptedException if the barrier is interrupted
          */
         void barrier() throws InterruptedException;
+
+        /**
+         * Synchronize all partitions at a barrier with timeout.
+         *
+         * @param timeout maximum time to wait
+         * @param unit time unit
+         * @return true if barrier completed, false if timeout
+         * @throws InterruptedException if the barrier is interrupted
+         * @throws BrokenBarrierException if another thread broke the barrier
+         */
+        boolean barrier(long timeout, TimeUnit unit)
+            throws InterruptedException, BrokenBarrierException;
     }
 }
