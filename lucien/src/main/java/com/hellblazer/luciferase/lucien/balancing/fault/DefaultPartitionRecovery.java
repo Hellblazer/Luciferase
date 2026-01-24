@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,6 +64,7 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
     private volatile long stateTransitionTime;
     private volatile int retryCount = 0;
     private final List<Consumer<RecoveryPhase>> listeners = new CopyOnWriteArrayList<>();
+    private volatile Clock clock = Clock.system();
 
     // Ghost layer integration for validation
     private com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager<?, ?, ?> ghostManager;
@@ -84,7 +86,7 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
         this.topology = Objects.requireNonNull(topology, "topology cannot be null");
         this.configuration = Objects.requireNonNull(configuration, "configuration cannot be null");
         this.validator = new GhostLayerValidator();
-        this.stateTransitionTime = System.currentTimeMillis();
+        this.stateTransitionTime = clock.currentTimeMillis();
     }
 
     /**
@@ -141,7 +143,7 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
         }
 
         // State machine: IDLE → DETECTING → REDISTRIBUTING → REBALANCING → VALIDATING → COMPLETE
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
 
         return CompletableFuture.supplyAsync(() -> {
             try {
@@ -162,23 +164,23 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
 
                 // Phase 4: Validation
                 transitionPhase(RecoveryPhase.VALIDATING);
-                // Validate ghost layer consistency
-                var activeRanks = topology.activeRanks();
-                var failedRankOpt = topology.rankFor(partitionId);
-                var failedRank = failedRankOpt.orElse(-1);
-
-                // Use real ghost layer if available, otherwise use mock for backwards compatibility
-                var ghostLayer = ghostManager != null ? ghostManager.getGhostLayer() : new Object();
-                var validationResult = validator.validate(ghostLayer, activeRanks, failedRank);
-                if (!validationResult.valid()) {
-                    throw new RecoveryException(
-                        "Ghost layer validation failed: " + validationResult.errors()
-                    );
+                // Validate ghost layer consistency if ghost manager is available
+                if (ghostManager != null) {
+                    var activeRanks = topology.activeRanks();
+                    var failedRankOpt = topology.rankFor(partitionId);
+                    var failedRank = failedRankOpt.orElse(-1);
+                    var ghostLayer = ghostManager.getGhostLayer();
+                    var validationResult = validator.validate(ghostLayer, activeRanks, failedRank);
+                    if (!validationResult.valid()) {
+                        throw new RecoveryException(
+                            "Ghost layer validation failed: " + validationResult.errors()
+                        );
+                    }
                 }
 
                 // Phase 5: Complete
                 transitionPhase(RecoveryPhase.COMPLETE);
-                var duration = System.currentTimeMillis() - startTime;
+                var duration = clock.currentTimeMillis() - startTime;
 
                 return RecoveryResult.success(
                     partitionId,
@@ -189,7 +191,7 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
 
             } catch (Exception e) {
                 transitionPhase(RecoveryPhase.FAILED);
-                var duration = System.currentTimeMillis() - startTime;
+                var duration = clock.currentTimeMillis() - startTime;
 
                 return RecoveryResult.failure(
                     partitionId,
@@ -295,13 +297,31 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
     }
 
     /**
+     * Set the clock for deterministic time control in tests.
+     * <p>
+     * Allows injection of custom clock for deterministic testing of
+     * recovery timing, retry backoff, and state transition timestamps.
+     * <p>
+     * Default is Clock.system() for production use.
+     *
+     * @param clock the clock to use for time operations
+     * @throws IllegalArgumentException if clock is null
+     */
+    public void setClock(Clock clock) {
+        if (clock == null) {
+            throw new IllegalArgumentException("clock cannot be null");
+        }
+        this.clock = clock;
+    }
+
+    /**
      * Transition to new recovery phase and notify listeners.
      *
      * @param newPhase new phase to transition to
      */
     private void transitionPhase(RecoveryPhase newPhase) {
         currentPhase = newPhase;
-        stateTransitionTime = System.currentTimeMillis();
+        stateTransitionTime = clock.currentTimeMillis();
         notifyListeners(newPhase);
     }
 
