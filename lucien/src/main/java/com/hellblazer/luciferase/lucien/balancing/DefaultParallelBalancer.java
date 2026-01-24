@@ -342,6 +342,18 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
     }
 
     /**
+     * Get the operation tracker used for pause/resume coordination.
+     *
+     * <p>This tracker is used to coordinate balance operations with recovery operations,
+     * allowing recovery to pause all in-flight balance operations until recovery completes.
+     *
+     * @return the operation tracker
+     */
+    public InFlightOperationTracker getOperationTracker() {
+        return operationTracker;
+    }
+
+    /**
      * Create a balance coordinator client for gRPC refinement communication.
      *
      * <p>This factory method creates the gRPC client that CrossPartitionBalancePhase uses
