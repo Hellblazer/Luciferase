@@ -22,9 +22,11 @@ import com.hellblazer.luciferase.lucien.balancing.proto.RefinementResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Coordinates refinement across all partitions in O(log P) rounds.
@@ -188,24 +190,39 @@ public class RefinementCoordinator {
      * @return futures for all requests
      */
     private List<CompletableFuture<RefinementResponse>> sendRequestsParallel(List<RefinementRequest> requests) {
-        // TODO: Phase C refactoring - implement parallel request sending
-        // Pattern for each request:
-        // 1. Map request to async call via client.requestRefinementAsync()
-        // 2. Track request via requestManager.trackRequest()
-        // 3. Add timeout handling (5 seconds default from BalanceConfiguration.timeoutPerRound)
-        // 4. Handle exceptions with CompletableFuture.exceptionally()
-        // 5. Collect all futures into list
-        //
-        // Example pattern:
-        //   for (var request : requests) {
-        //       var future = client.requestRefinementAsync(...)
-        //           .completeOnTimeout(defaultResponse, 5, TimeUnit.SECONDS);
-        //       futures.add(future);
-        //   }
-
         log.debug("Sending {} refinement requests in parallel", requests.size());
 
-        return List.of();
+        var futures = new ArrayList<CompletableFuture<RefinementResponse>>();
+
+        // Default timeout of 5 seconds per request
+        // (will be made configurable via BalanceConfiguration in future phases)
+        final long timeoutSeconds = 5;
+
+        for (var request : requests) {
+            // Track request for monitoring
+            requestManager.trackRequest(request, System.currentTimeMillis());
+
+            // Send async with timeout
+            var future = client.requestRefinementAsync(
+                request.getRequesterRank(),
+                request.getRequesterTreeId(),
+                request.getRoundNumber(),
+                request.getTreeLevel(),
+                request.getBoundaryKeysList()
+            )
+            .orTimeout(timeoutSeconds, TimeUnit.SECONDS)  // Default 5 second timeout
+            .exceptionally(ex -> {
+                log.warn("Request from rank {} failed in round {}: {}",
+                    request.getRequesterRank(), request.getRoundNumber(), ex.getMessage());
+                // Return empty response on timeout/failure
+                return RefinementResponse.getDefaultInstance();
+            });
+
+            futures.add(future);
+            log.trace("Queued request from rank {} in round {}", request.getRequesterRank(), request.getRoundNumber());
+        }
+
+        return futures;
     }
 
     /**
