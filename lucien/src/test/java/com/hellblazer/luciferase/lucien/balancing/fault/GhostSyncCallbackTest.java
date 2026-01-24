@@ -21,6 +21,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -121,5 +123,51 @@ class GhostSyncCallbackTest {
                    "Partition 1 should be SUSPECTED or FAILED");
         assertEquals(PartitionStatus.HEALTHY, status2,
                      "Partition 2 should be HEALTHY");
+    }
+
+    /**
+     * T5: Test concurrent sync notifications don't cause race conditions.
+     * Multiple threads notifying on same partition.
+     */
+    @Test
+    void testConcurrentSyncNotifications_ThreadSafe() throws InterruptedException {
+        faultHandler.markHealthy(partitionId1);
+
+        var threadCount = 4;
+        var latch = new CountDownLatch(threadCount);
+
+        // Fire concurrent success and failure notifications
+        for (int i = 0; i < threadCount; i++) {
+            final var index = i;
+            new Thread(() -> {
+                try {
+                    if (index % 2 == 0) {
+                        adapter.onSyncSuccess(1);
+                    } else {
+                        adapter.onSyncFailure(1, new Exception("concurrent failure"));
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            }).start();
+        }
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS),
+                   "All threads should complete within timeout");
+
+        // Should handle concurrent notifications without crashing
+        var status = faultHandler.checkHealth(partitionId1);
+        assertNotNull(status, "Partition should have a valid status after concurrent notifications");
+    }
+
+    /**
+     * T6: Test sync failure with no registered partition is handled gracefully.
+     * Adapter should not crash when notified about unknown partition.
+     */
+    @Test
+    void testSyncFailure_UnregisteredPartition() {
+        var unregisteredRank = 100;
+        assertDoesNotThrow(() -> adapter.onSyncFailure(unregisteredRank, new Exception("error")),
+                           "Should handle sync failure for unregistered partition");
     }
 }

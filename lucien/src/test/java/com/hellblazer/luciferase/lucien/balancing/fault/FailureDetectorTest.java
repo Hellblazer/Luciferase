@@ -255,4 +255,66 @@ class FailureDetectorTest {
         // Should still be running
         assertTrue(detector.isRunning());
     }
+
+    /**
+     * T9: Test multiple partitions register independently.
+     * Multiple partitions can be monitored concurrently.
+     */
+    @Test
+    void testMultiplePartitions_IndependentRegistration() {
+        var partition1 = UUID.randomUUID();
+        var partition2 = UUID.randomUUID();
+        var partition3 = UUID.randomUUID();
+
+        detector.start();
+        detector.registerPartition(partition1);
+        detector.registerPartition(partition2);
+        detector.registerPartition(partition3);
+
+        // All three should be registered
+        detector.recordHeartbeat(partition1);
+        detector.recordHeartbeat(partition2);
+        detector.recordHeartbeat(partition3);
+
+        // Should complete without error
+        assertTrue(detector.isRunning(), "Detector should handle multiple partitions");
+    }
+
+    /**
+     * T10: Test rapid heartbeat succession doesn't cause issues.
+     * Multiple heartbeats in quick succession should be handled safely.
+     */
+    @Test
+    void testRapidHeartbeats_Successive() {
+        var partitionId = UUID.randomUUID();
+
+        detector.start();
+        detector.registerPartition(partitionId);
+
+        // Fire rapid heartbeats
+        for (int i = 0; i < 100; i++) {
+            detector.recordHeartbeat(partitionId);
+        }
+
+        // Should still be healthy after many rapid heartbeats
+        var status = faultHandler.checkHealth(partitionId);
+        assertTrue(status == null || status == PartitionStatus.HEALTHY,
+                   "Partition should be HEALTHY after rapid heartbeats");
+    }
+
+    /**
+     * T11: Test unregistered partition is handled gracefully.
+     * Recording heartbeat on unregistered partition should not crash.
+     */
+    @Test
+    void testRecordHeartbeat_UnregisteredPartition() {
+        var unregisteredPartition = UUID.randomUUID();
+
+        detector.start();
+        // Don't register the partition
+
+        // Should handle gracefully
+        assertDoesNotThrow(() -> detector.recordHeartbeat(unregisteredPartition),
+                           "Should handle heartbeat for unregistered partition");
+    }
 }
