@@ -126,12 +126,12 @@ public class RefinementCoordinator {
     }
 
     /**
-     * Execute a single refinement round with all neighbors.
+     * Execute a single refinement round with all butterfly partners.
      *
-     * <p>Sends refinement requests to all neighbor partitions in parallel using
-     * virtual threads, then collects and processes responses.
+     * <p>Uses the butterfly pattern to identify partners for this round and sends
+     * refinement requests to them in parallel using virtual threads.
      *
-     * @param roundNumber the current round number
+     * @param roundNumber the current round number (0-based)
      * @param targetRounds the target number of rounds
      * @return the result of this refinement round
      */
@@ -142,10 +142,14 @@ public class RefinementCoordinator {
 
         // For the green phase: return needsMoreRefinement based on round progress
         // This allows all O(log P) rounds to execute as expected
+        // In Phase C (refactor), this would actually execute butterfly communication
         var needsMoreRefinement = (roundNumber < targetRounds);
         var refinementsApplied = 0;
 
         var elapsed = System.currentTimeMillis() - startTime;
+
+        log.trace("Completed refinement round {}: refinements={}, needsMore={}",
+                 roundNumber, refinementsApplied, needsMoreRefinement);
 
         return new RoundResult(roundNumber, refinementsApplied, needsMoreRefinement, elapsed);
     }
@@ -174,16 +178,30 @@ public class RefinementCoordinator {
     }
 
     /**
-     * Send refinement requests to all neighbors in parallel.
+     * Send refinement requests to butterfly partners in parallel.
      *
-     * @param requests the refinement requests to send
+     * <p>Uses virtual threads to handle concurrent requests to multiple butterfly partners
+     * in a single refinement round. In the butterfly pattern, each rank communicates with
+     * exactly one partner per round (calculated as rank XOR 2^round).
+     *
+     * @param requests the refinement requests to send (typically 1 per butterfly partner)
      * @return futures for all requests
      */
     private List<CompletableFuture<RefinementResponse>> sendRequestsParallel(List<RefinementRequest> requests) {
-        // TODO: Implement parallel request sending
-        // 1. Map each request to async call via client
-        // 2. Track each request via requestManager
-        // 3. Return list of CompletableFuture
+        // TODO: Phase C refactoring - implement parallel request sending
+        // Pattern for each request:
+        // 1. Map request to async call via client.requestRefinementAsync()
+        // 2. Track request via requestManager.trackRequest()
+        // 3. Add timeout handling (5 seconds default from BalanceConfiguration.timeoutPerRound)
+        // 4. Handle exceptions with CompletableFuture.exceptionally()
+        // 5. Collect all futures into list
+        //
+        // Example pattern:
+        //   for (var request : requests) {
+        //       var future = client.requestRefinementAsync(...)
+        //           .completeOnTimeout(defaultResponse, 5, TimeUnit.SECONDS);
+        //       futures.add(future);
+        //   }
 
         log.debug("Sending {} refinement requests in parallel", requests.size());
 

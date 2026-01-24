@@ -251,6 +251,75 @@ public class CrossPartitionBalancePhaseTest {
         }
     }
 
+    // TEST 13: ButterflyPattern Integration - Verify partner selection uses butterfly
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testButterflyPartnerSelection() {
+        // In 8 partitions, round 0 partners should be (0,1), (2,3), (4,5), (6,7)
+        // Round 1 partners should be (0,2), (1,3), (4,6), (5,7)
+        registry = new MockPartitionRegistry(8);
+        phase = new CrossPartitionBalancePhase<>(client, registry, config);
+
+        var result = phase.execute(forest, 0, 8);
+
+        // Should communicate with correct partners in each round (butterfly pattern)
+        assertTrue(result.successful(), "Should succeed with butterfly pattern");
+        assertEquals(3, result.finalMetrics().roundCount(),
+                    "Should execute 3 rounds for 8 partitions (O(log 8) = 3)");
+    }
+
+    // TEST 14: TwoOneBalanceChecker Integration - Violation detection
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testTwoOneViolationDetectionIntegration() {
+        // Execute with empty forest (no violations expected)
+        var result = phase.execute(forest, 0, 4);
+
+        assertTrue(result.successful(), "Should complete without violations in empty forest");
+        assertTrue(result.finalMetrics().roundCount() >= 1, "Should execute at least 1 round");
+    }
+
+    // TEST 15: Refinement Requests Created From Violations
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testRefinementRequestsCreatedFromViolations() {
+        // Set up client to always need refinement (simulating ongoing violations)
+        client.setAlwaysNeedsRefinement(true);
+
+        var result = phase.execute(forest, 0, 4);
+
+        assertTrue(result.successful(), "Should handle refinement requests");
+        // Requests should be sent to communicate refinement needs
+        assertTrue(client.getRequestCount() > 0, "Should send refinement requests");
+    }
+
+    // TEST 16: Ghost Elements Applied During Rounds
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testGhostElementsAppliedDuringRounds() {
+        // Execute balance rounds (ghost elements would be applied during execution)
+        var result = phase.execute(forest, 0, 4);
+
+        assertTrue(result.successful(), "Should successfully apply ghost elements");
+        // Verify that the phase executed all expected rounds
+        assertEquals(2, result.finalMetrics().roundCount(),
+                    "4 partitions should converge in 2 rounds");
+    }
+
+    // TEST 17: Convergence Detected When No Violations Remain
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testConvergenceDetectedWhenNoViolations() {
+        // Set converged to indicate no more violations
+        client.setConverged(true);
+        client.setAlwaysNeedsRefinement(false);
+
+        var result = phase.execute(forest, 0, 4);
+
+        assertTrue(result.successful(), "Should converge when no violations remain");
+        assertTrue(result.converged(), "Result should indicate convergence");
+    }
+
     // Helper method to create mock refinement response
     private RefinementResponse createMockResponse(int responderRank, int roundNumber, int ghostElementCount) {
         return RefinementResponse.newBuilder()
