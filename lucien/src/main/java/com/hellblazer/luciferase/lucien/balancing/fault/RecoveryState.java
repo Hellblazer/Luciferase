@@ -1,52 +1,41 @@
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Per-partition recovery state tracking (Phase 4.3).
+ * Per-partition recovery state tracking (Phase 4.3.2).
  * <p>
  * Immutable record tracking the current state of a partition recovery operation.
- * Includes phase, timing information, retry count, and error details.
+ * Includes phase, timing information, retry count, and flexible metadata storage.
  * <p>
  * Used by {@link DefaultPartitionRecovery} to maintain recovery state machine.
  *
  * @param partitionId UUID of partition being recovered
  * @param currentPhase Current recovery phase
- * @param startTimeMs Timestamp when recovery started (milliseconds)
- * @param lastUpdateMs Timestamp of last state transition (milliseconds)
- * @param retryCount Number of recovery attempts so far
- * @param errorMessage Last error message (empty string if no error)
+ * @param attemptCount Number of recovery attempts so far
+ * @param lastAttemptTime Timestamp of last recovery attempt (milliseconds)
+ * @param metadata Flexible key-value storage for recovery context (error messages, coordinator info, etc.)
  */
 public record RecoveryState(
     UUID partitionId,
     RecoveryPhase currentPhase,
-    long startTimeMs,
-    long lastUpdateMs,
-    int retryCount,
-    String errorMessage
+    int attemptCount,
+    long lastAttemptTime,
+    Map<String, Object> metadata
 ) {
 
     /**
      * Compact constructor with validation.
      */
     public RecoveryState {
-        if (partitionId == null) {
-            throw new IllegalArgumentException("partitionId cannot be null");
-        }
-        if (currentPhase == null) {
-            throw new IllegalArgumentException("currentPhase cannot be null");
-        }
-        if (startTimeMs < 0) {
-            throw new IllegalArgumentException("startTimeMs must be non-negative, got: " + startTimeMs);
-        }
-        if (lastUpdateMs < 0) {
-            throw new IllegalArgumentException("lastUpdateMs must be non-negative, got: " + lastUpdateMs);
-        }
-        if (retryCount < 0) {
-            throw new IllegalArgumentException("retryCount must be non-negative, got: " + retryCount);
-        }
-        if (errorMessage == null) {
-            throw new IllegalArgumentException("errorMessage cannot be null (use empty string for no error)");
+        Objects.requireNonNull(partitionId, "partitionId cannot be null");
+        Objects.requireNonNull(currentPhase, "currentPhase cannot be null");
+        Objects.requireNonNull(metadata, "metadata cannot be null");
+
+        if (attemptCount < 0) {
+            throw new IllegalArgumentException("attemptCount must be non-negative, got: " + attemptCount);
         }
     }
 
@@ -54,17 +43,16 @@ public record RecoveryState(
      * Create initial recovery state in IDLE phase.
      *
      * @param partitionId partition to track
+     * @param currentTime current timestamp in milliseconds
      * @return new RecoveryState in IDLE phase with current timestamp
      */
-    public static RecoveryState initial(UUID partitionId) {
-        var now = System.currentTimeMillis();
+    public static RecoveryState initial(UUID partitionId, long currentTime) {
         return new RecoveryState(
             partitionId,
             RecoveryPhase.IDLE,
-            now,
-            now,
             0,
-            ""
+            currentTime,
+            Map.of()
         );
     }
 
@@ -86,49 +74,61 @@ public record RecoveryState(
      * Create new state with updated phase and timestamp.
      *
      * @param newPhase new recovery phase
-     * @return new RecoveryState with updated phase and lastUpdateMs
+     * @param timestamp new timestamp in milliseconds
+     * @return new RecoveryState with updated phase and lastAttemptTime
      */
-    public RecoveryState withPhase(RecoveryPhase newPhase) {
+    public RecoveryState withPhase(RecoveryPhase newPhase, long timestamp) {
         return new RecoveryState(
             partitionId,
             newPhase,
-            startTimeMs,
-            System.currentTimeMillis(),
-            retryCount,
-            errorMessage
+            attemptCount,
+            timestamp,
+            metadata
         );
     }
 
     /**
-     * Create new state with error message.
+     * Create new state with updated metadata.
      *
-     * @param error error description
-     * @return new RecoveryState with error message
+     * @param newMetadata new metadata map
+     * @return new RecoveryState with updated metadata
      */
-    public RecoveryState withError(String error) {
+    public RecoveryState withMetadata(Map<String, Object> newMetadata) {
         return new RecoveryState(
             partitionId,
             currentPhase,
-            startTimeMs,
-            System.currentTimeMillis(),
-            retryCount,
-            error != null ? error : ""
+            attemptCount,
+            lastAttemptTime,
+            newMetadata
         );
     }
 
     /**
-     * Create new state with incremented retry count.
+     * Create new state with incremented attempt count.
      *
-     * @return new RecoveryState with retryCount + 1
+     * @param timestamp timestamp of the new attempt
+     * @return new RecoveryState with attemptCount + 1 and updated timestamp
      */
-    public RecoveryState withRetry() {
+    public RecoveryState withIncrementedAttempt(long timestamp) {
         return new RecoveryState(
             partitionId,
             currentPhase,
-            startTimeMs,
-            System.currentTimeMillis(),
-            retryCount + 1,
-            errorMessage
+            attemptCount + 1,
+            timestamp,
+            metadata
         );
+    }
+
+    /**
+     * Add or update a single metadata entry.
+     *
+     * @param key metadata key
+     * @param value metadata value
+     * @return new RecoveryState with updated metadata
+     */
+    public RecoveryState withMetadataEntry(String key, Object value) {
+        var newMetadata = new java.util.HashMap<>(metadata);
+        newMetadata.put(key, value);
+        return withMetadata(newMetadata);
     }
 }
