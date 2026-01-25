@@ -281,6 +281,136 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     }
 
     /**
+     * Identify refinement needs using TwoOneBalanceChecker and coordinate with RefinementCoordinator.
+     *
+     * <p>This method implements the core refinement protocol:
+     * <ol>
+     *   <li>Uses balanceChecker to find all 2:1 violations</li>
+     *   <li>Groups violations by source rank (partition)</li>
+     *   <li>Builds RefinementRequest for each rank group</li>
+     *   <li>Sends requests in parallel via coordinator</li>
+     *   <li>Collects and aggregates responses</li>
+     * </ol>
+     *
+     * @param roundNumber the current round number
+     * @param targetRounds the target number of rounds
+     * @param balanceChecker the checker to detect violations
+     * @param coordinator the coordinator to send requests
+     * @param <Coord> the coordinator type parameter
+     * @return RoundResult with violations processed, round status, and timing
+     * @throws java.util.concurrent.TimeoutException if requests timeout
+     * @throws InterruptedException if interrupted while waiting
+     */
+    public <Coord> RefinementCoordinator.RoundResult identifyRefinementNeeds(
+        int roundNumber,
+        int targetRounds,
+        TwoOneBalanceChecker<Key, ID, Content> balanceChecker,
+        Coord coordinator
+    ) throws java.util.concurrent.TimeoutException, InterruptedException {
+        var startTime = System.currentTimeMillis();
+
+        // Step 1: Identify violations using balanceChecker
+        var violations = balanceChecker.findViolations(ghostLayer, forest);
+
+        log.info("Round {}: Found {} balance violations", roundNumber, violations.size());
+
+        // Return empty result if no violations
+        if (violations.isEmpty()) {
+            var elapsed = System.currentTimeMillis() - startTime;
+            return new RefinementCoordinator.RoundResult(
+                roundNumber,
+                0,  // refinementsApplied
+                false,  // needsMoreRefinement
+                elapsed
+            );
+        }
+
+        // Step 2: Group violations by rank
+        var violationsByRank = new java.util.HashMap<Integer, java.util.ArrayList<TwoOneBalanceChecker.BalanceViolation<Key>>>();
+        for (var violation : violations) {
+            violationsByRank.computeIfAbsent(violation.sourceRank(), rank -> new java.util.ArrayList<>())
+                           .add(violation);
+        }
+
+        log.debug("Round {}: Grouped {} violations into {} rank groups",
+                 roundNumber, violations.size(), violationsByRank.size());
+
+        // Step 3: Build RefinementRequests
+        var requests = new java.util.ArrayList<RefinementRequest>();
+        for (var entry : violationsByRank.entrySet()) {
+            var sourceRank = entry.getKey();
+            var groupViolations = entry.getValue();
+
+            // Extract max level from violations
+            var maxLevel = groupViolations.stream()
+                .mapToInt(v -> Math.max(v.localLevel(), v.ghostLevel()))
+                .max()
+                .orElse(0);
+
+            // Collect boundary keys from violations
+            var boundaryKeys = groupViolations.stream()
+                .flatMap(v -> java.util.stream.Stream.of(v.localKey(), v.ghostKey()))
+                .map(ProtobufConverters::spatialKeyToProtobuf)
+                .collect(Collectors.toList());
+
+            var request = RefinementRequest.newBuilder()
+                .setRequesterRank(registry.getCurrentPartitionId())
+                .setRequesterTreeId(0L)
+                .setRoundNumber(roundNumber)
+                .setTreeLevel(maxLevel)
+                .addAllBoundaryKeys(boundaryKeys)
+                .setTimestamp(System.currentTimeMillis())
+                .build();
+
+            requests.add(request);
+            log.trace("Round {}: Created request for rank {} with {} violations, level={}",
+                     roundNumber, sourceRank, groupViolations.size(), maxLevel);
+        }
+
+        // Step 4: Send async requests via coordinator
+        List<java.util.concurrent.CompletableFuture<RefinementResponse>> futures;
+        try {
+            // Use reflection to call sendRequestsParallel on coordinator
+            var method = coordinator.getClass().getMethod("sendRequestsParallel", List.class);
+            @SuppressWarnings("unchecked")
+            var result = (List<java.util.concurrent.CompletableFuture<RefinementResponse>>) method.invoke(coordinator, requests);
+            futures = result;
+        } catch (Exception e) {
+            log.error("Failed to send requests via coordinator", e);
+            throw new RuntimeException("Coordinator sendRequestsParallel failed", e);
+        }
+
+        // Step 5: Await all futures with timeout
+        var responses = new java.util.ArrayList<RefinementResponse>();
+        for (var future : futures) {
+            try {
+                var response = future.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                responses.add(response);
+            } catch (java.util.concurrent.TimeoutException e) {
+                log.warn("Round {}: Request timed out", roundNumber);
+                throw e;
+            } catch (java.util.concurrent.ExecutionException e) {
+                log.warn("Round {}: Request execution failed: {}", roundNumber, e.getMessage());
+            }
+        }
+
+        // Step 6: Build RoundResult
+        var refinementsApplied = violations.size();
+        var needsMoreRefinement = roundNumber < targetRounds;
+        var elapsed = System.currentTimeMillis() - startTime;
+
+        log.info("Round {}: Processed {} violations, {} responses, time={}ms",
+                roundNumber, refinementsApplied, responses.size(), elapsed);
+
+        return new RefinementCoordinator.RoundResult(
+            roundNumber,
+            refinementsApplied,
+            needsMoreRefinement,
+            elapsed
+        );
+    }
+
+    /**
      * Identify refinement needs at partition boundaries for the current round.
      *
      * <p>Uses the TwoOneBalanceChecker to detect 2:1 balance violations at partition
@@ -365,6 +495,82 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         }
 
         return requests;
+    }
+
+    /**
+     * Process a single refinement response and apply ghost elements to the ghost layer.
+     *
+     * <p>This method deserializes ghost elements from the RefinementResponse protobuf
+     * and adds them to the local ghost layer for boundary element checking.
+     *
+     * @param response the refinement response from a remote partition
+     * @param coordinator the refinement coordinator (for context/logging)
+     * @throws ContentSerializer.SerializationException if ghost element deserialization fails
+     */
+    public void applyRefinementResponses(
+            RefinementResponse response,
+            RefinementCoordinator coordinator) throws ContentSerializer.SerializationException {
+
+        // Validate input
+        if (response == null) {
+            log.debug("Received null response, skipping ghost element application");
+            return;
+        }
+
+        if (ghostLayer == null) {
+            log.debug("No ghost layer context, skipping response processing");
+            return;
+        }
+
+        // Extract ghost elements from response
+        var ghostProtos = response.getGhostElementsList();
+        if (ghostProtos.isEmpty()) {
+            log.debug("Response contains no ghost elements, returning");
+            return;
+        }
+
+        log.debug("Processing {} ghost elements from response (responder rank: {})",
+                 ghostProtos.size(), response.getResponderRank());
+
+        var addedCount = 0;
+        var skippedCount = 0;
+
+        // Process each ghost element
+        for (var ghostProto : ghostProtos) {
+            try {
+                // Deserialize ghost element using contentSerializer and idType
+                if (contentSerializer != null && idType != null) {
+                    @SuppressWarnings("unchecked")
+                    var ghostElement = (GhostElement<Key, ID, Content>) GhostElement.fromProtobuf(
+                        ghostProto,
+                        contentSerializer,
+                        idType
+                    );
+
+                    // Add to ghost layer
+                    ghostLayer.addGhostElement(ghostElement);
+                    addedCount++;
+
+                    log.trace("Added ghost element: key={}, entityId={}, ownerRank={}",
+                             ghostElement.getSpatialKey(),
+                             ghostElement.getEntityId(),
+                             ghostElement.getOwnerRank());
+                } else {
+                    // Backward compatibility: skip if serializer not configured
+                    log.trace("Skipping ghost element deserialization (no serializer configured)");
+                    skippedCount++;
+                }
+            } catch (ContentSerializer.SerializationException e) {
+                log.warn("Failed to deserialize ghost element from response: {}", e.getMessage());
+                skippedCount++;
+            } catch (Exception e) {
+                log.warn("Unexpected error processing ghost element: {}", e.getMessage(), e);
+                skippedCount++;
+            }
+        }
+
+        log.debug("Applied {} ghost elements from response (rank {}), skipped {} invalid elements",
+                 addedCount, response.getResponderRank(), skippedCount);
     }
 
     /**
