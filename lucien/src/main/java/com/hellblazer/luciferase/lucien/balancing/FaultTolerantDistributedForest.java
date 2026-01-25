@@ -47,9 +47,14 @@ import java.util.Objects;
  *
  * <p>Thread-safe: Uses thread-safe delegation to underlying forest components.
  *
+ * <p><b>Full Fault Tolerance</b>: For comprehensive fault tolerance with health state tracking,
+ * quorum management, and automatic recovery, see
+ * {@link com.hellblazer.luciferase.lucien.balancing.fault.FaultTolerantDistributedForest}.
+ *
  * @param <Key> the spatial key type (MortonKey, TetreeKey, etc.)
  * @param <ID> the entity ID type
  * @param <Content> the content type stored with entities
+ * @see com.hellblazer.luciferase.lucien.balancing.fault.FaultTolerantDistributedForest
  * @author hal.hildebrand
  */
 public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID extends EntityID, Content>

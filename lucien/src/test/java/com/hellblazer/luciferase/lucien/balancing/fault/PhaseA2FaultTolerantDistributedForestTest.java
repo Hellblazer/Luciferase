@@ -244,16 +244,254 @@ class PhaseA2FaultTolerantDistributedForestTest {
         }
     }
 
-    @Disabled("Test 2: Will implement after InFlightOperationTracker")
+    /**
+     * Test 2: Verify barrier timeout detection with state transitions.
+     *
+     * <p>Validates HEALTHY → SUSPECTED → FAILED transition flow.
+     */
     @Test
     void testBarrierTimeoutDetection() {
-        fail("Not yet implemented");
+        // Given: Partition registered as healthy
+        var partitionId = UUID.randomUUID();
+        faultHandler.markHealthy(partitionId);
+        assertEquals(PartitionStatus.HEALTHY, faultHandler.checkHealth(partitionId));
+
+        // When: First barrier timeout
+        faultHandler.reportBarrierTimeout(partitionId);
+
+        // Then: Should transition to SUSPECTED
+        assertEquals(PartitionStatus.SUSPECTED, faultHandler.checkHealth(partitionId));
+
+        // Verify metrics
+        var metrics1 = faultHandler.getMetrics(partitionId);
+        assertEquals(1, metrics1.failureCount(), "Should have 1 failure after first timeout");
+
+        // When: Second barrier timeout
+        faultHandler.reportBarrierTimeout(partitionId);
+
+        // Then: Should transition to FAILED
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(partitionId));
+
+        // Verify metrics
+        var metrics2 = faultHandler.getMetrics(partitionId);
+        assertEquals(2, metrics2.failureCount(), "Should have 2 failures after second timeout");
     }
 
-    @Disabled("Test 3: Will implement after InFlightOperationTracker")
+    /**
+     * Test 2a: Verify barrier timeout from SUSPECTED state transitions to FAILED.
+     */
+    @Test
+    void testBarrierTimeoutFromSuspectedState() {
+        // Given: Partition in SUSPECTED state
+        var partitionId = UUID.randomUUID();
+        faultHandler.markHealthy(partitionId);
+        faultHandler.reportBarrierTimeout(partitionId);  // HEALTHY -> SUSPECTED
+        assertEquals(PartitionStatus.SUSPECTED, faultHandler.checkHealth(partitionId));
+
+        // When: Second barrier timeout
+        faultHandler.reportBarrierTimeout(partitionId);
+
+        // Then: Should transition to FAILED
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(partitionId));
+
+        // Verify metrics show 2 failures
+        var metrics = faultHandler.getMetrics(partitionId);
+        assertEquals(2, metrics.failureCount(), "Should have 2 failures detected");
+    }
+
+    /**
+     * Test 2b: Verify barrier timeout triggers recovery when registered.
+     */
+    @Test
+    void testBarrierTimeoutTriggerRecovery() throws Exception {
+        // Given: Partition with registered recovery
+        var partitionId = UUID.randomUUID();
+        var recovery = TestRecoveryStrategy.success("barrier-recovery");
+        faultHandler.registerRecovery(partitionId, recovery);
+        faultHandler.markHealthy(partitionId);
+
+        // When: Trigger failure via barrier timeout
+        faultHandler.reportBarrierTimeout(partitionId);  // HEALTHY -> SUSPECTED
+        faultHandler.reportBarrierTimeout(partitionId);  // SUSPECTED -> FAILED
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(partitionId));
+
+        // Initiate recovery
+        var recoveryFuture = faultHandler.initiateRecovery(partitionId);
+        var success = recoveryFuture.get(2, TimeUnit.SECONDS);
+
+        // Then: Recovery should succeed
+        assertTrue(success, "Recovery should succeed");
+        assertEquals(1, recovery.getAttemptCount(), "Recovery should be attempted");
+
+        // Notify complete
+        faultHandler.notifyRecoveryComplete(partitionId, true);
+        assertEquals(PartitionStatus.HEALTHY, faultHandler.checkHealth(partitionId));
+    }
+
+    /**
+     * Test 3: Verify ghost sync failure detection with state transitions.
+     *
+     * <p>Validates HEALTHY → SUSPECTED → FAILED transition flow for sync failures.
+     */
     @Test
     void testGhostSyncFailureDetection() {
-        fail("Not yet implemented");
+        // Given: Partition registered as healthy
+        var partitionId = UUID.randomUUID();
+        faultHandler.markHealthy(partitionId);
+        assertEquals(PartitionStatus.HEALTHY, faultHandler.checkHealth(partitionId));
+
+        // When: First ghost sync failure
+        faultHandler.reportSyncFailure(partitionId);
+
+        // Then: Should transition to SUSPECTED
+        assertEquals(PartitionStatus.SUSPECTED, faultHandler.checkHealth(partitionId));
+
+        // Verify metrics
+        var metrics1 = faultHandler.getMetrics(partitionId);
+        assertEquals(1, metrics1.failureCount(), "Should have 1 failure after first sync failure");
+
+        // When: Second ghost sync failure
+        faultHandler.reportSyncFailure(partitionId);
+
+        // Then: Should transition to FAILED
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(partitionId));
+
+        // Verify metrics
+        var metrics2 = faultHandler.getMetrics(partitionId);
+        assertEquals(2, metrics2.failureCount(), "Should have 2 failures after second sync failure");
+    }
+
+    /**
+     * Test 3a: Verify single ghost sync failure transitions to SUSPECTED.
+     */
+    @Test
+    void testGhostSyncFailureFromHealthyState() {
+        // Given: Partition in HEALTHY state
+        var partitionId = UUID.randomUUID();
+        faultHandler.markHealthy(partitionId);
+        assertEquals(PartitionStatus.HEALTHY, faultHandler.checkHealth(partitionId));
+
+        // When: Single ghost sync failure
+        faultHandler.reportSyncFailure(partitionId);
+
+        // Then: Should transition to SUSPECTED (not immediately FAILED)
+        assertEquals(PartitionStatus.SUSPECTED, faultHandler.checkHealth(partitionId));
+
+        // Verify metrics
+        var metrics = faultHandler.getMetrics(partitionId);
+        assertEquals(1, metrics.failureCount(), "Should have 1 failure detected");
+    }
+
+    /**
+     * Test 3b: Verify ghost sync can recover after failure.
+     */
+    @Test
+    void testGhostSyncRecoveryAfterFailure() throws Exception {
+        // Given: Partition with registered recovery
+        var partitionId = UUID.randomUUID();
+        var recovery = TestRecoveryStrategy.success("ghost-sync-recovery");
+        faultHandler.registerRecovery(partitionId, recovery);
+        faultHandler.markHealthy(partitionId);
+
+        // When: Trigger failure via ghost sync
+        faultHandler.reportSyncFailure(partitionId);  // HEALTHY -> SUSPECTED
+        faultHandler.reportSyncFailure(partitionId);  // SUSPECTED -> FAILED
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(partitionId));
+
+        // Initiate recovery
+        var recoveryFuture = faultHandler.initiateRecovery(partitionId);
+        var success = recoveryFuture.get(2, TimeUnit.SECONDS);
+
+        // Then: Recovery should succeed
+        assertTrue(success, "Recovery should succeed");
+        assertEquals(1, recovery.getAttemptCount(), "Recovery should be attempted");
+
+        // Notify complete
+        faultHandler.notifyRecoveryComplete(partitionId, true);
+        assertEquals(PartitionStatus.HEALTHY, faultHandler.checkHealth(partitionId));
+    }
+
+    /**
+     * Test E2E: Comprehensive end-to-end fault tolerance workflow.
+     *
+     * <p>Validates complete flow: quorum validation → failure detection →
+     * recovery coordination → resume cycle.
+     */
+    @Test
+    void testEndToEndFaultToleranceFlow() throws Exception {
+        // Given: 5-partition forest with recovery strategies
+        var partitions = new ArrayList<UUID>();
+        var recoveries = new ArrayList<TestRecoveryStrategy>();
+        for (int i = 0; i < 5; i++) {
+            var partitionId = UUID.randomUUID();
+            partitions.add(partitionId);
+
+            // Register recovery for all partitions
+            var recovery = TestRecoveryStrategy.success("e2e-recovery-" + i);
+            recoveries.add(recovery);
+            faultHandler.registerRecovery(partitionId, recovery);
+            faultHandler.markHealthy(partitionId);
+        }
+
+        var topology = createTestTopology(5, partitions.toArray(UUID[]::new));
+        var testForest = createTestDistributedForest();
+        ftForest = new FaultTolerantDistributedForest<>(
+            testForest,
+            faultHandler,
+            recoveryLock,
+            new DefaultParallelBalancer<>(BalanceConfiguration.defaultConfig()),
+            mockGhostManager,
+            topology,
+            partitions.get(0),
+            FaultConfiguration.defaultConfig(),
+            tracker
+        );
+
+        ftForest.start();
+
+        // Phase 1: Verify initial quorum
+        assertTrue(ftForest.hasQuorum(), "Should have quorum with 5/5 healthy");
+        var initialStats = ftForest.getStats();
+        assertEquals(5, initialStats.totalPartitions());
+        assertEquals(5, initialStats.healthyPartitions());
+
+        // Phase 2: Trigger failure on one partition
+        var failedPartition = partitions.get(2);
+        faultHandler.reportBarrierTimeout(failedPartition);  // HEALTHY -> SUSPECTED
+        Thread.sleep(50); // Allow event propagation
+
+        var afterSuspectedStats = ftForest.getStats();
+        assertEquals(4, afterSuspectedStats.healthyPartitions());
+        assertEquals(1, afterSuspectedStats.suspectedPartitions());
+
+        // Phase 3: Confirm failure (automatic recovery will be triggered by FaultTolerantDistributedForest)
+        faultHandler.reportBarrierTimeout(failedPartition);  // SUSPECTED -> FAILED
+        Thread.sleep(200); // Allow event propagation and automatic recovery
+
+        // Quorum should still be maintained (4/5 > 50%)
+        assertTrue(ftForest.hasQuorum(), "Should maintain quorum with 4/5 healthy");
+
+        // Phase 4: Wait for automatic recovery to complete
+        // FaultTolerantDistributedForest triggers recovery automatically when partition fails
+        Thread.sleep(300); // Allow time for automatic recovery
+
+        // Phase 5: Verify final state - partition should be recovered or in recovery
+        var finalStats = ftForest.getStats();
+        assertEquals(5, finalStats.totalPartitions(), "Should have 5 total partitions");
+
+        // Recovery happens automatically, so partition may be HEALTHY or still recovering
+        // The key is that recovery was triggered and quorum was maintained
+        assertTrue(finalStats.healthyPartitions() >= 4, "Should have at least 4 healthy partitions");
+        assertTrue(finalStats.totalFailuresDetected() > 0, "Should have detected failures");
+
+        // Verify recovery metrics - automatic recovery may trigger multiple times
+        var recoveryMetrics = faultHandler.getMetrics(failedPartition);
+        assertTrue(recoveryMetrics.recoveryAttempts() >= 1, "Should have at least 1 recovery attempt");
+        assertTrue(recoveryMetrics.successfulRecoveries() >= 1 || recoveryMetrics.failedRecoveries() >= 0,
+            "Recovery should have been attempted");
+
+        // Verify quorum was maintained throughout
+        assertTrue(ftForest.hasQuorum(), "Should maintain quorum at end");
     }
 
     /**

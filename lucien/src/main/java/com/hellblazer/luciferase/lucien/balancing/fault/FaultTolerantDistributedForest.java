@@ -15,16 +15,23 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
- * Fault-tolerant decorator for DistributedForest providing automatic failure
- * detection and recovery coordination.
+ * Comprehensive fault-tolerant decorator for DistributedForest providing automatic
+ * failure detection and recovery coordination.
  *
- * <p>This decorator wraps a DistributedForest implementation and adds:
+ * <p><b>Decorator Purpose</b>: This is a <i>heavyweight</i> decorator that wraps a
+ * DistributedForest implementation and adds complete fault tolerance infrastructure:
  * <ul>
  *   <li>Health state tracking (HEALTHY, SUSPECTED, FAILED)</li>
  *   <li>Quorum-based recovery coordination</li>
  *   <li>Synchronous pause/resume with barrier (waits for in-flight operations)</li>
  *   <li>Metrics collection for monitoring</li>
+ *   <li>Automatic recovery triggering on partition failure</li>
+ *   <li>Recovery lock coordination to prevent concurrent recovery attempts</li>
  * </ul>
+ *
+ * <p><b>Lightweight Alternative</b>: For simpler use cases requiring only pause/resume
+ * coordination without full fault tolerance, see the lightweight decorator in
+ * {@link com.hellblazer.luciferase.lucien.balancing.FaultTolerantDistributedForest}.
  *
  * <h2>Thread Safety</h2>
  * <ul>
@@ -36,6 +43,10 @@ import java.util.function.Consumer;
  * @param <Key> the spatial key type
  * @param <ID> the entity ID type
  * @param <Content> the content type
+ * @see com.hellblazer.luciferase.lucien.balancing.FaultTolerantDistributedForest
+ * @see SimpleFaultHandler
+ * @see RecoveryCoordinatorLock
+ * @see InFlightOperationTracker
  */
 public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID extends EntityID, Content>
     implements ParallelBalancer.DistributedForest<Key, ID, Content> {
