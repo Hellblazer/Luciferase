@@ -399,15 +399,20 @@ public class Phase44ForestIntegrationFixture {
     /**
      * Create a mock GrpcGhostChannel for testing (no network communication).
      */
+    @SuppressWarnings("unchecked")
     private GrpcGhostChannel<MortonKey, LongEntityID, TestEntity> createMockGhostChannel(
         Octree<LongEntityID, TestEntity> octree
     ) {
-        // For testing, we use null GhostCommunicationManager
-        // Real tests would use actual GrpcGhostChannel with network communication
+        // Use Mockito to create a minimal mock GhostCommunicationManager
+        // The mock doesn't need to implement any methods for basic testing
+        var mockCommManager = org.mockito.Mockito.mock(
+            com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostCommunicationManager.class
+        );
+
         return new GrpcGhostChannel<>(
-            null,  // GhostCommunicationManager not needed for testing
-            0,     // currentRank
-            1L,    // treeId
+            mockCommManager,  // Mock GhostCommunicationManager
+            0,                // currentRank
+            1L,               // treeId
             com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
         );
     }
