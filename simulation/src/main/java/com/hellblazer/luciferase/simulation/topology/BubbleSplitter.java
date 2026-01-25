@@ -127,11 +127,16 @@ public class BubbleSplitter {
         var sourceBubbleId = proposal.sourceBubble();
         var splitPlane = proposal.splitPlane();
 
-        log.debug("[{}] Executing split on bubble {}", correlationId, sourceBubbleId);
+        // Record split attempt for metrics
+        metrics.recordSplitAttempt();
+
+        log.debug("[SPLIT-{}] Bubble {}: Starting split operation", correlationId, sourceBubbleId);
 
         // Get source bubble
         var sourceBubble = bubbleGrid.getBubbleById(sourceBubbleId);
         if (sourceBubble == null) {
+            log.error("[SPLIT-{}] Bubble {}: Source bubble not found", correlationId, sourceBubbleId);
+            metrics.recordSplitFailure("SOURCE_BUBBLE_NOT_FOUND");
             return new SplitExecutionResult(false, "Source bubble not found: " + sourceBubbleId, null, 0, 0);
         }
 
@@ -142,15 +147,19 @@ public class BubbleSplitter {
         // Get all entity records with positions
         var allRecords = sourceBubble.getAllEntityRecords();
         if (allRecords.isEmpty()) {
+            log.error("[SPLIT-{}] Bubble {}: Source bubble has no entities", correlationId, sourceBubbleId);
+            metrics.recordSplitFailure("NO_ENTITIES");
             return new SplitExecutionResult(false, "Source bubble has no entities", null, 0, 0);
         }
 
         // Partition entities by split plane
         var entitiesToMove = partitionEntities(allRecords, splitPlane);
-        log.debug("Split plane partitions {} entities to new bubble (out of {})",
-                 entitiesToMove.size(), allRecords.size());
+        log.debug("[SPLIT-{}] Split plane partitions {} entities to new bubble (out of {})",
+                 correlationId, entitiesToMove.size(), allRecords.size());
 
         if (entitiesToMove.isEmpty()) {
+            log.error("[SPLIT-{}] Bubble {}: No entities to move based on split plane", correlationId, sourceBubbleId);
+            metrics.recordSplitFailure("NO_ENTITIES_TO_MOVE");
             return new SplitExecutionResult(false, "No entities to move based on split plane", null, entitiesBeforeSplit, entitiesBeforeSplit);
         }
 
@@ -173,8 +182,13 @@ public class BubbleSplitter {
         var keyLevelResult = findAvailableKey(cx, cy, cz, startLevel, correlationId);
 
         if (keyLevelResult == null) {
-            log.error("[{}] Could not find available key at any level from {} to 21 for centroid ({},{},{})",
-                     correlationId, startLevel, cx, cy, cz);
+            // Calculate levels attempted for diagnostic metrics
+            int levelsAttempted = 21 - startLevel + 1;
+            metrics.recordLevelsExhaustedOnFailure(levelsAttempted);
+            metrics.recordSplitFailure("NO_AVAILABLE_KEY");
+
+            log.error("[SPLIT-{}] Could not find available key at any level from {} to 21 for centroid ({},{},{}). Exhausted {} levels.",
+                     correlationId, startLevel, cx, cy, cz, levelsAttempted);
             return new SplitExecutionResult(false,
                                            "Could not find available key for split bubble after retrying deeper levels",
                                            null, entitiesBeforeSplit, entitiesBeforeSplit);
@@ -252,6 +266,9 @@ public class BubbleSplitter {
                 correlationId, sourceBubbleId, newBubbleId,
                 accountant.entitiesInBubble(sourceBubbleId).size(),
                 accountant.entitiesInBubble(newBubbleId).size());
+
+        // Record successful split in metrics
+        metrics.recordSplitSuccess();
 
         return new SplitExecutionResult(true, "Split successful",
                                        newBubbleId, entitiesBeforeSplit, entitiesAfterSplit);

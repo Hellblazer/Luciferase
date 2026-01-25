@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.simulation.topology;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -36,14 +37,19 @@ import java.util.concurrent.atomic.AtomicLong;
  * Metrics can be exported to monitoring systems via getMetrics().
  * <p>
  * Phase 9C: Topology Reorganization & Execution
+ * Phase P1.1: Diagnostic Enhancement - Split Failure Metrics
  *
  * @author hal.hildebrand
  */
 public class TopologyMetrics {
 
     // Split operation metrics
+    private final AtomicLong splitAttempts = new AtomicLong();
     private final AtomicLong splitsSuccessful = new AtomicLong();
     private final AtomicLong splitsFailed = new AtomicLong();
+    private final ConcurrentHashMap<String, AtomicLong> splitFailuresByReason = new ConcurrentHashMap<>();
+    private final AtomicLong totalLevelsExhausted = new AtomicLong();
+    private final AtomicLong levelsExhaustedCount = new AtomicLong();
 
     // Merge operation metrics
     private final AtomicLong mergesSuccessful = new AtomicLong();
@@ -60,6 +66,16 @@ public class TopologyMetrics {
     private final AtomicLong cooldownRejections = new AtomicLong();
 
     /**
+     * Record a split operation attempt.
+     * <p>
+     * Called at the start of each split operation execution.
+     * Phase P1.1: Diagnostic Enhancement
+     */
+    public void recordSplitAttempt() {
+        splitAttempts.incrementAndGet();
+    }
+
+    /**
      * Record a successful split operation.
      */
     public void recordSplitSuccess() {
@@ -71,6 +87,65 @@ public class TopologyMetrics {
      */
     public void recordSplitFailure() {
         splitsFailed.incrementAndGet();
+    }
+
+    /**
+     * Record a failed split operation with categorized reason.
+     * <p>
+     * Common reasons:
+     * <ul>
+     *   <li>KEY_COLLISION - Unable to find unoccupied key at target level</li>
+     *   <li>NO_AVAILABLE_KEY - Exhausted all levels without finding available key</li>
+     *   <li>ENTITY_CONSERVATION_FAILED - Entity count mismatch after split</li>
+     *   <li>SOURCE_BUBBLE_NOT_FOUND - Source bubble does not exist</li>
+     *   <li>NO_ENTITIES - Source bubble has no entities to split</li>
+     * </ul>
+     * Phase P1.1: Diagnostic Enhancement
+     *
+     * @param reason the failure reason category
+     */
+    public void recordSplitFailure(String reason) {
+        splitsFailed.incrementAndGet();
+        splitFailuresByReason.computeIfAbsent(reason, k -> new AtomicLong()).incrementAndGet();
+    }
+
+    /**
+     * Record the number of tree levels exhausted during a failed split.
+     * <p>
+     * Used to calculate average depth searched before failure.
+     * Phase P1.1: Diagnostic Enhancement
+     *
+     * @param levels number of levels attempted before failure
+     */
+    public void recordLevelsExhaustedOnFailure(int levels) {
+        totalLevelsExhausted.addAndGet(levels);
+        levelsExhaustedCount.incrementAndGet();
+    }
+
+    /**
+     * Get comprehensive split operation metrics.
+     * <p>
+     * Returns diagnostic data for understanding split retry patterns and failure modes.
+     * Phase P1.1: Diagnostic Enhancement
+     *
+     * @return split metrics snapshot
+     */
+    public SplitMetrics getSplitMetrics() {
+        var failuresByReason = new HashMap<String, Long>();
+        splitFailuresByReason.forEach((reason, counter) -> failuresByReason.put(reason, counter.get()));
+
+        long levelsCount = levelsExhaustedCount.get();
+        double avgLevels = levelsCount > 0
+            ? (double) totalLevelsExhausted.get() / levelsCount
+            : 0.0;
+
+        return new SplitMetrics(
+            splitAttempts.get(),
+            splitsSuccessful.get(),
+            splitsFailed.get(),
+            failuresByReason,
+            avgLevels
+        );
     }
 
     /**
@@ -217,8 +292,12 @@ public class TopologyMetrics {
      * Used for testing or when starting a new monitoring period.
      */
     public void reset() {
+        splitAttempts.set(0);
         splitsSuccessful.set(0);
         splitsFailed.set(0);
+        splitFailuresByReason.clear();
+        totalLevelsExhausted.set(0);
+        levelsExhaustedCount.set(0);
         mergesSuccessful.set(0);
         mergesFailed.set(0);
         movesSuccessful.set(0);
