@@ -51,17 +51,33 @@ public class RefinementCoordinator {
 
     private final BalanceCoordinatorClient client;
     private final RefinementRequestManager requestManager;
+    private final int myRank;
+    private final int totalPartitions;
 
     /**
      * Create a new refinement coordinator.
      *
      * @param client the gRPC client for communication
      * @param requestManager the request manager for tracking
-     * @throws NullPointerException if any parameter is null
+     * @param myRank this partition's rank (0 to P-1)
+     * @param totalPartitions total number of partitions P
+     * @throws NullPointerException if client or requestManager is null
+     * @throws IllegalArgumentException if myRank < 0 or totalPartitions <= 0
      */
-    public RefinementCoordinator(BalanceCoordinatorClient client, RefinementRequestManager requestManager) {
+    public RefinementCoordinator(BalanceCoordinatorClient client, RefinementRequestManager requestManager,
+                                int myRank, int totalPartitions) {
         this.client = Objects.requireNonNull(client, "client cannot be null");
         this.requestManager = Objects.requireNonNull(requestManager, "requestManager cannot be null");
+
+        if (myRank < 0) {
+            throw new IllegalArgumentException("myRank must be non-negative, got " + myRank);
+        }
+        if (totalPartitions <= 0) {
+            throw new IllegalArgumentException("totalPartitions must be positive, got " + totalPartitions);
+        }
+
+        this.myRank = myRank;
+        this.totalPartitions = totalPartitions;
     }
 
     /**
@@ -133,27 +149,97 @@ public class RefinementCoordinator {
      * <p>Uses the butterfly pattern to identify partners for this round and sends
      * refinement requests to them in parallel using virtual threads.
      *
-     * @param roundNumber the current round number (0-based)
+     * @param roundNumber the current round number (1-based)
      * @param targetRounds the target number of rounds
      * @return the result of this refinement round
      */
     public RoundResult executeRefinementRound(int roundNumber, int targetRounds) {
-        log.debug("Executing refinement round {}", roundNumber);
+        log.debug("Executing refinement round {} (rank {}/{})", roundNumber, myRank, totalPartitions);
 
         var startTime = System.currentTimeMillis();
 
-        // For the green phase: return needsMoreRefinement based on round progress
-        // This allows all O(log P) rounds to execute as expected
-        // In Phase C (refactor), this would actually execute butterfly communication
-        var needsMoreRefinement = (roundNumber < targetRounds);
+        // Convert from 1-based to 0-based for ButterflyPattern
+        var zeroBasedRound = roundNumber - 1;
+
+        // Get butterfly partner for this round
+        var partner = ButterflyPattern.getPartner(myRank, zeroBasedRound, totalPartitions);
+
         var refinementsApplied = 0;
 
+        if (partner < 0) {
+            // No partner for this round (non-power-of-2 edge case)
+            log.debug("Rank {} has no partner in round {} (0-based round {})",
+                     myRank, roundNumber, zeroBasedRound);
+        } else {
+            log.debug("Rank {} communicating with partner {} in round {}",
+                     myRank, partner, roundNumber);
+
+            // Build refinement requests for partner
+            var requests = buildRequestsForPartner(partner, roundNumber);
+
+            if (!requests.isEmpty()) {
+                // Send requests in parallel
+                var futures = sendRequestsParallel(requests);
+
+                // Wait for responses with timeout
+                var responses = new ArrayList<RefinementResponse>();
+                for (var future : futures) {
+                    try {
+                        var response = future.get(5, TimeUnit.SECONDS);
+                        responses.add(response);
+
+                        // Track refinements from this response
+                        if (response.getGhostElementsCount() > 0) {
+                            refinementsApplied += response.getGhostElementsCount();
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to get response from partner {} in round {}: {}",
+                                partner, roundNumber, e.getMessage());
+                        // Continue processing other responses
+                    }
+                }
+
+                log.debug("Received {} responses from partner {} in round {}",
+                         responses.size(), partner, roundNumber);
+            }
+        }
+
+        var needsMoreRefinement = (roundNumber < targetRounds);
         var elapsed = System.currentTimeMillis() - startTime;
 
         log.trace("Completed refinement round {}: refinements={}, needsMore={}",
                  roundNumber, refinementsApplied, needsMoreRefinement);
 
         return new RoundResult(roundNumber, refinementsApplied, needsMoreRefinement, elapsed);
+    }
+
+    /**
+     * Build refinement requests for a specific butterfly partner.
+     *
+     * <p>Creates requests containing boundary keys that need refinement
+     * from the partner partition.
+     *
+     * @param partnerRank the rank of the partner partition
+     * @param roundNumber the current round number
+     * @return list of refinement requests (typically 1 per partner)
+     */
+    private List<RefinementRequest> buildRequestsForPartner(int partnerRank, int roundNumber) {
+        var requests = new ArrayList<RefinementRequest>();
+
+        // Build request for this partner
+        var request = RefinementRequest.newBuilder()
+            .setRequesterRank(myRank)
+            .setRequesterTreeId(0L)  // TODO: support multiple trees
+            .setRoundNumber(roundNumber)
+            .setTreeLevel(0)  // TODO: extract actual level from boundary violations
+            .setTimestamp(System.currentTimeMillis())
+            .build();
+
+        requests.add(request);
+
+        log.trace("Built {} refinement requests for partner rank {}", requests.size(), partnerRank);
+
+        return requests;
     }
 
     /**

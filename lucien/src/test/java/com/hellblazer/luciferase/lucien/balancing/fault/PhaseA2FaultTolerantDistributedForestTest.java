@@ -397,6 +397,233 @@ class PhaseA2FaultTolerantDistributedForestTest {
         assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
     }
 
+    // === Test Recovery Strategy ===
+
+    /**
+     * Test implementation of PartitionRecovery for testing recovery wiring.
+     */
+    private static class TestRecoveryStrategy implements PartitionRecovery {
+        private final String name;
+        private final FaultConfiguration config;
+        private final boolean shouldSucceed;
+        private final long delayMs;
+        private final AtomicInteger attemptCount;
+
+        TestRecoveryStrategy(String name, FaultConfiguration config, boolean shouldSucceed, long delayMs) {
+            this.name = name;
+            this.config = config;
+            this.shouldSucceed = shouldSucceed;
+            this.delayMs = delayMs;
+            this.attemptCount = new AtomicInteger(0);
+        }
+
+        static TestRecoveryStrategy success(String name) {
+            return new TestRecoveryStrategy(name, FaultConfiguration.defaultConfig(), true, 0);
+        }
+
+        static TestRecoveryStrategy failure(String name) {
+            return new TestRecoveryStrategy(name, FaultConfiguration.defaultConfig(), false, 0);
+        }
+
+        static TestRecoveryStrategy delayed(String name, long delayMs) {
+            return new TestRecoveryStrategy(name, FaultConfiguration.defaultConfig(), true, delayMs);
+        }
+
+        @Override
+        public CompletableFuture<RecoveryResult> recover(UUID partitionId, FaultHandler handler) {
+            var startTime = System.currentTimeMillis();
+            var attempt = attemptCount.incrementAndGet();
+
+            return CompletableFuture.supplyAsync(() -> {
+                if (delayMs > 0) {
+                    try {
+                        Thread.sleep(delayMs);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return RecoveryResult.failure(
+                            partitionId,
+                            System.currentTimeMillis() - startTime,
+                            name,
+                            attempt,
+                            "Recovery interrupted",
+                            e
+                        );
+                    }
+                }
+
+                var duration = System.currentTimeMillis() - startTime;
+
+                if (shouldSucceed) {
+                    return RecoveryResult.success(partitionId, duration, name, attempt);
+                } else {
+                    return RecoveryResult.failure(
+                        partitionId,
+                        duration,
+                        name,
+                        attempt,
+                        "Test recovery configured to fail",
+                        null
+                    );
+                }
+            });
+        }
+
+        @Override
+        public boolean canRecover(UUID partitionId, FaultHandler handler) {
+            var status = handler.checkHealth(partitionId);
+            return status == PartitionStatus.FAILED || status == PartitionStatus.SUSPECTED;
+        }
+
+        @Override
+        public String getStrategyName() {
+            return name;
+        }
+
+        @Override
+        public FaultConfiguration getConfiguration() {
+            return config;
+        }
+
+        @Override
+        public CompletableFuture<Boolean> initiateRecovery(UUID failedPartitionId) {
+            // Support legacy method by calling recover() and converting result
+            return recover(failedPartitionId, null)
+                .thenApply(RecoveryResult::success)
+                .exceptionally(ex -> false);
+        }
+
+        int getAttemptCount() {
+            return attemptCount.get();
+        }
+    }
+
+    // === PHASE 1: Recovery Wiring Tests ===
+
+    /**
+     * Test: Successful recovery restores partition to HEALTHY.
+     */
+    @Test
+    void testRecoverySuccessRestoresHealthy() throws Exception {
+        // Given: Partition with registered recovery strategy
+        var partitionId = UUID.randomUUID();
+        var recovery = TestRecoveryStrategy.success("test-recovery");
+        faultHandler.registerRecovery(partitionId, recovery);
+
+        // Register partition
+        faultHandler.markHealthy(partitionId);
+        assertEquals(PartitionStatus.HEALTHY, faultHandler.checkHealth(partitionId));
+
+        // When: Partition fails
+        faultHandler.reportBarrierTimeout(partitionId);  // HEALTHY -> SUSPECTED
+        faultHandler.reportBarrierTimeout(partitionId);  // SUSPECTED -> FAILED
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(partitionId));
+
+        // Initiate recovery
+        var recoveryFuture = faultHandler.initiateRecovery(partitionId);
+        var success = recoveryFuture.get(2, TimeUnit.SECONDS);
+
+        // Then: Recovery should succeed
+        assertTrue(success, "Recovery should succeed");
+
+        // Verify recovery was called
+        assertEquals(1, recovery.getAttemptCount(), "Recovery should have been attempted once");
+
+        // Notify recovery complete
+        faultHandler.notifyRecoveryComplete(partitionId, true);
+
+        // Verify partition is HEALTHY
+        assertEquals(PartitionStatus.HEALTHY, faultHandler.checkHealth(partitionId));
+
+        // Verify metrics
+        var metrics = faultHandler.getMetrics(partitionId);
+        assertNotNull(metrics);
+        assertEquals(1, metrics.recoveryAttempts(), "Should have 1 recovery attempt");
+        assertEquals(1, metrics.successfulRecoveries(), "Should have 1 successful recovery");
+        assertEquals(0, metrics.failedRecoveries(), "Should have 0 failed recoveries");
+    }
+
+    /**
+     * Test: Failed recovery leaves partition in FAILED state.
+     */
+    @Test
+    void testRecoveryFailureLeavesPartitionFailed() throws Exception {
+        // Given: Partition with recovery strategy that fails
+        var partitionId = UUID.randomUUID();
+        var recovery = TestRecoveryStrategy.failure("test-recovery-fail");
+        faultHandler.registerRecovery(partitionId, recovery);
+
+        // Register partition
+        faultHandler.markHealthy(partitionId);
+        assertEquals(PartitionStatus.HEALTHY, faultHandler.checkHealth(partitionId));
+
+        // When: Partition fails
+        faultHandler.reportBarrierTimeout(partitionId);  // HEALTHY -> SUSPECTED
+        faultHandler.reportBarrierTimeout(partitionId);  // SUSPECTED -> FAILED
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(partitionId));
+
+        // Initiate recovery
+        var recoveryFuture = faultHandler.initiateRecovery(partitionId);
+        var success = recoveryFuture.get(2, TimeUnit.SECONDS);
+
+        // Then: Recovery should fail
+        assertFalse(success, "Recovery should fail");
+
+        // Verify recovery was attempted
+        assertEquals(1, recovery.getAttemptCount(), "Recovery should have been attempted once");
+
+        // Notify recovery failed
+        faultHandler.notifyRecoveryComplete(partitionId, false);
+
+        // Verify partition remains FAILED
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(partitionId));
+
+        // Verify metrics
+        var metrics = faultHandler.getMetrics(partitionId);
+        assertNotNull(metrics);
+        assertEquals(1, metrics.recoveryAttempts(), "Should have 1 recovery attempt");
+        assertEquals(0, metrics.successfulRecoveries(), "Should have 0 successful recoveries");
+        assertEquals(1, metrics.failedRecoveries(), "Should have 1 failed recovery");
+    }
+
+    /**
+     * Test: Recovery timeout handled gracefully without crashes.
+     */
+    @Test
+    void testRecoveryTimeoutHandledGracefully() throws Exception {
+        // Given: Partition with slow recovery strategy
+        var partitionId = UUID.randomUUID();
+        var recovery = TestRecoveryStrategy.delayed("test-recovery-slow", 5000); // 5 second delay
+        faultHandler.registerRecovery(partitionId, recovery);
+
+        // Register partition
+        faultHandler.markHealthy(partitionId);
+
+        // When: Partition fails
+        faultHandler.reportBarrierTimeout(partitionId);  // HEALTHY -> SUSPECTED
+        faultHandler.reportBarrierTimeout(partitionId);  // SUSPECTED -> FAILED
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(partitionId));
+
+        // Initiate recovery (will timeout in background)
+        var recoveryFuture = faultHandler.initiateRecovery(partitionId);
+
+        // Then: Should handle timeout gracefully
+        // Don't wait for completion, just verify no crash
+        Thread.sleep(100); // Brief wait to ensure recovery started
+
+        // Verify recovery was initiated
+        assertTrue(recovery.getAttemptCount() > 0, "Recovery should have been initiated");
+
+        // Verify partition state is consistent (still FAILED while recovery in progress)
+        var currentStatus = faultHandler.checkHealth(partitionId);
+        assertNotNull(currentStatus, "Partition status should not be null");
+        assertEquals(PartitionStatus.FAILED, currentStatus, "Partition should remain FAILED during recovery");
+
+        // Verify metrics are consistent
+        var metrics = faultHandler.getMetrics(partitionId);
+        assertNotNull(metrics);
+        assertEquals(1, metrics.recoveryAttempts(), "Should have 1 recovery attempt");
+    }
+
     // === Helper Methods ===
 
     /**

@@ -63,7 +63,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     private final ParallelBalancer.PartitionRegistry registry;
     private final BalanceConfiguration config;
     private final RefinementRequestManager requestManager;
-    private final RefinementCoordinator coordinator;
+    private volatile RefinementCoordinator coordinator;  // Initialized lazily in execute()
     private volatile boolean lastRoundIndicatedConvergence = false;
 
     // Forest context for violation detection and ghost element application
@@ -86,7 +86,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         this.registry = Objects.requireNonNull(registry, "registry cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.requestManager = new RefinementRequestManager();
-        this.coordinator = new RefinementCoordinator(client, requestManager);
+        this.coordinator = null;  // Initialized lazily in execute() when rank/partition count known
     }
 
     /**
@@ -126,6 +126,13 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         Objects.requireNonNull(forest, "forest cannot be null");
 
         log.info("Starting cross-partition balance: initiator={}, partitions={}", initiatorRank, totalPartitions);
+
+        // Lazily initialize coordinator with rank and partition count
+        if (coordinator == null) {
+            coordinator = new RefinementCoordinator(client, requestManager, initiatorRank, totalPartitions);
+            log.debug("Initialized RefinementCoordinator for rank {} with {} total partitions",
+                     initiatorRank, totalPartitions);
+        }
 
         var metrics = new BalanceMetrics();
         var startTime = System.currentTimeMillis();
