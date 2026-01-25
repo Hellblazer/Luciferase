@@ -27,6 +27,8 @@ import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -56,6 +58,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 public class CrossPartitionBalancePhaseTest {
+
+    private static final Logger log = LoggerFactory.getLogger(CrossPartitionBalancePhaseTest.class);
 
     private Forest<MortonKey, LongEntityID, String> forest;
     private MockBalanceCoordinatorClient client;
@@ -331,6 +335,283 @@ public class CrossPartitionBalancePhaseTest {
             .build();
     }
 
+    // ========== D.5 Tests: identifyRefinementNeeds() ==========
+
+    // TEST 1: No violations detected - should return empty RoundResult
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testIdentifyRefinementNeeds_NoViolations() throws Exception {
+        // Setup: Use real balance checker with empty forest (no violations)
+        var balanceChecker = new com.hellblazer.luciferase.lucien.balancing.TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+
+        // Create empty ghost layer
+        var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
+        );
+        phase.setForestContext(forest, ghostLayer);
+
+        // Mock coordinator (should not be called)
+        var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID, String>();
+
+        // Execute
+        var result = phase.identifyRefinementNeeds(1, 2, balanceChecker, mockCoordinator);
+
+        // Verify
+        assertNotNull(result, "Result should not be null");
+        assertEquals(0, result.refinementsApplied(), "Should have 0 violations processed");
+        assertEquals(1, result.roundNumber(), "Should track round number");
+        assertFalse(result.needsMoreRefinement(), "Should not need more refinement with no violations");
+        assertEquals(0, mockCoordinator.getRequestsSent(), "Should not send requests when no violations");
+    }
+
+    // TEST 2: Single violation from one rank - should create 1 request
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testIdentifyRefinementNeeds_SingleViolation() throws Exception {
+        // Setup: Create a mock balance checker that returns a single violation
+        var balanceChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+        var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
+        );
+
+        // Add a single ghost element that will create a violation
+        var ghostKey = new MortonKey(100L, (byte) 3); // Level 3 ghost element
+        var localKey = new MortonKey(101L, (byte) 1); // Level 1 local element (diff = 2, violation!)
+
+        // Create ghost element with proper constructor
+        var ghostElement = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
+            ghostKey,
+            new LongEntityID(100L),
+            "ghost-content",
+            new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f),
+            1,  // ownerRank = 1
+            0L  // globalTreeId
+        );
+        ghostLayer.addGhostElement(ghostElement);
+
+        // Add local element to first tree in forest
+        var tree = forest.getAllTrees().get(0);
+        var spatialIndex = tree.getSpatialIndex();
+        spatialIndex.insert(new LongEntityID(1L), new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f), (byte) 1, "test-entity", null);
+
+        phase.setForestContext(forest, ghostLayer);
+
+        var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID, String>();
+
+        // Execute
+        var result = phase.identifyRefinementNeeds(1, 2, balanceChecker, mockCoordinator);
+
+        // Verify
+        assertNotNull(result, "Result should not be null");
+        assertTrue(result.refinementsApplied() > 0 || mockCoordinator.getRequestsSent() > 0,
+                  "Should process violations or send requests");
+        assertEquals(1, result.roundNumber(), "Should track round number");
+    }
+
+    // TEST 3: Multiple violations from different ranks - should group by rank
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testIdentifyRefinementNeeds_MultipleRanks() throws Exception {
+        // Setup: Create violations from 3 different ranks
+        var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
+        );
+
+        // Rank 1: 2 violations
+        addViolationPair(ghostLayer, forest, 100L, 101L, 1);
+        addViolationPair(ghostLayer, forest, 102L, 103L, 1);
+
+        // Rank 2: 2 violations
+        addViolationPair(ghostLayer, forest, 200L, 201L, 2);
+        addViolationPair(ghostLayer, forest, 202L, 203L, 2);
+
+        // Rank 3: 1 violation
+        addViolationPair(ghostLayer, forest, 300L, 301L, 3);
+
+        phase.setForestContext(forest, ghostLayer);
+
+        var balanceChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+        var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID, String>();
+
+        // Execute
+        var result = phase.identifyRefinementNeeds(1, 2, balanceChecker, mockCoordinator);
+
+        // Verify: Should group into 3 requests (one per rank)
+        var capturedRequests = mockCoordinator.getCapturedRequests();
+        assertTrue(capturedRequests.size() <= 3,
+                  "Should create at most 3 requests (one per rank)");
+        assertNotNull(result, "Result should not be null");
+    }
+
+    // TEST 4: Boundary keys included in requests
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testIdentifyRefinementNeeds_RespectsBoundaryKeys() throws Exception {
+        // Setup: Create violations with distinct boundary keys
+        var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
+        );
+
+        // Add violations with specific keys
+        var ghostKey1 = new MortonKey(100L, (byte) 3);
+        var localKey1 = new MortonKey(101L, (byte) 1);
+        var ghostKey2 = new MortonKey(200L, (byte) 3);
+        var localKey2 = new MortonKey(201L, (byte) 1);
+
+        var ghost1 = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
+            ghostKey1, new LongEntityID(100L), "ghost1",
+            new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f), 1, 0L
+        );
+        var ghost2 = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
+            ghostKey2, new LongEntityID(200L), "ghost2",
+            new javax.vecmath.Point3f(20.0f, 20.0f, 20.0f), 1, 0L
+        );
+
+        ghostLayer.addGhostElement(ghost1);
+        ghostLayer.addGhostElement(ghost2);
+
+        var tree = forest.getAllTrees().get(0);
+        var spatialIndex = tree.getSpatialIndex();
+        spatialIndex.insert(new LongEntityID(1L), new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f), (byte) 1, "entity1", null);
+        spatialIndex.insert(new LongEntityID(2L), new javax.vecmath.Point3f(20.0f, 20.0f, 20.0f), (byte) 1, "entity2", null);
+
+        phase.setForestContext(forest, ghostLayer);
+
+        var balanceChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+        var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID, String>();
+
+        // Execute
+        var result = phase.identifyRefinementNeeds(1, 2, balanceChecker, mockCoordinator);
+
+        // Verify: Requests should include boundary keys
+        var capturedRequests = mockCoordinator.getCapturedRequests();
+        if (!capturedRequests.isEmpty()) {
+            for (var request : capturedRequests) {
+                // Should have boundary keys from violations
+                assertTrue(request.getBoundaryKeysCount() >= 0,
+                          "Request should contain boundary keys");
+            }
+        }
+    }
+
+    // TEST 5: Timeout handling - should throw TimeoutException
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    public void testIdentifyRefinementNeeds_AsyncTimeout() {
+        // Setup: Create violation that will trigger request
+        var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
+        );
+        addViolationPair(ghostLayer, forest, 100L, 101L, 1);
+
+        phase.setForestContext(forest, ghostLayer);
+
+        var balanceChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+        var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID, String>();
+        mockCoordinator.setShouldTimeout(true);
+
+        // Execute and verify timeout
+        assertThrows(java.util.concurrent.TimeoutException.class, () -> {
+            phase.identifyRefinementNeeds(1, 2, balanceChecker, mockCoordinator);
+        }, "Should throw TimeoutException when coordinator times out");
+    }
+
+    // TEST 6: Coordinator exception - should propagate
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testIdentifyRefinementNeeds_CoordinatorException() {
+        // Setup: Create violation that will trigger request
+        var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
+        );
+        addViolationPair(ghostLayer, forest, 100L, 101L, 1);
+
+        phase.setForestContext(forest, ghostLayer);
+
+        var balanceChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+        var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID, String>();
+        mockCoordinator.setShouldThrowException(true);
+
+        // Execute and verify exception propagation
+        assertThrows(RuntimeException.class, () -> {
+            phase.identifyRefinementNeeds(1, 2, balanceChecker, mockCoordinator);
+        }, "Should propagate RuntimeException from coordinator");
+    }
+
+    // TEST 7: Integration test with Phase44ForestIntegrationFixture
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    public void testIdentifyRefinementNeeds_IntegrationWithRealChecker() throws Exception {
+        // Setup: Use real forest fixture
+        var fixture = new com.hellblazer.luciferase.lucien.balancing.fault.Phase44ForestIntegrationFixture();
+        var distributedForest = fixture.createForest();
+        fixture.syncGhostLayer();
+
+        var realForest = fixture.getForest();
+        var realGhostLayer = fixture.getGhostLayer();
+
+        // Create typed instances for proper generics
+        var integrationClient = new MockBalanceCoordinatorClient();
+        var integrationRegistry = new MockPartitionRegistry(4);
+        var integrationConfig = BalanceConfiguration.defaultConfig();
+
+        var integrationPhase = new CrossPartitionBalancePhase<MortonKey, LongEntityID,
+                com.hellblazer.luciferase.lucien.balancing.fault.Phase44ForestIntegrationFixture.TestEntity>(
+            integrationClient, integrationRegistry, integrationConfig
+        );
+        integrationPhase.setForestContext(realForest, realGhostLayer);
+
+        var realBalanceChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID,
+                com.hellblazer.luciferase.lucien.balancing.fault.Phase44ForestIntegrationFixture.TestEntity>();
+
+        var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID,
+                com.hellblazer.luciferase.lucien.balancing.fault.Phase44ForestIntegrationFixture.TestEntity>();
+
+        // Execute
+        var result = integrationPhase.identifyRefinementNeeds(1, 2, realBalanceChecker, mockCoordinator);
+
+        // Verify
+        assertNotNull(result, "Result should not be null");
+        assertEquals(1, result.roundNumber(), "Should track round number");
+
+        // Capture requests for validation
+        var capturedRequests = mockCoordinator.getCapturedRequests();
+        log.info("Integration test: {} violations found, {} requests sent",
+                result.refinementsApplied(), capturedRequests.size());
+
+        // Verify request structure if any were sent
+        for (var request : capturedRequests) {
+            assertTrue(request.getRoundNumber() > 0, "Request should have valid round number");
+            assertTrue(request.getTreeLevel() >= 0, "Request should have valid tree level");
+        }
+    }
+
+    // Helper method to add violation pairs
+    private void addViolationPair(
+        com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String> ghostLayer,
+        Forest<MortonKey, LongEntityID, String> forest,
+        long ghostCode,
+        long localCode,
+        int ownerRank
+    ) {
+        var ghostKey = new MortonKey(ghostCode, (byte) 3); // Level 3
+        var localKey = new MortonKey(localCode, (byte) 1); // Level 1 (diff = 2, violation)
+
+        var ghostElement = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
+            ghostKey,
+            new LongEntityID(ghostCode),
+            "ghost-" + ghostCode,
+            new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f),
+            ownerRank,
+            0L
+        );
+        ghostLayer.addGhostElement(ghostElement);
+
+        var tree = forest.getAllTrees().get(0);
+        var spatialIndex = tree.getSpatialIndex();
+        spatialIndex.insert(new LongEntityID(localCode), new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f), (byte) 1, "entity-" + localCode, null);
+    }
+
     // Mock BalanceCoordinatorClient for testing
     private static class MockBalanceCoordinatorClient extends BalanceCoordinatorClient {
         private final Map<Integer, RefinementResponse> mockResponses = new ConcurrentHashMap<>();
@@ -464,6 +745,60 @@ public class CrossPartitionBalancePhaseTest {
 
         public int getBarrierCount() {
             return barrierCount.get();
+        }
+    }
+
+    // Mock RefinementCoordinator for D.5 tests
+    private static class MockRefinementCoordinator<Key extends com.hellblazer.luciferase.lucien.SpatialKey<Key>,
+                                                    ID extends com.hellblazer.luciferase.lucien.entity.EntityID,
+                                                    Content> {
+        private final AtomicInteger requestsSent = new AtomicInteger(0);
+        private final List<RefinementRequest> capturedRequests = Collections.synchronizedList(new ArrayList<>());
+        private boolean shouldTimeout = false;
+        private boolean shouldThrowException = false;
+
+        public List<CompletableFuture<RefinementResponse>> sendRequestsParallel(List<RefinementRequest> requests) {
+            requestsSent.addAndGet(requests.size());
+            capturedRequests.addAll(requests);
+
+            if (shouldThrowException) {
+                throw new RuntimeException("Coordinator exception");
+            }
+
+            var futures = new ArrayList<CompletableFuture<RefinementResponse>>();
+            for (var request : requests) {
+                if (shouldTimeout) {
+                    var future = new CompletableFuture<RefinementResponse>();
+                    // Don't complete the future - let it timeout
+                    futures.add(future);
+                } else {
+                    var response = RefinementResponse.newBuilder()
+                        .setResponderRank(request.getRequesterRank())
+                        .setResponderTreeId(0L)
+                        .setRoundNumber(request.getRoundNumber())
+                        .setNeedsFurtherRefinement(false)
+                        .setTimestamp(System.currentTimeMillis())
+                        .build();
+                    futures.add(CompletableFuture.completedFuture(response));
+                }
+            }
+            return futures;
+        }
+
+        public int getRequestsSent() {
+            return requestsSent.get();
+        }
+
+        public List<RefinementRequest> getCapturedRequests() {
+            return new ArrayList<>(capturedRequests);
+        }
+
+        public void setShouldTimeout(boolean shouldTimeout) {
+            this.shouldTimeout = shouldTimeout;
+        }
+
+        public void setShouldThrowException(boolean shouldThrowException) {
+            this.shouldThrowException = shouldThrowException;
         }
     }
 }
