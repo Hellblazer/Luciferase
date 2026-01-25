@@ -232,6 +232,7 @@ public class PredatorPreyGridWebDemo {
         private final TopologyExecutor executor;
         private final MultiBubbleVisualizationServer vizServer;
         private final DensityMonitor densityMonitor;
+        private final SplitCooldownTracker splitCooldownTracker;
 
         private int currentTick = 0;
 
@@ -253,6 +254,8 @@ public class PredatorPreyGridWebDemo {
             this.executor = executor;
             this.vizServer = vizServer;
             this.densityMonitor = densityMonitor;
+            this.splitCooldownTracker = new SplitCooldownTracker();
+            // Use system clock for production - can be overridden for testing
         }
 
         /**
@@ -334,6 +337,12 @@ public class PredatorPreyGridWebDemo {
                 var state = densityMonitor.getState(bubble.id());
 
                 if (state == DensityState.NEEDS_SPLIT && count > 250) {
+                    // Check cooldown before attempting split
+                    if (splitCooldownTracker.isOnCooldown(bubble.id())) {
+                        log.debug("[SPLIT-COOLDOWN] Skipping bubble {} (cooldown active)", bubble.id());
+                        continue;
+                    }
+
                     log.info("EXECUTING SPLIT: Bubble {} has {} entities (>250 threshold) - state: {}",
                              bubble.id(), count, state);
 
@@ -384,6 +393,8 @@ public class PredatorPreyGridWebDemo {
 
                         if (result.success()) {
                             log.info("Split successful: {}", result.message());
+                            // Clear cooldown on success
+                            splitCooldownTracker.recordSuccess(bubble.id());
                             // CRITICAL: Update density monitor immediately so UI shows correct entity counts
                             var updatedDistribution = accountant.getDistribution();
                             densityMonitor.update(updatedDistribution);
@@ -391,6 +402,8 @@ public class PredatorPreyGridWebDemo {
                             updateVisualizationGeometries();
                         } else {
                             log.warn("Split failed: {}", result.message());
+                            // Set cooldown on failure to prevent retry spam
+                            splitCooldownTracker.recordFailure(bubble.id());
                         }
                     } catch (Exception e) {
                         log.error("Exception during split execution: {}", e.getMessage(), e);
