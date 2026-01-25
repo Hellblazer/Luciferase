@@ -375,8 +375,17 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
             @SuppressWarnings("unchecked")
             var result = (List<java.util.concurrent.CompletableFuture<RefinementResponse>>) method.invoke(coordinator, requests);
             futures = result;
-        } catch (Exception e) {
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            // Unwrap exceptions thrown by sendRequestsParallel()
+            var cause = e.getCause();
+            if (cause instanceof RuntimeException rte) {
+                log.warn("Round {}: Coordinator threw exception: {}", roundNumber, rte.getMessage());
+                throw rte;  // Propagate RuntimeException directly
+            }
             log.error("Failed to send requests via coordinator", e);
+            throw new RuntimeException("Coordinator sendRequestsParallel failed", cause);
+        } catch (Exception e) {
+            log.error("Failed to send requests via coordinator (reflection)", e);
             throw new RuntimeException("Coordinator sendRequestsParallel failed", e);
         }
 

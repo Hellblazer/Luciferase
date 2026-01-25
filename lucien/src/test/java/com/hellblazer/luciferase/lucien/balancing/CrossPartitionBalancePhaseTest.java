@@ -70,6 +70,12 @@ public class CrossPartitionBalancePhaseTest {
     @BeforeEach
     public void setUp() {
         forest = new Forest<>(ForestConfig.defaultConfig());
+
+        // Add a tree to the forest so tests can insert elements
+        var idGen = new com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator();
+        var octree = new com.hellblazer.luciferase.lucien.octree.Octree<LongEntityID, String>(idGen);
+        forest.addTree(octree);
+
         client = new MockBalanceCoordinatorClient();
         registry = new MockPartitionRegistry(4); // 4 partitions
         config = BalanceConfiguration.defaultConfig();
@@ -368,43 +374,39 @@ public class CrossPartitionBalancePhaseTest {
     @Test
     @Timeout(value = 5, unit = TimeUnit.SECONDS)
     public void testIdentifyRefinementNeeds_SingleViolation() throws Exception {
-        // Setup: Create a mock balance checker that returns a single violation
-        var balanceChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+        // Setup: Create ghost layer
         var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
             com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
         );
 
-        // Add a single ghost element that will create a violation
-        var ghostKey = new MortonKey(100L, (byte) 3); // Level 3 ghost element
-        var localKey = new MortonKey(101L, (byte) 1); // Level 1 local element (diff = 2, violation!)
-
-        // Create ghost element with proper constructor
+        // Add a simple ghost element
+        var ghostKey = new MortonKey(100L, (byte) 3);
         var ghostElement = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
-            ghostKey,
-            new LongEntityID(100L),
-            "ghost-content",
-            new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f),
-            1,  // ownerRank = 1
-            0L  // globalTreeId
+            ghostKey, new LongEntityID(100L), "ghost-content",
+            new javax.vecmath.Point3f(100.0f, 100.0f, 100.0f), 1, 0L
         );
         ghostLayer.addGhostElement(ghostElement);
 
-        // Add local element to first tree in forest
-        var tree = forest.getAllTrees().get(0);
-        var spatialIndex = tree.getSpatialIndex();
-        spatialIndex.insert(new LongEntityID(1L), new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f), (byte) 1, "test-entity", null);
-
         phase.setForestContext(forest, ghostLayer);
+
+        // Use a mock balance checker that returns a predefined violation
+        var mockBalanceChecker = new MockBalanceChecker();
+        var localKey = new MortonKey(101L, (byte) 1);
+        mockBalanceChecker.addViolation(
+            localKey, (byte) 1,
+            ghostKey, (byte) 3,
+            1  // source rank
+        );
 
         var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID, String>();
 
         // Execute
-        var result = phase.identifyRefinementNeeds(1, 2, balanceChecker, mockCoordinator);
+        var result = phase.identifyRefinementNeeds(1, 2, mockBalanceChecker, mockCoordinator);
 
         // Verify
         assertNotNull(result, "Result should not be null");
-        assertTrue(result.refinementsApplied() > 0 || mockCoordinator.getRequestsSent() > 0,
-                  "Should process violations or send requests");
+        assertEquals(1, result.refinementsApplied(), "Should find 1 violation");
+        assertEquals(1, mockCoordinator.getRequestsSent(), "Should send 1 request");
         assertEquals(1, result.roundNumber(), "Should track round number");
     }
 
@@ -447,37 +449,33 @@ public class CrossPartitionBalancePhaseTest {
     @Test
     @Timeout(value = 5, unit = TimeUnit.SECONDS)
     public void testIdentifyRefinementNeeds_RespectsBoundaryKeys() throws Exception {
-        // Setup: Create violations with distinct boundary keys
+        // Setup: Create ghost layer with 2 violations
         var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
             com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
         );
 
-        // Add violations with specific keys
+        // Add 2 ghost elements
         var ghostKey1 = new MortonKey(100L, (byte) 3);
-        var localKey1 = new MortonKey(101L, (byte) 1);
-        var ghostKey2 = new MortonKey(200L, (byte) 3);
-        var localKey2 = new MortonKey(201L, (byte) 1);
-
-        var ghost1 = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
+        var ghostElement1 = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
             ghostKey1, new LongEntityID(100L), "ghost1",
             new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f), 1, 0L
         );
-        var ghost2 = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
+        ghostLayer.addGhostElement(ghostElement1);
+
+        var ghostKey2 = new MortonKey(200L, (byte) 3);
+        var ghostElement2 = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
             ghostKey2, new LongEntityID(200L), "ghost2",
             new javax.vecmath.Point3f(20.0f, 20.0f, 20.0f), 1, 0L
         );
-
-        ghostLayer.addGhostElement(ghost1);
-        ghostLayer.addGhostElement(ghost2);
-
-        var tree = forest.getAllTrees().get(0);
-        var spatialIndex = tree.getSpatialIndex();
-        spatialIndex.insert(new LongEntityID(1L), new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f), (byte) 1, "entity1", null);
-        spatialIndex.insert(new LongEntityID(2L), new javax.vecmath.Point3f(20.0f, 20.0f, 20.0f), (byte) 1, "entity2", null);
+        ghostLayer.addGhostElement(ghostElement2);
 
         phase.setForestContext(forest, ghostLayer);
 
-        var balanceChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+        // Create mock balance checker with 2 violations
+        var balanceChecker = new MockBalanceChecker();
+        balanceChecker.addViolation(new MortonKey(101L, (byte) 1), (byte) 1, ghostKey1, (byte) 3, 1);
+        balanceChecker.addViolation(new MortonKey(201L, (byte) 1), (byte) 1, ghostKey2, (byte) 3, 1);
+
         var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID, String>();
 
         // Execute
@@ -485,28 +483,37 @@ public class CrossPartitionBalancePhaseTest {
 
         // Verify: Requests should include boundary keys
         var capturedRequests = mockCoordinator.getCapturedRequests();
-        if (!capturedRequests.isEmpty()) {
-            for (var request : capturedRequests) {
-                // Should have boundary keys from violations
-                assertTrue(request.getBoundaryKeysCount() >= 0,
-                          "Request should contain boundary keys");
-            }
-        }
+        assertEquals(1, capturedRequests.size(), "Should have 1 request for rank 1 violations");
+
+        var request = capturedRequests.get(0);
+        assertEquals(4, request.getBoundaryKeysCount(), "Should have 4 boundary keys (2 violations × 2 keys each)");
+        assertEquals(2, result.refinementsApplied(), "Should apply 2 refinements");
     }
 
     // TEST 5: Timeout handling - should throw TimeoutException
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     public void testIdentifyRefinementNeeds_AsyncTimeout() {
-        // Setup: Create violation that will trigger request
+        // Setup: Create ghost layer
         var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
             com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
         );
-        addViolationPair(ghostLayer, forest, 100L, 101L, 1);
+
+        // Add a ghost element
+        var ghostKey = new MortonKey(100L, (byte) 3);
+        var ghostElement = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
+            ghostKey, new LongEntityID(100L), "ghost",
+            new javax.vecmath.Point3f(100.0f, 100.0f, 100.0f), 1, 0L
+        );
+        ghostLayer.addGhostElement(ghostElement);
 
         phase.setForestContext(forest, ghostLayer);
 
-        var balanceChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+        // Create mock balance checker with a violation
+        var balanceChecker = new MockBalanceChecker();
+        var localKey = new MortonKey(101L, (byte) 1);
+        balanceChecker.addViolation(localKey, (byte) 1, ghostKey, (byte) 3, 1);
+
         var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID, String>();
         mockCoordinator.setShouldTimeout(true);
 
@@ -520,15 +527,26 @@ public class CrossPartitionBalancePhaseTest {
     @Test
     @Timeout(value = 5, unit = TimeUnit.SECONDS)
     public void testIdentifyRefinementNeeds_CoordinatorException() {
-        // Setup: Create violation that will trigger request
+        // Setup: Create ghost layer
         var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
             com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
         );
-        addViolationPair(ghostLayer, forest, 100L, 101L, 1);
+
+        // Add a ghost element
+        var ghostKey = new MortonKey(100L, (byte) 3);
+        var ghostElement = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
+            ghostKey, new LongEntityID(100L), "ghost",
+            new javax.vecmath.Point3f(100.0f, 100.0f, 100.0f), 1, 0L
+        );
+        ghostLayer.addGhostElement(ghostElement);
 
         phase.setForestContext(forest, ghostLayer);
 
-        var balanceChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+        // Create mock balance checker with a violation
+        var balanceChecker = new MockBalanceChecker();
+        var localKey = new MortonKey(101L, (byte) 1);
+        balanceChecker.addViolation(localKey, (byte) 1, ghostKey, (byte) 3, 1);
+
         var mockCoordinator = new MockRefinementCoordinator<MortonKey, LongEntityID, String>();
         mockCoordinator.setShouldThrowException(true);
 
@@ -586,7 +604,80 @@ public class CrossPartitionBalancePhaseTest {
         }
     }
 
-    // Helper method to add violation pairs
+    /**
+     * Helper method to create a proper violation between ghost and local elements.
+     * Creates a ghost at one position and a local neighbor at a different level.
+     *
+     * <p>Key insight: MortonKey equality only compares Morton codes, not levels.
+     * So we need to choose positions that quantize to the same grid cell at both levels.
+     * This happens when the position is a multiple of the LARGER cell size.
+     *
+     * @param ghostLevel level of the ghost element
+     * @param localLevel level of the local element (must differ by > 1 from ghostLevel)
+     * @param ownerRank rank of the partition owning the ghost
+     * @return true if violation was successfully created, false otherwise
+     */
+    private boolean createProperViolation(
+        com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String> ghostLayer,
+        Forest<MortonKey, LongEntityID, String> forest,
+        byte ghostLevel,
+        byte localLevel,
+        int ownerRank
+    ) {
+        // Calculate cell sizes for both levels
+        // Level 1 cell size = 1 << (21 - 1) = 1,048,576
+        // Level 3 cell size = 1 << (21 - 3) = 262,144
+        var localCellSize = com.hellblazer.luciferase.lucien.Constants.lengthAtLevel(localLevel);
+        var ghostCellSize = com.hellblazer.luciferase.lucien.Constants.lengthAtLevel(ghostLevel);
+
+        // Choose a position that's a multiple of the LARGER cell size
+        // This ensures both levels quantize to the same grid coordinates
+        int baseCoord = localCellSize;  // Use one cell size as base
+
+        // Ghost position: at the base coordinates
+        var ghostPosition = new javax.vecmath.Point3f(baseCoord, baseCoord, baseCoord);
+        var ghostKey = new MortonKey(
+            com.hellblazer.luciferase.geometry.MortonCurve.encode(baseCoord, baseCoord, baseCoord),
+            ghostLevel
+        );
+
+        // Add ghost element
+        var ghostElement = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
+            ghostKey,
+            new LongEntityID(ownerRank * 1000L),
+            "ghost-content",
+            ghostPosition,
+            ownerRank,
+            0L
+        );
+        ghostLayer.addGhostElement(ghostElement);
+
+        // Neighbor position: move by one ghost cell in POSITIVE_X
+        // This ensures they're neighbors at the ghost level
+        int neighborX = baseCoord + ghostCellSize;
+        var neighborPosition = new javax.vecmath.Point3f(neighborX, baseCoord, baseCoord);
+
+        // Insert local element at the neighbor position with different level
+        // The TwoOneBalanceChecker will find this because:
+        // 1. It gets ghost's neighbor in POSITIVE_X direction
+        // 2. That neighbor position quantizes to (neighborX, baseCoord, baseCoord) at ghost level
+        // 3. It checks all levels 0-21 at that Morton code
+        // 4. Our local element at (neighborX, baseCoord, baseCoord) level 1 will match
+        // 5. Level difference abs(1 - 3) = 2 > 1, so violation detected
+        var tree = forest.getAllTrees().get(0);
+        var spatialIndex = tree.getSpatialIndex();
+        spatialIndex.insert(
+            new LongEntityID(ownerRank * 1000L + 1),
+            neighborPosition,
+            localLevel,
+            "local-entity",
+            null
+        );
+
+        return true;
+    }
+
+    // Helper method to add violation pairs (kept for backward compatibility)
     private void addViolationPair(
         com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String> ghostLayer,
         Forest<MortonKey, LongEntityID, String> forest,
@@ -594,22 +685,8 @@ public class CrossPartitionBalancePhaseTest {
         long localCode,
         int ownerRank
     ) {
-        var ghostKey = new MortonKey(ghostCode, (byte) 3); // Level 3
-        var localKey = new MortonKey(localCode, (byte) 1); // Level 1 (diff = 2, violation)
-
-        var ghostElement = new com.hellblazer.luciferase.lucien.forest.ghost.GhostElement<>(
-            ghostKey,
-            new LongEntityID(ghostCode),
-            "ghost-" + ghostCode,
-            new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f),
-            ownerRank,
-            0L
-        );
-        ghostLayer.addGhostElement(ghostElement);
-
-        var tree = forest.getAllTrees().get(0);
-        var spatialIndex = tree.getSpatialIndex();
-        spatialIndex.insert(new LongEntityID(localCode), new javax.vecmath.Point3f(10.0f, 10.0f, 10.0f), (byte) 1, "entity-" + localCode, null);
+        // Use the new proper violation creator with fixed levels
+        createProperViolation(ghostLayer, forest, (byte) 3, (byte) 1, ownerRank);
     }
 
     // Mock BalanceCoordinatorClient for testing
@@ -799,6 +876,27 @@ public class CrossPartitionBalancePhaseTest {
 
         public void setShouldThrowException(boolean shouldThrowException) {
             this.shouldThrowException = shouldThrowException;
+        }
+    }
+
+    // Mock BalanceChecker for D.5 tests - allows injecting predefined violations
+    private static class MockBalanceChecker extends TwoOneBalanceChecker<MortonKey, LongEntityID, String> {
+        private final List<TwoOneBalanceChecker.BalanceViolation<MortonKey>> violations = new ArrayList<>();
+
+        public void addViolation(MortonKey localKey, byte localLevel, MortonKey ghostKey, byte ghostLevel, int sourceRank) {
+            var levelDiff = Math.abs(localLevel - ghostLevel);
+            if (levelDiff > 1) {  // Valid violation
+                violations.add(new TwoOneBalanceChecker.BalanceViolation<>(
+                    localKey, ghostKey, localLevel, ghostLevel, levelDiff, sourceRank
+                ));
+            }
+        }
+
+        @Override
+        public List<TwoOneBalanceChecker.BalanceViolation<MortonKey>> findViolations(
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String> ghostLayer,
+            Forest<MortonKey, LongEntityID, String> forest) {
+            return new ArrayList<>(violations);
         }
     }
 }

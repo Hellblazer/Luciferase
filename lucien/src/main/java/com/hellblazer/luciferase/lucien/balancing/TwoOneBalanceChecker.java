@@ -120,6 +120,8 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             var ghostKey = ghost.getSpatialKey();
             int ghostLevel = ghostKey.getLevel();
 
+            log.debug("Checking ghost element: key={}, level={}", ghostKey, ghostLevel);
+
             // Check each neighbor of this ghost element
             // For MortonKey, use Direction-based neighbor iteration
             if (ghostKey instanceof MortonKey mortonGhost) {
@@ -146,35 +148,54 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
         int sourceRank,
         List<BalanceViolation<Key>> violations
     ) {
+        int neighborsChecked = 0;
+        int neighborsFound = 0;
+
         // Iterate through all possible directions
         for (var direction : MortonKey.Direction.values()) {
-            MortonKey neighborKey = ghostKey.neighbor(direction);
-            if (neighborKey == null) continue;
+            MortonKey neighborAtSameLevel = ghostKey.neighbor(direction);
+            if (neighborAtSameLevel == null) continue;
 
-            // Check if neighbor exists in any tree in the forest
-            boolean foundNeighbor = false;
-            for (var tree : forest.getAllTrees()) {
-                var spatialIndex = tree.getSpatialIndex();
-                if (spatialIndex.containsSpatialKey((Key) neighborKey)) {
-                    foundNeighbor = true;
-                    break;
+            // Get the Morton code of the neighbor position (independent of level)
+            long neighborMortonCode = neighborAtSameLevel.getMortonCode();
+
+            // Check all possible levels (0-21) at this neighbor position
+            // This is necessary because local elements might be at any level
+            for (byte level = 0; level <= 21; level++) {
+                MortonKey neighborAtLevel = new MortonKey(neighborMortonCode, level);
+                neighborsChecked++;
+
+                // Check if this key exists in any tree in the forest
+                boolean foundAtThisLevel = false;
+                for (var tree : forest.getAllTrees()) {
+                    var spatialIndex = tree.getSpatialIndex();
+                    if (spatialIndex.containsSpatialKey((Key) neighborAtLevel)) {
+                        foundAtThisLevel = true;
+                        neighborsFound++;
+                        log.debug("Found local element at neighbor position: key={}, level={}", neighborAtLevel, level);
+                        break;
+                    }
                 }
-            }
 
-            if (foundNeighbor) {
-                int localLevel = neighborKey.getLevel();
-                int levelDiff = Math.abs(localLevel - ghostLevel);
+                if (foundAtThisLevel) {
+                    int localLevel = level;  // Use the actual level we found
+                    int levelDiff = Math.abs(localLevel - ghostLevel);
 
-                // Violation detected if level difference > 1
-                if (levelDiff > 1) {
-                    violations.add(new BalanceViolation<>((Key) neighborKey, (Key) ghostKey,
-                                                         localLevel, ghostLevel,
-                                                         levelDiff, sourceRank));
-                    log.trace("Violation: local level {} vs ghost level {} (diff={})",
-                             localLevel, ghostLevel, levelDiff);
+                    log.debug("Level difference: local={}, ghost={}, diff={}", localLevel, ghostLevel, levelDiff);
+
+                    // Violation detected if level difference > 1
+                    if (levelDiff > 1) {
+                        violations.add(new BalanceViolation<>((Key) neighborAtLevel, (Key) ghostKey,
+                                                             localLevel, ghostLevel,
+                                                             levelDiff, sourceRank));
+                        log.debug("VIOLATION DETECTED: local level {} vs ghost level {} (diff={})",
+                                 localLevel, ghostLevel, levelDiff);
+                    }
                 }
             }
         }
+
+        log.debug("Checked {} neighbor positions, found {} neighbors", neighborsChecked, neighborsFound);
     }
 
     /**

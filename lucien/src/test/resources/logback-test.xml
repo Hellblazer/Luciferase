@@ -23,6 +23,9 @@
         </encoder>
     </appender>
 
+    <!-- Enable debug logging for TwoOneBalanceChecker -->
+    <logger name="com.hellblazer.luciferase.lucien.balancing.TwoOneBalanceChecker" level="DEBUG"/>
+
     <!-- Root logger configuration -->
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
