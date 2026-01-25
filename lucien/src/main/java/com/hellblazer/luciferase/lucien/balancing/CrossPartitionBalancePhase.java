@@ -22,12 +22,16 @@ import com.hellblazer.luciferase.lucien.balancing.proto.RefinementRequest;
 import com.hellblazer.luciferase.lucien.balancing.proto.RefinementResponse;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
+import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
+import com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * Implements Phase 3 of parallel balancing: O(log P) cross-partition refinement protocol.
@@ -70,6 +74,8 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     private volatile Forest<Key, ID, Content> forest;
     private volatile GhostLayer<Key, ID, Content> ghostLayer;
     private volatile TwoOneBalanceChecker<Key, ID, Content> balanceChecker;
+    private volatile ContentSerializer<Content> contentSerializer;
+    private volatile Class<ID> idType;
 
     /**
      * Create a new cross-partition balance phase.
@@ -102,6 +108,28 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         this.ghostLayer = Objects.requireNonNull(ghostLayer, "ghostLayer cannot be null");
         this.balanceChecker = new TwoOneBalanceChecker<>();
         log.debug("Forest context set: forest with {} trees, {} ghost elements",
+                 forest.getTreeCount(), ghostLayer.getNumGhostElements());
+    }
+
+    /**
+     * Set forest context for violation detection and refinement with ghost element deserialization support.
+     *
+     * @param forest the local forest containing local elements
+     * @param ghostLayer the ghost layer for boundary element checking
+     * @param contentSerializer the serializer for content type
+     * @param idType the entity ID class for deserialization
+     * @throws NullPointerException if forest, ghostLayer, contentSerializer, or idType is null
+     */
+    public void setForestContext(Forest<Key, ID, Content> forest,
+                                GhostLayer<Key, ID, Content> ghostLayer,
+                                ContentSerializer<Content> contentSerializer,
+                                Class<ID> idType) {
+        this.forest = Objects.requireNonNull(forest, "forest cannot be null");
+        this.ghostLayer = Objects.requireNonNull(ghostLayer, "ghostLayer cannot be null");
+        this.contentSerializer = Objects.requireNonNull(contentSerializer, "contentSerializer cannot be null");
+        this.idType = Objects.requireNonNull(idType, "idType cannot be null");
+        this.balanceChecker = new TwoOneBalanceChecker<>();
+        log.debug("Forest context set: forest with {} trees, {} ghost elements (with deserialization support)",
                  forest.getTreeCount(), ghostLayer.getNumGhostElements());
     }
 
@@ -312,18 +340,25 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
             var sourceRank = entry.getKey();
             var groupViolations = entry.getValue();
 
+            // Extract max level from violations
+            var maxLevel = groupViolations.stream()
+                .mapToInt(v -> Math.max(v.localLevel(), v.ghostLevel()))
+                .max()
+                .orElse(0);
+
+            // Collect boundary keys from violations
+            var boundaryKeys = groupViolations.stream()
+                .flatMap(v -> java.util.stream.Stream.of(v.localKey(), v.ghostKey()))
+                .map(ProtobufConverters::spatialKeyToProtobuf)
+                .collect(Collectors.toList());
+
             var request = RefinementRequest.newBuilder()
                 .setRequesterRank(registry.getCurrentPartitionId())
                 .setRequesterTreeId(0L)
                 .setRoundNumber(roundNumber)
-                .setTreeLevel(0)  // TODO: extract actual levels from violations
+                .setTreeLevel(maxLevel)
+                .addAllBoundaryKeys(boundaryKeys)
                 .setTimestamp(System.currentTimeMillis());
-
-            // Add boundary keys from violations
-            for (var violation : groupViolations) {
-                // Add both the local and ghost keys involved in violation
-                // (actual serialization depends on SpatialKey proto format)
-            }
 
             requests.add(request.build());
             log.trace("Created request for rank {} with {} violations", sourceRank, groupViolations.size());
@@ -348,21 +383,22 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         for (var response : responses) {
             // Extract ghost elements from response
             for (var ghostProto : response.getGhostElementsList()) {
-                // Convert protobuf ghost element to domain object and add to ghost layer
-                // Note: The conversion logic depends on specific proto definition and SpatialKey type
-                // For now, this is a placeholder structure
-
-                // In a concrete implementation:
-                // 1. Deserialize the SpatialKey from proto
-                // 2. Deserialize the entity ID from proto
-                // 3. Create GhostElement with proper content
-                // 4. Add to ghost layer via ghostLayer.addGhostElement()
-
                 try {
-                    // Placeholder: actual conversion would happen here
-                    // ghostLayer.addGhostElement(convertProtoToGhost(ghostProto));
-                    appliedCount++;
-                    log.trace("Applied ghost element from response");
+                    // Convert protobuf ghost element to domain object and add to ghost layer
+                    if (contentSerializer != null && idType != null) {
+                        @SuppressWarnings("unchecked")
+                        var ghostElement = (GhostElement<Key, ID, Content>) GhostElement.fromProtobuf(
+                            ghostProto,
+                            contentSerializer,
+                            idType
+                        );
+                        ghostLayer.addGhostElement(ghostElement);
+                        appliedCount++;
+                        log.trace("Applied ghost element from response");
+                    } else {
+                        // Backward compatibility: skip deserialization if serializer not configured
+                        log.trace("Skipping ghost element deserialization (no serializer configured)");
+                    }
                 } catch (Exception e) {
                     log.warn("Failed to apply ghost element from response: {}", e.getMessage());
                 }
