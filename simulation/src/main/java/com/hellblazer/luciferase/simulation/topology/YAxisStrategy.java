@@ -24,7 +24,7 @@ import java.util.List;
  * Split plane strategy that always uses Y-axis.
  * <p>
  * Creates a plane perpendicular to the Y-axis passing through
- * the bubble's centroid, regardless of bubble dimensions.
+ * the entity centroid, regardless of entity distribution.
  * <p>
  * Use cases:
  * - Fixed spatial partitioning schemes
@@ -36,7 +36,18 @@ public class YAxisStrategy implements SplitPlaneStrategy {
     @Override
     public SplitPlane calculate(com.hellblazer.luciferase.simulation.bubble.BubbleBounds bubbleBounds,
                                 List<EnhancedBubble.EntityRecord> entities) {
-        var centroid = bubbleBounds.centroid();
-        return SplitPlane.yAxis((float) centroid.getY());
+        if (entities.isEmpty()) {
+            var centroid = bubbleBounds.centroid();
+            return SplitPlane.yAxis((float) centroid.getY());
+        }
+
+        // Compute entity centroid Y-coordinate
+        float sumY = 0.0f;
+        for (var entity : entities) {
+            sumY += entity.position().y;
+        }
+        float cy = sumY / entities.size();
+
+        return SplitPlane.yAxis(cy);
     }
 }

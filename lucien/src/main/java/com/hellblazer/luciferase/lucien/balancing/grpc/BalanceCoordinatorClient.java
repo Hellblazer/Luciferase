@@ -165,6 +165,39 @@ public class BalanceCoordinatorClient {
     }
 
     /**
+     * Exchanges 2:1 balance violations with a remote partition during butterfly pattern rounds.
+     * Implements bidirectional exchange: sends this partition's violations and receives partner's.
+     *
+     * @param batch the violation batch to exchange
+     * @return violation batch from partner, or null if exchange fails
+     */
+    public ViolationBatch exchangeViolations(ViolationBatch batch) {
+        try {
+            var targetRank = batch.getResponderRank();
+            var stub = getBlockingStub(targetRank);
+            if (stub == null) {
+                log.warn("No connection available to rank {} for violation exchange", targetRank);
+                failureCount.incrementAndGet();
+                return null;
+            }
+
+            var responseBatch = stub.exchangeViolations(batch);
+
+            log.debug("Exchanged {} violations with rank {} in round {}, received {} violations back",
+                     batch.getViolationsCount(), targetRank, batch.getRoundNumber(),
+                     responseBatch.getViolationsCount());
+
+            return responseBatch;
+
+        } catch (StatusRuntimeException e) {
+            log.error("Failed to exchange violations with rank {}: {}",
+                     batch.getResponderRank(), e.getStatus());
+            failureCount.incrementAndGet();
+            throw e; // Rethrow for caller to handle retry logic
+        }
+    }
+
+    /**
      * Requests refinement asynchronously using virtual threads.
      *
      * @param targetRank the rank of the target process

@@ -98,5 +98,6 @@ service BalanceCoordinator {
     rpc GetBalanceStatistics(BalanceCoordinationRequest) returns (BalanceStatistics);
 
     // Exchange 2:1 balance violations during butterfly pattern rounds
-    rpc ExchangeViolations(ViolationBatch) returns (ViolationAck);
+    // Returns the responder's current violation set for bidirectional exchange
+    rpc ExchangeViolations(ViolationBatch) returns (ViolationBatch);
 }

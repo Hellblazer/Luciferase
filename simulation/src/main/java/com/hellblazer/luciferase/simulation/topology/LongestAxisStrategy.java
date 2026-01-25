@@ -21,28 +21,67 @@ import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import java.util.List;
 
 /**
- * Split plane strategy that selects the longest axis of bubble bounds.
+ * Split plane strategy that selects the longest axis of entity distribution.
  * <p>
  * This is the default strategy for bubble splitting. It analyzes the
- * bubble's bounds in Cartesian space, identifies the longest dimension
+ * actual entity positions, computes the AABB, identifies the longest dimension
  * (X, Y, or Z), and creates a plane perpendicular to that axis passing
- * through the centroid.
+ * through the entity centroid.
  * <p>
  * Benefits:
  * - Maximizes split effectiveness (largest dimension divided)
- * - Balanced subdivision (plane through centroid)
- * - Adaptive to bubble shape
+ * - Balanced subdivision (plane through entity centroid)
+ * - Adaptive to actual entity distribution
  * <p>
  * Example:
- * - Bubble bounds: 100m (X) × 20m (Y) × 20m (Z)
- * - Selected plane: X-axis aligned through centroid
+ * - Entity spread: 100m (X) × 20m (Y) × 20m (Z)
+ * - Selected plane: X-axis aligned through entity centroid
  */
 public class LongestAxisStrategy implements SplitPlaneStrategy {
 
     @Override
     public SplitPlane calculate(com.hellblazer.luciferase.simulation.bubble.BubbleBounds bubbleBounds,
                                 List<EnhancedBubble.EntityRecord> entities) {
-        // Delegate to SplitPlane factory method
-        return SplitPlane.alongLongestAxis(bubbleBounds);
+        if (entities.isEmpty()) {
+            // Fallback to bounds-based calculation if no entities
+            return SplitPlane.alongLongestAxis(bubbleBounds);
+        }
+
+        // Compute AABB from actual entity positions
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float minZ = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        float maxZ = Float.NEGATIVE_INFINITY;
+
+        for (var entity : entities) {
+            var pos = entity.position();
+            minX = Math.min(minX, pos.x);
+            minY = Math.min(minY, pos.y);
+            minZ = Math.min(minZ, pos.z);
+            maxX = Math.max(maxX, pos.x);
+            maxY = Math.max(maxY, pos.y);
+            maxZ = Math.max(maxZ, pos.z);
+        }
+
+        // Compute dimensions
+        float dx = maxX - minX;
+        float dy = maxY - minY;
+        float dz = maxZ - minZ;
+
+        // Compute entity centroid
+        float cx = (minX + maxX) / 2.0f;
+        float cy = (minY + maxY) / 2.0f;
+        float cz = (minZ + maxZ) / 2.0f;
+
+        // Choose longest axis and create plane through entity centroid
+        if (dx > dy && dx > dz) {
+            return SplitPlane.xAxis(cx);
+        } else if (dy > dx && dy > dz) {
+            return SplitPlane.yAxis(cy);
+        } else {
+            return SplitPlane.zAxis(cz);
+        }
     }
 }

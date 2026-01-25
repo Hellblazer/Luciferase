@@ -18,7 +18,6 @@ package com.hellblazer.luciferase.lucien.balancing;
 
 import com.hellblazer.luciferase.lucien.balancing.grpc.BalanceCoordinatorClient;
 import com.hellblazer.luciferase.lucien.balancing.proto.BalanceViolation;
-import com.hellblazer.luciferase.lucien.balancing.proto.ViolationAck;
 import com.hellblazer.luciferase.lucien.balancing.proto.ViolationBatch;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey;
 import io.grpc.StatusRuntimeException;
@@ -57,27 +56,35 @@ class DistributedViolationAggregatorTest {
             createViolation(3, 4, 6, 8, 2, 0)
         );
 
-        // Mock successful gRPC responses
+        // Mock successful gRPC responses with partner violations
+        var partnerViolation1 = createViolation(5, 6, 7, 9, 2, 1);
+        var partnerViolation2 = createViolation(7, 8, 8, 10, 2, 2);
+
         when(mockClient.exchangeViolations(any(ViolationBatch.class)))
-            .thenReturn(ViolationAck.newBuilder()
-                .setResponderRank(1)
-                .setViolationsReceivedCount(2)
-                .setAckTimestamp(System.currentTimeMillis())
-                .setErrorMessage("")
+            .thenReturn(ViolationBatch.newBuilder()
+                .setRequesterRank(1)
+                .setResponderRank(0)
+                .setRoundNumber(0)
+                .addViolations(partnerViolation1)
+                .setTimestamp(System.currentTimeMillis())
                 .build())
-            .thenReturn(ViolationAck.newBuilder()
-                .setResponderRank(2)
-                .setViolationsReceivedCount(3)
-                .setAckTimestamp(System.currentTimeMillis())
-                .setErrorMessage("")
+            .thenReturn(ViolationBatch.newBuilder()
+                .setRequesterRank(2)
+                .setResponderRank(0)
+                .setRoundNumber(1)
+                .addViolations(partnerViolation2)
+                .setTimestamp(System.currentTimeMillis())
                 .build());
 
         // Execute aggregation
         var result = aggregator.aggregateDistributed(localViolations);
 
-        // Verify we got results
+        // Verify we got results including partner violations
         assertNotNull(result);
         assertTrue(result.containsAll(localViolations));
+        assertTrue(result.contains(partnerViolation1));
+        assertTrue(result.contains(partnerViolation2));
+        assertEquals(4, result.size());
 
         // Verify gRPC calls were made (2 rounds for 4 partitions)
         verify(mockClient, times(2)).exchangeViolations(any(ViolationBatch.class));
@@ -93,11 +100,11 @@ class DistributedViolationAggregatorTest {
         // Mock timeout on first call, success on second
         when(mockClient.exchangeViolations(any(ViolationBatch.class)))
             .thenThrow(new StatusRuntimeException(Status.DEADLINE_EXCEEDED))
-            .thenReturn(ViolationAck.newBuilder()
-                .setResponderRank(2)
-                .setViolationsReceivedCount(1)
-                .setAckTimestamp(System.currentTimeMillis())
-                .setErrorMessage("")
+            .thenReturn(ViolationBatch.newBuilder()
+                .setRequesterRank(2)
+                .setResponderRank(0)
+                .setRoundNumber(1)
+                .setTimestamp(System.currentTimeMillis())
                 .build());
 
         // Execute aggregation - should handle timeout gracefully
@@ -126,11 +133,11 @@ class DistributedViolationAggregatorTest {
                 if (callCount.getAndIncrement() == 0) {
                     throw new StatusRuntimeException(Status.UNAVAILABLE);
                 }
-                return ViolationAck.newBuilder()
-                    .setResponderRank(1)
-                    .setViolationsReceivedCount(1)
-                    .setAckTimestamp(System.currentTimeMillis())
-                    .setErrorMessage("")
+                return ViolationBatch.newBuilder()
+                    .setRequesterRank(1)
+                    .setResponderRank(0)
+                    .setRoundNumber(0)
+                    .setTimestamp(System.currentTimeMillis())
                     .build();
             });
 
@@ -157,11 +164,11 @@ class DistributedViolationAggregatorTest {
         when(mockClient.exchangeViolations(any(ViolationBatch.class)))
             .thenThrow(new StatusRuntimeException(Status.UNAVAILABLE))
             .thenThrow(new StatusRuntimeException(Status.UNAVAILABLE))
-            .thenReturn(ViolationAck.newBuilder()
-                .setResponderRank(2)
-                .setViolationsReceivedCount(1)
-                .setAckTimestamp(System.currentTimeMillis())
-                .setErrorMessage("")
+            .thenReturn(ViolationBatch.newBuilder()
+                .setRequesterRank(2)
+                .setResponderRank(0)
+                .setRoundNumber(1)
+                .setTimestamp(System.currentTimeMillis())
                 .build());
 
         // Execute aggregation
@@ -185,11 +192,11 @@ class DistributedViolationAggregatorTest {
         var localViolations = List.of(createViolation(1, 2, 5, 7, 2, 0));
 
         when(mockClient.exchangeViolations(any(ViolationBatch.class)))
-            .thenReturn(ViolationAck.newBuilder()
-                .setResponderRank(1)
-                .setViolationsReceivedCount(1)
-                .setAckTimestamp(System.currentTimeMillis())
-                .setErrorMessage("")
+            .thenReturn(ViolationBatch.newBuilder()
+                .setRequesterRank(1)
+                .setResponderRank(0)
+                .setRoundNumber(0)
+                .setTimestamp(System.currentTimeMillis())
                 .build());
 
         aggregator.aggregateDistributed(localViolations);

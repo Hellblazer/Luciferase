@@ -220,6 +220,40 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
     }
 
     /**
+     * Exchanges 2:1 balance violations during butterfly pattern rounds.
+     * Implements bidirectional exchange: receives violations from requester,
+     * processes them, and returns this partition's current violation set.
+     *
+     * @param request the violation batch from remote partition
+     * @param responseObserver observer for sending the response batch
+     */
+    @Override
+    public void exchangeViolations(ViolationBatch request, StreamObserver<ViolationBatch> responseObserver) {
+        virtualExecutor.submit(() -> {
+            try {
+                log.debug("Processing violation exchange from rank {} in round {}: {} violations",
+                         request.getRequesterRank(), request.getRoundNumber(),
+                         request.getViolationsCount());
+
+                // Process received violations and get response batch
+                var responseBatch = balanceProvider.processViolations(request);
+
+                responseObserver.onNext(responseBatch);
+                responseObserver.onCompleted();
+
+                log.debug("Exchanged {} violations with rank {} in round {}: sent {} back",
+                         request.getViolationsCount(), request.getRequesterRank(),
+                         request.getRoundNumber(), responseBatch.getViolationsCount());
+
+            } catch (Exception e) {
+                log.error("Error processing violation exchange from rank {}: {}",
+                         request.getRequesterRank(), e.getMessage(), e);
+                responseObserver.onError(e);
+            }
+        });
+    }
+
+    /**
      * Provides balance statistics for monitoring and debugging.
      *
      * @param request the statistics request
@@ -365,5 +399,14 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
          * @param count the number of refinements applied
          */
         void recordRefinementApplied(int rank, int count);
+
+        /**
+         * Processes received violation batch during butterfly pattern exchange.
+         * Implements bidirectional exchange by returning this partition's current violations.
+         *
+         * @param batch the violation batch from remote partition
+         * @return violation batch containing this partition's current violations
+         */
+        ViolationBatch processViolations(ViolationBatch batch);
     }
 }

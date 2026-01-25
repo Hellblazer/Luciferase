@@ -24,7 +24,7 @@ import java.util.List;
  * Split plane strategy that always uses Z-axis.
  * <p>
  * Creates a plane perpendicular to the Z-axis passing through
- * the bubble's centroid, regardless of bubble dimensions.
+ * the entity centroid, regardless of entity distribution.
  * <p>
  * Use cases:
  * - Fixed spatial partitioning schemes
@@ -36,7 +36,18 @@ public class ZAxisStrategy implements SplitPlaneStrategy {
     @Override
     public SplitPlane calculate(com.hellblazer.luciferase.simulation.bubble.BubbleBounds bubbleBounds,
                                 List<EnhancedBubble.EntityRecord> entities) {
-        var centroid = bubbleBounds.centroid();
-        return SplitPlane.zAxis((float) centroid.getZ());
+        if (entities.isEmpty()) {
+            var centroid = bubbleBounds.centroid();
+            return SplitPlane.zAxis((float) centroid.getZ());
+        }
+
+        // Compute entity centroid Z-coordinate
+        float sumZ = 0.0f;
+        for (var entity : entities) {
+            sumZ += entity.position().z;
+        }
+        float cz = sumZ / entities.size();
+
+        return SplitPlane.zAxis(cz);
     }
 }

@@ -73,12 +73,15 @@ public class BubbleSplitter {
     private final EntityAccountant accountant;
     private final OperationTracker operationTracker;
     private final TopologyMetrics metrics;
+    private final SplitPlaneStrategy strategy;
 
     // Pluggable UUID supplier for deterministic testing - defaults to random UUIDs
     private volatile Supplier<UUID> uuidSupplier = UUID::randomUUID;
 
     /**
-     * Creates a bubble splitter.
+     * Creates a bubble splitter with default LongestAxisStrategy.
+     * <p>
+     * Backward-compatible constructor - preserves existing behavior.
      *
      * @param bubbleGrid        the bubble grid
      * @param accountant        the entity accountant for atomic transfers
@@ -88,10 +91,26 @@ public class BubbleSplitter {
      */
     public BubbleSplitter(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant, OperationTracker operationTracker,
                           TopologyMetrics metrics) {
+        this(bubbleGrid, accountant, operationTracker, metrics, SplitPlaneStrategies.longestAxis());
+    }
+
+    /**
+     * Creates a bubble splitter with custom split plane strategy.
+     *
+     * @param bubbleGrid        the bubble grid
+     * @param accountant        the entity accountant for atomic transfers
+     * @param operationTracker  the operation tracker for rollback support
+     * @param metrics           the metrics tracker for operational monitoring
+     * @param strategy          the split plane calculation strategy
+     * @throws NullPointerException if any parameter is null
+     */
+    public BubbleSplitter(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant, OperationTracker operationTracker,
+                          TopologyMetrics metrics, SplitPlaneStrategy strategy) {
         this.bubbleGrid = java.util.Objects.requireNonNull(bubbleGrid, "bubbleGrid must not be null");
         this.accountant = java.util.Objects.requireNonNull(accountant, "accountant must not be null");
         this.operationTracker = java.util.Objects.requireNonNull(operationTracker, "operationTracker must not be null");
         this.metrics = java.util.Objects.requireNonNull(metrics, "metrics must not be null");
+        this.strategy = java.util.Objects.requireNonNull(strategy, "strategy must not be null");
     }
 
     /**
@@ -125,7 +144,6 @@ public class BubbleSplitter {
         // Generate correlation ID for tracking this operation across log statements
         var correlationId = UUID.randomUUID().toString().substring(0, 8);
         var sourceBubbleId = proposal.sourceBubble();
-        var splitPlane = proposal.splitPlane();
 
         // Record split attempt for metrics
         metrics.recordSplitAttempt();
@@ -151,6 +169,12 @@ public class BubbleSplitter {
             metrics.recordSplitFailure("NO_ENTITIES");
             return new SplitExecutionResult(false, "Source bubble has no entities", null, 0, 0);
         }
+
+        // Use strategy to compute split plane (replaces proposal's plane)
+        // Strategy computes split plane from actual entity positions
+        var splitPlane = strategy.calculate(sourceBubble.bounds(), allRecords);
+        log.debug("[SPLIT-{}] Strategy {} selected {} axis for split plane",
+                 correlationId, strategy.getClass().getSimpleName(), splitPlane.axis());
 
         // Partition entities by split plane
         var entitiesToMove = partitionEntities(allRecords, splitPlane);

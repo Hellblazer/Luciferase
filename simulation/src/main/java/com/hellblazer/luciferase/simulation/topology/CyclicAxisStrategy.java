@@ -46,15 +46,34 @@ public class CyclicAxisStrategy implements SplitPlaneStrategy {
     @Override
     public SplitPlane calculate(com.hellblazer.luciferase.simulation.bubble.BubbleBounds bubbleBounds,
                                 List<EnhancedBubble.EntityRecord> entities) {
-        var centroid = bubbleBounds.centroid();
+        // Compute entity centroid if entities exist
+        float cx, cy, cz;
+        if (entities.isEmpty()) {
+            var centroid = bubbleBounds.centroid();
+            cx = (float) centroid.getX();
+            cy = (float) centroid.getY();
+            cz = (float) centroid.getZ();
+        } else {
+            float sumX = 0.0f, sumY = 0.0f, sumZ = 0.0f;
+            for (var entity : entities) {
+                var pos = entity.position();
+                sumX += pos.x;
+                sumY += pos.y;
+                sumZ += pos.z;
+            }
+            int count = entities.size();
+            cx = sumX / count;
+            cy = sumY / count;
+            cz = sumZ / count;
+        }
 
         // Get next axis in cycle (0 = X, 1 = Y, 2 = Z)
         var axisIndex = counter.getAndIncrement() % 3;
 
         return switch (axisIndex) {
-            case 0 -> SplitPlane.xAxis((float) centroid.getX());
-            case 1 -> SplitPlane.yAxis((float) centroid.getY());
-            case 2 -> SplitPlane.zAxis((float) centroid.getZ());
+            case 0 -> SplitPlane.xAxis(cx);
+            case 1 -> SplitPlane.yAxis(cy);
+            case 2 -> SplitPlane.zAxis(cz);
             default -> throw new IllegalStateException("Unexpected axis index: " + axisIndex);
         };
     }

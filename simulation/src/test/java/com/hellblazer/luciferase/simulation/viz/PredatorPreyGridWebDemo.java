@@ -67,6 +67,12 @@ public class PredatorPreyGridWebDemo {
         var metrics = new TopologyMetrics();
         var executor = new TopologyExecutor(bubbleGrid, accountant, metrics);
 
+        // Strategy Pattern Integration (P2.3):
+        // BubbleSplitter now uses pluggable SplitPlaneStrategy for split plane computation
+        // Default strategy: LongestAxisStrategy (selects longest axis of entity distribution)
+        // The strategy computes split planes automatically in executor.execute()
+        log.info("Topology executor initialized with LongestAxisStrategy (default)");
+
         // Create 4 initial bubbles
         bubbleGrid.createBubbles(4, (byte) 2, 10);
         var bubbles = new ArrayList<>(bubbleGrid.getAllBubbles());

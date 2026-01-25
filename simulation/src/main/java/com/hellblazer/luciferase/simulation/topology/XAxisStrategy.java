@@ -24,7 +24,7 @@ import java.util.List;
  * Split plane strategy that always uses X-axis.
  * <p>
  * Creates a plane perpendicular to the X-axis passing through
- * the bubble's centroid, regardless of bubble dimensions.
+ * the entity centroid, regardless of entity distribution.
  * <p>
  * Use cases:
  * - Fixed spatial partitioning schemes
@@ -36,7 +36,18 @@ public class XAxisStrategy implements SplitPlaneStrategy {
     @Override
     public SplitPlane calculate(com.hellblazer.luciferase.simulation.bubble.BubbleBounds bubbleBounds,
                                 List<EnhancedBubble.EntityRecord> entities) {
-        var centroid = bubbleBounds.centroid();
-        return SplitPlane.xAxis((float) centroid.getX());
+        if (entities.isEmpty()) {
+            var centroid = bubbleBounds.centroid();
+            return SplitPlane.xAxis((float) centroid.getX());
+        }
+
+        // Compute entity centroid X-coordinate
+        float sumX = 0.0f;
+        for (var entity : entities) {
+            sumX += entity.position().x;
+        }
+        float cx = sumX / entities.size();
+
+        return SplitPlane.xAxis(cx);
     }
 }

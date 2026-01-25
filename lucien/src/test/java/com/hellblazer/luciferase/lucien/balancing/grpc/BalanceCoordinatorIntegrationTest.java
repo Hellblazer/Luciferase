@@ -141,6 +141,38 @@ class BalanceCoordinatorIntegrationTest {
         assertTrue(stats.getTotalRefinementsRequested() >= 1);
     }
 
+    @Test
+    void testExchangeViolations() {
+        var violation = BalanceViolation.newBuilder()
+            .setLocalKey(SpatialKey.newBuilder()
+                .setMorton(MortonKey.newBuilder().setMortonCode(100L).build())
+                .build())
+            .setGhostKey(SpatialKey.newBuilder()
+                .setMorton(MortonKey.newBuilder().setMortonCode(200L).build())
+                .build())
+            .setLocalLevel(5)
+            .setGhostLevel(7)
+            .setLevelDifference(2)
+            .setSourceRank(1)
+            .build();
+
+        var batch = ViolationBatch.newBuilder()
+            .setRequesterRank(1)
+            .setResponderRank(0)
+            .setRoundNumber(0)
+            .addViolations(violation)
+            .setTimestamp(System.currentTimeMillis())
+            .build();
+
+        var responseBatch = blockingStub.exchangeViolations(batch);
+
+        assertNotNull(responseBatch);
+        assertEquals(0, responseBatch.getRequesterRank());
+        assertEquals(1, responseBatch.getResponderRank());
+        assertEquals(0, responseBatch.getRoundNumber());
+        assertTrue(responseBatch.getTimestamp() > 0);
+    }
+
     /**
      * Mock balance provider for testing.
      */
@@ -195,6 +227,17 @@ class BalanceCoordinatorIntegrationTest {
         @Override
         public void recordRefinementApplied(int rank, int count) {
             refinementsApplied.addAndGet(count);
+        }
+
+        @Override
+        public ViolationBatch processViolations(ViolationBatch batch) {
+            // Mock implementation - return empty batch with correct metadata
+            return ViolationBatch.newBuilder()
+                .setRequesterRank(getCurrentRank())
+                .setResponderRank(batch.getRequesterRank())
+                .setRoundNumber(batch.getRoundNumber())
+                .setTimestamp(System.currentTimeMillis())
+                .build();
         }
     }
 }
