@@ -56,6 +56,33 @@ message BalanceStatistics {
     map<int32, int32> refinements_per_rank = 6;
 }
 
+// 2:1 balance violation for exchange during butterfly pattern rounds
+message BalanceViolation {
+    lucien.ghost.SpatialKey local_key = 1;
+    lucien.ghost.SpatialKey ghost_key = 2;
+    int32 local_level = 3;
+    int32 ghost_level = 4;
+    int32 level_difference = 5;
+    int32 source_rank = 6;
+}
+
+// Batch of violations exchanged during butterfly pattern communication
+message ViolationBatch {
+    int32 requester_rank = 1;
+    int32 responder_rank = 2;
+    int32 round_number = 3;
+    repeated BalanceViolation violations = 4;
+    int64 timestamp = 5;
+}
+
+// Acknowledgment for violation batch reception
+message ViolationAck {
+    int32 responder_rank = 1;
+    int32 violations_received_count = 2;
+    int64 ack_timestamp = 3;
+    string error_message = 4;  // Empty if successful
+}
+
 // Balance coordinator service
 service BalanceCoordinator {
     // Request refinement from remote partition
@@ -69,4 +96,7 @@ service BalanceCoordinator {
 
     // Query balance statistics
     rpc GetBalanceStatistics(BalanceCoordinationRequest) returns (BalanceStatistics);
+
+    // Exchange 2:1 balance violations during butterfly pattern rounds
+    rpc ExchangeViolations(ViolationBatch) returns (ViolationAck);
 }

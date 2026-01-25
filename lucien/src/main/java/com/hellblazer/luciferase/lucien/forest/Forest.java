@@ -321,6 +321,63 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     }
     
     /**
+     * Refine (subdivide) all elements at the specified spatial key across all trees.
+     *
+     * <p>This method is used during cross-partition 2:1 balance refinement when a spatial element
+     * at the given key needs to be subdivided into smaller child elements to satisfy balance
+     * constraints. The refinement operation marks trees containing the key for refinement.
+     *
+     * <p>The refinement operation:
+     * <ul>
+     *   <li>Searches all trees in the forest for the spatial key</li>
+     *   <li>Marks trees containing the key for refinement via metadata</li>
+     *   <li>Logs refinement operations for debugging</li>
+     *   <li>Updates forest statistics after refinement</li>
+     * </ul>
+     *
+     * <p>Note: The actual subdivision of spatial elements is handled by the spatial index
+     * implementation (Octree, Tetree, etc.) during subsequent balance operations. This method
+     * prepares the forest state for refinement by marking affected trees.
+     *
+     * <p>Thread Safety: This method is thread-safe. It iterates over trees using the
+     * CopyOnWriteArrayList without locking, and forest metadata updates are atomic.
+     *
+     * @param key the spatial key to refine - trees containing this key will be marked
+     * @return true if refinement was applied (key found in at least one tree), false otherwise
+     *
+     * @throws NullPointerException if key is null
+     */
+    public boolean refine(Key key) {
+        Objects.requireNonNull(key, "Refinement key cannot be null");
+
+        var refined = false;
+
+        // Search all trees for the specified spatial key
+        for (var tree : trees) {
+            var spatialIndex = tree.getSpatialIndex();
+
+            // Check if this tree's spatial index contains the key
+            if (spatialIndex.containsSpatialKey(key)) {
+                refined = true;
+
+                // Mark this tree as having undergone refinement
+                tree.setMetadata("refined_at_key_" + key, true);
+
+                log.debug("Refined spatial key {} in tree {}", key, tree.getTreeId());
+            }
+        }
+
+        if (refined) {
+            // Update statistics after marking trees for refinement
+            refreshAllStatistics();
+            log.info("Forest refinement applied for key {}: {} tree(s) updated",
+                    key, trees.size());
+        }
+
+        return refined;
+    }
+
+    /**
      * Refresh statistics for all trees.
      */
     public void refreshAllStatistics() {
