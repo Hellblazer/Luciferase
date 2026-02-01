@@ -174,6 +174,10 @@ class Phase4E2ETest {
             startServer(partition);
         }
 
+        // Brief pause to ensure all servers are fully ready
+        // (prevents race condition between server startup and first client call)
+        Thread.sleep(100);
+
         // Create different numbers of violations on each partition
         testPartitions.get(0).createLocalViolations(2);
         testPartitions.get(1).createLocalViolations(3);
@@ -414,6 +418,9 @@ class Phase4E2ETest {
             startServer(partition);
         }
 
+        // Brief pause to ensure all servers are fully ready
+        Thread.sleep(100);
+
         // Create many violations (10K+ total)
         var violationsPerPartition = 2500;
         for (var partition : partitions) {
@@ -523,9 +530,11 @@ class Phase4E2ETest {
         var balanceProvider = partition.createBalanceProvider();
         var serverImpl = new BalanceCoordinatorServer(balanceProvider);
 
+        // Use newCachedThreadPool instead of directExecutor to avoid blocking issues
+        // when partitions exchange with each other (potential for deadlock with directExecutor)
         var server = InProcessServerBuilder.forName(serverName)
             .addService(serverImpl)
-            .directExecutor() // Use direct executor for testing
+            .executor(java.util.concurrent.Executors.newCachedThreadPool())
             .build()
             .start();
 
@@ -772,7 +781,9 @@ class Phase4E2ETest {
                     return com.hellblazer.luciferase.lucien.balancing.proto.BalanceCoordinatorGrpc.newBlockingStub(channel);
                 });
 
-                return stub.exchangeViolations(batch);
+                // Add deadline to prevent hanging indefinitely in CI
+                // 30 seconds should be plenty for even large violation sets
+                return stub.withDeadlineAfter(30, TimeUnit.SECONDS).exchangeViolations(batch);
 
             } catch (Exception e) {
                 throw new RuntimeException("Failed to exchange violations with rank " + batch.getResponderRank(), e);
