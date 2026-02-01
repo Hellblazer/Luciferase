@@ -64,9 +64,16 @@ class Phase4E2ETest {
     private final List<Partition> partitions = new ArrayList<>();
     private final Map<Integer, Server> servers = new ConcurrentHashMap<>();
 
+    /**
+     * Unique prefix for this test instance to ensure in-process server names
+     * don't collide between tests (gRPC's InProcessServer registry is global).
+     */
+    private String serverPrefix;
+
     @BeforeEach
     void setUp() {
-        // Tests will create partitions as needed
+        // Generate unique server name prefix for this test to avoid gRPC registry conflicts
+        serverPrefix = UUID.randomUUID().toString().substring(0, 8);
     }
 
     @AfterEach
@@ -511,7 +518,7 @@ class Phase4E2ETest {
      * Starts an in-process gRPC server for a partition.
      */
     private void startServer(Partition partition) throws Exception {
-        var serverName = "test-server-" + partition.rank;
+        var serverName = serverPrefix + "-server-" + partition.rank;
 
         var balanceProvider = partition.createBalanceProvider();
         var serverImpl = new BalanceCoordinatorServer(balanceProvider);
@@ -587,10 +594,11 @@ class Phase4E2ETest {
 
         private void initializeNetworking() {
             // Create service discovery for in-process channels
+            // Uses serverPrefix to ensure unique names per test run
             var serviceDiscovery = new BalanceCoordinatorClient.ServiceDiscovery() {
                 @Override
                 public String getEndpoint(int rank) {
-                    return "test-server-" + rank;
+                    return serverPrefix + "-server-" + rank;
                 }
 
                 @Override
@@ -602,7 +610,7 @@ class Phase4E2ETest {
                 public Map<Integer, String> getAllEndpoints() {
                     var endpoints = new HashMap<Integer, String>();
                     for (int i = 0; i < totalPartitions; i++) {
-                        endpoints.put(i, "test-server-" + i);
+                        endpoints.put(i, serverPrefix + "-server-" + i);
                     }
                     return endpoints;
                 }
@@ -738,8 +746,9 @@ class Phase4E2ETest {
 
     /**
      * In-process gRPC client for testing (uses InProcessChannelBuilder).
+     * Non-static to access outer class's serverPrefix field.
      */
-    private static class InProcessBalanceCoordinatorClient extends BalanceCoordinatorClient {
+    private class InProcessBalanceCoordinatorClient extends BalanceCoordinatorClient {
         private final Map<Integer, io.grpc.ManagedChannel> testChannels = new ConcurrentHashMap<>();
         private final Map<Integer, com.hellblazer.luciferase.lucien.balancing.proto.BalanceCoordinatorGrpc.BalanceCoordinatorBlockingStub> testStubs = new ConcurrentHashMap<>();
 
@@ -753,8 +762,9 @@ class Phase4E2ETest {
                 var targetRank = batch.getResponderRank();
 
                 // Get or create channel and stub (reuse across exchanges)
+                // Uses serverPrefix for unique server names per test run
                 var stub = testStubs.computeIfAbsent(targetRank, rank -> {
-                    var channelName = "test-server-" + rank;
+                    var channelName = serverPrefix + "-server-" + rank;
                     var channel = InProcessChannelBuilder.forName(channelName)
                         .directExecutor()
                         .build();
