@@ -212,6 +212,11 @@ class Phase4E2ETest {
     /**
      * Executes butterfly aggregation with synchronized rounds using barriers.
      * All partitions complete round N before any starts round N+1.
+     *
+     * <p>Uses a dedicated fixed thread pool (not ForkJoinPool.commonPool) to ensure
+     * enough threads are available for all partitions. This is critical for CI
+     * environments where the common pool may be undersized and blocking gRPC calls
+     * can exhaust the pool.
      */
     private List<Set<BalanceViolation>> executeSynchronizedAggregation(List<Partition> testPartitions) throws Exception {
         int numPartitions = testPartitions.size();
@@ -225,30 +230,46 @@ class Phase4E2ETest {
             aggregatedResults.put(partition.rank, new LinkedHashSet<>(partition.localViolations));
         }
 
-        // Execute rounds with barriers
-        // Note: CI runners may be slow, especially with high violation counts.
-        // Use 60-second timeout to accommodate serialization overhead.
-        for (int round = 0; round < numRounds; round++) {
-            final int currentRound = round;
-            var barrier = new CyclicBarrier(numPartitions);
+        // Use dedicated executor with exactly numPartitions threads to avoid ForkJoinPool issues
+        // This ensures all partitions can run concurrently without thread starvation
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(numPartitions);
+        try {
+            // Execute rounds with barriers
+            // Note: CI runners may be slow, especially with high violation counts.
+            // Use 60-second timeout to accommodate serialization overhead.
+            for (int round = 0; round < numRounds; round++) {
+                final int currentRound = round;
+                var barrier = new CyclicBarrier(numPartitions);
+                var latch = new java.util.concurrent.CountDownLatch(numPartitions);
+                var errors = new CopyOnWriteArrayList<Exception>();
 
-            var roundFutures = new ArrayList<java.util.concurrent.CompletableFuture<Void>>();
-            for (var partition : testPartitions) {
-                var future = java.util.concurrent.CompletableFuture.runAsync(() -> {
-                    try {
-                        executeRound(partition, currentRound, aggregatedResults);
-                        barrier.await(60, TimeUnit.SECONDS); // Wait for all to complete this round
-                    } catch (Exception e) {
-                        throw new RuntimeException("Round " + currentRound + " failed for partition " + partition.rank, e);
-                    }
-                });
-                roundFutures.add(future);
-            }
+                for (var partition : testPartitions) {
+                    final int partitionRank = partition.rank;
+                    executor.submit(() -> {
+                        try {
+                            executeRound(partition, currentRound, aggregatedResults);
+                            barrier.await(60, TimeUnit.SECONDS); // Wait for all to complete this round
+                        } catch (Exception e) {
+                            errors.add(new RuntimeException("Round " + currentRound + " failed for partition " + partitionRank, e));
+                        } finally {
+                            latch.countDown();
+                        }
+                    });
+                }
 
-            // Wait for all partitions to complete this round
-            for (var future : roundFutures) {
-                future.join();
+                // Wait for all partitions to complete this round
+                if (!latch.await(120, TimeUnit.SECONDS)) {
+                    throw new RuntimeException("Round " + currentRound + " timed out after 120 seconds");
+                }
+
+                // Check for errors
+                if (!errors.isEmpty()) {
+                    throw errors.get(0);
+                }
             }
+        } finally {
+            executor.shutdown();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
         }
 
         // Collect results
