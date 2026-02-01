@@ -23,6 +23,7 @@ import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,6 +40,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 @DisplayName("Phase 4.2.2b: Dynamic Kernel Selection")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Requires GPU hardware not available in CI")
 class DynamicKernelSelectionTest {
 
     private DAGOpenCLRenderer renderer;

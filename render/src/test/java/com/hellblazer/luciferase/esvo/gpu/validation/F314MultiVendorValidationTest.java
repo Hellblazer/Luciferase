@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.esvo.gpu.report.MultiVendorConsistencyReport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import java.util.List;
@@ -45,6 +46,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * @see MultiVendorConsistencyReport
  */
 @DisplayName("F3.1.4: Multi-Vendor Testing Validation")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Requires OpenCL/GPU hardware not available in CI")
 class F314MultiVendorValidationTest {
 
     @Nested

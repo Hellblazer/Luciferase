@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.esvo.gpu;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -27,10 +28,13 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * Test coverage for GPU vendor detection via OpenCL device queries.
  * Tests that require real GPU hardware are conditional on RUN_GPU_TESTS=true.
+ * All tests in this class require OpenCL which is not available in CI.
  *
  * @author hal.hildebrand
  */
 @DisplayName("F3.1.4 D1: GPUVendorDetector Tests")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Requires OpenCL/GPU hardware not available in CI")
 class GPUVendorDetectorTest {
 
     // ==================== Basic Detection Tests (No GPU Required) ====================

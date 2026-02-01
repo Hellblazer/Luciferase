@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.esvo.gpu;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -199,6 +200,8 @@ class VendorKernelConfigTest {
 
     @Test
     @DisplayName("Factory method creates config for detected GPU")
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+            disabledReason = "Requires GPU hardware not available in CI")
     void testFactoryForDetectedGPU() {
         var config = VendorKernelConfig.forDetectedGPU();
 
