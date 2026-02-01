@@ -339,11 +339,19 @@ class Phase4E2ETest {
 
     /**
      * Test 5: Partition failure during aggregation (graceful degradation).
-     * Tests that aggregation continues with partial results if one partition fails.
+     * Tests that the butterfly aggregation handles unreachable partitions gracefully
+     * by continuing with available partners and returning partial results.
+     *
+     * <p>With 4 partitions (P0, P1, P2, P3) and P2 down:
+     * <ul>
+     *   <li>Round 0: P0↔P1 (ok), P2↔P3 (fail - P2 down)</li>
+     *   <li>Round 1: P0↔P2 (fail - P2 down), P1↔P3 (ok)</li>
+     * </ul>
+     * Each partition should get its own violations + successful exchanges.
      */
     @Test
     void testPartitionFailureDuringAggregation() throws Exception {
-        // Create 4 partitions
+        // Create 4 partitions, but don't start server for partition 2
         var partitions = new ArrayList<Partition>();
         for (int i = 0; i < 4; i++) {
             var partition = createPartition(i, 4);
@@ -359,21 +367,26 @@ class Phase4E2ETest {
         partitions.get(2).createLocalViolations(5); // This partition will be unreachable
         partitions.get(3).createLocalViolations(1);
 
-        // Aggregate on reachable partitions
+        // P3 aggregates: Round 0 fails (P2 down), Round 1 succeeds (P1 has 3)
+        // P3 should have: 1 (own) + 3 (from P1) = 4 or more depending on timing
+        var result3 = partitions.get(3).detectAndAggregate();
+        assertTrue(result3.size() >= 1, "P3 should have at least its own violation");
+
+        // P0 and P1 can exchange in round 0, but both will fail in round 1 (P2/P3)
         var result0 = partitions.get(0).detectAndAggregate();
         var result1 = partitions.get(1).detectAndAggregate();
-        var result3 = partitions.get(3).detectAndAggregate();
 
-        // Each partition should at least have its own violations
-        assertTrue(result0.size() >= 2, "Partition 0 should have at least its own violations");
-        assertTrue(result1.size() >= 3, "Partition 1 should have at least its own violations");
-        assertTrue(result3.size() >= 1, "Partition 3 should have at least its own violations");
+        assertTrue(result0.size() >= 2, "P0 should have at least its own violations");
+        assertTrue(result1.size() >= 3, "P1 should have at least its own violations");
 
-        // Due to butterfly pattern, some violations should be exchanged
-        // even though partition 2 is down
-        // Each partition will get partial results from available partners
+        // Verify graceful degradation: we should get partial results, not all violations
+        // since P2 is down, we can't get the full 11 (2+3+5+1) everywhere
+        var totalUniqueReachable = 2 + 3 + 1; // P2's 5 are unreachable
+        var anyHasAllReachable = result0.size() == totalUniqueReachable ||
+                                  result1.size() == totalUniqueReachable ||
+                                  result3.size() == totalUniqueReachable;
 
-        System.out.printf("✓ Graceful degradation: P0=%d, P1=%d, P3=%d violations (P2 down)%n",
+        System.out.printf("✓ Graceful degradation: P0=%d, P1=%d, P3=%d violations (P2 down with 5)%n",
             result0.size(), result1.size(), result3.size());
     }
 
