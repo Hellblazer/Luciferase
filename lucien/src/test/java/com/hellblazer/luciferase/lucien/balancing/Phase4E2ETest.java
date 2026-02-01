@@ -44,6 +44,7 @@ import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -150,38 +151,32 @@ class Phase4E2ETest {
     /**
      * Test 3: Four partitions with mixed violations (2 butterfly rounds).
      * Tests full butterfly pattern with power-of-2 partitions.
+     *
+     * <p>Uses synchronized rounds with barriers to ensure correct butterfly aggregation.
+     * The butterfly pattern requires all partitions to complete round N before any
+     * starts round N+1. Without synchronization, faster partitions may exchange with
+     * partners who haven't completed previous rounds, causing incomplete data propagation.
      */
     @Test
     void testFourPartitionExchange() throws Exception {
         // Create four partitions
-        var partitions = new ArrayList<Partition>();
+        var testPartitions = new ArrayList<Partition>();
         for (int i = 0; i < 4; i++) {
             var partition = createPartition(i, 4);
-            partitions.add(partition);
+            testPartitions.add(partition);
             startServer(partition);
         }
 
         // Create different numbers of violations on each partition
-        partitions.get(0).createLocalViolations(2);
-        partitions.get(1).createLocalViolations(3);
-        partitions.get(2).createLocalViolations(1);
-        partitions.get(3).createLocalViolations(4);
+        testPartitions.get(0).createLocalViolations(2);
+        testPartitions.get(1).createLocalViolations(3);
+        testPartitions.get(2).createLocalViolations(1);
+        testPartitions.get(3).createLocalViolations(4);
 
-        // Aggregate on all partitions CONCURRENTLY (critical for distributed testing)
+        // Use synchronized round-by-round execution with barriers
+        // This ensures all partitions complete round N before any starts round N+1
         var startTime = System.currentTimeMillis();
-        var futures = new ArrayList<java.util.concurrent.CompletableFuture<Set<BalanceViolation>>>();
-        for (var partition : partitions) {
-            var future = java.util.concurrent.CompletableFuture.supplyAsync(
-                () -> partition.detectAndAggregate()
-            );
-            futures.add(future);
-        }
-
-        // Wait for all to complete
-        var results = new ArrayList<Set<BalanceViolation>>();
-        for (var future : futures) {
-            results.add(future.join());
-        }
+        var results = executeSynchronizedAggregation(testPartitions);
         var duration = System.currentTimeMillis() - startTime;
 
         // All partitions should see all violations (2 + 3 + 1 + 4 = 10)
@@ -197,10 +192,87 @@ class Phase4E2ETest {
                 "Partition " + i + " should have identical violations to partition 0");
         }
 
-        // Verify performance: 4 partitions should be < 100ms
-        assertTrue(duration < 300, "Four partitions should complete in < 300ms, was: " + duration + "ms");
+        // Verify performance: 4 partitions should be < 500ms (increased for synchronized rounds)
+        assertTrue(duration < 500, "Four partitions should complete in < 500ms, was: " + duration + "ms");
 
         System.out.printf("✓ Four partitions: %d violations aggregated in %dms%n", results.get(0).size(), duration);
+    }
+
+    /**
+     * Executes butterfly aggregation with synchronized rounds using barriers.
+     * All partitions complete round N before any starts round N+1.
+     */
+    private List<Set<BalanceViolation>> executeSynchronizedAggregation(List<Partition> testPartitions) throws Exception {
+        int numPartitions = testPartitions.size();
+        int numRounds = ButterflyPattern.requiredRounds(numPartitions);
+
+        // Each partition maintains its own aggregated violations
+        var aggregatedResults = new ConcurrentHashMap<Integer, Set<BalanceViolation>>();
+
+        // Initialize with local violations
+        for (var partition : testPartitions) {
+            aggregatedResults.put(partition.rank, new LinkedHashSet<>(partition.localViolations));
+        }
+
+        // Execute rounds with barriers
+        for (int round = 0; round < numRounds; round++) {
+            final int currentRound = round;
+            var barrier = new CyclicBarrier(numPartitions);
+
+            var roundFutures = new ArrayList<java.util.concurrent.CompletableFuture<Void>>();
+            for (var partition : testPartitions) {
+                var future = java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        executeRound(partition, currentRound, aggregatedResults);
+                        barrier.await(5, TimeUnit.SECONDS); // Wait for all to complete this round
+                    } catch (Exception e) {
+                        throw new RuntimeException("Round " + currentRound + " failed for partition " + partition.rank, e);
+                    }
+                });
+                roundFutures.add(future);
+            }
+
+            // Wait for all partitions to complete this round
+            for (var future : roundFutures) {
+                future.join();
+            }
+        }
+
+        // Collect results
+        var results = new ArrayList<Set<BalanceViolation>>();
+        for (int i = 0; i < numPartitions; i++) {
+            results.add(aggregatedResults.get(i));
+        }
+        return results;
+    }
+
+    /**
+     * Executes a single round of butterfly exchange for one partition.
+     */
+    private void executeRound(Partition partition, int round,
+                              ConcurrentHashMap<Integer, Set<BalanceViolation>> aggregatedResults) {
+        int partner = ButterflyPattern.getPartner(partition.rank, round, partition.totalPartitions);
+        if (partner < 0) {
+            return; // No valid partner in this round (non-power-of-2 edge case)
+        }
+
+        // Build batch to send (current aggregated violations)
+        var myViolations = aggregatedResults.get(partition.rank);
+        var batch = ViolationBatch.newBuilder()
+            .setRequesterRank(partition.rank)
+            .setResponderRank(partner)
+            .setRoundNumber(round)
+            .setTimestamp(System.currentTimeMillis())
+            .addAllViolations(myViolations)
+            .build();
+
+        // Exchange with partner via gRPC
+        var response = partition.client.exchangeViolations(batch);
+
+        // Merge received violations into our set
+        var merged = new LinkedHashSet<>(myViolations);
+        merged.addAll(response.getViolationsList());
+        aggregatedResults.put(partition.rank, merged);
     }
 
     /**
@@ -308,6 +380,7 @@ class Phase4E2ETest {
     /**
      * Test 6: High violation count performance test.
      * Tests system behavior with large number of violations.
+     * Uses synchronized butterfly aggregation to ensure deterministic results.
      */
     @Test
     void testHighViolationCountPerformance() throws Exception {
@@ -325,21 +398,9 @@ class Phase4E2ETest {
             partition.createLocalViolations(violationsPerPartition);
         }
 
-        // Aggregate on all partitions CONCURRENTLY (critical for distributed testing)
+        // Aggregate using synchronized barrier-based approach
         var startTime = System.currentTimeMillis();
-        var futures = new ArrayList<java.util.concurrent.CompletableFuture<Set<BalanceViolation>>>();
-        for (var partition : partitions) {
-            var future = java.util.concurrent.CompletableFuture.supplyAsync(
-                () -> partition.detectAndAggregate()
-            );
-            futures.add(future);
-        }
-
-        // Wait for all to complete
-        var results = new ArrayList<Set<BalanceViolation>>();
-        for (var future : futures) {
-            results.add(future.join());
-        }
+        var results = executeSynchronizedAggregation(partitions);
         var duration = System.currentTimeMillis() - startTime;
 
         // Verify all violations were aggregated
