@@ -43,22 +43,8 @@ class BeamKernelSelectorTest {
 
     @Test
     void testSelectLowCoherence() {
-        // Low coherence scene (random rays)
-        var incoherentRays = new Ray[100];
-        for (int i = 0; i < 100; i++) {
-            var x = (float) Math.random();
-            var y = (float) Math.random();
-            var z = (float) Math.random();
-            var origin = new Point3f(x, y, z);
-
-            var dx = (float) (Math.random() - 0.5);
-            var dy = (float) (Math.random() - 0.5);
-            var dz = (float) (Math.random() - 0.5);
-            var direction = new Vector3f(dx, dy, dz);
-            direction.normalize();
-
-            incoherentRays[i] = new Ray(origin, direction);
-        }
+        // Low coherence scene (uniformly distributed incoherent rays)
+        var incoherentRays = createIncoherentRays(100);
 
         var tree = BeamTreeBuilder.from(incoherentRays).build();
         var choice = selector.selectKernel(tree);
@@ -198,15 +184,26 @@ class BeamKernelSelectorTest {
 
     private Ray[] createIncoherentRays(int count) {
         var incoherentRays = new Ray[count];
+
+        // Use golden ratio for uniform sphere distribution (Fibonacci lattice)
+        // This ensures deterministic, uniformly distributed directions that
+        // produce average |cos(θ)| ≈ 0.5 between any two directions
+        var goldenRatio = (1 + Math.sqrt(5)) / 2;
+        var goldenAngle = 2 * Math.PI / (goldenRatio * goldenRatio);
+
         for (int i = 0; i < count; i++) {
-            var x = (float) Math.random();
-            var y = (float) Math.random();
-            var z = (float) Math.random();
+            // Spread origins across unit cube (deterministic pattern)
+            var x = ((i * 7 + 3) % 100) * 0.01f;
+            var y = ((i * 13 + 5) % 100) * 0.01f;
+            var z = ((i * 19 + 7) % 100) * 0.01f;
             var origin = new Point3f(x, y, z);
 
-            var dx = (float) (Math.random() - 0.5);
-            var dy = (float) (Math.random() - 0.5);
-            var dz = (float) (Math.random() - 0.5);
+            // Fibonacci lattice for uniform sphere distribution
+            var theta = goldenAngle * i;
+            var phi = Math.acos(1 - 2.0 * (i + 0.5) / count);
+            var dx = (float) (Math.sin(phi) * Math.cos(theta));
+            var dy = (float) (Math.sin(phi) * Math.sin(theta));
+            var dz = (float) Math.cos(phi);
             var direction = new Vector3f(dx, dy, dz);
             direction.normalize();
 

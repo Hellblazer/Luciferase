@@ -1,5 +1,9 @@
 package com.hellblazer.luciferase.esvo.gpu.beam.metrics;
 
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+
 /**
  * Collects GPU rendering metrics using CPU-side System.nanoTime() timing.
  * No OpenCL dependency - pure Java implementation.
@@ -9,11 +13,11 @@ public class GPUMetricsCollector {
 
     private final MetricsAggregator aggregator;
 
-    // Frame-level tracking (per-frame state)
-    private volatile long frameStartNanos = 0;
-    private volatile CoherenceSnapshot currentCoherence = CoherenceSnapshot.empty();
-    private volatile int frameBatchDispatches = 0;
-    private volatile int frameSingleRayDispatches = 0;
+    // Frame-level tracking (per-frame state) - using atomics for thread safety
+    private final AtomicLong frameStartNanos = new AtomicLong(0);
+    private final AtomicReference<CoherenceSnapshot> currentCoherence = new AtomicReference<>(CoherenceSnapshot.empty());
+    private final AtomicInteger frameBatchDispatches = new AtomicInteger(0);
+    private final AtomicInteger frameSingleRayDispatches = new AtomicInteger(0);
 
     /**
      * Creates collector with default window size (60 frames).
@@ -36,10 +40,10 @@ public class GPUMetricsCollector {
      * Resets per-frame metrics.
      */
     public void beginFrame() {
-        frameStartNanos = System.nanoTime();
-        currentCoherence = CoherenceSnapshot.empty();
-        frameBatchDispatches = 0;
-        frameSingleRayDispatches = 0;
+        frameStartNanos.set(System.nanoTime());
+        currentCoherence.set(CoherenceSnapshot.empty());
+        frameBatchDispatches.set(0);
+        frameSingleRayDispatches.set(0);
     }
 
     /**
@@ -47,27 +51,30 @@ public class GPUMetricsCollector {
      * Aggregates collected metrics and adds to rolling window.
      */
     public void endFrame() {
-        if (frameStartNanos == 0) {
+        var startNanos = frameStartNanos.get();
+        if (startNanos == 0) {
             // No matching beginFrame - ignore
             return;
         }
 
         var frameEndNanos = System.nanoTime();
-        var frameTimeNanos = frameEndNanos - frameStartNanos;
+        var frameTimeNanos = frameEndNanos - startNanos;
 
         // Build dispatch metrics from accumulated frame data
-        var totalDispatches = frameBatchDispatches + frameSingleRayDispatches;
+        var batchCount = frameBatchDispatches.get();
+        var singleRayCount = frameSingleRayDispatches.get();
+        var totalDispatches = batchCount + singleRayCount;
         var dispatch = DispatchMetrics.from(
             totalDispatches,
-            frameBatchDispatches,
-            frameSingleRayDispatches
+            batchCount,
+            singleRayCount
         );
 
         // Add frame to aggregator
-        aggregator.addFrame(frameTimeNanos, currentCoherence, dispatch);
+        aggregator.addFrame(frameTimeNanos, currentCoherence.get(), dispatch);
 
         // Reset frame start for next frame
-        frameStartNanos = 0;
+        frameStartNanos.set(0);
     }
 
     /**
@@ -90,7 +97,7 @@ public class GPUMetricsCollector {
      * @param coherence Coherence snapshot from BeamTree
      */
     public void recordBeamTreeStats(CoherenceSnapshot coherence) {
-        this.currentCoherence = coherence;
+        this.currentCoherence.set(coherence);
     }
 
     /**
@@ -100,8 +107,8 @@ public class GPUMetricsCollector {
      * @param dispatch Dispatch metrics from kernel selector
      */
     public void recordKernelSelection(DispatchMetrics dispatch) {
-        frameBatchDispatches += dispatch.batchDispatches();
-        frameSingleRayDispatches += dispatch.singleRayDispatches();
+        frameBatchDispatches.addAndGet(dispatch.batchDispatches());
+        frameSingleRayDispatches.addAndGet(dispatch.singleRayDispatches());
     }
 
     /**
@@ -120,9 +127,9 @@ public class GPUMetricsCollector {
      */
     public void reset() {
         aggregator.clear();
-        frameStartNanos = 0;
-        currentCoherence = CoherenceSnapshot.empty();
-        frameBatchDispatches = 0;
-        frameSingleRayDispatches = 0;
+        frameStartNanos.set(0);
+        currentCoherence.set(CoherenceSnapshot.empty());
+        frameBatchDispatches.set(0);
+        frameSingleRayDispatches.set(0);
     }
 }

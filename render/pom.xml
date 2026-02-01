@@ -19,6 +19,8 @@
     <properties>
         <!-- Default: no extra JVM args. Overridden by gpu-macos profile. -->
         <render.surefire.argLine></render.surefire.argLine>
+        <!-- Default: no excluded groups. CI sets this to exclude memory-intensive tests. -->
+        <render.excludedGroups></render.excludedGroups>
     </properties>
 
     <dependencies>
@@ -157,8 +159,11 @@
                         <org.lwjgl.util.Debug>false</org.lwjgl.util.Debug>
                         <org.lwjgl.util.DebugAllocator>false</org.lwjgl.util.DebugAllocator>
                     </systemPropertyVariables>
-                    <!-- Add JVM args for ESVO requirements. Use property for profile override. -->
-                    <argLine>${render.surefire.argLine} -Xmx2G -Xms512m --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
+                    <!-- Add JVM args for ESVO requirements. Use property for profile override.
+                         Increased heap to 4G for benchmark tests (Phase5a5BenchmarkTest with 4K frames needs significant heap) -->
+                    <argLine>${render.surefire.argLine} -Xmx4G -Xms1G --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
+                    <!-- Exclude memory-intensive tests in CI - they require more heap than typical CI runners provide -->
+                    <excludedGroups>${render.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
             
