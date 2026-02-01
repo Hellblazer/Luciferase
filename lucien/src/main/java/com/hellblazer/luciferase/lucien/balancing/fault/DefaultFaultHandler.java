@@ -62,19 +62,60 @@ public class DefaultFaultHandler implements FaultHandler {
     private volatile boolean monitoring;
 
     /**
-     * Internal partition health state.
+     * Internal partition health state with metrics tracking.
      */
     private static class PartitionHealthState {
         volatile PartitionStatus status;
         volatile int consecutiveTimeouts;
+        volatile int consecutiveSyncFailures;
         volatile long suspectedAt;
         volatile long lastSeenAt;
+        volatile long detectionStartTime;
+
+        // Metrics tracking
+        volatile long lastDetectionLatencyMs;
+        volatile long lastRecoveryLatencyMs;
+        volatile int failureCount;
+        volatile int recoveryAttempts;
+        volatile int successfulRecoveries;
+        volatile int failedRecoveries;
+
+        // Node-level heartbeat tracking
+        final Map<UUID, Long> nodeLastHeartbeat = new ConcurrentHashMap<>();
+        final Set<UUID> failedNodes = ConcurrentHashMap.newKeySet();
 
         PartitionHealthState(long currentTime) {
             this.status = PartitionStatus.HEALTHY;
             this.consecutiveTimeouts = 0;
+            this.consecutiveSyncFailures = 0;
             this.suspectedAt = 0;
             this.lastSeenAt = currentTime;
+            this.detectionStartTime = 0;
+            this.lastDetectionLatencyMs = 0;
+            this.lastRecoveryLatencyMs = 0;
+            this.failureCount = 0;
+            this.recoveryAttempts = 0;
+            this.successfulRecoveries = 0;
+            this.failedRecoveries = 0;
+        }
+
+        FaultMetrics toMetrics() {
+            return new FaultMetrics(
+                lastDetectionLatencyMs,
+                lastRecoveryLatencyMs,
+                failureCount,
+                recoveryAttempts,
+                successfulRecoveries,
+                failedRecoveries
+            );
+        }
+
+        int healthyNodeCount() {
+            return nodeLastHeartbeat.size() - failedNodes.size();
+        }
+
+        int totalNodeCount() {
+            return nodeLastHeartbeat.size();
         }
     }
 
@@ -279,8 +320,34 @@ public class DefaultFaultHandler implements FaultHandler {
 
     @Override
     public PartitionView getPartitionView(UUID partitionId) {
-        return null; // Not implemented in Phase 4.2
+        var state = healthStates.get(partitionId);
+        if (state == null) {
+            return null;
+        }
+
+        synchronized (state) {
+            return new PartitionViewSnapshot(
+                partitionId,
+                state.status,
+                state.lastSeenAt,
+                state.totalNodeCount(),
+                state.healthyNodeCount(),
+                state.toMetrics()
+            );
+        }
     }
+
+    /**
+     * Immutable snapshot of partition health state.
+     */
+    private record PartitionViewSnapshot(
+        UUID partitionId,
+        PartitionStatus status,
+        long lastSeenMs,
+        int nodeCount,
+        int healthyNodes,
+        FaultMetrics metrics
+    ) implements PartitionView {}
 
     @Override
     public Subscription subscribeToChanges(Consumer<PartitionChangeEvent> consumer) {
@@ -302,12 +369,74 @@ public class DefaultFaultHandler implements FaultHandler {
 
     @Override
     public void reportSyncFailure(UUID partitionId) {
-        // Not implemented in Phase 4.2
+        var state = healthStates.computeIfAbsent(partitionId, uuid -> new PartitionHealthState(now()));
+
+        synchronized (state) {
+            state.consecutiveSyncFailures++;
+            state.lastSeenAt = now();
+
+            var rank = topology.rankFor(partitionId).orElse(-1);
+            log.debug("Partition {} (rank {}) sync failure count: {}", partitionId, rank, state.consecutiveSyncFailures);
+
+            // Transition HEALTHY → SUSPECTED after threshold (same as barrier timeout)
+            if (state.status == PartitionStatus.HEALTHY &&
+                state.consecutiveSyncFailures >= CONSECUTIVE_TIMEOUT_THRESHOLD) {
+
+                state.status = PartitionStatus.SUSPECTED;
+                state.suspectedAt = now();
+                state.detectionStartTime = now();
+
+                log.warn("Partition {} (rank {}) marked SUSPECTED after {} consecutive sync failures",
+                    partitionId, rank, state.consecutiveSyncFailures);
+
+                var event = new PartitionChangeEvent(
+                    partitionId,
+                    PartitionStatus.HEALTHY,
+                    PartitionStatus.SUSPECTED,
+                    now(),
+                    "Consecutive ghost sync failures exceeded threshold"
+                );
+                notifyListeners(event);
+            }
+        }
     }
 
     @Override
     public void reportHeartbeatFailure(UUID partitionId, UUID nodeId) {
-        // Not implemented in Phase 4.2
+        var state = healthStates.computeIfAbsent(partitionId, uuid -> new PartitionHealthState(now()));
+
+        synchronized (state) {
+            // Track node-level failure
+            state.failedNodes.add(nodeId);
+            state.lastSeenAt = now();
+
+            var rank = topology.rankFor(partitionId).orElse(-1);
+            log.debug("Partition {} (rank {}) node {} heartbeat failure, failed nodes: {}/{}",
+                partitionId, rank, nodeId, state.failedNodes.size(), state.totalNodeCount());
+
+            // If majority of nodes have failed, mark partition as suspected
+            int failedCount = state.failedNodes.size();
+            int totalCount = state.totalNodeCount();
+            boolean majorityFailed = totalCount > 0 && failedCount > totalCount / 2;
+
+            if (state.status == PartitionStatus.HEALTHY && majorityFailed) {
+                state.status = PartitionStatus.SUSPECTED;
+                state.suspectedAt = now();
+                state.detectionStartTime = now();
+
+                log.warn("Partition {} (rank {}) marked SUSPECTED - majority nodes failed ({}/{})",
+                    partitionId, rank, failedCount, totalCount);
+
+                var event = new PartitionChangeEvent(
+                    partitionId,
+                    PartitionStatus.HEALTHY,
+                    PartitionStatus.SUSPECTED,
+                    now(),
+                    "Majority of nodes failed heartbeat"
+                );
+                notifyListeners(event);
+            }
+        }
     }
 
     @Override
@@ -319,16 +448,101 @@ public class DefaultFaultHandler implements FaultHandler {
     public CompletableFuture<Boolean> initiateRecovery(UUID partitionId) {
         var recovery = recoveryStrategies.get(partitionId);
         if (recovery == null) {
+            log.warn("No recovery strategy registered for partition {}", partitionId);
             return CompletableFuture.completedFuture(false);
         }
-        // Not fully implemented in Phase 4.2
-        return CompletableFuture.completedFuture(true);
+
+        var state = healthStates.get(partitionId);
+        if (state == null) {
+            log.warn("No health state for partition {}", partitionId);
+            return CompletableFuture.completedFuture(false);
+        }
+
+        // Check if recovery is possible
+        if (!recovery.canRecover(partitionId, this)) {
+            log.warn("Recovery not possible for partition {} (canRecover=false)", partitionId);
+            return CompletableFuture.completedFuture(false);
+        }
+
+        // Track recovery attempt
+        long recoveryStartTime = now();
+        synchronized (state) {
+            state.recoveryAttempts++;
+            state.failureCount++;
+
+            // Calculate detection latency if we have detection start time
+            if (state.detectionStartTime > 0) {
+                state.lastDetectionLatencyMs = state.suspectedAt - state.detectionStartTime;
+            }
+        }
+
+        log.info("Initiating recovery for partition {} using strategy: {}",
+            partitionId, recovery.getStrategyName());
+
+        // Delegate to recovery strategy
+        return recovery.recover(partitionId, this)
+            .thenApply(result -> {
+                long recoveryEndTime = now();
+                synchronized (state) {
+                    state.lastRecoveryLatencyMs = recoveryEndTime - recoveryStartTime;
+
+                    if (result.success()) {
+                        state.successfulRecoveries++;
+                        log.info("Recovery succeeded for partition {} in {}ms",
+                            partitionId, state.lastRecoveryLatencyMs);
+                    } else {
+                        state.failedRecoveries++;
+                        log.error("Recovery failed for partition {}: {}",
+                            partitionId, result.statusMessage());
+                    }
+                }
+                return result.success();
+            })
+            .exceptionally(ex -> {
+                long recoveryEndTime = now();
+                synchronized (state) {
+                    state.lastRecoveryLatencyMs = recoveryEndTime - recoveryStartTime;
+                    state.failedRecoveries++;
+                }
+                log.error("Recovery threw exception for partition {}: {}", partitionId, ex.getMessage(), ex);
+                return false;
+            });
     }
 
     @Override
     public void notifyRecoveryComplete(UUID partitionId, boolean success) {
+        var state = healthStates.get(partitionId);
+        if (state == null) {
+            return;
+        }
+
+        var rank = topology.rankFor(partitionId).orElse(-1);
+
         if (success) {
+            var previousStatus = state.status;
             markHealthy(partitionId);
+
+            // Also reset sync failures and clear failed nodes
+            synchronized (state) {
+                state.consecutiveSyncFailures = 0;
+                state.failedNodes.clear();
+                state.detectionStartTime = 0;
+            }
+
+            log.info("Recovery complete for partition {} (rank {}), status: {} → HEALTHY",
+                partitionId, rank, previousStatus);
+
+            var event = new PartitionChangeEvent(
+                partitionId,
+                previousStatus,
+                PartitionStatus.HEALTHY,
+                now(),
+                "Recovery completed successfully"
+            );
+            notifyListeners(event);
+        } else {
+            log.warn("Recovery failed for partition {} (rank {}), status remains: {}",
+                partitionId, rank, state.status);
         }
     }
 
@@ -339,12 +553,51 @@ public class DefaultFaultHandler implements FaultHandler {
 
     @Override
     public FaultMetrics getMetrics(UUID partitionId) {
-        return FaultMetrics.zero(); // Not implemented in Phase 4.2
+        var state = healthStates.get(partitionId);
+        if (state == null) {
+            return FaultMetrics.zero();
+        }
+
+        synchronized (state) {
+            return state.toMetrics();
+        }
     }
 
     @Override
     public FaultMetrics getAggregateMetrics() {
-        return FaultMetrics.zero(); // Not implemented in Phase 4.2
+        if (healthStates.isEmpty()) {
+            return FaultMetrics.zero();
+        }
+
+        long totalDetectionLatency = 0;
+        long totalRecoveryLatency = 0;
+        int totalFailures = 0;
+        int totalRecoveryAttempts = 0;
+        int totalSuccessfulRecoveries = 0;
+        int totalFailedRecoveries = 0;
+        int count = 0;
+
+        for (var state : healthStates.values()) {
+            synchronized (state) {
+                totalDetectionLatency += state.lastDetectionLatencyMs;
+                totalRecoveryLatency += state.lastRecoveryLatencyMs;
+                totalFailures += state.failureCount;
+                totalRecoveryAttempts += state.recoveryAttempts;
+                totalSuccessfulRecoveries += state.successfulRecoveries;
+                totalFailedRecoveries += state.failedRecoveries;
+                count++;
+            }
+        }
+
+        // Return average latencies, sum of counts
+        return new FaultMetrics(
+            count > 0 ? totalDetectionLatency / count : 0,
+            count > 0 ? totalRecoveryLatency / count : 0,
+            totalFailures,
+            totalRecoveryAttempts,
+            totalSuccessfulRecoveries,
+            totalFailedRecoveries
+        );
     }
 
     /**
