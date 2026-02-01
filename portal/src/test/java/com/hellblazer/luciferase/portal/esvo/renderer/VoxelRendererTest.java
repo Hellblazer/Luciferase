@@ -24,6 +24,7 @@ import javafx.scene.shape.Box;
 import javafx.scene.shape.DrawMode;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,9 +35,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for VoxelRenderer.
- * 
+ *
  * @author hal.hildebrand
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Requires JavaFX display not available in CI")
 class VoxelRendererTest {
     
     @BeforeAll

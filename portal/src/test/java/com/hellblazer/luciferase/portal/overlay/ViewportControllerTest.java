@@ -26,6 +26,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.testfx.framework.junit5.ApplicationExtension;
 import org.testfx.framework.junit5.Start;
@@ -43,6 +44,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 @ExtendWith(ApplicationExtension.class)
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Requires JavaFX display not available in CI")
 class ViewportControllerTest {
 
     private ViewportController controller;
