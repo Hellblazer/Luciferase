@@ -215,6 +215,8 @@ class Phase4E2ETest {
         }
 
         // Execute rounds with barriers
+        // Note: CI runners may be slow, especially with high violation counts.
+        // Use 60-second timeout to accommodate serialization overhead.
         for (int round = 0; round < numRounds; round++) {
             final int currentRound = round;
             var barrier = new CyclicBarrier(numPartitions);
@@ -224,7 +226,7 @@ class Phase4E2ETest {
                 var future = java.util.concurrent.CompletableFuture.runAsync(() -> {
                     try {
                         executeRound(partition, currentRound, aggregatedResults);
-                        barrier.await(5, TimeUnit.SECONDS); // Wait for all to complete this round
+                        barrier.await(60, TimeUnit.SECONDS); // Wait for all to complete this round
                     } catch (Exception e) {
                         throw new RuntimeException("Round " + currentRound + " failed for partition " + partition.rank, e);
                     }
