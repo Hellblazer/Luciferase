@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -167,6 +168,9 @@ public class MultiBubbleVisualizationServer {
         // WebSocket for entity streaming
         javalin.ws("/ws/entities", ws -> {
             ws.onConnect(ctx -> {
+                // Extend idle timeout to prevent 'Connection Idle Timeout' warnings
+                ctx.session.setIdleTimeout(Duration.ofMinutes(5));
+
                 entityClients.add(ctx);
                 log.debug("Entity client connected: {} (total: {})", ctx.sessionId(), entityClients.size());
 
@@ -193,6 +197,9 @@ public class MultiBubbleVisualizationServer {
         // WebSocket for bubble boundaries
         javalin.ws("/ws/bubbles", ws -> {
             ws.onConnect(ctx -> {
+                // Extend idle timeout to prevent 'Connection Idle Timeout' warnings
+                ctx.session.setIdleTimeout(Duration.ofMinutes(5));
+
                 bubbleClients.add(ctx);
                 log.debug("Bubble client connected: {} (total: {})", ctx.sessionId(), bubbleClients.size());
 
@@ -216,6 +223,9 @@ public class MultiBubbleVisualizationServer {
         // WebSocket for topology events
         javalin.ws("/ws/topology", ws -> {
             ws.onConnect(ctx -> {
+                // Extend idle timeout to prevent 'Connection Idle Timeout' warnings
+                ctx.session.setIdleTimeout(Duration.ofMinutes(5));
+
                 topologyEventStream.addClient(ctx);
                 log.debug("Topology event client connected: {} (total clients: {})",
                          ctx.sessionId(), topologyEventStream.getClientCount());
