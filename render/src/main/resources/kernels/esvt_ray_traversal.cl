@@ -8,7 +8,13 @@
 
 #define CAST_STACK_DEPTH 22
 #define MAX_RAYCAST_ITERATIONS 10000
-#define EPSILON 1e-7f
+// Vendor-configurable epsilon: Intel GPUs need relaxed precision (1e-5f)
+// VendorKernelConfig prepends #define RAY_EPSILON 1e-5f for Intel
+#ifdef RAY_EPSILON
+#define EPSILON RAY_EPSILON
+#else
+#define EPSILON 1e-7f  // Default for NVIDIA/AMD/Apple (tighter for tetrahedra)
+#endif
 #define TET_TYPES 6
 
 // ============================================================================

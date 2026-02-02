@@ -22,7 +22,13 @@
 #define MAX_TRAVERSAL_DEPTH 16    // Default: Stream A optimized for occupancy
 #endif
 
-#define EPSILON 1e-6f
+// Vendor-configurable epsilon: Intel GPUs need relaxed precision (1e-5f)
+// VendorKernelConfig prepends #define RAY_EPSILON 1e-5f for Intel
+#ifdef RAY_EPSILON
+#define EPSILON RAY_EPSILON
+#else
+#define EPSILON 1e-6f  // Default for NVIDIA/AMD/Apple
+#endif
 #define INFINITY 1e30f
 
 // Stream A: Shared memory cache configuration
