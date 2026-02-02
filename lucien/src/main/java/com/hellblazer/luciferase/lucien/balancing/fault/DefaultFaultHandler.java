@@ -263,9 +263,9 @@ public class DefaultFaultHandler implements FaultHandler {
      * Check for partitions that should transition SUSPECTED → FAILED.
      *
      * <p>Called periodically or manually in tests after TestClock.advance().
-     * Package-visible for testing.
+     * Public for cross-module testing and external schedulers.
      */
-    void checkTimeouts() {
+    public void checkTimeouts() {
         if (!monitoring) {
             return;
         }
