@@ -16,181 +16,347 @@
  */
 package com.hellblazer.luciferase.sparse.gpu;
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for B4: Dynamic Tuning Engine (Phase 5 Stream B Days 8-9).
+ * B4: Tests for DynamicTuner
  *
- * <p>Validates:
- * - Session-start optimization with cached fallback
- * - Background tuning thread and performance monitoring
- * - Cache hit/miss statistics
- * - Performance gain verification (>5% throughput improvement)
- * - Multi-vendor consistency across dynamic tuning
+ * Validates dynamic tuning engine that monitors performance and adjusts
+ * configuration during runtime.
+ *
+ * @author hal.hildebrand
  */
+@DisplayName("B4: DynamicTuner Tests")
 class DynamicTunerTest {
 
+    private DynamicTuner tuner;
+    private GPUCapabilities capabilities;
+
+    @TempDir
+    Path tempDir;
+
+    @BeforeEach
+    void setUp() {
+        capabilities = new GPUCapabilities(128, 65536, 65536, GPUVendor.NVIDIA, "RTX 4090", 32);
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (tuner != null) {
+            tuner.shutdown();
+        }
+    }
+
+    // ==================== Session Start Auto-Tuning ====================
+
     @Test
-    @DisplayName("Dynamic tuner returns cached configuration on session start")
-    void testCachedConfigurationOnStartup() {
-        var capabilities = new GPUCapabilities(
-            108, 49152, 65536,
-            GPUVendor.NVIDIA,
-            "RTX 4090",
-            32
-        );
+    @DisplayName("Auto-tune at session start")
+    void testSessionStartAutoTune() {
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
 
-        var tuner = new GPUAutoTuner(capabilities, "/tmp/dynamic-cache");
-        var startupConfig = tuner.selectOptimalConfigFromProfiles();
+        // Trigger session start tuning
+        var result = tuner.sessionStart();
 
-        assertNotNull(startupConfig, "Should return configuration immediately (from cache or defaults)");
-        assertTrue(startupConfig.workgroupSize() > 0);
-        assertTrue(startupConfig.maxTraversalDepth() > 0);
-
-        // Configuration should be available immediately (not blocking)
-        long startTime = System.nanoTime();
-        var secondCall = tuner.selectOptimalConfigFromProfiles();
-        long elapsed = System.nanoTime() - startTime;
-
-        assertNotNull(secondCall);
-        assertTrue(elapsed < 100_000_000, "Second call should be cached (< 100ms)");
+        assertTrue(result.isPresent(), "Should produce tuning result");
+        assertNotNull(result.get().config(), "Should have config");
+        assertNotNull(result.get().buildOptions(), "Should have build options");
+        assertTrue(result.get().buildOptions().contains("-D WORKGROUP_SIZE"),
+                "Should include workgroup size define");
     }
 
     @Test
-    @DisplayName("Dynamic tuner initializes with conservative defaults when cache unavailable")
-    void testConservativeDefaultsOnCacheMiss() {
-        var capabilities = new GPUCapabilities(
-            32, 65536, 65536,
-            GPUVendor.NVIDIA,
-            "Test GPU",
-            32
-        );
+    @DisplayName("Session start tuning completes within time limit")
+    void testSessionStartTuningSpeed() {
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
 
-        var tuner = new GPUAutoTuner(capabilities, "/tmp/new-dynamic-session");
-        var config = tuner.selectOptimalConfigFromProfiles();
+        long start = System.currentTimeMillis();
+        var result = tuner.sessionStart();
+        long elapsed = System.currentTimeMillis() - start;
 
-        // Should have conservative but valid defaults
-        assertTrue(config.workgroupSize() > 0 && config.workgroupSize() <= 1024);
-        assertTrue(config.maxTraversalDepth() > 0 && config.maxTraversalDepth() <= 32);
-        assertTrue(config.expectedOccupancy() >= 0.0 && config.expectedOccupancy() <= 1.0);
+        assertTrue(result.isPresent(), "Should succeed");
+        // Allow generous time for test environment, but should be fast
+        assertTrue(elapsed < 5000, "Session start tuning should complete within 5s");
+    }
 
-        // Configuration should support immediate rendering
-        assertNotNull(config.notes());
+    // ==================== Cached Fallback ====================
+
+    @Test
+    @DisplayName("Use cached config when benchmark unavailable")
+    void testCachedFallback() {
+        // First, do a successful tuning to populate cache
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        var firstResult = tuner.sessionStart();
+        assertTrue(firstResult.isPresent());
+        tuner.shutdown();
+
+        // Create new tuner with failing benchmark
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                (config, rays) -> { throw new RuntimeException("GPU unavailable"); });
+
+        var fallbackResult = tuner.sessionStartWithFallback();
+
+        assertTrue(fallbackResult.isPresent(), "Should return fallback config");
+        assertEquals(firstResult.get().config().workgroupSize(),
+                fallbackResult.get().config().workgroupSize(),
+                "Should use cached workgroup size");
     }
 
     @Test
-    @DisplayName("Background tuning thread optimizes configuration over time")
-    void testBackgroundTuningOptimization() {
-        var capabilities = new GPUCapabilities(
-            64, 65536, 65536,
-            GPUVendor.AMD,
-            "RX 7900",
-            64
-        );
+    @DisplayName("Return default config when no cache and benchmark fails")
+    void testDefaultFallbackWhenNoCache() {
+        // Create tuner with failing benchmark and no cache
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                (config, rays) -> { throw new RuntimeException("GPU unavailable"); });
 
-        var tuner = new GPUAutoTuner(capabilities, "/tmp/background-tuning");
-        var initialConfig = tuner.selectOptimalConfigFromProfiles();
+        var result = tuner.sessionStartWithFallback();
 
-        // Simulate rendering cycle (background tuning monitors performance)
-        // In real scenario, background thread would continuously optimize
-        var optimizedConfig = tuner.selectOptimalConfigFromProfiles();
+        assertTrue(result.isPresent(), "Should return default fallback");
+        // Default should be a reasonable config
+        assertTrue(result.get().config().workgroupSize() >= 32,
+                "Default should have valid workgroup size");
+    }
 
-        assertNotNull(initialConfig);
-        assertNotNull(optimizedConfig);
+    // ==================== Performance Monitoring ====================
 
-        // Optimized config should have same or better characteristics
-        assertTrue(optimizedConfig.expectedThroughput() >= 0);
-        assertTrue(optimizedConfig.expectedOccupancy() >= 0.0);
+    @Test
+    @DisplayName("Track throughput over time")
+    void testPerformanceMonitoring() {
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.sessionStart();
+
+        // Record several performance samples
+        tuner.recordFramePerformance(2.5); // rays/µs
+        tuner.recordFramePerformance(2.4);
+        tuner.recordFramePerformance(2.6);
+        tuner.recordFramePerformance(2.5);
+
+        var stats = tuner.getPerformanceStats();
+
+        assertEquals(4, stats.sampleCount(), "Should track 4 samples");
+        assertTrue(stats.averageThroughput() > 2.0 && stats.averageThroughput() < 3.0,
+                "Average should be around 2.5");
     }
 
     @Test
-    @DisplayName("Performance gain threshold validation (>5% improvement target)")
-    void testPerformanceGainVerification() {
-        var capabilities = new GPUCapabilities(
-            108, 49152, 65536,
-            GPUVendor.NVIDIA,
-            "RTX 4090",
-            32
-        );
+    @DisplayName("Sliding window limits sample history")
+    void testSlidingWindow() {
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.sessionStart();
 
-        var tuner = new GPUAutoTuner(capabilities, "/tmp/perf-gain");
-        var config = tuner.selectOptimalConfigFromProfiles();
+        // Record more samples than window size (default 100)
+        for (int i = 0; i < 150; i++) {
+            tuner.recordFramePerformance(2.0 + i * 0.01);
+        }
 
-        // Baseline throughput estimate (conservative)
-        double baselineOccupancy = 0.5;  // 50% conservative
-        double baselineThroughput = 1000.0;  // rays/ms baseline
+        var stats = tuner.getPerformanceStats();
 
-        // Tuned configuration throughput
-        double tunedEffectiveOccupancy = config.expectedOccupancy();
-        double tunedThroughput = config.expectedThroughput();
+        // Should only keep last 100 samples
+        assertTrue(stats.sampleCount() <= 100, "Should limit to window size");
+    }
 
-        // Calculate performance gain
-        double throughputRatio = tunedThroughput / baselineThroughput;
-        double occupancyGain = (tunedEffectiveOccupancy - baselineOccupancy) / baselineOccupancy;
+    // ==================== Performance Drop Re-tuning ====================
 
-        // Should show measurable improvement (>5% target)
-        double percentGain = (throughputRatio - 1.0) * 100.0;
-        assertTrue(percentGain >= -100.0 && percentGain <= 100.0,
-                "Performance gain should be within reasonable bounds: " + percentGain + "%");
+    @Test
+    @DisplayName("Re-tune when performance drops >20%")
+    void testPerformanceDropRetune() {
+        var retuneCount = new AtomicInteger(0);
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.setRetuneCallback(result -> retuneCount.incrementAndGet());
+        tuner.sessionStart();
 
-        // Tuned occupancy should match profile
-        assertTrue(tunedEffectiveOccupancy >= 0.0 && tunedEffectiveOccupancy <= 1.0);
+        // Record baseline performance
+        for (int i = 0; i < 20; i++) {
+            tuner.recordFramePerformance(2.5);
+        }
+
+        // Record significantly degraded performance (>20% drop)
+        for (int i = 0; i < 20; i++) {
+            tuner.recordFramePerformance(1.5); // 40% drop
+        }
+
+        // Check if re-tune was triggered
+        assertTrue(tuner.isRetuneTriggered(), "Should trigger re-tune on performance drop");
     }
 
     @Test
-    @DisplayName("Multi-vendor dynamic tuning produces consistent optimizations")
-    void testMultiVendorDynamicConsistency() {
-        var nvCapabilities = new GPUCapabilities(
-            108, 49152, 65536,
-            GPUVendor.NVIDIA,
-            "RTX 4090",
-            32
-        );
+    @DisplayName("No re-tune for minor performance fluctuation")
+    void testNoRetunForMinorFluctuation() {
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.sessionStart();
 
-        var amdCapabilities = new GPUCapabilities(
-            64, 65536, 65536,
-            GPUVendor.AMD,
-            "RX 7900",
-            64
-        );
+        // Record baseline
+        for (int i = 0; i < 20; i++) {
+            tuner.recordFramePerformance(2.5);
+        }
 
-        var intelCapabilities = new GPUCapabilities(
-            96, 131072, 131072,
-            GPUVendor.INTEL,
-            "Arc A770",
-            32
-        );
+        // Record minor drop (<20%)
+        for (int i = 0; i < 20; i++) {
+            tuner.recordFramePerformance(2.2); // 12% drop
+        }
 
-        var tunerNV = new GPUAutoTuner(nvCapabilities, "/tmp/nv-dynamic");
-        var tunerAMD = new GPUAutoTuner(amdCapabilities, "/tmp/amd-dynamic");
-        var tunerIntel = new GPUAutoTuner(intelCapabilities, "/tmp/intel-dynamic");
+        assertFalse(tuner.isRetuneTriggered(),
+                "Should not trigger re-tune for minor fluctuation");
+    }
 
-        var configNV = tunerNV.selectOptimalConfigFromProfiles();
-        var configAMD = tunerAMD.selectOptimalConfigFromProfiles();
-        var configIntel = tunerIntel.selectOptimalConfigFromProfiles();
+    // ==================== Background Tuning ====================
 
-        // All vendors should produce valid configurations
-        assertNotNull(configNV);
-        assertNotNull(configAMD);
-        assertNotNull(configIntel);
+    @Test
+    @DisplayName("Background tuning doesn't block main thread")
+    void testBackgroundTuning() throws InterruptedException {
+        var latch = new CountDownLatch(1);
+        var completed = new AtomicBoolean(false);
 
-        // Each vendor should optimize for its characteristics
-        assertTrue(configNV.expectedThroughput() > 0);
-        assertTrue(configAMD.expectedThroughput() > 0);
-        assertTrue(configIntel.expectedThroughput() > 0);
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.sessionStart();
 
-        // Verify vendor-specific diversity in optimization
-        // Different workgroup sizes indicate vendor-specific tuning
-        boolean hasDiversity = configNV.workgroupSize() != configAMD.workgroupSize() ||
-                              configAMD.workgroupSize() != configIntel.workgroupSize();
-        assertTrue(hasDiversity, "Dynamic tuning should produce vendor-specific optimizations");
+        // Start background re-tune
+        long startTime = System.currentTimeMillis();
+        tuner.backgroundRetune(result -> {
+            completed.set(true);
+            latch.countDown();
+        });
+        long mainThreadTime = System.currentTimeMillis() - startTime;
 
-        // All should maintain valid occupancy ranges
-        assertTrue(configNV.expectedOccupancy() >= 0.0 && configNV.expectedOccupancy() <= 1.0);
-        assertTrue(configAMD.expectedOccupancy() >= 0.0 && configAMD.expectedOccupancy() <= 1.0);
-        assertTrue(configIntel.expectedOccupancy() >= 0.0 && configIntel.expectedOccupancy() <= 1.0);
+        // Main thread should return immediately
+        assertTrue(mainThreadTime < 100, "Background tuning should not block main thread");
+
+        // Wait for background completion
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "Background tuning should complete");
+        assertTrue(completed.get(), "Background tuning callback should execute");
+    }
+
+    @Test
+    @DisplayName("Background tuning produces valid config")
+    void testBackgroundTuningConfig() throws InterruptedException {
+        var latch = new CountDownLatch(1);
+        var resultHolder = new GPUAutoTuner.AutoTuneResult[1];
+
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.sessionStart();
+
+        tuner.backgroundRetune(result -> {
+            resultHolder[0] = result;
+            latch.countDown();
+        });
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "Should complete");
+        assertNotNull(resultHolder[0], "Should produce result");
+        assertNotNull(resultHolder[0].config(), "Should have config");
+        assertTrue(resultHolder[0].config().workgroupSize() > 0,
+                "Should have valid workgroup size");
+    }
+
+    // ==================== Frame Overhead Tests ====================
+
+    @Test
+    @DisplayName("Performance recording has minimal overhead")
+    void testMinimalRecordingOverhead() {
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.sessionStart();
+
+        // Measure overhead of recording
+        long start = System.nanoTime();
+        for (int i = 0; i < 1000; i++) {
+            tuner.recordFramePerformance(2.5);
+        }
+        long elapsedNanos = System.nanoTime() - start;
+        double avgMicros = elapsedNanos / 1000.0 / 1000.0;
+
+        // Recording should be very fast (<1µs average)
+        assertTrue(avgMicros < 1.0,
+                "Recording overhead should be < 1µs per frame, was: " + avgMicros + "µs");
+    }
+
+    // ==================== Configuration Tests ====================
+
+    @Test
+    @DisplayName("Configurable re-tune threshold")
+    void testConfigurableRetuneThreshold() {
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.setRetuneThreshold(0.10); // 10% drop threshold
+        tuner.sessionStart();
+
+        // Record baseline
+        for (int i = 0; i < 20; i++) {
+            tuner.recordFramePerformance(2.5);
+        }
+
+        // Record 15% drop (should trigger with 10% threshold)
+        for (int i = 0; i < 20; i++) {
+            tuner.recordFramePerformance(2.125);
+        }
+
+        assertTrue(tuner.isRetuneTriggered(), "Should trigger with 10% threshold");
+    }
+
+    @Test
+    @DisplayName("Configurable sliding window size")
+    void testConfigurableWindowSize() {
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.setWindowSize(50); // Smaller window
+        tuner.sessionStart();
+
+        for (int i = 0; i < 100; i++) {
+            tuner.recordFramePerformance(2.5);
+        }
+
+        var stats = tuner.getPerformanceStats();
+        assertTrue(stats.sampleCount() <= 50, "Should respect configured window size");
+    }
+
+    // ==================== State Management ====================
+
+    @Test
+    @DisplayName("Get current config returns active configuration")
+    void testGetCurrentConfig() {
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.sessionStart();
+
+        var config = tuner.getCurrentConfig();
+
+        assertNotNull(config, "Should have current config");
+        assertTrue(config.workgroupSize() > 0, "Should have valid workgroup size");
+    }
+
+    @Test
+    @DisplayName("Get current build options returns active options")
+    void testGetCurrentBuildOptions() {
+        tuner = new DynamicTuner(capabilities, tempDir.toString(),
+                TuningBenchmark.mockExecutor(1.0));
+        tuner.sessionStart();
+
+        var options = tuner.getCurrentBuildOptions();
+
+        assertNotNull(options, "Should have build options");
+        assertTrue(options.contains("-D MAX_TRAVERSAL_DEPTH"),
+                "Should include traversal depth");
+        assertTrue(options.contains("-D WORKGROUP_SIZE"),
+                "Should include workgroup size");
     }
 }
