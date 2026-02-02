@@ -654,9 +654,148 @@ var conservativeConfig = config
 
 ---
 
+## Monitoring & Dashboards
+
+The framework includes comprehensive monitoring capabilities via `ForestMonitor` and `ForestHealthSnapshot`.
+
+### ForestMonitor
+
+**Purpose**: Centralized health monitoring aggregator that collects metrics from FaultHandler, Forest, and FaultTolerantDistributedForest instances.
+
+**Location**: `com.hellblazer.luciferase.lucien.balancing.fault.ForestMonitor`
+
+**Features**:
+- Unified health snapshots aggregating all metrics sources
+- Periodic polling with configurable intervals
+- Alert callbacks when thresholds are exceeded
+- Dashboard-friendly data export (Map format for JSON)
+- Historical trend tracking
+
+**Builder Pattern**:
+
+```java
+var monitor = new ForestMonitor.Builder()
+    .withFaultHandler(faultHandler)
+    .withTopology(topology)
+    .withForest(forest)
+    .withAlertThresholds(AlertThresholds.defaultThresholds())
+    .withAlertCallback(snapshot -> {
+        logger.warn("Alert: {}", snapshot.toSummary());
+    })
+    .withHistorySize(100)
+    .build();
+
+// Start periodic polling
+monitor.start(executor, 1, TimeUnit.SECONDS);
+
+// Get current health
+var snapshot = monitor.getHealthSnapshot();
+System.out.println(snapshot.toSummary());
+
+// Export for dashboard (JSON-friendly map)
+var dashboardData = monitor.exportDashboardData();
+```
+
+### ForestHealthSnapshot
+
+**Purpose**: Immutable point-in-time snapshot of system health.
+
+**Location**: `com.hellblazer.luciferase.lucien.balancing.fault.ForestHealthSnapshot`
+
+**Fields**:
+- `timestampMs`: Snapshot creation time
+- `totalPartitions`, `healthyPartitions`, `suspectedPartitions`, `failedPartitions`
+- `quorumMaintained`: Whether majority quorum is maintained
+- `inRecoveryMode`: Whether system is in recovery mode
+- `totalTrees`, `totalEntities`: Forest statistics
+- `avgDetectionLatencyMs`, `avgRecoveryLatencyMs`: Performance metrics
+- `totalFailuresDetected`, `totalRecoveriesAttempted`, `totalRecoveriesSucceeded`
+- `recoverySuccessRate`: Recovery success rate (0.0-1.0)
+- `partitionStatuses`: Per-partition status map
+
+**Health Levels**:
+```java
+enum HealthLevel {
+    HEALTHY,     // All partitions healthy
+    DEGRADED,    // Some suspected partitions
+    CRITICAL,    // One or more failed partitions
+    QUORUM_LOST  // Majority failed, manual intervention needed
+}
+```
+
+**Alert Thresholds**:
+```java
+// Default thresholds for production
+var defaultThresholds = AlertThresholds.defaultThresholds();
+// maxFailedPartitions: 0 (alert on any failure)
+// maxSuspectedPartitions: 2
+// maxDetectionLatencyMs: 500
+// maxRecoveryLatencyMs: 5000
+// minRecoverySuccessRate: 0.9
+
+// Relaxed thresholds for development
+var relaxedThresholds = AlertThresholds.relaxedThresholds();
+// maxFailedPartitions: 1
+// maxSuspectedPartitions: 5
+// maxDetectionLatencyMs: 2000
+// maxRecoveryLatencyMs: 30000
+// minRecoverySuccessRate: 0.5
+```
+
+**Dashboard Data Export**:
+```java
+var data = monitor.exportDashboardData();
+// Returns Map with sections:
+// - "timestamp", "healthLevel", "summary"
+// - "partitions": {total, healthy, suspected, failed, quorumMaintained}
+// - "forest": {trees, entities}
+// - "performance": {avgDetectionLatencyMs, avgRecoveryLatencyMs, recoverySuccessRate}
+// - "recovery": {totalFailures, totalAttempts, totalSucceeded, inRecoveryMode}
+// - "partitionStatuses": {uuid → status} for detailed view
+```
+
+**Summary Format**:
+```
+Health: HEALTHY | Partitions: 5/5 healthy | Recovery: 100.0% success | Latency: detect=1ms, recover=150ms
+```
+
+### Integration Example
+
+```java
+// Setup monitoring for production
+var executor = Executors.newSingleThreadScheduledExecutor();
+var monitor = new ForestMonitor.Builder()
+    .withFaultHandler(faultHandler)
+    .withTopology(topology)
+    .withForest(forest)
+    .withFaultTolerantForest(ftForest)  // Optional: additional stats
+    .withAlertThresholds(AlertThresholds.defaultThresholds())
+    .withAlertCallback(this::sendPagerDutyAlert)
+    .withHistorySize(1000)  // Keep 1000 snapshots for trend analysis
+    .build();
+
+// Start polling every second
+monitor.start(executor, 1, TimeUnit.SECONDS);
+
+// REST endpoint for dashboard
+@GetMapping("/api/health")
+public Map<String, Object> getHealth() {
+    return monitor.exportDashboardData();
+}
+
+// Shutdown
+@PreDestroy
+public void shutdown() {
+    monitor.stop();
+    executor.shutdown();
+}
+```
+
+---
+
 ## See Also
 
 - **FAULT_TOLERANCE_BENCHMARKS.md**: Performance targets and benchmark results
 - **PHASE_5_FAULT_TOLERANCE_SUMMARY.md**: Complete architecture overview
-- **Javadoc**: `FaultHandler.java`, `PartitionRecovery.java`, `DefaultFaultHandler.java`, `DefaultPartitionRecovery.java`
-- **Tests**: `Phase45E2EValidationTest.java` (18 E2E tests), `FaultDetectionBenchmark.java` (5 JMH benchmarks)
+- **Javadoc**: `FaultHandler.java`, `PartitionRecovery.java`, `DefaultFaultHandler.java`, `DefaultPartitionRecovery.java`, `ForestMonitor.java`, `ForestHealthSnapshot.java`
+- **Tests**: `Phase45E2EValidationTest.java` (18 E2E tests), `FaultDetectionBenchmark.java` (5 JMH benchmarks), `ForestMonitorTest.java` (11 monitoring tests)
