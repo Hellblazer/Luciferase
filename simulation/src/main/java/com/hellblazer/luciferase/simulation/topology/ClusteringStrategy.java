@@ -155,10 +155,11 @@ public class ClusteringStrategy implements SplitPlaneStrategy {
 
             // Update centroids
             var newCentroids = new ArrayList<Point3f>(k);
-            for (var cluster : clusters) {
+            for (int i = 0; i < clusters.size(); i++) {
+                var cluster = clusters.get(i);
                 if (cluster.isEmpty()) {
                     // Keep old centroid for empty cluster
-                    newCentroids.add(centroids.get(newCentroids.size()));
+                    newCentroids.add(centroids.get(i));
                 } else {
                     newCentroids.add(computeCentroid(cluster));
                 }

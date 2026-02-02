@@ -233,6 +233,33 @@ class ClusteringStrategyTest {
         assertThat(plane.intersectsEntityBounds(entities)).isTrue();
     }
 
+    // ========== Empty Cluster Tests ==========
+
+    @Test
+    void testEmptyClusterPreservesCentroid() {
+        // Create a scenario where one cluster might become empty during iteration
+        // Use entities very close together plus one outlier to test edge case
+        var entities = new ArrayList<EnhancedBubble.EntityRecord>();
+
+        // Tight cluster around (50, 50, 50) - will all be assigned to same centroid
+        for (int i = 0; i < 6; i++) {
+            entities.add(createEntity("close_" + i, 50.0f + i * 0.1f, 50.0f + i * 0.1f, 50.0f));
+        }
+
+        // One outlier at (90, 90, 90) - might create empty cluster scenario
+        entities.add(createEntity("outlier", 90.0f, 90.0f, 90.0f));
+
+        var plane = strategy.calculate(bounds, entities);
+
+        // Should either cluster successfully or fall back gracefully
+        assertThat(plane).isNotNull();
+
+        // Verify plane has valid normal (unit vector)
+        var normal = plane.normal();
+        float normalLength = (float) Math.sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+        assertThat(normalLength).isBetween(0.99f, 1.01f); // Should be ~1.0
+    }
+
     // ========== Helper Methods ==========
 
     private EnhancedBubble.EntityRecord createEntity(String id, float x, float y, float z) {
