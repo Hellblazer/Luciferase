@@ -76,6 +76,7 @@ typedef struct {
     uint voxelValue;         // Voxel data from attributes
     uint nodeIndex;          // Index of hit node
     uint iterations;         // Traversal iterations (for profiling)
+    int overflow;            // Stream A: 1 = stack overflow occurred (depth limit reached)
 } IntersectionResult;
 
 // ==================== Utility Functions ====================
@@ -205,6 +206,7 @@ IntersectionResult traverseDAG(
     result.t = INFINITY;
     result.iterations = 0;
     result.nodeIndex = 0;
+    result.overflow = 0;  // Stream A: No overflow initially
     result.normal = (float3)(0.0f, 1.0f, 0.0f);
 
     // Early exit for invalid ray
@@ -225,8 +227,12 @@ IntersectionResult traverseDAG(
 
     // Traverse until stack empty
     while (stackPtr > 0 && result.hit == 0) {
-        // Stack limit check
+        // Stack limit check - graceful overflow handling (Stream A)
+        // Treat overflow as hitting a leaf to prevent visual artifacts
         if (stackPtr >= MAX_TRAVERSAL_DEPTH) {
+            result.hit = 1;
+            result.t = ray.tMin;
+            result.overflow = 1;  // Mark as overflow for debugging
             break;
         }
 
