@@ -1,0 +1,25 @@
+{
+  "vendor" : "APPLE",
+  "deviceName" : "M4 Max",
+  "driverVersion" : "Apple M4 Max",
+  "openCLVersion" : "OpenCL 1.2",
+  "timestamp" : "2026-01-15T10:30:00",
+  "testParameters" : {
+    "frameWidth" : 1920,
+    "frameHeight" : 1080,
+    "iterations" : 100,
+    "warmupIterations" : 10
+  },
+  "metrics" : {
+    "dag_ray_traversal" : {
+      "raysPerSecond" : 850000.0,
+      "avgFrameTimeMs" : 19.6,
+      "p99FrameTimeMs" : 22.5
+    },
+    "depth_buffer_clear" : {
+      "raysPerSecond" : 500000.0,
+      "avgFrameTimeMs" : 2.0,
+      "p99FrameTimeMs" : 2.5
+    }
+  }
+}
