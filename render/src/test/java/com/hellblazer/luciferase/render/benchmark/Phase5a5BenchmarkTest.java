@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -29,8 +30,16 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * Validates 30% node reduction target and coherence-based dispatch routing.
  * Uses shared benchmark configuration for consistency.
+ *
+ * <p>Disabled in CI: Memory-intensive benchmark requires >4GB heap.
+ * Run locally with: {@code mvn test -Dtest=Phase5a5BenchmarkTest -DargLine="-Xmx8g"}
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DisabledIfEnvironmentVariable(
+    named = "CI",
+    matches = "true",
+    disabledReason = "Memory-intensive benchmark requires >4GB heap, causes OOM in CI"
+)
 class Phase5a5BenchmarkTest {
 
     private static final int FRAME_WIDTH = 256;
