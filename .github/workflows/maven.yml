@@ -503,7 +503,8 @@ jobs:
         run: |
           export DISPLAY=:99.0
           # Exclude memory-intensive tests from render module (require 4K+ resolution, >4GB heap)
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl grpc,common,lucien,sentry,render,portal,dyada-java -Drender.excludedGroups=memory-intensive --file pom.xml
+          # Exclude javafx tests (require full JavaFX toolkit, unreliable in CI)
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl grpc,common,lucien,sentry,render,portal,dyada-java -Drender.excludedGroups=memory-intensive -Dportal.excludedGroups=javafx --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}

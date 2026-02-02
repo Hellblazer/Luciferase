@@ -10,6 +10,11 @@
     <artifactId>portal</artifactId>
     <name>Portal - Simple views</name>
 
+    <properties>
+        <!-- Default: no excluded groups. CI sets this to exclude javafx tests. -->
+        <portal.excludedGroups></portal.excludedGroups>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>
@@ -90,4 +95,17 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- Exclude javafx tests in CI - they require full JavaFX toolkit -->
+                    <excludedGroups>${portal.excludedGroups}</excludedGroups>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

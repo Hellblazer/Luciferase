@@ -21,6 +21,7 @@ import javafx.application.Platform;
 import javafx.stage.Stage;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 
  * @author hal.hildebrand
  */
+@Tag("javafx")
 public abstract class JavaFXTestBase {
 
     private static final AtomicBoolean initialized = new AtomicBoolean(false);
