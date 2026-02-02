@@ -34,9 +34,20 @@ import java.util.Optional;
  * Stream B Phase 5: Workgroup Auto-Tuning
  * Selects optimal workgroup configuration for a GPU device
  *
+ * B1: Auto-Tuner Integration with Kernel Recompilation
+ * Generates build options for kernel recompilation with optimal parameters
+ *
  * @author hal.hildebrand
  */
 public class GPUAutoTuner {
+
+    /**
+     * B1: Result of auto-tuning containing both configuration and build options
+     *
+     * @param config       Selected optimal workgroup configuration
+     * @param buildOptions OpenCL build options string for kernel recompilation
+     */
+    public record AutoTuneResult(WorkgroupConfig config, String buildOptions) {}
     private static final Logger log = LoggerFactory.getLogger(GPUAutoTuner.class);
 
     private final GPUCapabilities capabilities;
@@ -215,5 +226,93 @@ public class GPUAutoTuner {
             case APPLE -> new int[]{16, 24}; // Apple can handle deeper stacks
             case UNKNOWN -> new int[]{16};
         };
+    }
+
+    // ==================== B1: Auto-Tuner Integration Methods ====================
+
+    /**
+     * B1: Perform auto-tuning and return result with build options
+     *
+     * Selects optimal configuration and generates build options for kernel
+     * recompilation. Caches the result for future use.
+     *
+     * @return AutoTuneResult containing config and build options
+     */
+    public AutoTuneResult autoTune() {
+        // Select optimal configuration
+        var config = selectOptimalConfigFromProfiles();
+
+        // Generate build options for this configuration
+        var buildOptions = generateBuildOptions(config);
+
+        // Cache for future use
+        cacheConfiguration(config);
+
+        log.info("Auto-tuned: {} threads, depth {}, build options: {}",
+                config.workgroupSize(), config.maxTraversalDepth(), buildOptions);
+
+        return new AutoTuneResult(config, buildOptions);
+    }
+
+    /**
+     * B1: Generate OpenCL build options string for a workgroup configuration
+     *
+     * Build options include:
+     * - -D MAX_TRAVERSAL_DEPTH=N (stack depth from config)
+     * - -D WORKGROUP_SIZE=M (workgroup size from config)
+     * - Vendor-specific optimization flags
+     *
+     * @param config Workgroup configuration
+     * @return OpenCL build options string
+     */
+    public String generateBuildOptions(WorkgroupConfig config) {
+        var options = new StringBuilder();
+
+        // Core defines from config
+        options.append("-D MAX_TRAVERSAL_DEPTH=").append(config.maxTraversalDepth()).append(" ");
+        options.append("-D WORKGROUP_SIZE=").append(config.workgroupSize()).append(" ");
+
+        // Vendor-specific optimization flags
+        switch (capabilities.vendor()) {
+            case NVIDIA -> {
+                options.append("-cl-mad-enable ");  // Fused multiply-add
+                options.append("-cl-fast-relaxed-math ");
+            }
+            case AMD -> {
+                options.append("-cl-fast-relaxed-math ");
+            }
+            case INTEL -> {
+                options.append("-cl-fast-relaxed-math ");
+            }
+            case APPLE -> {
+                // Apple Silicon uses Metal under the hood, fewer flags needed
+                options.append("-cl-fast-relaxed-math ");
+            }
+            default -> {
+                // Conservative defaults
+            }
+        }
+
+        return options.toString().trim();
+    }
+
+    /**
+     * B1: Get default build options for fallback scenarios
+     *
+     * Used when auto-tuning fails or is not available. Uses Stream A
+     * optimized defaults (depth 16 for occupancy).
+     *
+     * @return Default OpenCL build options string
+     */
+    public String getDefaultBuildOptions() {
+        // Stream A default: depth 16 (optimized for occupancy)
+        var defaultConfig = WorkgroupConfig.forDevice(capabilities);
+        return generateBuildOptions(new WorkgroupConfig(
+            defaultConfig.workgroupSize(),
+            16,  // Stream A default
+            defaultConfig.expectedOccupancy(),
+            defaultConfig.expectedThroughput(),
+            "Default fallback configuration"
+        ));
     }
 }

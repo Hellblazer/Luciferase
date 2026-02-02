@@ -284,4 +284,124 @@ class GPUAutoTunerTest {
 
         assertTrue(avgSize <= 128, "Apple should average <= 128 threads, got: " + avgSize);
     }
+
+    // ==================== B1: Auto-Tuner Integration Tests ====================
+
+    @Test
+    @DisplayName("B1: Generate build options string with MAX_TRAVERSAL_DEPTH and WORKGROUP_SIZE")
+    void testGenerateBuildOptions() {
+        // TDD: Build options should contain proper -D defines
+        var config = new WorkgroupConfig(64, 16, 0.75f, 2.5f, "test config");
+
+        var buildOptions = autoTuner.generateBuildOptions(config);
+
+        assertNotNull(buildOptions, "Build options should not be null");
+        assertTrue(buildOptions.contains("-D MAX_TRAVERSAL_DEPTH=16"),
+                "Build options should set MAX_TRAVERSAL_DEPTH");
+        assertTrue(buildOptions.contains("-D WORKGROUP_SIZE=64"),
+                "Build options should set WORKGROUP_SIZE");
+    }
+
+    @Test
+    @DisplayName("B1: Generate build options includes vendor-specific flags")
+    void testGenerateBuildOptionsVendorFlags() {
+        // TDD: NVIDIA should get NVIDIA-specific optimizations
+        var config = new WorkgroupConfig(64, 16, 0.75f, 2.5f, "test config");
+
+        var buildOptions = autoTuner.generateBuildOptions(config);
+
+        // NVIDIA should include -cl-mad-enable for fused multiply-add
+        assertTrue(buildOptions.contains("-cl-mad-enable") ||
+                   buildOptions.contains("-cl-fast-relaxed-math"),
+                "NVIDIA build options should include optimization flags");
+    }
+
+    @Test
+    @DisplayName("B1: Generate build options for AMD includes proper flags")
+    void testGenerateBuildOptionsAmd() {
+        // TDD: AMD should get AMD-specific optimizations
+        var amdCaps = new GPUCapabilities(80, 65536, 65536, GPUVendor.AMD, "RX 6900 XT", 64);
+        var amdTuner = new GPUAutoTuner(amdCaps, tempDir.toString());
+        var config = new WorkgroupConfig(64, 16, 0.80f, 3.0f, "AMD config");
+
+        var buildOptions = amdTuner.generateBuildOptions(config);
+
+        assertTrue(buildOptions.contains("-D MAX_TRAVERSAL_DEPTH=16"),
+                "AMD build options should set MAX_TRAVERSAL_DEPTH");
+        assertTrue(buildOptions.contains("-D WORKGROUP_SIZE=64"),
+                "AMD build options should set WORKGROUP_SIZE");
+    }
+
+    @Test
+    @DisplayName("B1: Build options handles depth 24 correctly")
+    void testGenerateBuildOptionsDeepStack() {
+        // TDD: Deeper stack should be represented correctly
+        var config = new WorkgroupConfig(128, 24, 0.70f, 3.5f, "deep stack config");
+
+        var buildOptions = autoTuner.generateBuildOptions(config);
+
+        assertTrue(buildOptions.contains("-D MAX_TRAVERSAL_DEPTH=24"),
+                "Build options should set MAX_TRAVERSAL_DEPTH=24 for deep stacks");
+    }
+
+    @Test
+    @DisplayName("B1: AutoTuneResult contains build options and config")
+    void testAutoTuneResultStructure() {
+        // TDD: AutoTuneResult should encapsulate config and build options
+        var result = autoTuner.autoTune();
+
+        assertNotNull(result, "AutoTuneResult should not be null");
+        assertNotNull(result.config(), "Result should contain config");
+        assertNotNull(result.buildOptions(), "Result should contain build options");
+        assertTrue(result.buildOptions().contains("-D MAX_TRAVERSAL_DEPTH"),
+                "Build options should be populated");
+    }
+
+    @Test
+    @DisplayName("B1: AutoTune selects optimal config and generates options")
+    void testAutoTuneSelectsOptimal() {
+        // TDD: AutoTune should select best config and generate matching options
+        var result = autoTuner.autoTune();
+
+        // Config should be selected
+        assertTrue(result.config().isValidWorkgroupSize(),
+                "Selected config should have valid workgroup size");
+        assertTrue(result.config().isValidDepth(),
+                "Selected config should have valid depth");
+
+        // Build options should match config
+        var expectedDepthOption = "-D MAX_TRAVERSAL_DEPTH=" + result.config().maxTraversalDepth();
+        var expectedSizeOption = "-D WORKGROUP_SIZE=" + result.config().workgroupSize();
+
+        assertTrue(result.buildOptions().contains(expectedDepthOption),
+                "Build options should match config depth");
+        assertTrue(result.buildOptions().contains(expectedSizeOption),
+                "Build options should match config size");
+    }
+
+    @Test
+    @DisplayName("B1: AutoTune caches result for future use")
+    void testAutoTuneCachesResult() {
+        // TDD: AutoTune should cache the selected configuration
+        var result = autoTuner.autoTune();
+
+        // Should be cached
+        var cached = autoTuner.loadFromCache();
+        assertTrue(cached.isPresent(), "AutoTune should cache the configuration");
+        assertEquals(result.config().workgroupSize(), cached.get().workgroupSize(),
+                "Cached config should match auto-tuned config");
+    }
+
+    @Test
+    @DisplayName("B1: getDefaultBuildOptions returns fallback options")
+    void testGetDefaultBuildOptions() {
+        // TDD: Default build options for fallback scenarios
+        var defaultOptions = autoTuner.getDefaultBuildOptions();
+
+        assertNotNull(defaultOptions, "Default build options should not be null");
+        assertTrue(defaultOptions.contains("-D MAX_TRAVERSAL_DEPTH=16"),
+                "Default should use depth 16 (Stream A optimized)");
+        assertTrue(defaultOptions.contains("-D WORKGROUP_SIZE="),
+                "Default should set workgroup size");
+    }
 }
