@@ -90,6 +90,8 @@ public class VONRecoveryIntegration {
 
     private static final Logger log = LoggerFactory.getLogger(VONRecoveryIntegration.class);
     private static final long DEFAULT_RECOVERY_TIMEOUT_MS = 30_000L;  // 30 seconds
+    private static final int MAX_RECOVERY_DEPTH = 10;  // Phase 3: Maximum cascading recovery depth
+    private static final long RECOVERY_COOLDOWN_MS = 1000L;  // Phase 3: Minimum time between recoveries
 
     private final VonManager vonManager;
     private final PartitionTopology topology;
@@ -113,8 +115,8 @@ public class VONRecoveryIntegration {
     // Phase 2: Recovery metrics tracking
     private final Map<UUID, RecoveryMetricsTracker> recoveryMetricsTrackers;
 
-    // Phase 2: Loop prevention - partitions currently being recovered
-    private final Set<UUID> partitionsBeingRecovered;
+    // Phase 3: Cooldown tracking - last recovery time per partition
+    private final Map<UUID, Long> lastRecoveryTime;
 
     /**
      * Create VON Recovery Integration with all dependencies using system clock.
@@ -158,7 +160,7 @@ public class VONRecoveryIntegration {
         // Phase 2 collections
         this.recoveryDependencies = new ConcurrentHashMap<>();
         this.recoveryMetricsTrackers = new ConcurrentHashMap<>();
-        this.partitionsBeingRecovered = ConcurrentHashMap.newKeySet();
+        this.lastRecoveryTime = new ConcurrentHashMap<>();
 
         // Create event handlers
         this.vonEventHandler = this::handleVonEvent;
@@ -349,9 +351,19 @@ public class VONRecoveryIntegration {
         partitionRanks.clear();
         recoveryDependencies.clear();
         recoveryMetricsTrackers.clear();
-        partitionsBeingRecovered.clear();
+        lastRecoveryTime.clear();
         log.info("VONRecoveryIntegration closed");
     }
+
+    // ========== Phase 3: Recovery Task Record ==========
+
+    /**
+     * Recovery task for BFS traversal with depth tracking.
+     *
+     * @param partitionId Partition to recover
+     * @param depth       Current depth in the dependency graph
+     */
+    private record RecoveryTask(UUID partitionId, int depth) {}
 
     // ========== Private Event Handlers ==========
 
@@ -421,83 +433,128 @@ public class VONRecoveryIntegration {
         }
     }
 
+    /**
+     * Phase 3: BFS-based partition recovery with depth limiting and cooldown.
+     * <p>
+     * Replaces recursive implementation to prevent stack overflow and enforce safety constraints:
+     * <ul>
+     *   <li>MAX_RECOVERY_DEPTH (10): Limits cascading dependency depth</li>
+     *   <li>RECOVERY_COOLDOWN_MS (1000): Prevents rapid re-triggering</li>
+     *   <li>BFS traversal: Prevents stack overflow from deep dependency chains</li>
+     *   <li>Visited set: Prevents circular dependency loops</li>
+     * </ul>
+     *
+     * @param partitionId Root partition to recover
+     */
     private void onPartitionRecovered(UUID partitionId) {
         log.info("Partition {} recovered - rejoining VON bubbles", partitionId);
 
-        // Loop prevention: check if already recovering this partition
-        if (!partitionsBeingRecovered.add(partitionId)) {
-            log.warn("Partition {} already being recovered - skipping to prevent loop", partitionId);
+        // Cooldown check
+        var lastTime = lastRecoveryTime.get(partitionId);
+        var now = clock.currentTimeMillis();
+        if (lastTime != null && (now - lastTime) < RECOVERY_COOLDOWN_MS) {
+            log.debug("Skipping recovery for {} - cooldown active ({}ms since last)",
+                      partitionId, now - lastTime);
+            return;
+        }
+        lastRecoveryTime.put(partitionId, now);
+
+        // BFS with depth tracking
+        var queue = new ArrayDeque<RecoveryTask>();
+        var visited = new HashSet<UUID>();
+        queue.add(new RecoveryTask(partitionId, 0));
+        visited.add(partitionId);
+
+        while (!queue.isEmpty()) {
+            var task = queue.poll();
+            if (task.depth >= MAX_RECOVERY_DEPTH) {
+                log.warn("Max recovery depth ({}) reached for partition {} at depth {}",
+                         MAX_RECOVERY_DEPTH, task.partitionId, task.depth);
+                continue;
+            }
+
+            // Process this partition's recovery
+            processPartitionRecovery(task.partitionId);
+
+            // Queue dependent partitions
+            var dependents = recoveryDependencies.get(task.partitionId);
+            if (dependents != null) {
+                for (var dependent : dependents) {
+                    if (visited.add(dependent)) {
+                        // Update cooldown timestamp for dependent
+                        lastRecoveryTime.put(dependent, clock.currentTimeMillis());
+                        queue.add(new RecoveryTask(dependent, task.depth + 1));
+                    } else {
+                        log.debug("Skipping already visited partition {} (cycle prevention)", dependent);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Phase 3: Process recovery for a single partition (extracted from onPartitionRecovered).
+     * <p>
+     * Handles bubble rejoin, metrics tracking, and event emission.
+     *
+     * @param partitionId Partition to process
+     */
+    private void processPartitionRecovery(UUID partitionId) {
+        var recoveryStartTime = clock.currentTimeMillis();
+        var bubbles = partitionBubbles.get(partitionId);
+
+        if (bubbles == null || bubbles.isEmpty()) {
+            log.warn("No bubbles found for recovered partition {}", partitionId);
+            emitRecoveryEvent(partitionId, 0, 0, 0, 0, false);
             return;
         }
 
-        try {
-            var recoveryStartTime = clock.currentTimeMillis();
-            var bubbles = partitionBubbles.get(partitionId);
+        int totalBubbles = bubbles.size();
+        int successfulRejoins = 0;
+        int failedRejoins = 0;
 
-            if (bubbles == null || bubbles.isEmpty()) {
-                log.warn("No bubbles found for recovered partition {}", partitionId);
-                emitRecoveryEvent(partitionId, 0, 0, 0, 0, false);
-                return;
+        // Rejoin all bubbles in this partition
+        for (var bubbleId : bubbles) {
+            // Check timeout
+            if (clock.currentTimeMillis() - recoveryStartTime > recoveryTimeoutMs) {
+                log.warn("Recovery timeout ({}ms) for partition {} - {} bubbles not processed",
+                        recoveryTimeoutMs, partitionId, totalBubbles - successfulRejoins - failedRejoins);
+                failedRejoins += (totalBubbles - successfulRejoins - failedRejoins);
+                break;
             }
 
-            int totalBubbles = bubbles.size();
-            int successfulRejoins = 0;
-            int failedRejoins = 0;
-
-            // Rejoin all bubbles in this partition
-            for (var bubbleId : bubbles) {
-                // Check timeout
-                if (clock.currentTimeMillis() - recoveryStartTime > recoveryTimeoutMs) {
-                    log.warn("Recovery timeout ({}ms) for partition {} - {} bubbles not processed",
-                            recoveryTimeoutMs, partitionId, totalBubbles - successfulRejoins - failedRejoins);
-                    failedRejoins += (totalBubbles - successfulRejoins - failedRejoins);
-                    break;
-                }
-
-                var bubble = vonManager.getBubble(bubbleId);
-                if (bubble != null) {
-                    var position = bubble.position();
-                    var rejoined = vonManager.joinAt(bubble, position);
-                    if (rejoined) {
-                        successfulRejoins++;
-                        log.debug("Rejoined bubble {} to VON at {}", bubbleId, position);
-                    } else {
-                        failedRejoins++;
-                        log.warn("Failed to rejoin bubble {} to VON", bubbleId);
-                    }
+            var bubble = vonManager.getBubble(bubbleId);
+            if (bubble != null) {
+                var position = bubble.position();
+                var rejoined = vonManager.joinAt(bubble, position);
+                if (rejoined) {
+                    successfulRejoins++;
+                    log.debug("Rejoined bubble {} to VON at {}", bubbleId, position);
                 } else {
                     failedRejoins++;
-                    log.warn("Bubble {} not found in VonManager during recovery", bubbleId);
+                    log.warn("Failed to rejoin bubble {} to VON", bubbleId);
                 }
+            } else {
+                failedRejoins++;
+                log.warn("Bubble {} not found in VonManager during recovery", bubbleId);
             }
-
-            var recoveryTimeMs = clock.currentTimeMillis() - recoveryStartTime;
-
-            // Check for cascading recovery
-            boolean cascadeTriggered = false;
-            var dependents = recoveryDependencies.get(partitionId);
-            if (dependents != null && !dependents.isEmpty()) {
-                cascadeTriggered = true;
-                log.info("Triggering cascading recovery for {} dependent partitions", dependents.size());
-                for (var dependentPartition : dependents) {
-                    // Trigger recovery for dependent partition (async to prevent deep recursion)
-                    onPartitionRecovered(dependentPartition);
-                }
-            }
-
-            // Update metrics tracker
-            var tracker = recoveryMetricsTrackers.computeIfAbsent(partitionId, k -> new RecoveryMetricsTracker());
-            tracker.recordRecovery(successfulRejoins, failedRejoins, recoveryTimeMs);
-
-            // Emit recovery event
-            emitRecoveryEvent(partitionId, totalBubbles, successfulRejoins, failedRejoins, recoveryTimeMs, cascadeTriggered);
-
-            log.info("Partition {} recovery complete: {}/{} bubbles rejoined in {}ms (cascade={})",
-                    partitionId, successfulRejoins, totalBubbles, recoveryTimeMs, cascadeTriggered);
-
-        } finally {
-            partitionsBeingRecovered.remove(partitionId);
         }
+
+        var recoveryTimeMs = clock.currentTimeMillis() - recoveryStartTime;
+
+        // Check if cascading was triggered (for metrics)
+        boolean cascadeTriggered = recoveryDependencies.containsKey(partitionId)
+                                    && !recoveryDependencies.get(partitionId).isEmpty();
+
+        // Update metrics tracker
+        var tracker = recoveryMetricsTrackers.computeIfAbsent(partitionId, k -> new RecoveryMetricsTracker());
+        tracker.recordRecovery(successfulRejoins, failedRejoins, recoveryTimeMs);
+
+        // Emit recovery event
+        emitRecoveryEvent(partitionId, totalBubbles, successfulRejoins, failedRejoins, recoveryTimeMs, cascadeTriggered);
+
+        log.info("Partition {} recovery complete: {}/{} bubbles rejoined in {}ms (cascade={})",
+                partitionId, successfulRejoins, totalBubbles, recoveryTimeMs, cascadeTriggered);
     }
 
     /**
