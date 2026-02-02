@@ -315,4 +315,92 @@ public class GPUAutoTuner {
             "Default fallback configuration"
         ));
     }
+
+    // ==================== B3: Runtime Performance-Driven Tuning ====================
+
+    /**
+     * B3: Select optimal configuration by running benchmarks
+     *
+     * Uses TuningBenchmark to measure actual GPU performance for each candidate
+     * configuration and selects the best performing one.
+     *
+     * @param executor benchmark executor (use TuningBenchmark.mockExecutor for testing)
+     * @return AutoTuneResult with benchmarked optimal config and build options
+     */
+    public AutoTuneResult selectOptimalConfigByBenchmark(TuningBenchmark.BenchmarkExecutor executor) {
+        var candidates = generateCandidates();
+        if (candidates.isEmpty()) {
+            log.warn("No candidates to benchmark, using default config");
+            return autoTune();
+        }
+
+        var benchmark = new TuningBenchmark(executor);
+        try {
+            var optimal = benchmark.selectOptimalConfig(candidates);
+            var buildOptions = generateBuildOptions(optimal);
+
+            // Cache the benchmarked result
+            cacheConfiguration(optimal);
+
+            log.info("Benchmark-tuned: {} threads, depth {}, build options: {}",
+                    optimal.workgroupSize(), optimal.maxTraversalDepth(), buildOptions);
+
+            return new AutoTuneResult(optimal, buildOptions);
+        } finally {
+            benchmark.shutdown();
+        }
+    }
+
+    /**
+     * B3: Select optimal configuration by benchmarking vendor profile candidates
+     *
+     * If a vendor profile is available, benchmarks its candidates instead of
+     * generated candidates. Falls back to generated candidates if no profile.
+     *
+     * @param executor benchmark executor
+     * @param profileLoader profile loader to get vendor candidates
+     * @return AutoTuneResult with benchmarked optimal config
+     */
+    public AutoTuneResult selectOptimalConfigByBenchmark(
+            TuningBenchmark.BenchmarkExecutor executor,
+            GPUTuningProfileLoader profileLoader
+    ) {
+        // Try to get vendor-specific candidates first
+        var vendorCandidates = profileLoader.getVendorCandidates(capabilities);
+
+        List<WorkgroupConfig> candidates;
+        if (!vendorCandidates.isEmpty()) {
+            log.info("Using {} vendor profile candidates for benchmarking", vendorCandidates.size());
+            candidates = vendorCandidates;
+        } else {
+            log.info("No vendor profile, using generated candidates");
+            candidates = generateCandidates();
+        }
+
+        if (candidates.isEmpty()) {
+            log.warn("No candidates to benchmark");
+            return autoTune();
+        }
+
+        var benchmark = new TuningBenchmark(executor);
+        try {
+            var optimal = benchmark.selectOptimalConfig(candidates);
+            var buildOptions = generateBuildOptions(optimal);
+
+            // Merge vendor build options if available
+            var vendorOptions = profileLoader.getVendorBuildOptions(capabilities.vendor());
+            if (!vendorOptions.isEmpty() && !buildOptions.contains(vendorOptions)) {
+                buildOptions = buildOptions + " " + vendorOptions;
+            }
+
+            cacheConfiguration(optimal);
+
+            log.info("Benchmark-tuned (vendor): {} threads, depth {}, options: {}",
+                    optimal.workgroupSize(), optimal.maxTraversalDepth(), buildOptions);
+
+            return new AutoTuneResult(optimal, buildOptions.trim());
+        } finally {
+            benchmark.shutdown();
+        }
+    }
 }

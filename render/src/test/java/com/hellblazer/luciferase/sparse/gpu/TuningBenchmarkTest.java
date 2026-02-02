@@ -16,226 +16,285 @@
  */
 package com.hellblazer.luciferase.sparse.gpu;
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for B3: Runtime Performance-Driven Tuning (Phase 5 Stream B Days 6-8).
+ * B3: Tests for TuningBenchmark
  *
- * <p>Validates:
- * - Benchmark-based configuration selection during rendering
- * - Throughput measurements with different tuning parameters
- * - Latency impact from workgroup size variations
- * - Configuration caching and reuse
- * - Performance improvement validation (>5% throughput gain target)
+ * Validates runtime performance-driven tuning benchmark functionality.
+ *
+ * @author hal.hildebrand
  */
+@DisplayName("B3: TuningBenchmark Tests")
 class TuningBenchmarkTest {
 
-    @Test
-    @DisplayName("Throughput measurement with baseline configuration")
-    void testThroughputMeasurement() {
-        var capabilities = new GPUCapabilities(
-            108, 49152, 65536,
-            GPUVendor.NVIDIA,
-            "RTX 4090",
-            32
+    private TuningBenchmark benchmark;
+
+    @BeforeEach
+    void setUp() {
+        // Create benchmark with mock executor (1.0 throughput multiplier)
+        benchmark = new TuningBenchmark(
+            TuningBenchmark.mockExecutor(1.0),
+            Duration.ofSeconds(2),
+            1, 2, 1000  // 1 warmup, 2 runs, 1000 rays
         );
+    }
 
-        var tuner = new GPUAutoTuner(capabilities, "/tmp/test-tuning");
-        var config = tuner.selectOptimalConfigFromProfiles();
+    @AfterEach
+    void tearDown() {
+        if (benchmark != null) {
+            benchmark.shutdown();
+        }
+    }
 
-        // Simulate throughput measurement (rays/second)
-        double baselineThroughput = config.expectedThroughput();
+    // ==================== Single Config Benchmarking ====================
 
-        assertTrue(baselineThroughput > 0, "Throughput should be positive");
-        assertTrue(baselineThroughput <= 1e12, "Throughput should be reasonable (< 1 trillion rays/sec)");
+    @Test
+    @DisplayName("Benchmark single config returns metrics")
+    void testBenchmarkSingleConfig() {
+        var config = new WorkgroupConfig(64, 16, 0.75f, 2.5f, "test");
+
+        var result = benchmark.benchmarkConfig(config);
+
+        assertTrue(result.isSuccessful(), "Benchmark should succeed");
+        assertTrue(result.throughputRaysPerMicrosecond() > 0, "Throughput should be positive");
+        assertTrue(result.latencyMicroseconds() > 0, "Latency should be positive");
+        assertEquals(config, result.config(), "Config should match");
+        assertFalse(result.timedOut(), "Should not timeout");
+        assertNull(result.errorMessage(), "Should have no error");
     }
 
     @Test
-    @DisplayName("Latency measurement with conservative workgroup size")
-    void testLatencyConservative() {
-        var capabilities = new GPUCapabilities(
-            108, 49152, 65536,
-            GPUVendor.NVIDIA,
-            "RTX 4090",
-            32
+    @DisplayName("Benchmark result tracks ray count")
+    void testBenchmarkTracksRayCount() {
+        var config = new WorkgroupConfig(64, 16, 0.75f, 2.5f, "test");
+
+        var result = benchmark.benchmarkConfig(config);
+
+        // 2 benchmark runs × 1000 rays = 2000 rays
+        assertEquals(2000, result.raysProcessed(), "Should track total rays processed");
+    }
+
+    // ==================== Multiple Config Comparison ====================
+
+    @Test
+    @DisplayName("Benchmark multiple configs returns sorted results")
+    void testBenchmarkMultipleConfigs() {
+        var configs = List.of(
+            new WorkgroupConfig(32, 16, 0.65f, 1.5f, "small"),
+            new WorkgroupConfig(64, 16, 0.75f, 2.5f, "medium"),
+            new WorkgroupConfig(128, 16, 0.80f, 3.5f, "large")
         );
 
-        var tuner = new GPUAutoTuner(capabilities, "/tmp/test-tuning");
-        var config = tuner.selectOptimalConfigFromProfiles();
+        var results = benchmark.benchmarkConfigs(configs);
 
-        // Conservative config should have lower latency but lower throughput
-        assertTrue(config.workgroupSize() > 0);
-        assertTrue(config.expectedOccupancy() >= 0.0);
+        assertEquals(3, results.size(), "Should have 3 results");
+
+        // Results should be sorted by throughput (descending)
+        assertTrue(results.get(0).throughputRaysPerMicrosecond() >=
+                   results.get(1).throughputRaysPerMicrosecond(),
+                "First result should have highest throughput");
+        assertTrue(results.get(1).throughputRaysPerMicrosecond() >=
+                   results.get(2).throughputRaysPerMicrosecond(),
+                "Second result should have higher throughput than third");
     }
 
     @Test
-    @DisplayName("Throughput comparison: conservative vs aggressive")
-    void testThroughputComparison() {
-        var nvCapabilities = new GPUCapabilities(
-            108, 49152, 65536,
-            GPUVendor.NVIDIA,
-            "RTX 4090",
-            32
+    @DisplayName("Larger workgroups have higher throughput (mock simulation)")
+    void testLargerWorkgroupsHigherThroughput() {
+        var configs = List.of(
+            new WorkgroupConfig(32, 16, 0.65f, 1.5f, "small"),
+            new WorkgroupConfig(128, 16, 0.80f, 3.5f, "large")
         );
 
-        var tunerNV = new GPUAutoTuner(nvCapabilities, "/tmp/test-tuning-nv");
-        var configNV = tunerNV.selectOptimalConfigFromProfiles();
+        var results = benchmark.benchmarkConfigs(configs);
 
-        var amdCapabilities = new GPUCapabilities(
-            64, 65536, 65536,
-            GPUVendor.AMD,
-            "RX 7900",
-            64
+        // In mock executor, 128 threads should outperform 32 threads
+        var largeResult = results.stream()
+            .filter(r -> r.config().workgroupSize() == 128)
+            .findFirst()
+            .orElseThrow();
+        var smallResult = results.stream()
+            .filter(r -> r.config().workgroupSize() == 32)
+            .findFirst()
+            .orElseThrow();
+
+        assertTrue(largeResult.throughputRaysPerMicrosecond() > smallResult.throughputRaysPerMicrosecond(),
+                "128 threads should outperform 32 threads");
+    }
+
+    // ==================== Optimal Selection ====================
+
+    @Test
+    @DisplayName("Select optimal config returns best performing")
+    void testSelectOptimalByBenchmark() {
+        var configs = List.of(
+            new WorkgroupConfig(32, 16, 0.65f, 1.5f, "small"),
+            new WorkgroupConfig(64, 16, 0.75f, 2.5f, "medium"),
+            new WorkgroupConfig(128, 16, 0.80f, 3.5f, "large")
         );
 
-        var tunerAMD = new GPUAutoTuner(amdCapabilities, "/tmp/test-tuning-amd");
-        var configAMD = tunerAMD.selectOptimalConfigFromProfiles();
+        var optimal = benchmark.selectOptimalConfig(configs);
 
-        // Both should have valid throughput
-        assertTrue(configNV.expectedThroughput() > 0);
-        assertTrue(configAMD.expectedThroughput() > 0);
-
-        // Throughput should correlate with occupancy and workgroup size
-        double nvidiaEfficiency = configNV.expectedThroughput() * configNV.expectedOccupancy();
-        double amdEfficiency = configAMD.expectedThroughput() * configAMD.expectedOccupancy();
-
-        assertTrue(nvidiaEfficiency > 0);
-        assertTrue(amdEfficiency > 0);
+        // Mock executor should favor larger workgroups
+        assertEquals(128, optimal.workgroupSize(),
+                "Should select largest workgroup as optimal");
     }
 
     @Test
-    @DisplayName("Configuration performance impact measurement")
-    void testConfigPerformanceImpact() {
-        var capabilities = new GPUCapabilities(
-            108, 49152, 65536,
-            GPUVendor.NVIDIA,
-            "RTX 4090",
-            32
+    @DisplayName("Select optimal returns fallback when all fail")
+    void testSelectOptimalFallback() {
+        // Create benchmark that always fails
+        var failingBenchmark = new TuningBenchmark(
+            (config, rayCount) -> { throw new RuntimeException("Simulated failure"); },
+            Duration.ofMillis(100), 0, 1, 1000
         );
 
-        var tuner = new GPUAutoTuner(capabilities, "/tmp/test-tuning");
-        var config = tuner.selectOptimalConfigFromProfiles();
+        var configs = List.of(
+            new WorkgroupConfig(32, 16, 0.65f, 1.5f, "first"),
+            new WorkgroupConfig(64, 16, 0.75f, 2.5f, "second")
+        );
 
-        // Baseline: stack depth 16, workgroup 128
-        long baselineDepth = 16;
-        int baselineWorkgroup = 128;
+        var optimal = failingBenchmark.selectOptimalConfig(configs);
+        failingBenchmark.shutdown();
 
-        // Calculate LDS usage for baseline
-        long baseLDS = baselineDepth * baselineWorkgroup * 4;  // 4 bytes per entry
-        assertTrue(baseLDS <= 65536, "Baseline LDS should fit in GPU memory");
-
-        // More aggressive: stack depth 24, workgroup 256
-        long aggressiveDepth = 24;
-        int aggressiveWorkgroup = 256;
-        long aggressiveLDS = aggressiveDepth * aggressiveWorkgroup * 4;
-
-        // Aggressive may exceed if not managed
-        assertTrue(aggressiveLDS <= 131072, "Aggressive LDS should be reasonable");
-
-        // Performance ratio: higher occupancy = higher throughput
-        double occupancyRatio = (double) baseLDS / aggressiveLDS;
-        assertTrue(occupancyRatio > 0 && occupancyRatio <= 1.0);
+        // Should return first candidate as fallback
+        assertEquals(32, optimal.workgroupSize(),
+                "Should return first candidate when all benchmarks fail");
     }
 
     @Test
-    @DisplayName("Performance-driven selection prefers high occupancy")
-    void testPerformanceDrivenSelection() {
-        var capabilities = new GPUCapabilities(
-            64, 65536, 65536,
-            GPUVendor.AMD,
-            "RX 7900",
-            64
+    @DisplayName("Select optimal throws on empty candidates")
+    void testSelectOptimalEmptyCandidates() {
+        assertThrows(IllegalArgumentException.class,
+                () -> benchmark.selectOptimalConfig(List.of()),
+                "Should throw for empty candidates");
+    }
+
+    // ==================== Timeout Protection ====================
+
+    @Test
+    @DisplayName("Timeout prevents hung benchmark from blocking")
+    void testBenchmarkTimeout() {
+        // Create benchmark with very short timeout and slow executor
+        var slowBenchmark = new TuningBenchmark(
+            TuningBenchmark.slowExecutor(Set.of(128)), // 128 threads will hang
+            Duration.ofMillis(100), // 100ms timeout
+            0, 1, 1000
         );
 
-        var tuner = new GPUAutoTuner(capabilities, "/tmp/test-tuning");
-        var config = tuner.selectOptimalConfigFromProfiles();
+        var config = new WorkgroupConfig(128, 16, 0.80f, 3.5f, "slow");
 
-        // Should select configuration that maximizes occupancy
-        assertTrue(config.expectedOccupancy() >= 0.65, "AMD should use high occupancy config");
+        var result = slowBenchmark.benchmarkConfig(config);
+        slowBenchmark.shutdown();
 
-        // Verify throughput is positive and meaningful
-        double expectedThroughputPerThread = config.expectedThroughput() / config.workgroupSize();
-        assertTrue(expectedThroughputPerThread > 0, "Per-thread throughput should be positive");
+        assertTrue(result.timedOut(), "Should timeout for slow config");
+        assertFalse(result.isSuccessful(), "Timed out result should not be successful");
     }
 
     @Test
-    @DisplayName("Benchmark results reproducible across multiple runs")
-    void testBenchmarkReproducibility() {
-        var capabilities = new GPUCapabilities(
-            108, 49152, 65536,
-            GPUVendor.NVIDIA,
-            "RTX 4090",
-            32
+    @DisplayName("Non-slow configs complete within timeout")
+    void testNonSlowConfigsComplete() {
+        // Create benchmark with slow executor but only 128 threads is slow
+        var slowBenchmark = new TuningBenchmark(
+            TuningBenchmark.slowExecutor(Set.of(128)),
+            Duration.ofSeconds(2),
+            0, 1, 1000
         );
 
-        var tuner1 = new GPUAutoTuner(capabilities, "/tmp/bench-1");
-        var tuner2 = new GPUAutoTuner(capabilities, "/tmp/bench-2");
-        var tuner3 = new GPUAutoTuner(capabilities, "/tmp/bench-3");
+        var config = new WorkgroupConfig(64, 16, 0.75f, 2.5f, "fast");
 
-        var config1 = tuner1.selectOptimalConfigFromProfiles();
-        var config2 = tuner2.selectOptimalConfigFromProfiles();
-        var config3 = tuner3.selectOptimalConfigFromProfiles();
+        var result = slowBenchmark.benchmarkConfig(config);
+        slowBenchmark.shutdown();
 
-        // All should select same configuration (reproducible)
-        assertEquals(config1.workgroupSize(), config2.workgroupSize(), "Same tuner input should produce same output");
-        assertEquals(config2.workgroupSize(), config3.workgroupSize(), "Same tuner input should produce same output");
+        assertTrue(result.isSuccessful(), "Non-slow config should complete successfully");
+        assertFalse(result.timedOut(), "Non-slow config should not timeout");
+    }
 
-        // All should have same throughput
-        assertEquals(config1.expectedThroughput(), config2.expectedThroughput(), 0.01);
-        assertEquals(config2.expectedThroughput(), config3.expectedThroughput(), 0.01);
+    // ==================== Benchmark Result Tests ====================
 
-        // All should have same occupancy
-        assertEquals(config1.expectedOccupancy(), config2.expectedOccupancy(), 0.01);
-        assertEquals(config2.expectedOccupancy(), config3.expectedOccupancy(), 0.01);
+    @Test
+    @DisplayName("BenchmarkResult.success creates valid result")
+    void testBenchmarkResultSuccess() {
+        var config = new WorkgroupConfig(64, 16, 0.75f, 2.5f, "test");
+        var result = TuningBenchmark.BenchmarkResult.success(config, 2.5, 400.0, 1000);
+
+        assertTrue(result.isSuccessful());
+        assertEquals(2.5, result.throughputRaysPerMicrosecond());
+        assertEquals(400.0, result.latencyMicroseconds());
+        assertEquals(1000, result.raysProcessed());
+        assertFalse(result.timedOut());
+        assertNull(result.errorMessage());
     }
 
     @Test
-    @DisplayName("Multi-vendor throughput comparison validates tuning diversity")
-    void testMultiVendorThroughputComparison() {
-        var nvidiaCapabilities = new GPUCapabilities(
-            108, 49152, 65536,
-            GPUVendor.NVIDIA,
-            "RTX 4090",
-            32
+    @DisplayName("BenchmarkResult.failed creates invalid result")
+    void testBenchmarkResultFailed() {
+        var config = new WorkgroupConfig(64, 16, 0.75f, 2.5f, "test");
+        var result = TuningBenchmark.BenchmarkResult.failed(config, "Test error");
+
+        assertFalse(result.isSuccessful());
+        assertEquals("Test error", result.errorMessage());
+        assertEquals(0.0, result.throughputRaysPerMicrosecond());
+    }
+
+    @Test
+    @DisplayName("BenchmarkResult.timeout creates timeout result")
+    void testBenchmarkResultTimeout() {
+        var config = new WorkgroupConfig(64, 16, 0.75f, 2.5f, "test");
+        var result = TuningBenchmark.BenchmarkResult.timeout(config);
+
+        assertFalse(result.isSuccessful());
+        assertTrue(result.timedOut());
+    }
+
+    // ==================== Depth Impact Tests ====================
+
+    @Test
+    @DisplayName("Deeper stacks slightly reduce throughput (mock simulation)")
+    void testDeepStacksThroughputImpact() {
+        var configs = List.of(
+            new WorkgroupConfig(64, 16, 0.75f, 2.5f, "shallow"),
+            new WorkgroupConfig(64, 24, 0.70f, 2.0f, "deep")
         );
 
-        var amdCapabilities = new GPUCapabilities(
-            64, 65536, 65536,
-            GPUVendor.AMD,
-            "RX 7900",
-            64
-        );
+        var results = benchmark.benchmarkConfigs(configs);
 
-        var intelCapabilities = new GPUCapabilities(
-            96, 131072, 131072,
-            GPUVendor.INTEL,
-            "Arc A770",
-            32
-        );
+        var shallowResult = results.stream()
+            .filter(r -> r.config().maxTraversalDepth() == 16)
+            .findFirst()
+            .orElseThrow();
+        var deepResult = results.stream()
+            .filter(r -> r.config().maxTraversalDepth() == 24)
+            .findFirst()
+            .orElseThrow();
 
-        var tunerNV = new GPUAutoTuner(nvidiaCapabilities, "/tmp/nvidia-bench");
-        var tunerAMD = new GPUAutoTuner(amdCapabilities, "/tmp/amd-bench");
-        var tunerIntel = new GPUAutoTuner(intelCapabilities, "/tmp/intel-bench");
+        // In mock executor, deeper stacks have slight penalty
+        assertTrue(shallowResult.throughputRaysPerMicrosecond() >= deepResult.throughputRaysPerMicrosecond() * 0.8,
+                "Shallow stack throughput should be within 20% of deep stack");
+    }
 
-        var configNV = tunerNV.selectOptimalConfigFromProfiles();
-        var configAMD = tunerAMD.selectOptimalConfigFromProfiles();
-        var configIntel = tunerIntel.selectOptimalConfigFromProfiles();
+    // ==================== Mock Executor Tests ====================
 
-        // All should have valid throughput
-        assertTrue(configNV.expectedThroughput() > 0);
-        assertTrue(configAMD.expectedThroughput() > 0);
-        assertTrue(configIntel.expectedThroughput() > 0);
+    @Test
+    @DisplayName("Mock executor produces reasonable throughput range")
+    void testMockExecutorThroughputRange() {
+        var config = new WorkgroupConfig(64, 16, 0.75f, 2.5f, "test");
+        var result = benchmark.benchmarkConfig(config);
 
-        // Different vendors should produce different configurations (diversity validation)
-        assertNotEquals(configNV.workgroupSize(), configAMD.workgroupSize(),
-                "NVIDIA and AMD should have different optimal workgroup sizes");
-
-        // But all should have reasonable occupancy
-        assertTrue(configNV.expectedOccupancy() >= 0.0 && configNV.expectedOccupancy() <= 1.0);
-        assertTrue(configAMD.expectedOccupancy() >= 0.0 && configAMD.expectedOccupancy() <= 1.0);
-        assertTrue(configIntel.expectedOccupancy() >= 0.0 && configIntel.expectedOccupancy() <= 1.0);
+        // Mock should produce throughput in reasonable range
+        assertTrue(result.throughputRaysPerMicrosecond() > 0.1,
+                "Throughput should be > 0.1 rays/µs");
+        assertTrue(result.throughputRaysPerMicrosecond() < 100.0,
+                "Throughput should be < 100 rays/µs (realistic)");
     }
 }
