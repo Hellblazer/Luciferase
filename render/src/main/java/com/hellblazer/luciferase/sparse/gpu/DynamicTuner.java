@@ -174,7 +174,11 @@ public class DynamicTuner {
     }
 
     /**
-     * Record frame performance for monitoring
+     * Record frame performance for monitoring.
+     *
+     * <p><b>Thread Safety</b>: This method is NOT thread-safe. It should only
+     * be called from the render thread. Concurrent calls may corrupt the
+     * performance sample buffer.
      *
      * @param throughputRaysPerMicrosecond measured throughput
      */
@@ -190,7 +194,7 @@ public class DynamicTuner {
         // Update baseline if we have enough samples
         if (sampleCount >= MIN_SAMPLES_FOR_BASELINE && baselineThroughput == 0.0) {
             baselineThroughput = calculateAverage();
-            log.debug("Baseline throughput established: {:.2f} rays/µs", baselineThroughput);
+            log.debug("Baseline throughput established: {} rays/µs", String.format("%.2f", baselineThroughput));
         }
 
         // Check for performance degradation
@@ -199,8 +203,8 @@ public class DynamicTuner {
             double drop = (baselineThroughput - current) / baselineThroughput;
 
             if (drop >= retuneThreshold && retuneTriggered.compareAndSet(false, true)) {
-                log.warn("Performance drop detected: {:.1f}% (threshold: {:.1f}%)",
-                        drop * 100, retuneThreshold * 100);
+                log.warn("Performance drop detected: {}% (threshold: {}%)",
+                        String.format("%.1f", drop * 100), String.format("%.1f", retuneThreshold * 100));
 
                 // Trigger re-tune callback if set
                 if (retuneCallback != null) {
@@ -221,8 +225,8 @@ public class DynamicTuner {
         }
 
         double sum = 0.0;
-        double min = Double.MAX_VALUE;
-        double max = Double.MIN_VALUE;
+        double min = Double.POSITIVE_INFINITY;
+        double max = Double.NEGATIVE_INFINITY;
 
         for (int i = 0; i < sampleCount; i++) {
             double v = performanceSamples[i];
