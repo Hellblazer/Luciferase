@@ -54,7 +54,7 @@ public class VonBubble extends EnhancedBubble implements Node {
     private static final Logger log = LoggerFactory.getLogger(VonBubble.class);
 
     private final VonTransport transport;
-    private final VonMessageFactory factory;
+    private volatile VonMessageFactory factory;
     private final Map<UUID, NeighborState> neighborStates;
     private final Set<UUID> introducedTo;  // Track neighbors we've introduced ourselves to
     private final List<Consumer<Event>> eventListeners;
@@ -63,11 +63,15 @@ public class VonBubble extends EnhancedBubble implements Node {
 
     /**
      * Set the clock for deterministic testing.
+     * <p>
+     * Updates both the clock field and recreates the factory to use the new clock
+     * for all subsequent message timestamps.
      *
      * @param clock Clock instance to use
      */
     public void setClock(Clock clock) {
         this.clock = clock;
+        this.factory = new VonMessageFactory(clock);
     }
 
     /**
@@ -271,6 +275,18 @@ public class VonBubble extends EnhancedBubble implements Node {
      */
     public Map<UUID, NeighborState> getNeighborStates() {
         return Collections.unmodifiableMap(neighborStates);
+    }
+
+    /**
+     * Create a Move message for this bubble using the configured factory.
+     * <p>
+     * Primarily used for testing clock injection - verifies that the factory
+     * uses the correct clock for timestamps.
+     *
+     * @return Move message with current position and bounds
+     */
+    public VonMessage.Move createMoveMessage() {
+        return factory.createMove(id(), position(), bounds());
     }
 
     /**

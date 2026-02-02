@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import javafx.geometry.Point3D;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,11 +57,12 @@ public class VonManager {
 
     private final Map<UUID, VonBubble> bubbles;
     private final LocalServerTransport.Registry transportRegistry;
-    private final VonMessageFactory factory;
+    private volatile VonMessageFactory factory;
     private final List<Consumer<Event>> eventListeners;
     private final byte spatialLevel;
     private final long targetFrameMs;
     private final float aoiRadius;
+    private volatile Clock clock;
 
     /**
      * Create a VonManager with default configuration.
@@ -72,7 +74,7 @@ public class VonManager {
     }
 
     /**
-     * Create a VonManager with custom configuration.
+     * Create a VonManager with custom configuration using system clock.
      *
      * @param transportRegistry Transport registry for P2P communication
      * @param spatialLevel      Tetree refinement level for bubbles
@@ -81,8 +83,25 @@ public class VonManager {
      */
     public VonManager(LocalServerTransport.Registry transportRegistry,
                       byte spatialLevel, long targetFrameMs, float aoiRadius) {
+        this(transportRegistry, spatialLevel, targetFrameMs, aoiRadius, Clock.system());
+    }
+
+    /**
+     * Create a VonManager with custom configuration and injected clock.
+     * <p>
+     * Use this constructor for deterministic testing with a TestClock.
+     *
+     * @param transportRegistry Transport registry for P2P communication
+     * @param spatialLevel      Tetree refinement level for bubbles
+     * @param targetFrameMs     Target frame time for simulation
+     * @param aoiRadius         Area of Interest radius for neighbor detection
+     * @param clock             Clock for timestamps (use TestClock for testing)
+     */
+    public VonManager(LocalServerTransport.Registry transportRegistry,
+                      byte spatialLevel, long targetFrameMs, float aoiRadius, Clock clock) {
         this.transportRegistry = Objects.requireNonNull(transportRegistry, "transportRegistry cannot be null");
-        this.factory = VonMessageFactory.system();
+        this.clock = Objects.requireNonNull(clock, "clock cannot be null");
+        this.factory = new VonMessageFactory(clock);
         this.bubbles = new ConcurrentHashMap<>();
         this.eventListeners = new ArrayList<>();
         this.spatialLevel = spatialLevel;
@@ -94,7 +113,28 @@ public class VonManager {
     }
 
     /**
+     * Set the clock for deterministic testing.
+     * <p>
+     * Updates the manager's factory and propagates the clock to all existing bubbles.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock cannot be null");
+        this.factory = new VonMessageFactory(clock);
+
+        // Propagate to all existing bubbles
+        for (var bubble : bubbles.values()) {
+            bubble.setClock(clock);
+        }
+
+        log.debug("Clock updated and propagated to {} bubbles", bubbles.size());
+    }
+
+    /**
      * Create a new VonBubble and register it with the manager.
+     * <p>
+     * The new bubble inherits the manager's clock for deterministic timestamps.
      *
      * @return The newly created VonBubble
      */
@@ -102,6 +142,9 @@ public class VonManager {
         var id = UUID.randomUUID();
         var transport = transportRegistry.register(id);
         var bubble = new VonBubble(id, spatialLevel, targetFrameMs, transport);
+
+        // Propagate clock to new bubble
+        bubble.setClock(clock);
 
         // Forward events to manager listeners
         bubble.addEventListener(this::dispatchEvent);
@@ -114,6 +157,8 @@ public class VonManager {
 
     /**
      * Create a new VonBubble with a specific ID.
+     * <p>
+     * The new bubble inherits the manager's clock for deterministic timestamps.
      *
      * @param id The UUID for the bubble
      * @return The newly created VonBubble
@@ -121,6 +166,9 @@ public class VonManager {
     public VonBubble createBubble(UUID id) {
         var transport = transportRegistry.register(id);
         var bubble = new VonBubble(id, spatialLevel, targetFrameMs, transport);
+
+        // Propagate clock to new bubble
+        bubble.setClock(clock);
 
         // Forward events to manager listeners
         bubble.addEventListener(this::dispatchEvent);
