@@ -94,7 +94,7 @@ jobs:
 
       - name: Run Tier 1 Compilation Tests (NVIDIA, AMD, Intel, Apple)
         run: |
-          ./mvnw -batch-mode test -pl render \
+          ./mvnw -batch-mode test -pl render -am \
             -Dtest="DAGOpenCLRendererVendorTest#testNvidiaKernelCompilation,DAGOpenCLRendererVendorTest#testAmdKernelCompilation,DAGOpenCLRendererVendorTest#testIntelKernelCompilation,DAGOpenCLRendererVendorTest#testAppleKernelCompilation" \
             -Dsurefire.rerunFailingTestsCount=0 \
             --file pom.xml
@@ -104,7 +104,7 @@ jobs:
 
       - name: Run Vendor Configuration Tests
         run: |
-          ./mvnw -batch-mode test -pl render \
+          ./mvnw -batch-mode test -pl render -am \
             -Dtest="GPUVendorDetectorTest,MultiVendorConsistencyTest" \
             -Dsurefire.rerunFailingTestsCount=0 \
             --file pom.xml
@@ -114,7 +114,7 @@ jobs:
 
       - name: Validate MultiVendorConsistencyReport
         run: |
-          ./mvnw -batch-mode test -pl render \
+          ./mvnw -batch-mode test -pl render -am \
             -Dtest="MultiVendorConsistencyReportTest" \
             -Dsurefire.rerunFailingTestsCount=0 \
             --file pom.xml
