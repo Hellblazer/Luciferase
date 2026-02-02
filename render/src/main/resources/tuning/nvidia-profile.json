@@ -1,0 +1,69 @@
+{
+  "vendor": "NVIDIA",
+  "description": "Tuning profiles for NVIDIA GPUs (CUDA/OpenCL)",
+  "candidates": [
+    {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 16,
+      "notes": "Conservative - for lower-end GPUs or complex scenes"
+    },
+    {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "notes": "Balanced - good for most GeForce GTX/RTX GPUs"
+    },
+    {
+      "workgroupSize": 128,
+      "maxTraversalDepth": 16,
+      "notes": "Aggressive - for high-end RTX 3000/4000 series"
+    },
+    {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 24,
+      "notes": "Deep traversal - for very detailed voxel scenes"
+    },
+    {
+      "workgroupSize": 128,
+      "maxTraversalDepth": 24,
+      "notes": "Maximum - for RTX 4090 with complex scenes"
+    }
+  ],
+  "defaultConfig": {
+    "workgroupSize": 64,
+    "maxTraversalDepth": 16,
+    "expectedOccupancy": 0.75,
+    "expectedThroughput": 2.5,
+    "notes": "NVIDIA default - balanced for most GeForce GPUs"
+  },
+  "deviceOverrides": {
+    "RTX_4090": {
+      "workgroupSize": 128,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.8,
+      "expectedThroughput": 4.2,
+      "notes": "GeForce RTX 4090 - 16384 CUDA cores, 24GB VRAM"
+    },
+    "RTX_4080": {
+      "workgroupSize": 128,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.78,
+      "expectedThroughput": 3.8,
+      "notes": "GeForce RTX 4080 - 9728 CUDA cores, 16GB VRAM"
+    },
+    "RTX_3080": {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.75,
+      "expectedThroughput": 3.1,
+      "notes": "GeForce RTX 3080 - 8704 CUDA cores, 10GB VRAM"
+    },
+    "RTX_3060": {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.75,
+      "expectedThroughput": 2.5,
+      "notes": "GeForce RTX 3060 - 3584 CUDA cores, 12GB VRAM"
+    }
+  },
+  "vendorBuildOptions": "-cl-mad-enable -cl-fast-relaxed-math"
+}

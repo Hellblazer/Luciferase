@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,7 +33,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * GPU Tuning Profile Loader
  *
  * Stream B Phase 6: Load predefined tuning profiles from JSON resource
- * Provides GPU-specific workgroup configurations
+ * B2: Enhanced to support vendor-specific profile files
+ *
+ * Provides GPU-specific workgroup configurations from:
+ * 1. Vendor-specific profiles (tuning/nvidia-profile.json, etc.)
+ * 2. Legacy combined profile (gpu-tuning-profiles.json)
  *
  * @author hal.hildebrand
  */
@@ -41,6 +46,7 @@ public class GPUTuningProfileLoader {
     private static final String PROFILE_RESOURCE = "/gpu-tuning-profiles.json";
 
     private final Map<String, WorkgroupConfig> profileCache;
+    private final Map<GPUVendor, VendorTuningProfile> vendorProfiles;
     private final ObjectMapper objectMapper;
 
     /**
@@ -48,10 +54,31 @@ public class GPUTuningProfileLoader {
      */
     public GPUTuningProfileLoader() {
         this.profileCache = new ConcurrentHashMap<>();
+        this.vendorProfiles = new ConcurrentHashMap<>();
         this.objectMapper = new ObjectMapper();
 
-        // Eagerly load all profiles on construction
+        // B2: Load vendor-specific profiles first
+        loadVendorProfiles();
+
+        // Eagerly load legacy profiles on construction
         loadAllProfilesInternal();
+    }
+
+    /**
+     * B2: Load vendor-specific profiles from tuning/ directory
+     */
+    private void loadVendorProfiles() {
+        for (var vendor : GPUVendor.values()) {
+            if (vendor == GPUVendor.UNKNOWN) {
+                continue;
+            }
+
+            VendorTuningProfile.load(vendor).ifPresent(profile -> {
+                vendorProfiles.put(vendor, profile);
+                log.debug("Loaded vendor profile: {}", vendor);
+            });
+        }
+        log.info("Loaded {} vendor-specific tuning profiles", vendorProfiles.size());
     }
 
     /**
@@ -92,16 +119,29 @@ public class GPUTuningProfileLoader {
     /**
      * Load profile for a GPU device based on capabilities
      *
-     * Tries to match:
-     * 1. Exact model match
-     * 2. Vendor + partial model match
-     * 3. Vendor default (generated)
+     * B2: Enhanced lookup order:
+     * 1. Vendor-specific profile with device override
+     * 2. Legacy exact model match
+     * 3. Legacy partial model match
+     * 4. Vendor-specific profile default
+     * 5. Generated config (fallback)
      *
      * @param capabilities GPU capabilities
      * @return profile configuration
      */
     public Optional<WorkgroupConfig> loadProfileForDevice(GPUCapabilities capabilities) {
-        // Try exact match with vendor_model format
+        // B2: Try vendor-specific profile with device override first
+        var vendorProfile = vendorProfiles.get(capabilities.vendor());
+        if (vendorProfile != null) {
+            var config = vendorProfile.getConfigForDevice(capabilities.model());
+            // Check if we got a device-specific override (not just the default)
+            if (!config.equals(vendorProfile.defaultConfig())) {
+                log.info("Loaded vendor profile override for {}: {}", capabilities.model(), config.notes());
+                return Optional.of(config);
+            }
+        }
+
+        // Try legacy exact match with vendor_model format
         var exactKey = String.format("%s_%s",
             capabilities.vendor().name(),
             capabilities.model().toUpperCase().replaceAll("[^A-Z0-9]", "_")
@@ -124,9 +164,50 @@ public class GPUTuningProfileLoader {
             }
         }
 
+        // B2: Use vendor profile default if available
+        if (vendorProfile != null) {
+            log.info("Using vendor profile default for {}", capabilities.vendor());
+            return Optional.of(vendorProfile.defaultConfig());
+        }
+
         // Fallback: generate config using WorkgroupConfig factory
         log.info("No profile found for {}, using generated config", capabilities.model());
         return Optional.of(WorkgroupConfig.forDevice(capabilities));
+    }
+
+    /**
+     * B2: Get vendor-specific profile
+     *
+     * @param vendor GPU vendor
+     * @return vendor profile or empty if not loaded
+     */
+    public Optional<VendorTuningProfile> getVendorProfile(GPUVendor vendor) {
+        return Optional.ofNullable(vendorProfiles.get(vendor));
+    }
+
+    /**
+     * B2: Get all candidate configs for a vendor
+     *
+     * @param capabilities GPU capabilities
+     * @return list of candidate configs, or empty list if no vendor profile
+     */
+    public List<WorkgroupConfig> getVendorCandidates(GPUCapabilities capabilities) {
+        var vendorProfile = vendorProfiles.get(capabilities.vendor());
+        if (vendorProfile == null) {
+            return List.of();
+        }
+        return vendorProfile.getCandidateConfigs(capabilities);
+    }
+
+    /**
+     * B2: Get vendor-specific build options
+     *
+     * @param vendor GPU vendor
+     * @return vendor build options string, or empty string if not available
+     */
+    public String getVendorBuildOptions(GPUVendor vendor) {
+        var vendorProfile = vendorProfiles.get(vendor);
+        return vendorProfile != null ? vendorProfile.vendorBuildOptions() : "";
     }
 
     /**

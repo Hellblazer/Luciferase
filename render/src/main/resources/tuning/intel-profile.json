@@ -1,0 +1,64 @@
+{
+  "vendor": "INTEL",
+  "description": "Tuning profiles for Intel GPUs (Arc Xe-HPG architecture)",
+  "candidates": [
+    {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 16,
+      "notes": "Conservative - for integrated or lower-end Arc"
+    },
+    {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "notes": "Standard - 2x subslice for discrete Arc GPUs"
+    },
+    {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "notes": "Deep traversal - smaller workgroups with extended stack"
+    },
+    {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 24,
+      "notes": "Extended - for Arc A770/A750 with complex scenes"
+    }
+  ],
+  "defaultConfig": {
+    "workgroupSize": 32,
+    "maxTraversalDepth": 24,
+    "expectedOccupancy": 0.65,
+    "expectedThroughput": 1.5,
+    "notes": "Intel default - conservative for Xe architecture"
+  },
+  "deviceOverrides": {
+    "ARC_A770": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.65,
+      "expectedThroughput": 1.8,
+      "notes": "Intel Arc A770 - 32 Xe-Cores, 16GB VRAM"
+    },
+    "ARC_A750": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.65,
+      "expectedThroughput": 1.6,
+      "notes": "Intel Arc A750 - 28 Xe-Cores, 8GB VRAM"
+    },
+    "ARC_A380": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.60,
+      "expectedThroughput": 0.9,
+      "notes": "Intel Arc A380 - 8 Xe-Cores, 6GB VRAM"
+    },
+    "UHD_770": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.50,
+      "expectedThroughput": 0.3,
+      "notes": "Intel UHD 770 - Integrated, 32 EUs"
+    }
+  },
+  "vendorBuildOptions": "-cl-fast-relaxed-math"
+}

@@ -1,0 +1,64 @@
+{
+  "vendor": "AMD",
+  "description": "Tuning profiles for AMD GPUs (RDNA/CDNA architecture)",
+  "candidates": [
+    {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "notes": "Standard wavefront size - optimal for RDNA"
+    },
+    {
+      "workgroupSize": 128,
+      "maxTraversalDepth": 16,
+      "notes": "2x wavefront - for high-end RDNA 2/3 GPUs"
+    },
+    {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 24,
+      "notes": "Deep traversal - wavefront with extended stack"
+    },
+    {
+      "workgroupSize": 128,
+      "maxTraversalDepth": 24,
+      "notes": "Maximum - for RX 7900 XTX class GPUs"
+    }
+  ],
+  "defaultConfig": {
+    "workgroupSize": 64,
+    "maxTraversalDepth": 16,
+    "expectedOccupancy": 0.75,
+    "expectedThroughput": 2.8,
+    "notes": "AMD default - wavefront-aligned for RDNA architecture"
+  },
+  "deviceOverrides": {
+    "RX_7900_XTX": {
+      "workgroupSize": 128,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.78,
+      "expectedThroughput": 4.5,
+      "notes": "AMD Radeon RX 7900 XTX - 6144 stream processors, RDNA 3"
+    },
+    "RX_7900_XT": {
+      "workgroupSize": 128,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.76,
+      "expectedThroughput": 4.0,
+      "notes": "AMD Radeon RX 7900 XT - 5376 stream processors, RDNA 3"
+    },
+    "RX_6900_XT": {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.75,
+      "expectedThroughput": 3.8,
+      "notes": "AMD Radeon RX 6900 XT - 5120 stream processors, RDNA 2"
+    },
+    "RX_6700_XT": {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.70,
+      "expectedThroughput": 2.1,
+      "notes": "AMD Radeon RX 6700 XT - 2560 stream processors, RDNA 2"
+    }
+  },
+  "vendorBuildOptions": "-cl-fast-relaxed-math"
+}

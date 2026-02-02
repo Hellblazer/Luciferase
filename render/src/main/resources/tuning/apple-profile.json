@@ -1,0 +1,78 @@
+{
+  "vendor": "APPLE",
+  "description": "Tuning profiles for Apple Silicon GPUs (M-series)",
+  "candidates": [
+    {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 16,
+      "notes": "Conservative - for M1/M2 base variants"
+    },
+    {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 16,
+      "notes": "Standard - for M1 Pro/M2 Pro and above"
+    },
+    {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "notes": "Deep traversal - Apple Silicon handles deeper stacks well"
+    },
+    {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 24,
+      "notes": "Extended - for M2 Max/M3 Max with complex scenes"
+    }
+  ],
+  "defaultConfig": {
+    "workgroupSize": 32,
+    "maxTraversalDepth": 24,
+    "expectedOccupancy": 0.70,
+    "expectedThroughput": 1.4,
+    "notes": "Apple default - optimized for unified memory architecture"
+  },
+  "deviceOverrides": {
+    "M3_MAX": {
+      "workgroupSize": 64,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.75,
+      "expectedThroughput": 2.2,
+      "notes": "Apple M3 Max - 40-core GPU, unified memory"
+    },
+    "M3_PRO": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.72,
+      "expectedThroughput": 1.7,
+      "notes": "Apple M3 Pro - 14-core GPU, unified memory"
+    },
+    "M2_MAX": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.70,
+      "expectedThroughput": 1.5,
+      "notes": "Apple M2 Max - 10-core GPU, unified memory"
+    },
+    "M2_PRO": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.68,
+      "expectedThroughput": 1.3,
+      "notes": "Apple M2 Pro - 19-core GPU, unified memory"
+    },
+    "M1_MAX": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 24,
+      "expectedOccupancy": 0.68,
+      "expectedThroughput": 1.2,
+      "notes": "Apple M1 Max - 32-core GPU, unified memory"
+    },
+    "M1_PRO": {
+      "workgroupSize": 32,
+      "maxTraversalDepth": 16,
+      "expectedOccupancy": 0.65,
+      "expectedThroughput": 1.0,
+      "notes": "Apple M1 Pro - 16-core GPU, unified memory"
+    }
+  },
+  "vendorBuildOptions": "-cl-fast-relaxed-math"
+}
