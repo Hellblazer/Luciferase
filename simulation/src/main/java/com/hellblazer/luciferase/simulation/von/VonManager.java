@@ -418,8 +418,10 @@ public class VonManager {
 
     /**
      * Dispatch event to all listeners.
+     * <p>
+     * Package-private to allow VONRecoveryIntegration to emit events.
      */
-    private void dispatchEvent(Event event) {
+    void dispatchEvent(Event event) {
         for (var listener : eventListeners) {
             try {
                 listener.accept(event);

@@ -173,4 +173,46 @@ public sealed interface Event {
             return sourceBubbleId;
         }
     }
+
+    /**
+     * Partition recovery completion event.
+     * <p>
+     * Triggered when a partition completes recovery and VON bubbles are rejoined.
+     * Provides metrics about the recovery process for monitoring and analysis.
+     *
+     * @param partitionId       Partition that was recovered
+     * @param totalBubbles      Total bubbles in the partition
+     * @param successfulRejoins Bubbles successfully rejoined to VON
+     * @param failedRejoins     Bubbles that failed to rejoin
+     * @param recoveryTimeMs    Time taken for recovery in milliseconds
+     * @param cascadeTriggered  Whether cascading recovery was triggered
+     */
+    record PartitionRecovered(
+        UUID partitionId,
+        int totalBubbles,
+        int successfulRejoins,
+        int failedRejoins,
+        long recoveryTimeMs,
+        boolean cascadeTriggered
+    ) implements Event {
+
+        @Override
+        public UUID nodeId() {
+            return partitionId;
+        }
+
+        /**
+         * @return true if all bubbles were successfully rejoined
+         */
+        public boolean isFullyRecovered() {
+            return failedRejoins == 0 && successfulRejoins == totalBubbles;
+        }
+
+        /**
+         * @return success ratio (0.0 to 1.0)
+         */
+        public double successRatio() {
+            return totalBubbles > 0 ? (double) successfulRejoins / totalBubbles : 1.0;
+        }
+    }
 }
