@@ -6,18 +6,16 @@
  */
 package com.hellblazer.luciferase.simulation.delos.fireflies;
 
-import com.codahale.metrics.ConsoleReporter;
-import com.codahale.metrics.MetricRegistry;
 import com.google.common.collect.Sets;
 import com.hellblazer.delos.archipelago.LocalServer;
+import com.hellblazer.delos.archipelago.MicrometerServerConnectionCacheMetrics;
 import com.hellblazer.delos.archipelago.Router;
 import com.hellblazer.delos.archipelago.ServerConnectionCache;
-import com.hellblazer.delos.archipelago.ServerConnectionCacheMetricsImpl;
 import com.hellblazer.delos.context.Context;
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
-import com.hellblazer.delos.fireflies.FireflyMetricsImpl;
+import com.hellblazer.delos.fireflies.MicrometerFireflyMetrics;
 import com.hellblazer.delos.fireflies.Parameters;
 import com.hellblazer.delos.fireflies.View;
 import com.hellblazer.delos.fireflies.View.Participant;
@@ -28,6 +26,7 @@ import com.hellblazer.delos.stereotomy.identifier.SelfAddressingIdentifier;
 import com.hellblazer.delos.stereotomy.mem.MemKERL;
 import com.hellblazer.delos.stereotomy.mem.MemKeyStore;
 import com.hellblazer.delos.utils.Utils;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -65,9 +64,9 @@ public class E2ETest {
     private final List<Router>                            communications = new ArrayList<>();
     private final List<Router>                            gateways       = new ArrayList<>();
     private       Map<Digest, ControlledIdentifierMember> members;
-    private       MetricRegistry                          node0Registry;
-    private       MetricRegistry registry;
-    private       List<View>     views;
+    private       SimpleMeterRegistry                     node0Registry;
+    private       SimpleMeterRegistry                     registry;
+    private       List<View>                              views;
 
     @BeforeAll
     public static void beforeClass() throws Exception {
@@ -182,8 +181,8 @@ public class E2ETest {
 
     private void initialize() {
         var parameters = Parameters.newBuilder().setMaxPending(20).setMaximumTxfr(5).build();
-        registry = new MetricRegistry();
-        node0Registry = new MetricRegistry();
+        registry = new SimpleMeterRegistry();
+        node0Registry = new SimpleMeterRegistry();
 
         members = identities.values()
                             .stream()
@@ -201,15 +200,15 @@ public class E2ETest {
             var isFirstNode = first.getAndSet(false);
             var metricsRegistry = isFirstNode ? node0Registry : registry;
             DynamicContext<Participant> context = ctxBuilder.build();
-            FireflyMetricsImpl metrics = new FireflyMetricsImpl(context.getId(), metricsRegistry);
+            var metrics = new MicrometerFireflyMetrics(context.getId(), metricsRegistry);
             var comms = new LocalServer(prefix, node).router(ServerConnectionCache.newBuilder()
                                                                                   .setTarget(200)
                                                                                   .setMetrics(
-                                                                                  new ServerConnectionCacheMetricsImpl(metricsRegistry)));
+                                                                                  new MicrometerServerConnectionCacheMetrics(metricsRegistry)));
             var gateway = new LocalServer(gatewayPrefix, node).router(ServerConnectionCache.newBuilder()
                                                                                            .setTarget(200)
                                                                                            .setMetrics(
-                                                                                           new ServerConnectionCacheMetricsImpl(metricsRegistry)));
+                                                                                           new MicrometerServerConnectionCacheMetrics(metricsRegistry)));
             comms.start();
             communications.add(comms);
 
@@ -225,11 +224,7 @@ public class E2ETest {
         views.forEach(view -> view.stop());
         if (Boolean.getBoolean("reportMetrics")) {
             System.out.println("Node 0 metrics");
-            ConsoleReporter.forRegistry(node0Registry)
-                           .convertRatesTo(TimeUnit.SECONDS)
-                           .convertDurationsTo(TimeUnit.MILLISECONDS)
-                           .build()
-                           .report();
+            node0Registry.getMeters().forEach(meter -> System.out.println(meter.getId() + ": " + meter.measure()));
         }
     }
 

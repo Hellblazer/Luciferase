@@ -17,15 +17,14 @@
 
 package com.hellblazer.luciferase.simulation.integration;
 
-import com.codahale.metrics.MetricRegistry;
 import com.hellblazer.delos.archipelago.LocalServer;
+import com.hellblazer.delos.archipelago.MicrometerServerConnectionCacheMetrics;
 import com.hellblazer.delos.archipelago.Router;
 import com.hellblazer.delos.archipelago.ServerConnectionCache;
-import com.hellblazer.delos.archipelago.ServerConnectionCacheMetricsImpl;
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
-import com.hellblazer.delos.fireflies.FireflyMetricsImpl;
+import com.hellblazer.delos.fireflies.MicrometerFireflyMetrics;
 import com.hellblazer.delos.fireflies.Parameters;
 import com.hellblazer.delos.fireflies.View;
 import com.hellblazer.delos.fireflies.View.Participant;
@@ -40,6 +39,7 @@ import com.hellblazer.delos.stereotomy.identifier.SelfAddressingIdentifier;
 import com.hellblazer.delos.stereotomy.mem.MemKERL;
 import com.hellblazer.delos.stereotomy.mem.MemKeyStore;
 import com.hellblazer.delos.utils.Utils;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -277,7 +277,7 @@ public class TestClusterBuilder {
             var views = new ArrayList<View>();
             var communications = new ArrayList<Router>();
             var gateways = new ArrayList<Router>();
-            var registry = new MetricRegistry();
+            var registry = new SimpleMeterRegistry();
 
             // Unique prefixes for this cluster
             var prefix = UUID.randomUUID().toString();
@@ -285,20 +285,20 @@ public class TestClusterBuilder {
 
             for (var member : members.values()) {
                 DynamicContext<Participant> context = ctxBuilder.build();
-                var metrics = new FireflyMetricsImpl(context.getId(), registry);
+                var metrics = new MicrometerFireflyMetrics(context.getId(), registry);
 
                 // Create communication router (LocalServer for in-process)
                 var comms = new LocalServer(prefix, member).router(
                     ServerConnectionCache.newBuilder()
                                          .setTarget(200)
-                                         .setMetrics(new ServerConnectionCacheMetricsImpl(registry))
+                                         .setMetrics(new MicrometerServerConnectionCacheMetrics(registry))
                 );
 
                 // Create gateway router (for view changes)
                 var gateway = new LocalServer(gatewayPrefix, member).router(
                     ServerConnectionCache.newBuilder()
                                          .setTarget(200)
-                                         .setMetrics(new ServerConnectionCacheMetricsImpl(registry))
+                                         .setMetrics(new MicrometerServerConnectionCacheMetrics(registry))
                 );
 
                 comms.start();
