@@ -46,9 +46,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *   var preserver = new CausalityPreserver();
  *
  *   // Before processing event
- *   if (preserver.canProcess(event)) {
+ *   if (preserver.canProcess(event, sourceBubbleId)) {
  *       processor.process(event);
- *       preserver.markProcessed(event);
+ *       preserver.markProcessed(event, sourceBubbleId);
  *   } else {
  *       reprocessor.queueEvent(event);  // Requeue for later
  *   }
@@ -111,23 +111,6 @@ public class CausalityPreserver {
      *
      * NOTE: This allows idempotent reprocessing (clock == highest) without
      * causing issues, and allows any clock >= highest (monotonic increase).
-     *
-     * @param event Event to check
-     * @return true if event can be safely processed
-     */
-    public boolean canProcess(EntityUpdateEvent event) {
-        Objects.requireNonNull(event, "event must not be null");
-
-        // Get source bubble ID - we need to track this separately since
-        // EntityUpdateEvent doesn't have sourceBubble field
-        // This is called by the receiving bubble's event handler,
-        // which knows the source from the network layer
-        return true;  // Implementation requires source tracking from caller
-    }
-
-    /**
-     * Check if event can be processed by source bubble ID.
-     * This is the actual implementation that checks causality.
      *
      * @param event        Event to check
      * @param sourceBubble Source bubble that sent the event
