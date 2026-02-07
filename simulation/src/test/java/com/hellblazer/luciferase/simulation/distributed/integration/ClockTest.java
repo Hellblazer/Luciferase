@@ -48,6 +48,21 @@ class ClockTest {
         assertEquals(fixedTime, clock.currentTimeMillis());
     }
 
+    @Test
+    void testFixedClockNanoTimeThrowsException() {
+        var clock = Clock.fixed(1000L);
+
+        var exception = assertThrows(UnsupportedOperationException.class,
+            () -> clock.nanoTime(),
+            "Fixed clock should throw on nanoTime() call"
+        );
+
+        assertTrue(exception.getMessage().contains("TestClock"),
+            "Exception should guide to TestClock");
+        assertTrue(exception.getMessage().contains("elapsed time"),
+            "Exception should explain the limitation");
+    }
+
     // ==================== TestClock Basic Tests ====================
 
     @Test
