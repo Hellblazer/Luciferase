@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import com.hellblazer.luciferase.simulation.von.VonBubble;
+import com.hellblazer.luciferase.simulation.von.Bubble;
 import javafx.geometry.Point3D;
 
 import java.util.Objects;
@@ -27,24 +27,24 @@ import java.util.UUID;
 /**
  * Reference to a bubble in the local process.
  * <p>
- * Wraps a VonBubble instance and delegates method calls directly.
+ * Wraps a Bubble instance and delegates method calls directly.
  * No network communication required.
  * <p>
- * Thread-safe: delegates to thread-safe VonBubble.
+ * Thread-safe: delegates to thread-safe Bubble.
  *
  * @author hal.hildebrand
  */
 public class LocalBubbleReference implements BubbleReference {
 
-    private final VonBubble bubble;
+    private final Bubble bubble;
 
     /**
      * Create a reference to a local bubble.
      *
-     * @param bubble VonBubble instance to wrap
+     * @param bubble Bubble instance to wrap
      * @throws NullPointerException if bubble is null
      */
-    public LocalBubbleReference(VonBubble bubble) {
+    public LocalBubbleReference(Bubble bubble) {
         this.bubble = Objects.requireNonNull(bubble, "Bubble cannot be null");
     }
 
@@ -79,11 +79,11 @@ public class LocalBubbleReference implements BubbleReference {
     }
 
     /**
-     * Get the wrapped VonBubble instance.
+     * Get the wrapped Bubble instance.
      *
-     * @return VonBubble
+     * @return Bubble
      */
-    public VonBubble getBubble() {
+    public Bubble getBubble() {
         return bubble;
     }
 

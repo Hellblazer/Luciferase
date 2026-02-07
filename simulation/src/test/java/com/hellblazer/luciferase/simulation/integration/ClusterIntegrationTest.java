@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>
  * Phase 4 tests validate:
  * <ul>
- *   <li>10-node cluster with 20 VonBubbles (2 per node)</li>
+ *   <li>10-node cluster with 20 Bubbles (2 per node)</li>
  *   <li>P2P JOIN protocol with neighbor discovery</li>
  *   <li>Entity movement with MOVE propagation</li>
  *   <li>Ghost sync between P2P neighbors</li>
@@ -58,7 +58,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author hal.hildebrand
  */
 @Tag("integration")
-public class VonClusterIntegrationTest {
+public class ClusterIntegrationTest {
 
     private static final int NODE_COUNT = 10;
     private static final int BUBBLES_PER_NODE = 2;
@@ -69,8 +69,8 @@ public class VonClusterIntegrationTest {
     private static final int STABILIZATION_TIMEOUT_SECONDS = 30;
 
     private LocalServerTransport.Registry transportRegistry;
-    private VonManager vonManager;
-    private List<VonBubble> bubbles;
+    private Manager vonManager;
+    private List<Bubble> bubbles;
     private Map<UUID, P2PGhostChannel<StringEntityID, Object>> ghostChannels;
     private Map<UUID, BubbleGhostManager<StringEntityID, Object>> ghostManagers;
     private ServerRegistry serverRegistry;
@@ -78,7 +78,7 @@ public class VonClusterIntegrationTest {
     @BeforeEach
     void setup() {
         transportRegistry = LocalServerTransport.Registry.create();
-        vonManager = new VonManager(transportRegistry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS);
+        vonManager = new Manager(transportRegistry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS);
         bubbles = new ArrayList<>();
         ghostChannels = new ConcurrentHashMap<>();
         ghostManagers = new ConcurrentHashMap<>();
@@ -94,7 +94,7 @@ public class VonClusterIntegrationTest {
         // Close ghost managers (no explicit close needed, but clear references)
         ghostManagers.clear();
 
-        // Close VonManager (closes all bubbles)
+        // Close Manager (closes all bubbles)
         if (vonManager != null) {
             vonManager.close();
         }

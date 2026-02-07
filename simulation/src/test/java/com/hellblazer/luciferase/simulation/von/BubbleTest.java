@@ -32,20 +32,20 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests for VonBubble - VON-enabled bubble with P2P transport.
+ * Tests for Bubble - VON-enabled bubble with P2P transport.
  *
  * @author hal.hildebrand
  */
-class VonBubbleTest {
+class BubbleTest {
 
     private static final byte SPATIAL_LEVEL = 10;
     private static final long TARGET_FRAME_MS = 16;
 
     private LocalServerTransport.Registry registry;
-    private VonBubble bubble1;
-    private VonBubble bubble2;
-    private VonBubble bubble3;
-    private final VonMessageFactory factory = VonMessageFactory.system();
+    private Bubble bubble1;
+    private Bubble bubble2;
+    private Bubble bubble3;
+    private final MessageFactory factory = MessageFactory.system();
 
     @BeforeEach
     void setup() {
@@ -62,10 +62,10 @@ class VonBubbleTest {
 
     @Test
     void testCreation_implementsNodeInterface() {
-        // Given: A VonBubble
+        // Given: A Bubble
         var id = UUID.randomUUID();
         var transport = registry.register(id);
-        bubble1 = new VonBubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
+        bubble1 = new Bubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
 
         // Then: Should implement Node interface
         assertThat(bubble1).isInstanceOf(Node.class);
@@ -76,10 +76,10 @@ class VonBubbleTest {
 
     @Test
     void testAddNeighbor_updatesNeighborSet() {
-        // Given: A VonBubble
+        // Given: A Bubble
         var id = UUID.randomUUID();
         var transport = registry.register(id);
-        bubble1 = new VonBubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
+        bubble1 = new Bubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
 
         // When: Add a neighbor
         var neighborId = UUID.randomUUID();
@@ -91,10 +91,10 @@ class VonBubbleTest {
 
     @Test
     void testRemoveNeighbor_updatesNeighborSet() {
-        // Given: A VonBubble with a neighbor
+        // Given: A Bubble with a neighbor
         var id = UUID.randomUUID();
         var transport = registry.register(id);
-        bubble1 = new VonBubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
+        bubble1 = new Bubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
         var neighborId = UUID.randomUUID();
         bubble1.addNeighbor(neighborId);
 
@@ -112,17 +112,17 @@ class VonBubbleTest {
         var id2 = UUID.randomUUID();
         var transport1 = registry.register(id1);
         var transport2 = registry.register(id2);
-        bubble1 = new VonBubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
-        bubble2 = new VonBubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
+        bubble1 = new Bubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
+        bubble2 = new Bubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
 
         // Add entity to bubble1 to get valid bounds
         bubble1.addEntity("entity1", new Point3f(0.5f, 0.5f, 0.5f), "content");
 
         var responseReceived = new CountDownLatch(1);
-        var receivedMessages = new CopyOnWriteArrayList<VonMessage>();
+        var receivedMessages = new CopyOnWriteArrayList<Message>();
         transport2.onMessage(msg -> {
             receivedMessages.add(msg);
-            if (msg instanceof VonMessage.JoinResponse) {
+            if (msg instanceof Message.JoinResponse) {
                 responseReceived.countDown();
             }
         });
@@ -133,7 +133,7 @@ class VonBubbleTest {
 
         // Then: Bubble1 should respond with JoinResponse
         assertThat(responseReceived.await(2, TimeUnit.SECONDS)).isTrue();
-        assertThat(receivedMessages).anyMatch(m -> m instanceof VonMessage.JoinResponse);
+        assertThat(receivedMessages).anyMatch(m -> m instanceof Message.JoinResponse);
 
         // And: Bubble1 should have bubble2 as neighbor
         assertThat(bubble1.neighbors()).contains(id2);
@@ -144,11 +144,11 @@ class VonBubbleTest {
         // Given: A bubble
         var id1 = UUID.randomUUID();
         var transport1 = registry.register(id1);
-        bubble1 = new VonBubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
+        bubble1 = new Bubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
 
         // When: Receive JoinResponse with neighbors
         var neighborId = UUID.randomUUID();
-        var neighborInfo = new VonMessage.NeighborInfo(
+        var neighborInfo = new Message.NeighborInfo(
             neighborId,
             new Point3D(0.3, 0.3, 0.3),
             null
@@ -175,8 +175,8 @@ class VonBubbleTest {
         var id2 = UUID.randomUUID();
         var transport1 = registry.register(id1);
         var transport2 = registry.register(id2);
-        bubble1 = new VonBubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
-        bubble2 = new VonBubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
+        bubble1 = new Bubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
+        bubble2 = new Bubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
 
         // Establish neighbor relationship
         bubble1.addNeighbor(id2);
@@ -208,8 +208,8 @@ class VonBubbleTest {
         var id2 = UUID.randomUUID();
         var transport1 = registry.register(id1);
         var transport2 = registry.register(id2);
-        bubble1 = new VonBubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
-        bubble2 = new VonBubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
+        bubble1 = new Bubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
+        bubble2 = new Bubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
 
         // Establish neighbor relationship
         bubble1.addNeighbor(id2);
@@ -240,9 +240,9 @@ class VonBubbleTest {
         var transport1 = registry.register(id1);
         var transport2 = registry.register(id2);
         var transport3 = registry.register(id3);
-        bubble1 = new VonBubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
-        bubble2 = new VonBubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
-        bubble3 = new VonBubble(id3, SPATIAL_LEVEL, TARGET_FRAME_MS, transport3);
+        bubble1 = new Bubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
+        bubble2 = new Bubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
+        bubble3 = new Bubble(id3, SPATIAL_LEVEL, TARGET_FRAME_MS, transport3);
 
         // Add entity to bubble1
         bubble1.addEntity("entity1", new Point3f(0.5f, 0.5f, 0.5f), "content");
@@ -275,9 +275,9 @@ class VonBubbleTest {
         var transport1 = registry.register(id1);
         var transport2 = registry.register(id2);
         var transport3 = registry.register(id3);
-        bubble1 = new VonBubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
-        bubble2 = new VonBubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
-        bubble3 = new VonBubble(id3, SPATIAL_LEVEL, TARGET_FRAME_MS, transport3);
+        bubble1 = new Bubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
+        bubble2 = new Bubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
+        bubble3 = new Bubble(id3, SPATIAL_LEVEL, TARGET_FRAME_MS, transport3);
 
         // Establish neighbor relationships
         bubble1.addNeighbor(id2);
@@ -305,8 +305,8 @@ class VonBubbleTest {
         var id2 = UUID.randomUUID();
         var transport1 = registry.register(id1);
         var transport2 = registry.register(id2);
-        bubble1 = new VonBubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
-        bubble2 = new VonBubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
+        bubble1 = new Bubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
+        bubble2 = new Bubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
 
         bubble1.addNeighbor(id2);
         bubble2.addNeighbor(id1);
@@ -327,7 +327,7 @@ class VonBubbleTest {
         // Given: A bubble with event listener
         var id = UUID.randomUUID();
         var transport = registry.register(id);
-        bubble1 = new VonBubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
+        bubble1 = new Bubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
 
         var events = new CopyOnWriteArrayList<Event>();
         bubble1.addEventListener(events::add);
@@ -346,7 +346,7 @@ class VonBubbleTest {
         // Given: A bubble with neighbors
         var id = UUID.randomUUID();
         var transport = registry.register(id);
-        bubble1 = new VonBubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
+        bubble1 = new Bubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
 
         var neighbor1 = UUID.randomUUID();
         var neighbor2 = UUID.randomUUID();

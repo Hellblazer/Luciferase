@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * These tests validate the LOCAL-ONLY protocol implementation using
  * SpatialNeighborIndex for single-JVM operation. For distributed P2P
- * testing, see {@link VonManagerTest} and {@link P2PProtocolIntegrationTest}.
+ * testing, see {@link ManagerTest} and {@link P2PProtocolIntegrationTest}.
  * <p>
  * The LEAVE protocol handles graceful bubble shutdown in the VON overlay.
  * Tests validate:
@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * LOCAL MODE vs P2P MODE:
  * - Local: Uses SpatialNeighborIndex for direct neighbor lookup
- * - P2P: Uses VonTransport for Leave broadcast (VonBubble)
+ * - P2P: Uses Transport for Leave broadcast (Bubble)
  *
  * @author hal.hildebrand
  */

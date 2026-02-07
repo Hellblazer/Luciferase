@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
-import com.hellblazer.luciferase.simulation.von.VonMessage.*;
+import com.hellblazer.luciferase.simulation.von.Message.*;
 import javafx.geometry.Point3D;
 
 import java.util.List;
@@ -28,9 +28,9 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Factory for creating VonMessage records with injected clock for deterministic testing.
+ * Factory for creating Message records with injected clock for deterministic testing.
  * <p>
- * Enables Clock injection for immutable VonMessage records. Production code uses
+ * Enables Clock injection for immutable Message records. Production code uses
  * {@link #system()} factory for default System clock behavior. Test code can inject
  * a {@link com.hellblazer.luciferase.simulation.distributed.integration.TestClock}
  * for deterministic time control.
@@ -38,19 +38,19 @@ import java.util.UUID;
  * Usage:
  * <pre>{@code
  * // Production
- * var factory = VonMessageFactory.system();
+ * var factory = MessageFactory.system();
  * var msg = factory.createJoinRequest(id, position, bounds);
  *
  * // Testing
  * var testClock = new TestClock(1000L);
- * var factory = new VonMessageFactory(testClock);
+ * var factory = new MessageFactory(testClock);
  * testClock.advance(500);
  * var msg = factory.createMove(id, newPos, newBounds); // timestamp = 1500
  * }</pre>
  *
  * @author hal.hildebrand
  */
-public class VonMessageFactory {
+public class MessageFactory {
     private final Clock clock;
 
     /**
@@ -59,7 +59,7 @@ public class VonMessageFactory {
      * @param clock the clock to use for message timestamps
      * @throws NullPointerException if clock is null
      */
-    public VonMessageFactory(Clock clock) {
+    public MessageFactory(Clock clock) {
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -68,8 +68,8 @@ public class VonMessageFactory {
      *
      * @return factory with system clock
      */
-    public static VonMessageFactory system() {
-        return new VonMessageFactory(Clock.system());
+    public static MessageFactory system() {
+        return new MessageFactory(Clock.system());
     }
 
     /**

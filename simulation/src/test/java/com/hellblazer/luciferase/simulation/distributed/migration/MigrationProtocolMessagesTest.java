@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Message creation with required fields
  * - Message equality and timestamps
  * - All 6 message types (PrepareRequest/Response, CommitRequest/Response, AbortRequest/Response)
- * - VonMessage interface implementation
+ * - Message interface implementation
  *
  * @author hal.hildebrand
  */

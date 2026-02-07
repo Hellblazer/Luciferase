@@ -51,15 +51,15 @@ import java.util.function.Consumer;
  *
  * @author hal.hildebrand
  */
-public class LocalServerTransport implements VonTransport {
+public class LocalServerTransport implements Transport {
 
     private static final Logger log = LoggerFactory.getLogger(LocalServerTransport.class);
 
     private final UUID localId;
     private final Registry registry;
-    private final VonMessageFactory factory;
-    private final List<Consumer<VonMessage>> handlers = new CopyOnWriteArrayList<>();
-    private final Map<UUID, CompletableFuture<VonMessage.Ack>> pendingAcks = new ConcurrentHashMap<>();
+    private final MessageFactory factory;
+    private final List<Consumer<Message>> handlers = new CopyOnWriteArrayList<>();
+    private final Map<UUID, CompletableFuture<Message.Ack>> pendingAcks = new ConcurrentHashMap<>();
     private final ExecutorService executor;
     private volatile boolean connected = true;
 
@@ -73,12 +73,12 @@ public class LocalServerTransport implements VonTransport {
     LocalServerTransport(UUID localId, Registry registry, ExecutorService executor) {
         this.localId = localId;
         this.registry = registry;
-        this.factory = VonMessageFactory.system();
+        this.factory = MessageFactory.system();
         this.executor = executor;
     }
 
     @Override
-    public void sendToNeighbor(UUID neighborId, VonMessage message) throws TransportException {
+    public void sendToNeighbor(UUID neighborId, Message message) throws TransportException {
         if (!connected) {
             throw new TransportException("Transport is closed");
         }
@@ -109,12 +109,12 @@ public class LocalServerTransport implements VonTransport {
     }
 
     @Override
-    public CompletableFuture<VonMessage.Ack> sendToNeighborAsync(UUID neighborId, VonMessage message) {
+    public CompletableFuture<Message.Ack> sendToNeighborAsync(UUID neighborId, Message message) {
         if (!connected) {
             return CompletableFuture.failedFuture(new TransportException("Transport is closed"));
         }
 
-        var future = new CompletableFuture<VonMessage.Ack>();
+        var future = new CompletableFuture<Message.Ack>();
         var messageId = UUID.randomUUID();
         pendingAcks.put(messageId, future);
 
@@ -134,12 +134,12 @@ public class LocalServerTransport implements VonTransport {
     }
 
     @Override
-    public void onMessage(Consumer<VonMessage> handler) {
+    public void onMessage(Consumer<Message> handler) {
         handlers.add(handler);
     }
 
     @Override
-    public void removeMessageHandler(Consumer<VonMessage> handler) {
+    public void removeMessageHandler(Consumer<Message> handler) {
         handlers.remove(handler);
     }
 
@@ -191,7 +191,7 @@ public class LocalServerTransport implements VonTransport {
      * <p>
      * Public to allow cross-package message delivery for migration coordinator.
      */
-    public void deliver(VonMessage message) {
+    public void deliver(Message message) {
         executor.submit(() -> {
             for (var handler : handlers) {
                 try {

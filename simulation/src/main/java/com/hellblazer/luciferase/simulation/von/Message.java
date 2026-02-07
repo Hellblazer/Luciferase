@@ -30,7 +30,7 @@ import java.util.UUID;
  * <p>
  * In v4.0 architecture, all VON communication after JOIN is point-to-point
  * between neighbors (NOT broadcast). These messages are sent directly to
- * specific neighbors via VonTransport.
+ * specific neighbors via Transport.
  * <p>
  * Message Types:
  * <ul>
@@ -49,7 +49,7 @@ import java.util.UUID;
  *
  * @author hal.hildebrand
  */
-public interface VonMessage {
+public interface Message {
 
     /**
      * Request to join the VON at a specific position.
@@ -61,8 +61,8 @@ public interface VonMessage {
      * @param bounds    Initial spatial bounds
      * @param timestamp Message creation time
      */
-    record JoinRequest(UUID joinerId, Point3D position, BubbleBounds bounds, long timestamp) implements VonMessage {
-        // Compact constructor removed - use VonMessageFactory instead
+    record JoinRequest(UUID joinerId, Point3D position, BubbleBounds bounds, long timestamp) implements Message {
+        // Compact constructor removed - use MessageFactory instead
     }
 
     /**
@@ -74,8 +74,8 @@ public interface VonMessage {
      * @param neighbors  Set of neighbor information for the joiner
      * @param timestamp  Message creation time
      */
-    record JoinResponse(UUID acceptorId, Set<NeighborInfo> neighbors, long timestamp) implements VonMessage {
-        // Compact constructor removed - use VonMessageFactory instead
+    record JoinResponse(UUID acceptorId, Set<NeighborInfo> neighbors, long timestamp) implements Message {
+        // Compact constructor removed - use MessageFactory instead
     }
 
     /**
@@ -88,8 +88,8 @@ public interface VonMessage {
      * @param newBounds   New bounds after movement
      * @param timestamp   Message creation time
      */
-    record Move(UUID nodeId, Point3D newPosition, BubbleBounds newBounds, long timestamp) implements VonMessage {
-        // Compact constructor removed - use VonMessageFactory instead
+    record Move(UUID nodeId, Point3D newPosition, BubbleBounds newBounds, long timestamp) implements Message {
+        // Compact constructor removed - use MessageFactory instead
     }
 
     /**
@@ -100,8 +100,8 @@ public interface VonMessage {
      * @param nodeId    UUID of the leaving node
      * @param timestamp Message creation time
      */
-    record Leave(UUID nodeId, long timestamp) implements VonMessage {
-        // Compact constructor removed - use VonMessageFactory instead
+    record Leave(UUID nodeId, long timestamp) implements Message {
+        // Compact constructor removed - use MessageFactory instead
     }
 
     /**
@@ -115,8 +115,8 @@ public interface VonMessage {
      * @param timestamp      Message creation time
      */
     record GhostSync(UUID sourceBubbleId, List<TransportGhost> ghosts, long bucket,
-                     long timestamp) implements VonMessage {
-        // Compact constructor removed - use VonMessageFactory instead
+                     long timestamp) implements Message {
+        // Compact constructor removed - use MessageFactory instead
     }
 
     /**
@@ -153,8 +153,8 @@ public interface VonMessage {
      * @param senderId  UUID of the acknowledging node
      * @param timestamp Message creation time
      */
-    record Ack(UUID ackFor, UUID senderId, long timestamp) implements VonMessage {
-        // Compact constructor removed - use VonMessageFactory instead
+    record Ack(UUID ackFor, UUID senderId, long timestamp) implements Message {
+        // Compact constructor removed - use MessageFactory instead
     }
 
     /**
@@ -167,8 +167,8 @@ public interface VonMessage {
      * @param queryType Type of query (e.g., "position", "neighbors")
      * @param timestamp Message creation time
      */
-    record Query(UUID senderId, UUID targetId, String queryType, long timestamp) implements VonMessage {
-        // Compact constructor removed - use VonMessageFactory instead
+    record Query(UUID senderId, UUID targetId, String queryType, long timestamp) implements Message {
+        // Compact constructor removed - use MessageFactory instead
     }
 
     /**

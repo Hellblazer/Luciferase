@@ -23,15 +23,15 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Serializable wrapper for VonMessage for network transport.
+ * Serializable wrapper for Message for network transport.
  * <p>
- * Problem: VonMessage contains JavaFX types (Point3D) and javax.vecmath types (Point3f)
+ * Problem: Message contains JavaFX types (Point3D) and javax.vecmath types (Point3f)
  * that are not Serializable or have problematic serialization.
  * <p>
  * Solution: Decompose Point3f into 3x float (posX, posY, posZ) to ensure reliable
  * Java Serialization without depending on external type serialization behavior.
  * <p>
- * Supports all VonMessage types:
+ * Supports all Message types:
  * <ul>
  *   <li>JoinRequest/JoinResponse - Join protocol messages</li>
  *   <li>Move - Position/bounds change notification</li>
@@ -41,7 +41,7 @@ import java.util.Objects;
  *   <li>Query - Remote bubble query</li>
  * </ul>
  * <p>
- * Used by SocketTransport for cross-process communication via VonMessageConverter.
+ * Used by SocketTransport for cross-process communication via MessageConverter.
  *
  * @author hal.hildebrand
  */

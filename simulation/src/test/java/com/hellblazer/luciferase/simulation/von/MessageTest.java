@@ -29,13 +29,13 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests for VonMessage sealed types.
+ * Tests for Message sealed types.
  *
  * @author hal.hildebrand
  */
-public class VonMessageTest {
+public class MessageTest {
 
-    private final VonMessageFactory factory = VonMessageFactory.system();
+    private final MessageFactory factory = MessageFactory.system();
 
     @Test
     void testJoinRequest_createsWithTimestamp() {
@@ -58,7 +58,7 @@ public class VonMessageTest {
         var position = new Point3D(1.0, 2.0, 3.0);
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(1.0f, 2.0f, 3.0f)));
 
-        var neighborInfo = new VonMessage.NeighborInfo(neighborId, position, bounds);
+        var neighborInfo = new Message.NeighborInfo(neighborId, position, bounds);
         var response = factory.createJoinResponse(acceptorId, Set.of(neighborInfo));
 
         assertThat(response.acceptorId()).isEqualTo(acceptorId);
@@ -122,7 +122,7 @@ public class VonMessageTest {
         var position = new Point3D(1.0, 2.0, 3.0);
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(1.0f, 2.0f, 3.0f)));
 
-        var info = new VonMessage.NeighborInfo(nodeId, position, bounds);
+        var info = new Message.NeighborInfo(nodeId, position, bounds);
 
         assertThat(info.nodeId()).isEqualTo(nodeId);
         assertThat(info.position()).isEqualTo(position);
@@ -131,16 +131,16 @@ public class VonMessageTest {
 
     @Test
     void testSealedInterface_patternMatching() {
-        VonMessage message = factory.createLeave(UUID.randomUUID());
+        Message message = factory.createLeave(UUID.randomUUID());
 
-        // Verify VonMessage allows pattern matching (non-sealed for Phase 6B extensions)
+        // Verify Message allows pattern matching (non-sealed for Phase 6B extensions)
         var result = switch (message) {
-            case VonMessage.JoinRequest r -> "join";
-            case VonMessage.JoinResponse r -> "response";
-            case VonMessage.Move m -> "move";
-            case VonMessage.Leave l -> "leave";
-            case VonMessage.GhostSync g -> "ghost";
-            case VonMessage.Ack a -> "ack";
+            case Message.JoinRequest r -> "join";
+            case Message.JoinResponse r -> "response";
+            case Message.Move m -> "move";
+            case Message.Leave l -> "leave";
+            case Message.GhostSync g -> "ghost";
+            case Message.Ack a -> "ack";
             default -> "other"; // Phase 6B extensions (RegisterProcessMessage, etc.)
         };
 

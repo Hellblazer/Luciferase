@@ -17,13 +17,13 @@
 
 package com.hellblazer.luciferase.simulation.transport;
 
-import com.hellblazer.luciferase.simulation.von.VonTransport;
+import com.hellblazer.luciferase.simulation.von.Transport;
 
 import java.io.IOException;
 import java.util.List;
 
 /**
- * Extension of VonTransport for network-based inter-process communication.
+ * Extension of Transport for network-based inter-process communication.
  * <p>
  * In Inc 6 (multi-process), this enables socket-based communication between
  * processes on the same host. In Inc 7+, it will support cross-host communication.
@@ -42,7 +42,7 @@ import java.util.List;
  *
  * @author hal.hildebrand
  */
-public interface NetworkTransport extends VonTransport {
+public interface NetworkTransport extends Transport {
 
     /**
      * Establish a client connection to a remote process.

@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>
  * Tests bidirectional synchronization between:
  * <ul>
- *   <li>VON topology (VonManager, VonBubble) → Recovery system (FaultHandler, PartitionTopology)</li>
+ *   <li>VON topology (Manager, Bubble) → Recovery system (FaultHandler, PartitionTopology)</li>
  *   <li>Recovery events (partition status changes) → VON updates (rejoin, isolation)</li>
  * </ul>
  * <p>
@@ -54,28 +54,28 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @author hal.hildebrand
  */
-class P42VONRecoveryIntegrationTest {
+class P42RecoveryIntegrationTest {
 
     private static final byte SPATIAL_LEVEL = 10;
     private static final long TARGET_FRAME_MS = 16;
     private static final float AOI_RADIUS = 50.0f;
 
     private LocalServerTransport.Registry transportRegistry;
-    private VonManager vonManager;
+    private Manager vonManager;
     private InMemoryPartitionTopology topology;
     private TestFaultHandler faultHandler;
-    private VONRecoveryIntegration integration;
+    private RecoveryIntegration integration;
     private TestClock clock;
 
     @BeforeEach
     void setup() {
         transportRegistry = LocalServerTransport.Registry.create();
-        vonManager = new VonManager(transportRegistry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS);
+        vonManager = new Manager(transportRegistry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS);
         topology = new InMemoryPartitionTopology();
         faultHandler = new TestFaultHandler();
         clock = new TestClock(1000);
 
-        integration = new VONRecoveryIntegration(vonManager, topology, faultHandler);
+        integration = new RecoveryIntegration(vonManager, topology, faultHandler);
     }
 
     @AfterEach
@@ -489,7 +489,7 @@ class P42VONRecoveryIntegrationTest {
     @Test
     void testConcurrentPartitionChanges_threadSafe() throws Exception {
         // Given: Multiple partitions
-        var bubbles = new ArrayList<VonBubble>();
+        var bubbles = new ArrayList<Bubble>();
         var partitions = new ArrayList<UUID>();
 
         for (int i = 0; i < 5; i++) {
@@ -556,7 +556,7 @@ class P42VONRecoveryIntegrationTest {
 
         integration.registerBubble(bubbleId, partitionId);
 
-        // When: Partition recovers (bubble doesn't exist in VonManager)
+        // When: Partition recovers (bubble doesn't exist in Manager)
         var recoveryEvent = new PartitionChangeEvent(
             partitionId, PartitionStatus.FAILED, PartitionStatus.HEALTHY,
             clock.currentTimeMillis(), "recovery_with_missing_bubble"
@@ -574,7 +574,7 @@ class P42VONRecoveryIntegrationTest {
     /**
      * Add entities to a bubble to establish spatial bounds.
      */
-    private void addEntities(VonBubble bubble, Point3f center, int count) {
+    private void addEntities(Bubble bubble, Point3f center, int count) {
         for (int i = 0; i < count; i++) {
             float x = Math.max(0.1f, center.x + (i % 3) * 0.1f);
             float y = Math.max(0.1f, center.y + (i / 3) * 0.1f);

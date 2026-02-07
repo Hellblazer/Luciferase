@@ -22,9 +22,9 @@ import java.util.ArrayList;
 import java.util.UUID;
 
 /**
- * Bidirectional converter between VonMessage (domain) and TransportVonMessage (wire format).
+ * Bidirectional converter between Message (domain) and TransportVonMessage (wire format).
  * <p>
- * Converts all VonMessage sealed interface types:
+ * Converts all Message sealed interface types:
  * - JoinRequest, JoinResponse, Move, Leave, GhostSync, Ack, Query
  * <p>
  * Design:
@@ -33,50 +33,50 @@ import java.util.UUID;
  *
  * @author hal.hildebrand
  */
-public class VonMessageConverter {
+public class MessageConverter {
 
     /**
-     * Convert domain VonMessage to serializable TransportVonMessage.
+     * Convert domain Message to serializable TransportVonMessage.
      * <p>
-     * Pattern matches all VonMessage subtypes and extracts their fields
+     * Pattern matches all Message subtypes and extracts their fields
      * into the wire format. GhostSync messages include the ghost list and bucket.
      *
-     * @param message Domain VonMessage
+     * @param message Domain Message
      * @return TransportVonMessage ready for serialization
      * @throws IllegalArgumentException if message type is unknown
      */
-    public static TransportVonMessage toTransport(VonMessage message) {
+    public static TransportVonMessage toTransport(Message message) {
         return switch (message) {
-            case VonMessage.GhostSync ghostSync ->
+            case Message.GhostSync ghostSync ->
                 ghostSyncToTransport(ghostSync);
-            case VonMessage.JoinRequest joinReq ->
+            case Message.JoinRequest joinReq ->
                 joinRequestToTransport(joinReq);
-            case VonMessage.JoinResponse joinResp ->
+            case Message.JoinResponse joinResp ->
                 joinResponseToTransport(joinResp);
-            case VonMessage.Move move ->
+            case Message.Move move ->
                 moveToTransport(move);
-            case VonMessage.Leave leave ->
+            case Message.Leave leave ->
                 leaveToTransport(leave);
-            case VonMessage.Ack ack ->
+            case Message.Ack ack ->
                 ackToTransport(ack);
-            case VonMessage.Query query ->
+            case Message.Query query ->
                 queryToTransport(query);
             default ->
-                throw new IllegalArgumentException("Unknown VonMessage type: " + message.getClass().getSimpleName());
+                throw new IllegalArgumentException("Unknown Message type: " + message.getClass().getSimpleName());
         };
     }
 
     /**
-     * Convert serializable TransportVonMessage back to domain VonMessage.
+     * Convert serializable TransportVonMessage back to domain Message.
      * <p>
      * Uses type field to dispatch reconstruction of correct subtype.
      * Handles GhostSync specially by reconstructing the ghost list.
      *
      * @param transport Wire-format message
-     * @return Reconstructed VonMessage
+     * @return Reconstructed Message
      * @throws IllegalArgumentException if type is unknown
      */
-    public static VonMessage fromTransport(TransportVonMessage transport) {
+    public static Message fromTransport(TransportVonMessage transport) {
         return switch (transport.type()) {
             case "GhostSync" ->
                 ghostSyncFromTransport(transport);
@@ -99,7 +99,7 @@ public class VonMessageConverter {
 
     // ==================== GhostSync Conversion ====================
 
-    private static TransportVonMessage ghostSyncToTransport(VonMessage.GhostSync msg) {
+    private static TransportVonMessage ghostSyncToTransport(Message.GhostSync msg) {
         var ghosts = new ArrayList<TransportGhostData>(msg.ghosts().size());
         for (var ghost : msg.ghosts()) {
             ghosts.add(TransportGhostData.from(ghost));
@@ -117,9 +117,9 @@ public class VonMessageConverter {
         );
     }
 
-    private static VonMessage ghostSyncFromTransport(TransportVonMessage transport) {
+    private static Message ghostSyncFromTransport(TransportVonMessage transport) {
         var sourceBubbleId = UUID.fromString(transport.sourceBubbleId());
-        var ghosts = new ArrayList<VonMessage.TransportGhost>();
+        var ghosts = new ArrayList<Message.TransportGhost>();
 
         if (transport.ghosts() != null) {
             for (var ghostData : transport.ghosts()) {
@@ -127,7 +127,7 @@ public class VonMessageConverter {
             }
         }
 
-        return new VonMessage.GhostSync(
+        return new Message.GhostSync(
             sourceBubbleId,
             ghosts,
             transport.bucket() != null ? transport.bucket() : 0L,
@@ -137,7 +137,7 @@ public class VonMessageConverter {
 
     // ==================== JoinRequest Conversion ====================
 
-    private static TransportVonMessage joinRequestToTransport(VonMessage.JoinRequest msg) {
+    private static TransportVonMessage joinRequestToTransport(Message.JoinRequest msg) {
         return new TransportVonMessage(
             "JoinRequest",
             msg.joinerId().toString(),
@@ -150,11 +150,11 @@ public class VonMessageConverter {
         );
     }
 
-    private static VonMessage joinRequestFromTransport(TransportVonMessage transport) {
+    private static Message joinRequestFromTransport(TransportVonMessage transport) {
         var joinerId = UUID.fromString(transport.sourceBubbleId());
         var position = new javafx.geometry.Point3D(transport.posX(), transport.posY(), transport.posZ());
 
-        return new VonMessage.JoinRequest(
+        return new Message.JoinRequest(
             joinerId,
             position,
             null,  // BubbleBounds not transmitted in wire format (Phase 6B)
@@ -164,7 +164,7 @@ public class VonMessageConverter {
 
     // ==================== JoinResponse Conversion ====================
 
-    private static TransportVonMessage joinResponseToTransport(VonMessage.JoinResponse msg) {
+    private static TransportVonMessage joinResponseToTransport(Message.JoinResponse msg) {
         // JoinResponse contains neighbor set - simplified for Phase 6A
         return new TransportVonMessage(
             "JoinResponse",
@@ -176,10 +176,10 @@ public class VonMessageConverter {
         );
     }
 
-    private static VonMessage joinResponseFromTransport(TransportVonMessage transport) {
+    private static Message joinResponseFromTransport(TransportVonMessage transport) {
         var acceptorId = UUID.fromString(transport.sourceBubbleId());
 
-        return new VonMessage.JoinResponse(
+        return new Message.JoinResponse(
             acceptorId,
             java.util.Set.of(),  // Neighbor set not transmitted in Phase 6A wire format
             transport.timestamp()
@@ -188,7 +188,7 @@ public class VonMessageConverter {
 
     // ==================== Move Conversion ====================
 
-    private static TransportVonMessage moveToTransport(VonMessage.Move msg) {
+    private static TransportVonMessage moveToTransport(Message.Move msg) {
         return new TransportVonMessage(
             "Move",
             msg.nodeId().toString(),
@@ -201,11 +201,11 @@ public class VonMessageConverter {
         );
     }
 
-    private static VonMessage moveFromTransport(TransportVonMessage transport) {
+    private static Message moveFromTransport(TransportVonMessage transport) {
         var nodeId = UUID.fromString(transport.sourceBubbleId());
         var newPosition = new javafx.geometry.Point3D(transport.posX(), transport.posY(), transport.posZ());
 
-        return new VonMessage.Move(
+        return new Message.Move(
             nodeId,
             newPosition,
             null,  // BubbleBounds not transmitted in wire format (Phase 6B)
@@ -215,7 +215,7 @@ public class VonMessageConverter {
 
     // ==================== Leave Conversion ====================
 
-    private static TransportVonMessage leaveToTransport(VonMessage.Leave msg) {
+    private static TransportVonMessage leaveToTransport(Message.Leave msg) {
         return new TransportVonMessage(
             "Leave",
             msg.nodeId().toString(),
@@ -226,10 +226,10 @@ public class VonMessageConverter {
         );
     }
 
-    private static VonMessage leaveFromTransport(TransportVonMessage transport) {
+    private static Message leaveFromTransport(TransportVonMessage transport) {
         var nodeId = UUID.fromString(transport.sourceBubbleId());
 
-        return new VonMessage.Leave(
+        return new Message.Leave(
             nodeId,
             transport.timestamp()
         );
@@ -237,7 +237,7 @@ public class VonMessageConverter {
 
     // ==================== Ack Conversion ====================
 
-    private static TransportVonMessage ackToTransport(VonMessage.Ack msg) {
+    private static TransportVonMessage ackToTransport(Message.Ack msg) {
         return new TransportVonMessage(
             "Ack",
             msg.senderId().toString(),
@@ -248,11 +248,11 @@ public class VonMessageConverter {
         );
     }
 
-    private static VonMessage ackFromTransport(TransportVonMessage transport) {
+    private static Message ackFromTransport(TransportVonMessage transport) {
         var ackFor = UUID.fromString(transport.targetBubbleId());
         var senderId = UUID.fromString(transport.sourceBubbleId());
 
-        return new VonMessage.Ack(
+        return new Message.Ack(
             ackFor,
             senderId,
             transport.timestamp()
@@ -261,7 +261,7 @@ public class VonMessageConverter {
 
     // ==================== Query Conversion ====================
 
-    private static TransportVonMessage queryToTransport(VonMessage.Query msg) {
+    private static TransportVonMessage queryToTransport(Message.Query msg) {
         return new TransportVonMessage(
             "Query",
             msg.senderId().toString(),
@@ -272,12 +272,12 @@ public class VonMessageConverter {
         );
     }
 
-    private static VonMessage queryFromTransport(TransportVonMessage transport) {
+    private static Message queryFromTransport(TransportVonMessage transport) {
         var senderId = UUID.fromString(transport.sourceBubbleId());
         var targetId = UUID.fromString(transport.targetBubbleId());
         var queryType = transport.entityId();
 
-        return new VonMessage.Query(
+        return new Message.Query(
             senderId,
             targetId,
             queryType,

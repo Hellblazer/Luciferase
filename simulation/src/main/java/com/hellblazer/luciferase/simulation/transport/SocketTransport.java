@@ -19,10 +19,10 @@ package com.hellblazer.luciferase.simulation.transport;
 
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.simulation.von.TransportVonMessage;
-import com.hellblazer.luciferase.simulation.von.VonMessage;
-import com.hellblazer.luciferase.simulation.von.VonMessageConverter;
-import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
-import com.hellblazer.luciferase.simulation.von.VonTransport;
+import com.hellblazer.luciferase.simulation.von.Message;
+import com.hellblazer.luciferase.simulation.von.MessageConverter;
+import com.hellblazer.luciferase.simulation.von.MessageFactory;
+import com.hellblazer.luciferase.simulation.von.Transport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +49,7 @@ import java.util.function.Consumer;
  * <ul>
  *   <li>SocketServer: Accepts inbound connections on bind address</li>
  *   <li>SocketClient: Establishes outbound connections to remote processes</li>
- *   <li>Message routing: Uses VonMessageConverter for serialization</li>
+ *   <li>Message routing: Uses MessageConverter for serialization</li>
  *   <li>Thread-safe: Concurrent client map and synchronized sends</li>
  * </ul>
  * <p>
@@ -69,9 +69,9 @@ public class SocketTransport implements NetworkTransport {
 
     private final UUID localId;
     private final ProcessAddress myAddress;
-    private final VonMessageFactory factory;
+    private final MessageFactory factory;
     private final Map<String, SocketClient> clients = new ConcurrentHashMap<>();
-    private final List<Consumer<VonMessage>> handlers = new CopyOnWriteArrayList<>();
+    private final List<Consumer<Message>> handlers = new CopyOnWriteArrayList<>();
     private final Map<UUID, ProcessAddress> memberRegistry = new ConcurrentHashMap<>();
     private SocketServer server;
     private volatile boolean connected = true;
@@ -84,7 +84,7 @@ public class SocketTransport implements NetworkTransport {
     public SocketTransport(ProcessAddress myAddress) {
         this.localId = UUID.randomUUID();
         this.myAddress = myAddress;
-        this.factory = VonMessageFactory.system();
+        this.factory = MessageFactory.system();
     }
 
     /**
@@ -150,14 +150,14 @@ public class SocketTransport implements NetworkTransport {
     /**
      * Send a message to a specific neighbor.
      * <p>
-     * Converts VonMessage to TransportVonMessage and sends via SocketClient.
+     * Converts Message to TransportVonMessage and sends via SocketClient.
      *
      * @param neighborId UUID of the target neighbor
      * @param message    Message to send
      * @throws TransportException if send fails or neighbor not connected
      */
     @Override
-    public void sendToNeighbor(UUID neighborId, VonMessage message) throws TransportException {
+    public void sendToNeighbor(UUID neighborId, Message message) throws TransportException {
         // Find client by looking up process ID from neighborId
         // Note: This is a simplified implementation for Phase 6A
         // Phase 6B will add proper UUID -> ProcessAddress mapping
@@ -167,7 +167,7 @@ public class SocketTransport implements NetworkTransport {
         }
 
         try {
-            // Convert VonMessage to TransportVonMessage
+            // Convert Message to TransportVonMessage
             var transportMsg = convertToTransport(message);
             client.send(transportMsg);
         } catch (IOException e) {
@@ -186,7 +186,7 @@ public class SocketTransport implements NetworkTransport {
      * @return Future that completes when send succeeds
      */
     @Override
-    public CompletableFuture<VonMessage.Ack> sendToNeighborAsync(UUID neighborId, VonMessage message) {
+    public CompletableFuture<Message.Ack> sendToNeighborAsync(UUID neighborId, Message message) {
         return CompletableFuture.supplyAsync(() -> {
             sendToNeighbor(neighborId, message);
             return factory.createAck(UUID.randomUUID(), neighborId);
@@ -196,15 +196,15 @@ public class SocketTransport implements NetworkTransport {
     /**
      * Handle an incoming TransportVonMessage from the network.
      * <p>
-     * Converts back to VonMessage and dispatches to registered handlers.
+     * Converts back to Message and dispatches to registered handlers.
      *
      * @param transportMsg Deserialized message from socket
      */
     private void handleIncomingMessage(TransportVonMessage transportMsg) {
         log.debug("Received TransportVonMessage type={}", transportMsg.type());
 
-        // Convert to VonMessage
-        var vonMsg = VonMessageConverter.fromTransport(transportMsg);
+        // Convert to Message
+        var vonMsg = MessageConverter.fromTransport(transportMsg);
 
         // Deliver to handlers
         for (var handler : handlers) {
@@ -217,15 +217,15 @@ public class SocketTransport implements NetworkTransport {
     }
 
     /**
-     * Convert VonMessage to TransportVonMessage for serialization.
+     * Convert Message to TransportVonMessage for serialization.
      * <p>
      * Phase 6A: Simplified conversion with basic field extraction.
-     * Phase 6B: Will use full VonMessageConverter with all message types.
+     * Phase 6B: Will use full MessageConverter with all message types.
      */
-    private TransportVonMessage convertToTransport(VonMessage message) {
+    private TransportVonMessage convertToTransport(Message message) {
         // Phase 6A: Use new comprehensive converter
-        // Delegates to VonMessageConverter which pattern matches on message type
-        return VonMessageConverter.toTransport(message);
+        // Delegates to MessageConverter which pattern matches on message type
+        return MessageConverter.toTransport(message);
     }
 
     /**
@@ -271,14 +271,14 @@ public class SocketTransport implements NetworkTransport {
         return myAddress;
     }
 
-    // Implement remaining VonTransport methods
+    // Implement remaining Transport methods
     @Override
-    public void onMessage(Consumer<VonMessage> handler) {
+    public void onMessage(Consumer<Message> handler) {
         handlers.add(handler);
     }
 
     @Override
-    public void removeMessageHandler(Consumer<VonMessage> handler) {
+    public void removeMessageHandler(Consumer<Message> handler) {
         handlers.remove(handler);
     }
 

@@ -19,10 +19,10 @@ package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.simulation.von.Event;
-import com.hellblazer.luciferase.simulation.von.VonBubble;
-import com.hellblazer.luciferase.simulation.von.VonMessage;
-import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
-import com.hellblazer.luciferase.simulation.von.VonTransport;
+import com.hellblazer.luciferase.simulation.von.Bubble;
+import com.hellblazer.luciferase.simulation.von.Message;
+import com.hellblazer.luciferase.simulation.von.MessageFactory;
+import com.hellblazer.luciferase.simulation.von.Transport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,18 +36,18 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 
 /**
- * P2P implementation of GhostChannel using VonTransport for neighbor-to-neighbor ghost synchronization.
+ * P2P implementation of GhostChannel using Transport for neighbor-to-neighbor ghost synchronization.
  * <p>
  * P2PGhostChannel integrates with the v4.0 VON architecture to send ghost entities directly to
- * P2P neighbors via VonBubble's transport layer. This replaces broadcast-based ghost sync with
+ * P2P neighbors via Bubble's transport layer. This replaces broadcast-based ghost sync with
  * targeted P2P messaging.
  * <p>
  * <strong>Key Features:</strong>
  * <ul>
- *   <li>P2P ghost transmission via VonTransport (no broadcast)</li>
+ *   <li>P2P ghost transmission via Transport (no broadcast)</li>
  *   <li>Batched transmission at bucket boundaries (100ms)</li>
  *   <li>Automatic conversion between SimulationGhostEntity and TransportGhost</li>
- *   <li>Event-based receive handling from VonBubble</li>
+ *   <li>Event-based receive handling from Bubble</li>
  *   <li>Same-server optimization via shouldBypass check</li>
  * </ul>
  * <p>
@@ -56,10 +56,10 @@ import java.util.function.BiConsumer;
  * Sender Side:
  *   notifyEntityNearBoundary() → queueGhost() → flush() → sendBatch()
  *                                                             ↓
- *                                              VonTransport.sendToNeighbor(GhostSync)
+ *                                              Transport.sendToNeighbor(GhostSync)
  *
  * Receiver Side:
- *   VonBubble.handleMessage(GhostSync) → Event.GhostSync → P2PGhostChannel.onGhostSyncEvent()
+ *   Bubble.handleMessage(GhostSync) → Event.GhostSync → P2PGhostChannel.onGhostSyncEvent()
  *                                                                   ↓
  *                                              handlers.accept(sourceBubbleId, ghosts)
  * </pre>
@@ -87,14 +87,14 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     private static final Logger log = LoggerFactory.getLogger(P2PGhostChannel.class);
 
     /**
-     * VonBubble for P2P communication
+     * Bubble for P2P communication
      */
-    private final VonBubble vonBubble;
+    private final Bubble vonBubble;
 
     /**
-     * Factory for creating VonMessage records with timestamp
+     * Factory for creating Message records with timestamp
      */
-    private final VonMessageFactory factory;
+    private final MessageFactory factory;
 
     /**
      * Pending batches grouped by target bubble
@@ -112,17 +112,17 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     private long currentBucket = 0;
 
     /**
-     * Create P2P ghost channel with VonBubble.
+     * Create P2P ghost channel with Bubble.
      *
-     * @param vonBubble VonBubble for P2P transport
+     * @param vonBubble Bubble for P2P transport
      */
-    public P2PGhostChannel(VonBubble vonBubble) {
+    public P2PGhostChannel(Bubble vonBubble) {
         this.vonBubble = Objects.requireNonNull(vonBubble, "vonBubble must not be null");
-        this.factory = VonMessageFactory.system();
+        this.factory = MessageFactory.system();
         this.pendingBatches = new ConcurrentHashMap<>();
         this.handlers = new CopyOnWriteArrayList<>();
 
-        // Register for GhostSync events from VonBubble
+        // Register for GhostSync events from Bubble
         vonBubble.addEventListener(this::handleEvent);
 
         log.debug("P2PGhostChannel created for bubble {}", vonBubble.id());
@@ -159,18 +159,18 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
         }
 
         // Convert to transport format
-        var transportGhosts = new ArrayList<VonMessage.TransportGhost>(ghosts.size());
+        var transportGhosts = new ArrayList<Message.TransportGhost>(ghosts.size());
         for (var ghost : ghosts) {
             transportGhosts.add(toTransportGhost(ghost));
         }
 
-        // Send via VonTransport
+        // Send via Transport
         var message = factory.createGhostSync(vonBubble.id(), transportGhosts, currentBucket);
         try {
             vonBubble.getTransport().sendToNeighbor(targetBubbleId, message);
             log.debug("Sent {} ghosts to neighbor {} at bucket {}",
                       ghosts.size(), targetBubbleId, currentBucket);
-        } catch (VonTransport.TransportException e) {
+        } catch (Transport.TransportException e) {
             log.warn("Failed to send ghost batch to {}: {}", targetBubbleId, e.getMessage());
         }
     }
@@ -217,7 +217,7 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     }
 
     /**
-     * Handle events from VonBubble.
+     * Handle events from Bubble.
      * <p>
      * Processes GhostSync events and dispatches to registered handlers.
      *
@@ -234,7 +234,7 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
      * <p>
      * Converts TransportGhosts back to SimulationGhostEntities and notifies handlers.
      *
-     * @param event GhostSync event from VonBubble
+     * @param event GhostSync event from Bubble
      */
     @SuppressWarnings("unchecked")
     private void onGhostSyncEvent(Event.GhostSync event) {
@@ -270,8 +270,8 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
      * @param ghost SimulationGhostEntity to convert
      * @return TransportGhost for transmission
      */
-    private VonMessage.TransportGhost toTransportGhost(SimulationGhostEntity<ID, Content> ghost) {
-        return new VonMessage.TransportGhost(
+    private Message.TransportGhost toTransportGhost(SimulationGhostEntity<ID, Content> ghost) {
+        return new Message.TransportGhost(
             ghost.entityId().toDebugString(),
             ghost.position(),
             ghost.content() != null ? ghost.content().getClass().getName() : "null",
@@ -295,7 +295,7 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
      */
     @SuppressWarnings("unchecked")
     private SimulationGhostEntity<ID, Content> fromTransportGhost(
-        VonMessage.TransportGhost tg,
+        Message.TransportGhost tg,
         UUID sourceId,
         long bucket
     ) {

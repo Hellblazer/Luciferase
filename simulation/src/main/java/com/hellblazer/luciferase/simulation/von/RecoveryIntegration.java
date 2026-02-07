@@ -33,9 +33,9 @@ import java.util.function.Consumer;
 /**
  * Connects VON (Virtual Organization Network) topology with partition recovery system (Phase 4.2).
  * <p>
- * VONRecoveryIntegration provides bidirectional synchronization between:
+ * RecoveryIntegration provides bidirectional synchronization between:
  * <ul>
- *   <li><strong>VON Layer</strong> - Distributed spatial perception via VonManager/VonBubble</li>
+ *   <li><strong>VON Layer</strong> - Distributed spatial perception via Manager/Bubble</li>
  *   <li><strong>Recovery Layer</strong> - Partition fault tolerance via FaultHandler/PartitionTopology</li>
  * </ul>
  * <p>
@@ -70,7 +70,7 @@ import java.util.function.Consumer;
  * <p>
  * <strong>Usage Example:</strong>
  * <pre>
- * var integration = new VONRecoveryIntegration(vonManager, topology, faultHandler);
+ * var integration = new RecoveryIntegration(vonManager, topology, faultHandler);
  *
  * // Register bubbles with their partitions
  * integration.registerBubble(bubble1.id(), partition1);
@@ -82,18 +82,18 @@ import java.util.function.Consumer;
  * </pre>
  *
  * @author hal.hildebrand
- * @see VonManager
+ * @see Manager
  * @see FaultHandler
  * @see PartitionTopology
  */
-public class VONRecoveryIntegration {
+public class RecoveryIntegration {
 
-    private static final Logger log = LoggerFactory.getLogger(VONRecoveryIntegration.class);
+    private static final Logger log = LoggerFactory.getLogger(RecoveryIntegration.class);
     private static final long DEFAULT_RECOVERY_TIMEOUT_MS = 30_000L;  // 30 seconds
     private static final int MAX_RECOVERY_DEPTH = 10;  // Phase 3: Maximum cascading recovery depth
     private static final long RECOVERY_COOLDOWN_MS = 1000L;  // Phase 3: Minimum time between recoveries
 
-    private final VonManager vonManager;
+    private final Manager vonManager;
     private final PartitionTopology topology;
     private final FaultHandler faultHandler;
     private final Map<UUID, UUID> bubbleToPartition;
@@ -126,7 +126,7 @@ public class VONRecoveryIntegration {
      * @param faultHandler Fault handler for partition recovery coordination
      * @throws NullPointerException if any parameter is null
      */
-    public VONRecoveryIntegration(VonManager vonManager,
+    public RecoveryIntegration(Manager vonManager,
                                   PartitionTopology topology,
                                   FaultHandler faultHandler) {
         this(vonManager, topology, faultHandler, Clock.system());
@@ -143,7 +143,7 @@ public class VONRecoveryIntegration {
      * @param clock        Clock for timestamps (use TestClock for testing)
      * @throws NullPointerException if any parameter is null
      */
-    public VONRecoveryIntegration(VonManager vonManager,
+    public RecoveryIntegration(Manager vonManager,
                                   PartitionTopology topology,
                                   FaultHandler faultHandler,
                                   Clock clock) {
@@ -170,7 +170,7 @@ public class VONRecoveryIntegration {
         vonManager.addEventListener(vonEventHandler);
         faultHandler.subscribeToChanges(recoveryEventHandler);
 
-        log.info("VONRecoveryIntegration initialized with clock");
+        log.info("RecoveryIntegration initialized with clock");
     }
 
     /**
@@ -352,7 +352,7 @@ public class VONRecoveryIntegration {
         recoveryDependencies.clear();
         recoveryMetricsTrackers.clear();
         lastRecoveryTime.clear();
-        log.info("VONRecoveryIntegration closed");
+        log.info("RecoveryIntegration closed");
     }
 
     // ========== Phase 3: Recovery Task Record ==========
@@ -536,7 +536,7 @@ public class VONRecoveryIntegration {
                 }
             } else {
                 failedRejoins++;
-                log.warn("Bubble {} not found in VonManager during recovery", bubbleId);
+                log.warn("Bubble {} not found in Manager during recovery", bubbleId);
             }
         }
 

@@ -18,8 +18,8 @@
 package com.hellblazer.luciferase.simulation.transport;
 
 import com.hellblazer.luciferase.simulation.von.LocalServerTransport;
-import com.hellblazer.luciferase.simulation.von.VonMessage;
-import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
+import com.hellblazer.luciferase.simulation.von.Message;
+import com.hellblazer.luciferase.simulation.von.MessageFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -47,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class FailureInjectionTest {
 
     private LocalServerTransport.Registry registry;
-    private final VonMessageFactory factory = VonMessageFactory.system();
+    private final MessageFactory factory = MessageFactory.system();
 
     @AfterEach
     void cleanup() {
@@ -70,7 +70,7 @@ class FailureInjectionTest {
         var transport2 = registry.register(uuid2);
 
         // Setup message capture
-        BlockingQueue<VonMessage> received = new LinkedBlockingQueue<>();
+        BlockingQueue<Message> received = new LinkedBlockingQueue<>();
         transport2.onMessage(received::offer);
 
         // Inject 150ms delay
@@ -104,7 +104,7 @@ class FailureInjectionTest {
         var transport1 = registry.register(uuid1);
         var transport2 = registry.register(uuid2);
 
-        BlockingQueue<VonMessage> received = new LinkedBlockingQueue<>();
+        BlockingQueue<Message> received = new LinkedBlockingQueue<>();
         transport2.onMessage(received::offer);
 
         // Initially no delay
@@ -149,7 +149,7 @@ class FailureInjectionTest {
         var transport1 = registry.register(uuid1);
         var transport2 = registry.register(uuid2);
 
-        BlockingQueue<VonMessage> received = new LinkedBlockingQueue<>();
+        BlockingQueue<Message> received = new LinkedBlockingQueue<>();
         transport2.onMessage(received::offer);
 
         // Inject partition
@@ -177,7 +177,7 @@ class FailureInjectionTest {
         var transport1 = registry.register(uuid1);
         var transport2 = registry.register(uuid2);
 
-        BlockingQueue<VonMessage> received = new LinkedBlockingQueue<>();
+        BlockingQueue<Message> received = new LinkedBlockingQueue<>();
         transport2.onMessage(received::offer);
 
         // Enable partition
@@ -209,7 +209,7 @@ class FailureInjectionTest {
         var transport1 = registry.register(uuid1);
         var transport2 = registry.register(uuid2);
 
-        BlockingQueue<VonMessage> received = new LinkedBlockingQueue<>();
+        BlockingQueue<Message> received = new LinkedBlockingQueue<>();
         transport2.onMessage(received::offer);
 
         // Inject both delay and partition
@@ -248,7 +248,7 @@ class FailureInjectionTest {
         var transport2 = registry.register(uuid2);
         var transport3 = registry.register(uuid3);
 
-        BlockingQueue<VonMessage> received = new LinkedBlockingQueue<>();
+        BlockingQueue<Message> received = new LinkedBlockingQueue<>();
         transport3.onMessage(received::offer);
 
         // Inject partition only on transport1
@@ -277,7 +277,7 @@ class FailureInjectionTest {
         var transport1 = registry.register(uuid1);
         var transport2 = registry.register(uuid2);
 
-        BlockingQueue<VonMessage> received = new LinkedBlockingQueue<>();
+        BlockingQueue<Message> received = new LinkedBlockingQueue<>();
         transport2.onMessage(received::offer);
 
         // Inject delay

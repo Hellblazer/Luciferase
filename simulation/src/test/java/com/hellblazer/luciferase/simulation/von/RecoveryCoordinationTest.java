@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Tests for Phase 2: Recovery Coordination Enhancements.
  * <p>
- * Validates enhanced VONRecoveryIntegration with:
+ * Validates enhanced RecoveryIntegration with:
  * <ul>
  *   <li>Success/failure counting for bubble rejoins</li>
  *   <li>Recovery timeout handling (30s default)</li>
@@ -55,10 +55,10 @@ class RecoveryCoordinationTest {
     private static final float AOI_RADIUS = 50.0f;
 
     private LocalServerTransport.Registry transportRegistry;
-    private VonManager vonManager;
+    private Manager vonManager;
     private InMemoryPartitionTopology topology;
     private TestFaultHandler faultHandler;
-    private VONRecoveryIntegration integration;
+    private RecoveryIntegration integration;
     private TestClock clock;
     private List<Event> capturedEvents;
 
@@ -66,12 +66,12 @@ class RecoveryCoordinationTest {
     void setup() {
         transportRegistry = LocalServerTransport.Registry.create();
         clock = new TestClock(1000L);
-        vonManager = new VonManager(transportRegistry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS, clock);
+        vonManager = new Manager(transportRegistry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS, clock);
         topology = new InMemoryPartitionTopology();
         faultHandler = new TestFaultHandler();
         capturedEvents = new CopyOnWriteArrayList<>();
 
-        integration = new VONRecoveryIntegration(vonManager, topology, faultHandler, clock);
+        integration = new RecoveryIntegration(vonManager, topology, faultHandler, clock);
 
         // Capture VON events for verification
         vonManager.addEventListener(capturedEvents::add);
@@ -344,7 +344,7 @@ class RecoveryCoordinationTest {
     /**
      * Add entities to a bubble to establish spatial bounds.
      */
-    private void addEntities(VonBubble bubble, Point3f center, int count) {
+    private void addEntities(Bubble bubble, Point3f center, int count) {
         for (int i = 0; i < count; i++) {
             float x = Math.max(0.1f, center.x + (i % 3) * 0.1f);
             float y = Math.max(0.1f, center.y + (i / 3) * 0.1f);

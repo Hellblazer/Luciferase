@@ -33,26 +33,26 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests for VonManager - P2P VON coordination.
+ * Tests for Manager - P2P VON coordination.
  * <p>
  * These tests validate the P2P protocol implementation using
  * LocalServerTransport for in-process communication.
  *
  * @author hal.hildebrand
  */
-class VonManagerTest {
+class ManagerTest {
 
     private static final byte SPATIAL_LEVEL = 10;
     private static final long TARGET_FRAME_MS = 16;
     private static final float AOI_RADIUS = 50.0f;
 
     private LocalServerTransport.Registry registry;
-    private VonManager manager;
+    private Manager manager;
 
     @BeforeEach
     void setup() {
         registry = LocalServerTransport.Registry.create();
-        manager = new VonManager(registry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS);
+        manager = new Manager(registry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS);
     }
 
     @AfterEach
@@ -118,7 +118,7 @@ class VonManagerTest {
     @Test
     void testTenBubbleCluster_formation() throws Exception {
         // Given: Empty VON
-        List<VonBubble> bubbles = new ArrayList<>();
+        List<Bubble> bubbles = new ArrayList<>();
         var allJoinsComplete = new CountDownLatch(10);
 
         // When: Create and join 10 bubbles
@@ -292,7 +292,7 @@ class VonManagerTest {
 
         // When: 5 concurrent joins
         var latch = new CountDownLatch(5);
-        List<VonBubble> newBubbles = new ArrayList<>();
+        List<Bubble> newBubbles = new ArrayList<>();
 
         for (int i = 0; i < 5; i++) {
             var bubble = manager.createBubble();
@@ -344,7 +344,7 @@ class VonManagerTest {
     /**
      * Add entities to a bubble to establish its spatial bounds.
      */
-    private void addEntities(VonBubble bubble, Point3f center, int count) {
+    private void addEntities(Bubble bubble, Point3f center, int count) {
         for (int i = 0; i < count; i++) {
             float x = Math.max(0.1f, center.x + (i % 3) * 0.1f);
             float y = Math.max(0.1f, center.y + (i / 3) * 0.1f);

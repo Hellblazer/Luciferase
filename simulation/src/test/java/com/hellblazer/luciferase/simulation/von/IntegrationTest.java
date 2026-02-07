@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * These tests validate the LOCAL-ONLY protocol implementation using
  * SpatialNeighborIndex for single-JVM operation. For distributed P2P
- * testing, see {@link VonManagerTest} and {@link P2PProtocolIntegrationTest}.
+ * testing, see {@link ManagerTest} and {@link P2PProtocolIntegrationTest}.
  * <p>
  * Tests validate the complete VON protocol lifecycle with multi-bubble clusters:
  * - 10-bubble cluster formation
@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * LOCAL MODE vs P2P MODE:
  * - Local: All bubbles in same JVM, uses SpatialNeighborIndex
- * - P2P: Distributed across network, uses VonTransport
+ * - P2P: Distributed across network, uses Transport
  *
  * @author hal.hildebrand
  */

@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.*;
 
 /**
  * Tests for BubbleMigrator - bubble migration protocol.
- * These tests focus on the core migration logic without VonBubble dependencies.
+ * These tests focus on the core migration logic without Bubble dependencies.
  */
 class BubbleMigratorTest {
 
@@ -105,7 +105,7 @@ class BubbleMigratorTest {
         region.addServer(targetServerId, targetMetrics);
 
         // Empty bubble map (no actual bubbles to migrate)
-        var serverBubbles = new HashMap<UUID, List<com.hellblazer.luciferase.simulation.von.VonBubble>>();
+        var serverBubbles = new HashMap<UUID, List<com.hellblazer.luciferase.simulation.von.Bubble>>();
 
         int initiated = migrator.runMigrationCycle(serverBubbles);
 

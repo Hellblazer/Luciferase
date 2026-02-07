@@ -164,7 +164,7 @@ public sealed interface Event {
      */
     record GhostSync(
         UUID sourceBubbleId,
-        List<VonMessage.TransportGhost> ghosts,
+        List<Message.TransportGhost> ghosts,
         long bucket
     ) implements Event {
 

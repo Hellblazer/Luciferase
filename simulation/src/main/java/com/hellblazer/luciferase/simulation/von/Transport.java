@@ -49,7 +49,7 @@ import java.util.function.Consumer;
  *
  * @author hal.hildebrand
  */
-public interface VonTransport {
+public interface Transport {
 
     /**
      * Send a message directly to a specific neighbor (P2P).
@@ -60,7 +60,7 @@ public interface VonTransport {
      * @param message    Message to send
      * @throws TransportException if send fails
      */
-    void sendToNeighbor(UUID neighborId, VonMessage message) throws TransportException;
+    void sendToNeighbor(UUID neighborId, Message message) throws TransportException;
 
     /**
      * Send a message asynchronously to a specific neighbor (P2P).
@@ -72,7 +72,7 @@ public interface VonTransport {
      * @param message    Message to send
      * @return Future that completes with ACK or fails with TransportException
      */
-    CompletableFuture<VonMessage.Ack> sendToNeighborAsync(UUID neighborId, VonMessage message);
+    CompletableFuture<Message.Ack> sendToNeighborAsync(UUID neighborId, Message message);
 
     /**
      * Register a handler for incoming messages.
@@ -82,14 +82,14 @@ public interface VonTransport {
      *
      * @param handler Consumer to process incoming messages
      */
-    void onMessage(Consumer<VonMessage> handler);
+    void onMessage(Consumer<Message> handler);
 
     /**
      * Remove a previously registered message handler.
      *
      * @param handler Handler to remove
      */
-    void removeMessageHandler(Consumer<VonMessage> handler);
+    void removeMessageHandler(Consumer<Message> handler);
 
     /**
      * Look up member information by UUID.

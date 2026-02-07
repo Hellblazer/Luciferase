@@ -30,11 +30,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
- * Manager for coordinating VonBubbles with P2P transport.
+ * Manager for coordinating Bubbles with P2P transport.
  * <p>
- * VonManager provides a high-level API for VON operations in a distributed setting:
+ * Manager provides a high-level API for VON operations in a distributed setting:
  * <ul>
- *   <li>Create and manage VonBubbles with P2P transport</li>
+ *   <li>Create and manage Bubbles with P2P transport</li>
  *   <li>Coordinate JOIN via Fireflies member discovery</li>
  *   <li>Track MOVE and LEAVE across the network</li>
  *   <li>Monitor neighbor consistency (NC) metric</li>
@@ -51,13 +51,13 @@ import java.util.function.Consumer;
  *
  * @author hal.hildebrand
  */
-public class VonManager {
+public class Manager {
 
-    private static final Logger log = LoggerFactory.getLogger(VonManager.class);
+    private static final Logger log = LoggerFactory.getLogger(Manager.class);
 
-    private final Map<UUID, VonBubble> bubbles;
+    private final Map<UUID, Bubble> bubbles;
     private final LocalServerTransport.Registry transportRegistry;
-    private volatile VonMessageFactory factory;
+    private volatile MessageFactory factory;
     private final List<Consumer<Event>> eventListeners;
     private final byte spatialLevel;
     private final long targetFrameMs;
@@ -65,29 +65,29 @@ public class VonManager {
     private volatile Clock clock;
 
     /**
-     * Create a VonManager with default configuration.
+     * Create a Manager with default configuration.
      *
      * @param transportRegistry Transport registry for P2P communication
      */
-    public VonManager(LocalServerTransport.Registry transportRegistry) {
+    public Manager(LocalServerTransport.Registry transportRegistry) {
         this(transportRegistry, (byte) 10, 16L, 50.0f);
     }
 
     /**
-     * Create a VonManager with custom configuration using system clock.
+     * Create a Manager with custom configuration using system clock.
      *
      * @param transportRegistry Transport registry for P2P communication
      * @param spatialLevel      Tetree refinement level for bubbles
      * @param targetFrameMs     Target frame time for simulation
      * @param aoiRadius         Area of Interest radius for neighbor detection
      */
-    public VonManager(LocalServerTransport.Registry transportRegistry,
+    public Manager(LocalServerTransport.Registry transportRegistry,
                       byte spatialLevel, long targetFrameMs, float aoiRadius) {
         this(transportRegistry, spatialLevel, targetFrameMs, aoiRadius, Clock.system());
     }
 
     /**
-     * Create a VonManager with custom configuration and injected clock.
+     * Create a Manager with custom configuration and injected clock.
      * <p>
      * Use this constructor for deterministic testing with a TestClock.
      *
@@ -97,18 +97,18 @@ public class VonManager {
      * @param aoiRadius         Area of Interest radius for neighbor detection
      * @param clock             Clock for timestamps (use TestClock for testing)
      */
-    public VonManager(LocalServerTransport.Registry transportRegistry,
+    public Manager(LocalServerTransport.Registry transportRegistry,
                       byte spatialLevel, long targetFrameMs, float aoiRadius, Clock clock) {
         this.transportRegistry = Objects.requireNonNull(transportRegistry, "transportRegistry cannot be null");
         this.clock = Objects.requireNonNull(clock, "clock cannot be null");
-        this.factory = new VonMessageFactory(clock);
+        this.factory = new MessageFactory(clock);
         this.bubbles = new ConcurrentHashMap<>();
         this.eventListeners = new ArrayList<>();
         this.spatialLevel = spatialLevel;
         this.targetFrameMs = targetFrameMs;
         this.aoiRadius = aoiRadius;
 
-        log.info("VonManager created: spatialLevel={}, targetFrameMs={}, aoiRadius={}",
+        log.info("Manager created: spatialLevel={}, targetFrameMs={}, aoiRadius={}",
                 spatialLevel, targetFrameMs, aoiRadius);
     }
 
@@ -121,7 +121,7 @@ public class VonManager {
      */
     public void setClock(Clock clock) {
         this.clock = Objects.requireNonNull(clock, "clock cannot be null");
-        this.factory = new VonMessageFactory(clock);
+        this.factory = new MessageFactory(clock);
 
         // Propagate to all existing bubbles
         for (var bubble : bubbles.values()) {
@@ -132,16 +132,16 @@ public class VonManager {
     }
 
     /**
-     * Create a new VonBubble and register it with the manager.
+     * Create a new Bubble and register it with the manager.
      * <p>
      * The new bubble inherits the manager's clock for deterministic timestamps.
      *
-     * @return The newly created VonBubble
+     * @return The newly created Bubble
      */
-    public VonBubble createBubble() {
+    public Bubble createBubble() {
         var id = UUID.randomUUID();
         var transport = transportRegistry.register(id);
-        var bubble = new VonBubble(id, spatialLevel, targetFrameMs, transport);
+        var bubble = new Bubble(id, spatialLevel, targetFrameMs, transport);
 
         // Propagate clock to new bubble
         bubble.setClock(clock);
@@ -156,16 +156,16 @@ public class VonManager {
     }
 
     /**
-     * Create a new VonBubble with a specific ID.
+     * Create a new Bubble with a specific ID.
      * <p>
      * The new bubble inherits the manager's clock for deterministic timestamps.
      *
      * @param id The UUID for the bubble
-     * @return The newly created VonBubble
+     * @return The newly created Bubble
      */
-    public VonBubble createBubble(UUID id) {
+    public Bubble createBubble(UUID id) {
         var transport = transportRegistry.register(id);
-        var bubble = new VonBubble(id, spatialLevel, targetFrameMs, transport);
+        var bubble = new Bubble(id, spatialLevel, targetFrameMs, transport);
 
         // Propagate clock to new bubble
         bubble.setClock(clock);
@@ -189,7 +189,7 @@ public class VonManager {
      * @param position Target position in the VON
      * @return true if join succeeded, false otherwise
      */
-    public boolean joinAt(VonBubble bubble, Point3D position) {
+    public boolean joinAt(Bubble bubble, Point3D position) {
         Objects.requireNonNull(bubble, "bubble cannot be null");
         Objects.requireNonNull(position, "position cannot be null");
 
@@ -212,7 +212,7 @@ public class VonManager {
             bubble.getTransport().sendToNeighbor(entryPoint.id(), joinRequest);
             log.debug("Sent JOIN request from {} to entry point {}", bubble.id(), entryPoint.id());
             return true;
-        } catch (VonTransport.TransportException e) {
+        } catch (Transport.TransportException e) {
             log.error("Failed to send JOIN request: {}", e.getMessage());
             return false;
         }
@@ -226,7 +226,7 @@ public class VonManager {
      * @param timeoutMs      Maximum time to wait for join completion
      * @return true if join completed with at least one neighbor, false otherwise
      */
-    public boolean joinAndWait(VonBubble bubble, Point3D position, long timeoutMs) {
+    public boolean joinAndWait(Bubble bubble, Point3D position, long timeoutMs) {
         if (bubbles.size() == 1 && bubbles.containsKey(bubble.id())) {
             // Solo join - immediate success
             return true;
@@ -264,7 +264,7 @@ public class VonManager {
      * @param bubble      The bubble to move
      * @param newPosition New position
      */
-    public void move(VonBubble bubble, Point3D newPosition) {
+    public void move(Bubble bubble, Point3D newPosition) {
         Objects.requireNonNull(bubble, "bubble cannot be null");
         Objects.requireNonNull(newPosition, "newPosition cannot be null");
 
@@ -282,7 +282,7 @@ public class VonManager {
      *
      * @param bubble The bubble to remove
      */
-    public void leave(VonBubble bubble) {
+    public void leave(Bubble bubble) {
         Objects.requireNonNull(bubble, "bubble cannot be null");
 
         // Broadcast leave to neighbors
@@ -301,9 +301,9 @@ public class VonManager {
      * Get a bubble by ID.
      *
      * @param id Bubble UUID
-     * @return VonBubble or null if not found
+     * @return Bubble or null if not found
      */
-    public VonBubble getBubble(UUID id) {
+    public Bubble getBubble(UUID id) {
         return bubbles.get(id);
     }
 
@@ -312,7 +312,7 @@ public class VonManager {
      *
      * @return Unmodifiable collection of bubbles
      */
-    public Collection<VonBubble> getAllBubbles() {
+    public Collection<Bubble> getAllBubbles() {
         return Collections.unmodifiableCollection(bubbles.values());
     }
 
@@ -354,7 +354,7 @@ public class VonManager {
      * @param bubble Bubble to calculate NC for
      * @return NC value (0.0 to 1.0)
      */
-    public float calculateNC(VonBubble bubble) {
+    public float calculateNC(Bubble bubble) {
         if (!bubbles.containsKey(bubble.id())) {
             return 0.0f;
         }
@@ -363,7 +363,7 @@ public class VonManager {
 
         // Count bubbles within AOI radius (excluding self)
         int actualNeighbors = 0;
-        for (VonBubble other : bubbles.values()) {
+        for (Bubble other : bubbles.values()) {
             if (!other.id().equals(bubble.id())) {
                 double dist = bubble.position().distance(other.position());
                 if (dist <= aoiRadius) {
@@ -392,7 +392,7 @@ public class VonManager {
      * Close all bubbles and release resources.
      */
     public void close() {
-        for (VonBubble bubble : bubbles.values()) {
+        for (Bubble bubble : bubbles.values()) {
             try {
                 bubble.close();
             } catch (Exception e) {
@@ -401,7 +401,7 @@ public class VonManager {
         }
         bubbles.clear();
         eventListeners.clear();
-        log.info("VonManager closed");
+        log.info("Manager closed");
     }
 
     // ========== Private Methods ==========
@@ -409,7 +409,7 @@ public class VonManager {
     /**
      * Find an entry point for joining (any existing bubble except the joiner).
      */
-    private VonBubble findEntryPoint(UUID excludeId) {
+    private Bubble findEntryPoint(UUID excludeId) {
         return bubbles.values().stream()
             .filter(b -> !b.id().equals(excludeId))
             .findFirst()

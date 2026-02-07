@@ -54,10 +54,10 @@ class P42RealFaultHandlerIntegrationTest {
     private static final float AOI_RADIUS = 50.0f;
 
     private LocalServerTransport.Registry transportRegistry;
-    private VonManager vonManager;
+    private Manager vonManager;
     private InMemoryPartitionTopology topology;
     private DefaultFaultHandler faultHandler;
-    private VONRecoveryIntegration integration;
+    private RecoveryIntegration integration;
     private TestClock clock;
     private List<PartitionChangeEvent> capturedEvents;
     private List<Event> vonEvents;
@@ -66,7 +66,7 @@ class P42RealFaultHandlerIntegrationTest {
     void setup() {
         transportRegistry = LocalServerTransport.Registry.create();
         clock = new TestClock(1000L);
-        vonManager = new VonManager(transportRegistry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS, clock);
+        vonManager = new Manager(transportRegistry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS, clock);
         topology = new InMemoryPartitionTopology();
 
         // Create REAL FaultHandler with short timeouts for testing
@@ -81,7 +81,7 @@ class P42RealFaultHandlerIntegrationTest {
         faultHandler = new DefaultFaultHandler(config, topology);
         faultHandler.setClock(clock);
 
-        integration = new VONRecoveryIntegration(vonManager, topology, faultHandler, clock);
+        integration = new RecoveryIntegration(vonManager, topology, faultHandler, clock);
 
         capturedEvents = new CopyOnWriteArrayList<>();
         vonEvents = new CopyOnWriteArrayList<>();
@@ -409,7 +409,7 @@ class P42RealFaultHandlerIntegrationTest {
     /**
      * Add entities to a bubble to establish spatial bounds.
      */
-    private void addEntities(VonBubble bubble, Point3f center, int count) {
+    private void addEntities(Bubble bubble, Point3f center, int count) {
         for (int i = 0; i < count; i++) {
             float x = Math.max(0.1f, center.x + (i % 3) * 0.1f);
             float y = Math.max(0.1f, center.y + (i / 3) * 0.1f);

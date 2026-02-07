@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * These tests validate the LOCAL-ONLY protocol implementation using
  * SpatialNeighborIndex for single-JVM operation. For distributed P2P
- * testing, see {@link VonManagerTest} and {@link P2PProtocolIntegrationTest}.
+ * testing, see {@link ManagerTest} and {@link P2PProtocolIntegrationTest}.
  * <p>
  * The MOVE protocol handles bubble position updates in the VON overlay.
  * Tests validate:
@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * LOCAL MODE vs P2P MODE:
  * - Local: Uses SpatialNeighborIndex for k-NN neighbor discovery
- * - P2P: Uses VonTransport for broadcast to known neighbors (VonBubble)
+ * - P2P: Uses Transport for broadcast to known neighbors (Bubble)
  *
  * @author hal.hildebrand
  */

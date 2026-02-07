@@ -21,8 +21,8 @@ import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.von.LocalServerTransport;
-import com.hellblazer.luciferase.simulation.von.VonBubble;
-import com.hellblazer.luciferase.simulation.von.VonMessage;
+import com.hellblazer.luciferase.simulation.von.Bubble;
+import com.hellblazer.luciferase.simulation.von.Message;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,11 +38,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests for P2PGhostChannel - P2P ghost synchronization over VonTransport.
+ * Tests for P2PGhostChannel - P2P ghost synchronization over Transport.
  * <p>
  * Tests validate:
  * - Ghost queuing and flushing at bucket boundaries
- * - P2P transmission via VonTransport
+ * - P2P transmission via Transport
  * - Receiving and converting TransportGhosts back to SimulationGhostEntities
  * - Handler notification on incoming ghosts
  * - Neighbor-only transmission (non-neighbors ignored)
@@ -56,8 +56,8 @@ class P2PGhostChannelTest {
     private static final long TARGET_FRAME_MS = 10;
 
     private LocalServerTransport.Registry registry;
-    private VonBubble bubble1;
-    private VonBubble bubble2;
+    private Bubble bubble1;
+    private Bubble bubble2;
     private P2PGhostChannel<StringEntityID, Object> channel1;
     private P2PGhostChannel<StringEntityID, Object> channel2;
 
@@ -65,15 +65,15 @@ class P2PGhostChannelTest {
     void setup() {
         registry = LocalServerTransport.Registry.create();
 
-        // Create two VonBubbles with P2P transport
+        // Create two Bubbles with P2P transport
         var id1 = UUID.randomUUID();
         var id2 = UUID.randomUUID();
 
         var transport1 = registry.register(id1);
         var transport2 = registry.register(id2);
 
-        bubble1 = new VonBubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
-        bubble2 = new VonBubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
+        bubble1 = new Bubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
+        bubble2 = new Bubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
 
         // Add some entities so bubbles have positions
         bubble1.addEntity("entity-1", new Point3f(50.0f, 50.0f, 50.0f), new Object());
@@ -158,7 +158,7 @@ class P2PGhostChannelTest {
     }
 
     @Test
-    void testSendBatch_transmitsViaVonTransport() throws Exception {
+    void testSendBatch_transmitsViaTransport() throws Exception {
         // Given: A batch of ghosts
         var ghosts = List.of(
             createGhost("ghost-1", new Point3f(51.0f, 51.0f, 50.0f)),

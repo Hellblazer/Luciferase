@@ -18,9 +18,9 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
-import com.hellblazer.luciferase.simulation.von.VonMessage;
-import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
-import com.hellblazer.luciferase.simulation.von.VonTransport;
+import com.hellblazer.luciferase.simulation.von.Message;
+import com.hellblazer.luciferase.simulation.von.MessageFactory;
+import com.hellblazer.luciferase.simulation.von.Transport;
 import javafx.geometry.Point3D;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +34,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Proxy for a bubble in a remote process.
  * <p>
- * Delegates operations to remote process via VonTransport.
+ * Delegates operations to remote process via Transport.
  * Manages connection failures and timeouts gracefully.
  * <p>
  * Features:
@@ -55,8 +55,8 @@ public class RemoteBubbleProxy implements BubbleReference {
     private volatile Clock clock = Clock.system();
 
     private final UUID bubbleId;
-    private final VonTransport transport;
-    private final VonMessageFactory factory;
+    private final Transport transport;
+    private final MessageFactory factory;
     private final long timeoutMs;
     private final long cacheTTL;
 
@@ -74,9 +74,9 @@ public class RemoteBubbleProxy implements BubbleReference {
      * Create a remote bubble proxy.
      *
      * @param bubbleId  UUID of the remote bubble
-     * @param transport VonTransport for communication
+     * @param transport Transport for communication
      */
-    public RemoteBubbleProxy(UUID bubbleId, VonTransport transport) {
+    public RemoteBubbleProxy(UUID bubbleId, Transport transport) {
         this(bubbleId, transport, DEFAULT_TIMEOUT_MS);
     }
 
@@ -84,10 +84,10 @@ public class RemoteBubbleProxy implements BubbleReference {
      * Create a remote bubble proxy with custom timeout.
      *
      * @param bubbleId  UUID of the remote bubble
-     * @param transport VonTransport for communication
+     * @param transport Transport for communication
      * @param timeoutMs Timeout in milliseconds for remote calls
      */
-    public RemoteBubbleProxy(UUID bubbleId, VonTransport transport, long timeoutMs) {
+    public RemoteBubbleProxy(UUID bubbleId, Transport transport, long timeoutMs) {
         this(bubbleId, transport, timeoutMs, DEFAULT_CACHE_TTL_MS);
     }
 
@@ -95,14 +95,14 @@ public class RemoteBubbleProxy implements BubbleReference {
      * Create a remote bubble proxy with custom timeout and cache TTL.
      *
      * @param bubbleId  UUID of the remote bubble
-     * @param transport VonTransport for communication
+     * @param transport Transport for communication
      * @param timeoutMs Timeout in milliseconds for remote calls
      * @param cacheTTL  Cache time-to-live in milliseconds
      */
-    public RemoteBubbleProxy(UUID bubbleId, VonTransport transport, long timeoutMs, long cacheTTL) {
+    public RemoteBubbleProxy(UUID bubbleId, Transport transport, long timeoutMs, long cacheTTL) {
         this.bubbleId = Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
         this.transport = Objects.requireNonNull(transport, "Transport cannot be null");
-        this.factory = VonMessageFactory.system();
+        this.factory = MessageFactory.system();
         this.timeoutMs = timeoutMs;
         this.cacheTTL = cacheTTL;
         this.cache = new ConcurrentHashMap<>();
@@ -199,7 +199,7 @@ public class RemoteBubbleProxy implements BubbleReference {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while fetching position", e);
-        } catch (VonTransport.TransportException e) {
+        } catch (Transport.TransportException e) {
             throw new RuntimeException("Transport error fetching position", e);
         }
     }
@@ -227,7 +227,7 @@ public class RemoteBubbleProxy implements BubbleReference {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while fetching neighbors", e);
-        } catch (VonTransport.TransportException e) {
+        } catch (Transport.TransportException e) {
             throw new RuntimeException("Transport error fetching neighbors", e);
         }
     }

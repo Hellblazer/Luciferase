@@ -60,12 +60,12 @@ class P2PProtocolIntegrationTest {
     private static final float AOI_RADIUS = 50.0f;
 
     private LocalServerTransport.Registry registry;
-    private VonManager manager;
+    private Manager manager;
 
     @BeforeEach
     void setup() {
         registry = LocalServerTransport.Registry.create();
-        manager = new VonManager(registry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS);
+        manager = new Manager(registry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS);
     }
 
     @AfterEach
@@ -263,7 +263,7 @@ class P2PProtocolIntegrationTest {
     @Test
     void testPerformance_joinLatencyUnder100ms() throws Exception {
         // Given: 10-bubble cluster
-        List<VonBubble> cluster = new ArrayList<>();
+        List<Bubble> cluster = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
             var bubble = createBubbleAt(50.0f + i * 8, 50.0f, 50.0f);
             manager.joinAt(bubble, bubble.position());
@@ -313,7 +313,7 @@ class P2PProtocolIntegrationTest {
         // Given: 10-bubble cluster in tight area (all within AOI)
         // In P2P mode with star topology, the hub (first bubble) knows all,
         // but others only know the hub + neighbors from introductions
-        List<VonBubble> bubbles = new ArrayList<>();
+        List<Bubble> bubbles = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
             var bubble = createBubbleAt(
                 50.0f + (i % 3) * 10.0f,
@@ -372,7 +372,7 @@ class P2PProtocolIntegrationTest {
 
     // ========== Helper Methods ==========
 
-    private VonBubble createBubbleAt(float x, float y, float z) {
+    private Bubble createBubbleAt(float x, float y, float z) {
         var bubble = manager.createBubble();
         for (int i = 0; i < 10; i++) {
             float ex = Math.max(0.1f, x + (i % 3) * 0.1f);

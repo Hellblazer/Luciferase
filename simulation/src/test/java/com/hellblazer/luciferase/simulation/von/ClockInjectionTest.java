@@ -36,9 +36,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Phase 1 of F4.2.4 VON + Simulation Integration plan (bead: Luciferase-mvba).
  * Validates deterministic time handling across:
  * <ul>
- *   <li>VonManager.setClock() propagation to bubbles</li>
- *   <li>VonManager constructor with Clock parameter</li>
- *   <li>VonBubble.setClock() updates factory timestamps</li>
+ *   <li>Manager.setClock() propagation to bubbles</li>
+ *   <li>Manager constructor with Clock parameter</li>
+ *   <li>Bubble.setClock() updates factory timestamps</li>
  *   <li>Cross-component clock consistency</li>
  * </ul>
  *
@@ -51,7 +51,7 @@ class ClockInjectionTest {
     private static final float AOI_RADIUS = 50.0f;
 
     private LocalServerTransport.Registry registry;
-    private VonManager manager;
+    private Manager manager;
     private TestClock testClock;
 
     @BeforeEach
@@ -67,12 +67,12 @@ class ClockInjectionTest {
     }
 
     /**
-     * Test 1: VonManager.setClock() propagates clock to all existing bubbles.
+     * Test 1: Manager.setClock() propagates clock to all existing bubbles.
      */
     @Test
-    void testVonManager_setClock_propagatesToBubbles() {
+    void testManager_setClock_propagatesToBubbles() {
         // Given: Manager with bubbles using system clock
-        manager = new VonManager(registry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS);
+        manager = new Manager(registry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS);
         var bubble1 = manager.createBubble();
         var bubble2 = manager.createBubble();
         addEntities(bubble1, new Point3f(50.0f, 50.0f, 50.0f), 5);
@@ -93,12 +93,12 @@ class ClockInjectionTest {
     }
 
     /**
-     * Test 2: VonManager constructor with Clock uses that clock for factory and propagates to bubbles.
+     * Test 2: Manager constructor with Clock uses that clock for factory and propagates to bubbles.
      */
     @Test
-    void testVonManager_constructorWithClock_bubblesUseClock() {
+    void testManager_constructorWithClock_bubblesUseClock() {
         // Given: Manager constructed with test clock
-        manager = new VonManager(registry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS, testClock);
+        manager = new Manager(registry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS, testClock);
 
         // When: Create a bubble
         var bubble = manager.createBubble();
@@ -111,14 +111,14 @@ class ClockInjectionTest {
     }
 
     /**
-     * Test 3: VonBubble.setClock() updates factory to use new clock for message timestamps.
+     * Test 3: Bubble.setClock() updates factory to use new clock for message timestamps.
      */
     @Test
-    void testVonBubble_setClock_updatesFactoryTimestamps() {
+    void testBubble_setClock_updatesFactoryTimestamps() {
         // Given: Bubble with default clock
         var id = UUID.randomUUID();
         var transport = registry.register(id);
-        var bubble = new VonBubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
+        var bubble = new Bubble(id, SPATIAL_LEVEL, TARGET_FRAME_MS, transport);
         addEntities(bubble, new Point3f(50.0f, 50.0f, 50.0f), 5);
 
         // When: Set clock on bubble
@@ -142,7 +142,7 @@ class ClockInjectionTest {
     @Test
     void testClockConsistency_acrossComponents() throws Exception {
         // Given: Manager with test clock and two connected bubbles
-        manager = new VonManager(registry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS, testClock);
+        manager = new Manager(registry, SPATIAL_LEVEL, TARGET_FRAME_MS, AOI_RADIUS, testClock);
         var bubble1 = manager.createBubble();
         var bubble2 = manager.createBubble();
 
@@ -156,11 +156,11 @@ class ClockInjectionTest {
         Thread.sleep(200);
 
         // Capture Move messages received by bubble1
-        var receivedMessages = new CopyOnWriteArrayList<VonMessage.Move>();
+        var receivedMessages = new CopyOnWriteArrayList<Message.Move>();
         var moveReceived = new CountDownLatch(1);
 
         bubble1.getTransport().onMessage(msg -> {
-            if (msg instanceof VonMessage.Move move) {
+            if (msg instanceof Message.Move move) {
                 receivedMessages.add(move);
                 moveReceived.countDown();
             }
@@ -181,7 +181,7 @@ class ClockInjectionTest {
     /**
      * Add entities to a bubble to establish spatial bounds.
      */
-    private void addEntities(VonBubble bubble, Point3f center, int count) {
+    private void addEntities(Bubble bubble, Point3f center, int count) {
         for (int i = 0; i < count; i++) {
             float x = Math.max(0.1f, center.x + (i % 3) * 0.1f);
             float y = Math.max(0.1f, center.y + (i / 3) * 0.1f);

@@ -35,7 +35,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * Test suite for VONRecoveryIntegration Phase 3: Recovery System Safety.
+ * Test suite for RecoveryIntegration Phase 3: Recovery System Safety.
  * <p>
  * Tests focus on:
  * <ul>
@@ -46,18 +46,18 @@ import static org.mockito.Mockito.*;
  *
  * @author hal.hildebrand
  */
-class VONRecoveryIntegrationTest {
+class RecoveryIntegrationTest {
 
-    private VonManager vonManager;
+    private Manager vonManager;
     private PartitionTopology topology;
     private FaultHandler faultHandler;
     private TestClock testClock;
-    private VONRecoveryIntegration integration;
+    private RecoveryIntegration integration;
 
     @BeforeEach
     void setUp() {
         // Create mocks
-        vonManager = mock(VonManager.class);
+        vonManager = mock(Manager.class);
         topology = mock(PartitionTopology.class);
         faultHandler = mock(FaultHandler.class);
         testClock = new TestClock();
@@ -66,7 +66,7 @@ class VONRecoveryIntegrationTest {
         when(vonManager.getAllBubbles()).thenReturn(List.of());
 
         // Create integration with test clock
-        integration = new VONRecoveryIntegration(vonManager, topology, faultHandler, testClock);
+        integration = new RecoveryIntegration(vonManager, topology, faultHandler, testClock);
     }
 
     /**
@@ -143,7 +143,7 @@ class VONRecoveryIntegrationTest {
 
         // Arrange: Create chain of 15 partitions (0 → 1 → 2 → ... → 14)
         var partitions = new ArrayList<UUID>();
-        var bubbles = new ArrayList<VonBubble>();
+        var bubbles = new ArrayList<Bubble>();
 
         for (int i = 0; i < 15; i++) {
             var partition = UUID.randomUUID();
@@ -256,10 +256,10 @@ class VONRecoveryIntegrationTest {
     }
 
     /**
-     * Create a mock VonBubble with specified ID and position.
+     * Create a mock Bubble with specified ID and position.
      */
-    private VonBubble createMockBubble(UUID id, Point3D position) {
-        var bubble = mock(VonBubble.class);
+    private Bubble createMockBubble(UUID id, Point3D position) {
+        var bubble = mock(Bubble.class);
         when(bubble.id()).thenReturn(id);
         when(bubble.position()).thenReturn(position);
         when(bubble.neighbors()).thenReturn(Set.of());

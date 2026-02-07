@@ -41,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class LocalServerTransportTest {
 
     private LocalServerTransport.Registry registry;
-    private final VonMessageFactory factory = VonMessageFactory.system();
+    private final MessageFactory factory = MessageFactory.system();
 
     @BeforeEach
     void setUp() {
@@ -75,7 +75,7 @@ public class LocalServerTransportTest {
         var transport2 = registry.register(id2);
 
         var latch = new CountDownLatch(1);
-        var received = new AtomicReference<VonMessage>();
+        var received = new AtomicReference<Message>();
 
         transport2.onMessage(msg -> {
             received.set(msg);
@@ -86,8 +86,8 @@ public class LocalServerTransportTest {
         transport1.sendToNeighbor(id2, message);
 
         assertThat(latch.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(received.get()).isInstanceOf(VonMessage.Leave.class);
-        assertThat(((VonMessage.Leave) received.get()).nodeId()).isEqualTo(id1);
+        assertThat(received.get()).isInstanceOf(Message.Leave.class);
+        assertThat(((Message.Leave) received.get()).nodeId()).isEqualTo(id1);
     }
 
     @Test
@@ -115,7 +115,7 @@ public class LocalServerTransportTest {
 
         var message = factory.createLeave(id1);
         assertThatThrownBy(() -> transport1.sendToNeighbor(unknownId, message))
-            .isInstanceOf(VonTransport.TransportException.class)
+            .isInstanceOf(Transport.TransportException.class)
             .hasMessageContaining("Unknown neighbor");
     }
 
@@ -180,7 +180,7 @@ public class LocalServerTransportTest {
 
         assertThat(transport1.isConnected()).isFalse();
         assertThatThrownBy(() -> transport1.sendToNeighbor(id2, factory.createLeave(id1)))
-            .isInstanceOf(VonTransport.TransportException.class)
+            .isInstanceOf(Transport.TransportException.class)
             .hasMessageContaining("closed");
     }
 
@@ -220,7 +220,7 @@ public class LocalServerTransportTest {
         var transport2 = registry.register(id2);
 
         var count = new java.util.concurrent.atomic.AtomicInteger(0);
-        var handler = (java.util.function.Consumer<VonMessage>) msg -> count.incrementAndGet();
+        var handler = (java.util.function.Consumer<Message>) msg -> count.incrementAndGet();
 
         transport2.onMessage(handler);
 
@@ -247,10 +247,10 @@ public class LocalServerTransportTest {
         var transport2 = registry.register(id2);
 
         var latch = new CountDownLatch(1);
-        var received = new AtomicReference<VonMessage.JoinRequest>();
+        var received = new AtomicReference<Message.JoinRequest>();
 
         transport2.onMessage(msg -> {
-            if (msg instanceof VonMessage.JoinRequest jr) {
+            if (msg instanceof Message.JoinRequest jr) {
                 received.set(jr);
                 latch.countDown();
             }

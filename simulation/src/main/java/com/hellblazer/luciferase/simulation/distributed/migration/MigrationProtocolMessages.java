@@ -18,14 +18,14 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
-import com.hellblazer.luciferase.simulation.von.VonMessage;
+import com.hellblazer.luciferase.simulation.von.Message;
 
 import java.util.UUID;
 
 /**
  * Two-Phase Commit protocol messages for cross-process entity migration.
  * <p>
- * Implements VonMessage for P2P transport between processes. All messages
+ * Implements Message for P2P transport between processes. All messages
  * include transaction ID for correlation and timestamp for ordering.
  * <p>
  * Protocol flow:
@@ -47,11 +47,11 @@ import java.util.UUID;
  *     |◀---------------- AbortResponse ----|
  * </pre>
  * <p>
- * Architecture Decision D6B.8: Messages extend VonMessage for P2P transport.
+ * Architecture Decision D6B.8: Messages extend Message for P2P transport.
  *
  * @author hal.hildebrand
  */
-public sealed interface MigrationProtocolMessages extends VonMessage {
+public sealed interface MigrationProtocolMessages extends Message {
 
     /**
      * PREPARE phase request: Initiate migration.

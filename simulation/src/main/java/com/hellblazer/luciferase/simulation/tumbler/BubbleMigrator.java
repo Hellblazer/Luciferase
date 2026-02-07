@@ -9,8 +9,8 @@
 package com.hellblazer.luciferase.simulation.tumbler;
 
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
-import com.hellblazer.luciferase.simulation.von.VonBubble;
-import com.hellblazer.luciferase.simulation.von.VonManager;
+import com.hellblazer.luciferase.simulation.von.Bubble;
+import com.hellblazer.luciferase.simulation.von.Manager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,11 +52,11 @@ public class BubbleMigrator {
     // Cooldown tracking (bubbleId -> last migration time)
     private final Map<UUID, Long> migrationCooldowns = new ConcurrentHashMap<>();
 
-    // Server-specific managers (serverId -> VonManager)
-    private final Map<UUID, VonManager> serverManagers = new ConcurrentHashMap<>();
+    // Server-specific managers (serverId -> Manager)
+    private final Map<UUID, Manager> serverManagers = new ConcurrentHashMap<>();
 
     // Bubble factory for creating bubbles on target server
-    private BiFunction<UUID, VonBubble, VonBubble> bubbleTransferFactory;
+    private BiFunction<UUID, Bubble, Bubble> bubbleTransferFactory;
 
     public BubbleMigrator(SpatialTumbler tumbler) {
         this(tumbler, Duration.ofSeconds(1), Duration.ofSeconds(5), 3);
@@ -80,9 +80,9 @@ public class BubbleMigrator {
     }
 
     /**
-     * Register a VonManager for a server.
+     * Register a Manager for a server.
      */
-    public void registerServerManager(UUID serverId, VonManager manager) {
+    public void registerServerManager(UUID serverId, Manager manager) {
         serverManagers.put(serverId, manager);
     }
 
@@ -91,7 +91,7 @@ public class BubbleMigrator {
      * The factory takes (targetServerId, sourceBubble) and returns
      * the new bubble on the target server.
      */
-    public void setBubbleTransferFactory(BiFunction<UUID, VonBubble, VonBubble> factory) {
+    public void setBubbleTransferFactory(BiFunction<UUID, Bubble, Bubble> factory) {
         this.bubbleTransferFactory = factory;
     }
 
@@ -100,7 +100,7 @@ public class BubbleMigrator {
      *
      * @return CompletableFuture with migration result
      */
-    public CompletableFuture<MigrationResult> migrate(VonBubble bubble, UUID targetServerId) {
+    public CompletableFuture<MigrationResult> migrate(Bubble bubble, UUID targetServerId) {
         var bubbleId = bubble.id();
 
         // Check if already migrating
@@ -152,7 +152,7 @@ public class BubbleMigrator {
     /**
      * Execute the actual migration protocol.
      */
-    private MigrationResult executeMigration(VonBubble sourceBubble, UUID targetServerId, long startTime) {
+    private MigrationResult executeMigration(Bubble sourceBubble, UUID targetServerId, long startTime) {
         var bubbleId = sourceBubble.id();
 
         log.info("Starting migration of bubble {} to server {}", bubbleId, targetServerId);
@@ -214,7 +214,7 @@ public class BubbleMigrator {
     /**
      * Transfer entities from source bubble to target bubble.
      */
-    private void transferEntities(VonBubble source, VonBubble target) {
+    private void transferEntities(Bubble source, Bubble target) {
         // Get all entities from source
         var entities = source.getAllEntityRecords();
 
@@ -231,7 +231,7 @@ public class BubbleMigrator {
      * Get the server ID for a bubble.
      * This should be tracked elsewhere; placeholder implementation.
      */
-    private UUID getServerForBubble(VonBubble bubble) {
+    private UUID getServerForBubble(Bubble bubble) {
         // In real implementation, look up from registry
         return null;
     }
@@ -241,7 +241,7 @@ public class BubbleMigrator {
      *
      * @return Number of migrations initiated
      */
-    public int runMigrationCycle(Map<UUID, List<VonBubble>> serverBubbles) {
+    public int runMigrationCycle(Map<UUID, List<Bubble>> serverBubbles) {
         var candidates = tumbler.findMigrationCandidates();
         if (candidates.isEmpty()) {
             return 0;
@@ -275,11 +275,11 @@ public class BubbleMigrator {
      * Select a bubble for migration from a list.
      * Prefers bubbles with more entities (higher load contribution).
      */
-    private VonBubble selectBubbleForMigration(List<VonBubble> bubbles) {
+    private Bubble selectBubbleForMigration(List<Bubble> bubbles) {
         return bubbles.stream()
                       .filter(b -> !inFlightMigrations.containsKey(b.id()))
                       .filter(b -> !isInCooldown(b.id()))
-                      .max(Comparator.comparingInt(VonBubble::entityCount))
+                      .max(Comparator.comparingInt(Bubble::entityCount))
                       .orElse(null);
     }
 

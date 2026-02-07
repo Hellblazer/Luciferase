@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * These tests validate the LOCAL-ONLY protocol implementation using
  * SpatialNeighborIndex for single-JVM operation. For distributed P2P
- * testing, see {@link VonManagerTest} and {@link P2PProtocolIntegrationTest}.
+ * testing, see {@link ManagerTest} and {@link P2PProtocolIntegrationTest}.
  * <p>
  * The JOIN protocol enables new bubbles to enter the VON overlay network.
  * Tests validate:
@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * LOCAL MODE vs P2P MODE:
  * - Local: Uses SpatialNeighborIndex for direct neighbor lookup
- * - P2P: Uses VonTransport for network communication (VonBubble)
+ * - P2P: Uses Transport for network communication (Bubble)
  *
  * @author hal.hildebrand
  */

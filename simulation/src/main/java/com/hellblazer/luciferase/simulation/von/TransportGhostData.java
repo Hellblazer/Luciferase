@@ -25,7 +25,7 @@ import java.io.Serializable;
  * <p>
  * Decomposes Point3f into individual float components (posX, posY, posZ)
  * for reliable Java Serialization over network sockets. This is the wire format
- * used in TransportVonMessage for cross-process ghost synchronization.
+ * used in TransportMessage for cross-process ghost synchronization.
  *
  * @author hal.hildebrand
  */
@@ -44,12 +44,12 @@ public record TransportGhostData(
     private static final long serialVersionUID = 1L;
 
     /**
-     * Create TransportGhostData from a VonMessage.TransportGhost.
+     * Create TransportGhostData from a Message.TransportGhost.
      *
      * @param ghost TransportGhost to convert
      * @return TransportGhostData with decomposed position
      */
-    public static TransportGhostData from(VonMessage.TransportGhost ghost) {
+    public static TransportGhostData from(Message.TransportGhost ghost) {
         return new TransportGhostData(
             ghost.entityId(),
             ghost.position().x,
@@ -64,12 +64,12 @@ public record TransportGhostData(
     }
 
     /**
-     * Convert back to VonMessage.TransportGhost.
+     * Convert back to Message.TransportGhost.
      *
      * @return TransportGhost with reconstructed Point3f
      */
-    public VonMessage.TransportGhost toTransportGhost() {
-        return new VonMessage.TransportGhost(
+    public Message.TransportGhost toTransportGhost() {
+        return new Message.TransportGhost(
             entityId,
             new Point3f(posX, posY, posZ),
             contentClass,

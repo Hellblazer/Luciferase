@@ -17,8 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.transport;
 
-import com.hellblazer.luciferase.simulation.von.VonMessage;
-import com.hellblazer.luciferase.simulation.von.VonMessageFactory;
+import com.hellblazer.luciferase.simulation.von.Message;
+import com.hellblazer.luciferase.simulation.von.MessageFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -47,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class SocketTransportTest {
 
     private final List<SocketTransport> transports = new ArrayList<>();
-    private final VonMessageFactory factory = VonMessageFactory.system();
+    private final MessageFactory factory = MessageFactory.system();
 
     @AfterEach
     void cleanup() throws IOException {
@@ -135,7 +135,7 @@ class SocketTransportTest {
         transports.add(transport2);
 
         // Setup message capture for transport2
-        BlockingQueue<VonMessage> received = new LinkedBlockingQueue<>();
+        BlockingQueue<Message> received = new LinkedBlockingQueue<>();
         transport2.onMessage(received::offer);
 
         // Start servers
@@ -161,9 +161,9 @@ class SocketTransportTest {
         // Receive and verify
         var receivedMessage = received.poll(5, TimeUnit.SECONDS);
         assertNotNull(receivedMessage, "Should receive message within 5 seconds");
-        assertTrue(receivedMessage instanceof VonMessage.Ack, "Should receive Ack message");
+        assertTrue(receivedMessage instanceof Message.Ack, "Should receive Ack message");
 
-        var ack = (VonMessage.Ack) receivedMessage;
+        var ack = (Message.Ack) receivedMessage;
         assertEquals(uuid2, ack.senderId(), "Sender ID should match");
     }
 
@@ -184,8 +184,8 @@ class SocketTransportTest {
         transports.add(transport2);
 
         // Setup message capture
-        BlockingQueue<VonMessage> received1 = new LinkedBlockingQueue<>();
-        BlockingQueue<VonMessage> received2 = new LinkedBlockingQueue<>();
+        BlockingQueue<Message> received1 = new LinkedBlockingQueue<>();
+        BlockingQueue<Message> received2 = new LinkedBlockingQueue<>();
         transport1.onMessage(received1::offer);
         transport2.onMessage(received2::offer);
 

@@ -32,15 +32,15 @@ import java.util.function.Consumer;
 /**
  * VON-enabled bubble that integrates P2P transport for distributed operation.
  * <p>
- * VonBubble extends EnhancedBubble with:
+ * Bubble extends EnhancedBubble with:
  * <ul>
  *   <li>Node interface implementation for VON protocols</li>
- *   <li>VonTransport integration for P2P communication</li>
+ *   <li>Transport integration for P2P communication</li>
  *   <li>Neighbor tracking via P2P messages (not broadcast)</li>
  *   <li>Message handlers for JOIN/MOVE/LEAVE/GHOST_SYNC</li>
  * </ul>
  * <p>
- * In v4.0 architecture, VonBubble IS a VON node - the bubble provides:
+ * In v4.0 architecture, Bubble IS a VON node - the bubble provides:
  * - Spatial bounds (TetreeKey + RDGCS)
  * - Position (entity centroid)
  * - Neighbor management (via P2P)
@@ -49,16 +49,16 @@ import java.util.function.Consumer;
  *
  * @author hal.hildebrand
  */
-public class VonBubble extends EnhancedBubble implements Node {
+public class Bubble extends EnhancedBubble implements Node {
 
-    private static final Logger log = LoggerFactory.getLogger(VonBubble.class);
+    private static final Logger log = LoggerFactory.getLogger(Bubble.class);
 
-    private final VonTransport transport;
-    private volatile VonMessageFactory factory;
+    private final Transport transport;
+    private volatile MessageFactory factory;
     private final Map<UUID, NeighborState> neighborStates;
     private final Set<UUID> introducedTo;  // Track neighbors we've introduced ourselves to
     private final List<Consumer<Event>> eventListeners;
-    private final Consumer<VonMessage> messageHandler;
+    private final Consumer<Message> messageHandler;
     private volatile Clock clock = Clock.system();
 
     /**
@@ -71,21 +71,21 @@ public class VonBubble extends EnhancedBubble implements Node {
      */
     public void setClock(Clock clock) {
         this.clock = clock;
-        this.factory = new VonMessageFactory(clock);
+        this.factory = new MessageFactory(clock);
     }
 
     /**
-     * Create a VonBubble with P2P transport.
+     * Create a Bubble with P2P transport.
      *
      * @param id            Unique bubble identifier
      * @param spatialLevel  Tetree refinement level (typically 10)
      * @param targetFrameMs Target simulation frame time budget
      * @param transport     P2P transport for VON communication
      */
-    public VonBubble(UUID id, byte spatialLevel, long targetFrameMs, VonTransport transport) {
+    public Bubble(UUID id, byte spatialLevel, long targetFrameMs, Transport transport) {
         super(id, spatialLevel, targetFrameMs);
         this.transport = transport;
-        this.factory = VonMessageFactory.system();
+        this.factory = MessageFactory.system();
         this.neighborStates = new ConcurrentHashMap<>();
         this.introducedTo = ConcurrentHashMap.newKeySet();
         this.eventListeners = new CopyOnWriteArrayList<>();
@@ -94,7 +94,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         this.messageHandler = this::handleMessage;
         transport.onMessage(messageHandler);
 
-        log.debug("VonBubble created: id={}", id);
+        log.debug("Bubble created: id={}", id);
     }
 
     // ========== Node Interface Implementation ==========
@@ -190,7 +190,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         for (UUID neighborId : neighborSnapshot) {
             try {
                 transport.sendToNeighbor(neighborId, moveMsg);
-            } catch (VonTransport.TransportException e) {
+            } catch (Transport.TransportException e) {
                 log.warn("Failed to send MOVE to neighbor {}: {}", neighborId, e.getMessage());
             }
         }
@@ -211,7 +211,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         for (UUID neighborId : neighborSnapshot) {
             try {
                 transport.sendToNeighbor(neighborId, leaveMsg);
-            } catch (VonTransport.TransportException e) {
+            } catch (Transport.TransportException e) {
                 log.warn("Failed to send LEAVE to neighbor {}: {}", neighborId, e.getMessage());
             }
         }
@@ -243,7 +243,7 @@ public class VonBubble extends EnhancedBubble implements Node {
             log.debug("Sent JOIN request to {} for position {}", acceptor.nodeId(), targetPosition);
             return true;
 
-        } catch (VonTransport.TransportException e) {
+        } catch (Transport.TransportException e) {
             log.error("JOIN failed: {}", e.getMessage());
             return false;
         }
@@ -254,7 +254,7 @@ public class VonBubble extends EnhancedBubble implements Node {
      *
      * @return P2P transport
      */
-    public VonTransport getTransport() {
+    public Transport getTransport() {
         return transport;
     }
 
@@ -285,7 +285,7 @@ public class VonBubble extends EnhancedBubble implements Node {
      *
      * @return Move message with current position and bounds
      */
-    public VonMessage.Move createMoveMessage() {
+    public Message.Move createMoveMessage() {
         return factory.createMove(id(), position(), bounds());
     }
 
@@ -317,7 +317,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         transport.removeMessageHandler(messageHandler);
         neighborStates.clear();
         eventListeners.clear();
-        log.debug("VonBubble {} closed", id());
+        log.debug("Bubble {} closed", id());
     }
 
     // ========== Private Methods ==========
@@ -325,19 +325,19 @@ public class VonBubble extends EnhancedBubble implements Node {
     /**
      * Handle incoming P2P messages.
      */
-    private void handleMessage(VonMessage message) {
+    private void handleMessage(Message message) {
         switch (message) {
-            case VonMessage.JoinRequest req -> handleJoinRequest(req);
-            case VonMessage.JoinResponse resp -> handleJoinResponse(resp);
-            case VonMessage.Move move -> handleMove(move);
-            case VonMessage.Leave leave -> handleLeave(leave);
-            case VonMessage.GhostSync sync -> handleGhostSync(sync);
-            case VonMessage.Ack ack -> handleAck(ack);
+            case Message.JoinRequest req -> handleJoinRequest(req);
+            case Message.JoinResponse resp -> handleJoinResponse(resp);
+            case Message.Move move -> handleMove(move);
+            case Message.Leave leave -> handleLeave(leave);
+            case Message.GhostSync sync -> handleGhostSync(sync);
+            case Message.Ack ack -> handleAck(ack);
             default -> log.warn("Unhandled message type: {}", message.getClass().getSimpleName());
         }
     }
 
-    private void handleJoinRequest(VonMessage.JoinRequest req) {
+    private void handleJoinRequest(Message.JoinRequest req) {
         log.debug("Received JOIN request from {} at {}", req.joinerId(), req.position());
 
         // Add as neighbor
@@ -351,12 +351,12 @@ public class VonBubble extends EnhancedBubble implements Node {
 
         // Respond with our current neighbors
         // Create snapshot to avoid ConcurrentModificationException
-        var neighborInfos = new HashSet<VonMessage.NeighborInfo>();
+        var neighborInfos = new HashSet<Message.NeighborInfo>();
         var statesSnapshot = new HashMap<>(neighborStates);
         for (var entry : statesSnapshot.entrySet()) {
             if (!entry.getKey().equals(req.joinerId())) {
                 var state = entry.getValue();
-                neighborInfos.add(new VonMessage.NeighborInfo(
+                neighborInfos.add(new Message.NeighborInfo(
                     state.nodeId(),
                     state.position(),
                     state.bounds()
@@ -364,19 +364,19 @@ public class VonBubble extends EnhancedBubble implements Node {
             }
         }
         // Include ourselves
-        neighborInfos.add(new VonMessage.NeighborInfo(id(), position(), bounds()));
+        neighborInfos.add(new Message.NeighborInfo(id(), position(), bounds()));
 
         var response = factory.createJoinResponse(id(), neighborInfos);
         try {
             transport.sendToNeighbor(req.joinerId(), response);
-        } catch (VonTransport.TransportException e) {
+        } catch (Transport.TransportException e) {
             log.warn("Failed to send JOIN response to {}: {}", req.joinerId(), e.getMessage());
         }
 
         emitEvent(new Event.Join(req.joinerId(), req.position()));
     }
 
-    private void handleJoinResponse(VonMessage.JoinResponse resp) {
+    private void handleJoinResponse(Message.JoinResponse resp) {
         log.debug("Received JOIN response from {} with {} neighbors", resp.acceptorId(), resp.neighbors().size());
 
         // Add all neighbors from the response
@@ -393,7 +393,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         // Send ACK to acceptor
         try {
             transport.sendToNeighbor(resp.acceptorId(), factory.createAck(resp.acceptorId(), id()));
-        } catch (VonTransport.TransportException e) {
+        } catch (Transport.TransportException e) {
             log.warn("Failed to send ACK to {}: {}", resp.acceptorId(), e.getMessage());
         }
 
@@ -408,14 +408,14 @@ public class VonBubble extends EnhancedBubble implements Node {
                     var introRequest = factory.createJoinRequest(id(), position(), bounds());
                     transport.sendToNeighbor(neighborId, introRequest);
                     log.trace("Sent introduction to neighbor {} from JoinResponse", neighborId);
-                } catch (VonTransport.TransportException e) {
+                } catch (Transport.TransportException e) {
                     log.warn("Failed to introduce to neighbor {}: {}", neighborId, e.getMessage());
                 }
             }
         }
     }
 
-    private void handleMove(VonMessage.Move move) {
+    private void handleMove(Message.Move move) {
         if (!neighborStates.containsKey(move.nodeId())) {
             log.trace("Ignoring MOVE from non-neighbor {}", move.nodeId());
             return;
@@ -432,7 +432,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         log.trace("Neighbor {} moved to {}", move.nodeId(), move.newPosition());
     }
 
-    private void handleLeave(VonMessage.Leave leave) {
+    private void handleLeave(Message.Leave leave) {
         var state = neighborStates.get(leave.nodeId());
         if (state != null) {
             removeNeighbor(leave.nodeId());
@@ -441,7 +441,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         }
     }
 
-    private void handleGhostSync(VonMessage.GhostSync sync) {
+    private void handleGhostSync(Message.GhostSync sync) {
         log.trace("Received GHOST_SYNC from {} with {} ghosts at bucket {}",
                   sync.sourceBubbleId(), sync.ghosts().size(), sync.bucket());
         // Ghost handling is delegated to external ghost manager
@@ -449,7 +449,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         emitEvent(new Event.GhostSync(sync.sourceBubbleId(), sync.ghosts(), sync.bucket()));
     }
 
-    private void handleAck(VonMessage.Ack ack) {
+    private void handleAck(Message.Ack ack) {
         log.trace("Received ACK from {} for {}", ack.senderId(), ack.ackFor());
         // ACKs are handled by transport layer for async operations
     }
@@ -464,7 +464,7 @@ public class VonBubble extends EnhancedBubble implements Node {
         }
     }
 
-    private VonTransport.MemberInfo findAcceptorForPosition(Point3D position) {
+    private Transport.MemberInfo findAcceptorForPosition(Point3D position) {
         // Use transport's routing to find the member responsible for this position
         // For now, use a simple approach: get any available member
         // In production, this would use TetreeKey routing
@@ -473,7 +473,7 @@ public class VonBubble extends EnhancedBubble implements Node {
             if (bounds != null && bounds.rootKey() != null) {
                 return transport.routeToKey(bounds.rootKey());
             }
-        } catch (VonTransport.TransportException e) {
+        } catch (Transport.TransportException e) {
             log.warn("Route to key failed: {}", e.getMessage());
         }
         return null;
