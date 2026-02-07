@@ -570,6 +570,64 @@ class CrossProcessMigrationTest {
         }
     }
 
+    /**
+     * BubbleReference that fails rollback operations (addEntity) but succeeds at remove.
+     * <p>
+     * Used to test orphan tracking when rollback fails.
+     */
+    private static class RollbackFailingBubbleReference implements BubbleReference, TestableEntityStore {
+        private final UUID bubbleId;
+
+        RollbackFailingBubbleReference(UUID bubbleId) {
+            this.bubbleId = bubbleId;
+        }
+
+        @Override
+        public boolean isLocal() {
+            return true;
+        }
+
+        @Override
+        public com.hellblazer.luciferase.simulation.distributed.LocalBubbleReference asLocal() {
+            return null;
+        }
+
+        @Override
+        public com.hellblazer.luciferase.simulation.distributed.RemoteBubbleProxy asRemote() {
+            throw new IllegalStateException("Not remote");
+        }
+
+        @Override
+        public UUID getBubbleId() {
+            return bubbleId;
+        }
+
+        @Override
+        public Point3D getPosition() {
+            return new Point3D(0, 0, 0);
+        }
+
+        @Override
+        public Set<UUID> getNeighbors() {
+            return new HashSet<>();
+        }
+
+        @Override
+        public boolean removeEntity(String entityId) {
+            return true; // Succeed at removing (prepare phase works)
+        }
+
+        @Override
+        public boolean addEntity(EntitySnapshot snapshot) {
+            return false; // Fail at adding (rollback phase fails)
+        }
+
+        @Override
+        public boolean isReachable() {
+            return true;
+        }
+    }
+
     private BubbleReference createMockBubbleReference(UUID bubbleId, boolean reachable) {
         return new TestBubbleReference(bubbleId, reachable);
     }
@@ -580,6 +638,10 @@ class CrossProcessMigrationTest {
 
     private BubbleReference createFailingCommitBubbleReference(UUID bubbleId) {
         return new TestBubbleReference(bubbleId, true, 0, true);
+    }
+
+    private BubbleReference createRollbackFailingBubbleReference(UUID bubbleId) {
+        return new RollbackFailingBubbleReference(bubbleId);
     }
 
     /**
@@ -639,6 +701,41 @@ class CrossProcessMigrationTest {
                    "After GC, most locks should be collected. Live locks: " + liveLocksCount +
                    " out of " + entityCount + " (map size: " + mapSize + "). " +
                    "WeakReference allows lock GC without shrinking map.");
+    }
+
+    /**
+     * Test Phase2C-1: Orphan tracking on rollback failure.
+     * <p>
+     * Verifies:
+     * - When rollback fails, entity ID is tracked in orphanedEntityIds
+     * - getOrphanedEntities() returns the orphaned entity ID
+     * - Orphan tracking is thread-safe (ConcurrentHashSet)
+     */
+    @Test
+    @Timeout(5)
+    void testOrphanTrackingOnRollbackFailure() throws Exception {
+        var entityId = "orphan-test-entity-1";
+        var sourceId = UUID.randomUUID();
+        var destId = UUID.randomUUID();
+
+        // Source that fails rollback: removeEntity succeeds, but addEntity fails
+        var source = createRollbackFailingBubbleReference(sourceId);
+        // Destination that fails commit
+        var dest = createFailingCommitBubbleReference(destId);
+
+        var result = migration.migrate(entityId, source, dest).get(2, TimeUnit.SECONDS);
+
+        assertFalse(result.success(), "Migration should fail");
+        assertTrue(result.reason().contains("COMMIT_FAILED") || result.reason().contains("ROLLBACK"),
+                   "Failure reason should indicate commit or rollback failure");
+
+        // Verify orphan tracking
+        var orphanedEntities = migration.getOrphanedEntities();
+        assertEquals(1, orphanedEntities.size(), "Should have 1 orphaned entity");
+        assertTrue(orphanedEntities.contains(entityId), "Orphaned entities should contain " + entityId);
+
+        // Verify metrics recorded rollback failure
+        assertEquals(1, metrics.getRollbackFailures(), "Should have 1 rollback failure");
     }
 
     /**
@@ -740,5 +837,94 @@ class CrossProcessMigrationTest {
         assertTrue(liveLocksCount < entityCount / 10,
                    "AFTER FIX: Most locks should be GC'd. Live locks: " + liveLocksCount +
                    " out of " + entityCount + " (map entries: " + locksMap.size() + ")");
+    }
+
+    /**
+     * Test 13: getRecoveryState() returns accurate recovery state (Phase 2C).
+     * <p>
+     * Verifies:
+     * - Orphaned entities are tracked when rollback fails
+     * - getRecoveryState() returns correct count
+     * - Recovery state includes rollback failure count
+     * - Recovery state includes concurrent migrations
+     */
+    @Test
+    @Timeout(5)
+    void testGetRecoveryState() throws Exception {
+        var entityId = "orphan-test-entity";
+        var sourceId = UUID.randomUUID();
+        var destId = UUID.randomUUID();
+
+        // Create source that removes successfully but FAILS rollback (addEntity)
+        var source = createRollbackFailingBubbleReference(sourceId);
+        // Create dest that fails commit (addEntity)
+        var dest = createFailingCommitBubbleReference(destId);
+
+        // Initial state: no orphans, no failures
+        var initialState = migration.getRecoveryState();
+        assertEquals(0, initialState.orphanedEntities().size(), "Should start with no orphans");
+        assertEquals(0, initialState.rollbackFailures(), "Should start with no rollback failures");
+
+        // Trigger migration that will:
+        // 1. Remove from source (succeeds)
+        // 2. Add to dest (fails - triggers ABORT)
+        // 3. Rollback to source (fails - creates orphan)
+        var result = migration.migrate(entityId, source, dest).get(2, TimeUnit.SECONDS);
+
+        // Migration should fail
+        assertFalse(result.success(), "Migration should fail");
+
+        // Verify orphan tracking
+        var orphans = migration.getOrphanedEntities();
+        assertEquals(1, orphans.size(), "Should have 1 orphaned entity");
+        assertTrue(orphans.contains(entityId), "Should contain orphaned entity");
+
+        // Verify getRecoveryState() includes orphan data
+        var recoveryState = migration.getRecoveryState();
+        assertEquals(1, recoveryState.orphanedEntities().size(), "RecoveryState should show 1 orphan");
+        assertTrue(recoveryState.orphanedEntities().contains(entityId),
+                   "RecoveryState should contain orphaned entity");
+        assertEquals(1, recoveryState.rollbackFailures(),
+                     "RecoveryState should show 1 rollback failure");
+    }
+
+    /**
+     * Test 14: Multiple orphans tracked correctly (Phase 2C).
+     * <p>
+     * Verifies:
+     * - Multiple rollback failures create multiple orphans
+     * - getRecoveryState() reflects cumulative state
+     * - Orphan set is thread-safe
+     */
+    @Test
+    @Timeout(5)
+    void testMultipleOrphans() throws Exception {
+        var entityCount = 5;
+        var futures = new CompletableFuture[entityCount];
+
+        for (var i = 0; i < entityCount; i++) {
+            var entityId = "orphan-" + i;
+            var sourceId = UUID.randomUUID();
+            var destId = UUID.randomUUID();
+
+            var source = createRollbackFailingBubbleReference(sourceId);
+            var dest = createFailingCommitBubbleReference(destId);
+
+            futures[i] = migration.migrate(entityId, source, dest);
+        }
+
+        // Wait for all to complete
+        CompletableFuture.allOf(futures).get(5, TimeUnit.SECONDS);
+
+        // Verify all are orphaned
+        var orphans = migration.getOrphanedEntities();
+        assertEquals(entityCount, orphans.size(), "Should have " + entityCount + " orphaned entities");
+
+        // Verify getRecoveryState() shows correct count
+        var recoveryState = migration.getRecoveryState();
+        assertEquals(entityCount, recoveryState.orphanedEntities().size(),
+                     "RecoveryState should show " + entityCount + " orphans");
+        assertEquals(entityCount, recoveryState.rollbackFailures(),
+                     "RecoveryState should show " + entityCount + " rollback failures");
     }
 }

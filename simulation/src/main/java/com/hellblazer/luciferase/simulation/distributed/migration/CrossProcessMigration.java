@@ -29,6 +29,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.ref.WeakReference;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
@@ -87,6 +88,8 @@ public class CrossProcessMigration {
     private final        Map<String, WeakReference<ReentrantLock>> entityMigrationLocks = new ConcurrentHashMap<>();
     // Active transactions (for cleanup and monitoring)
     private final        Map<UUID, com.hellblazer.luciferase.simulation.distributed.migration.MigrationTransaction> activeTransactions = new ConcurrentHashMap<>();
+    // Phase 2C: Orphaned entity tracking for rollback failure observability
+    private final        Set<String>           orphanedEntityIds                                                    = ConcurrentHashMap.newKeySet();
     // Phase 4.2.2: Prime-Mover controller for event-driven execution
     private final        RealTimeController    controller;
 
@@ -173,7 +176,8 @@ public class CrossProcessMigration {
             metrics::recordAlreadyMigrating,
             metrics::recordRollbackFailure,
             metrics::recordAbort,
-            dedup
+            dedup,
+            orphanedEntityIds::add  // Phase 2C: Pass orphaned entity tracking callback
         );
 
         // Set controller context and start entity
@@ -210,6 +214,78 @@ public class CrossProcessMigration {
      */
     public MigrationMetrics getMetrics() {
         return metrics;
+    }
+
+    /**
+     * Phase 2C: Get orphaned entity IDs (entities that failed rollback).
+     * <p>
+     * Returns a defensive copy of the orphaned entity set.
+     * <p>
+     * Orphaned entities are those where:
+     * - Migration failed during COMMIT phase
+     * - Rollback (restore to source) also failed
+     * - Entity may be lost and requires manual intervention
+     * <p>
+     * Use this API for admin tooling and runbook procedures.
+     *
+     * @return Immutable set of orphaned entity IDs
+     */
+    public Set<String> getOrphanedEntities() {
+        return Set.copyOf(orphanedEntityIds);
+    }
+
+    /**
+     * Phase 2C: Recovery state for admin tooling and observability.
+     * <p>
+     * Provides snapshot of migration recovery state including:
+     * - Orphaned entities (rollback failures requiring manual intervention)
+     * - Active transactions (in-flight migrations)
+     * - Rollback failure count (cumulative)
+     * - Concurrent migrations (current gauge)
+     * <p>
+     * Use this for:
+     * - Admin dashboards
+     * - Runbook procedures
+     * - Alerting and monitoring
+     * - Operational health checks
+     *
+     * @param orphanedEntities   Set of entity IDs that failed rollback
+     * @param activeTransactions Count of in-flight migrations
+     * @param rollbackFailures   Cumulative count of rollback failures
+     * @param concurrentMigrations Current concurrent migration gauge
+     */
+    public record RecoveryState(
+        Set<String> orphanedEntities,
+        int activeTransactions,
+        long rollbackFailures,
+        int concurrentMigrations
+    ) {}
+
+    /**
+     * Phase 2C: Get current recovery state for admin tooling.
+     * <p>
+     * Returns comprehensive recovery state including:
+     * - Orphaned entities
+     * - Active transactions
+     * - Rollback failure count
+     * - Concurrent migrations
+     * <p>
+     * Thread-safe. Returns snapshot of current state.
+     * <p>
+     * <b>Note</b>: The snapshot is not atomic. If migrations complete
+     * during this method call, the returned values may be slightly
+     * inconsistent across fields. This is acceptable for admin
+     * monitoring where exact consistency is not required.
+     *
+     * @return RecoveryState snapshot
+     */
+    public RecoveryState getRecoveryState() {
+        return new RecoveryState(
+            Set.copyOf(orphanedEntityIds),
+            activeTransactions.size(),
+            metrics.getRollbackFailures(),
+            metrics.getConcurrentMigrations()
+        );
     }
 
     /**
@@ -260,6 +336,7 @@ public class CrossProcessMigration {
         private final Runnable                            recordRollbackFailure;
         private final java.util.function.Consumer<String> recordAbort;
         private final IdempotencyStore                    dedup;
+        private final java.util.function.Consumer<String> recordOrphanedEntity; // Phase 2C: Orphan tracking callback
 
         public CrossProcessMigrationEntity(
             String entityId,
@@ -277,7 +354,8 @@ public class CrossProcessMigration {
             Runnable recordAlreadyMigrating,
             Runnable recordRollbackFailure,
             java.util.function.Consumer<String> recordAbort,
-            IdempotencyStore dedup
+            IdempotencyStore dedup,
+            java.util.function.Consumer<String> recordOrphanedEntity  // Phase 2C: Orphan tracking
         ) {
             this.entityId = entityId;
             this.source = source;
@@ -295,6 +373,7 @@ public class CrossProcessMigration {
             this.recordRollbackFailure = recordRollbackFailure;
             this.recordAbort = recordAbort;
             this.dedup = dedup;
+            this.recordOrphanedEntity = recordOrphanedEntity;  // Phase 2C
         }
 
         /**
@@ -476,16 +555,26 @@ public class CrossProcessMigration {
 
         /**
          * ABORT state: Rollback (restore entity to source).
+         * <p>
+         * Phase 2C: Enhanced logging with full entity state for observability.
          */
         private void abort() {
             try {
-                log.info("ABORT: Rolling back entity {} to source {}", entityId, source.getBubbleId());
+                // Phase 2C: Structured logging with full context
+                log.info("ABORT: Rolling back entity {} to source {} (txn={}, reason={}, snapshot=[epoch={}, position={}])",
+                         entityId, source.getBubbleId(), txnId, abortReason,
+                         snapshot.epoch(), snapshot.position());
 
                 // Check total timeout
                 var totalElapsed = clockSupplier.getAsLong() - phaseStartTime;
                 if (totalElapsed > TOTAL_TIMEOUT_MS) {
-                    log.error("ABORT timed out for entity {} - CRITICAL: Entity may be lost", entityId);
+                    // Phase 2C: Enhanced error logging with full state
+                    log.error("ABORT timed out for entity {} - CRITICAL: Entity may be lost " +
+                              "(txn={}, source={}, dest={}, elapsed={}ms, snapshot=[epoch={}, position={}], reason={})",
+                              entityId, txnId, source.getBubbleId(), dest.getBubbleId(), totalElapsed,
+                              snapshot.epoch(), snapshot.position(), abortReason);
                     recordRollbackFailure.run();
+                    recordOrphanedEntity.accept(entityId); // Phase 2C: Track orphaned entity
                     recordAbort.accept("TIMEOUT");
                     failAndUnlock("ABORT_TIMEOUT");
                     return;
@@ -501,23 +590,30 @@ public class CrossProcessMigration {
                 }
 
                 if (!restored) {
-                    // C3: Log and metric rollback failures (critical error)
-                    log.error("ABORT/Rollback FAILED for entity {} - CRITICAL: Manual intervention required", entityId);
+                    // Phase 2C: Enhanced error logging with full entity state
+                    log.error("ABORT/Rollback FAILED for entity {} - CRITICAL: Manual intervention required " +
+                              "(txn={}, source={}, dest={}, snapshot=[epoch={}, position={}], reason={})",
+                              entityId, txnId, source.getBubbleId(), dest.getBubbleId(),
+                              snapshot.epoch(), snapshot.position(), abortReason);
                     recordRollbackFailure.run();
+                    recordOrphanedEntity.accept(entityId); // Phase 2C: Track orphaned entity
                 }
 
-                log.debug("ABORT: Restored entity {} to source {} with epoch {}", entityId, source.getBubbleId(),
-                          snapshot.epoch());
+                log.debug("ABORT: Restored entity {} to source {} with epoch {} (txn={}, position={})",
+                          entityId, source.getBubbleId(), snapshot.epoch(), txnId, snapshot.position());
 
                 recordAbort.accept(abortReason != null ? abortReason : "COMMIT_FAILED");
                 // Return the original failure reason, not "ROLLBACK_COMPLETE"
                 failAndUnlock(abortReason != null ? abortReason : "ROLLBACK_COMPLETE");
 
             } catch (Exception e) {
-                // C3: Log and metric rollback failures (critical error)
-                log.error("ABORT/Rollback FAILED for entity {} - CRITICAL: Manual intervention required: {}",
-                          entityId, e.getMessage(), e);
+                // Phase 2C: Enhanced exception logging with full state dump
+                log.error("ABORT/Rollback FAILED for entity {} - CRITICAL: Manual intervention required " +
+                          "(txn={}, source={}, dest={}, snapshot=[epoch={}, position={}], reason={}, exception={})",
+                          entityId, txnId, source.getBubbleId(), dest.getBubbleId(),
+                          snapshot.epoch(), snapshot.position(), abortReason, e.getMessage(), e);
                 recordRollbackFailure.run();
+                recordOrphanedEntity.accept(entityId); // Phase 2C: Track orphaned entity
                 recordAbort.accept("ROLLBACK_FAILED");
                 failAndUnlock("ROLLBACK_FAILED");
             }
