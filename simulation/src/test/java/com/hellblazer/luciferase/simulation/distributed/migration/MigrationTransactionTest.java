@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import com.hellblazer.luciferase.simulation.distributed.BubbleReference;
 import javafx.geometry.Point3D;
 import org.junit.jupiter.api.Test;
 
@@ -237,12 +236,12 @@ class MigrationTransactionTest {
             }
 
             @Override
-            public com.hellblazer.luciferase.simulation.distributed.LocalBubbleReference asLocal() {
+            public LocalBubbleReference asLocal() {
                 return null; // Not needed for these tests
             }
 
             @Override
-            public com.hellblazer.luciferase.simulation.distributed.RemoteBubbleProxy asRemote() {
+            public RemoteBubbleProxy asRemote() {
                 throw new IllegalStateException("Not a remote reference");
             }
 

@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import com.hellblazer.luciferase.simulation.distributed.BubbleReference;
 import javafx.geometry.Point3D;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -293,12 +292,12 @@ class CrossProcessMigrationTest {
             }
 
             @Override
-            public com.hellblazer.luciferase.simulation.distributed.LocalBubbleReference asLocal() {
+            public LocalBubbleReference asLocal() {
                 return null;
             }
 
             @Override
-            public com.hellblazer.luciferase.simulation.distributed.RemoteBubbleProxy asRemote() {
+            public RemoteBubbleProxy asRemote() {
                 throw new IllegalStateException("Not remote");
             }
 
@@ -528,12 +527,12 @@ class CrossProcessMigrationTest {
         }
 
         @Override
-        public com.hellblazer.luciferase.simulation.distributed.LocalBubbleReference asLocal() {
+        public LocalBubbleReference asLocal() {
             return null;
         }
 
         @Override
-        public com.hellblazer.luciferase.simulation.distributed.RemoteBubbleProxy asRemote() {
+        public RemoteBubbleProxy asRemote() {
             throw new IllegalStateException("Not remote");
         }
 
@@ -588,12 +587,12 @@ class CrossProcessMigrationTest {
         }
 
         @Override
-        public com.hellblazer.luciferase.simulation.distributed.LocalBubbleReference asLocal() {
+        public LocalBubbleReference asLocal() {
             return null;
         }
 
         @Override
-        public com.hellblazer.luciferase.simulation.distributed.RemoteBubbleProxy asRemote() {
+        public RemoteBubbleProxy asRemote() {
             throw new IllegalStateException("Not remote");
         }
 

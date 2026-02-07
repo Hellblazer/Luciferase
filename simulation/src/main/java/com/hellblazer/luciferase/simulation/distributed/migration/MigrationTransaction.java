@@ -17,7 +17,6 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import com.hellblazer.luciferase.simulation.distributed.BubbleReference;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
 import java.util.UUID;

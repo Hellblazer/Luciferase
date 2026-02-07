@@ -15,7 +15,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.simulation.distributed;
+package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import javafx.geometry.Point3D;
 
