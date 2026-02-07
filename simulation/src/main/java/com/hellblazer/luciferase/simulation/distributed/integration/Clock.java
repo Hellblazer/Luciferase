@@ -44,9 +44,14 @@ public interface Clock {
      * The returned value is relative to an arbitrary origin and is NOT comparable across
      * JVM instances or to {@link #currentTimeMillis()}.
      * <p>
+     * <b>Note</b>: {@link #fixed(long)} does not support this method and will throw
+     * {@link UnsupportedOperationException}. Use {@link TestClock} for tests requiring
+     * elapsed time measurements.
+     * <p>
      * Default implementation delegates to {@link System#nanoTime()}.
      *
      * @return current high-resolution time in nanoseconds
+     * @throws UnsupportedOperationException if called on {@link #fixed(long)} clock
      */
     default long nanoTime() {
         return System.nanoTime();
@@ -74,11 +79,13 @@ public interface Clock {
     /**
      * Returns a clock that always returns the given fixed time.
      * <p>
-     * For {@link #nanoTime()}, returns {@code fixedTime * 1,000,000} to maintain
-     * consistent millis:nanos ratio of 1:1,000,000.
+     * <b>Important</b>: {@link #nanoTime()} throws {@link UnsupportedOperationException}
+     * because fixed clocks cannot support elapsed time measurements. Use {@link TestClock}
+     * for tests requiring time advancement.
      *
      * @param fixedTime the fixed timestamp in milliseconds
      * @return fixed clock implementation
+     * @throws UnsupportedOperationException if {@link #nanoTime()} is called
      */
     static Clock fixed(long fixedTime) {
         return new Clock() {
@@ -89,7 +96,13 @@ public interface Clock {
 
             @Override
             public long nanoTime() {
-                return fixedTime * 1_000_000;
+                throw new UnsupportedOperationException(
+                    "Clock.fixed() does not support elapsed time measurements via nanoTime(). " +
+                    "Fixed clocks return constant values, making elapsed time always 0. " +
+                    "Use TestClock for tests requiring time advancement. " +
+                    "Example: var clock = new TestClock(1000L); clock.advance(500); " +
+                    "See simulation/doc/H3_DETERMINISM_EPIC.md and ADR_002_CLOCK_FIXED_NANOTIME.md"
+                );
             }
         };
     }

@@ -202,6 +202,25 @@ class LamportClockGeneratorTest {
     }
 
     /**
+     * Test: canProcess() rejects negative clocks (sanity check).
+     * Negative clocks indicate invalid state (corruption, underflow bugs).
+     */
+    @Test
+    void testCanProcessRejectsNegativeClock() {
+        var bubbleId = UUID.randomUUID();
+        var source = UUID.randomUUID();
+        var clock = new LamportClockGenerator(bubbleId);
+
+        // Negative clocks should be rejected (invalid state)
+        assertFalse(clock.canProcess(-1L, source), "Should reject negative clock");
+        assertFalse(clock.canProcess(Long.MIN_VALUE, source), "Should reject Long.MIN_VALUE");
+
+        // Zero and positive should be accepted
+        assertTrue(clock.canProcess(0L, source), "Should accept clock 0 (initial state)");
+        assertTrue(clock.canProcess(1L, source), "Should accept positive clock");
+    }
+
+    /**
      * Test: Concurrent ticks maintain monotonicity.
      */
     @Test

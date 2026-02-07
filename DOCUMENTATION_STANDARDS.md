@@ -1,436 +1,369 @@
-# Documentation Standards for Luciferase
+# Documentation Standards
 
-**Effective Date**: December 6, 2025
-**Applies To**: All markdown documentation and inline code documentation
-
----
+**Last Updated**: 2026-02-07
+**Status**: Active
+**Owner**: Project Maintainers
 
 ## Purpose
 
-These standards ensure consistency, accuracy, and maintainability of all knowledge documentation in the Luciferase project. They provide guidelines for creating, updating, and retiring documentation.
+This document defines documentation standards for the Luciferase project to ensure consistency, maintainability, and discoverability across all documentation artifacts.
 
 ---
 
-## Document Header Requirements
+## 1. Required Headers
 
-All primary documentation files (not included: code comments, inline documentation) must include a header with the following information:
-
-### Minimal Header
+All major documentation files MUST include these headers:
 
 ```markdown
-
 # Document Title
 
 **Last Updated**: YYYY-MM-DD
-**Status**: Current | Archived | Draft
+**Status**: Draft | Active | Deprecated
+**Owner**: Team/Individual responsible
+```
 
-```text
+### Applicability
 
-### Recommended Header (for significant documents)
+Required for:
+- README.md files
+- CLAUDE.md files
+- Architecture documents (`*ARCHITECTURE*.md`)
+- API documentation (`*_API.md`)
+- ADRs (Architecture Decision Records)
+- Technical specifications
+- Runbooks and operational guides
 
-```markdown
-
-# Document Title
-
-**Last Updated**: December 6, 2025
-**Status**: Current (Production Ready)
-**Author/Owner**: [Optional: Name or role]
-**Applies To**: [Module names or components]
-**Related Documents**: [List of cross-references]
-**Confidence Level**: [95%+ recommended, less for in-progress items]
-
-```text
-
-### Archive Header (for deprecated documents)
-
-```markdown
-
-# Document Title [ARCHIVED]
-
-**Deprecated**: December 1, 2025
-**Reason**: [Reason for archiving]
-**Successor**: [Link to replacement document or none]
-**Last Updated**: [Date when deprecated]
-**Historical Context**: [Brief explanation of what this document covers and why it's historical]
-
-```text
+Optional for:
+- Meeting notes
+- Temporary planning documents
+- Changelog entries
 
 ---
 
-## Content Standards
+## 2. Document Structure
 
-### 1. Accuracy Requirements
+### 2.1 Standard Sections
 
-- **Verifiable Facts**: All factual claims must be verifiable (either by code inspection or recent testing)
-- **Performance Data**: Must include date of measurement and test environment
-- **Technical Specifications**: Must reference code location where implemented
-- **Examples**: Code examples must compile and work with current implementation
+All major documents SHOULD include:
 
-### 2. Cross-Reference Standards
+1. **Purpose/Overview**: What this document describes
+2. **Scope**: What is and isn't covered
+3. **Content**: The main body organized by topic
+4. **References**: Links to related documents
+5. **Revision History** (for ADRs and specifications)
 
-- **Link Format**: Use relative paths for internal documents: `[API Guide](./lucien/doc/CORE_SPATIAL_INDEX_API.md)`
-- **External Links**: Use absolute URLs with full path
-- **Broken References**: Document review process must catch broken links
-- **Mandatory Cross-References**:
-  - Architecture docs must reference implementation modules
-  - API docs must link to usage examples
-  - Performance claims must link to PERFORMANCE_METRICS_MASTER.md
+### 2.2 Table of Contents
 
-### 3. Terminology Standards
+Documents >500 lines MUST include a table of contents:
 
-Use these standard terms consistently across all documentation:
+```markdown
+## Table of Contents
 
-| Concept | Standard Term | Avoid |
-| --------- | --------------- | ------- |
-| Distributed spatial indexing support | Distributed support / Ghost layer | Remote trees, distributed trees |
-| Multi-tree management | Forest management | Tree forest, forest coordination |
-| Tree depth optimization | Tree balancing | Rebalancing, reorganization |
-| Spatial location | Node | Cell, bin, partition |
-| Data entity in index | Entity | Object, item, element (except ghost elements) |
-| Index subdivision level | Level | Depth, tier, layer |
-| Geometry division types | Octree, Tetree, Prism | Cubic, tetrahedral, prismatic (as adjectives only) |
+- [Section 1](#section-1)
+- [Section 2](#section-2)
+  - [Subsection 2.1](#subsection-21)
+```
 
-### 4. Performance Claims Standards
+---
 
-All performance-related statements must include:
+## 3. Linking Conventions
 
-- **Measurement Date**: When the benchmark was run
-- **Environment**: Platform, JVM version, CPU details
-- **Scale**: Entity count tested
-- **Conditions**: What operation(s) were measured
-- **Source Document**: Reference to PERFORMANCE_METRICS_MASTER.md
+### 3.1 Internal Links
 
-**Example Format**:
+**Relative paths from document location**:
 
-```text
+```markdown
+[Related Document](../othermodule/doc/ARCHITECTURE.md)
+[Section](#section-name)
+[File Reference](../../src/main/java/com/example/Class.java)
+```
 
-Tetree performs 5.7x faster than Octree for insertions with 1,000 entities
-(OctreeVsTetreeVsPrismBenchmark, August 3, 2025, Mac OS X aarch64, Java 24)
-See PERFORMANCE_METRICS_MASTER.md for complete results.
+**Anchor format**: Use lowercase with hyphens for multi-word sections:
+- `#architecture-overview` (correct)
+- `#ArchitectureOverview` (incorrect)
 
-```text
+### 3.2 External Links
 
-### 5. Code Example Standards
+Always use full URLs for external resources:
 
-All code examples must:
+```markdown
+[GitHub Issue #123](https://github.com/Hellblazer/Luciferase/issues/123)
+[Maven Central](https://central.sonatype.com/)
+```
 
-- **Be Syntactically Correct**: Must compile with current Java/module versions
-- **Be Runnable**: Examples should be executable (even if simplified)
-- **Include Imports**: Show necessary import statements
-- **Be Minimal**: Show only essential code, not boilerplate
-- **Be Commented**: Explain non-obvious parts
+### 3.3 Code References
 
-**Poor Example**:
+Format: `ClassName.java:lineNumber` or `ClassName.java:methodName()`
 
+```markdown
+See `CrossProcessMigration.java:257` for RecoveryState implementation.
+See `Clock.fixed()` method for details.
+```
+
+---
+
+## 4. Terminology Standards
+
+### 4.1 Approved Terms
+
+Use these terms consistently:
+
+| Approved | Avoid | Context |
+|----------|-------|---------|
+| distributed support | distributed trees | Forest/multi-bubble features |
+| forest management | tree forest | Multiple spatial index coordination |
+| ghost layer | ghost sync | Boundary entity visibility |
+| spatial index | tree structure | Generic reference to Octree/Tetree/Prism |
+
+### 4.2 Module-Specific Terms
+
+- **lucien**: Octree, Tetree, Prism, SFCArrayIndex, Forest
+- **render**: ESVO, DAG, beam optimization, voxel traversal
+- **simulation**: Bubble, entity, ghost, migration, causality
+- **sentry**: Delaunay, kinetic points, tetrahedralization
+- **portal**: JavaFX, 3D visualization, inspector
+
+---
+
+## 5. Update Policy
+
+### 5.1 Update Triggers
+
+Update "Last Updated" date when:
+- Changing implementation details
+- Adding/removing sections
+- Updating performance metrics
+- Fixing errors or clarifications
+
+Do NOT update for:
+- Typo fixes
+- Formatting adjustments
+- Link updates (unless broken)
+
+### 5.2 Review Cycle
+
+**Performance/Metrics Documents**: Review every 6 months
+**Architecture Documents**: Review on major version changes
+**ADRs**: Immutable after approval (create new ADR for changes)
+**Runbooks**: Review after each incident or quarterly
+
+### 5.3 Deprecation
+
+Mark outdated documents as:
+
+```markdown
+**Status**: Deprecated
+**Superseded By**: [New Document](path/to/new.md)
+**Deprecation Date**: YYYY-MM-DD
+```
+
+---
+
+## 6. Code Examples
+
+### 6.1 Format
+
+Use triple backticks with language identifier:
+
+````markdown
 ```java
+public void example() {
+    // Code here
+}
+```
+````
 
-octree.insert(id, pos);
+### 6.2 Validation
 
-```text
+All code examples SHOULD:
+- Compile without errors
+- Include necessary imports/context
+- Use project coding standards
+- Match actual implementation (for snippets from codebase)
 
-**Good Example**:
+### 6.3 Example Conventions
 
-```java
-
-// Insert an entity at a specific position
-var octree = new Octree<>(bounds, maxLevel);
-var entityId = new LongEntityID(42L);
-var position = new Point3f(10, 20, 30);
-octree.insert(entityId, position);
-
-```text
-
----
-
-## Update Process
-
-### When to Update Documentation
-
-**Immediately** (within 1 commit):
-- Bug fixes that change documented behavior
-- Security-related changes
-- Critical API changes
-
-**Within 1 sprint** (2 weeks):
-- Feature additions with new APIs
-- Performance improvements (>10% difference)
-- Architecture changes
-
-**Quarterly** (every 3 months):
-- Review all documentation for accuracy
-- Update metrics if assumptions changed
-- Fix broken cross-references
-
-### Update Checklist for Major Features
-
-When merging a major feature, update these documents in order:
-
-```markdown
-
-## Documentation Update Checklist
-
-When merging a feature branch with significant changes:
-
-- [ ] Update PROJECT_STATUS.md with new features/completion status
-- [ ] Update module README.md with feature description
-- [ ] Update relevant API documentation (if new APIs)
-- [ ] Run performance benchmarks and update PERFORMANCE_METRICS_MASTER.md (if affected)
-- [ ] Update ARCHITECTURE_SUMMARY.md (if structural changes)
-- [ ] Add entry to HISTORICAL_FIXES_REFERENCE.md (if bug fix)
-- [ ] Add timestamp to all modified documents
-- [ ] Review all cross-references for correctness
-- [ ] Request review from documentation owner
-
-```text
+Mark examples as:
+- `// Correct` vs `// Incorrect` for comparisons
+- `// Example` for demonstration code
+- `// From ClassName.java:123` for actual code snippets
 
 ---
 
-## Deprecation and Archiving
+## 7. Validation
 
-### Deprecation Process
+### 7.1 Automated Checks
 
-When a document becomes obsolete:
+The `scripts/validate-documentation.sh` script validates:
+1. Required headers present
+2. No broken internal links
+3. Performance docs updated (<6 months)
+4. No deprecated terminology
+5. Critical documents exist
+6. Java class references valid
 
-1. **Mark as Deprecated**: Update header to ARCHIVED status
-2. **Explain Reason**: Clear statement of why deprecated
-3. **Provide Alternative**: Link to successor document
-4. **Keep in Place**: Archive don't delete (preserves history)
-5. **Link from Index**: Keep link in API_DOCUMENTATION_INDEX.md with deprecation note
+### 7.2 Pre-Commit
 
-### Deprecation Header Template
-
-```markdown
-
-# Document Title [ARCHIVED]
-
-**Status**: ARCHIVED
-**Archived Date**: December 1, 2025
-**Deprecation Reason**: [Reason why this is no longer current]
-**Successor Document**: [Link to replacement]
-**Last Updated**: [Original date]
-**Availability**: Preserved for historical reference only
-
----
-
-## Historical Context
-
-[Explanation of what this document covered and why it's no longer maintained]
-
-[Content of original document...]
-
-```text
-
----
-
-## Critical Technical Documentation
-
-The following documents contain critical technical information that MUST NOT be changed without careful review:
-
-### 1. Geometry Calculations
-
-- **Document**: CLAUDE.md (lines 141-149)
-- **Critical Claim**: Cube center vs tetrahedron centroid calculations differ fundamentally
-- **Never Change**: These calculations are based on mathematical correctness, not preference
-- **Verification**: TetS0S5SubdivisionTest validates implementation
-
-### 2. S0-S5 Tetrahedral Subdivision
-
-- **Document**: S0_S5_TETRAHEDRAL_SUBDIVISION.md, CLAUDE.md (lines 151-158)
-- **Critical Claim**: 6 tetrahedra tile a cube perfectly with no gaps/overlaps
-- **Never Change**: This is proven by mathematical proof documented in TetS0S5SubdivisionTest
-- **Verification**: 100% containment rate verified in unit tests
-
-### 3. TET SFC Level Encoding
-
-- **Document**: CLAUDE.md (lines 160-165), TM_INDEX_LIMITATIONS_AND_SOLUTIONS.md
-- **Critical Claim**: tmIndex() is O(level) and cannot be optimized further
-- **Never Change**: This is a fundamental architectural constraint required for global uniqueness
-- **Verification**: Documented in performance analysis and confirmed by benchmarks
-
-### 4. Ghost Layer Implementation
-
-- **Document**: GHOST_API.md, PERFORMANCE_METRICS_MASTER.md (lines 97-108)
-- **Critical Claim**: Ghost layer performance exceeds all targets (99% better than 2x baseline)
-- **Never Change**: Verified by GhostPerformanceBenchmark
-- **Verification**: All integration tests passing (7/7)
-
----
-
-## Review Process
-
-### Documentation Review Checklist
-
-Before submitting documentation changes:
-
-- [ ] Header information is complete and accurate
-- [ ] All claims are verifiable (either by code or benchmark)
-- [ ] All cross-references exist and are correct
-- [ ] Examples compile and run (or are clearly marked as pseudo-code)
-- [ ] Terminology uses standard terms from this document
-- [ ] Performance data includes measurement context
-- [ ] No dead links or references to non-existent files
-- [ ] Changes are reflected in API_DOCUMENTATION_INDEX.md if applicable
-- [ ] Date stamp is current
-- [ ] Confidence level specified (if applicable)
-
-### Peer Review Requirements
-
-Documentation changes affecting:
-
-- **Architecture**: Requires 1+ peer review
-- **Performance Claims**: Requires verification against benchmarks
-- **API Changes**: Requires API owner approval
-- **Breaking Changes**: Requires project lead approval
-
----
-
-## Conflict Resolution
-
-When documentation conflicts with code, resolution priority is:
-
-1. **Actual Code Behavior**: Current implementation is source of truth
-2. **Benchmark Results**: Performance claims verified by recent benchmarks
-3. **Architecture Documents**: Describes intended design
-4. **Historical References**: Explains how we got here
-
-**Resolution Process**:
-1. Identify conflict
-2. Check actual code behavior
-3. Update documentation to match reality
-4. If code is wrong, fix code AND documentation
-5. Document in HISTORICAL_FIXES_REFERENCE.md if significant
-
----
-
-## Special Considerations
-
-### Performance Documentation
-
-Performance metrics have special rules:
-
-- **Location**: All metrics must be in PERFORMANCE_METRICS_MASTER.md
-- **Other Docs**: Can reference but not duplicate metrics
-- **Update Frequency**: Quarterly minimum, or after major changes
-- **Verification**: Must include benchmark name, date, environment
-
-### API Documentation
-
-API documentation rules:
-
-- **Completeness**: Every public API must be documented
-- **Examples**: All APIs should include usage examples
-- **Links**: Each API doc must appear in API_DOCUMENTATION_INDEX.md
-- **Consistency**: Naming and organization must follow established patterns
-
-### Historical Documentation
-
-Historical documents have special status:
-
-- **Preserve Exactly**: Never modify historical documentation
-- **Archive Clearly**: Mark with ARCHIVED header
-- **Explain Context**: Clarify why kept and what it describes
-- **Link Sparingly**: Only cross-reference when necessary for understanding
-
----
-
-## Tools and Automation
-
-### Recommended Tools
-
-- **Markdown Linting**: Use markdownlint for consistency
-- **Link Checking**: Use markdown-link-check to verify cross-references
-- **Spell Checking**: Use aspell or equivalent
-- **Version Control**: Keep documentation in git with clear commit messages
-
-### Automation Scripts
-
-Consider implementing:
+Run validation before committing:
 
 ```bash
+./scripts/validate-documentation.sh
+```
 
-# Check all markdown files
+Fix mode available for automatic corrections:
 
-markdownlint lucien/doc/*.md portal/doc/*.md
+```bash
+./scripts/validate-documentation.sh --fix
+```
 
-# Verify all links
+### 7.3 CI Integration
 
-markdown-link-check lucien/doc/**/*.md
-
-# Check for outdated metrics (older than 90 days)
-
-grep -r "Last Updated.*[0-9][0-9][0-9][0-9]-[01][0-9]-" lucien/doc/ | \
-  grep -v "$(date -d '90 days ago' +'%Y-%m')"
-
-```text
+Documentation validation runs on all PRs via GitHub Actions workflow `Documentation Checks`.
 
 ---
 
-## Governance
+## 8. Special Document Types
 
-### Documentation Owner
+### 8.1 ADRs (Architecture Decision Records)
 
-Assign a documentation owner who:
+Follow the format in `simulation/doc/ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md`:
+- Title: `ADR_NNN_TITLE.md` (numbered)
+- Status: Draft → Proposed → Accepted → Superseded
+- Sections: Context, Decision, Alternatives Considered, Consequences, References
 
-- Reviews all documentation changes
-- Maintains consistency across documents
-- Performs quarterly documentation audits
-- Approves new API documentation
+ADRs are immutable once accepted. Create a new ADR to revise decisions.
 
-### Review Schedule
+### 8.2 Runbooks
 
-- **Quarterly**: Full documentation audit (every 3 months)
-- **Per-Feature**: Update checklist review before merge
-- **Annual**: Comprehensive restructuring review (once per year)
+Follow the format in `simulation/doc/RUNBOOK_ROLLBACK_RECOVERY.md`:
+- Operational focus (detection → diagnosis → recovery)
+- Step-by-step procedures with commands
+- Alert configurations
+- Escalation paths
+- Validation checklists
 
-**Next Scheduled Review**: March 6, 2026
+### 8.3 Architecture Documents
 
----
-
-## Examples
-
-### Example: Good Architecture Document
-
-File: `/Users/hal.hildebrand/git/Luciferase/lucien/doc/LUCIEN_ARCHITECTURE.md`
-
-**What it does right**:
-- Clear header with purpose
-- Well-organized package structure
-- Proper cross-references
-- Links to related documents
-- Code examples where helpful
-
-### Example: Good API Document
-
-File: `/Users/hal.hildebrand/git/Luciferase/lucien/doc/CORE_SPATIAL_INDEX_API.md`
-
-**What it does right**:
-- Clear purpose statement
-- Usage examples
-- Parameter documentation
+Follow the format in `lucien/doc/LUCIEN_ARCHITECTURE.md`:
+- Module overview
+- Core abstractions
+- Design patterns used
+- Key algorithms
 - Performance characteristics
-- Links to related APIs
+- Cross-references to implementation
 
-### Example: Good Performance Documentation
+### 8.4 Test Framework Guides
 
-File: `/Users/hal.hildebrand/git/Luciferase/lucien/doc/PERFORMANCE_METRICS_MASTER.md`
-
-**What it does right**:
-- Clear measurement date
-- Environment specifications
-- Benchmark name
-- Table format for easy comparison
-- Context for interpreting results
+Follow the format in `simulation/doc/TEST_FRAMEWORK_GUIDE.md`:
+- Testing philosophy
+- Test patterns and anti-patterns
+- CI/CD integration
+- Environment-specific behavior
+- Troubleshooting procedures
 
 ---
 
-## Questions and Updates
+## 9. Tools
 
-For questions about documentation standards, contact the documentation owner or create an issue in the project repository.
+### 9.1 Recommended
 
-To update these standards, follow the same documentation process: create a pull request with proposed changes and request review from project maintainers.
+- **Markdown editors**: VSCode with Markdown All in One, IntelliJ IDEA Markdown plugin
+- **Link validation**: `scripts/validate-documentation.sh`
+- **Diagram tools**: Mermaid (inline), PlantUML, Graphviz
+- **Spell check**: Enable in IDE/editor
+
+### 9.2 Diagram Standards
+
+**Inline Mermaid** (preferred for simple diagrams):
+
+````markdown
+```mermaid
+graph LR
+    A[Entity] --> B[Bubble]
+    B --> C[Ghost Layer]
+```
+````
+
+**External diagrams**: Place in `doc/diagrams/` directory as SVG or PNG.
 
 ---
 
-**Document Version**: 1.0
-**Effective Date**: December 6, 2025
-**Last Reviewed**: December 6, 2025
+## 10. Migration Guide
+
+### 10.1 Existing Documents
+
+Documents missing required headers:
+1. Add headers at top of file
+2. Set "Last Updated" to current date
+3. Set "Status" to "Active" (or "Deprecated" if outdated)
+4. Identify owner/responsible team
+
+### 10.2 Broken Links
+
+Fix broken links identified by validation script:
+1. Run `./scripts/validate-documentation.sh`
+2. Update or remove broken links
+3. Use relative paths for internal docs
+4. Archive or delete documents with >5 broken links
+
+---
+
+## 11. Examples
+
+### 11.1 Complete Header Example
+
+```markdown
+# Cross-Process Migration Architecture
+
+**Last Updated**: 2026-02-06
+**Status**: Active
+**Owner**: Simulation Team
+
+## Overview
+
+This document describes the 2PC-based entity migration protocol...
+```
+
+### 11.2 Link Example
+
+```markdown
+See [ADR-001](./simulation/doc/ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md)
+for the original design decision.
+
+Implementation: `CrossProcessMigration.java:123-456`
+
+Related: [RecoveryState API](#recoverystate-api)
+```
+
+### 11.3 Code Example
+
+````markdown
+```java
+// From CrossProcessMigration.java:257
+public record RecoveryState(
+    Set<String> orphanedEntities,
+    int activeTransactions,
+    long rollbackFailures,
+    int concurrentMigrations
+) {}
+```
+````
+
+---
+
+## References
+
+- **Validation Script**: `scripts/validate-documentation.sh`
+- **CI Workflow**: `.github/workflows/documentation-checks.yml`
+- **Example ADR**: `simulation/doc/ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md`
+- **Example Runbook**: `simulation/doc/RUNBOOK_ROLLBACK_RECOVERY.md`
+- **Example Architecture**: `lucien/doc/LUCIEN_ARCHITECTURE.md`
+- **Example Test Guide**: `simulation/doc/TEST_FRAMEWORK_GUIDE.md`
+
+---
+
+## Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-02-07 | Simulation Team | Initial version based on existing patterns |

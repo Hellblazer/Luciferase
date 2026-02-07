@@ -223,8 +223,29 @@ class MultiBubbleSimulationGhostSyncTest {
         assertTrue(finalGhostCount >= 0, "Ghost count should be valid throughout lifecycle");
     }
 
+    /**
+     * Validates ghost synchronization maintains ~60fps performance.
+     * <p>
+     * <b>CI Environment Adaptation</b>:
+     * <ul>
+     * <li><b>Local</b>: Strict validation (60+ fps in 1 second)</li>
+     * <li><b>CI</b>: Relaxed threshold (50+ fps in 2 seconds) to accommodate system load</li>
+     * </ul>
+     * <p>
+     * Rationale: CI runners experience 20% performance degradation due to shared resources
+     * and scheduler contention. The 2-second duration smooths single-tick variance while
+     * still detecting sustained performance regressions >20%.
+     * <p>
+     * Reference: TEST_FRAMEWORK_GUIDE.md § Performance Test Thresholds
+     */
     @Test
     void testSimulationWithGhosts_60fps() throws InterruptedException {
+        // CI environment detection
+        boolean isCI = System.getenv("CI") != null;
+        int expectedMinTicks = isCI ? 100 : 60;  // 50 fps × 2s = 100 ticks (CI), 60 fps × 1s = 60 ticks (local)
+        int expectedMaxTicks = isCI ? 140 : 70;  // 70 fps × 2s = 140 ticks (CI), 70 fps × 1s = 70 ticks (local)
+        long testDurationMs = isCI ? 2000 : 1000;
+
         simulation = new MultiBubbleSimulation(
             9,
             (byte) 2,
@@ -235,19 +256,21 @@ class MultiBubbleSimulationGhostSyncTest {
 
         simulation.start();
 
-        // Run for 1 second (60 ticks at 60fps)
-        Thread.sleep(1000);
+        // Run for configured duration
+        Thread.sleep(testDurationMs);
 
         simulation.stop();
 
         var tickCount = simulation.getTickCount();
         var metrics = simulation.getMetrics();
 
-        // Should maintain ~60fps (50-70 ticks in 1 second)
-        assertTrue(tickCount >= 50 && tickCount <= 70,
-                  "Should maintain ~60fps, got " + tickCount + " ticks");
+        // Should maintain ~60fps with environment-specific thresholds
+        String environment = isCI ? "CI" : "local";
+        assertTrue(tickCount >= expectedMinTicks && tickCount <= expectedMaxTicks,
+                  String.format("Should maintain ~60fps in %s environment (expected %d-%d ticks in %dms), got %d ticks",
+                               environment, expectedMinTicks, expectedMaxTicks, testDurationMs, tickCount));
 
-        // Average tick time should be <16ms
+        // Average tick time should be <20ms
         var avgTickTimeMs = metrics.getAverageFrameTimeMs();
         assertTrue(avgTickTimeMs < 20.0,
                   "Average tick time should be <20ms, got " + avgTickTimeMs + "ms");

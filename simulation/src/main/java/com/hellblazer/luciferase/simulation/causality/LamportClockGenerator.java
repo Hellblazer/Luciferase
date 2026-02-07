@@ -171,22 +171,30 @@ public class LamportClockGenerator {
 
     /**
      * Check if event can be processed based on causality ordering.
-     * Returns true if event's source clock is sequential (next expected) or
-     * we've already processed this clock from this source (idempotency).
+     *
+     * This is a preliminary sanity check that rejects only invalid (negative) clocks.
+     * Actual causality ordering is enforced by CausalityPreserver after onRemoteEvent()
+     * updates the vector timestamp.
+     *
+     * Returns true for any valid (non-negative) Lamport clock value, including:
+     * - Clock 0 (valid initial state)
+     * - First events (before onRemoteEvent updates vector timestamp)
+     * - Sequential events (normal causal order)
+     * - Same clock (idempotent replay/duplicate events)
+     * - Lower clocks (out-of-order arrival after higher clocks seen)
+     *
+     * Returns false only for negative clocks (invalid state/corruption).
      *
      * @param eventLamportClock Clock value from event
      * @param sourceBubbleId    Source bubble ID
-     * @return true if event can be safely processed
+     * @return true if event has valid clock (>= 0)
      */
     public boolean canProcess(long eventLamportClock, UUID sourceBubbleId) {
         Objects.requireNonNull(sourceBubbleId, "sourceBubbleId must not be null");
 
-        var lastSeenClock = getVectorTimestamp(sourceBubbleId);
-
-        // Event is processable if:
-        // 1. It's the next sequential clock from source (lastSeen + 1), OR
-        // 2. We've already processed it (eventClock <= lastSeenClock) - idempotency
-        return eventLamportClock > lastSeenClock || eventLamportClock <= lastSeenClock;
+        // Sanity check: reject only invalid (negative) clocks
+        // Actual causality ordering is enforced by CausalityPreserver
+        return eventLamportClock >= 0;
     }
 
     /**
