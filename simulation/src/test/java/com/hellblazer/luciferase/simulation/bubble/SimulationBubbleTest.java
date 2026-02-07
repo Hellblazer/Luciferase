@@ -148,26 +148,28 @@ class SimulationBubbleTest {
         }
     }
 
+    /**
+     * Test that simulations with same seed produce identical, deterministic results.
+     * Now uses TestClock for deterministic time advancement (no wall-clock variability).
+     */
     @Test
-    @DisabledIfEnvironmentVariable(
-        named = "CI",
-        matches = "true",
-        disabledReason = "Non-deterministic: uses wall-clock Thread.sleep() with Prime-Mover RealTimeController. " +
-                         "Prime-Mover's event timing is not controlled by TestClock. " +
-                         "See MAJOR-3 in code review: tick counts can vary by ±2 under CI load."
-    )
     void testDeterminismWithSameSeed() throws Exception {
         var seed = 42L;
         var worldBounds = WorldBounds.DEFAULT;
         var tickIntervalMs = 16L;
 
+        // Use TestClock for deterministic time advancement (not wall-clock Thread.sleep)
+        var testClock1 = new TestClock(0L);
+        var testClock2 = new TestClock(0L);
+
         // Run 1: First simulation
         var bubble1 = TestBubbleFactory.createTestBubble(10, new Random(seed));
         var behavior1 = new RandomWalkBehavior(new Random(seed), 10.0f, 20.0f, 0.5f, worldBounds);
         var sim1 = new SimulationBubble(bubble1, behavior1, tickIntervalMs, worldBounds);
+        sim1.setClock(testClock1);
 
         sim1.start();
-        Thread.sleep(200);
+        testClock1.advance(200);  // Deterministic 200ms advancement
         sim1.stop();
 
         var positions1 = capturePositions(bubble1);
@@ -177,17 +179,18 @@ class SimulationBubbleTest {
         var bubble2 = TestBubbleFactory.createTestBubble(10, new Random(seed));
         var behavior2 = new RandomWalkBehavior(new Random(seed), 10.0f, 20.0f, 0.5f, worldBounds);
         var sim2 = new SimulationBubble(bubble2, behavior2, tickIntervalMs, worldBounds);
+        sim2.setClock(testClock2);
 
         sim2.start();
-        Thread.sleep(200);
+        testClock2.advance(200);  // Deterministic 200ms advancement
         sim2.stop();
 
         var positions2 = capturePositions(bubble2);
         var tickCount2 = sim2.getTickCount();
 
-        // Verify tick counts are similar (may differ by 1 due to timing)
-        assertTrue(Math.abs(tickCount1 - tickCount2) <= 2,
-                   "Tick counts should be similar: " + tickCount1 + " vs " + tickCount2);
+        // Verify tick counts are IDENTICAL (deterministic with TestClock)
+        assertEquals(tickCount1, tickCount2,
+                     "Tick counts should be identical with deterministic clock");
 
         // Verify positions are identical (determinism)
         for (var entityId : positions1.keySet()) {
