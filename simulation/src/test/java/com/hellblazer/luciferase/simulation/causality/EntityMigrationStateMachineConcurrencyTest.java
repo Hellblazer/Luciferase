@@ -282,14 +282,14 @@ class EntityMigrationStateMachineConcurrencyTest {
             });
         }
 
-        // Threads 4-5: Query while transitions occur
+        // Threads 4-5: Query while transitions occur (using atomic snapshot)
         for (int t = 0; t < 2; t++) {
             executor.submit(() -> {
                 try {
                     for (int i = 0; i < 10; i++) {
-                        var ownedCount = fsm.getEntitiesInState(EntityMigrationState.OWNED).size();
-                        var migratingCount = fsm.getEntitiesInState(EntityMigrationState.MIGRATING_OUT).size();
-                        queryResults.add(ownedCount + migratingCount);
+                        // Use atomic snapshot to avoid race condition between two getEntitiesInState() calls
+                        var counts = fsm.getStateCounts();
+                        queryResults.add(counts.owned() + counts.migratingOut());
                         Thread.sleep(1);
                     }
                 } catch (InterruptedException e) {

@@ -590,6 +590,88 @@ public class EntityMigrationStateMachine {
     }
 
     /**
+     * Atomic snapshot of entity counts across all states.
+     * <p>
+     * Provides consistent view of entity distribution without race conditions.
+     * Uses ConcurrentHashMap's atomic snapshot guarantee via copy constructor.
+     * <p>
+     * <b>Thread Safety</b>: Lock-free, uses ConcurrentHashMap snapshot semantics.
+     * <p>
+     * <b>Pattern</b>: Similar to RecoveryState in CrossProcessMigration (Phase 2C).
+     *
+     * @param owned Count of entities in OWNED state
+     * @param migratingOut Count of entities in MIGRATING_OUT state
+     * @param departed Count of entities in DEPARTED state
+     * @param migratingIn Count of entities in MIGRATING_IN state
+     * @param ghost Count of entities in GHOST state
+     * @param total Total entity count across all states (sum of above)
+     */
+    public record StateCounts(
+        int owned,
+        int migratingOut,
+        int departed,
+        int migratingIn,
+        int ghost,
+        int total
+    ) {
+        /**
+         * Validate invariant: total equals sum of individual state counts.
+         */
+        public StateCounts {
+            int sum = owned + migratingOut + departed + migratingIn + ghost;
+            if (total != sum) {
+                throw new IllegalArgumentException(
+                    String.format("Invariant violated: total=%d != sum=%d (owned=%d, migratingOut=%d, departed=%d, migratingIn=%d, ghost=%d)",
+                                 total, sum, owned, migratingOut, departed, migratingIn, ghost)
+                );
+            }
+        }
+    }
+
+    /**
+     * Get atomic snapshot of entity counts across all states.
+     * <p>
+     * Returns consistent view of entity distribution at a single point in time.
+     * Avoids race conditions that occur when calling getEntitiesInState() multiple
+     * times (entities can transition between calls).
+     * <p>
+     * <b>Implementation</b>: Uses ConcurrentHashMap's atomic snapshot via copy constructor.
+     * The copied map provides consistent view of all entries without blocking writers.
+     * <p>
+     * <b>Pattern</b>: Follows RecoveryState pattern from CrossProcessMigration.getRecoveryState()
+     * (Phase 2C), which also provides atomic multi-field snapshots.
+     * <p>
+     * <b>Performance</b>: O(n) copy operation where n = entity count. Lock-free, no contention
+     * with state transitions.
+     *
+     * @return Atomic snapshot of entity counts
+     */
+    public StateCounts getStateCounts() {
+        // ConcurrentHashMap guarantees atomic snapshot when copied
+        var snapshot = new HashMap<>(entityStates);
+
+        int ownedCount = 0;
+        int migratingOutCount = 0;
+        int departedCount = 0;
+        int migratingInCount = 0;
+        int ghostCount = 0;
+
+        for (var state : snapshot.values()) {
+            switch (state) {
+                case OWNED -> ownedCount++;
+                case MIGRATING_OUT -> migratingOutCount++;
+                case DEPARTED -> departedCount++;
+                case MIGRATING_IN -> migratingInCount++;
+                case GHOST -> ghostCount++;
+            }
+        }
+
+        int total = snapshot.size();
+        return new StateCounts(ownedCount, migratingOutCount, departedCount,
+                              migratingInCount, ghostCount, total);
+    }
+
+    /**
      * Reset all state (for testing or recovery).
      * WARNING: Clears all tracking.
      */
