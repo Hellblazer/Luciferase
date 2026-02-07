@@ -189,7 +189,7 @@ ABORT: Remove from destination
 
 **Migration Protocol**:
 1. ⚠️ Entity unavailable for ~100ms during migration
-2. ⚠️ Rollback failure is critical condition (requires manual intervention)
+2. ⚠️ Rollback failure is critical condition (see Recovery Architecture below)
 3. ⚠️ Additional memory for entity snapshots during migration
 4. ⚠️ Idempotency store cleanup required (5-min TTL)
 
@@ -217,6 +217,55 @@ ABORT: Remove from destination
 - `DuplicateEntityDetector`: Safety net for duplicates
 - `EntityCountInvariant`: Total entity count preservation (recommended)
 - `MigrationLog`: Audit trail for reconciliation
+
+### Recovery Architecture
+
+**Phase 2C: Recovery Observability** (added 2026-02-06)
+
+When migration rollback (ABORT phase) fails, entities become "orphaned" - not present in either source or destination bubble. This is a critical condition requiring manual intervention.
+
+**RecoveryState API** (`CrossProcessMigration.getRecoveryState()`):
+```java
+public record RecoveryState(
+    Set<String> orphanedEntities,      // Entities that failed rollback
+    int activeTransactions,             // Currently in-flight migrations
+    long rollbackFailures,              // Total rollback failure count
+    int concurrentMigrations            // Concurrent migration attempts
+) {}
+```
+
+**Key Features**:
+- Thread-safe snapshot of recovery state (non-atomic but acceptable for admin monitoring)
+- Orphaned entity tracking with defensive copying (`Set.copyOf()`)
+- Integration with existing `MigrationMetrics` for comprehensive observability
+
+**Enhanced Abort Logging**:
+```
+ERROR c.h.l.s.d.m.CrossProcessMigration - ABORT/Rollback FAILED for entity {entityId} - CRITICAL: Manual intervention required (txn={txnId}, source={sourceId}, dest={destId}, snapshot=[epoch={epoch}, position={x,y,z}], reason={reason})
+```
+
+Structured logging provides:
+- Transaction correlation (txnId)
+- Full state dump (source, dest, snapshot)
+- Actionable severity guidance
+- Audit trail for post-incident analysis
+
+**Operational Procedures**: See `simulation/doc/RUNBOOK_ROLLBACK_RECOVERY.md` for:
+- Detection (alerts, log patterns, API queries)
+- Diagnosis (state verification, audit trail)
+- Manual recovery (entity restoration, state reconciliation)
+- Monitoring (dashboards, alert configurations)
+- Prevention (timeout tuning, capacity planning)
+
+**Recovery Workflow**:
+1. Alert triggers on rollback failure (PagerDuty/Opsgenie)
+2. Operations team queries `getRecoveryState()` for orphaned entities
+3. Logs provide snapshot (epoch, position) for entity restoration
+4. Manual recovery recreates entity at source from snapshot
+5. State reconciliation applies pending events
+6. Metrics reset after recovery confirmation
+
+This architecture transforms "manual intervention required" from an operational black hole into a well-defined, documented, and monitorable recovery process.
 
 ## Implementation Status
 
@@ -396,6 +445,9 @@ See `simulation/doc/GHOST_LAYER_CONSOLIDATION_ANALYSIS.md` for full consolidatio
 - `simulation/doc/PHASE_7G_DAY3_COMMITTEE_CONSENSUS_REDESIGN.md` - Consensus redesign
 - `.pm/plans/H1_ENHANCED_BUBBLE_REFACTOR.md` - EnhancedBubble decomposition
 
+### Operational Runbooks
+- `simulation/doc/RUNBOOK_ROLLBACK_RECOVERY.md` - Rollback failure recovery procedures (Phase 2C)
+
 ### Git Commits
 - `c05d5748` - Raft code deletion (Jan 10, 2026)
 - `a16de8b6` - Committee consensus setup (Jan 10, 2026)
@@ -404,7 +456,7 @@ See `simulation/doc/GHOST_LAYER_CONSOLIDATION_ANALYSIS.md` for full consolidatio
 ## Date
 
 **Created**: 2026-01-15
-**Last Updated**: 2026-01-15 (M2: Ghost Channel consolidation decision added)
+**Last Updated**: 2026-02-06 (Phase 2C: Recovery architecture and runbook added)
 **Reviewed By**: [Pending human review]
 
 ---
