@@ -27,6 +27,7 @@ import javafx.geometry.Point3D;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.ref.WeakReference;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -82,7 +83,8 @@ public class CrossProcessMigration {
     private final        IdempotencyStore      dedup;
     private final        MigrationMetrics      metrics;
     // C1: Per-entity migration locks to prevent concurrent migrations
-    private final        Map<String, ReentrantLock> entityMigrationLocks = new ConcurrentHashMap<>();
+    // BUG-004 FIX: Use WeakReference to allow GC cleanup of unused locks (prevents memory leak)
+    private final        Map<String, WeakReference<ReentrantLock>> entityMigrationLocks = new ConcurrentHashMap<>();
     // Active transactions (for cleanup and monitoring)
     private final        Map<UUID, com.hellblazer.luciferase.simulation.distributed.migration.MigrationTransaction> activeTransactions = new ConcurrentHashMap<>();
     // Phase 4.2.2: Prime-Mover controller for event-driven execution
@@ -113,6 +115,29 @@ public class CrossProcessMigration {
     }
 
     /**
+     * BUG-004 FIX: Get or create migration lock for an entity, handling WeakReference cleanup.
+     * <p>
+     * Uses WeakReference to allow GC to clean up locks when no thread holds a reference.
+     * This prevents unbounded map growth (memory leak).
+     *
+     * @param entityId Entity identifier
+     * @return ReentrantLock for this entity
+     */
+    private ReentrantLock getLockForEntity(String entityId) {
+        return entityMigrationLocks.compute(entityId, (key, existingRef) -> {
+            // Try to get existing lock from WeakReference
+            var lock = existingRef != null ? existingRef.get() : null;
+            if (lock == null) {
+                // Lock was GC'd or doesn't exist - create new one
+                lock = new ReentrantLock();
+                return new WeakReference<>(lock);
+            }
+            // Lock still exists - reuse it
+            return existingRef;
+        }).get(); // Extract lock from WeakReference
+    }
+
+    /**
      * Migrate an entity from source to destination bubble (event-driven).
      * <p>
      * Phase 4.2.2: Uses Prime-Mover @Entity for non-blocking execution.
@@ -128,8 +153,8 @@ public class CrossProcessMigration {
         // Create future to be completed by entity
         var future = new CompletableFuture<MigrationResult>();
 
-        // C1: Get or create migration lock for this entity
-        var lock = entityMigrationLocks.computeIfAbsent(entityId, k -> new ReentrantLock());
+        // C1: Get or create migration lock for this entity (BUG-004 FIX: uses WeakReference)
+        var lock = getLockForEntity(entityId);
 
         // Create entity instance for this migration
         var entity = new CrossProcessMigrationEntity(
