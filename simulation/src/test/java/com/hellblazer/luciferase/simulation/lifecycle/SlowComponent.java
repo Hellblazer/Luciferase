@@ -49,7 +49,7 @@ public class SlowComponent implements LifecycleComponent {
         return CompletableFuture.runAsync(() -> {
             try {
                 Thread.sleep(startDelayMs);
-                state.set(LifecycleState.RUNNING);
+                state.compareAndSet(LifecycleState.STARTING, LifecycleState.RUNNING);
             } catch (InterruptedException e) {
                 state.set(LifecycleState.FAILED);
                 throw new LifecycleException("Start interrupted", e);

@@ -24,6 +24,7 @@ public class FailingComponent implements LifecycleComponent {
     private final boolean failOnStart;
     private final boolean failOnStop;
     private final AtomicReference<LifecycleState> state;
+    private int startAttempts = 0; // Track start attempts for "fail once" behavior
 
     /**
      * Create a component that fails on start or stop.
@@ -44,13 +45,17 @@ public class FailingComponent implements LifecycleComponent {
     @Override
     public CompletableFuture<Void> start() {
         var currentState = state.get();
-        if (currentState != LifecycleState.CREATED && currentState != LifecycleState.STOPPED) {
+        if (currentState != LifecycleState.CREATED
+            && currentState != LifecycleState.STOPPED
+            && currentState != LifecycleState.FAILED) {
             throw new LifecycleException("Cannot start from state: " + currentState);
         }
 
         state.set(LifecycleState.STARTING);
+        startAttempts++;
 
-        if (failOnStart) {
+        // Fail only on first attempt if failOnStart is true (allows testing restart from FAILED)
+        if (failOnStart && startAttempts == 1) {
             state.set(LifecycleState.FAILED);
             return CompletableFuture.failedFuture(new LifecycleException("Simulated start failure: " + componentName));
         }
@@ -58,7 +63,7 @@ public class FailingComponent implements LifecycleComponent {
         return CompletableFuture.runAsync(() -> {
             try {
                 Thread.sleep(10);
-                state.set(LifecycleState.RUNNING);
+                state.compareAndSet(LifecycleState.STARTING, LifecycleState.RUNNING);
             } catch (InterruptedException e) {
                 state.set(LifecycleState.FAILED);
                 throw new LifecycleException("Start interrupted", e);

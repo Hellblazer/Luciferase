@@ -158,11 +158,29 @@ public class LifecycleCoordinator {
                                    })
                                    .toList();
 
-                // Wait for all components in this layer to complete
+                // Wait for all components in this layer to complete (with timeout)
                 try {
-                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                    // 5 seconds per component to prevent indefinite blocking
+                    var layerTimeout = layer.size() * 5000L;
+                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                        .orTimeout(layerTimeout, TimeUnit.MILLISECONDS)
+                        .join();
                 } catch (Exception e) {
                     isStarted.set(false); // Reset on failure
+                    log.error("Startup failed at layer {}, rolling back {} previously started layers", i, i);
+
+                    // Rollback: Stop already-started layers in reverse order
+                    for (int rollback = i - 1; rollback >= 0; rollback--) {
+                        var rollbackLayer = layers.get(rollback);
+                        log.info("Rolling back layer {}: {}", rollback, rollbackLayer);
+                        try {
+                            stopLayer(rollbackLayer, 5000); // 5s timeout per layer rollback
+                        } catch (Exception rollbackError) {
+                            log.error("Rollback failed for layer {}", rollback, rollbackError);
+                            // Continue with remaining rollback despite error
+                        }
+                    }
+
                     throw new LifecycleException("Failed to start layer " + i + ": " + layer, e);
                 }
             }
@@ -377,5 +395,52 @@ public class LifecycleCoordinator {
 
         log.debug("Computed {} layers: {}", layers.size(), layers);
         return layers;
+    }
+
+    /**
+     * Stop all components in a single layer.
+     * <p>
+     * Helper method for rollback during startup failures.
+     * Gracefully handles errors in individual component stops - logs and continues.
+     *
+     * @param layer list of component names to stop
+     * @param timeoutMs timeout for the entire layer
+     */
+    private void stopLayer(List<String> layer, long timeoutMs) {
+        var perComponentTimeout = layer.isEmpty() ? timeoutMs : timeoutMs / layer.size();
+
+        var componentsToStop = layer.stream()
+            .map(name -> components.get(name))
+            .filter(Objects::nonNull)
+            .filter(comp -> {
+                var state = comp.getState();
+                // During rollback, stop components that are STARTING or RUNNING
+                return state == LifecycleState.STARTING || state == LifecycleState.RUNNING;
+            })
+            .toList();
+
+        var futures = componentsToStop.stream()
+            .map(comp -> comp.stop()
+                .orTimeout(perComponentTimeout, TimeUnit.MILLISECONDS)
+                .exceptionally(ex -> {
+                    log.warn("Component {} stop failed during rollback: {}", comp.name(), ex.getMessage());
+                    return null;
+                }))
+            .toList();
+
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            // Small delay to ensure all async state transitions complete
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException ignored) {
+            }
+            // Update states map after all stop futures complete
+            for (var comp : componentsToStop) {
+                states.put(comp.name(), comp.getState());
+            }
+        } catch (Exception e) {
+            log.warn("stopLayer encountered errors (continuing)", e);
+        }
     }
 }

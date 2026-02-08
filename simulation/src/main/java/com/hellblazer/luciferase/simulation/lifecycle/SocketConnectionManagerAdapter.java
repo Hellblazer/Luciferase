@@ -81,8 +81,10 @@ public class SocketConnectionManagerAdapter implements LifecycleComponent {
                 return;
             }
 
-            // Validate transition
-            if (currentState != LifecycleState.CREATED && currentState != LifecycleState.STOPPED) {
+            // Validate transition (allow restart from FAILED for recovery)
+            if (currentState != LifecycleState.CREATED
+                && currentState != LifecycleState.STOPPED
+                && currentState != LifecycleState.FAILED) {
                 throw new LifecycleException(
                     "Cannot start SocketConnectionManager from state: " + currentState);
             }

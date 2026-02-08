@@ -142,7 +142,35 @@ class LifecycleCoordinatorTest {
     }
 
     /**
-     * Test 4: Verify failed component blocks dependents from starting.
+     * Test 4: Verify timeout handling on start prevents indefinite blocking.
+     * <p>
+     * Setup: Component with 12-second start delay exceeding timeout (2 components × 5s = 10s timeout)
+     * Expected: Coordinator throws TimeoutException within reasonable time
+     */
+    @Test
+    void testTimeoutOnStart() {
+        // Arrange
+        var slowComponent = new SlowComponent("Slow", 12_000, 0); // 12 second start delay (exceeds 10s timeout)
+        var normalComponent = new MockComponent("Normal", new ArrayList<>(), new ArrayList<>());
+
+        coordinator.register(slowComponent);
+        coordinator.register(normalComponent);
+
+        // Act
+        var startTime = System.currentTimeMillis();
+        var exception = assertThrows(LifecycleException.class, () -> coordinator.start());
+        var duration = System.currentTimeMillis() - startTime;
+
+        // Assert
+        assertTrue(exception.getMessage().contains("Failed to start layer"),
+                   "Exception should indicate layer failure");
+        assertTrue(duration < 15_000,
+                   "Coordinator should timeout within 15s (2 components × 5s + overhead), took: " + duration + "ms");
+        // Slow component should timeout, normal component may or may not complete depending on timing
+    }
+
+    /**
+     * Test 5: Verify failed component blocks dependents from starting.
      * <p>
      * Setup: A starts successfully, B depends on A and fails, C depends on B
      * Expected: A starts, B fails, C never starts
@@ -177,7 +205,70 @@ class LifecycleCoordinatorTest {
     }
 
     /**
-     * Test 5: Verify multiple start() calls are idempotent.
+     * Test 6: Verify components can restart from FAILED state.
+     * <p>
+     * Setup: Component fails during first start, then successfully starts on retry
+     * Expected: First start fails, second start succeeds from FAILED state
+     */
+    @Test
+    void testRestartFromFailed() {
+        // Arrange
+        // Component that fails on first start, succeeds on second
+        var failingComponent = new FailingComponent("FailOnce", List.of(), true, false);
+
+        coordinator.register(failingComponent);
+
+        // Act - First start attempt fails
+        var firstException = assertThrows(LifecycleException.class, () -> coordinator.start());
+        assertTrue(firstException.getMessage().contains("Failed to start"),
+                   "First start should fail");
+        assertEquals(LifecycleState.FAILED, coordinator.getState("FailOnce"),
+                     "Component should be in FAILED state");
+
+        // Act - Second start attempt succeeds (FailingComponent succeeds on second start)
+        coordinator.start(); // Should succeed after first failure
+
+        // Assert
+        assertEquals(LifecycleState.RUNNING, coordinator.getState("FailOnce"),
+                     "Component should recover and reach RUNNING state");
+    }
+
+    /**
+     * Test 7: Verify startup failure triggers rollback of already-started layers.
+     * <p>
+     * Setup: Layer 0 (A) starts successfully, Layer 1 (B) fails
+     * Expected: A is stopped during rollback, exception thrown
+     */
+    @Test
+    void testStartFailureRollback() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+        var componentB = new FailingComponent("B", List.of("A"), true, false);
+
+        coordinator.register(componentA);
+        coordinator.register(componentB);
+
+        // Act & Assert
+        var exception = assertThrows(LifecycleException.class, () -> coordinator.start());
+        assertTrue(exception.getMessage().contains("Failed to start layer"),
+                   "Exception should indicate layer failure");
+
+        // Verify rollback occurred
+        assertEquals(1, startOrder.size(), "A should have started");
+        assertEquals("A", startOrder.get(0));
+        assertEquals(1, stopOrder.size(), "A should be stopped during rollback");
+        assertEquals("A", stopOrder.get(0));
+
+        // Verify final states
+        assertEquals(LifecycleState.STOPPED, coordinator.getState("A"), "A should be STOPPED after rollback");
+        assertEquals(LifecycleState.FAILED, coordinator.getState("B"), "B should be FAILED");
+    }
+
+    /**
+     * Test 8: Verify multiple start() calls are idempotent.
      * <p>
      * Setup: Start coordinator twice
      * Expected: Components start only once, no errors
@@ -202,7 +293,7 @@ class LifecycleCoordinatorTest {
     }
 
     /**
-     * Test 6: Verify thread-safe concurrent access.
+     * Test 9: Verify thread-safe concurrent access.
      * <p>
      * Setup: 10 threads calling start()/stop() concurrently
      * Expected: No ConcurrentModificationException, consistent final state
@@ -252,7 +343,7 @@ class LifecycleCoordinatorTest {
     }
 
     /**
-     * Test 7: Verify circular dependency detection.
+     * Test 10: Verify circular dependency detection.
      * <p>
      * Setup: A depends on B, B depends on A (cycle)
      * Expected: LifecycleException thrown during start()
@@ -278,7 +369,7 @@ class LifecycleCoordinatorTest {
     }
 
     /**
-     * Test 8: Verify multiple independent components start in parallel within same layer.
+     * Test 11: Verify multiple independent components start in parallel within same layer.
      * <p>
      * Setup: 3 components with no dependencies (all Layer 0)
      * Expected: All start in parallel, all reach RUNNING

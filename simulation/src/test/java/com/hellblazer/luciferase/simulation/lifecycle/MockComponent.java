@@ -25,6 +25,7 @@ public class MockComponent implements LifecycleComponent {
     private final AtomicReference<LifecycleState> state;
     private final List<String> startOrder;
     private final List<String> stopOrder;
+    private final Object stateLock = new Object(); // Synchronize start/stop transitions
 
     /**
      * Create a mock component with no dependencies.
@@ -66,7 +67,12 @@ public class MockComponent implements LifecycleComponent {
         return CompletableFuture.runAsync(() -> {
             try {
                 Thread.sleep(10); // Simulate startup work
-                state.set(LifecycleState.RUNNING);
+                // Only transition to RUNNING if still in STARTING state (not stopped during rollback)
+                synchronized (stateLock) {
+                    if (state.get() == LifecycleState.STARTING) {
+                        state.set(LifecycleState.RUNNING);
+                    }
+                }
             } catch (InterruptedException e) {
                 state.set(LifecycleState.FAILED);
                 throw new LifecycleException("Start interrupted", e);
@@ -76,12 +82,15 @@ public class MockComponent implements LifecycleComponent {
 
     @Override
     public CompletableFuture<Void> stop() {
-        var currentState = state.get();
-        if (currentState != LifecycleState.RUNNING) {
-            throw new LifecycleException("Cannot stop from state: " + currentState);
-        }
+        synchronized (stateLock) {
+            var currentState = state.get();
+            // Allow stop from STARTING or RUNNING (for rollback support)
+            if (currentState != LifecycleState.STARTING && currentState != LifecycleState.RUNNING) {
+                throw new LifecycleException("Cannot stop from state: " + currentState);
+            }
 
-        state.set(LifecycleState.STOPPING);
+            state.set(LifecycleState.STOPPING);
+        }
         stopOrder.add(componentName);
 
         return CompletableFuture.runAsync(() -> {

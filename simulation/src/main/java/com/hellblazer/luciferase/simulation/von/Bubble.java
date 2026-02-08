@@ -71,10 +71,12 @@ public class Bubble extends EnhancedBubble implements Node {
      * <p>
      * Updates both the clock field and recreates the factory to use the new clock
      * for all subsequent message timestamps.
+     * <p>
+     * Synchronized to prevent race conditions where clock and factory become inconsistent.
      *
      * @param clock Clock instance to use
      */
-    public void setClock(Clock clock) {
+    public synchronized void setClock(Clock clock) {
         this.clock = clock;
         this.factory = new MessageFactory(clock);
     }

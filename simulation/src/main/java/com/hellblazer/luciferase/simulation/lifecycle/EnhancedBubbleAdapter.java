@@ -10,6 +10,7 @@ package com.hellblazer.luciferase.simulation.lifecycle;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.RealTimeController;
+import com.hellblazer.luciferase.simulation.von.Bubble;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,8 +68,10 @@ public class EnhancedBubbleAdapter implements LifecycleComponent {
                 return;
             }
 
-            // Validate transition
-            if (currentState != LifecycleState.CREATED && currentState != LifecycleState.STOPPED) {
+            // Validate transition (allow restart from FAILED for recovery)
+            if (currentState != LifecycleState.CREATED
+                && currentState != LifecycleState.STOPPED
+                && currentState != LifecycleState.FAILED) {
                 throw new LifecycleException(
                     "Cannot start EnhancedBubble from state: " + currentState);
             }
@@ -121,12 +124,15 @@ public class EnhancedBubbleAdapter implements LifecycleComponent {
 
                 log.debug("Stopping EnhancedBubble {}", bubble.id());
 
-                // Stop RealTimeController if it's running (should be stopped by RealTimeControllerAdapter)
-                // Note: The coordinator handles dependency ordering, so RealTimeController will
-                // be stopped before this adapter's stop() is called
-                if (realTimeController.isRunning()) {
-                    realTimeController.stop();
+                // If this is a VON-enabled Bubble, broadcast LEAVE to neighbors before stopping
+                // This ensures graceful departure notifications are sent while transport is still available
+                if (bubble instanceof Bubble vonBubble) {
+                    log.debug("Broadcasting LEAVE to neighbors for Bubble {}", bubble.id());
+                    vonBubble.broadcastLeave();
                 }
+
+                // RealTimeController is stopped by RealTimeControllerAdapter via coordinator's dependency ordering
+                // No manual stop needed here - trust the coordinator's Layer 0→1→2 shutdown sequence
 
                 // Clean up ghost coordinator resources
                 // (Ghost channel cleanup happens via coordinator)
