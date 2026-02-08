@@ -181,6 +181,16 @@ public class EnhancedBubble {
     }
 
     /**
+     * Get the real-time controller used by this bubble.
+     * Needed by LifecycleCoordinator for proper shutdown ordering.
+     *
+     * @return RealTimeController instance
+     */
+    public RealTimeController getRealTimeController() {
+        return realTimeController;
+    }
+
+    /**
      * Tick ghost state on simulation step (Phase 7B.3).
      * Updates ghost positions via dead reckoning and culls stale ghosts.
      * Should be called once per simulation tick.

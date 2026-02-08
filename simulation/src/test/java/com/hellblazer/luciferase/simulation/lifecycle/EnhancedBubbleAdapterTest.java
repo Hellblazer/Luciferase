@@ -77,14 +77,28 @@ class EnhancedBubbleAdapterTest {
 
     @Test
     void testName() {
-        assertEquals("EnhancedBubble", adapter.name(), "Adapter name should be EnhancedBubble");
+        var name = adapter.name();
+        assertTrue(name.startsWith("EnhancedBubble-"), "Adapter name should start with EnhancedBubble-");
+        assertTrue(name.contains(bubble.id().toString()), "Adapter name should contain bubble ID");
     }
 
     @Test
     void testDependencies() {
+        // Default constructor (no dependencies)
         var deps = adapter.dependencies();
         assertNotNull(deps, "Dependencies should not be null");
-        assertEquals(3, deps.size(), "EnhancedBubble depends on 3 components (Layer 2)");
+        assertEquals(0, deps.size(), "Default adapter has no dependencies");
+    }
+
+    @Test
+    void testDependenciesWithExplicitList() {
+        // Create adapter with explicit dependencies
+        var depsAdapter = new EnhancedBubbleAdapter(bubble, controller,
+            java.util.List.of("PersistenceManager", "RealTimeController", "SocketConnectionManager"));
+
+        var deps = depsAdapter.dependencies();
+        assertNotNull(deps, "Dependencies should not be null");
+        assertEquals(3, deps.size(), "EnhancedBubble with explicit deps has 3 components");
         assertTrue(deps.contains("PersistenceManager"), "Should depend on PersistenceManager");
         assertTrue(deps.contains("RealTimeController"), "Should depend on RealTimeController");
         assertTrue(deps.contains("SocketConnectionManager"), "Should depend on SocketConnectionManager");

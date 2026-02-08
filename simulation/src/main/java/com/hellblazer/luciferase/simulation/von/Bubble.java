@@ -59,6 +59,7 @@ public class Bubble extends EnhancedBubble implements Node {
     private final List<Consumer<Event>> eventListeners;
     private final Consumer<Message> messageHandler;
     private volatile Clock clock = Clock.system();
+    private volatile boolean closed = false;  // Track if close() has been called (for idempotency)
 
     // JOIN response retry management
     private final Map<UUID, PendingJoinResponse> pendingJoinResponses = new ConcurrentHashMap<>();
@@ -326,6 +327,17 @@ public class Bubble extends EnhancedBubble implements Node {
      * LifecycleCoordinator during shutdown to prevent duplicate calls.
      */
     public void close() {
+        // Idempotent: return immediately if already closed
+        if (closed) {
+            log.debug("Bubble {} already closed - idempotent no-op", id());
+            return;
+        }
+        closed = true;
+
+        // Broadcast LEAVE to neighbors before cleanup (graceful departure)
+        // This ensures neighbors are notified while transport is still available
+        broadcastLeave();
+
         transport.removeMessageHandler(messageHandler);
 
         // Cancel all pending retries

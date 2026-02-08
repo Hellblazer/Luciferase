@@ -44,16 +44,37 @@ public class EnhancedBubbleAdapter implements LifecycleComponent {
     private final EnhancedBubble bubble;
     private final RealTimeController realTimeController;
     private final AtomicReference<LifecycleState> state;
+    private final List<String> dependencies;
 
     /**
-     * Create an adapter for EnhancedBubble.
+     * Create an adapter for EnhancedBubble with no dependencies.
+     * <p>
+     * Use this constructor when the bubble is standalone and doesn't depend
+     * on other lifecycle components (typical for Manager integration in Phase 5).
      *
      * @param bubble              The EnhancedBubble instance to wrap
      * @param realTimeController  The RealTimeController used by the bubble
      */
     public EnhancedBubbleAdapter(EnhancedBubble bubble, RealTimeController realTimeController) {
+        this(bubble, realTimeController, List.of());
+    }
+
+    /**
+     * Create an adapter for EnhancedBubble with explicit dependencies.
+     * <p>
+     * Use this constructor when the bubble depends on other lifecycle components
+     * (e.g., PersistenceManager, SocketConnectionManager) that are managed by
+     * the same coordinator.
+     *
+     * @param bubble              The EnhancedBubble instance to wrap
+     * @param realTimeController  The RealTimeController used by the bubble
+     * @param dependencies        List of component names this bubble depends on
+     */
+    public EnhancedBubbleAdapter(EnhancedBubble bubble, RealTimeController realTimeController,
+                                 List<String> dependencies) {
         this.bubble = Objects.requireNonNull(bubble, "bubble must not be null");
         this.realTimeController = Objects.requireNonNull(realTimeController, "realTimeController must not be null");
+        this.dependencies = Objects.requireNonNull(dependencies, "dependencies must not be null");
         this.state = new AtomicReference<>(LifecycleState.CREATED);
     }
 
@@ -124,15 +145,18 @@ public class EnhancedBubbleAdapter implements LifecycleComponent {
 
                 log.debug("Stopping EnhancedBubble {}", bubble.id());
 
-                // If this is a VON-enabled Bubble, broadcast LEAVE to neighbors before stopping
-                // This ensures graceful departure notifications are sent while transport is still available
+                // If this is a VON-enabled Bubble, call close() for full cleanup
+                // Bubble.close() handles broadcastLeave() + resource cleanup in correct order
                 if (bubble instanceof Bubble vonBubble) {
-                    log.debug("Broadcasting LEAVE to neighbors for Bubble {}", bubble.id());
-                    vonBubble.broadcastLeave();
+                    log.debug("Calling close() on VON Bubble {} for graceful shutdown", bubble.id());
+                    vonBubble.close();
+                } else {
+                    // For plain EnhancedBubbles, stop RealTimeController manually
+                    if (realTimeController.isRunning()) {
+                        log.debug("Stopping RealTimeController for bubble {}", bubble.id());
+                        realTimeController.stop();
+                    }
                 }
-
-                // RealTimeController is stopped by RealTimeControllerAdapter via coordinator's dependency ordering
-                // No manual stop needed here - trust the coordinator's Layer 0→1→2 shutdown sequence
 
                 // Clean up ghost coordinator resources
                 // (Ghost channel cleanup happens via coordinator)
@@ -155,13 +179,15 @@ public class EnhancedBubbleAdapter implements LifecycleComponent {
 
     @Override
     public String name() {
-        return "EnhancedBubble";
+        // Include bubble ID to ensure unique names when multiple bubbles are coordinated
+        return "EnhancedBubble-" + bubble.id();
     }
 
     @Override
     public List<String> dependencies() {
-        // Layer 2: Depends on all managers and controller
-        return List.of("PersistenceManager", "RealTimeController", "SocketConnectionManager");
+        // Return dependencies provided at construction time
+        // Empty list for standalone bubbles, or explicit dependencies for coordinated systems
+        return dependencies;
     }
 
     /**
