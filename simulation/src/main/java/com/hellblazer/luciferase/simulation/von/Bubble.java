@@ -186,6 +186,7 @@ public class Bubble extends EnhancedBubble implements Node {
     public void removeNeighbor(UUID neighborId) {
         super.removeVonNeighbor(neighborId);
         neighborStates.remove(neighborId);
+        introducedTo.remove(neighborId);  // Clean up introducedTo to prevent memory leak
     }
 
     // ========== P2P Transport Methods ==========
@@ -359,6 +360,7 @@ public class Bubble extends EnhancedBubble implements Node {
         }
 
         neighborStates.clear();
+        introducedTo.clear();  // Clean up introducedTo to prevent memory leak
         eventListeners.clear();
         log.debug("Bubble {} closed", id());
     }
