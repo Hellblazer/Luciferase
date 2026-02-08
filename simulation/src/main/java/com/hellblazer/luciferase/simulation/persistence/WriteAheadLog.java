@@ -19,10 +19,12 @@ package com.hellblazer.luciferase.simulation.persistence;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -64,9 +66,11 @@ public class WriteAheadLog implements AutoCloseable {
     private final AtomicBoolean isClosed;
     private final AtomicLong currentSize;
     private final long rotationSize;
+    private volatile Clock clock = Clock.system();
 
     private Path currentLogFile;
     private BufferedWriter writer;
+    private FileChannel fileChannel;
     private int rotationCount;
 
     /**
@@ -109,6 +113,15 @@ public class WriteAheadLog implements AutoCloseable {
     }
 
     /**
+     * Set Clock implementation for deterministic testing.
+     *
+     * @param clock Clock implementation
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    /**
      * Append event to log (thread-safe).
      *
      * @param event Event data as map
@@ -145,16 +158,13 @@ public class WriteAheadLog implements AutoCloseable {
         checkNotClosed();
         writer.flush();
 
-        // Force fsync via FileDescriptor
-        // Note: BufferedWriter wraps OutputStreamWriter which wraps FileOutputStream
-        // We attempt to access the underlying FileDescriptor for fsync
-        try {
-            var fileOutputStream = getFileOutputStream();
-            if (fileOutputStream != null) {
-                fileOutputStream.getFD().sync();
-            }
-        } catch (Exception e) {
-            log.debug("Failed to fsync log file: {}", e.getMessage());
+        // Force fsync via FileChannel.force(true)
+        // true = sync both data and metadata (required for WAL)
+        if (fileChannel != null && fileChannel.isOpen()) {
+            var startTime = clock.nanoTime();
+            fileChannel.force(true);
+            var elapsed = clock.nanoTime() - startTime;
+            log.trace("fsync completed in {}ns", elapsed);
         }
     }
 
@@ -187,10 +197,13 @@ public class WriteAheadLog implements AutoCloseable {
     public synchronized void rotate() throws IOException {
         checkNotClosed();
 
-        // Close current writer
+        // Close current writer and channel
         if (writer != null) {
             writer.flush();
             writer.close();
+        }
+        if (fileChannel != null) {
+            fileChannel.close();
         }
 
         // Increment rotation counter
@@ -198,7 +211,9 @@ public class WriteAheadLog implements AutoCloseable {
 
         // Create new log file
         currentLogFile = logDirectory.resolve("node-" + nodeId + "-" + rotationCount + ".log");
-        writer = Files.newBufferedWriter(currentLogFile, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        var fos = new FileOutputStream(currentLogFile.toFile(), true);
+        this.fileChannel = fos.getChannel();
+        this.writer = new BufferedWriter(new OutputStreamWriter(fos, java.nio.charset.StandardCharsets.UTF_8));
         currentSize.set(0);
 
         log.debug("Log rotated to {}", currentLogFile);
@@ -251,6 +266,10 @@ public class WriteAheadLog implements AutoCloseable {
                 writer.close();
                 writer = null;
             }
+            if (fileChannel != null) {
+                fileChannel.close();
+                fileChannel = null;
+            }
             log.debug("WriteAheadLog closed for node {}", nodeId);
         }
     }
@@ -264,14 +283,18 @@ public class WriteAheadLog implements AutoCloseable {
         if (logFiles.isEmpty()) {
             // No existing logs, create new one
             currentLogFile = logDirectory.resolve("node-" + nodeId + ".log");
-            writer = Files.newBufferedWriter(currentLogFile, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            var fos = new FileOutputStream(currentLogFile.toFile(), true);
+            this.fileChannel = fos.getChannel();
+            this.writer = new BufferedWriter(new OutputStreamWriter(fos, java.nio.charset.StandardCharsets.UTF_8));
             currentSize.set(0);
         } else {
             // Use most recent log file
             currentLogFile = logFiles.get(logFiles.size() - 1);
             var existingSize = Files.size(currentLogFile);
             currentSize.set(existingSize);
-            writer = Files.newBufferedWriter(currentLogFile, StandardOpenOption.APPEND);
+            var fos = new FileOutputStream(currentLogFile.toFile(), true);
+            this.fileChannel = fos.getChannel();
+            this.writer = new BufferedWriter(new OutputStreamWriter(fos, java.nio.charset.StandardCharsets.UTF_8));
 
             // Set rotation count from file name
             var fileName = currentLogFile.getFileName().toString();
@@ -341,37 +364,5 @@ public class WriteAheadLog implements AutoCloseable {
         if (isClosed.get()) {
             throw new IllegalStateException("WriteAheadLog is closed");
         }
-    }
-
-    /**
-     * Get underlying FileOutputStream for fsync (hacky but necessary).
-     * This uses reflection to access the underlying stream.
-     */
-    private FileOutputStream getFileOutputStream() {
-        try {
-            // BufferedWriter wraps OutputStreamWriter which wraps FileOutputStream
-            var field = BufferedWriter.class.getDeclaredField("out");
-            field.setAccessible(true);
-            var osw = field.get(writer);
-
-            if (osw instanceof OutputStreamWriter) {
-                var streamField = OutputStreamWriter.class.getDeclaredField("se");
-                streamField.setAccessible(true);
-                var streamEncoder = streamField.get(osw);
-
-                var chField = streamEncoder.getClass().getDeclaredField("ch");
-                chField.setAccessible(true);
-                var channel = chField.get(streamEncoder);
-
-                if (channel instanceof java.nio.channels.FileChannel fc) {
-                    // Get FileDescriptor from FileChannel
-                    return null; // FileChannel doesn't expose FD directly in Java 24
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Could not access FileOutputStream for fsync: {}", e.getMessage());
-        }
-
-        return null;
     }
 }
