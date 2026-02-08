@@ -204,17 +204,18 @@ public class LocalServerTransport implements Transport {
      * Deliver a message to this transport (called by sender).
      * <p>
      * Public to allow cross-package message delivery for migration coordinator.
+     * <p>
+     * Executes handlers synchronously to preserve ordering when called from
+     * per-destination executors in sendToNeighborAsync().
      */
     public void deliver(Message message) {
-        executor.submit(() -> {
-            for (var handler : handlers) {
-                try {
-                    handler.accept(message);
-                } catch (Exception e) {
-                    log.error("Handler error for {}: {}", message.getClass().getSimpleName(), e.getMessage(), e);
-                }
+        for (var handler : handlers) {
+            try {
+                handler.accept(message);
+            } catch (Exception e) {
+                log.error("Handler error for {}: {}", message.getClass().getSimpleName(), e.getMessage(), e);
             }
-        });
+        }
     }
 
     /**
