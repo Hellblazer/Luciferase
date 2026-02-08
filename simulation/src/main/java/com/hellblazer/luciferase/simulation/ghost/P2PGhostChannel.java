@@ -50,6 +50,7 @@ import java.util.function.BiConsumer;
  *   <li>Automatic conversion between SimulationGhostEntity and TransportGhost</li>
  *   <li>Event-based receive handling from Bubble</li>
  *   <li>Same-server optimization via shouldBypass check</li>
+ *   <li>Content serialization for EntityType enum</li>
  * </ul>
  * <p>
  * <strong>Architecture:</strong>
@@ -259,7 +260,6 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
         }
 
         // Convert from transport format
-        // Note: This is a simplified reconstruction - full content requires serialization
         var ghosts = new ArrayList<SimulationGhostEntity<ID, Content>>(transportGhosts.size());
         for (var tg : transportGhosts) {
             ghosts.add(fromTransportGhost(tg, sourceId, event.bucket()));
@@ -284,10 +284,15 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
      * @return TransportGhost for transmission
      */
     private Message.TransportGhost toTransportGhost(SimulationGhostEntity<ID, Content> ghost) {
+        var content = ghost.content();
+        var contentClass = content != null ? content.getClass().getName() : "null";
+        var contentValue = serializeContent(content);
+
         return new Message.TransportGhost(
             ghost.entityId().toDebugString(),
             ghost.position(),
-            ghost.content() != null ? ghost.content().getClass().getName() : "null",
+            contentClass,
+            contentValue,
             ghost.sourceTreeId(),
             ghost.epoch(),
             ghost.version(),
@@ -296,15 +301,40 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     }
 
     /**
+     * Serialize content for transport.
+     * <p>
+     * Currently supports EntityType enum serialization via name().
+     * For future content types, extend with custom serialization logic.
+     *
+     * @param content Content to serialize
+     * @return Serialized content as String, or null
+     */
+    private String serializeContent(Content content) {
+        if (content == null) {
+            return null;
+        }
+
+        // Serialize EntityType enum as its name
+        if (content instanceof com.hellblazer.luciferase.simulation.entity.EntityType entityType) {
+            return entityType.name();
+        }
+
+        // Future: Add support for other Content types here
+        // For now, return null for unsupported types
+        log.warn("Unsupported content type for serialization: {}", content.getClass().getName());
+        return null;
+    }
+
+    /**
      * Convert TransportGhost back to SimulationGhostEntity.
      * <p>
-     * Note: Content is not reconstructed (would require serialization).
-     * For full reconstruction, extend this with content serialization.
+     * Content is reconstructed for supported types (EntityType enum).
+     * For unsupported types, content will be null.
      *
      * @param tg       TransportGhost to convert
      * @param sourceId Source bubble ID
      * @param bucket   Simulation bucket
-     * @return SimulationGhostEntity (with null content)
+     * @return SimulationGhostEntity with reconstructed content
      */
     @SuppressWarnings("unchecked")
     private SimulationGhostEntity<ID, Content> fromTransportGhost(
@@ -312,11 +342,13 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
         UUID sourceId,
         long bucket
     ) {
-        // Create a minimal ghost entity for the internal structure
-        // Note: This creates a placeholder since we don't have full serialization
+        // Deserialize content
+        var content = deserializeContent(tg.contentClass(), tg.contentValue());
+
+        // Create ghost entity with reconstructed content
         var internalGhost = new com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager.GhostEntity<ID, Content>(
             (ID) new StringEntityID(tg.entityId()),  // Use StringEntityID as placeholder
-            null,  // Content not transmitted - would need serialization
+            content,  // Reconstructed content
             tg.position(),
             new com.hellblazer.luciferase.lucien.entity.EntityBounds(tg.position(), 0.5f),
             tg.sourceTreeId()
@@ -329,6 +361,37 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
             tg.epoch(),
             tg.version()
         );
+    }
+
+    /**
+     * Deserialize content from transport representation.
+     * <p>
+     * Currently supports EntityType enum deserialization via valueOf().
+     * For future content types, extend with custom deserialization logic.
+     *
+     * @param contentClass Fully qualified class name
+     * @param contentValue Serialized content value
+     * @return Deserialized content, or null
+     */
+    @SuppressWarnings("unchecked")
+    private Content deserializeContent(String contentClass, String contentValue) {
+        if (contentClass == null || contentClass.equals("null") || contentValue == null) {
+            return null;
+        }
+
+        // Deserialize EntityType enum
+        if (contentClass.equals(com.hellblazer.luciferase.simulation.entity.EntityType.class.getName())) {
+            try {
+                return (Content) com.hellblazer.luciferase.simulation.entity.EntityType.valueOf(contentValue);
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid EntityType value: {}", contentValue);
+                return null;
+            }
+        }
+
+        // Future: Add support for other Content types here
+        log.warn("Unsupported content type for deserialization: {}", contentClass);
+        return null;
     }
 
     /**

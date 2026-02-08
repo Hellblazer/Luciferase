@@ -49,7 +49,10 @@ import java.util.UUID;
  *
  * @author hal.hildebrand
  */
-public interface Message {
+public sealed interface Message
+    permits Message.JoinRequest, Message.JoinResponse, Message.Move, Message.Leave,
+            Message.GhostSync, Message.Ack, Message.Query, Message.QueryResponse,
+            MigrationProtocolMessages {
 
     /**
      * Request to join the VON at a specific position.
@@ -128,6 +131,7 @@ public interface Message {
      * @param entityId     Entity identifier as string
      * @param position     Entity 3D position
      * @param contentClass Content class name for reconstruction
+     * @param contentValue Serialized content value
      * @param sourceTreeId Source spatial tree identifier
      * @param epoch        Authority epoch for stale detection
      * @param version      Entity version within epoch
@@ -137,6 +141,7 @@ public interface Message {
         String entityId,
         Point3f position,
         String contentClass,
+        String contentValue,
         String sourceTreeId,
         long epoch,
         long version,
