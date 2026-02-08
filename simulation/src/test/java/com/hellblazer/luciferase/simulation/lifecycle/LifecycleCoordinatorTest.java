@@ -194,14 +194,16 @@ class LifecycleCoordinatorTest {
         assertTrue(exception.getMessage().contains("B") || exception.getMessage().contains("Failed"),
                    "Exception should reference failed component");
 
-        // Verify states
-        assertEquals(LifecycleState.RUNNING, coordinator.getState("A"), "A should start successfully");
+        // Verify states (A rolled back after B failure)
+        assertEquals(LifecycleState.STOPPED, coordinator.getState("A"), "A should be rolled back after B failure");
         assertEquals(LifecycleState.FAILED, coordinator.getState("B"), "B should be in FAILED state");
         assertEquals(LifecycleState.CREATED, coordinator.getState("C"), "C should never start (blocked by B failure)");
 
-        // Verify start order
+        // Verify start order (A started, then rolled back)
         assertEquals(1, startOrder.size(), "Only A should have started");
         assertEquals("A", startOrder.get(0));
+        assertEquals(1, stopOrder.size(), "A should be stopped during rollback");
+        assertEquals("A", stopOrder.get(0));
     }
 
     /**

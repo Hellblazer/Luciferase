@@ -175,6 +175,14 @@ public class LifecycleCoordinator {
                         log.info("Rolling back layer {}: {}", rollback, rollbackLayer);
                         try {
                             stopLayer(rollbackLayer, 5000); // 5s timeout per layer rollback
+
+                            // Force states map update after layer rollback to ensure test visibility
+                            for (String compName : rollbackLayer) {
+                                var comp = components.get(compName);
+                                if (comp != null) {
+                                    states.put(compName, comp.getState());
+                                }
+                            }
                         } catch (Exception rollbackError) {
                             log.error("Rollback failed for layer {}", rollback, rollbackError);
                             // Continue with remaining rollback despite error
