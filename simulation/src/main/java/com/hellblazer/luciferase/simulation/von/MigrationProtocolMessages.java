@@ -15,10 +15,11 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.simulation.distributed.migration;
+package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
-import com.hellblazer.luciferase.simulation.von.Message;
+import com.hellblazer.luciferase.simulation.distributed.migration.EntitySnapshot;
+import com.hellblazer.luciferase.simulation.distributed.migration.IdempotencyToken;
 
 import java.util.UUID;
 

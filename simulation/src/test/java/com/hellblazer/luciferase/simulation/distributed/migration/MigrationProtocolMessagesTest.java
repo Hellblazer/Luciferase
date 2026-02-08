@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+import com.hellblazer.luciferase.simulation.von.MigrationProtocolMessages;
 import javafx.geometry.Point3D;
 import org.junit.jupiter.api.Test;
 
