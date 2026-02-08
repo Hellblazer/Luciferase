@@ -17,14 +17,14 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import com.hellblazer.luciferase.simulation.transport.ProcessAddress;
-import com.hellblazer.luciferase.simulation.transport.SocketTransport;
+import com.hellblazer.luciferase.simulation.von.transport.ProcessAddress;
+import com.hellblazer.luciferase.simulation.von.transport.SocketTransport;
 import com.hellblazer.luciferase.simulation.von.Bubble;
 import javafx.geometry.Point3D;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import com.hellblazer.luciferase.simulation.transport.TestTransportFactory;
+import com.hellblazer.luciferase.simulation.von.transport.TestTransportFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;

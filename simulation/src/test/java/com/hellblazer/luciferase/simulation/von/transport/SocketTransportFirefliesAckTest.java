@@ -15,7 +15,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.simulation.transport;
+package com.hellblazer.luciferase.simulation.von.transport;
 
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
