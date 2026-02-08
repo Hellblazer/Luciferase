@@ -71,11 +71,12 @@ public record MigrationTransaction(UUID transactionId, IdempotencyToken idempote
      * @param entitySnapshot   Entity snapshot
      * @param sourceRef        Source bubble
      * @param destRef          Destination bubble
+     * @param clock            Clock for deterministic timestamps
      */
     public MigrationTransaction(UUID transactionId, IdempotencyToken idempotencyToken, EntitySnapshot entitySnapshot,
-                                BubbleReference sourceRef, BubbleReference destRef) {
+                                BubbleReference sourceRef, BubbleReference destRef, Clock clock) {
         this(transactionId, idempotencyToken, entitySnapshot, sourceRef, destRef, MigrationPhase.PREPARE,
-             Clock.system().currentTimeMillis());
+             clock.currentTimeMillis());
     }
 
     /**
@@ -96,18 +97,20 @@ public record MigrationTransaction(UUID transactionId, IdempotencyToken idempote
      * Check if transaction has exceeded timeout.
      *
      * @param timeoutMs Timeout in milliseconds
+     * @param clock     Clock for deterministic time measurement
      * @return True if elapsed time > timeoutMs
      */
-    public boolean isTimedOut(long timeoutMs) {
-        return (Clock.system().currentTimeMillis() - startTime) > timeoutMs;
+    public boolean isTimedOut(long timeoutMs, Clock clock) {
+        return (clock.currentTimeMillis() - startTime) > timeoutMs;
     }
 
     /**
      * Get elapsed time since transaction start.
      *
+     * @param clock Clock for deterministic time measurement
      * @return Elapsed milliseconds
      */
-    public long elapsedTime() {
-        return Clock.system().currentTimeMillis() - startTime;
+    public long elapsedTime(Clock clock) {
+        return clock.currentTimeMillis() - startTime;
     }
 }

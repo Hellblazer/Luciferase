@@ -58,7 +58,7 @@ public class RemoteBubbleProxy implements BubbleReference {
 
     private final UUID bubbleId;
     private final Transport transport;
-    private final MessageFactory factory;
+    private volatile MessageFactory factory;
     private final long timeoutMs;
     private final long cacheTTL;
 
@@ -73,6 +73,7 @@ public class RemoteBubbleProxy implements BubbleReference {
      */
     public void setClock(Clock clock) {
         this.clock = clock;
+        this.factory = new MessageFactory(clock);
     }
 
     /**
@@ -107,7 +108,7 @@ public class RemoteBubbleProxy implements BubbleReference {
     public RemoteBubbleProxy(UUID bubbleId, Transport transport, long timeoutMs, long cacheTTL) {
         this.bubbleId = Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
         this.transport = Objects.requireNonNull(transport, "Transport cannot be null");
-        this.factory = MessageFactory.system();
+        this.factory = new MessageFactory(clock);
         this.timeoutMs = timeoutMs;
         this.cacheTTL = cacheTTL;
         this.cache = new ConcurrentHashMap<>();

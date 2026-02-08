@@ -149,8 +149,8 @@ public class EntityMigrationStateMachine {
 
         // Legacy constructor for backward compatibility
         @Deprecated
-        public MigrationContext(Object entityId, long startTimeTicks, EntityMigrationState originState) {
-            var now = Clock.system().currentTimeMillis();
+        public MigrationContext(Object entityId, long startTimeTicks, EntityMigrationState originState, Clock clock) {
+            var now = clock.currentTimeMillis();
             this(entityId, startTimeTicks, originState, now, now + 8000L); // Default 8s timeout
         }
 

@@ -73,8 +73,8 @@ public sealed interface MigrationProtocolMessages extends Message {
     record PrepareRequest(UUID transactionId, IdempotencyToken idempotencyToken, EntitySnapshot entitySnapshot,
                           UUID sourceId, UUID destId, long timestamp) implements MigrationProtocolMessages {
         public PrepareRequest(UUID transactionId, IdempotencyToken idempotencyToken, EntitySnapshot entitySnapshot,
-                              UUID sourceId, UUID destId) {
-            this(transactionId, idempotencyToken, entitySnapshot, sourceId, destId, Clock.system().currentTimeMillis());
+                              UUID sourceId, UUID destId, Clock clock) {
+            this(transactionId, idempotencyToken, entitySnapshot, sourceId, destId, clock.currentTimeMillis());
         }
     }
 
@@ -91,8 +91,8 @@ public sealed interface MigrationProtocolMessages extends Message {
      */
     record PrepareResponse(UUID transactionId, boolean success, String reason, UUID destProcessId,
                            long timestamp) implements MigrationProtocolMessages {
-        public PrepareResponse(UUID transactionId, boolean success, String reason, UUID destProcessId) {
-            this(transactionId, success, reason, destProcessId, Clock.system().currentTimeMillis());
+        public PrepareResponse(UUID transactionId, boolean success, String reason, UUID destProcessId, Clock clock) {
+            this(transactionId, success, reason, destProcessId, clock.currentTimeMillis());
         }
     }
 
@@ -111,8 +111,8 @@ public sealed interface MigrationProtocolMessages extends Message {
      * @param timestamp     Message timestamp
      */
     record CommitRequest(UUID transactionId, boolean confirmed, long timestamp) implements MigrationProtocolMessages {
-        public CommitRequest(UUID transactionId, boolean confirmed) {
-            this(transactionId, confirmed, Clock.system().currentTimeMillis());
+        public CommitRequest(UUID transactionId, boolean confirmed, Clock clock) {
+            this(transactionId, confirmed, clock.currentTimeMillis());
         }
     }
 
@@ -128,8 +128,8 @@ public sealed interface MigrationProtocolMessages extends Message {
      */
     record CommitResponse(UUID transactionId, boolean success, String reason,
                           long timestamp) implements MigrationProtocolMessages {
-        public CommitResponse(UUID transactionId, boolean success, String reason) {
-            this(transactionId, success, reason, Clock.system().currentTimeMillis());
+        public CommitResponse(UUID transactionId, boolean success, String reason, Clock clock) {
+            this(transactionId, success, reason, clock.currentTimeMillis());
         }
     }
 
@@ -147,8 +147,8 @@ public sealed interface MigrationProtocolMessages extends Message {
      * @param timestamp     Message timestamp
      */
     record AbortRequest(UUID transactionId, String reason, long timestamp) implements MigrationProtocolMessages {
-        public AbortRequest(UUID transactionId, String reason) {
-            this(transactionId, reason, Clock.system().currentTimeMillis());
+        public AbortRequest(UUID transactionId, String reason, Clock clock) {
+            this(transactionId, reason, clock.currentTimeMillis());
         }
     }
 
@@ -162,8 +162,8 @@ public sealed interface MigrationProtocolMessages extends Message {
      * @param timestamp     Message timestamp
      */
     record AbortResponse(UUID transactionId, boolean rolledBack, long timestamp) implements MigrationProtocolMessages {
-        public AbortResponse(UUID transactionId, boolean rolledBack) {
-            this(transactionId, rolledBack, Clock.system().currentTimeMillis());
+        public AbortResponse(UUID transactionId, boolean rolledBack, Clock clock) {
+            this(transactionId, rolledBack, clock.currentTimeMillis());
         }
     }
 }

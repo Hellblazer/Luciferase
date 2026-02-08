@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import javafx.geometry.Point3D;
 import org.junit.jupiter.api.Test;
 
@@ -44,12 +46,15 @@ class MigrationTransactionTest {
 
     @Test
     void testTransactionCreation() {
+        var testClock = new TestClock();
+        testClock.setTime(1000L);
+
         var txnId = UUID.randomUUID();
         var token = new IdempotencyToken(
             "entity-1",
             UUID.randomUUID(),
             UUID.randomUUID(),
-            System.currentTimeMillis(),
+            testClock.currentTimeMillis(),
             UUID.randomUUID()
         );
 
@@ -63,10 +68,10 @@ class MigrationTransactionTest {
             mockSource.getBubbleId(),
             42L, // epoch
             100L, // version
-            System.currentTimeMillis()
+            testClock.currentTimeMillis()
         );
 
-        var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest);
+        var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest, testClock);
 
         assertNotNull(txn);
         assertEquals(txnId, txn.transactionId());
@@ -75,20 +80,23 @@ class MigrationTransactionTest {
         assertEquals(mockSource, txn.sourceRef());
         assertEquals(mockDest, txn.destRef());
         assertEquals(MigrationPhase.PREPARE, txn.phase());
-        assertFalse(txn.isTimedOut(300)); // Should not be timed out immediately
+        assertFalse(txn.isTimedOut(300, testClock)); // Should not be timed out immediately
     }
 
     @Test
     void testPhaseTransitions() {
+        var testClock = new TestClock();
+        testClock.setTime(1000L);
+
         var txnId = UUID.randomUUID();
         var token = new IdempotencyToken("entity-1", UUID.randomUUID(), UUID.randomUUID(),
-                                         System.currentTimeMillis(), UUID.randomUUID());
+                                         testClock.currentTimeMillis(), UUID.randomUUID());
         var mockSource = createMockBubbleReference(UUID.randomUUID());
         var mockDest = createMockBubbleReference(UUID.randomUUID());
         var snapshot = new EntitySnapshot("entity-1", new Point3D(0, 0, 0), "Content",
-                                          mockSource.getBubbleId(), 1L, 1L, System.currentTimeMillis());
+                                          mockSource.getBubbleId(), 1L, 1L, testClock.currentTimeMillis());
 
-        var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest);
+        var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest, testClock);
 
         // Initially PREPARE
         assertEquals(MigrationPhase.PREPARE, txn.phase());
@@ -103,15 +111,18 @@ class MigrationTransactionTest {
 
     @Test
     void testPhaseAbort() {
+        var testClock = new TestClock();
+        testClock.setTime(1000L);
+
         var txnId = UUID.randomUUID();
         var token = new IdempotencyToken("entity-1", UUID.randomUUID(), UUID.randomUUID(),
-                                         System.currentTimeMillis(), UUID.randomUUID());
+                                         testClock.currentTimeMillis(), UUID.randomUUID());
         var mockSource = createMockBubbleReference(UUID.randomUUID());
         var mockDest = createMockBubbleReference(UUID.randomUUID());
         var snapshot = new EntitySnapshot("entity-1", new Point3D(0, 0, 0), "Content",
-                                          mockSource.getBubbleId(), 1L, 1L, System.currentTimeMillis());
+                                          mockSource.getBubbleId(), 1L, 1L, testClock.currentTimeMillis());
 
-        var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest);
+        var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest, testClock);
 
         // Can abort from PREPARE
         var aborted = txn.advancePhase(MigrationPhase.ABORT);
@@ -119,29 +130,35 @@ class MigrationTransactionTest {
     }
 
     @Test
-    void testTimeoutDetection() throws InterruptedException {
+    void testTimeoutDetection() {
+        var testClock = new TestClock();
+        testClock.setTime(1000L);
+
         var txnId = UUID.randomUUID();
         var token = new IdempotencyToken("entity-1", UUID.randomUUID(), UUID.randomUUID(),
-                                         System.currentTimeMillis(), UUID.randomUUID());
+                                         testClock.currentTimeMillis(), UUID.randomUUID());
         var mockSource = createMockBubbleReference(UUID.randomUUID());
         var mockDest = createMockBubbleReference(UUID.randomUUID());
         var snapshot = new EntitySnapshot("entity-1", new Point3D(0, 0, 0), "Content",
-                                          mockSource.getBubbleId(), 1L, 1L, System.currentTimeMillis());
+                                          mockSource.getBubbleId(), 1L, 1L, testClock.currentTimeMillis());
 
-        var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest);
+        var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest, testClock);
 
         // Not timed out immediately
-        assertFalse(txn.isTimedOut(100));
+        assertFalse(txn.isTimedOut(100, testClock));
 
-        // Wait for timeout
-        Thread.sleep(150);
+        // Advance clock past timeout
+        testClock.setTime(1200L); // +200ms > 100ms timeout
 
         // Should be timed out now
-        assertTrue(txn.isTimedOut(100));
+        assertTrue(txn.isTimedOut(100, testClock));
     }
 
     @Test
     void testEntitySnapshotImmutability() {
+        var testClock = new TestClock();
+        testClock.setTime(1000L);
+
         var position = new Point3D(10, 20, 30);
         var snapshot = new EntitySnapshot(
             "entity-1",
@@ -150,7 +167,7 @@ class MigrationTransactionTest {
             UUID.randomUUID(),
             42L,
             100L,
-            System.currentTimeMillis()
+            testClock.currentTimeMillis()
         );
 
         // Verify all fields

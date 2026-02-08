@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.von.Event;
 import com.hellblazer.luciferase.simulation.von.Bubble;
 import com.hellblazer.luciferase.simulation.von.Message;
@@ -87,6 +88,11 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     private static final Logger log = LoggerFactory.getLogger(P2PGhostChannel.class);
 
     /**
+     * Clock for deterministic testing
+     */
+    private volatile Clock clock = Clock.system();
+
+    /**
      * Bubble for P2P communication
      */
     private final Bubble vonBubble;
@@ -94,7 +100,7 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     /**
      * Factory for creating Message records with timestamp
      */
-    private final MessageFactory factory;
+    private volatile MessageFactory factory;
 
     /**
      * Pending batches grouped by target bubble
@@ -112,13 +118,21 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     private long currentBucket = 0;
 
     /**
+     * Set the clock source for deterministic testing.
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+        this.factory = new MessageFactory(clock);
+    }
+
+    /**
      * Create P2P ghost channel with Bubble.
      *
      * @param vonBubble Bubble for P2P transport
      */
     public P2PGhostChannel(Bubble vonBubble) {
         this.vonBubble = Objects.requireNonNull(vonBubble, "vonBubble must not be null");
-        this.factory = MessageFactory.system();
+        this.factory = new MessageFactory(clock);
         this.pendingBatches = new ConcurrentHashMap<>();
         this.handlers = new CopyOnWriteArrayList<>();
 
