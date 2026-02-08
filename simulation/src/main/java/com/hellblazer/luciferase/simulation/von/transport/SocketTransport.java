@@ -32,41 +32,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-/**
- * Socket-based inter-process transport for VON communication.
- * <p>
- * Extends LocalServerTransport to add network capabilities via TCP sockets
- * and Java Serialization. Provides both server (accepting inbound connections)
- * and client (establishing outbound connections) functionality.
- * <p>
- * Scope Enforcement (Inc 6):
- * Both listenOn() and connectTo() enforce localhost-only operation by validating
- * that addresses are loopback (127.0.0.1 or localhost). Non-loopback addresses
- * throw IllegalArgumentException to prevent accidental scope creep.
- * <p>
- * Architecture:
- * <ul>
- *   <li>SocketServer: Accepts inbound connections on bind address</li>
- *   <li>SocketClient: Establishes outbound connections to remote processes</li>
- *   <li>Message routing: Uses MessageConverter for serialization</li>
- *   <li>Thread-safe: Concurrent client map and synchronized sends</li>
- * </ul>
- * <p>
- * Usage:
- * <pre>
- * var transport = new SocketTransport(ProcessAddress.localhost("p1", 9991));
- * transport.listenOn(transport.getMyAddress());
- * transport.connectTo(ProcessAddress.localhost("p2", 9992));
- * transport.sendToNeighbor(uuid2, message);
- * </pre>
- *
- * @author hal.hildebrand
- */
 /**
  * TCP-based transport with Fireflies virtual synchrony ACK.
  * <p>
@@ -136,7 +105,6 @@ public final class SocketTransport implements NetworkTransport {
         this.viewMonitor = Objects.requireNonNull(viewMonitor, "viewMonitor must not be null");
         this.controller = Objects.requireNonNull(controller, "controller must not be null");
         this.factory = MessageFactory.system();
-        this.handlers.clear(); // Ensure clean state
         this.memberDirectory = new ConcurrentMemberDirectory();
         this.connectionManager = new SocketConnectionManager(myAddress, this::handleIncomingMessage);
     }
