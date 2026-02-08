@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * OptimisticMigratorImpl - Speculative entity migration with deferred update queue (Phase 7E Day 3)
@@ -110,7 +111,7 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
                 entityId, targetBubbleId.toString().substring(0, 8));
 
         // Create deferred queue for this entity
-        deferredQueues.computeIfAbsent(entityId, k -> new ArrayList<>());
+        deferredQueues.computeIfAbsent(entityId, k -> new CopyOnWriteArrayList<>());
 
         totalMigrationsInitiated++;
 
@@ -164,20 +165,25 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
             new Point3f(velocity[0], velocity[1], velocity[2])
         );
 
-        // Check for queue overflow
-        if (queue.size() >= MAX_DEFERRED_QUEUE_SIZE) {
-            // Queue full - drop oldest event and log warning
-            queue.remove(0);
-            log.warn("Deferred queue overflow for entity {}, dropped oldest event", entityId);
-        }
+        // Atomic check-and-add: synchronize on the queue to prevent race conditions
+        // between size check and add operation when multiple threads queue updates
+        // for the same entity concurrently
+        synchronized (queue) {
+            // Check for queue overflow
+            if (queue.size() >= MAX_DEFERRED_QUEUE_SIZE) {
+                // Queue full - drop oldest event and log warning
+                queue.remove(0);
+                log.warn("Deferred queue overflow for entity {}, dropped oldest event", entityId);
+            }
 
-        // Add update to queue
-        queue.add(update);
-        totalDeferredEventsQueued++;
+            // Add update to queue
+            queue.add(update);
+            totalDeferredEventsQueued++;
 
-        if (queue.size() > OVERFLOW_WARNING_THRESHOLD) {
-            log.warn("Deferred queue approaching limit for entity {}: {} events",
-                    entityId, queue.size());
+            if (queue.size() > OVERFLOW_WARNING_THRESHOLD) {
+                log.warn("Deferred queue approaching limit for entity {}: {} events",
+                        entityId, queue.size());
+            }
         }
     }
 

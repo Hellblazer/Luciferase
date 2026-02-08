@@ -23,7 +23,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -340,5 +347,83 @@ class OptimisticMigratorTest {
         assertTrue(metrics.contains("initiated=1"), "Should show 1 migration initiated");
         assertTrue(metrics.contains("pending=1"), "Should show 1 pending entity");
         assertTrue(metrics.contains("queued=2"), "Should show 2 queued events");
+    }
+
+    @Test
+    @DisplayName("Thread-safety: concurrent queue operations from multiple threads")
+    void testConcurrentQueueOperations() throws Exception {
+        var entity = UUID.randomUUID();
+        migrator.initiateOptimisticMigration(entity, targetBubble1);
+
+        int numThreads = 5;
+        int operationsPerThread = 30;
+        var executor = Executors.newFixedThreadPool(numThreads);
+        var startLatch = new CountDownLatch(1);
+        var completionLatch = new CountDownLatch(numThreads);
+        var exceptionCount = new AtomicInteger(0);
+        List<Throwable> exceptions = new ArrayList<>();
+
+        // Launch concurrent threads
+        for (int t = 0; t < numThreads; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    // Wait for all threads to be ready
+                    startLatch.await();
+
+                    // Perform queue operations concurrently
+                    for (int i = 0; i < operationsPerThread; i++) {
+                        var position = new float[]{
+                            threadId + i * 0.01f,
+                            threadId + i * 0.02f,
+                            threadId + i * 0.03f
+                        };
+                        var velocity = new float[]{0.1f * threadId, 0.2f, 0.3f};
+                        migrator.queueDeferredUpdate(entity, position, velocity);
+                    }
+                } catch (Exception e) {
+                    exceptionCount.incrementAndGet();
+                    synchronized (exceptions) {
+                        exceptions.add(e);
+                    }
+                    log.error("Thread {} exception: {}", threadId, e.getMessage(), e);
+                } finally {
+                    completionLatch.countDown();
+                }
+            });
+        }
+
+        // Start all threads simultaneously
+        startLatch.countDown();
+
+        // Wait for completion
+        assertTrue(completionLatch.await(10, TimeUnit.SECONDS),
+            "All threads should complete within 10 seconds");
+
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS),
+            "Executor should terminate");
+
+        // Verify no exceptions occurred
+        if (!exceptions.isEmpty()) {
+            log.error("Concurrent test failures:");
+            for (var ex : exceptions) {
+                log.error("  - {}", ex.getMessage(), ex);
+            }
+        }
+        assertEquals(0, exceptionCount.get(),
+            "No exceptions should occur during concurrent operations. Exceptions: " + exceptions);
+
+        // Verify queue size (should be capped at 100)
+        int queueSize = migrator.getDeferredQueueSize(entity);
+        assertTrue(queueSize > 0, "Queue should contain updates");
+        assertTrue(queueSize <= 100, "Queue should be capped at 100, got: " + queueSize);
+
+        // Verify at least some updates were queued (not all lost to races)
+        assertTrue(queueSize >= 90,
+            "Should have queued close to max capacity, got: " + queueSize);
+
+        log.info("Concurrent stress test: {} threads × {} ops = {} total operations, final queue size: {}",
+            numThreads, operationsPerThread, numThreads * operationsPerThread, queueSize);
     }
 }
