@@ -64,49 +64,86 @@ public final class SocketTransport implements NetworkTransport {
     private final MessageFactory factory;
     private final List<Consumer<Message>> handlers = new CopyOnWriteArrayList<>();
     private final MemberDirectory memberDirectory;
-    private final ConnectionManager connectionManager;
+    private volatile ConnectionManager connectionManager;  // Non-final to support safe two-phase initialization
     private final FirefliesMembershipView membership;
     private final FirefliesViewMonitor viewMonitor;
     private final RealTimeController controller;
 
     /**
      * Create a SocketTransport with a random local ID.
+     * <p>
+     * Factory method to prevent 'this' escape during construction.
      *
      * @param myAddress    This process's network address
      * @param membership   Fireflies membership view for virtual synchrony
      * @param viewMonitor  View stability monitor for ACK semantics
      * @param controller   Simulation time controller for tick listeners
+     * @return Fully initialized SocketTransport
      */
-    public SocketTransport(ProcessAddress myAddress,
-                          FirefliesMembershipView membership,
-                          FirefliesViewMonitor viewMonitor,
-                          RealTimeController controller) {
-        this(UUID.randomUUID(), myAddress, membership, viewMonitor, controller);
+    public static SocketTransport create(ProcessAddress myAddress,
+                                        FirefliesMembershipView membership,
+                                        FirefliesViewMonitor viewMonitor,
+                                        RealTimeController controller) {
+        return create(UUID.randomUUID(), myAddress, membership, viewMonitor, controller);
     }
 
     /**
      * Create a SocketTransport with a specific local ID.
+     * <p>
+     * Factory method to prevent 'this' escape during construction.
      *
      * @param localId      UUID for this transport (typically matches the Bubble's UUID)
      * @param myAddress    This process's network address
      * @param membership   Fireflies membership view for virtual synchrony
      * @param viewMonitor  View stability monitor for ACK semantics
      * @param controller   Simulation time controller for tick listeners
+     * @return Fully initialized SocketTransport
      */
-    public SocketTransport(UUID localId,
-                          ProcessAddress myAddress,
-                          FirefliesMembershipView membership,
-                          FirefliesViewMonitor viewMonitor,
-                          RealTimeController controller) {
-        // CRITICAL: Initialize components BEFORE any methods can be called
-        // (prevents concurrent initialization race)
+    public static SocketTransport create(UUID localId,
+                                        ProcessAddress myAddress,
+                                        FirefliesMembershipView membership,
+                                        FirefliesViewMonitor viewMonitor,
+                                        RealTimeController controller) {
+        // Create instance with null connectionManager (will be set in private constructor)
+        var transport = new SocketTransport(localId, myAddress, membership, viewMonitor, controller, null);
+        // Now safe to pass 'this' reference - constructor completed, all fields visible
+        var connManager = new SocketConnectionManager(myAddress, transport::handleIncomingMessage);
+        transport.setConnectionManager(connManager);
+        return transport;
+    }
+
+    /**
+     * Private constructor to prevent 'this' escape.
+     * <p>
+     * Fix for Luciferase-ivrt: Prevents concurrent access during construction by
+     * deferring connectionManager initialization until after constructor completes.
+     */
+    private SocketTransport(UUID localId,
+                           ProcessAddress myAddress,
+                           FirefliesMembershipView membership,
+                           FirefliesViewMonitor viewMonitor,
+                           RealTimeController controller,
+                           ConnectionManager connectionManager) {
         this.localId = Objects.requireNonNull(localId, "localId must not be null");
         this.membership = Objects.requireNonNull(membership, "membership must not be null");
         this.viewMonitor = Objects.requireNonNull(viewMonitor, "viewMonitor must not be null");
         this.controller = Objects.requireNonNull(controller, "controller must not be null");
         this.factory = MessageFactory.system();
         this.memberDirectory = new ConcurrentMemberDirectory();
-        this.connectionManager = new SocketConnectionManager(myAddress, this::handleIncomingMessage);
+        this.connectionManager = connectionManager;  // Will be null initially, set by factory
+    }
+
+    /**
+     * Set the connection manager after construction (called by factory method).
+     * <p>
+     * Safe because: (1) constructor completes before this is called,
+     * (2) volatile write ensures visibility, (3) only called once by factory.
+     */
+    private void setConnectionManager(ConnectionManager manager) {
+        if (this.connectionManager != null) {
+            throw new IllegalStateException("connectionManager already set");
+        }
+        this.connectionManager = Objects.requireNonNull(manager, "manager must not be null");
     }
 
     @Override

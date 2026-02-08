@@ -95,8 +95,8 @@ class SocketTransportFirefliesAckTest {
         var addr2 = ProcessAddress.localhost("p2", port2);
 
         transport2BubbleId = UUID.randomUUID();  // Store for use in tests
-        transport1 = new SocketTransport(bubbleId, addr1, membership, viewMonitor, controller);
-        transport2 = new SocketTransport(transport2BubbleId, addr2, membership, viewMonitor, controller);
+        transport1 = SocketTransport.create(bubbleId, addr1, membership, viewMonitor, controller);
+        transport2 = SocketTransport.create(transport2BubbleId, addr2, membership, viewMonitor, controller);
 
         transports.add(transport1);
         transports.add(transport2);

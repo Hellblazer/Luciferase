@@ -63,7 +63,7 @@ public class TestTransportFactory {
         // Create RealTimeController
         var controller = new RealTimeController(localId, "test-transport", 100);  // 100 Hz
 
-        return new SocketTransport(localId, myAddress, membership, viewMonitor, controller);
+        return SocketTransport.create(localId, myAddress, membership, viewMonitor, controller);
     }
 
     /**
