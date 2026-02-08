@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.persistence;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,6 +66,14 @@ public class PersistenceManager implements AutoCloseable {
     private final AtomicLong eventCounter;
 
     private volatile Instant lastCheckpoint;
+    private volatile Clock clock = Clock.system();
+
+    /**
+     * Set the clock source for deterministic testing.
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Create PersistenceManager with default settings.
@@ -84,7 +93,7 @@ public class PersistenceManager implements AutoCloseable {
         this.recoveryInProgress = new AtomicBoolean(false);
         this.lastCheckpointSeq = new AtomicLong(0);
         this.eventCounter = new AtomicLong(0);
-        this.lastCheckpoint = Instant.now();
+        this.lastCheckpoint = Instant.ofEpochMilli(clock.currentTimeMillis());
 
         // Start batch flush scheduler
         startBatchFlushScheduler();
@@ -204,7 +213,7 @@ public class PersistenceManager implements AutoCloseable {
      */
     public void checkpoint() throws IOException {
         var seq = eventCounter.get();
-        var timestamp = Instant.now();
+        var timestamp = Instant.ofEpochMilli(clock.currentTimeMillis());
 
         writeAheadLog.checkpoint(seq, timestamp);
         lastCheckpointSeq.set(seq);
@@ -352,7 +361,7 @@ public class PersistenceManager implements AutoCloseable {
     private Map<String, Object> createEvent(String type) {
         var event = new HashMap<String, Object>();
         event.put("version", 1);
-        event.put("timestamp", Instant.now().toString());
+        event.put("timestamp", Instant.ofEpochMilli(clock.currentTimeMillis()).toString());
         event.put("type", type);
         return event;
     }
