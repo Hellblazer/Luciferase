@@ -114,6 +114,37 @@ public class Bubble extends EnhancedBubble implements Node {
             return t;
         });
 
+        // Schedule periodic sweep to clean up orphaned JOIN response entries
+        // (Fix for Luciferase-ziyl: prevent memory leak from failed JOINs)
+        retryScheduler.scheduleAtFixedRate(() -> {
+            try {
+                var ctx = clockContext;  // Single volatile read
+                var now = ctx.clock.currentTimeMillis();
+                var removed = 0;
+
+                // Remove entries older than 60 seconds
+                var iterator = pendingJoinResponses.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    var entry = iterator.next();
+                    if (now - entry.getValue().firstAttemptTime() > 60_000) {
+                        // Cancel the scheduled future to prevent further retries
+                        var future = entry.getValue().retryFuture();
+                        if (future != null && !future.isDone()) {
+                            future.cancel(false);
+                        }
+                        iterator.remove();
+                        removed++;
+                    }
+                }
+
+                if (removed > 0) {
+                    log.debug("Swept {} orphaned JOIN response entries", removed);
+                }
+            } catch (Exception e) {
+                log.error("Error during JOIN response sweep: {}", e.getMessage(), e);
+            }
+        }, 60, 60, TimeUnit.SECONDS);
+
         // Register message handler
         this.messageHandler = this::handleMessage;
         transport.onMessage(messageHandler);
@@ -599,9 +630,13 @@ public class Bubble extends EnhancedBubble implements Node {
                     TimeUnit.MILLISECONDS
                 );
 
-                // Track pending retry
+                // Track pending retry - preserve firstAttemptTime from previous entry or use current time
+                var ctx = clockContext;  // Single volatile read
+                var existingEntry = pendingJoinResponses.get(joinerId);
+                var firstAttemptTime = existingEntry != null ? existingEntry.firstAttemptTime() : ctx.clock.currentTimeMillis();
+
                 pendingJoinResponses.put(joinerId, new PendingJoinResponse(
-                    joinerId, response, nextAttempt, retryFuture
+                    joinerId, response, nextAttempt, retryFuture, firstAttemptTime
                 ));
             }
         }
@@ -661,16 +696,18 @@ public class Bubble extends EnhancedBubble implements Node {
     /**
      * Tracks pending JOIN response retry state.
      *
-     * @param joinerId     UUID of the joining node
-     * @param response     JoinResponse message to send
-     * @param attemptCount Number of send attempts so far
-     * @param retryFuture  Scheduled future for the next retry
+     * @param joinerId         UUID of the joining node
+     * @param response         JoinResponse message to send
+     * @param attemptCount     Number of send attempts so far
+     * @param retryFuture      Scheduled future for the next retry
+     * @param firstAttemptTime Timestamp of the first send attempt (for orphan detection)
      */
     private record PendingJoinResponse(
         UUID joinerId,
         Message.JoinResponse response,
         int attemptCount,
-        ScheduledFuture<?> retryFuture
+        ScheduledFuture<?> retryFuture,
+        long firstAttemptTime
     ) {
     }
 }
