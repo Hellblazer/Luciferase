@@ -52,13 +52,28 @@ public class Bubble extends EnhancedBubble implements Node {
 
     private static final Logger log = LoggerFactory.getLogger(Bubble.class);
 
+    /**
+     * Immutable holder for Clock and MessageFactory to guarantee atomic reads.
+     * <p>
+     * Fix for Luciferase-rpid: prevents race condition where clock and factory
+     * become inconsistent when setClock() is called concurrently with message creation.
+     */
+    private static final class ClockContext {
+        final Clock clock;
+        final MessageFactory factory;
+
+        ClockContext(Clock clock) {
+            this.clock = clock;
+            this.factory = new MessageFactory(clock);
+        }
+    }
+
     private final Transport transport;
-    private volatile MessageFactory factory;
     private final Map<UUID, NeighborState> neighborStates;
     private final Set<UUID> introducedTo;  // Track neighbors we've introduced ourselves to
     private final List<Consumer<Event>> eventListeners;
     private final Consumer<Message> messageHandler;
-    private volatile Clock clock = Clock.system();
+    private volatile ClockContext clockContext = new ClockContext(Clock.system());
     private volatile boolean closed = false;  // Track if close() has been called (for idempotency)
 
     // JOIN response retry management
@@ -70,16 +85,13 @@ public class Bubble extends EnhancedBubble implements Node {
     /**
      * Set the clock for deterministic testing.
      * <p>
-     * Updates both the clock field and recreates the factory to use the new clock
-     * for all subsequent message timestamps.
-     * <p>
-     * Synchronized to prevent race conditions where clock and factory become inconsistent.
+     * Updates both clock and factory atomically by creating a new ClockContext.
+     * No synchronization needed - single volatile write guarantees atomicity.
      *
      * @param clock Clock instance to use
      */
-    public synchronized void setClock(Clock clock) {
-        this.clock = clock;
-        this.factory = new MessageFactory(clock);
+    public void setClock(Clock clock) {
+        this.clockContext = new ClockContext(clock);  // Atomic swap
     }
 
     /**
@@ -93,7 +105,6 @@ public class Bubble extends EnhancedBubble implements Node {
     public Bubble(UUID id, byte spatialLevel, long targetFrameMs, Transport transport) {
         super(id, spatialLevel, targetFrameMs);
         this.transport = transport;
-        this.factory = MessageFactory.system();
         this.neighborStates = new ConcurrentHashMap<>();
         this.introducedTo = ConcurrentHashMap.newKeySet();
         this.eventListeners = new CopyOnWriteArrayList<>();
@@ -138,11 +149,12 @@ public class Bubble extends EnhancedBubble implements Node {
         // Update our tracked state for this neighbor
         var state = neighborStates.get(neighbor.id());
         if (state != null) {
+            var ctx = clockContext;  // Single volatile read
             neighborStates.put(neighbor.id(), new NeighborState(
                 neighbor.id(),
                 neighbor.position(),
                 neighbor.bounds(),
-                clock.currentTimeMillis()
+                ctx.clock.currentTimeMillis()
             ));
             log.trace("Neighbor {} moved to {}", neighbor.id(), neighbor.position());
         }
@@ -158,11 +170,12 @@ public class Bubble extends EnhancedBubble implements Node {
     @Override
     public void notifyJoin(Node neighbor) {
         addNeighbor(neighbor.id());
+        var ctx = clockContext;  // Single volatile read
         neighborStates.put(neighbor.id(), new NeighborState(
             neighbor.id(),
             neighbor.position(),
             neighbor.bounds(),
-            clock.currentTimeMillis()
+            ctx.clock.currentTimeMillis()
         ));
         emitEvent(new Event.Join(neighbor.id(), neighbor.position()));
         log.debug("Neighbor {} joined at {}", neighbor.id(), neighbor.position());
@@ -173,11 +186,12 @@ public class Bubble extends EnhancedBubble implements Node {
         super.addVonNeighbor(neighborId);
         if (!neighborStates.containsKey(neighborId)) {
             // Initialize with unknown state - will be updated on first message
+            var ctx = clockContext;  // Single volatile read
             neighborStates.put(neighborId, new NeighborState(
                 neighborId,
                 new Point3D(0, 0, 0),
                 null,
-                clock.currentTimeMillis()
+                ctx.clock.currentTimeMillis()
             ));
         }
     }
@@ -197,7 +211,8 @@ public class Bubble extends EnhancedBubble implements Node {
      * Called when this bubble's position or bounds change significantly.
      */
     public void broadcastMove() {
-        var moveMsg = factory.createMove(id(), position(), bounds());
+        var ctx = clockContext;  // Single volatile read
+        var moveMsg = ctx.factory.createMove(id(), position(), bounds());
 
         // Create snapshot to avoid ConcurrentModificationException during iteration
         var neighborSnapshot = new ArrayList<>(neighbors());
@@ -218,7 +233,8 @@ public class Bubble extends EnhancedBubble implements Node {
      * Called during graceful shutdown.
      */
     public void broadcastLeave() {
-        var leaveMsg = factory.createLeave(id());
+        var ctx = clockContext;  // Single volatile read
+        var leaveMsg = ctx.factory.createLeave(id());
 
         // Create snapshot to avoid ConcurrentModificationException during iteration
         var neighborSnapshot = new ArrayList<>(neighbors());
@@ -251,7 +267,8 @@ public class Bubble extends EnhancedBubble implements Node {
             }
 
             // Send JOIN request
-            var joinRequest = factory.createJoinRequest(id(), targetPosition, bounds());
+            var ctx = clockContext;  // Single volatile read
+            var joinRequest = ctx.factory.createJoinRequest(id(), targetPosition, bounds());
             transport.sendToNeighbor(acceptor.nodeId(), joinRequest);
 
             log.debug("Sent JOIN request to {} for position {}", acceptor.nodeId(), targetPosition);
@@ -300,7 +317,8 @@ public class Bubble extends EnhancedBubble implements Node {
      * @return Move message with current position and bounds
      */
     public Message.Move createMoveMessage() {
-        return factory.createMove(id(), position(), bounds());
+        var ctx = clockContext;  // Single volatile read
+        return ctx.factory.createMove(id(), position(), bounds());
     }
 
     /**
@@ -413,7 +431,8 @@ public class Bubble extends EnhancedBubble implements Node {
         // Include ourselves
         neighborInfos.add(new Message.NeighborInfo(id(), position(), bounds()));
 
-        var response = factory.createJoinResponse(id(), neighborInfos);
+        var ctx = clockContext;  // Single volatile read
+        var response = ctx.factory.createJoinResponse(id(), neighborInfos);
         sendJoinResponseWithRetry(req.joinerId(), response, 0);
 
         emitEvent(new Event.Join(req.joinerId(), req.position()));
@@ -434,8 +453,9 @@ public class Bubble extends EnhancedBubble implements Node {
         }
 
         // Send ACK to acceptor
+        var ctx = clockContext;  // Single volatile read
         try {
-            transport.sendToNeighbor(resp.acceptorId(), factory.createAck(resp.acceptorId(), id()));
+            transport.sendToNeighbor(resp.acceptorId(), ctx.factory.createAck(resp.acceptorId(), id()));
         } catch (Transport.TransportException e) {
             log.warn("Failed to send ACK to {}: {}", resp.acceptorId(), e.getMessage());
         }
@@ -448,7 +468,7 @@ public class Bubble extends EnhancedBubble implements Node {
             if (!neighborId.equals(resp.acceptorId()) && !introducedTo.contains(neighborId)) {
                 introducedTo.add(neighborId);  // Mark as introduced before sending
                 try {
-                    var introRequest = factory.createJoinRequest(id(), position(), bounds());
+                    var introRequest = ctx.factory.createJoinRequest(id(), position(), bounds());
                     transport.sendToNeighbor(neighborId, introRequest);
                     log.trace("Sent introduction to neighbor {} from JoinResponse", neighborId);
                 } catch (Transport.TransportException e) {
@@ -501,6 +521,7 @@ public class Bubble extends EnhancedBubble implements Node {
         log.debug("Received Query from {} for '{}' (queryId: {})",
             query.senderId(), query.queryType(), query.queryId());
 
+        var ctx = clockContext;  // Single volatile read
         String responseData;
         try {
             responseData = switch (query.queryType()) {
@@ -523,7 +544,7 @@ public class Bubble extends EnhancedBubble implements Node {
             };
 
             // Send QueryResponse back to querier
-            var response = factory.createQueryResponse(query.queryId(), id(), responseData);
+            var response = ctx.factory.createQueryResponse(query.queryId(), id(), responseData);
             transport.sendToNeighbor(query.senderId(), response);
             log.trace("Sent QueryResponse to {} (queryId: {})", query.senderId(), query.queryId());
 
@@ -531,7 +552,7 @@ public class Bubble extends EnhancedBubble implements Node {
             log.error("Error handling query from {}: {}", query.senderId(), e.getMessage(), e);
             // Send error response
             try {
-                var errorResponse = factory.createQueryResponse(
+                var errorResponse = ctx.factory.createQueryResponse(
                     query.queryId(), id(), "error:" + e.getMessage());
                 transport.sendToNeighbor(query.senderId(), errorResponse);
             } catch (Exception e2) {
