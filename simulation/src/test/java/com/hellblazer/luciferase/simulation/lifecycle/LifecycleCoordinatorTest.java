@@ -18,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -404,5 +405,386 @@ class LifecycleCoordinatorTest {
         // If sequential, would take ~30ms (3 * 10ms each)
         // If parallel, should take ~10-15ms (one round)
         assertTrue(duration < 100, "Parallel start should complete quickly, took: " + duration + "ms");
+    }
+
+    // ========== Phase 1: registerAndStart() Tests ==========
+
+    /**
+     * Test 12: Verify registerAndStart() starts component when coordinator already running.
+     */
+    @Test
+    void testRegisterAndStart_whenCoordinatorRunning_startsComponent() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+
+        coordinator.register(componentA);
+        coordinator.start();
+
+        // Act - Add new component after coordinator started
+        var componentB = new MockComponent("B", startOrder, stopOrder);
+        coordinator.registerAndStart(componentB);
+
+        // Assert
+        assertEquals(LifecycleState.RUNNING, coordinator.getState("B"),
+                     "Component B should be RUNNING after registerAndStart");
+        assertEquals(2, startOrder.size(), "Both components should have started");
+        assertTrue(startOrder.contains("B"), "Component B should be in start order");
+    }
+
+    /**
+     * Test 13: Verify registerAndStart() only registers when coordinator not started.
+     */
+    @Test
+    void testRegisterAndStart_whenCoordinatorNotStarted_registersOnly() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+
+        // Act - Register component before coordinator starts
+        coordinator.registerAndStart(componentA);
+
+        // Assert
+        assertEquals(LifecycleState.CREATED, coordinator.getState("A"),
+                     "Component should be CREATED, not started yet");
+        assertEquals(0, startOrder.size(), "Component should not have started");
+
+        // Now start coordinator and verify component starts
+        coordinator.start();
+        assertEquals(LifecycleState.RUNNING, coordinator.getState("A"),
+                     "Component should be RUNNING after coordinator.start()");
+        assertEquals(1, startOrder.size(), "Component should have started");
+    }
+
+    /**
+     * Test 14: Verify registerAndStart() succeeds with satisfied dependencies.
+     */
+    @Test
+    void testRegisterAndStart_withSatisfiedDependencies_succeeds() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+
+        coordinator.register(componentA);
+        coordinator.start();
+
+        // Act - Add component B that depends on already-running A
+        var componentB = new MockComponent("B", List.of("A"), startOrder, stopOrder);
+        coordinator.registerAndStart(componentB);
+
+        // Assert
+        assertEquals(LifecycleState.RUNNING, coordinator.getState("B"),
+                     "Component B should start successfully");
+        assertEquals(2, startOrder.size(), "Both components should have started");
+        assertEquals("A", startOrder.get(0), "A should start first");
+        assertEquals("B", startOrder.get(1), "B should start second");
+    }
+
+    /**
+     * Test 15: Verify registerAndStart() throws when dependencies not satisfied.
+     */
+    @Test
+    void testRegisterAndStart_withUnsatisfiedDependencies_throws() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+
+        coordinator.start(); // Start empty coordinator
+
+        // Act & Assert - Try to add component with missing dependency
+        var componentB = new MockComponent("B", List.of("NonExistent"), startOrder, stopOrder);
+        var exception = assertThrows(LifecycleException.class,
+                                     () -> coordinator.registerAndStart(componentB));
+        assertTrue(exception.getMessage().contains("depends on non-existent") ||
+                   exception.getMessage().contains("NonExistent"),
+                   "Exception should mention missing dependency");
+    }
+
+    /**
+     * Test 16: Verify registerAndStart() throws when component already registered.
+     */
+    @Test
+    void testRegisterAndStart_duplicateComponent_throws() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+
+        coordinator.registerAndStart(componentA);
+
+        // Act & Assert - Try to register same component again
+        var componentA2 = new MockComponent("A", startOrder, stopOrder);
+        var exception = assertThrows(LifecycleException.class,
+                                     () -> coordinator.registerAndStart(componentA2));
+        assertTrue(exception.getMessage().contains("already registered"),
+                   "Exception should mention duplicate registration");
+    }
+
+    // ========== Phase 1: stopAndUnregister() Tests ==========
+
+    /**
+     * Test 17: Verify stopAndUnregister() stops and removes running component.
+     */
+    @Test
+    void testStopAndUnregister_runningComponent_stopsAndRemoves() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+
+        coordinator.register(componentA);
+        coordinator.start();
+
+        assertEquals(LifecycleState.RUNNING, coordinator.getState("A"));
+
+        // Act
+        coordinator.stopAndUnregister("A");
+
+        // Assert
+        assertNull(coordinator.getState("A"), "Component A should be unregistered");
+        assertEquals(1, stopOrder.size(), "Component should have been stopped");
+        assertEquals("A", stopOrder.get(0));
+    }
+
+    /**
+     * Test 18: Verify stopAndUnregister() just removes stopped component.
+     */
+    @Test
+    void testStopAndUnregister_stoppedComponent_justRemoves() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+
+        coordinator.register(componentA);
+        coordinator.start();
+        coordinator.stop(5000);
+
+        assertEquals(LifecycleState.STOPPED, coordinator.getState("A"));
+        var initialStopCount = stopOrder.size();
+
+        // Act
+        coordinator.stopAndUnregister("A");
+
+        // Assert
+        assertNull(coordinator.getState("A"), "Component A should be unregistered");
+        assertEquals(initialStopCount, stopOrder.size(),
+                     "Stop should not be called again for already-stopped component");
+    }
+
+    /**
+     * Test 19: Verify stopAndUnregister() is no-op for non-existent component.
+     */
+    @Test
+    void testStopAndUnregister_nonExistentComponent_noOp() {
+        // Arrange
+        coordinator.start();
+
+        // Act & Assert - Should not throw
+        assertDoesNotThrow(() -> coordinator.stopAndUnregister("NonExistent"),
+                          "stopAndUnregister should be no-op for non-existent component");
+    }
+
+    /**
+     * Test 20: Verify stopAndUnregister() removes created component without stopping.
+     */
+    @Test
+    void testStopAndUnregister_createdComponent_justRemoves() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+
+        coordinator.register(componentA);
+        // Don't start coordinator - component stays in CREATED
+
+        assertEquals(LifecycleState.CREATED, coordinator.getState("A"));
+
+        // Act
+        coordinator.stopAndUnregister("A");
+
+        // Assert
+        assertNull(coordinator.getState("A"), "Component A should be unregistered");
+        assertEquals(0, stopOrder.size(), "Stop should not be called for CREATED component");
+    }
+
+    /**
+     * Test 21: Verify stopAndUnregister() throws when other components depend on it.
+     */
+    @Test
+    void testStopAndUnregister_withDependents_throws() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+        var componentB = new MockComponent("B", List.of("A"), startOrder, stopOrder);
+
+        coordinator.register(componentA);
+        coordinator.register(componentB);
+        coordinator.start();
+
+        // Act & Assert - Try to remove A while B depends on it
+        var exception = assertThrows(LifecycleException.class,
+                                     () -> coordinator.stopAndUnregister("A"));
+        assertTrue(exception.getMessage().contains("depends on") || exception.getMessage().contains("B"),
+                   "Exception should mention dependent component");
+    }
+
+    /**
+     * Test 22: Verify stopAndUnregister() handles gracefully during coordinator stop.
+     */
+    @Test
+    void testStopAndUnregister_duringCoordinatorStop_handlesGracefully() throws InterruptedException {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+        var componentB = new MockComponent("B", startOrder, stopOrder);
+
+        coordinator.register(componentA);
+        coordinator.register(componentB);
+        coordinator.start();
+
+        // Act - Try to remove component during coordinator shutdown
+        var stopThread = new Thread(() -> coordinator.stop(5000));
+        stopThread.start();
+
+        Thread.sleep(20); // Let stop begin
+
+        // Attempt stopAndUnregister during stop - should handle gracefully
+        assertDoesNotThrow(() -> coordinator.stopAndUnregister("A"),
+                          "stopAndUnregister should handle gracefully during coordinator stop");
+
+        stopThread.join(2000);
+    }
+
+    // ========== Phase 1: Additional Tests from Plan Audit ==========
+
+    /**
+     * Test 23: Document race condition between registerAndStart() and start().
+     * <p>
+     * This test documents expected behavior when registerAndStart() is called
+     * concurrently with coordinator.start(). The outcome is non-deterministic:
+     * - If registerAndStart() wins: component starts immediately
+     * - If start() wins: component registers but doesn't start until next start()
+     */
+    @Test
+    void testRegisterAndStart_concurrentWithStart_handlesRace() throws InterruptedException {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+
+        coordinator.register(componentA);
+
+        var latch = new CountDownLatch(2);
+        var exception = new AtomicReference<Exception>();
+
+        // Act - Race: start() vs registerAndStart()
+        var startThread = new Thread(() -> {
+            try {
+                coordinator.start();
+            } catch (Exception e) {
+                exception.set(e);
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        var registerThread = new Thread(() -> {
+            try {
+                var componentB = new MockComponent("B", startOrder, stopOrder);
+                coordinator.registerAndStart(componentB);
+            } catch (Exception e) {
+                // Expected - may fail due to race
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        startThread.start();
+        registerThread.start();
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "Threads should complete");
+
+        // Assert - Document non-deterministic outcome
+        // Component A should always reach RUNNING (registered before race)
+        assertEquals(LifecycleState.RUNNING, coordinator.getState("A"));
+
+        // Component B outcome is non-deterministic - either RUNNING or CREATED
+        var stateB = coordinator.getState("B");
+        assertTrue(stateB == LifecycleState.RUNNING || stateB == LifecycleState.CREATED,
+                   "Component B in race should be RUNNING or CREATED, was: " + stateB);
+    }
+
+    /**
+     * Test 24: Verify empty coordinator starts instantly (<50ms assumption).
+     */
+    @Test
+    void testEmptyCoordinatorStartTime_isInstant() {
+        // Arrange
+        var emptyCoordinator = new LifecycleCoordinator();
+
+        // Act
+        var startTime = System.currentTimeMillis();
+        emptyCoordinator.start();
+        var duration = System.currentTimeMillis() - startTime;
+
+        // Assert
+        assertTrue(duration < 50, "Empty coordinator should start in <50ms, took: " + duration + "ms");
+        emptyCoordinator.stop(1000); // Cleanup
+    }
+
+    /**
+     * Test 25: Verify stopAndUnregister() dependent detection prevents removal.
+     * <p>
+     * This test validates the critical dependent detection logic in stopAndUnregister().
+     * It ensures components cannot be removed while others depend on them.
+     */
+    @Test
+    void testStopAndUnregister_dependentDetection_preventsRemoval() {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+
+        // Create dependency chain: C depends on B, B depends on A
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+        var componentB = new MockComponent("B", List.of("A"), startOrder, stopOrder);
+        var componentC = new MockComponent("C", List.of("B"), startOrder, stopOrder);
+
+        coordinator.register(componentA);
+        coordinator.register(componentB);
+        coordinator.register(componentC);
+        coordinator.start();
+
+        // Act & Assert - Try to remove A (B depends on it)
+        var exceptionA = assertThrows(LifecycleException.class,
+                                      () -> coordinator.stopAndUnregister("A"));
+        assertTrue(exceptionA.getMessage().contains("depends on") || exceptionA.getMessage().contains("B"),
+                   "Exception should mention that B depends on A");
+
+        // Act & Assert - Try to remove B (C depends on it)
+        var exceptionB = assertThrows(LifecycleException.class,
+                                      () -> coordinator.stopAndUnregister("B"));
+        assertTrue(exceptionB.getMessage().contains("depends on") || exceptionB.getMessage().contains("C"),
+                   "Exception should mention that C depends on B");
+
+        // Act & Assert - Remove C (no dependents) should succeed
+        assertDoesNotThrow(() -> coordinator.stopAndUnregister("C"),
+                          "Removing C should succeed (no dependents)");
+        assertNull(coordinator.getState("C"), "C should be removed");
+
+        // Now B can be removed (no dependents after C removed)
+        assertDoesNotThrow(() -> coordinator.stopAndUnregister("B"),
+                          "Removing B should succeed after C removed");
+        assertNull(coordinator.getState("B"), "B should be removed");
+
+        // Finally A can be removed
+        assertDoesNotThrow(() -> coordinator.stopAndUnregister("A"),
+                          "Removing A should succeed after B removed");
+        assertNull(coordinator.getState("A"), "A should be removed");
     }
 }

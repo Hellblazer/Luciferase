@@ -109,6 +109,111 @@ public class LifecycleCoordinator {
     }
 
     /**
+     * Register and optionally start a component.
+     * <p>
+     * If the coordinator is already started, the component is started immediately.
+     * If not started, the component is only registered and will start when coordinator.start() is called.
+     * <p>
+     * Dependencies must already be registered and satisfied.
+     *
+     * @param component the component to register and start
+     * @throws LifecycleException if component already registered or dependencies not satisfied
+     */
+    public void registerAndStart(LifecycleComponent component) {
+        var name = component.name();
+
+        // Validate dependencies exist
+        for (var depName : component.dependencies()) {
+            if (!components.containsKey(depName)) {
+                throw new LifecycleException(
+                    "Component " + name + " depends on non-existent component: " + depName);
+            }
+        }
+
+        // Register the component
+        if (components.putIfAbsent(name, component) != null) {
+            throw new LifecycleException("Component already registered: " + name);
+        }
+        states.put(name, component.getState());
+        log.debug("Registered component: {}", name);
+
+        // If coordinator is started, start this component immediately
+        if (isStarted.get()) {
+            try {
+                component.start()
+                    .orTimeout(5, TimeUnit.SECONDS)
+                    .whenComplete((v, ex) -> {
+                        if (ex != null) {
+                            log.error("Component {} failed to start", name, ex);
+                            states.put(name, LifecycleState.FAILED);
+                        } else {
+                            states.put(name, component.getState());
+                        }
+                    })
+                    .join(); // Wait for completion
+                log.debug("Started component immediately: {}", name);
+            } catch (Exception e) {
+                states.put(name, LifecycleState.FAILED);
+                throw new LifecycleException("Failed to start component: " + name, e);
+            }
+        }
+    }
+
+    /**
+     * Stop and unregister a component.
+     * <p>
+     * If the component is RUNNING, it is stopped first.
+     * Then the component is unregistered from lifecycle management.
+     * <p>
+     * This method checks if any other components depend on this one and throws if so.
+     * This prevents removing components that are dependencies of others.
+     *
+     * @param componentName the name of the component to stop and remove
+     * @throws LifecycleException if other components depend on this one
+     */
+    public void stopAndUnregister(String componentName) {
+        var component = components.get(componentName);
+        if (component == null) {
+            log.debug("Component {} not found - no-op", componentName);
+            return;
+        }
+
+        // CRITICAL: Check if any component depends on this one
+        for (var comp : components.values()) {
+            if (comp.dependencies().contains(componentName)) {
+                throw new LifecycleException(
+                    "Cannot remove " + componentName + " - " + comp.name() + " depends on it");
+            }
+        }
+
+        // Stop component if it's running
+        var state = component.getState();
+        if (state == LifecycleState.RUNNING) {
+            try {
+                component.stop()
+                    .orTimeout(5, TimeUnit.SECONDS)
+                    .whenComplete((v, ex) -> {
+                        if (ex != null) {
+                            log.warn("Component {} stop timeout or error", componentName, ex);
+                        } else {
+                            states.put(componentName, component.getState());
+                        }
+                    })
+                    .join();
+                log.debug("Stopped component: {}", componentName);
+            } catch (Exception e) {
+                log.warn("Error stopping component {}: {}", componentName, e.getMessage());
+                // Continue with unregistration despite error
+            }
+        }
+
+        // Unregister the component
+        components.remove(componentName);
+        states.remove(componentName);
+        log.debug("Unregistered component: {}", componentName);
+    }
+
+    /**
      * Start all registered components in dependency order.
      * <p>
      * Uses Kahn's algorithm to compute layers, starts each layer in parallel.
