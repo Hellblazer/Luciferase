@@ -113,7 +113,8 @@ public class MessageConverter {
             "",  // Entity ID not used for GhostSync
             msg.timestamp(),
             ghosts,
-            msg.bucket()
+            msg.bucket(),
+            null  // neighbors not used for GhostSync
         );
     }
 
@@ -165,23 +166,37 @@ public class MessageConverter {
     // ==================== JoinResponse Conversion ====================
 
     private static TransportVonMessage joinResponseToTransport(Message.JoinResponse msg) {
-        // JoinResponse contains neighbor set - simplified for Phase 6A
+        // Convert neighbor set to transport format
+        var transportNeighbors = msg.neighbors().stream()
+            .map(TransportNeighborInfo::from)
+            .toList();
+
         return new TransportVonMessage(
             "JoinResponse",
             msg.acceptorId().toString(),
             msg.acceptorId().toString(),
             0f, 0f, 0f,
             "",
-            msg.timestamp()
+            msg.timestamp(),
+            null,  // ghosts
+            null,  // bucket
+            transportNeighbors  // neighbors
         );
     }
 
     private static Message joinResponseFromTransport(TransportVonMessage transport) {
         var acceptorId = UUID.fromString(transport.sourceBubbleId());
 
+        // Reconstruct neighbor set from transport format
+        var neighbors = transport.neighbors() != null
+            ? transport.neighbors().stream()
+                .map(TransportNeighborInfo::toNeighborInfo)
+                .collect(java.util.stream.Collectors.toSet())
+            : java.util.Set.<Message.NeighborInfo>of();
+
         return new Message.JoinResponse(
             acceptorId,
-            java.util.Set.of(),  // Neighbor set not transmitted in Phase 6A wire format
+            neighbors,
             transport.timestamp()
         );
     }

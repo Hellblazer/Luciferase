@@ -145,6 +145,68 @@ class MessageConverterTest {
     }
 
     @Test
+    void testJoinResponseWithNeighborsRoundTrip() {
+        var acceptorId = UUID.randomUUID();
+
+        // Create neighbor set with multiple neighbors
+        var neighbors = java.util.Set.of(
+            new Message.NeighborInfo(
+                UUID.randomUUID(),
+                new Point3D(1.5, 2.5, 3.5),
+                null  // Phase 6A: bounds not transmitted
+            ),
+            new Message.NeighborInfo(
+                UUID.randomUUID(),
+                new Point3D(10.0, 20.0, 30.0),
+                null  // Phase 6A: bounds not transmitted
+            ),
+            new Message.NeighborInfo(
+                UUID.randomUUID(),
+                new Point3D(100.25, 200.5, 300.75),
+                null  // Phase 6A: bounds not transmitted
+            )
+        );
+
+        var originalJoinResp = factory.createJoinResponse(acceptorId, neighbors);
+
+        // Convert to transport
+        var transport = MessageConverter.toTransport(originalJoinResp);
+
+        assertEquals("JoinResponse", transport.type());
+        assertEquals(acceptorId.toString(), transport.sourceBubbleId());
+        assertNotNull(transport.neighbors());
+        assertEquals(3, transport.neighbors().size());
+
+        // Convert back
+        var recovered = MessageConverter.fromTransport(transport);
+
+        assertInstanceOf(Message.JoinResponse.class, recovered);
+        var recoveredJoinResp = (Message.JoinResponse) recovered;
+        assertEquals(acceptorId, recoveredJoinResp.acceptorId());
+        assertNotNull(recoveredJoinResp.neighbors());
+        assertEquals(3, recoveredJoinResp.neighbors().size());
+
+        // Verify each neighbor's data is preserved
+        var originalList = new java.util.ArrayList<>(neighbors);
+        var recoveredList = new java.util.ArrayList<>(recoveredJoinResp.neighbors());
+
+        // Sort both lists by nodeId for comparison
+        originalList.sort((a, b) -> a.nodeId().compareTo(b.nodeId()));
+        recoveredList.sort((a, b) -> a.nodeId().compareTo(b.nodeId()));
+
+        for (int i = 0; i < 3; i++) {
+            var orig = originalList.get(i);
+            var recv = recoveredList.get(i);
+
+            assertEquals(orig.nodeId(), recv.nodeId());
+            assertEquals(orig.position().getX(), recv.position().getX(), 0.001);
+            assertEquals(orig.position().getY(), recv.position().getY(), 0.001);
+            assertEquals(orig.position().getZ(), recv.position().getZ(), 0.001);
+            assertNull(recv.bounds());  // Phase 6A: bounds not transmitted
+        }
+    }
+
+    @Test
     void testQueryRoundTrip() {
         var senderId = UUID.randomUUID();
         var targetId = UUID.randomUUID();
@@ -235,9 +297,7 @@ class MessageConverterTest {
             UUID.randomUUID().toString(),
             0f, 0f, 0f,
             "",
-            System.currentTimeMillis(),
-            null,
-            null
+            System.currentTimeMillis()
         );
 
         assertThrows(IllegalArgumentException.class, () ->

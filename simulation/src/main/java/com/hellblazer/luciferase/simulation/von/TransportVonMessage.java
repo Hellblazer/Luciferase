@@ -46,19 +46,20 @@ import java.util.Objects;
  * @author hal.hildebrand
  */
 public record TransportVonMessage(
-    String type,                      // Message type: "GHOST_SYNC", "ACK", "MOVE", etc.
-    String sourceBubbleId,            // Source bubble UUID as string
-    String targetBubbleId,            // Target bubble UUID as string
-    float posX,                       // Entity X position (decomposed from Point3f)
-    float posY,                       // Entity Y position (decomposed from Point3f)
-    float posZ,                       // Entity Z position (decomposed from Point3f)
-    String entityId,                  // Entity identifier as string
-    long timestamp,                   // Message timestamp in millis
-    List<TransportGhostData> ghosts,  // Ghost list for GhostSync (null for other types)
-    Long bucket                       // Simulation bucket for GhostSync (null for other types)
+    String type,                           // Message type: "GHOST_SYNC", "ACK", "MOVE", etc.
+    String sourceBubbleId,                 // Source bubble UUID as string
+    String targetBubbleId,                 // Target bubble UUID as string
+    float posX,                            // Entity X position (decomposed from Point3f)
+    float posY,                            // Entity Y position (decomposed from Point3f)
+    float posZ,                            // Entity Z position (decomposed from Point3f)
+    String entityId,                       // Entity identifier as string
+    long timestamp,                        // Message timestamp in millis
+    List<TransportGhostData> ghosts,       // Ghost list for GhostSync (null for other types)
+    Long bucket,                           // Simulation bucket for GhostSync (null for other types)
+    List<TransportNeighborInfo> neighbors  // Neighbor list for JoinResponse (null for other types)
 ) implements Serializable {
     @java.io.Serial
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L; // Incremented for protocol change
 
     /**
      * Compact constructor with validation.
@@ -92,7 +93,7 @@ public record TransportVonMessage(
         String entityId,
         long timestamp
     ) {
-        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp, null, null);
+        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp, null, null, null);
     }
 
     /**
