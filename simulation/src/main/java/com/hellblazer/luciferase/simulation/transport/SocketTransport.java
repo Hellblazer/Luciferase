@@ -231,13 +231,27 @@ public class SocketTransport implements NetworkTransport {
     /**
      * Find SocketClient for a neighbor UUID.
      * <p>
-     * Phase 6A: Iterates all clients (simple implementation).
-     * Phase 6B: Will use proper UUID -> ProcessAddress mapping.
+     * Uses memberRegistry to map UUID to ProcessAddress, then looks up
+     * the corresponding SocketClient by processId.
+     *
+     * @param neighborId UUID of the neighbor to find
+     * @return SocketClient for the neighbor, or null if not found/connected
      */
     private SocketClient findClientForNeighbor(UUID neighborId) {
-        // Phase 6A: Simple iteration (sufficient for testing)
-        // Phase 6B: Will maintain UUID -> ProcessAddress map
-        return clients.values().stream().findFirst().orElse(null);
+        // Look up ProcessAddress for this neighbor UUID
+        var address = memberRegistry.get(neighborId);
+        if (address == null) {
+            log.warn("No ProcessAddress registered for neighbor {}", neighborId);
+            return null;
+        }
+
+        // Find client by processId
+        var client = clients.get(address.processId());
+        if (client == null) {
+            log.warn("No SocketClient found for processId {} (neighbor {})",
+                address.processId(), neighborId);
+        }
+        return client;
     }
 
     @Override
