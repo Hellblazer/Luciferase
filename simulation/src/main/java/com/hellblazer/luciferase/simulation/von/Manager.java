@@ -67,6 +67,7 @@ public class Manager {
     private final long targetFrameMs;
     private final float aoiRadius;
     private volatile Clock clock;
+    private final LifecycleCoordinator coordinator;
 
     /**
      * Create a Manager with default configuration.
@@ -112,6 +113,10 @@ public class Manager {
         this.targetFrameMs = targetFrameMs;
         this.aoiRadius = aoiRadius;
 
+        // Initialize persistent lifecycle coordinator
+        this.coordinator = new LifecycleCoordinator();
+        this.coordinator.start(); // Empty coordinator starts instantly (<50ms)
+
         log.info("Manager created: spatialLevel={}, targetFrameMs={}, aoiRadius={}",
                 spatialLevel, targetFrameMs, aoiRadius);
     }
@@ -139,6 +144,7 @@ public class Manager {
      * Create a new Bubble and register it with the manager.
      * <p>
      * The new bubble inherits the manager's clock for deterministic timestamps.
+     * Registers bubble with lifecycle coordinator for graceful shutdown coordination.
      *
      * @return The newly created Bubble
      */
@@ -154,7 +160,21 @@ public class Manager {
         bubble.addEventListener(this::dispatchEvent);
 
         bubbles.put(id, bubble);
-        log.debug("Created bubble: {}", id);
+
+        // Register with lifecycle coordinator for graceful shutdown
+        // Non-fatal if registration fails - bubble still works without coordinator
+        if (bubble instanceof EnhancedBubble enhanced) {
+            try {
+                var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController());
+                coordinator.registerAndStart(adapter);
+                log.debug("Created and registered bubble: {}", id);
+            } catch (Exception e) {
+                log.warn("Failed to register bubble {} with lifecycle coordinator: {}", id, e.getMessage());
+                // Continue - bubble still functional without coordinator
+            }
+        } else {
+            log.debug("Created bubble: {}", id);
+        }
 
         return bubble;
     }
@@ -163,6 +183,7 @@ public class Manager {
      * Create a new Bubble with a specific ID.
      * <p>
      * The new bubble inherits the manager's clock for deterministic timestamps.
+     * Registers bubble with lifecycle coordinator for graceful shutdown coordination.
      *
      * @param id The UUID for the bubble
      * @return The newly created Bubble
@@ -178,7 +199,21 @@ public class Manager {
         bubble.addEventListener(this::dispatchEvent);
 
         bubbles.put(id, bubble);
-        log.debug("Created bubble with ID: {}", id);
+
+        // Register with lifecycle coordinator for graceful shutdown
+        // Non-fatal if registration fails - bubble still works without coordinator
+        if (bubble instanceof EnhancedBubble enhanced) {
+            try {
+                var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController());
+                coordinator.registerAndStart(adapter);
+                log.debug("Created and registered bubble with ID: {}", id);
+            } catch (Exception e) {
+                log.warn("Failed to register bubble {} with lifecycle coordinator: {}", id, e.getMessage());
+                // Continue - bubble still functional without coordinator
+            }
+        } else {
+            log.debug("Created bubble with ID: {}", id);
+        }
 
         return bubble;
     }
@@ -284,7 +319,7 @@ public class Manager {
     /**
      * Remove a bubble from the VON gracefully.
      * <p>
-     * Phase 5: Uses EnhancedBubbleAdapter for single-bubble graceful shutdown.
+     * Uses persistent lifecycle coordinator for single-bubble graceful shutdown.
      * The adapter ensures broadcastLeave() is called exactly once during stop().
      *
      * @param bubble The bubble to remove
@@ -292,22 +327,16 @@ public class Manager {
     public void leave(Bubble bubble) {
         Objects.requireNonNull(bubble, "bubble cannot be null");
 
-        // Phase 5: Use adapter for graceful shutdown
-        // EnhancedBubbleAdapter handles broadcastLeave() during stop()
+        // Use persistent coordinator for graceful shutdown
         if (bubble instanceof EnhancedBubble enhanced) {
+            var adapterName = "EnhancedBubble-" + bubble.id();
             try {
-                var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController());
-
-                // Use a single-bubble coordinator for proper lifecycle management
-                var coordinator = new LifecycleCoordinator();
-                coordinator.register(adapter);
-                coordinator.start(); // Idempotent - required before stop
-                coordinator.stop(5000); // 5 second timeout
-
-                log.debug("Bubble {} gracefully departed via lifecycle adapter", bubble.id());
+                coordinator.stopAndUnregister(adapterName);
+                log.debug("Bubble {} gracefully departed via lifecycle coordinator", bubble.id());
             } catch (Exception e) {
-                log.warn("Error during graceful leave for bubble {}: {}", bubble.id(), e.getMessage());
-                // Fallback to direct close
+                log.warn("Coordinator stop failed for bubble {}, falling back to direct close: {}",
+                         bubble.id(), e.getMessage());
+                // Fallback to direct close (idempotent)
                 bubble.close();
             }
         } else {
@@ -415,43 +444,22 @@ public class Manager {
     /**
      * Close all bubbles and release resources.
      * <p>
-     * Uses LifecycleCoordinator for ordered shutdown when bubbles are EnhancedBubbles.
+     * Uses persistent lifecycle coordinator for ordered shutdown.
      * This ensures components stop in proper dependency order and broadcastLeave()
      * is called exactly once per bubble.
      */
     public void close() {
-        // Phase 5: Use LifecycleCoordinator for ordered shutdown
-        var coordinator = new LifecycleCoordinator();
-        var adapters = new ArrayList<EnhancedBubbleAdapter>();
+        log.info("Starting coordinated shutdown of {} bubbles", bubbles.size());
 
-        // Register all bubbles as lifecycle components
-        for (Bubble bubble : bubbles.values()) {
-            // Bubble extends EnhancedBubble, so this cast is safe
-            if (bubble instanceof EnhancedBubble enhanced) {
-                try {
-                    var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController());
-                    coordinator.register(adapter);
-                    adapters.add(adapter);
-                    log.debug("Registered bubble {} for lifecycle shutdown", bubble.id());
-                } catch (Exception e) {
-                    log.warn("Failed to register bubble {} for lifecycle: {}", bubble.id(), e.getMessage());
-                }
-            }
-        }
-
-        // Perform ordered shutdown via coordinator
+        // Use persistent coordinator for graceful shutdown of all registered bubbles
         try {
-            if (!adapters.isEmpty()) {
-                log.info("Starting coordinated shutdown of {} bubbles", adapters.size());
-                coordinator.start(); // Idempotent - allows us to stop
-                coordinator.stop(5000); // 5 second timeout for shutdown
-                log.info("Coordinated shutdown completed");
-            }
+            coordinator.stop(5000); // 5 second timeout for shutdown
+            log.info("Coordinated shutdown completed");
         } catch (Exception e) {
             log.warn("Error during coordinated shutdown: {}", e.getMessage());
         }
 
-        // Clean up remaining bubbles that weren't coordinated
+        // Safety net: Close any bubbles directly (idempotent)
         for (Bubble bubble : bubbles.values()) {
             try {
                 bubble.close();
