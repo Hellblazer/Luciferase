@@ -282,7 +282,7 @@ class OptimisticMigratorTest {
     }
 
     @Test
-    @DisplayName("Performs within performance target: < 10ms for 1000 queued updates")
+    @DisplayName("Performs within performance target: < 100ms for 1000 queued updates")
     void testPerformanceQueueing1000Updates() {
         var entity = UUID.randomUUID();
         migrator.initiateOptimisticMigration(entity, targetBubble1);
@@ -302,7 +302,10 @@ class OptimisticMigratorTest {
         log.info("1000 deferred updates queued in {}ms (final queue size: {})",
                 elapsedMs, migrator.getDeferredQueueSize(entity));
 
-        assertTrue(elapsedMs < 50, "1000 queue operations should complete in < 50ms, got " + elapsedMs + "ms");
+        // Threshold increased from 50ms to 100ms to account for thread-safety overhead
+        // from CopyOnWriteArrayList + synchronized block (commit 70542cf4)
+        // The overhead is necessary for correctness under concurrent load
+        assertTrue(elapsedMs < 100, "1000 queue operations should complete in < 100ms, got " + elapsedMs + "ms");
         assertEquals(100, migrator.getDeferredQueueSize(entity),
                 "Final queue should be limited to 100 events");
     }

@@ -17,7 +17,10 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.simulation.lifecycle.EnhancedBubbleAdapter;
+import com.hellblazer.luciferase.simulation.lifecycle.LifecycleCoordinator;
 import javafx.geometry.Point3D;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -280,17 +283,37 @@ public class Manager {
 
     /**
      * Remove a bubble from the VON gracefully.
+     * <p>
+     * Phase 5: Uses EnhancedBubbleAdapter for single-bubble graceful shutdown.
+     * The adapter ensures broadcastLeave() is called exactly once during stop().
      *
      * @param bubble The bubble to remove
      */
     public void leave(Bubble bubble) {
         Objects.requireNonNull(bubble, "bubble cannot be null");
 
-        // Broadcast leave to neighbors
-        bubble.broadcastLeave();
+        // Phase 5: Use adapter for graceful shutdown
+        // EnhancedBubbleAdapter handles broadcastLeave() during stop()
+        if (bubble instanceof EnhancedBubble enhanced) {
+            try {
+                var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController());
 
-        // Close the bubble
-        bubble.close();
+                // Use a single-bubble coordinator for proper lifecycle management
+                var coordinator = new LifecycleCoordinator();
+                coordinator.register(adapter);
+                coordinator.start(); // Idempotent - required before stop
+                coordinator.stop(5000); // 5 second timeout
+
+                log.debug("Bubble {} gracefully departed via lifecycle adapter", bubble.id());
+            } catch (Exception e) {
+                log.warn("Error during graceful leave for bubble {}: {}", bubble.id(), e.getMessage());
+                // Fallback to direct close
+                bubble.close();
+            }
+        } else {
+            // Plain bubble - just close directly
+            bubble.close();
+        }
 
         // Remove from manager
         bubbles.remove(bubble.id());
@@ -391,8 +414,44 @@ public class Manager {
 
     /**
      * Close all bubbles and release resources.
+     * <p>
+     * Uses LifecycleCoordinator for ordered shutdown when bubbles are EnhancedBubbles.
+     * This ensures components stop in proper dependency order and broadcastLeave()
+     * is called exactly once per bubble.
      */
     public void close() {
+        // Phase 5: Use LifecycleCoordinator for ordered shutdown
+        var coordinator = new LifecycleCoordinator();
+        var adapters = new ArrayList<EnhancedBubbleAdapter>();
+
+        // Register all bubbles as lifecycle components
+        for (Bubble bubble : bubbles.values()) {
+            // Bubble extends EnhancedBubble, so this cast is safe
+            if (bubble instanceof EnhancedBubble enhanced) {
+                try {
+                    var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController());
+                    coordinator.register(adapter);
+                    adapters.add(adapter);
+                    log.debug("Registered bubble {} for lifecycle shutdown", bubble.id());
+                } catch (Exception e) {
+                    log.warn("Failed to register bubble {} for lifecycle: {}", bubble.id(), e.getMessage());
+                }
+            }
+        }
+
+        // Perform ordered shutdown via coordinator
+        try {
+            if (!adapters.isEmpty()) {
+                log.info("Starting coordinated shutdown of {} bubbles", adapters.size());
+                coordinator.start(); // Idempotent - allows us to stop
+                coordinator.stop(5000); // 5 second timeout for shutdown
+                log.info("Coordinated shutdown completed");
+            }
+        } catch (Exception e) {
+            log.warn("Error during coordinated shutdown: {}", e.getMessage());
+        }
+
+        // Clean up remaining bubbles that weren't coordinated
         for (Bubble bubble : bubbles.values()) {
             try {
                 bubble.close();
@@ -400,6 +459,7 @@ public class Manager {
                 log.warn("Error closing bubble {}: {}", bubble.id(), e.getMessage());
             }
         }
+
         bubbles.clear();
         eventListeners.clear();
         log.info("Manager closed");

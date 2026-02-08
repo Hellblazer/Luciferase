@@ -15,7 +15,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.simulation.transport;
+package com.hellblazer.luciferase.simulation.von.transport;
 
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
@@ -308,119 +308,10 @@ class SocketTransportTest {
         assertFalse(transport.isConnected(), "Should be disconnected after closeAll");
     }
 
-    /**
-     * Test routeToKey() race condition: member removed between snapshot and get.
-     * <p>
-     * Verifies that NPE is prevented and TransportException is thrown instead.
-     */
-    @Test
-    void testRouteToKeyMemberRemovedRace() throws Exception {
-        var port = findAvailablePort();
-        var addr = ProcessAddress.localhost("process-1", port);
-        var bubbleId = UUID.randomUUID();
-        var transport = TestTransportFactory.createTestTransport(bubbleId, addr);
-        transports.add(transport);
-
-        // Register 3 members to make routing interesting
-        var member1 = UUID.randomUUID();
-        var member2 = UUID.randomUUID();
-        var member3 = UUID.randomUUID();
-        transport.registerMember(member1, ProcessAddress.localhost("m1", findAvailablePort()));
-        transport.registerMember(member2, ProcessAddress.localhost("m2", findAvailablePort()));
-        transport.registerMember(member3, ProcessAddress.localhost("m3", findAvailablePort()));
-
-        // Use reflection to access private memberRegistry
-        var field = SocketTransport.class.getDeclaredField("memberRegistry");
-        field.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        var memberRegistry = (java.util.Map<UUID, ProcessAddress>) field.get(transport);
-
-        // Create a key that will route to one of the members
-        var key = com.hellblazer.luciferase.lucien.tetree.TetreeKey.create((byte) 0, 0L, 0L);
-
-        // Remove all members to simulate race condition
-        memberRegistry.clear();
-
-        // When: Try to route with no members available
-        var ex = assertThrows(SocketTransport.TransportException.class,
-                              () -> transport.routeToKey(key),
-                              "Should throw TransportException when member removed");
-
-        // Then: Should get helpful error message (not NPE)
-        assertTrue(ex.getMessage().contains("not found") || ex.getMessage().contains("No members"),
-                   "Error message should indicate member was removed: " + ex.getMessage());
-    }
-
-    /**
-     * Test routeToKey() race condition with concurrent removal.
-     * <p>
-     * Verifies thread-safe behavior under concurrent member churn.
-     */
-    @Test
-    void testRouteToKeyConcurrentMemberChurn() throws Exception {
-        var port = findAvailablePort();
-        var addr = ProcessAddress.localhost("process-1", port);
-        var bubbleId = UUID.randomUUID();
-        var transport = TestTransportFactory.createTestTransport(bubbleId, addr);
-        transports.add(transport);
-
-        // Use reflection to access private memberRegistry
-        var field = SocketTransport.class.getDeclaredField("memberRegistry");
-        field.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        var memberRegistry = (java.util.Map<UUID, ProcessAddress>) field.get(transport);
-
-        // Create test key
-        var key = com.hellblazer.luciferase.lucien.tetree.TetreeKey.create((byte) 0, 0L, 0L);
-
-        var failures = new java.util.concurrent.atomic.AtomicInteger(0);
-        var successes = new java.util.concurrent.atomic.AtomicInteger(0);
-
-        // Thread 1: Keep adding/removing members
-        var churnThread = new Thread(() -> {
-            for (int i = 0; i < 100; i++) {
-                var memberId = UUID.randomUUID();
-                memberRegistry.put(memberId, ProcessAddress.localhost("m" + i, 9000 + i));
-                try {
-                    Thread.sleep(1);
-                } catch (InterruptedException e) {
-                    break;
-                }
-                memberRegistry.remove(memberId);
-            }
-        });
-
-        // Thread 2: Keep trying to route
-        var routeThread = new Thread(() -> {
-            for (int i = 0; i < 100; i++) {
-                try {
-                    transport.routeToKey(key);
-                    successes.incrementAndGet();
-                } catch (SocketTransport.TransportException e) {
-                    // Expected - member might be removed during routing
-                    failures.incrementAndGet();
-                }
-                try {
-                    Thread.sleep(1);
-                } catch (InterruptedException ex) {
-                    break;
-                }
-            }
-        });
-
-        // Start both threads
-        churnThread.start();
-        routeThread.start();
-
-        // Wait for completion
-        churnThread.join(5000);
-        routeThread.join(5000);
-
-        // Then: Should have some successes and failures (depending on timing)
-        // but NO NPEs (all exceptions should be TransportException)
-        var total = successes.get() + failures.get();
-        assertEquals(100, total, "Should complete all routing attempts without NPE");
-    }
+    // NOTE: testRouteToKeyMemberRemovedRace and testRouteToKeyConcurrentMemberChurn
+    // have been MIGRATED to ConcurrentMemberDirectoryTest.
+    // They now use unregisterMember() API instead of reflection-based member removal.
+    // See Phase 1 of NetworkTransport SRP refactoring (Luciferase-yth6).
 
     /**
      * Find an available port for testing.

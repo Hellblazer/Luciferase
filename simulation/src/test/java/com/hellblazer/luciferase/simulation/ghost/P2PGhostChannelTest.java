@@ -369,6 +369,37 @@ class P2PGhostChannelTest {
         }
     }
 
+    @Test
+    void testGhostContentSerialization_preservesEntityType() throws Exception {
+        // Given: A ghost with EntityType.PREY content
+        var position = new Point3f(51.5f, 51.5f, 50.5f);
+        var ghost = createGhostWithEntityType("ghost-prey", position,
+            com.hellblazer.luciferase.simulation.entity.EntityType.PREY, 42L, 7L);
+
+        // When: Send and receive
+        var receivedGhosts = new AtomicReference<List<SimulationGhostEntity<StringEntityID, Object>>>();
+        var receiveLatch = new CountDownLatch(1);
+        channel2.onReceive((fromId, received) -> {
+            receivedGhosts.set(new ArrayList<>(received));
+            receiveLatch.countDown();
+        });
+
+        channel1.sendBatch(bubble2.id(), List.of(ghost));
+
+        // Then: Content is preserved (not null)
+        assertThat(receiveLatch.await(2, TimeUnit.SECONDS)).isTrue();
+        var received = receivedGhosts.get().get(0);
+        assertThat(received.content())
+            .as("Ghost content should be preserved during serialization")
+            .isNotNull();
+        assertThat(received.content())
+            .isInstanceOf(com.hellblazer.luciferase.simulation.entity.EntityType.class);
+        assertThat(received.content())
+            .isEqualTo(com.hellblazer.luciferase.simulation.entity.EntityType.PREY);
+        assertThat(received.epoch()).isEqualTo(42L);
+        assertThat(received.version()).isEqualTo(7L);
+    }
+
     // ========== Helper Methods ==========
 
     private SimulationGhostEntity<StringEntityID, Object> createGhost(String entityId, Point3f position) {
@@ -382,6 +413,20 @@ class P2PGhostChannelTest {
         var bounds = new EntityBounds(position, 0.5f);
         var ghost = new GhostZoneManager.GhostEntity<StringEntityID, Object>(
             id, new Object(), position, bounds, "tree-" + bubble1.id()
+        );
+        return new SimulationGhostEntity<>(
+            ghost, bubble1.id(), 1L, epoch, version
+        );
+    }
+
+    private SimulationGhostEntity<StringEntityID, Object> createGhostWithEntityType(
+        String entityId, Point3f position, com.hellblazer.luciferase.simulation.entity.EntityType entityType,
+        long epoch, long version
+    ) {
+        var id = new StringEntityID(entityId);
+        var bounds = new EntityBounds(position, 0.5f);
+        var ghost = new GhostZoneManager.GhostEntity<StringEntityID, Object>(
+            id, entityType, position, bounds, "tree-" + bubble1.id()
         );
         return new SimulationGhostEntity<>(
             ghost, bubble1.id(), 1L, epoch, version

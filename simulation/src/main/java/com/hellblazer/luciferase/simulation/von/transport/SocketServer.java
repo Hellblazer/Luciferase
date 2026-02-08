@@ -15,7 +15,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.simulation.transport;
+package com.hellblazer.luciferase.simulation.von.transport;
 
 import com.hellblazer.luciferase.simulation.von.TransportVonMessage;
 import org.slf4j.Logger;
@@ -176,14 +176,18 @@ public class SocketServer {
         }
 
         // Close all connected client sockets to unblock readObject() calls
-        for (var clientSocket : clientSockets) {
-            try {
-                clientSocket.close();
-            } catch (IOException e) {
-                log.debug("Error closing client socket during shutdown", e);
+        // Synchronized because clientSockets is Collections.synchronizedSet(HashSet)
+        // which requires external synchronization for iteration
+        synchronized (clientSockets) {
+            for (var clientSocket : clientSockets) {
+                try {
+                    clientSocket.close();
+                } catch (IOException e) {
+                    log.debug("Error closing client socket during shutdown", e);
+                }
             }
+            clientSockets.clear();
         }
-        clientSockets.clear();
 
         executor.shutdown();
         try {

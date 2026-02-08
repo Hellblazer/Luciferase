@@ -38,6 +38,7 @@ import java.util.function.Consumer;
  *   <li>Thread-safe concurrent operations</li>
  *   <li>Automatic routing via TetreeKey hash</li>
  *   <li>Async message handling with CompletableFuture</li>
+ *   <li>Per-destination FIFO ordering for async messages</li>
  * </ul>
  * <p>
  * Usage:
@@ -61,6 +62,7 @@ public class LocalServerTransport implements Transport {
     private final List<Consumer<Message>> handlers = new CopyOnWriteArrayList<>();
     private final Map<UUID, CompletableFuture<Message.Ack>> pendingAcks = new ConcurrentHashMap<>();
     private final ExecutorService executor;
+    private final Map<UUID, ExecutorService> destinationExecutors = new ConcurrentHashMap<>();
     private volatile boolean connected = true;
 
     // Failure injection for testing (Phase 6A)
@@ -125,7 +127,9 @@ public class LocalServerTransport implements Transport {
         var messageId = UUID.randomUUID();
         pendingAcks.put(messageId, future);
 
-        executor.submit(() -> {
+        // Use per-destination executor to ensure FIFO ordering
+        var destinationExecutor = getOrCreateDestinationExecutor(neighborId);
+        destinationExecutor.execute(() -> {
             try {
                 sendToNeighbor(neighborId, message);
                 // For LocalServer, immediately complete (real impl would wait for ACK)
@@ -191,23 +195,42 @@ public class LocalServerTransport implements Transport {
         registry.unregister(localId);
         pendingAcks.values().forEach(f -> f.cancel(true));
         pendingAcks.clear();
+        // Shutdown all per-destination executors
+        destinationExecutors.values().forEach(ExecutorService::shutdown);
+        destinationExecutors.clear();
     }
 
     /**
      * Deliver a message to this transport (called by sender).
      * <p>
      * Public to allow cross-package message delivery for migration coordinator.
+     * <p>
+     * Executes handlers synchronously to preserve ordering when called from
+     * per-destination executors in sendToNeighborAsync().
      */
     public void deliver(Message message) {
-        executor.submit(() -> {
-            for (var handler : handlers) {
-                try {
-                    handler.accept(message);
-                } catch (Exception e) {
-                    log.error("Handler error for {}: {}", message.getClass().getSimpleName(), e.getMessage(), e);
-                }
+        for (var handler : handlers) {
+            try {
+                handler.accept(message);
+            } catch (Exception e) {
+                log.error("Handler error for {}: {}", message.getClass().getSimpleName(), e.getMessage(), e);
             }
-        });
+        }
+    }
+
+    /**
+     * Get or create a single-threaded executor for a destination.
+     * <p>
+     * Ensures FIFO ordering of messages sent to the same destination.
+     */
+    private ExecutorService getOrCreateDestinationExecutor(UUID destination) {
+        return destinationExecutors.computeIfAbsent(destination, k ->
+            Executors.newSingleThreadExecutor(r -> {
+                var t = new Thread(r, "send-to-" + destination);
+                t.setDaemon(true);
+                return t;
+            })
+        );
     }
 
     /**

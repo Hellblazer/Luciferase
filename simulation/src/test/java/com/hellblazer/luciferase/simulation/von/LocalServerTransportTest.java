@@ -266,4 +266,115 @@ public class LocalServerTransportTest {
         assertThat(received.get().joinerId()).isEqualTo(id1);
         assertThat(received.get().position()).isEqualTo(position);
     }
+
+    @Test
+    void testAsyncMessageOrdering_maintainsFIFO() throws Exception {
+        var id1 = UUID.randomUUID();
+        var id2 = UUID.randomUUID();
+
+        var transport1 = registry.register(id1);
+        var transport2 = registry.register(id2);
+
+        var messageCount = 100;
+        var latch = new CountDownLatch(messageCount);
+        var receivedSequences = new java.util.ArrayList<Integer>();
+
+        // Handler records sequence numbers from message positions
+        transport2.onMessage(msg -> {
+            if (msg instanceof Message.JoinRequest jr) {
+                var seq = (int) jr.position().getX();
+                synchronized (receivedSequences) {
+                    receivedSequences.add(seq);
+                }
+                latch.countDown();
+            }
+        });
+
+        // Send messages with sequence numbers encoded in position.x
+        var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(0.5f, 0.5f, 0.5f)));
+        for (int i = 0; i < messageCount; i++) {
+            var position = new Point3D(i, 0, 0);  // Sequence number in x coordinate
+            var request = factory.createJoinRequest(id1, position, bounds);
+            transport1.sendToNeighborAsync(id2, request);
+        }
+
+        // Wait for all messages to be received
+        assertThat(latch.await(5, TimeUnit.SECONDS))
+            .as("All messages should be received within timeout")
+            .isTrue();
+
+        // Verify messages arrived in order
+        assertThat(receivedSequences).hasSize(messageCount);
+        for (int i = 0; i < messageCount; i++) {
+            assertThat(receivedSequences.get(i))
+                .as("Message at position %d should have sequence %d", i, i)
+                .isEqualTo(i);
+        }
+    }
+
+    @Test
+    void testAsyncMessageOrdering_multipleConcurrentSenders() throws Exception {
+        var sender1 = UUID.randomUUID();
+        var sender2 = UUID.randomUUID();
+        var receiver = UUID.randomUUID();
+
+        var transport1 = registry.register(sender1);
+        var transport2 = registry.register(sender2);
+        var receiverTransport = registry.register(receiver);
+
+        var messagesPerSender = 50;
+        var totalMessages = messagesPerSender * 2;
+        var latch = new CountDownLatch(totalMessages);
+
+        var sender1Sequences = new java.util.ArrayList<Integer>();
+        var sender2Sequences = new java.util.ArrayList<Integer>();
+
+        // Handler separates messages by sender and records sequences
+        receiverTransport.onMessage(msg -> {
+            if (msg instanceof Message.JoinRequest jr) {
+                var seq = (int) jr.position().getX();
+                if (jr.joinerId().equals(sender1)) {
+                    synchronized (sender1Sequences) {
+                        sender1Sequences.add(seq);
+                    }
+                } else if (jr.joinerId().equals(sender2)) {
+                    synchronized (sender2Sequences) {
+                        sender2Sequences.add(seq);
+                    }
+                }
+                latch.countDown();
+            }
+        });
+
+        // Both senders send messages concurrently
+        var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(0.5f, 0.5f, 0.5f)));
+        for (int i = 0; i < messagesPerSender; i++) {
+            var position1 = new Point3D(i, 0, 0);
+            var position2 = new Point3D(i, 0, 0);
+
+            var request1 = factory.createJoinRequest(sender1, position1, bounds);
+            var request2 = factory.createJoinRequest(sender2, position2, bounds);
+
+            transport1.sendToNeighborAsync(receiver, request1);
+            transport2.sendToNeighborAsync(receiver, request2);
+        }
+
+        // Wait for all messages
+        assertThat(latch.await(5, TimeUnit.SECONDS))
+            .as("All messages should be received within timeout")
+            .isTrue();
+
+        // Verify each sender's messages arrived in order (independently)
+        assertThat(sender1Sequences).hasSize(messagesPerSender);
+        assertThat(sender2Sequences).hasSize(messagesPerSender);
+
+        for (int i = 0; i < messagesPerSender; i++) {
+            assertThat(sender1Sequences.get(i))
+                .as("Sender1 message at position %d should have sequence %d", i, i)
+                .isEqualTo(i);
+            assertThat(sender2Sequences.get(i))
+                .as("Sender2 message at position %d should have sequence %d", i, i)
+                .isEqualTo(i);
+        }
+    }
 }

@@ -59,6 +59,7 @@ public class Bubble extends EnhancedBubble implements Node {
     private final List<Consumer<Event>> eventListeners;
     private final Consumer<Message> messageHandler;
     private volatile Clock clock = Clock.system();
+    private volatile boolean closed = false;  // Track if close() has been called (for idempotency)
 
     // JOIN response retry management
     private final Map<UUID, PendingJoinResponse> pendingJoinResponses = new ConcurrentHashMap<>();
@@ -71,10 +72,12 @@ public class Bubble extends EnhancedBubble implements Node {
      * <p>
      * Updates both the clock field and recreates the factory to use the new clock
      * for all subsequent message timestamps.
+     * <p>
+     * Synchronized to prevent race conditions where clock and factory become inconsistent.
      *
      * @param clock Clock instance to use
      */
-    public void setClock(Clock clock) {
+    public synchronized void setClock(Clock clock) {
         this.clock = clock;
         this.factory = new MessageFactory(clock);
     }
@@ -183,6 +186,7 @@ public class Bubble extends EnhancedBubble implements Node {
     public void removeNeighbor(UUID neighborId) {
         super.removeVonNeighbor(neighborId);
         neighborStates.remove(neighborId);
+        introducedTo.remove(neighborId);  // Clean up introducedTo to prevent memory leak
     }
 
     // ========== P2P Transport Methods ==========
@@ -320,10 +324,21 @@ public class Bubble extends EnhancedBubble implements Node {
     /**
      * Close this bubble and release resources.
      * <p>
-     * Sends LEAVE to all neighbors and unregisters message handler.
+     * Unregisters message handler. Note: broadcastLeave() is handled by
+     * LifecycleCoordinator during shutdown to prevent duplicate calls.
      */
     public void close() {
+        // Idempotent: return immediately if already closed
+        if (closed) {
+            log.debug("Bubble {} already closed - idempotent no-op", id());
+            return;
+        }
+        closed = true;
+
+        // Broadcast LEAVE to neighbors before cleanup (graceful departure)
+        // This ensures neighbors are notified while transport is still available
         broadcastLeave();
+
         transport.removeMessageHandler(messageHandler);
 
         // Cancel all pending retries
@@ -345,6 +360,7 @@ public class Bubble extends EnhancedBubble implements Node {
         }
 
         neighborStates.clear();
+        introducedTo.clear();  // Clean up introducedTo to prevent memory leak
         eventListeners.clear();
         log.debug("Bubble {} closed", id());
     }
