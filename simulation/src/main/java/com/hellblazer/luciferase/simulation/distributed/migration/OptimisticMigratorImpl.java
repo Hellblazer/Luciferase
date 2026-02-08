@@ -41,7 +41,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *
  * THREAD SAFETY:
  * Uses ConcurrentHashMap for concurrent access to deferred queues.
- * Individual queue operations are atomic via CopyOnWriteArrayList.
+ * Individual queue operations are atomic via LinkedBlockingDeque (lock-free, O(1)).
  *
  * PERFORMANCE:
  * - initiateOptimisticMigration: O(1)
@@ -67,8 +67,8 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
     private record DeferredUpdate(Point3f position, Point3f velocity) {
     }
 
-    // Per-entity deferred update queue
-    private final Map<UUID, List<DeferredUpdate>> deferredQueues;
+    // Per-entity deferred update queue (bounded, lock-free)
+    private final Map<UUID, java.util.concurrent.BlockingDeque<DeferredUpdate>> deferredQueues;
 
     // Integration with committee consensus (Phase 7G.3)
     private com.hellblazer.luciferase.simulation.consensus.committee.OptimisticMigratorIntegration consensusIntegration;
@@ -110,8 +110,8 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
         log.debug("Initiating optimistic migration: entity={}, target={}",
                 entityId, targetBubbleId.toString().substring(0, 8));
 
-        // Create deferred queue for this entity
-        deferredQueues.computeIfAbsent(entityId, k -> new CopyOnWriteArrayList<>());
+        // Create bounded deferred queue for this entity (O(1) operations, lock-free)
+        deferredQueues.computeIfAbsent(entityId, k -> new java.util.concurrent.LinkedBlockingDeque<>(MAX_DEFERRED_QUEUE_SIZE));
 
         totalMigrationsInitiated++;
 
@@ -165,25 +165,20 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
             new Point3f(velocity[0], velocity[1], velocity[2])
         );
 
-        // Atomic check-and-add: synchronize on the queue to prevent race conditions
-        // between size check and add operation when multiple threads queue updates
-        // for the same entity concurrently
-        synchronized (queue) {
-            // Check for queue overflow
-            if (queue.size() >= MAX_DEFERRED_QUEUE_SIZE) {
-                // Queue full - drop oldest event and log warning
-                queue.remove(0);
-                log.warn("Deferred queue overflow for entity {}, dropped oldest event", entityId);
-            }
+        // Atomic offer-with-eviction using BlockingDeque (O(1), lock-free)
+        // Fix for Luciferase-zcne: replaced synchronized CopyOnWriteArrayList operations
+        if (!queue.offerLast(update)) {
+            // Queue full - drop oldest event and add new one
+            queue.pollFirst();  // Remove oldest (O(1))
+            queue.offerLast(update);  // Add new (guaranteed to succeed after poll)
+            log.warn("Deferred queue overflow for entity {}, dropped oldest event", entityId);
+        }
+        totalDeferredEventsQueued++;
 
-            // Add update to queue
-            queue.add(update);
-            totalDeferredEventsQueued++;
-
-            if (queue.size() > OVERFLOW_WARNING_THRESHOLD) {
-                log.warn("Deferred queue approaching limit for entity {}: {} events",
-                        entityId, queue.size());
-            }
+        var queueSize = queue.size();
+        if (queueSize > OVERFLOW_WARNING_THRESHOLD) {
+            log.warn("Deferred queue approaching limit for entity {}: {} events",
+                    entityId, queueSize);
         }
     }
 
@@ -287,7 +282,7 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
         }
 
         return nonEmptyQueues.stream()
-            .mapToInt(List::size)
+            .mapToInt(q -> q.size())
             .average()
             .orElse(0.0);
     }
