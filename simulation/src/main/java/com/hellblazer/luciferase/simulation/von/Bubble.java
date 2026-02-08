@@ -320,10 +320,10 @@ public class Bubble extends EnhancedBubble implements Node {
     /**
      * Close this bubble and release resources.
      * <p>
-     * Sends LEAVE to all neighbors and unregisters message handler.
+     * Unregisters message handler. Note: broadcastLeave() is handled by
+     * LifecycleCoordinator during shutdown to prevent duplicate calls.
      */
     public void close() {
-        broadcastLeave();
         transport.removeMessageHandler(messageHandler);
 
         // Cancel all pending retries

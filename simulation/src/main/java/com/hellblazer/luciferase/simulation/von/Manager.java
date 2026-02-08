@@ -286,8 +286,9 @@ public class Manager {
     public void leave(Bubble bubble) {
         Objects.requireNonNull(bubble, "bubble cannot be null");
 
-        // Broadcast leave to neighbors
-        bubble.broadcastLeave();
+        // Broadcast leave to neighbors (handled by LifecycleCoordinator during shutdown)
+        // Note: broadcastLeave() removed here to prevent duplicate calls
+        // The coordinator ensures single broadcast during graceful shutdown
 
         // Close the bubble
         bubble.close();
