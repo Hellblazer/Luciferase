@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -103,7 +104,7 @@ public class Manager {
         this.clock = Objects.requireNonNull(clock, "clock cannot be null");
         this.factory = new MessageFactory(clock);
         this.bubbles = new ConcurrentHashMap<>();
-        this.eventListeners = new ArrayList<>();
+        this.eventListeners = new CopyOnWriteArrayList<>();
         this.spatialLevel = spatialLevel;
         this.targetFrameMs = targetFrameMs;
         this.aoiRadius = aoiRadius;

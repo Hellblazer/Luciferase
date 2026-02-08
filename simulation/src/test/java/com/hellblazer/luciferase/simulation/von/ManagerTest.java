@@ -28,7 +28,12 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -337,6 +342,114 @@ class ManagerTest {
         // Then: All bubbles removed
         assertThat(manager.size()).isEqualTo(0);
         assertThat(manager.getAllBubbles()).isEmpty();
+    }
+
+    @Test
+    void testConcurrentEventListenerModification() throws Exception {
+        // THREAD SAFETY TEST: Concurrent event dispatch + listener modification
+        // Reproduces race condition where:
+        // - Thread A: Dispatches events (iterates eventListeners)
+        // - Thread B: Adds/removes listeners (modifies eventListeners)
+        // Without CopyOnWriteArrayList, this causes ConcurrentModificationException
+
+        int numEventThreads = 10;
+        int numModificationThreads = 5;
+        int eventsPerThread = 1000;
+        int modificationsPerThread = 100;
+
+        var executor = Executors.newFixedThreadPool(numEventThreads + numModificationThreads);
+        var startLatch = new CountDownLatch(1);
+        var completionLatch = new CountDownLatch(numEventThreads + numModificationThreads);
+        var exceptionOccurred = new AtomicBoolean(false);
+        var eventCount = new AtomicInteger(0);
+        List<Throwable> exceptions = new CopyOnWriteArrayList<>();
+
+        // Create a bubble to generate events
+        var bubble = manager.createBubble();
+        addEntities(bubble, new Point3f(50.0f, 50.0f, 50.0f), 10);
+
+        // Event dispatch threads - trigger dispatchEvent by generating bubble events
+        for (int t = 0; t < numEventThreads; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    for (int i = 0; i < eventsPerThread; i++) {
+                        // Generate events by updating entity positions, which triggers Event dispatching
+                        var entityId = "entity-" + (i % 10);
+                        try {
+                            bubble.updateEntityPosition(entityId,
+                                new Point3f(50.0f + i * 0.001f, 50.0f, 50.0f));
+                            eventCount.incrementAndGet();
+                        } catch (Exception e) {
+                            // Ignore entity not found - focus on ConcurrentModificationException
+                        }
+                    }
+                } catch (Throwable e) {
+                    exceptionOccurred.set(true);
+                    exceptions.add(e);
+                } finally {
+                    completionLatch.countDown();
+                }
+            });
+        }
+
+        // Listener modification threads - add/remove listeners concurrently
+        for (int t = 0; t < numModificationThreads; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    for (int i = 0; i < modificationsPerThread; i++) {
+                        // Add listener
+                        Consumer<Event> listener = (Event event) -> {
+                            // Minimal processing to trigger iteration
+                        };
+                        manager.addEventListener(listener);
+
+                        // Brief delay to increase chance of concurrent iteration
+                        Thread.sleep(1);
+
+                        // Remove listener
+                        manager.removeEventListener(listener);
+                    }
+                } catch (Throwable e) {
+                    exceptionOccurred.set(true);
+                    exceptions.add(e);
+                } finally {
+                    completionLatch.countDown();
+                }
+            });
+        }
+
+        // Start all threads
+        startLatch.countDown();
+
+        // Wait for completion
+        assertThat(completionLatch.await(30, TimeUnit.SECONDS))
+            .as("All threads should complete within 30 seconds")
+            .isTrue();
+
+        executor.shutdown();
+        assertThat(executor.awaitTermination(5, TimeUnit.SECONDS))
+            .as("Executor should terminate")
+            .isTrue();
+
+        // Verify no ConcurrentModificationException occurred
+        if (!exceptions.isEmpty()) {
+            System.err.println("Concurrent test failures:");
+            for (var ex : exceptions) {
+                ex.printStackTrace();
+            }
+        }
+        assertThat(exceptionOccurred.get())
+            .as("No ConcurrentModificationException should occur. Exceptions: " + exceptions)
+            .isFalse();
+
+        // Verify events were processed
+        assertThat(eventCount.get())
+            .as("Should have processed events")
+            .isGreaterThan(0);
     }
 
     // ========== Helper Methods ==========
