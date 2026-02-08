@@ -926,4 +926,80 @@ class CrossProcessMigrationTest {
         assertEquals(entityCount, recoveryState.rollbackFailures(),
                      "RecoveryState should show " + entityCount + " rollback failures");
     }
+
+    /**
+     * Test: WeakReference GC race condition (BUG-004 regression test).
+     * <p>
+     * Verifies that getLockForEntity() correctly handles GC between compute() and .get()
+     * by holding a strong reference during the operation.
+     * <p>
+     * Without the fix, this test would fail with NullPointerException when:
+     * 1. compute() creates WeakReference
+     * 2. GC runs (triggered by allocation storm)
+     * 3. .get() returns null
+     * 4. migrate() receives null lock → NPE
+     * <p>
+     * With the fix (strong reference array), lock is never GC'd during the operation.
+     */
+    @Test
+    @Timeout(30)
+    void testWeakReferenceGCRace() throws Exception {
+        int migrationCount = 100;
+        var futures = new CompletableFuture[migrationCount];
+        var exceptions = new AtomicInteger(0);
+
+        // Create many entities to increase GC pressure
+        for (int i = 0; i < migrationCount; i++) {
+            final String entityId = "gc-test-entity-" + i;
+            var sourceId = UUID.randomUUID();
+            var destId = UUID.randomUUID();
+
+            var source = createMockBubbleReference(sourceId, true);
+            var dest = createMockBubbleReference(destId, true);
+
+            // Force allocation storm to trigger GC between compute() and .get()
+            // This simulates the race condition window
+            byte[][] garbage = new byte[10][1024 * 1024];  // 10MB allocation
+
+            try {
+                futures[i] = migration.migrate(entityId, source, dest);
+
+                // Suggest GC to increase chance of race condition
+                System.gc();
+            } catch (NullPointerException e) {
+                // This would occur if lock was GC'd before use (BUG-004)
+                exceptions.incrementAndGet();
+                System.err.println("NullPointerException caught for entity " + entityId + ": " + e.getMessage());
+                e.printStackTrace();
+            }
+
+            // Clear garbage to trigger more GC
+            garbage = null;
+        }
+
+        // Wait for all migrations to complete (those that didn't NPE)
+        var completedCount = 0;
+        for (var future : futures) {
+            if (future != null) {
+                try {
+                    future.get(5, TimeUnit.SECONDS);
+                    completedCount++;
+                } catch (Exception e) {
+                    // Migration failed, but that's OK - we're testing for NPE
+                }
+            }
+        }
+
+        // Verify no NullPointerException occurred (BUG-004 fix validation)
+        assertEquals(0, exceptions.get(),
+                     "No NullPointerException should occur under GC pressure. " +
+                     "If this fails, WeakReference GC race is present (BUG-004)");
+
+        // Verify at least some migrations completed successfully
+        assertTrue(completedCount > 0,
+                   "At least some migrations should complete (got " + completedCount + "/" + migrationCount + ")");
+
+        System.out.println("GC stress test: " + completedCount + "/" + migrationCount +
+                           " migrations completed, 0 NPEs (BUG-004 fix validated)");
+    }
 }

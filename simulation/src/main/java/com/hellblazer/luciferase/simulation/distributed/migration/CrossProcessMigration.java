@@ -121,22 +121,32 @@ public class CrossProcessMigration {
      * <p>
      * Uses WeakReference to allow GC to clean up locks when no thread holds a reference.
      * This prevents unbounded map growth (memory leak).
+     * <p>
+     * CRITICAL: Holds strong reference during compute() to prevent GC race where:
+     * 1. compute() returns WeakReference
+     * 2. GC runs before .get() is called
+     * 3. .get() returns null → NullPointerException
      *
      * @param entityId Entity identifier
-     * @return ReentrantLock for this entity
+     * @return ReentrantLock for this entity (never null)
      */
     private ReentrantLock getLockForEntity(String entityId) {
-        return entityMigrationLocks.compute(entityId, (key, existingRef) -> {
+        // Hold strong reference to prevent GC between compute() and return
+        final ReentrantLock[] strongRef = new ReentrantLock[1];
+
+        entityMigrationLocks.compute(entityId, (key, existingRef) -> {
             // Try to get existing lock from WeakReference
             var lock = existingRef != null ? existingRef.get() : null;
             if (lock == null) {
                 // Lock was GC'd or doesn't exist - create new one
                 lock = new ReentrantLock();
-                return new WeakReference<>(lock);
             }
-            // Lock still exists - reuse it
-            return existingRef;
-        }).get(); // Extract lock from WeakReference
+            // Store in strong reference to prevent GC during this operation
+            strongRef[0] = lock;
+            return new WeakReference<>(lock);
+        });
+
+        return strongRef[0];
     }
 
     /**
