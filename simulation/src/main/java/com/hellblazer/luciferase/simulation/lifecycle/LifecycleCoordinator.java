@@ -38,14 +38,33 @@ public class LifecycleCoordinator {
     private final ConcurrentHashMap<String, LifecycleComponent> components;
     private final ConcurrentHashMap<String, LifecycleState> states;
     private final AtomicBoolean isStarted;
+    private final ViewStabilityGate viewStabilityGate;  // Optional Fireflies integration
 
     /**
-     * Create a new lifecycle coordinator.
+     * Create a new lifecycle coordinator without Fireflies integration.
      */
     public LifecycleCoordinator() {
+        this(null);
+    }
+
+    /**
+     * Create a new lifecycle coordinator with Fireflies view stability integration.
+     * <p>
+     * When a ViewStabilityGate is provided, shutdown will wait for view stability
+     * before closing components, ensuring all messages sent within the current view
+     * are delivered (Fireflies virtual synchrony guarantee).
+     *
+     * @param viewStabilityGate optional gate for view stability checking (null for no Fireflies integration)
+     */
+    public LifecycleCoordinator(ViewStabilityGate viewStabilityGate) {
         this.components = new ConcurrentHashMap<>();
         this.states = new ConcurrentHashMap<>();
         this.isStarted = new AtomicBoolean(false);
+        this.viewStabilityGate = viewStabilityGate;
+
+        if (viewStabilityGate != null) {
+            log.debug("LifecycleCoordinator created with Fireflies view stability integration");
+        }
     }
 
     /**
@@ -180,6 +199,20 @@ public class LifecycleCoordinator {
         log.info("Stopping lifecycle coordinator with {} components, timeout: {}ms", components.size(), timeoutMs);
 
         try {
+            // Phase 4: Wait for Fireflies view stability (if configured)
+            if (viewStabilityGate != null) {
+                log.debug("Waiting for Fireflies view stability before shutdown");
+                try {
+                    viewStabilityGate.awaitStability()
+                        .get(5, TimeUnit.SECONDS);  // 5s timeout for view stability
+                    log.info("View stable, proceeding with shutdown");
+                } catch (java.util.concurrent.TimeoutException e) {
+                    log.warn("View stability timeout after 5s, proceeding with shutdown anyway (graceful degradation)");
+                } catch (Exception e) {
+                    log.warn("View stability check failed, proceeding with shutdown anyway", e);
+                }
+            }
+
             // Compute dependency layers
             var layers = computeLayers();
 
