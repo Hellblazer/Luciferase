@@ -76,7 +76,7 @@ public class SocketTransport implements NetworkTransport {
     private final MessageFactory factory;
     private final Map<String, SocketClient> clients = new ConcurrentHashMap<>();
     private final List<Consumer<Message>> handlers = new CopyOnWriteArrayList<>();
-    private final Map<UUID, ProcessAddress> memberRegistry = new ConcurrentHashMap<>();
+    private final MemberDirectory memberDirectory = new ConcurrentMemberDirectory();
     private final FirefliesMembershipView membership;
     private final FirefliesViewMonitor viewMonitor;
     private final RealTimeController controller;
@@ -342,7 +342,7 @@ public class SocketTransport implements NetworkTransport {
     /**
      * Find SocketClient for a neighbor UUID.
      * <p>
-     * Uses memberRegistry to map UUID to ProcessAddress, then looks up
+     * Uses MemberDirectory to map UUID to ProcessAddress, then looks up
      * the corresponding SocketClient by processId.
      *
      * @param neighborId UUID of the neighbor to find
@@ -350,7 +350,7 @@ public class SocketTransport implements NetworkTransport {
      */
     private SocketClient findClientForNeighbor(UUID neighborId) {
         // Look up ProcessAddress for this neighbor UUID
-        var address = memberRegistry.get(neighborId);
+        var address = memberDirectory.getAddressFor(neighborId);
         if (address == null) {
             log.warn("No ProcessAddress registered for neighbor {}", neighborId);
             return null;
@@ -409,34 +409,12 @@ public class SocketTransport implements NetworkTransport {
 
     @Override
     public Optional<MemberInfo> lookupMember(UUID memberId) {
-        var address = memberRegistry.get(memberId);
-        if (address == null) {
-            return Optional.empty();
-        }
-        return Optional.of(new MemberInfo(memberId, address.toUrl()));
+        return memberDirectory.lookupMember(memberId);
     }
 
     @Override
     public MemberInfo routeToKey(TetreeKey<?> key) throws TransportException {
-        var members = new ArrayList<>(memberRegistry.keySet());
-        if (members.isEmpty()) {
-            throw new TransportException("No members available for routing");
-        }
-
-        // Deterministic routing: hash key to member index
-        var hash = key.getLowBits() ^ key.getHighBits();
-        var absHash = hash == Long.MIN_VALUE ? 0 : Math.abs(hash);
-        var index = (int) (absHash % members.size());
-
-        var targetId = members.get(index);
-        var address = memberRegistry.get(targetId);
-
-        // Handle race condition: member could be removed between snapshot and get
-        if (address == null) {
-            throw new TransportException("Member " + targetId + " not found (removed during routing)");
-        }
-
-        return new MemberInfo(targetId, address.toUrl());
+        return memberDirectory.routeToKey(key);
     }
 
     @Override
@@ -462,11 +440,12 @@ public class SocketTransport implements NetworkTransport {
      * Register a member UUID with its process address.
      * <p>
      * Used for lookupMember and routeToKey.
+     * Delegates to MemberDirectory for SRP.
      *
      * @param memberId UUID of the member
      * @param address  ProcessAddress of the member
      */
     public void registerMember(UUID memberId, ProcessAddress address) {
-        memberRegistry.put(memberId, address);
+        memberDirectory.registerMember(memberId, address);
     }
 }
