@@ -266,6 +266,69 @@ class WriteAheadLogTest {
         assertEquals(50, events.size(), "All events from 5 threads should be persisted");
     }
 
+    @Test
+    void testReadEventsSince() throws IOException {
+        // Given: WAL with multiple events
+        wal = new WriteAheadLog(nodeId, tempDir);
+
+        // Append 5 events (sequences 1-5)
+        wal.append(createTestEvent("EVENT_1"));
+        wal.append(createTestEvent("EVENT_2"));
+        wal.append(createTestEvent("EVENT_3"));
+        wal.append(createTestEvent("EVENT_4"));
+        wal.append(createTestEvent("EVENT_5"));
+        wal.flush();
+
+        // When: Read events since sequence 2 (exclusive)
+        var eventsSince2 = wal.readEventsSince(2L);
+
+        // Then: Should return events 3, 4, 5 only
+        assertEquals(3, eventsSince2.size(), "Should return 3 events after sequence 2");
+        assertEquals("EVENT_3", eventsSince2.get(0).get("type"));
+        assertEquals("EVENT_4", eventsSince2.get(1).get("type"));
+        assertEquals("EVENT_5", eventsSince2.get(2).get("type"));
+
+        // Verify sequence numbers are present
+        assertEquals(3L, ((Number) eventsSince2.get(0).get("sequence")).longValue());
+        assertEquals(4L, ((Number) eventsSince2.get(1).get("sequence")).longValue());
+        assertEquals(5L, ((Number) eventsSince2.get(2).get("sequence")).longValue());
+    }
+
+    @Test
+    void testReadEventsSinceZero() throws IOException {
+        // Given: WAL with events
+        wal = new WriteAheadLog(nodeId, tempDir);
+
+        wal.append(createTestEvent("EVENT_1"));
+        wal.append(createTestEvent("EVENT_2"));
+        wal.flush();
+
+        // When: Read events since 0 (from beginning)
+        var allEvents = wal.readEventsSince(0L);
+
+        // Then: Should return all events
+        assertEquals(2, allEvents.size());
+        assertEquals("EVENT_1", allEvents.get(0).get("type"));
+        assertEquals("EVENT_2", allEvents.get(1).get("type"));
+    }
+
+    @Test
+    void testReadEventsSinceLastSequence() throws IOException {
+        // Given: WAL with 3 events
+        wal = new WriteAheadLog(nodeId, tempDir);
+
+        wal.append(createTestEvent("EVENT_1"));
+        wal.append(createTestEvent("EVENT_2"));
+        wal.append(createTestEvent("EVENT_3"));
+        wal.flush();
+
+        // When: Read events since last sequence
+        var eventsSinceLast = wal.readEventsSince(3L);
+
+        // Then: Should return empty list
+        assertTrue(eventsSinceLast.isEmpty(), "Should return no events after last sequence");
+    }
+
     // ========== Helper Methods ==========
 
     private Map<String, Object> createTestEvent(String type) {

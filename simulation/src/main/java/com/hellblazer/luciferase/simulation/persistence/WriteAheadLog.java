@@ -65,6 +65,7 @@ public class WriteAheadLog implements AutoCloseable {
     private final Path metadataFile;
     private final AtomicBoolean isClosed;
     private final AtomicLong currentSize;
+    private final AtomicLong sequenceCounter;  // Event sequence number
     private final long rotationSize;
     private volatile Clock clock = Clock.system();
 
@@ -98,6 +99,7 @@ public class WriteAheadLog implements AutoCloseable {
         this.rotationSize = rotationSize;
         this.isClosed = new AtomicBoolean(false);
         this.currentSize = new AtomicLong(0);
+        this.sequenceCounter = new AtomicLong(0);  // Start sequences at 0
         this.rotationCount = 0;
 
         // Ensure log directory exists
@@ -123,6 +125,7 @@ public class WriteAheadLog implements AutoCloseable {
 
     /**
      * Append event to log (thread-safe).
+     * Automatically adds "sequence" field to event for ordering and filtering.
      *
      * @param event Event data as map
      * @throws IOException if write fails
@@ -131,6 +134,10 @@ public class WriteAheadLog implements AutoCloseable {
     public synchronized void append(Map<String, Object> event) throws IOException {
         Objects.requireNonNull(event, "event must not be null");
         checkNotClosed();
+
+        // Add sequence number to event (1-indexed)
+        var sequence = sequenceCounter.incrementAndGet();
+        event.put("sequence", sequence);
 
         // Serialize event to JSON line
         var json = MAPPER.writeValueAsString(event);
@@ -241,16 +248,27 @@ public class WriteAheadLog implements AutoCloseable {
 
     /**
      * Read events since specific sequence number.
+     * Returns events with sequence > sequenceNumber (exclusive).
      *
      * @param sequenceNumber Starting sequence number (exclusive)
      * @return List of events after sequence number
      * @throws IOException if read fails
      */
     public List<Map<String, Object>> readEventsSince(long sequenceNumber) throws IOException {
-        // For simplicity, read all and filter
-        // In production, might use sequence markers in log
         var allEvents = readAllEvents();
-        return allEvents; // Would need sequence tracking in events to filter
+        var filtered = new ArrayList<Map<String, Object>>();
+
+        for (var event : allEvents) {
+            var eventSeq = event.get("sequence");
+            if (eventSeq instanceof Number) {
+                var seq = ((Number) eventSeq).longValue();
+                if (seq > sequenceNumber) {
+                    filtered.add(event);
+                }
+            }
+        }
+
+        return filtered;
     }
 
     /**
