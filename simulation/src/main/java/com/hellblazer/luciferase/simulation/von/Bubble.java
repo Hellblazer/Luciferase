@@ -333,6 +333,8 @@ public class Bubble extends EnhancedBubble implements Node {
             case Message.Leave leave -> handleLeave(leave);
             case Message.GhostSync sync -> handleGhostSync(sync);
             case Message.Ack ack -> handleAck(ack);
+            case Message.Query query -> handleQuery(query);
+            case Message.QueryResponse resp -> {}  // Handled by RemoteBubbleProxy
             default -> log.warn("Unhandled message type: {}", message.getClass().getSimpleName());
         }
     }
@@ -452,6 +454,49 @@ public class Bubble extends EnhancedBubble implements Node {
     private void handleAck(Message.Ack ack) {
         log.trace("Received ACK from {} for {}", ack.senderId(), ack.ackFor());
         // ACKs are handled by transport layer for async operations
+    }
+
+    private void handleQuery(Message.Query query) {
+        log.debug("Received Query from {} for '{}' (queryId: {})",
+            query.senderId(), query.queryType(), query.queryId());
+
+        String responseData;
+        try {
+            responseData = switch (query.queryType()) {
+                case "position" -> {
+                    var pos = position();
+                    yield String.format("%f,%f,%f", pos.getX(), pos.getY(), pos.getZ());
+                }
+                case "neighbors" -> {
+                    if (neighbors().isEmpty()) {
+                        yield "";
+                    }
+                    yield String.join(",", neighbors().stream()
+                        .map(UUID::toString)
+                        .toList());
+                }
+                default -> {
+                    log.warn("Unknown query type: {}", query.queryType());
+                    yield "error:unknown_query_type";
+                }
+            };
+
+            // Send QueryResponse back to querier
+            var response = factory.createQueryResponse(query.queryId(), id(), responseData);
+            transport.sendToNeighbor(query.senderId(), response);
+            log.trace("Sent QueryResponse to {} (queryId: {})", query.senderId(), query.queryId());
+
+        } catch (Exception e) {
+            log.error("Error handling query from {}: {}", query.senderId(), e.getMessage(), e);
+            // Send error response
+            try {
+                var errorResponse = factory.createQueryResponse(
+                    query.queryId(), id(), "error:" + e.getMessage());
+                transport.sendToNeighbor(query.senderId(), errorResponse);
+            } catch (Exception e2) {
+                log.error("Failed to send error response: {}", e2.getMessage());
+            }
+        }
     }
 
     private void emitEvent(Event event) {

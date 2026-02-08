@@ -77,12 +77,22 @@ public class SocketTransport implements NetworkTransport {
     private volatile boolean connected = true;
 
     /**
-     * Create a SocketTransport.
+     * Create a SocketTransport with a random local ID.
      *
      * @param myAddress This process's network address
      */
     public SocketTransport(ProcessAddress myAddress) {
-        this.localId = UUID.randomUUID();
+        this(UUID.randomUUID(), myAddress);
+    }
+
+    /**
+     * Create a SocketTransport with a specific local ID.
+     *
+     * @param localId   UUID for this transport (typically matches the Bubble's UUID)
+     * @param myAddress This process's network address
+     */
+    public SocketTransport(UUID localId, ProcessAddress myAddress) {
+        this.localId = localId;
         this.myAddress = myAddress;
         this.factory = MessageFactory.system();
     }

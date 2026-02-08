@@ -56,10 +56,11 @@ public record TransportVonMessage(
     long timestamp,                        // Message timestamp in millis
     List<TransportGhostData> ghosts,       // Ghost list for GhostSync (null for other types)
     Long bucket,                           // Simulation bucket for GhostSync (null for other types)
-    List<TransportNeighborInfo> neighbors  // Neighbor list for JoinResponse (null for other types)
+    List<TransportNeighborInfo> neighbors, // Neighbor list for JoinResponse (null for other types)
+    String queryId                         // Query correlation ID (null for non-query types)
 ) implements Serializable {
     @java.io.Serial
-    private static final long serialVersionUID = 2L; // Incremented for protocol change
+    private static final long serialVersionUID = 3L; // Incremented for protocol change
 
     /**
      * Compact constructor with validation.
@@ -93,7 +94,7 @@ public record TransportVonMessage(
         String entityId,
         long timestamp
     ) {
-        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp, null, null, null);
+        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp, null, null, null, null);
     }
 
     /**

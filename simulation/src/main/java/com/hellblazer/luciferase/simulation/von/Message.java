@@ -162,12 +162,27 @@ public interface Message {
      * <p>
      * Used by RemoteBubbleProxy to fetch state from remote bubbles.
      *
+     * @param queryId   UUID for correlating query with response
      * @param senderId  UUID of the querying node
      * @param targetId  UUID of the target bubble
      * @param queryType Type of query (e.g., "position", "neighbors")
      * @param timestamp Message creation time
      */
-    record Query(UUID senderId, UUID targetId, String queryType, long timestamp) implements Message {
+    record Query(UUID queryId, UUID senderId, UUID targetId, String queryType, long timestamp) implements Message {
+        // Compact constructor removed - use MessageFactory instead
+    }
+
+    /**
+     * Response to a Query message.
+     * <p>
+     * Returns requested information from remote bubble to querying node.
+     *
+     * @param queryId      UUID correlating this response to original query
+     * @param responderId  UUID of the responding node
+     * @param responseData Serialized response data (JSON format)
+     * @param timestamp    Message creation time
+     */
+    record QueryResponse(UUID queryId, UUID responderId, String responseData, long timestamp) implements Message {
         // Compact constructor removed - use MessageFactory instead
     }
 

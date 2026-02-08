@@ -61,6 +61,8 @@ public class MessageConverter {
                 ackToTransport(ack);
             case Message.Query query ->
                 queryToTransport(query);
+            case Message.QueryResponse queryResp ->
+                queryResponseToTransport(queryResp);
             default ->
                 throw new IllegalArgumentException("Unknown Message type: " + message.getClass().getSimpleName());
         };
@@ -92,6 +94,8 @@ public class MessageConverter {
                 ackFromTransport(transport);
             case "Query" ->
                 queryFromTransport(transport);
+            case "QueryResponse" ->
+                queryResponseFromTransport(transport);
             default ->
                 throw new IllegalArgumentException("Unknown message type: " + transport.type());
         };
@@ -114,7 +118,8 @@ public class MessageConverter {
             msg.timestamp(),
             ghosts,
             msg.bucket(),
-            null  // neighbors not used for GhostSync
+            null,  // neighbors not used for GhostSync
+            null   // queryId not used for GhostSync
         );
     }
 
@@ -180,7 +185,8 @@ public class MessageConverter {
             msg.timestamp(),
             null,  // ghosts
             null,  // bucket
-            transportNeighbors  // neighbors
+            transportNeighbors,  // neighbors
+            null   // queryId not used for JoinResponse
         );
     }
 
@@ -283,19 +289,55 @@ public class MessageConverter {
             msg.targetId().toString(),
             0f, 0f, 0f,
             msg.queryType(),
-            msg.timestamp()
+            msg.timestamp(),
+            null,  // ghosts
+            null,  // bucket
+            null,  // neighbors
+            msg.queryId().toString()  // queryId
         );
     }
 
     private static Message queryFromTransport(TransportVonMessage transport) {
+        var queryId = UUID.fromString(transport.queryId());
         var senderId = UUID.fromString(transport.sourceBubbleId());
         var targetId = UUID.fromString(transport.targetBubbleId());
         var queryType = transport.entityId();
 
         return new Message.Query(
+            queryId,
             senderId,
             targetId,
             queryType,
+            transport.timestamp()
+        );
+    }
+
+    // ==================== QueryResponse Conversion ====================
+
+    private static TransportVonMessage queryResponseToTransport(Message.QueryResponse msg) {
+        return new TransportVonMessage(
+            "QueryResponse",
+            msg.responderId().toString(),
+            msg.responderId().toString(),  // No specific target
+            0f, 0f, 0f,
+            msg.responseData(),  // Response data in entityId field
+            msg.timestamp(),
+            null,  // ghosts
+            null,  // bucket
+            null,  // neighbors
+            msg.queryId().toString()  // queryId
+        );
+    }
+
+    private static Message queryResponseFromTransport(TransportVonMessage transport) {
+        var queryId = UUID.fromString(transport.queryId());
+        var responderId = UUID.fromString(transport.sourceBubbleId());
+        var responseData = transport.entityId();
+
+        return new Message.QueryResponse(
+            queryId,
+            responderId,
+            responseData,
             transport.timestamp()
         );
     }

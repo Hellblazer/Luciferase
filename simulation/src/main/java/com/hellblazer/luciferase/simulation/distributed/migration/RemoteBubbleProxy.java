@@ -28,8 +28,10 @@ import org.slf4j.LoggerFactory;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Proxy for a bubble in a remote process.
@@ -62,6 +64,9 @@ public class RemoteBubbleProxy implements BubbleReference {
 
     // Cache for remote bubble info
     private final ConcurrentHashMap<String, CacheEntry> cache;
+
+    // Query correlation: queryId -> CompletableFuture<QueryResponse>
+    private final ConcurrentHashMap<UUID, CompletableFuture<Message.QueryResponse>> pendingQueries;
 
     /**
      * Set the clock source for deterministic testing.
@@ -106,6 +111,10 @@ public class RemoteBubbleProxy implements BubbleReference {
         this.timeoutMs = timeoutMs;
         this.cacheTTL = cacheTTL;
         this.cache = new ConcurrentHashMap<>();
+        this.pendingQueries = new ConcurrentHashMap<>();
+
+        // Register handler for QueryResponse messages
+        transport.onMessage(this::handleMessage);
     }
 
     @Override
@@ -182,25 +191,34 @@ public class RemoteBubbleProxy implements BubbleReference {
      * @throws RuntimeException on timeout or connection failure
      */
     private Point3D fetchPosition() {
+        // Send query message
+        var query = factory.createQuery(transport.getLocalId(), bubbleId, "position");
+        var future = new CompletableFuture<Message.QueryResponse>();
+        pendingQueries.put(query.queryId(), future);
+
         try {
-            // Send query message
-            var query = factory.createQuery(transport.getLocalId(), bubbleId, "position");
             transport.sendToNeighbor(bubbleId, query);
 
-            // Wait for response (blocking with timeout)
-            var start = clock.currentTimeMillis();
-            while (clock.currentTimeMillis() - start < timeoutMs) {
-                Thread.sleep(10);
-                // In production, would use Future/CompletableFuture
-                // For now, return a placeholder
-            }
+            // Wait for response with timeout
+            var response = future.get(timeoutMs, TimeUnit.MILLISECONDS);
 
-            throw new RuntimeException("Timeout fetching position from " + bubbleId);
+            // Parse position from response data (JSON format: "x,y,z")
+            var parts = response.responseData().split(",");
+            return new Point3D(
+                Double.parseDouble(parts[0]),
+                Double.parseDouble(parts[1]),
+                Double.parseDouble(parts[2])
+            );
+        } catch (TimeoutException e) {
+            pendingQueries.remove(query.queryId());  // Clean up on timeout
+            throw new RuntimeException("Timeout fetching position from " + bubbleId, e);
         } catch (InterruptedException e) {
+            pendingQueries.remove(query.queryId());  // Clean up on interrupt
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while fetching position", e);
-        } catch (Transport.TransportException e) {
-            throw new RuntimeException("Transport error fetching position", e);
+        } catch (Exception e) {
+            pendingQueries.remove(query.queryId());  // Clean up on error
+            throw new RuntimeException("Error fetching position from " + bubbleId, e);
         }
     }
 
@@ -211,24 +229,38 @@ public class RemoteBubbleProxy implements BubbleReference {
      * @throws RuntimeException on timeout or connection failure
      */
     private Set<UUID> fetchNeighbors() {
+        // Send query message
+        var query = factory.createQuery(transport.getLocalId(), bubbleId, "neighbors");
+        var future = new CompletableFuture<Message.QueryResponse>();
+        pendingQueries.put(query.queryId(), future);
+
         try {
-            // Send query message
-            var query = factory.createQuery(transport.getLocalId(), bubbleId, "neighbors");
             transport.sendToNeighbor(bubbleId, query);
 
-            // Wait for response (blocking with timeout)
-            var start = clock.currentTimeMillis();
-            while (clock.currentTimeMillis() - start < timeoutMs) {
-                Thread.sleep(10);
-                // In production, would use Future/CompletableFuture
+            // Wait for response with timeout
+            var response = future.get(timeoutMs, TimeUnit.MILLISECONDS);
+
+            // Parse neighbors from response data (JSON format: "uuid1,uuid2,uuid3,...")
+            if (response.responseData().isEmpty()) {
+                return Set.of();
             }
 
-            throw new RuntimeException("Timeout fetching neighbors from " + bubbleId);
+            var parts = response.responseData().split(",");
+            var neighbors = new java.util.HashSet<UUID>();
+            for (var part : parts) {
+                neighbors.add(UUID.fromString(part.trim()));
+            }
+            return neighbors;
+        } catch (TimeoutException e) {
+            pendingQueries.remove(query.queryId());  // Clean up on timeout
+            throw new RuntimeException("Timeout fetching neighbors from " + bubbleId, e);
         } catch (InterruptedException e) {
+            pendingQueries.remove(query.queryId());  // Clean up on interrupt
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while fetching neighbors", e);
-        } catch (Transport.TransportException e) {
-            throw new RuntimeException("Transport error fetching neighbors", e);
+        } catch (Exception e) {
+            pendingQueries.remove(query.queryId());  // Clean up on error
+            throw new RuntimeException("Error fetching neighbors from " + bubbleId, e);
         }
     }
 
@@ -237,6 +269,25 @@ public class RemoteBubbleProxy implements BubbleReference {
      */
     public void invalidateCache() {
         cache.clear();
+    }
+
+    /**
+     * Handle incoming messages from transport.
+     * <p>
+     * Completes pending QueryResponse futures for query correlation.
+     *
+     * @param message Incoming message
+     */
+    private void handleMessage(Message message) {
+        if (message instanceof Message.QueryResponse queryResponse) {
+            var future = pendingQueries.remove(queryResponse.queryId());
+            if (future != null) {
+                future.complete(queryResponse);
+            } else {
+                log.warn("Received QueryResponse for unknown queryId: {}", queryResponse.queryId());
+            }
+        }
+        // Ignore other message types - they're handled elsewhere
     }
 
     @Override

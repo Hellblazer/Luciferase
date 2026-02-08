@@ -146,9 +146,21 @@ public class MessageFactory {
      * @param senderId  UUID of the querying node
      * @param targetId  UUID of the target bubble
      * @param queryType type of query (e.g., "position", "neighbors")
-     * @return new Query with current timestamp
+     * @return new Query with generated queryId and current timestamp
      */
     public Query createQuery(UUID senderId, UUID targetId, String queryType) {
-        return new Query(senderId, targetId, queryType, clock.currentTimeMillis());
+        return new Query(UUID.randomUUID(), senderId, targetId, queryType, clock.currentTimeMillis());
+    }
+
+    /**
+     * Creates a QueryResponse message.
+     *
+     * @param queryId      UUID correlating to original query
+     * @param responderId  UUID of the responding node
+     * @param responseData serialized response data (JSON format)
+     * @return new QueryResponse with current timestamp
+     */
+    public QueryResponse createQueryResponse(UUID queryId, UUID responderId, String responseData) {
+        return new QueryResponse(queryId, responderId, responseData, clock.currentTimeMillis());
     }
 }
