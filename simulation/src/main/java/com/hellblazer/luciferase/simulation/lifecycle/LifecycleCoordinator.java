@@ -169,6 +169,10 @@ public class LifecycleCoordinator {
                     isStarted.set(false); // Reset on failure
                     log.error("Startup failed at layer {}, rolling back {} previously started layers", i, i);
 
+                    // Track rollback failures for complete error reporting
+                    // Fix for Luciferase-b8al: report which components failed rollback
+                    java.util.List<String> rollbackFailures = new java.util.ArrayList<>();
+
                     // Rollback: Stop already-started layers in reverse order
                     for (int rollback = i - 1; rollback >= 0; rollback--) {
                         var rollbackLayer = layers.get(rollback);
@@ -184,12 +188,23 @@ public class LifecycleCoordinator {
                                 }
                             }
                         } catch (Exception rollbackError) {
+                            String failure = String.format("Layer %d (%s): %s",
+                                rollback,
+                                String.join(", ", rollbackLayer),
+                                rollbackError.getMessage()
+                            );
+                            rollbackFailures.add(failure);
                             log.error("Rollback failed for layer {}", rollback, rollbackError);
                             // Continue with remaining rollback despite error
                         }
                     }
 
-                    throw new LifecycleException("Failed to start layer " + i + ": " + layer, e);
+                    // Include rollback failures in exception for complete error context
+                    String errorMsg = "Failed to start layer " + i + ": " + layer;
+                    if (!rollbackFailures.isEmpty()) {
+                        errorMsg += "; Rollback also failed: " + String.join("; ", rollbackFailures);
+                    }
+                    throw new LifecycleException(errorMsg, e);
                 }
             }
 
