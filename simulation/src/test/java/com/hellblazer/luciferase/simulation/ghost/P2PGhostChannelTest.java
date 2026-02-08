@@ -297,6 +297,78 @@ class P2PGhostChannelTest {
         assertThat(bubble2Received.get()).hasSize(1);
     }
 
+    /**
+     * Test concurrent flush() and queueGhost() operations don't lose items.
+     * <p>
+     * Race condition: Between copy and clear in flush(), items added by queueGhost()
+     * could be lost. Fix uses atomic swap (replace with empty list atomically).
+     */
+    @Test
+    void testConcurrentFlushAndQueue() throws Exception {
+        // Setup: Track received ghosts
+        var receivedGhosts = new ArrayList<SimulationGhostEntity<StringEntityID, Object>>();
+        var latch = new CountDownLatch(1);
+
+        channel2.onReceive((fromId, ghosts) -> {
+            synchronized (receivedGhosts) {
+                receivedGhosts.addAll(ghosts);
+            }
+            if (receivedGhosts.size() >= 100) {
+                latch.countDown();
+            }
+        });
+
+        // When: Concurrently queue and flush from multiple threads
+        var queueThread1 = new Thread(() -> {
+            for (int i = 0; i < 50; i++) {
+                channel1.queueGhost(bubble2.id(), createGhost("entity-" + i, new Point3f(50.0f + i, 50.0f, 50.0f)));
+                Thread.yield(); // Encourage interleaving
+            }
+        });
+
+        var queueThread2 = new Thread(() -> {
+            for (int i = 50; i < 100; i++) {
+                channel1.queueGhost(bubble2.id(), createGhost("entity-" + i, new Point3f(50.0f + i, 50.0f, 50.0f)));
+                Thread.yield(); // Encourage interleaving
+            }
+        });
+
+        var flushThread = new Thread(() -> {
+            for (int bucket = 0; bucket < 20; bucket++) {
+                channel1.flush(bucket);
+                try {
+                    Thread.sleep(5); // Small delay between flushes
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        });
+
+        // Start all threads
+        queueThread1.start();
+        queueThread2.start();
+        Thread.sleep(10); // Let some items queue before flushing
+        flushThread.start();
+
+        // Wait for completion
+        queueThread1.join(5000);
+        queueThread2.join(5000);
+        flushThread.join(5000);
+        channel1.flush(999); // Final flush to ensure all queued items sent
+
+        // Then: All 100 ghosts should be received (no lost items)
+        assertThat(latch.await(5, TimeUnit.SECONDS))
+            .as("Should receive all 100 ghosts despite concurrent operations")
+            .isTrue();
+
+        synchronized (receivedGhosts) {
+            assertThat(receivedGhosts)
+                .as("No ghosts lost during concurrent flush and queue")
+                .hasSizeGreaterThanOrEqualTo(100);
+        }
+    }
+
     // ========== Helper Methods ==========
 
     private SimulationGhostEntity<StringEntityID, Object> createGhost(String entityId, Point3f position) {

@@ -195,11 +195,10 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
 
         for (var entry : pendingBatches.entrySet()) {
             var targetId = entry.getKey();
-            var ghosts = entry.getValue();
-            if (!ghosts.isEmpty()) {
-                // Send copy to avoid concurrent modification
-                sendBatch(targetId, new ArrayList<>(ghosts));
-                ghosts.clear();
+            // Atomic swap: replace with empty list, get previous list
+            var ghostsToSend = pendingBatches.put(targetId, new CopyOnWriteArrayList<>());
+            if (ghostsToSend != null && !ghostsToSend.isEmpty()) {
+                sendBatch(targetId, new ArrayList<>(ghostsToSend));
             }
         }
 
