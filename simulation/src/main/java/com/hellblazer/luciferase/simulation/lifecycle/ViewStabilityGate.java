@@ -80,45 +80,51 @@ public class ViewStabilityGate {
         var future = new CompletableFuture<Void>();
         var startTime = System.currentTimeMillis();
 
-        // Create a single-threaded scheduled executor for polling
-        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            var thread = new Thread(r, "view-stability-poller");
-            thread.setDaemon(true);
-            return thread;
-        });
+        // Use holder array for effectively final access in lambdas (fix for Luciferase-hwgf resource leak)
+        final var schedulerHolder = new ScheduledExecutorService[1];
 
-        // Schedule polling task
-        var pollingTask = scheduler.scheduleAtFixedRate(() -> {
-            try {
-                // Check for timeout
-                var elapsed = System.currentTimeMillis() - startTime;
-                if (elapsed >= timeoutMs) {
-                    future.completeExceptionally(
-                        new java.util.concurrent.TimeoutException("View stability timeout after " + elapsed + "ms")
-                    );
-                    scheduler.shutdown();
-                    return;
+        try {
+            // Create a single-threaded scheduled executor for polling
+            schedulerHolder[0] = Executors.newSingleThreadScheduledExecutor(r -> {
+                var thread = new Thread(r, "view-stability-poller");
+                thread.setDaemon(true);
+                return thread;
+            });
+
+            // Schedule polling task (may throw RejectedExecutionException)
+            var pollingTask = schedulerHolder[0].scheduleAtFixedRate(() -> {
+                try {
+                    // Check for timeout
+                    var elapsed = System.currentTimeMillis() - startTime;
+                    if (elapsed >= timeoutMs) {
+                        future.completeExceptionally(
+                            new java.util.concurrent.TimeoutException("View stability timeout after " + elapsed + "ms")
+                        );
+                        schedulerHolder[0].shutdown();
+                        return;
+                    }
+
+                    // Check if view is stable
+                    if (viewMonitor.isViewStable()) {
+                        log.debug("View stability achieved after {}ms", elapsed);
+                        future.complete(null);
+                        schedulerHolder[0].shutdown();
+                    }
+
+                } catch (Exception e) {
+                    future.completeExceptionally(e);
+                    schedulerHolder[0].shutdown();
                 }
+            }, 0, POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
-                // Check if view is stable
-                if (viewMonitor.isViewStable()) {
-                    log.debug("View stability achieved after {}ms", elapsed);
-                    future.complete(null);
-                    scheduler.shutdown();
+        } finally {
+            // Guarantee scheduler cleanup even if scheduleAtFixedRate throws
+            future.whenComplete((result, throwable) -> {
+                if (schedulerHolder[0] != null && !schedulerHolder[0].isShutdown()) {
+                    schedulerHolder[0].shutdown();
                 }
-
-            } catch (Exception e) {
-                future.completeExceptionally(e);
-                scheduler.shutdown();
-            }
-        }, 0, POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
-
-        // Cleanup scheduler when future completes (either success or failure)
-        future.whenComplete((result, throwable) -> {
-            if (!scheduler.isShutdown()) {
-                scheduler.shutdown();
-            }
-        });
+            });
+        }
 
         return future;
     }

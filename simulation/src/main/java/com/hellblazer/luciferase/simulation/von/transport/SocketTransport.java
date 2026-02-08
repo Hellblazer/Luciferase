@@ -195,7 +195,6 @@ public final class SocketTransport implements NetworkTransport {
     @Override
     public CompletableFuture<Message.Ack> sendToNeighborAsync(UUID neighborId, Message message) {
         var future = new CompletableFuture<Message.Ack>();
-        var sentViewId = membership.getCurrentViewId();
 
         // Send message immediately (traditional Transport behavior)
         try {
@@ -204,6 +203,10 @@ public final class SocketTransport implements NetworkTransport {
             future.completeExceptionally(e);
             return future;
         }
+
+        // Capture view ID AFTER successful send to avoid TOCTOU race
+        // (Fix for Luciferase-y1pd: prevents false positive failures when view changes before send)
+        var sentViewId = membership.getCurrentViewId();
 
         // Hook into Fireflies round timer to check view stability
         RealTimeController.TickListener checkStability = (simTime, lamportClock) -> {
