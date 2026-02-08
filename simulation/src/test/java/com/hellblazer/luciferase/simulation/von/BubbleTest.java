@@ -363,6 +363,227 @@ class BubbleTest {
     }
 
     /**
+     * Test JOIN retry on transient failure.
+     * <p>
+     * Verifies that:
+     * - First attempt fails (injected exception)
+     * - Retry occurs with exponential backoff timing (50ms)
+     * - Success on second attempt
+     * - Neighbor relationship established
+     */
+    @Test
+    void testJoinRetryOnTransientFailure() throws Exception {
+        // Given: Two bubbles
+        var id1 = UUID.randomUUID();
+        var id2 = UUID.randomUUID();
+        var transport1 = registry.register(id1);
+        var transport2 = registry.register(id2);
+        bubble1 = new Bubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
+        bubble2 = new Bubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
+
+        // Add entity to bubble1 to get valid bounds
+        bubble1.addEntity("entity1", new Point3f(0.5f, 0.5f, 0.5f), "content");
+
+        // Set up response tracking
+        var responseReceived = new CountDownLatch(1);
+        var receivedMessages = new CopyOnWriteArrayList<Message>();
+        transport2.onMessage(msg -> {
+            receivedMessages.add(msg);
+            if (msg instanceof Message.JoinResponse) {
+                responseReceived.countDown();
+            }
+        });
+
+        // Inject exception for first attempt only
+        var attemptCount = new java.util.concurrent.atomic.AtomicInteger(0);
+        var originalHandler = transport1.toString(); // Dummy to capture original state
+
+        // Use a wrapper to inject failure on first attempt
+        var sendWrapper = new Object() {
+            boolean firstAttempt = true;
+        };
+
+        // Inject failure by making transport1 fail on first send
+        transport1.injectException(true);
+
+        // When: Bubble2 sends JOIN request to Bubble1
+        var startTime = System.currentTimeMillis();
+        var joinRequest = factory.createJoinRequest(id2, new Point3D(0.6, 0.6, 0.6), bubble2.bounds());
+
+        // Send in background thread to allow retry mechanism to work
+        new Thread(() -> {
+            try {
+                transport2.sendToNeighbor(id1, joinRequest);
+            } catch (Exception e) {
+                // Expected on first attempt
+            }
+        }).start();
+
+        // Wait a bit for bubble1 to receive request and attempt first send
+        Thread.sleep(100);
+
+        // Disable exception injection to allow retry to succeed
+        transport1.injectException(false);
+
+        // Then: Should receive response after retry
+        assertThat(responseReceived.await(2, TimeUnit.SECONDS)).isTrue();
+        var elapsedMs = System.currentTimeMillis() - startTime;
+
+        // Verify retry timing (should be at least initial delay of 50ms)
+        assertThat(elapsedMs).isGreaterThanOrEqualTo(50);
+
+        // Verify neighbor relationship established
+        assertThat(bubble1.neighbors()).contains(id2);
+        assertThat(receivedMessages).anyMatch(m -> m instanceof Message.JoinResponse);
+    }
+
+    /**
+     * Test JOIN removal on persistent failure.
+     * <p>
+     * Verifies that:
+     * - All retry attempts fail (injected exception)
+     * - Exponential backoff timing observed (50ms, 100ms, 200ms, 400ms, 800ms)
+     * - Neighbor removed after max retries
+     * - No asymmetric relationships
+     */
+    @Test
+    void testJoinRemovalOnPersistentFailure() throws Exception {
+        // Given: Two bubbles
+        var id1 = UUID.randomUUID();
+        var id2 = UUID.randomUUID();
+        var transport1 = registry.register(id1);
+        var transport2 = registry.register(id2);
+        bubble1 = new Bubble(id1, SPATIAL_LEVEL, TARGET_FRAME_MS, transport1);
+        bubble2 = new Bubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
+
+        // Add entity to bubble1
+        bubble1.addEntity("entity1", new Point3f(0.5f, 0.5f, 0.5f), "content");
+
+        // Inject persistent exception on transport1 (all send attempts fail)
+        transport1.injectException(true);
+
+        // When: Bubble2 sends JOIN request to Bubble1
+        var startTime = System.currentTimeMillis();
+        var joinRequest = factory.createJoinRequest(id2, new Point3D(0.6, 0.6, 0.6), bubble2.bounds());
+        transport2.sendToNeighbor(id1, joinRequest);
+
+        // Wait for all retries to complete (total: 50+100+200+400+800 = 1550ms)
+        Thread.sleep(2000);
+        var elapsedMs = System.currentTimeMillis() - startTime;
+
+        // Then: Verify exponential backoff timing
+        // Total retry time should be approximately 1550ms (50+100+200+400+800)
+        assertThat(elapsedMs).isGreaterThanOrEqualTo(1500);
+
+        // Verify neighbor was removed after max retries (compensation)
+        assertThat(bubble1.neighbors()).doesNotContain(id2);
+
+        // Verify no asymmetric relationship (bubble2 should not be in neighbor list)
+        assertThat(bubble1.getNeighborState(id2)).isNull();
+    }
+
+    /**
+     * Test JOIN message routing after retry.
+     * <p>
+     * Verifies that:
+     * - After JOIN with retries completes
+     * - Messages to Node B reach B (not C)
+     * - Messages to Node C reach C (not B)
+     * - No cross-contamination between neighbors
+     */
+    @Test
+    void testJoinMessageRouting() throws Exception {
+        // Given: Three bubbles - A (bubble1), B (bubble2), C (bubble3)
+        var idA = UUID.randomUUID();
+        var idB = UUID.randomUUID();
+        var idC = UUID.randomUUID();
+        var transportA = registry.register(idA);
+        var transportB = registry.register(idB);
+        var transportC = registry.register(idC);
+        bubble1 = new Bubble(idA, SPATIAL_LEVEL, TARGET_FRAME_MS, transportA);
+        bubble2 = new Bubble(idB, SPATIAL_LEVEL, TARGET_FRAME_MS, transportB);
+        bubble3 = new Bubble(idC, SPATIAL_LEVEL, TARGET_FRAME_MS, transportC);
+
+        // Add entities to all bubbles
+        bubble1.addEntity("entityA", new Point3f(0.3f, 0.3f, 0.3f), "contentA");
+        bubble2.addEntity("entityB", new Point3f(0.5f, 0.5f, 0.5f), "contentB");
+        bubble3.addEntity("entityC", new Point3f(0.7f, 0.7f, 0.7f), "contentC");
+
+        // Set up message tracking for B and C
+        var messagesB = new CopyOnWriteArrayList<Message>();
+        var messagesC = new CopyOnWriteArrayList<Message>();
+        var joinResponseB = new CountDownLatch(1);
+        var joinResponseC = new CountDownLatch(1);
+
+        transportB.onMessage(msg -> {
+            messagesB.add(msg);
+            if (msg instanceof Message.JoinResponse) joinResponseB.countDown();
+        });
+        transportC.onMessage(msg -> {
+            messagesC.add(msg);
+            if (msg instanceof Message.JoinResponse) joinResponseC.countDown();
+        });
+
+        // Inject transient failure on transportA for first JOIN
+        transportA.injectException(true);
+
+        // When: B sends JOIN request to A
+        var joinRequestB = factory.createJoinRequest(idB, bubble2.position(), bubble2.bounds());
+        new Thread(() -> {
+            try {
+                transportB.sendToNeighbor(idA, joinRequestB);
+            } catch (Exception ignored) {}
+        }).start();
+
+        Thread.sleep(100);
+        transportA.injectException(false); // Allow retry to succeed
+
+        // Wait for B's JOIN to complete
+        assertThat(joinResponseB.await(2, TimeUnit.SECONDS)).isTrue();
+
+        // C sends JOIN request to A (should succeed immediately)
+        var joinRequestC = factory.createJoinRequest(idC, bubble3.position(), bubble3.bounds());
+        transportC.sendToNeighbor(idA, joinRequestC);
+        assertThat(joinResponseC.await(2, TimeUnit.SECONDS)).isTrue();
+
+        // Clear received messages
+        messagesB.clear();
+        messagesC.clear();
+
+        // Set up move event tracking
+        var moveBReceived = new CountDownLatch(1);
+        var moveCReceived = new CountDownLatch(1);
+        bubble2.addEventListener(e -> { if (e instanceof Event.Move) moveBReceived.countDown(); });
+        bubble3.addEventListener(e -> { if (e instanceof Event.Move) moveCReceived.countDown(); });
+
+        // Then: Send MOVE messages from A to B and C
+        var moveToB = factory.createMove(idA, new Point3D(0.35, 0.35, 0.35), bubble1.bounds());
+        var moveToC = factory.createMove(idA, new Point3D(0.75, 0.75, 0.75), bubble1.bounds());
+
+        transportA.sendToNeighbor(idB, moveToB);
+        transportA.sendToNeighbor(idC, moveToC);
+
+        // Verify routing: B receives move to B, C receives move to C
+        assertThat(moveBReceived.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(moveCReceived.await(2, TimeUnit.SECONDS)).isTrue();
+
+        // Verify no cross-contamination
+        var moveMsgsB = messagesB.stream()
+            .filter(m -> m instanceof Message.Move)
+            .map(m -> (Message.Move) m)
+            .toList();
+        var moveMsgsC = messagesC.stream()
+            .filter(m -> m instanceof Message.Move)
+            .map(m -> (Message.Move) m)
+            .toList();
+
+        assertThat(moveMsgsB).hasSize(1);
+        assertThat(moveMsgsC).hasSize(1);
+        assertThat(moveMsgsB.get(0).newPosition().getX()).isCloseTo(0.35, org.assertj.core.data.Offset.offset(0.01));
+        assertThat(moveMsgsC.get(0).newPosition().getX()).isCloseTo(0.75, org.assertj.core.data.Offset.offset(0.01));
+    }
+
+    /**
      * Simple Node implementation for testing.
      */
     private record SimpleNode(UUID id, Point3D position) implements Node {

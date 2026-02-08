@@ -25,8 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 
 /**
@@ -61,6 +60,12 @@ public class Bubble extends EnhancedBubble implements Node {
     private final Consumer<Message> messageHandler;
     private volatile Clock clock = Clock.system();
 
+    // JOIN response retry management
+    private final Map<UUID, PendingJoinResponse> pendingJoinResponses = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService retryScheduler;
+    private static final int MAX_JOIN_RETRIES = 5;
+    private static final long INITIAL_RETRY_DELAY_MS = 50;
+
     /**
      * Set the clock for deterministic testing.
      * <p>
@@ -89,6 +94,11 @@ public class Bubble extends EnhancedBubble implements Node {
         this.neighborStates = new ConcurrentHashMap<>();
         this.introducedTo = ConcurrentHashMap.newKeySet();
         this.eventListeners = new CopyOnWriteArrayList<>();
+        this.retryScheduler = Executors.newScheduledThreadPool(1, r -> {
+            var t = new Thread(r, "join-retry-" + id);
+            t.setDaemon(true);
+            return t;
+        });
 
         // Register message handler
         this.messageHandler = this::handleMessage;
@@ -315,6 +325,25 @@ public class Bubble extends EnhancedBubble implements Node {
     public void close() {
         broadcastLeave();
         transport.removeMessageHandler(messageHandler);
+
+        // Cancel all pending retries
+        pendingJoinResponses.values().forEach(pending -> {
+            if (pending.retryFuture != null && !pending.retryFuture.isDone()) {
+                pending.retryFuture.cancel(false);
+            }
+        });
+        pendingJoinResponses.clear();
+
+        retryScheduler.shutdown();
+        try {
+            if (!retryScheduler.awaitTermination(1, TimeUnit.SECONDS)) {
+                retryScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            retryScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+
         neighborStates.clear();
         eventListeners.clear();
         log.debug("Bubble {} closed", id());
@@ -369,11 +398,7 @@ public class Bubble extends EnhancedBubble implements Node {
         neighborInfos.add(new Message.NeighborInfo(id(), position(), bounds()));
 
         var response = factory.createJoinResponse(id(), neighborInfos);
-        try {
-            transport.sendToNeighbor(req.joinerId(), response);
-        } catch (Transport.TransportException e) {
-            log.warn("Failed to send JOIN response to {}: {}", req.joinerId(), e.getMessage());
-        }
+        sendJoinResponseWithRetry(req.joinerId(), response, 0);
 
         emitEvent(new Event.Join(req.joinerId(), req.position()));
     }
@@ -499,6 +524,65 @@ public class Bubble extends EnhancedBubble implements Node {
         }
     }
 
+    /**
+     * Send JOIN response with exponential backoff retry.
+     * <p>
+     * Retry intervals: 50ms, 100ms, 200ms, 400ms, 800ms
+     * After max retries (5), performs compensation (removes neighbor).
+     *
+     * @param joinerId      UUID of the joining node
+     * @param response      JoinResponse message
+     * @param attemptCount  Current attempt number (0-based)
+     */
+    private void sendJoinResponseWithRetry(UUID joinerId, Message.JoinResponse response, int attemptCount) {
+        try {
+            transport.sendToNeighbor(joinerId, response);
+
+            // Success - remove from pending if present
+            pendingJoinResponses.remove(joinerId);
+            log.debug("Successfully sent JOIN response to {} after {} attempts", joinerId, attemptCount + 1);
+
+        } catch (Transport.TransportException e) {
+            if (attemptCount >= MAX_JOIN_RETRIES - 1) {
+                // Max retries exceeded - perform compensation
+                log.error("Failed to send JOIN response to {} after {} attempts: {}. Removing neighbor.",
+                         joinerId, attemptCount + 1, e.getMessage());
+                compensateFailedJoin(joinerId);
+            } else {
+                // Schedule retry with exponential backoff
+                var nextAttempt = attemptCount + 1;
+                var delayMs = INITIAL_RETRY_DELAY_MS * (1L << attemptCount);  // 50, 100, 200, 400, 800
+
+                log.warn("Failed to send JOIN response to {} (attempt {}/{}): {}. Retrying in {}ms",
+                        joinerId, attemptCount + 1, MAX_JOIN_RETRIES, e.getMessage(), delayMs);
+
+                var retryFuture = retryScheduler.schedule(
+                    () -> sendJoinResponseWithRetry(joinerId, response, nextAttempt),
+                    delayMs,
+                    TimeUnit.MILLISECONDS
+                );
+
+                // Track pending retry
+                pendingJoinResponses.put(joinerId, new PendingJoinResponse(
+                    joinerId, response, nextAttempt, retryFuture
+                ));
+            }
+        }
+    }
+
+    /**
+     * Compensation logic for failed JOIN response.
+     * <p>
+     * Removes the neighbor and cleans up state to prevent asymmetric relationships.
+     *
+     * @param joinerId UUID of the joiner that couldn't receive the response
+     */
+    private void compensateFailedJoin(UUID joinerId) {
+        removeNeighbor(joinerId);
+        pendingJoinResponses.remove(joinerId);
+        log.debug("Compensated failed JOIN for {}: removed neighbor and cleaned up state", joinerId);
+    }
+
     private void emitEvent(Event event) {
         for (var listener : eventListeners) {
             try {
@@ -535,5 +619,21 @@ public class Bubble extends EnhancedBubble implements Node {
      * @param lastUpdateMs Timestamp of last update
      */
     public record NeighborState(UUID nodeId, Point3D position, BubbleBounds bounds, long lastUpdateMs) {
+    }
+
+    /**
+     * Tracks pending JOIN response retry state.
+     *
+     * @param joinerId     UUID of the joining node
+     * @param response     JoinResponse message to send
+     * @param attemptCount Number of send attempts so far
+     * @param retryFuture  Scheduled future for the next retry
+     */
+    private record PendingJoinResponse(
+        UUID joinerId,
+        Message.JoinResponse response,
+        int attemptCount,
+        ScheduledFuture<?> retryFuture
+    ) {
     }
 }

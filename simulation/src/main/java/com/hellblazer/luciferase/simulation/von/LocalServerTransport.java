@@ -66,6 +66,7 @@ public class LocalServerTransport implements Transport {
     // Failure injection for testing (Phase 6A)
     private volatile long injectDelayMs = 0;
     private volatile boolean injectPartition = false;
+    private volatile boolean injectException = false;
 
     /**
      * Create a LocalServerTransport (use Registry.register() instead).
@@ -87,6 +88,12 @@ public class LocalServerTransport implements Transport {
         if (injectPartition) {
             log.debug("{} -> {}: DROPPED (partition injected)", localId, neighborId);
             return; // Message silently dropped
+        }
+
+        // Failure injection: Simulate transport exception
+        if (injectException) {
+            log.debug("{} -> {}: EXCEPTION (exception injected)", localId, neighborId);
+            throw new TransportException("Injected transport failure");
         }
 
         // Failure injection: Simulate network delay
@@ -227,6 +234,19 @@ public class LocalServerTransport implements Transport {
     public void injectPartition(boolean enabled) {
         this.injectPartition = enabled;
         log.debug("Injected partition: {}", enabled);
+    }
+
+    /**
+     * Inject transport exceptions for testing.
+     * <p>
+     * When enabled, all sendToNeighbor calls throw TransportException
+     * (simulating connection failures, timeouts, etc).
+     *
+     * @param enabled true to throw exceptions, false to restore normal operation
+     */
+    public void injectException(boolean enabled) {
+        this.injectException = enabled;
+        log.debug("Injected exception: {}", enabled);
     }
 
     /**
