@@ -67,21 +67,38 @@ import java.util.function.Consumer;
  *
  * @author hal.hildebrand
  */
-public class SocketTransport implements NetworkTransport {
+/**
+ * TCP-based transport with Fireflies virtual synchrony ACK.
+ * <p>
+ * Composes MemberDirectory and ConnectionManager for SRP.
+ * <p>
+ * Responsibilities:
+ * <ul>
+ *   <li>Message sending with Fireflies ACK semantics</li>
+ *   <li>Message handler registry and dispatch</li>
+ *   <li>Composition of MemberDirectory and ConnectionManager</li>
+ * </ul>
+ * <p>
+ * Delegates member routing to {@link MemberDirectory} and connection
+ * lifecycle to {@link ConnectionManager} for SRP.
+ * <p>
+ * Marked {@code final} - use composition for extension, not inheritance.
+ *
+ * @see MemberDirectory
+ * @see ConnectionManager
+ */
+public final class SocketTransport implements NetworkTransport {
 
     private static final Logger log = LoggerFactory.getLogger(SocketTransport.class);
 
     private final UUID localId;
-    private final ProcessAddress myAddress;
     private final MessageFactory factory;
-    private final Map<String, SocketClient> clients = new ConcurrentHashMap<>();
     private final List<Consumer<Message>> handlers = new CopyOnWriteArrayList<>();
-    private final MemberDirectory memberDirectory = new ConcurrentMemberDirectory();
+    private final MemberDirectory memberDirectory;
+    private final ConnectionManager connectionManager;
     private final FirefliesMembershipView membership;
     private final FirefliesViewMonitor viewMonitor;
     private final RealTimeController controller;
-    private SocketServer server;
-    private volatile boolean connected = true;
 
     /**
      * Create a SocketTransport with a random local ID.
@@ -112,97 +129,41 @@ public class SocketTransport implements NetworkTransport {
                           FirefliesMembershipView membership,
                           FirefliesViewMonitor viewMonitor,
                           RealTimeController controller) {
-        this.localId = localId;
-        this.myAddress = myAddress;
-        this.factory = MessageFactory.system();
+        // CRITICAL: Initialize components BEFORE any methods can be called
+        // (prevents concurrent initialization race)
+        this.localId = Objects.requireNonNull(localId, "localId must not be null");
         this.membership = Objects.requireNonNull(membership, "membership must not be null");
         this.viewMonitor = Objects.requireNonNull(viewMonitor, "viewMonitor must not be null");
         this.controller = Objects.requireNonNull(controller, "controller must not be null");
+        this.factory = MessageFactory.system();
+        this.handlers.clear(); // Ensure clean state
+        this.memberDirectory = new ConcurrentMemberDirectory();
+        this.connectionManager = new SocketConnectionManager(myAddress, this::handleIncomingMessage);
     }
 
-    /**
-     * Start server socket listening for inbound connections.
-     * <p>
-     * MANDATORY ENFORCEMENT: Only loopback addresses (127.0.0.1, localhost) are permitted
-     * in Inc 6. Non-loopback addresses throw IllegalArgumentException.
-     *
-     * @param bindAddress Local address to bind
-     * @throws IOException              if bind fails
-     * @throws IllegalArgumentException if bindAddress is not a loopback address (Inc 6 constraint)
-     */
     @Override
     public void listenOn(ProcessAddress bindAddress) throws IOException {
-        if (!isLoopback(bindAddress.hostname())) {
-            throw new IllegalArgumentException(
-                "Inc 6 supports localhost only; use Inc 7+ for distributed hosts. Got: " + bindAddress.hostname()
-            );
-        }
-
-        this.server = new SocketServer(bindAddress, this::handleIncomingMessage);
-        this.server.start();
-        log.info("SocketTransport listening on {}", bindAddress.toUrl());
+        connectionManager.listenOn(bindAddress);
     }
 
-    /**
-     * Establish a client connection to a remote process.
-     * <p>
-     * MANDATORY ENFORCEMENT: Only loopback addresses (127.0.0.1, localhost) are permitted
-     * in Inc 6. Non-loopback addresses throw IllegalArgumentException.
-     *
-     * @param remoteAddress Target process address
-     * @throws IOException              if connection fails
-     * @throws IllegalArgumentException if remoteAddress is not a loopback address (Inc 6 constraint)
-     */
     @Override
     public void connectTo(ProcessAddress remoteAddress) throws IOException {
-        if (!isLoopback(remoteAddress.hostname())) {
-            throw new IllegalArgumentException(
-                "Inc 6 supports localhost only. Got: " + remoteAddress.hostname()
-            );
-        }
-
-        var client = new SocketClient(remoteAddress, this::handleIncomingMessage);
-        client.connect();
-        clients.put(remoteAddress.processId(), client);
-        log.info("SocketTransport connected to {}", remoteAddress.toUrl());
+        connectionManager.connectTo(remoteAddress);
     }
 
-    /**
-     * Check if a hostname is a loopback address.
-     * <p>
-     * Used for Inc 6 scope enforcement. Accepts IPv4 (127.0.0.1),
-     * IPv6 (::1), and DNS name (localhost).
-     *
-     * @param hostname Hostname to check
-     * @return true if hostname is 127.0.0.1, ::1, or localhost
-     */
-    private boolean isLoopback(String hostname) {
-        return hostname.equals("127.0.0.1") || hostname.equals("::1") || hostname.equals("localhost");
-    }
 
-    /**
-     * Send a message to a specific neighbor.
-     * <p>
-     * Converts Message to TransportVonMessage and sends via SocketClient.
-     *
-     * @param neighborId UUID of the target neighbor
-     * @param message    Message to send
-     * @throws TransportException if send fails or neighbor not connected
-     */
     @Override
     public void sendToNeighbor(UUID neighborId, Message message) throws TransportException {
-        // Find client by looking up process ID from neighborId
-        // Note: This is a simplified implementation for Phase 6A
-        // Phase 6B will add proper UUID -> ProcessAddress mapping
-        var client = findClientForNeighbor(neighborId);
-        if (client == null) {
-            throw new TransportException("Not connected to neighbor: " + neighborId);
+        // Get address from MemberDirectory
+        var address = memberDirectory.getAddressFor(neighborId);
+        if (address == null) {
+            throw new TransportException("No address for neighbor: " + neighborId);
         }
 
         try {
-            // Convert Message to TransportVonMessage
+            // Convert and send via ConnectionManager
             var transportMsg = convertToTransport(message);
-            client.send(transportMsg);
+            connectionManager.sendToProcess(address.processId(), transportMsg);
         } catch (IOException e) {
             throw new TransportException("Failed to send to " + neighborId, e);
         }
@@ -339,62 +300,17 @@ public class SocketTransport implements NetworkTransport {
         return MessageConverter.toTransport(message);
     }
 
-    /**
-     * Find SocketClient for a neighbor UUID.
-     * <p>
-     * Uses MemberDirectory to map UUID to ProcessAddress, then looks up
-     * the corresponding SocketClient by processId.
-     *
-     * @param neighborId UUID of the neighbor to find
-     * @return SocketClient for the neighbor, or null if not found/connected
-     */
-    private SocketClient findClientForNeighbor(UUID neighborId) {
-        // Look up ProcessAddress for this neighbor UUID
-        var address = memberDirectory.getAddressFor(neighborId);
-        if (address == null) {
-            log.warn("No ProcessAddress registered for neighbor {}", neighborId);
-            return null;
-        }
-
-        // Find client by processId
-        var client = clients.get(address.processId());
-        if (client == null) {
-            log.warn("No SocketClient found for processId {} (neighbor {})",
-                address.processId(), neighborId);
-        }
-        return client;
-    }
 
     @Override
     public List<ProcessAddress> getConnectedProcesses() {
-        return new ArrayList<>(
-            clients.values().stream().map(SocketClient::getRemoteAddress).toList()
-        );
+        return connectionManager.getConnectedProcesses();
     }
 
     @Override
     public void closeAll() throws IOException {
-        log.info("Closing SocketTransport");
-        connected = false;
-
-        if (server != null) {
-            server.shutdown();
-        }
-
-        for (var client : clients.values()) {
-            client.close();
-        }
-        clients.clear();
+        connectionManager.closeAll();
     }
 
-    /**
-     * Get this process's address.
-     *
-     * @return My ProcessAddress
-     */
-    public ProcessAddress getMyAddress() {
-        return myAddress;
-    }
 
     // Implement remaining Transport methods
     @Override
@@ -424,7 +340,7 @@ public class SocketTransport implements NetworkTransport {
 
     @Override
     public boolean isConnected() {
-        return connected;
+        return connectionManager.isRunning();  // FIXES BUG: now false until first connect/listen
     }
 
     @Override
