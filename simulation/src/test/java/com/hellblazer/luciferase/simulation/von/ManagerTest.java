@@ -452,6 +452,241 @@ class ManagerTest {
             .isGreaterThan(0);
     }
 
+    // ========== Phase 3: Persistent Coordinator Tests ==========
+
+    /**
+     * Test 13: Verify persistent coordinator survives multiple leave operations.
+     * <p>
+     * This test validates that the coordinator remains functional after individual
+     * bubbles are removed, without requiring a full shutdown/restart cycle.
+     */
+    @Test
+    void testPersistentCoordinator_survivesMultipleLeaves() throws Exception {
+        // Given: Create 5 bubbles
+        List<Bubble> bubbles = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            var bubble = manager.createBubble();
+            float x = 50.0f + i * 10.0f;
+            addEntities(bubble, new Point3f(x, 50.0f, 50.0f), 10);
+            manager.joinAt(bubble, bubble.position());
+            bubbles.add(bubble);
+            Thread.sleep(100);  // Let joins complete
+        }
+
+        assertThat(manager.size()).isEqualTo(5);
+
+        // When: Leave 3 bubbles
+        for (int i = 0; i < 3; i++) {
+            manager.leave(bubbles.get(i));
+            Thread.sleep(50);  // Let leave complete
+        }
+
+        // Then: 2 bubbles remain
+        assertThat(manager.size()).isEqualTo(2);
+
+        // And: Remaining bubbles are still functional
+        var bubble4 = bubbles.get(3);
+        var bubble5 = bubbles.get(4);
+
+        assertThat(bubble4.neighbors()).isNotNull();
+        assertThat(bubble5.neighbors()).isNotNull();
+
+        // And: Can still move remaining bubbles
+        manager.move(bubble4, new Point3D(85.0, 50.0, 50.0));
+        manager.move(bubble5, new Point3D(95.0, 50.0, 50.0));
+
+        // And: Can create new bubble after leaves
+        var newBubble = manager.createBubble();
+        addEntities(newBubble, new Point3f(105.0f, 50.0f, 50.0f), 10);
+        manager.joinAt(newBubble, newBubble.position());
+
+        Thread.sleep(200);  // Let join complete
+        assertThat(manager.size()).isEqualTo(3);
+    }
+
+    /**
+     * Test 14: Verify concurrent leave() and createBubble() operations are thread-safe.
+     * <p>
+     * This test validates that the persistent coordinator handles concurrent
+     * add/remove operations correctly without race conditions or exceptions.
+     */
+    @Test
+    void testConcurrentLeaveAndCreate() throws Exception {
+        // Given: Initial set of bubbles
+        List<Bubble> initialBubbles = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            var bubble = manager.createBubble();
+            float x = 50.0f + i * 10.0f;
+            addEntities(bubble, new Point3f(x, 50.0f, 50.0f), 10);
+            manager.joinAt(bubble, bubble.position());
+            initialBubbles.add(bubble);
+            Thread.sleep(100);
+        }
+
+        assertThat(manager.size()).isEqualTo(5);
+
+        // When: Concurrent leave() and createBubble() operations
+        var executor = Executors.newFixedThreadPool(10);
+        var latch = new CountDownLatch(10);
+        var errors = new CopyOnWriteArrayList<Throwable>();
+
+        // 5 threads removing bubbles
+        for (int i = 0; i < 5; i++) {
+            final var bubble = initialBubbles.get(i);
+            executor.submit(() -> {
+                try {
+                    manager.leave(bubble);
+                } catch (Throwable e) {
+                    errors.add(e);
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        // 5 threads creating new bubbles
+        for (int i = 0; i < 5; i++) {
+            final int idx = i;
+            executor.submit(() -> {
+                try {
+                    var bubble = manager.createBubble();
+                    float x = 150.0f + idx * 10.0f;
+                    addEntities(bubble, new Point3f(x, 50.0f, 50.0f), 10);
+                    manager.joinAt(bubble, bubble.position());
+                } catch (Throwable e) {
+                    errors.add(e);
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        // Wait for all operations to complete
+        assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+
+        executor.shutdown();
+        assertThat(executor.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+
+        // Then: No errors occurred
+        if (!errors.isEmpty()) {
+            System.err.println("Concurrent operation errors:");
+            for (var error : errors) {
+                error.printStackTrace();
+            }
+        }
+        assertThat(errors).isEmpty();
+
+        // And: Manager has 5 bubbles (5 removed, 5 created)
+        assertThat(manager.size()).isEqualTo(5);
+    }
+
+    /**
+     * Test 15: Verify coordinator remains functional after all bubbles leave.
+     * <p>
+     * This test validates the "empty coordinator" case - that the persistent
+     * coordinator can transition from N bubbles → 0 bubbles → N bubbles without
+     * requiring shutdown/restart.
+     */
+    @Test
+    void testLeaveAllThenCreate() throws Exception {
+        // Given: Create 3 bubbles
+        List<Bubble> bubbles = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            var bubble = manager.createBubble();
+            float x = 50.0f + i * 10.0f;
+            addEntities(bubble, new Point3f(x, 50.0f, 50.0f), 10);
+            manager.joinAt(bubble, bubble.position());
+            bubbles.add(bubble);
+            Thread.sleep(100);
+        }
+
+        assertThat(manager.size()).isEqualTo(3);
+
+        // When: All bubbles leave
+        for (var bubble : bubbles) {
+            manager.leave(bubble);
+            Thread.sleep(50);
+        }
+
+        // Then: Manager is empty
+        assertThat(manager.size()).isEqualTo(0);
+
+        // And: Can create new bubbles (coordinator still functional)
+        var newBubble1 = manager.createBubble();
+        addEntities(newBubble1, new Point3f(100.0f, 50.0f, 50.0f), 10);
+        manager.joinAt(newBubble1, newBubble1.position());
+
+        var newBubble2 = manager.createBubble();
+        addEntities(newBubble2, new Point3f(110.0f, 50.0f, 50.0f), 10);
+        manager.joinAt(newBubble2, newBubble2.position());
+
+        Thread.sleep(200);
+
+        // And: New bubbles are functional
+        assertThat(manager.size()).isEqualTo(2);
+        assertThat(newBubble1.neighbors()).isNotNull();
+        assertThat(newBubble2.neighbors()).isNotNull();
+    }
+
+    /**
+     * Test 16: Verify close() is idempotent (can be called multiple times).
+     * <p>
+     * This test validates that calling close() multiple times doesn't throw
+     * exceptions or cause errors. The coordinator's stop() is idempotent via
+     * AtomicBoolean CAS.
+     */
+    @Test
+    void testCloseIdempotent() {
+        // Given: Manager with bubbles
+        var bubble1 = manager.createBubble();
+        var bubble2 = manager.createBubble();
+        addEntities(bubble1, new Point3f(50.0f, 50.0f, 50.0f), 10);
+        addEntities(bubble2, new Point3f(60.0f, 50.0f, 50.0f), 10);
+
+        assertThat(manager.size()).isEqualTo(2);
+
+        // When: Close manager twice
+        manager.close();
+        manager.close();  // Should not throw
+
+        // Then: Manager is empty
+        assertThat(manager.size()).isEqualTo(0);
+
+        // And: Third close also works (idempotent)
+        manager.close();
+        assertThat(manager.size()).isEqualTo(0);
+    }
+
+    /**
+     * Test 17: Verify leave() after close() handles gracefully.
+     * <p>
+     * This test validates error handling when leave() is called after close().
+     * The coordinator may already be stopped, but leave() should handle this
+     * gracefully without throwing exceptions.
+     */
+    @Test
+    void testLeaveAfterClose() {
+        // Given: Manager with bubbles
+        var bubble1 = manager.createBubble();
+        var bubble2 = manager.createBubble();
+        addEntities(bubble1, new Point3f(50.0f, 50.0f, 50.0f), 10);
+        addEntities(bubble2, new Point3f(60.0f, 50.0f, 50.0f), 10);
+
+        assertThat(manager.size()).isEqualTo(2);
+
+        // When: Close manager
+        manager.close();
+        assertThat(manager.size()).isEqualTo(0);
+
+        // Then: leave() after close() should not throw (graceful handling)
+        // Note: bubble1/bubble2 are already closed, but leave() should handle this
+        manager.leave(bubble1);  // Should not throw
+        manager.leave(bubble2);  // Should not throw
+
+        // And: Manager remains empty
+        assertThat(manager.size()).isEqualTo(0);
+    }
+
     // ========== Helper Methods ==========
 
     /**
