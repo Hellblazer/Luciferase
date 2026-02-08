@@ -430,6 +430,12 @@ public class SocketTransport implements NetworkTransport {
 
         var targetId = members.get(index);
         var address = memberRegistry.get(targetId);
+
+        // Handle race condition: member could be removed between snapshot and get
+        if (address == null) {
+            throw new TransportException("Member " + targetId + " not found (removed during routing)");
+        }
+
         return new MemberInfo(targetId, address.toUrl());
     }
 
