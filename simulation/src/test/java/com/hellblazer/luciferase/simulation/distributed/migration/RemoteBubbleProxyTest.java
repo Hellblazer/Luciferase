@@ -24,6 +24,7 @@ import javafx.geometry.Point3D;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.hellblazer.luciferase.simulation.transport.TestTransportFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -73,8 +74,8 @@ class RemoteBubbleProxyTest {
         var bubble2Id = UUID.randomUUID();
 
         // Create transports with bubble UUIDs so getLocalId() returns correct ID
-        var transport1 = new SocketTransport(bubble1Id, addr1);
-        var transport2 = new SocketTransport(bubble2Id, addr2);
+        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, addr1);
+        var transport2 = TestTransportFactory.createTestTransport(bubble2Id, addr2);
         transports.add(transport1);
         transports.add(transport2);
 
@@ -133,9 +134,9 @@ class RemoteBubbleProxyTest {
         var bubble2Id = UUID.randomUUID();
         var bubble3Id = UUID.randomUUID();
 
-        var transport1 = new SocketTransport(bubble1Id, addr1);
-        var transport2 = new SocketTransport(bubble2Id, addr2);
-        var transport3 = new SocketTransport(bubble3Id, addr3);
+        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, addr1);
+        var transport2 = TestTransportFactory.createTestTransport(bubble2Id, addr2);
+        var transport3 = TestTransportFactory.createTestTransport(bubble3Id, addr3);
         transports.add(transport1);
         transports.add(transport2);
         transports.add(transport3);
@@ -183,7 +184,7 @@ class RemoteBubbleProxyTest {
         var addr1 = ProcessAddress.localhost("bubble1", port1);
         var bubble1Id = UUID.randomUUID();
 
-        var transport1 = new SocketTransport(bubble1Id, addr1);
+        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, addr1);
         transports.add(transport1);
         transport1.listenOn(addr1);
 
@@ -213,8 +214,8 @@ class RemoteBubbleProxyTest {
         var bubble1Id = UUID.randomUUID();
         var bubble2Id = UUID.randomUUID();
 
-        var transport1 = new SocketTransport(bubble1Id, addr1);
-        var transport2 = new SocketTransport(bubble2Id, addr2);
+        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, addr1);
+        var transport2 = TestTransportFactory.createTestTransport(bubble2Id, addr2);
         transports.add(transport1);
         transports.add(transport2);
 

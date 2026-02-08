@@ -236,6 +236,73 @@ Historical reference:
 - **Adaptive Sizing**: Z-buffer scales from 128x128 to 2048x2048 based on scene
 - **Performance**: Provides 2.0x speedup when properly configured with sufficient occlusion
 
+## Fireflies Virtual Synchrony
+
+**Transport ACK Semantics**: `SocketTransport.sendToNeighborAsync()` uses Fireflies virtual synchrony for "with high probability" delivery guarantees.
+
+### Key Concepts
+
+- **Virtual Synchrony**: Delos Fireflies ensures all messages sent within a stable view are delivered to all live members
+- **View**: Current set of active cluster members (tracked by FirefliesViewMonitor)
+- **View Stability**: No membership changes for N ticks (default 30 ticks = 300ms at 100Hz)
+- **ACK Semantics**: Not traditional message-level ACK - uses view stability as proxy for delivery success
+
+### Implementation (Option B - Round Timer Integration)
+
+```java
+// SocketTransport hooks into Fireflies round timer (100Hz)
+public CompletableFuture<Message.Ack> sendToNeighborAsync(UUID neighborId, Message message) {
+    1. Send message immediately via socket
+    2. Capture current Fireflies view ID
+    3. Register RealTimeController.TickListener (checks every 10ms)
+    4. On each tick:
+       - If view changed → complete exceptionally (delivery uncertain)
+       - If view stable → complete successfully (delivery guaranteed)
+    5. Auto-cleanup: Remove listener when future completes
+    6. Timeout: 5 seconds if view never stabilizes
+}
+```
+
+### Benefits
+
+- **Simpler**: No message correlation, no explicit ACK messages
+- **Stronger guarantees**: Virtual synchrony ensures delivery within stable view
+- **Automatic failure detection**: Fireflies handles all member failure detection
+- **Zero overhead**: No additional threads, hooks into existing 100Hz tick timer
+- **Deterministic testing**: Compatible with TestClock for reproducible tests
+
+### Design Trade-offs
+
+- **"With high probability" delivery**: Not 100% guarantee (view may change during send)
+- **Latency**: ACK waits for view stability (typical 300ms), not immediate
+- **Fireflies dependency**: Requires Fireflies membership view and view monitor
+
+### Testing Pattern
+
+```java
+// Create test infrastructure with Fireflies components
+var controller = new RealTimeController(bubbleId, "test", 100);  // 100Hz
+var mockView = new MockFirefliesView<>();
+var viewMonitor = new FirefliesViewMonitor(mockView);  // Default 30 tick threshold
+var membership = new FirefliesMembershipView(mockedDelosView);
+
+// Create transport with Fireflies integration
+var transport = new SocketTransport(bubbleId, address, membership, viewMonitor, controller);
+
+// Register viewMonitor for tick notifications
+controller.addTickListener((simTime, lamportClock) -> viewMonitor.onTick(simTime));
+
+// Start controller and wait for ticks
+controller.start();
+Thread.sleep(50);  // Ensure controller has started ticking
+
+// Send with ACK
+var ackFuture = transport.sendToNeighborAsync(neighborId, message);
+var ack = ackFuture.get(500, TimeUnit.MILLISECONDS);  // Waits for view stability
+```
+
+**See**: `SocketTransportFirefliesAckTest.java` for complete test examples
+
 ## Testing Configuration
 
 **Comprehensive Test Framework Documentation**: See `TEST_FRAMEWORK_GUIDE.md` for complete guidance on:

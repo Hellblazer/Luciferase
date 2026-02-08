@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -109,7 +110,7 @@ public class RealTimeController {
         this.clockGenerator = new LamportClockGenerator(bubbleId);
         this.running = new AtomicBoolean(false);
         this.tickPeriodNs = TimeUnit.NANOSECONDS.convert(1, TimeUnit.SECONDS) / tickRate;
-        this.tickListeners = new ArrayList<>();
+        this.tickListeners = new CopyOnWriteArrayList<>();  // Thread-safe for concurrent add/remove during iteration
         this.tickThread = null;
     }
 

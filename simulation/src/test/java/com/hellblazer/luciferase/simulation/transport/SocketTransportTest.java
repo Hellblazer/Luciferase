@@ -17,6 +17,14 @@
 
 package com.hellblazer.luciferase.simulation.transport;
 
+import com.hellblazer.delos.context.DynamicContext;
+import com.hellblazer.delos.cryptography.Digest;
+import com.hellblazer.delos.fireflies.View;
+import com.hellblazer.delos.membership.Member;
+import com.hellblazer.luciferase.simulation.bubble.RealTimeController;
+import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
+import com.hellblazer.luciferase.simulation.delos.fireflies.FirefliesMembershipView;
+import com.hellblazer.luciferase.simulation.delos.mock.MockFirefliesView;
 import com.hellblazer.luciferase.simulation.von.Message;
 import com.hellblazer.luciferase.simulation.von.MessageFactory;
 import org.junit.jupiter.api.AfterEach;
@@ -32,6 +40,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Test SocketTransport implementation with focus on:
@@ -65,7 +74,11 @@ class SocketTransportTest {
     @Test
     void testListenOnRejectsNonLoopback() {
         var port = findAvailablePort();
-        var transport = new SocketTransport(ProcessAddress.localhost("process-1", port));
+        var bubbleId = UUID.randomUUID();
+        var transport = TestTransportFactory.createTestTransport(
+            bubbleId,
+            ProcessAddress.localhost("process-1", port)
+        );
         transports.add(transport);
 
         // Should reject 0.0.0.0 (all interfaces)
@@ -89,14 +102,22 @@ class SocketTransportTest {
         var port = findAvailablePort();
 
         // Should accept 127.0.0.1
-        var transport1 = new SocketTransport(ProcessAddress.localhost("p1", port));
+        var bubbleId1 = UUID.randomUUID();
+        var transport1 = TestTransportFactory.createTestTransport(
+            bubbleId1,
+            ProcessAddress.localhost("p1", port)
+        );
         transports.add(transport1);
         assertDoesNotThrow(() -> transport1.listenOn(ProcessAddress.localhost("p1", port)),
                            "Should accept 127.0.0.1");
 
         // Should accept "localhost"
         var port2 = findAvailablePort();
-        var transport2 = new SocketTransport(new ProcessAddress("p2", "localhost", port2));
+        var bubbleId2 = UUID.randomUUID();
+        var transport2 = TestTransportFactory.createTestTransport(
+            bubbleId2,
+            new ProcessAddress("p2", "localhost", port2)
+        );
         transports.add(transport2);
         assertDoesNotThrow(() -> transport2.listenOn(new ProcessAddress("p2", "localhost", port2)),
                            "Should accept localhost");
@@ -108,7 +129,11 @@ class SocketTransportTest {
     @Test
     void testConnectToRejectsNonLoopback() {
         var port = findAvailablePort();
-        var transport = new SocketTransport(ProcessAddress.localhost("process-1", port));
+        var bubbleId = UUID.randomUUID();
+        var transport = TestTransportFactory.createTestTransport(
+            bubbleId,
+            ProcessAddress.localhost("process-1", port)
+        );
         transports.add(transport);
 
         // Should reject connection to non-loopback
@@ -129,8 +154,10 @@ class SocketTransportTest {
         var process1Addr = ProcessAddress.localhost("process-1", port1);
         var process2Addr = ProcessAddress.localhost("process-2", port2);
 
-        var transport1 = new SocketTransport(process1Addr);
-        var transport2 = new SocketTransport(process2Addr);
+        var bubbleId1 = UUID.randomUUID();
+        var bubbleId2 = UUID.randomUUID();
+        var transport1 = TestTransportFactory.createTestTransport(bubbleId1, process1Addr);
+        var transport2 = TestTransportFactory.createTestTransport(bubbleId2, process2Addr);
         transports.add(transport1);
         transports.add(transport2);
 
@@ -178,8 +205,10 @@ class SocketTransportTest {
         var process1Addr = ProcessAddress.localhost("process-1", port1);
         var process2Addr = ProcessAddress.localhost("process-2", port2);
 
-        var transport1 = new SocketTransport(process1Addr);
-        var transport2 = new SocketTransport(process2Addr);
+        var bubbleId1 = UUID.randomUUID();
+        var bubbleId2 = UUID.randomUUID();
+        var transport1 = TestTransportFactory.createTestTransport(bubbleId1, process1Addr);
+        var transport2 = TestTransportFactory.createTestTransport(bubbleId2, process2Addr);
         transports.add(transport1);
         transports.add(transport2);
 
@@ -230,9 +259,12 @@ class SocketTransportTest {
         var addr2 = ProcessAddress.localhost("p2", port2);
         var addr3 = ProcessAddress.localhost("p3", port3);
 
-        var transport1 = new SocketTransport(addr1);
-        var transport2 = new SocketTransport(addr2);
-        var transport3 = new SocketTransport(addr3);
+        var bubbleId1 = UUID.randomUUID();
+        var bubbleId2 = UUID.randomUUID();
+        var bubbleId3 = UUID.randomUUID();
+        var transport1 = TestTransportFactory.createTestTransport(bubbleId1, addr1);
+        var transport2 = TestTransportFactory.createTestTransport(bubbleId2, addr2);
+        var transport3 = TestTransportFactory.createTestTransport(bubbleId3, addr3);
         transports.add(transport1);
         transports.add(transport2);
         transports.add(transport3);
@@ -265,7 +297,8 @@ class SocketTransportTest {
         var port = findAvailablePort();
         var addr = ProcessAddress.localhost("process-1", port);
 
-        var transport = new SocketTransport(addr);
+        var bubbleId = UUID.randomUUID();
+        var transport = TestTransportFactory.createTestTransport(bubbleId, addr);
         transports.add(transport);
 
         transport.listenOn(addr);
@@ -290,4 +323,5 @@ class SocketTransportTest {
             throw new RuntimeException("Failed to find available port", e);
         }
     }
+
 }
