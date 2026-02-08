@@ -270,7 +270,7 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
             try {
                 handler.accept(sourceId, ghosts);
             } catch (Exception e) {
-                log.warn("Handler threw exception processing ghost batch from {}: {}", sourceId, e.getMessage());
+                log.warn("Handler threw exception processing ghost batch from {}", sourceId, e);
             }
         }
 
