@@ -27,7 +27,7 @@ public class ServerMetrics {
 
     private final AtomicInteger bubbleCount = new AtomicInteger(0);
     private final AtomicInteger entityCount = new AtomicInteger(0);
-    private final AtomicLong lastUpdateNanos = new AtomicLong(Clock.system().nanoTime());
+    private final AtomicLong lastUpdateNanos = new AtomicLong(0);
 
     // EWMA-smoothed utilization (0.0 to 1.0)
     private volatile double smoothedUtilization = 0.0;
@@ -45,15 +45,19 @@ public class ServerMetrics {
         this.serverId = serverId;
         this.targetFrameTimeMs = targetFrameTimeMs;
         this.ewmaAlpha = ewmaAlpha;
+        // Initialize lastUpdateNanos with current clock time
+        this.lastUpdateNanos.set(clock.nanoTime());
     }
 
     /**
      * Set the clock for deterministic testing.
+     * Also resets lastUpdateNanos to current clock time.
      *
      * @param clock Clock instance to use
      */
     public void setClock(Clock clock) {
         this.clock = clock;
+        this.lastUpdateNanos.set(clock.nanoTime());
     }
 
     public UUID serverId() {
