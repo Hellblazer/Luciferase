@@ -176,6 +176,11 @@ public class LifecycleCoordinator {
         components.computeIfPresent(componentName, (name, comp) -> {
             synchronized (comp) {  // Prevent concurrent state changes during check
                 var state = comp.getState();
+                // FIX Luciferase-vt8d: Defensive null check for contract violation
+                if (state == null) {
+                    throw new LifecycleException(
+                        "Component " + name + " violated contract: getState() returned null");
+                }
                 if (state != LifecycleState.STOPPED && state != LifecycleState.CREATED) {
                     throw new LifecycleException("Cannot unregister component in state: " + state);
                 }
@@ -203,22 +208,22 @@ public class LifecycleCoordinator {
     public void registerAndStart(LifecycleComponent component) {
         var name = component.name();
 
-        // Validate dependencies exist
-        for (var depName : component.dependencies()) {
-            if (!components.containsKey(depName)) {
-                throw new LifecycleException(
-                    "Component " + name + " depends on non-existent component: " + depName);
-            }
-        }
-
         // FIX Issue #2 (Luciferase-7q6q): Use computeIfAbsent for atomic registration
         // FIX Luciferase-1k4s: Set state to STARTING in atomic block to prevent unregister race
-        // Previous: component.getState() returns CREATED, allowing unregister() to remove before start()
+        // FIX Luciferase-3nio: Move dependency validation inside atomic block to prevent TOCTOU race
+        // Previous: validation happened outside atomic block, allowing dependency removal between check and registration
         var result = components.computeIfAbsent(name, k -> {
+            // Validate dependencies exist NOW, inside atomic block
+            for (var depName : component.dependencies()) {
+                if (!components.containsKey(depName)) {
+                    throw new LifecycleException(
+                        "Component " + name + " depends on non-existent component: " + depName);
+                }
+            }
             // Mark as STARTING immediately to block unregister() during start operation
             // This is intentional deviation from component's actual state (which is CREATED)
             states.put(name, LifecycleState.STARTING);
-            log.debug("Registered component: {} with STARTING state", name);
+            log.debug("Registered component with dependencies: {}", name);
             return component;
         });
         if (result != component) {
@@ -278,16 +283,24 @@ public class LifecycleCoordinator {
         }
 
         // Stop component if it's running
-        var state = component.getState();
-        if (state == LifecycleState.RUNNING) {
-            // FIX Issue #3 (Luciferase-7q6q): Only unregister on successful stop
-            // Previous: component removed even if stop() failed
-            try {
-                component.stop()
-                    .orTimeout(5, TimeUnit.SECONDS)
-                    .join();
-                states.put(componentName, component.getState());
-                log.debug("Stopped component: {}", componentName);
+        // FIX Luciferase-3f3o: Synchronize on component to prevent state-change race
+        // Same pattern as unregister() to ensure atomic state check
+        synchronized (component) {  // Prevent concurrent state changes during check
+            var state = component.getState();
+            // FIX Luciferase-vt8d: Defensive null check for contract violation
+            if (state == null) {
+                throw new LifecycleException(
+                    "Component " + componentName + " violated contract: getState() returned null");
+            }
+            if (state == LifecycleState.RUNNING) {
+                // FIX Issue #3 (Luciferase-7q6q): Only unregister on successful stop
+                // Previous: component removed even if stop() failed
+                try {
+                    component.stop()
+                        .orTimeout(5, TimeUnit.SECONDS)
+                        .join();
+                    states.put(componentName, component.getState());
+                    log.debug("Stopped component: {}", componentName);
             } catch (Exception e) {
                 // Distinguish timeout from other errors for better diagnostics
                 if (e instanceof java.util.concurrent.TimeoutException ||
@@ -302,6 +315,7 @@ public class LifecycleCoordinator {
                 throw new LifecycleException("Cannot unregister component that failed to stop", e);
             }
         }
+        }  // End synchronized block (Luciferase-3f3o fix)
 
         // Unregister the component (only reached if stop succeeded or component wasn't running)
         components.remove(componentName);

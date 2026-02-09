@@ -997,15 +997,23 @@ class LifecycleCoordinatorTest {
     /**
      * Test 30: Validate Luciferase-bo26 fix - synchronized unregister prevents state-change race.
      * <p>
+     * FIX Luciferase-vrd0: Rewritten to actually test the synchronized fix.
+     * <p>
      * Original race (before fix):
-     * T0: Thread A calls unregister('test')
-     * T1: Thread A reads state=CREATED, passes check
+     * T0: Thread A calls unregister('test') on STOPPED component
+     * T1: Thread A reads state=STOPPED, passes check
      * T2: Thread B calls component.start() → state=RUNNING
      * T3: Thread A removes component from maps
      * Result: Component RUNNING but removed from coordinator
      * <p>
      * Fix: Synchronize on component during unregister to prevent state changes
      * during the check-and-remove operation.
+     * <p>
+     * This test creates the actual race condition:
+     * - Component starts in STOPPED state (not started by coordinator)
+     * - Thread A tries to unregister (checks state=STOPPED)
+     * - Thread B actually changes state by calling component.start()
+     * - With synchronized fix, one thread wins atomically
      */
     @Test
     void testUnregisterRaceWithStart_synchronized() throws Exception {
@@ -1013,32 +1021,30 @@ class LifecycleCoordinatorTest {
         var stopOrder = Collections.synchronizedList(new ArrayList<String>());
         var component = new MockComponent("test", startOrder, stopOrder);
 
+        // Register but DO NOT START - component is in STOPPED state
         coordinator.register(component);
-        coordinator.start();
+        // Component state is STOPPED/CREATED - this is critical for the test
 
         var executor = Executors.newFixedThreadPool(2);
         var latch = new CountDownLatch(2);
-        var failures = Collections.synchronizedList(new ArrayList<String>());
 
-        // Thread A: unregister
+        // Thread A: unregister (will check state=STOPPED)
         var unregisterFuture = executor.submit(() -> {
             latch.countDown();
             try {
                 latch.await(100, TimeUnit.MILLISECONDS);
-                coordinator.unregister(component.name());
+                coordinator.unregister("test");
             } catch (Exception e) {
                 // May throw if state changed - expected
             }
         });
 
-        // Thread B: start component directly (simulates state change during unregister)
+        // Thread B: start component (actually changes STOPPED→RUNNING)
         var startFuture = executor.submit(() -> {
             latch.countDown();
             try {
                 latch.await(100, TimeUnit.MILLISECONDS);
-                // Component already started by coordinator.start() above
-                // This simulates concurrent state changes
-                Thread.sleep(5);
+                component.start().join();  // Actually change state!
             } catch (Exception e) {
                 // Ignore
             }
@@ -1047,18 +1053,14 @@ class LifecycleCoordinatorTest {
         unregisterFuture.get(1, TimeUnit.SECONDS);
         startFuture.get(1, TimeUnit.SECONDS);
 
-        // Verify no inconsistency: component RUNNING but removed
+        // Verify: Component either RUNNING (start won) or unregistered (unregister won)
+        // NEVER: Component RUNNING but removed from coordinator
         if (component.getState() == LifecycleState.RUNNING) {
-            if (coordinator.getState(component.name()) == null) {
-                failures.add("Component RUNNING but removed from coordinator");
-            }
+            assertNotNull(coordinator.getState("test"),
+                "Component RUNNING but removed from coordinator - synchronized fix failed!");
         }
 
         executor.shutdown();
         assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
-
-        // Assert - No state inconsistencies
-        assertTrue(failures.isEmpty(),
-                  "Found state inconsistencies: " + failures);
     }
 }
