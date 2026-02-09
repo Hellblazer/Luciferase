@@ -9,13 +9,9 @@
 package com.hellblazer.luciferase.simulation.lifecycle;
 
 import com.hellblazer.luciferase.simulation.bubble.RealTimeController;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Lifecycle adapter for RealTimeController.
@@ -25,22 +21,13 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>
  * Dependency Layer: 0 (no dependencies)
  * <p>
- * State Transitions:
- * <ul>
- *   <li>start(): CREATED/STOPPED → STARTING → RUNNING (calls controller.start())</li>
- *   <li>stop(): RUNNING → STOPPING → STOPPED (calls controller.stop())</li>
- * </ul>
- * <p>
- * Thread-safe via AtomicReference for state management.
+ * Extends {@link AbstractLifecycleAdapter} for common state management logic.
  *
  * @author hal.hildebrand
  */
-public class RealTimeControllerAdapter implements LifecycleComponent {
-
-    private static final Logger log = LoggerFactory.getLogger(RealTimeControllerAdapter.class);
+public class RealTimeControllerAdapter extends AbstractLifecycleAdapter {
 
     private final RealTimeController controller;
-    private final AtomicReference<LifecycleState> state;
 
     /**
      * Create an adapter for RealTimeController.
@@ -49,92 +36,21 @@ public class RealTimeControllerAdapter implements LifecycleComponent {
      */
     public RealTimeControllerAdapter(RealTimeController controller) {
         this.controller = Objects.requireNonNull(controller, "controller must not be null");
-        this.state = new AtomicReference<>(LifecycleState.CREATED);
     }
 
     @Override
-    public CompletableFuture<Void> start() {
-        return CompletableFuture.runAsync(() -> {
-            var currentState = state.get();
-
-            // Idempotent: already running
-            if (currentState == LifecycleState.RUNNING) {
-                log.debug("RealTimeController already running - idempotent no-op");
-                return;
-            }
-
-            // Validate transition (allow restart from FAILED for recovery)
-            if (currentState != LifecycleState.CREATED
-                && currentState != LifecycleState.STOPPED
-                && currentState != LifecycleState.FAILED) {
-                throw new LifecycleException(
-                    "Cannot start RealTimeController from state: " + currentState);
-            }
-
-            try {
-                // Transition to STARTING
-                if (!state.compareAndSet(currentState, LifecycleState.STARTING)) {
-                    throw new LifecycleException("State changed during start transition");
-                }
-
-                log.debug("Starting RealTimeController: {}", controller.getName());
-
-                // Delegate to wrapped controller
-                controller.start();
-
-                // Transition to RUNNING
-                state.set(LifecycleState.RUNNING);
-                log.info("RealTimeController started: {}", controller.getName());
-
-            } catch (Exception e) {
-                state.set(LifecycleState.FAILED);
-                throw new LifecycleException("Failed to start RealTimeController", e);
-            }
-        });
+    protected String getComponentName() {
+        return "RealTimeController";
     }
 
     @Override
-    public CompletableFuture<Void> stop() {
-        return CompletableFuture.runAsync(() -> {
-            var currentState = state.get();
-
-            // Idempotent: already stopped
-            if (currentState == LifecycleState.STOPPED) {
-                log.debug("RealTimeController already stopped - idempotent no-op");
-                return;
-            }
-
-            // Validate transition
-            if (currentState != LifecycleState.RUNNING) {
-                throw new LifecycleException(
-                    "Cannot stop RealTimeController from state: " + currentState);
-            }
-
-            try {
-                // Transition to STOPPING
-                if (!state.compareAndSet(currentState, LifecycleState.STOPPING)) {
-                    throw new LifecycleException("State changed during stop transition");
-                }
-
-                log.debug("Stopping RealTimeController: {}", controller.getName());
-
-                // Delegate to wrapped controller
-                controller.stop();
-
-                // Transition to STOPPED
-                state.set(LifecycleState.STOPPED);
-                log.info("RealTimeController stopped: {}", controller.getName());
-
-            } catch (Exception e) {
-                state.set(LifecycleState.FAILED);
-                throw new LifecycleException("Failed to stop RealTimeController", e);
-            }
-        });
+    protected void doStart() {
+        controller.start();
     }
 
     @Override
-    public LifecycleState getState() {
-        return state.get();
+    protected void doStop() {
+        controller.stop();
     }
 
     @Override
