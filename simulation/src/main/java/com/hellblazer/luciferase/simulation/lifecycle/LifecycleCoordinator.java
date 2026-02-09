@@ -109,6 +109,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class LifecycleCoordinator {
     private static final Logger log = LoggerFactory.getLogger(LifecycleCoordinator.class);
     private static final ThreadLocal<Boolean> inCoordinatorCall = ThreadLocal.withInitial(() -> false);
+    private static final long MAX_LAYER_TIMEOUT_MS = 300_000; // 5 minutes
 
     final ConcurrentHashMap<String, LifecycleComponent> components;  // Package-private for Test 27 dual-map race detection
     private final ConcurrentHashMap<String, LifecycleState> states;
@@ -431,8 +432,8 @@ public class LifecycleCoordinator {
 
                 // Wait for all components in this layer to complete (with timeout)
                 try {
-                    // 5 seconds per component to prevent indefinite blocking
-                    var layerTimeout = layer.size() * 5000L;
+                    // 5 seconds per component, capped at 5 minutes to prevent overflow
+                    var layerTimeout = Math.min(layer.size() * 5000L, MAX_LAYER_TIMEOUT_MS);
                     CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                         .orTimeout(layerTimeout, TimeUnit.MILLISECONDS)
                         .join();
@@ -718,9 +719,11 @@ public class LifecycleCoordinator {
             .map(name -> components.get(name))
             .filter(Objects::nonNull)
             .filter(comp -> {
-                var state = comp.getState();
-                // During rollback, stop components that are STARTING or RUNNING
-                return state == LifecycleState.STARTING || state == LifecycleState.RUNNING;
+                synchronized (comp) {  // Prevent concurrent state changes during check
+                    var state = comp.getState();
+                    // During rollback, stop components that are STARTING or RUNNING
+                    return state == LifecycleState.STARTING || state == LifecycleState.RUNNING;
+                }
             })
             .toList();
 
