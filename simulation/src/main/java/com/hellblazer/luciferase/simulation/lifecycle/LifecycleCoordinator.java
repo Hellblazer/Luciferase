@@ -238,8 +238,9 @@ public class LifecycleCoordinator {
      * <p>
      * Dependencies must already be registered and satisfied.
      * <p>
-     * FIX Luciferase-1k4s: Component state set to STARTING during registration (not actual component state)
-     * to prevent unregister() race. This marks intent to start and prevents removal during startup.
+     * FIX Luciferase-g4ww: Remove STARTING sentinel to fix race with coordinator.start()
+     * Component is registered with its actual state (typically CREATED), preventing race condition
+     * where start() would try to start a component already in STARTING state.
      *
      * @param component the component to register and start
      * @throws LifecycleException if component already registered or dependencies not satisfied
@@ -251,8 +252,8 @@ public class LifecycleCoordinator {
             var name = component.name();
 
             // FIX Issue #2 (Luciferase-7q6q): Use computeIfAbsent for atomic registration
-            // FIX Luciferase-1k4s: Set state to STARTING in atomic block to prevent unregister race
             // FIX Luciferase-3nio: Move dependency validation inside atomic block to prevent TOCTOU race
+            // FIX Luciferase-g4ww: Register with actual component state, not STARTING sentinel
             // Previous: validation happened outside atomic block, allowing dependency removal between check and registration
             var result = components.computeIfAbsent(name, k -> {
                 // Validate dependencies exist NOW, inside atomic block
@@ -262,9 +263,8 @@ public class LifecycleCoordinator {
                             "Component " + name + " depends on non-existent component: " + depName);
                     }
                 }
-                // Mark as STARTING immediately to block unregister() during start operation
-                // This is intentional deviation from component's actual state (which is CREATED)
-                states.put(name, LifecycleState.STARTING);
+                // Register with component's actual state to avoid STARTING sentinel race
+                states.put(name, component.getState());
                 log.debug("Registered component with dependencies: {}", name);
                 return component;
             });
@@ -291,10 +291,8 @@ public class LifecycleCoordinator {
                     states.put(name, LifecycleState.FAILED);
                     throw new LifecycleException("Failed to start component: " + name, e);
                 }
-            } else {
-                // Coordinator not started - update state to actual component state
-                states.put(name, component.getState());
             }
+            // FIX Luciferase-g4ww: No else block needed - state already set during registration
         } finally {
             inCoordinatorCall.set(false);
         }
@@ -409,7 +407,17 @@ public class LifecycleCoordinator {
                 log.debug("Starting layer {} with {} components: {}", i, layer.size(), layer);
 
                 // Start all components in this layer in parallel
+                // FIX Luciferase-g4ww: Skip components already starting/running to avoid double-start race
                 var futures = layer.stream()
+                                   .filter(name -> {
+                                       var component = components.get(name);
+                                       var state = component.getState();
+                                       // Only start components in CREATED, STOPPED, or FAILED state
+                                       // FAILED allows retry, STARTING/RUNNING skipped to prevent double-start
+                                       return state == LifecycleState.CREATED ||
+                                              state == LifecycleState.STOPPED ||
+                                              state == LifecycleState.FAILED;
+                                   })
                                    .map(name -> {
                                        var component = components.get(name);
                                        try {
