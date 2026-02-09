@@ -127,11 +127,58 @@ public sealed interface Message
      * <p>
      * Serializable format for P2P ghost synchronization carrying all
      * SimulationGhostEntity data needed for reconstruction on the receiver.
+     * <p>
+     * <b>Serialization Contract:</b>
+     * <ul>
+     *   <li>All fields use primitive types or standard Java types (String, Point3f)</li>
+     *   <li>The {@code contentValue} field stores entity content as a String representation</li>
+     *   <li>Simple content types (String, primitives, enums) can be serialized directly</li>
+     *   <li>The {@code contentClass} field identifies the runtime type for deserialization</li>
+     * </ul>
+     * <p>
+     * <b>Supported Content Types:</b>
+     * <ul>
+     *   <li>Primitive types: Integer, Long, Double, Boolean (as String)</li>
+     *   <li>String values: Direct storage in contentValue</li>
+     *   <li>Enum types: Enum.name() stored as String</li>
+     *   <li>Simple value objects: toString() representation (if parseable)</li>
+     * </ul>
+     * <p>
+     * <b>Limitations:</b>
+     * <ul>
+     *   <li>Complex objects with nested structures are NOT supported directly</li>
+     *   <li>Binary data cannot be efficiently encoded as String</li>
+     *   <li>Collections and arrays require custom serialization logic</li>
+     *   <li>Loss of type information for generic types (e.g., {@code List<String>})</li>
+     *   <li>No built-in support for circular references or object graphs</li>
+     * </ul>
+     * <p>
+     * <b>Recommendations for Rich Content:</b>
+     * <ul>
+     *   <li>For complex objects: Implement custom serialization to JSON/XML in contentValue</li>
+     *   <li>For binary data: Use Base64 encoding or external blob storage with references</li>
+     *   <li>For large payloads: Consider splitting across multiple ghost entities</li>
+     *   <li>For structured data: Use Protocol Buffers or similar serialization frameworks</li>
+     *   <li>Document content serialization format in the entity's content class</li>
+     * </ul>
+     * <p>
+     * <b>Example Usage:</b>
+     * <pre>{@code
+     * // Simple content (String)
+     * var ghost = new TransportGhost("entity-1", position, "String", "hello", treeId, epoch, version, timestamp);
+     *
+     * // Enum content
+     * var ghost = new TransportGhost("entity-2", position, "EntityType", EntityType.PLAYER.name(), treeId, epoch, version, timestamp);
+     *
+     * // Complex content (JSON serialization)
+     * var json = objectMapper.writeValueAsString(complexObject);
+     * var ghost = new TransportGhost("entity-3", position, "ComplexEntity", json, treeId, epoch, version, timestamp);
+     * }</pre>
      *
      * @param entityId     Entity identifier as string
      * @param position     Entity 3D position
      * @param contentClass Content class name for reconstruction
-     * @param contentValue Serialized content value
+     * @param contentValue Serialized content value (String representation)
      * @param sourceTreeId Source spatial tree identifier
      * @param epoch        Authority epoch for stale detection
      * @param version      Entity version within epoch
