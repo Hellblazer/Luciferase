@@ -846,16 +846,21 @@ class LifecycleCoordinatorTest {
     @Test
     void testRegisterAndStart_concurrentGetState_noInconsistency() throws InterruptedException {
         // Arrange
-        var threadCount = 20;
-        var latch = new CountDownLatch(threadCount);
+        var threadCount = 100;  // Increased from 20 to stress test
+        var startLatch = new CountDownLatch(threadCount);
+        var readyLatch = new CountDownLatch(1);
         var inconsistencies = Collections.synchronizedList(new ArrayList<String>());
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
 
         // Act - Half threads register components, half threads query state
+        var futures = new ArrayList<java.util.concurrent.Future<?>>();
         for (int i = 0; i < threadCount; i++) {
             var index = i;
-            executor.submit(() -> {
+            futures.add(executor.submit(() -> {
                 try {
+                    startLatch.countDown();
+                    readyLatch.await();  // All threads start together
+
                     if (index % 2 == 0) {
                         // Register thread
                         var name = "Component" + index;
@@ -863,7 +868,6 @@ class LifecycleCoordinatorTest {
                         coordinator.registerAndStart(comp);
                     } else {
                         // Query thread - check if registered components have consistent state
-                        Thread.sleep(5); // Small delay to increase race probability
                         for (int j = 0; j < index; j += 2) {
                             var name = "Component" + j;
                             // FIX Issue #2 (Luciferase-gotz): Check for dual-map inconsistency
@@ -879,13 +883,20 @@ class LifecycleCoordinatorTest {
                     }
                 } catch (Exception e) {
                     inconsistencies.add("Exception: " + e.getMessage());
-                } finally {
-                    latch.countDown();
                 }
-            });
+            }));
         }
 
-        assertTrue(latch.await(5, TimeUnit.SECONDS), "All threads should complete");
+        startLatch.await();  // Wait for all threads to be ready
+        readyLatch.countDown();  // Release all threads simultaneously
+
+        try {
+            for (var future : futures) {
+                future.get(5, TimeUnit.SECONDS);
+            }
+        } catch (Exception e) {
+            inconsistencies.add("Future completion error: " + e.getMessage());
+        }
         executor.shutdown();
         assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS), "Executor should terminate");
 
@@ -952,46 +963,60 @@ class LifecycleCoordinatorTest {
         var iterations = 100;  // Stress test to catch race condition
         var failures = Collections.synchronizedList(new ArrayList<String>());
 
-        for (int i = 0; i < iterations; i++) {
-            var startOrder = Collections.synchronizedList(new ArrayList<String>());
-            var stopOrder = Collections.synchronizedList(new ArrayList<String>());
-            var component = new MockComponent("test-" + i, startOrder, stopOrder);
+        try {
+            for (int i = 0; i < iterations; i++) {
+                var startOrder = Collections.synchronizedList(new ArrayList<String>());
+                var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+                var component = new MockComponent("test-" + i, startOrder, stopOrder);
 
-            // Thread A: registerAndStart
-            var registerFuture = executor.submit(() -> {
-                try {
-                    coordinator.registerAndStart(component);
-                } catch (Exception e) {
-                    // May fail if unregister won race - OK
+                // Thread A: registerAndStart
+                var registerFuture = executor.submit(() -> {
+                    try {
+                        coordinator.registerAndStart(component);
+                    } catch (Exception e) {
+                        // May fail if unregister won race - OK
+                    }
+                });
+
+                // Thread B: unregister (races with registerAndStart)
+                var unregisterFuture = executor.submit(() -> {
+                    try {
+                        Thread.sleep(1);  // Small delay to hit race window
+                        coordinator.unregister(component.name());
+                    } catch (Exception e) {
+                        // May fail if component already started - OK
+                    }
+                });
+
+                registerFuture.get(1, TimeUnit.SECONDS);
+                unregisterFuture.get(1, TimeUnit.SECONDS);
+
+                // CRITICAL: Component must NEVER be RUNNING without coordinator tracking
+                if (component.getState() == LifecycleState.RUNNING &&
+                    coordinator.getState(component.name()) == null) {
+                    failures.add("Iteration " + i + ": Component RUNNING but not tracked by coordinator");
                 }
-            });
+            }
 
-            // Thread B: unregister (races with registerAndStart)
-            var unregisterFuture = executor.submit(() -> {
+            // Assert - No resource leaks detected
+            assertTrue(failures.isEmpty(),
+                      "Found " + failures.size() + " resource leaks: " + failures);
+        } finally {
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+
+            // Cleanup any leaked components
+            for (int i = 0; i < iterations; i++) {
+                var componentName = "test-" + i;
                 try {
-                    Thread.sleep(1);  // Small delay to hit race window
-                    coordinator.unregister(component.name());
+                    if (coordinator.getState(componentName) != null) {
+                        coordinator.stopAndUnregister(componentName);
+                    }
                 } catch (Exception e) {
-                    // May fail if component already started - OK
+                    // Ignore cleanup errors
                 }
-            });
-
-            registerFuture.get(1, TimeUnit.SECONDS);
-            unregisterFuture.get(1, TimeUnit.SECONDS);
-
-            // CRITICAL: Component must NEVER be RUNNING without coordinator tracking
-            if (component.getState() == LifecycleState.RUNNING &&
-                coordinator.getState(component.name()) == null) {
-                failures.add("Iteration " + i + ": Component RUNNING but not tracked by coordinator");
             }
         }
-
-        executor.shutdown();
-        assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
-
-        // Assert - No resource leaks detected
-        assertTrue(failures.isEmpty(),
-                  "Found " + failures.size() + " resource leaks: " + failures);
     }
 
     /**

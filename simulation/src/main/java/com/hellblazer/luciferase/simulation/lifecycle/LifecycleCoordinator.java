@@ -35,6 +35,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>{@link ConcurrentHashMap} provides atomic map operations for registration/unregistration</li>
  *   <li>{@link #start()} and {@link #stop(long)} are idempotent via {@link java.util.concurrent.atomic.AtomicBoolean} guards</li>
  *   <li>{@link #unregister(String)} synchronizes on components to prevent state-change races</li>
+ *   <li>{@link #stopAndUnregister(String)} synchronizes on component during state check,
+ *       preventing concurrent state changes during stop operation</li>
  *   <li>{@link #register(LifecycleComponent)} and {@link #registerAndStart(LifecycleComponent)} use
  *       atomic {@code computeIfAbsent} to prevent dual-map inconsistencies</li>
  * </ul>
@@ -106,6 +108,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class LifecycleCoordinator {
     private static final Logger log = LoggerFactory.getLogger(LifecycleCoordinator.class);
+    private static final ThreadLocal<Boolean> inCoordinatorCall = ThreadLocal.withInitial(() -> false);
 
     final ConcurrentHashMap<String, LifecycleComponent> components;  // Package-private for Test 27 dual-map race detection
     private final ConcurrentHashMap<String, LifecycleState> states;
@@ -140,6 +143,26 @@ public class LifecycleCoordinator {
     }
 
     /**
+     * Check for re-entrant calls from component callbacks.
+     * <p>
+     * Re-entrant calls occur when a component's getState() callback calls back into
+     * the coordinator while the coordinator holds internal locks. This creates
+     * lock cycles leading to deadlock.
+     * <p>
+     * Components must follow the no-callback contract documented in {@link LifecycleComponent}.
+     *
+     * @throws IllegalStateException if re-entrant call detected
+     */
+    private void checkReentrancy() {
+        if (inCoordinatorCall.get()) {
+            throw new IllegalStateException(
+                "Re-entrant coordinator call detected - component called back into " +
+                "coordinator from getState(). This violates the thread-safety contract " +
+                "and will cause deadlock. See LifecycleComponent javadoc.");
+        }
+    }
+
+    /**
      * Register a component for lifecycle management.
      * <p>
      * Component must not be already registered.
@@ -148,16 +171,25 @@ public class LifecycleCoordinator {
      * @throws LifecycleException if component already registered
      */
     public void register(LifecycleComponent component) {
-        var name = component.name();
-        // FIX Issue #3 (Luciferase-qxy6): Use atomic pattern to prevent dual-map race
-        // Same pattern as registerAndStart() to ensure components and states updated atomically
-        var result = components.computeIfAbsent(name, k -> {
-            states.put(name, component.getState());
-            log.debug("Registered component: {}", name);
-            return component;
-        });
-        if (result != component) {
-            throw new LifecycleException("Component already registered: " + name);
+        checkReentrancy();
+        inCoordinatorCall.set(true);
+        try {
+            var name = component.name();
+            // FIX Issue #3 (Luciferase-qxy6): Use atomic pattern to prevent dual-map race
+            // Same pattern as registerAndStart() to ensure components and states updated atomically
+            var result = components.computeIfAbsent(name, k -> {
+                // Use actual component state (typically CREATED) rather than STARTING sentinel.
+                // Unlike registerAndStart(), this component won't start immediately,
+                // so no need to block concurrent unregister() with STARTING marker.
+                states.put(name, component.getState());
+                log.debug("Registered component: {}", name);
+                return component;
+            });
+            if (result != component) {
+                throw new LifecycleException("Component already registered: " + name);
+            }
+        } finally {
+            inCoordinatorCall.set(false);
         }
     }
 
@@ -170,25 +202,31 @@ public class LifecycleCoordinator {
      * @throws LifecycleException if component is not stopped
      */
     public void unregister(String componentName) {
-        // FIX Issue #1 (Luciferase-7q6q): Use computeIfPresent for atomic check-and-remove
-        // FIX Issue #1 (Luciferase-bo26): Synchronize on component to prevent state-change race
-        // Previous: check-then-act race between get() and remove()
-        components.computeIfPresent(componentName, (name, comp) -> {
-            synchronized (comp) {  // Prevent concurrent state changes during check
-                var state = comp.getState();
-                // FIX Luciferase-vt8d: Defensive null check for contract violation
-                if (state == null) {
-                    throw new LifecycleException(
-                        "Component " + name + " violated contract: getState() returned null");
+        checkReentrancy();
+        inCoordinatorCall.set(true);
+        try {
+            // FIX Issue #1 (Luciferase-7q6q): Use computeIfPresent for atomic check-and-remove
+            // FIX Issue #1 (Luciferase-bo26): Synchronize on component to prevent state-change race
+            // Previous: check-then-act race between get() and remove()
+            components.computeIfPresent(componentName, (name, comp) -> {
+                synchronized (comp) {  // Prevent concurrent state changes during check
+                    var state = comp.getState();
+                    // FIX Luciferase-vt8d: Defensive null check for contract violation
+                    if (state == null) {
+                        throw new LifecycleException(
+                            "Component " + name + " violated contract: getState() returned null");
+                    }
+                    if (state != LifecycleState.STOPPED && state != LifecycleState.CREATED) {
+                        throw new LifecycleException("Cannot unregister component in state: " + state);
+                    }
+                    states.remove(name);
+                    log.debug("Unregistered component: {}", name);
+                    return null; // Remove from map
                 }
-                if (state != LifecycleState.STOPPED && state != LifecycleState.CREATED) {
-                    throw new LifecycleException("Cannot unregister component in state: " + state);
-                }
-                states.remove(name);
-                log.debug("Unregistered component: {}", name);
-                return null; // Remove from map
-            }
-        });
+            });
+        } finally {
+            inCoordinatorCall.set(false);
+        }
     }
 
     /**
@@ -206,52 +244,58 @@ public class LifecycleCoordinator {
      * @throws LifecycleException if component already registered or dependencies not satisfied
      */
     public void registerAndStart(LifecycleComponent component) {
-        var name = component.name();
+        checkReentrancy();
+        inCoordinatorCall.set(true);
+        try {
+            var name = component.name();
 
-        // FIX Issue #2 (Luciferase-7q6q): Use computeIfAbsent for atomic registration
-        // FIX Luciferase-1k4s: Set state to STARTING in atomic block to prevent unregister race
-        // FIX Luciferase-3nio: Move dependency validation inside atomic block to prevent TOCTOU race
-        // Previous: validation happened outside atomic block, allowing dependency removal between check and registration
-        var result = components.computeIfAbsent(name, k -> {
-            // Validate dependencies exist NOW, inside atomic block
-            for (var depName : component.dependencies()) {
-                if (!components.containsKey(depName)) {
-                    throw new LifecycleException(
-                        "Component " + name + " depends on non-existent component: " + depName);
+            // FIX Issue #2 (Luciferase-7q6q): Use computeIfAbsent for atomic registration
+            // FIX Luciferase-1k4s: Set state to STARTING in atomic block to prevent unregister race
+            // FIX Luciferase-3nio: Move dependency validation inside atomic block to prevent TOCTOU race
+            // Previous: validation happened outside atomic block, allowing dependency removal between check and registration
+            var result = components.computeIfAbsent(name, k -> {
+                // Validate dependencies exist NOW, inside atomic block
+                for (var depName : component.dependencies()) {
+                    if (!components.containsKey(depName)) {
+                        throw new LifecycleException(
+                            "Component " + name + " depends on non-existent component: " + depName);
+                    }
                 }
+                // Mark as STARTING immediately to block unregister() during start operation
+                // This is intentional deviation from component's actual state (which is CREATED)
+                states.put(name, LifecycleState.STARTING);
+                log.debug("Registered component with dependencies: {}", name);
+                return component;
+            });
+            if (result != component) {
+                throw new LifecycleException("Component already registered: " + name);
             }
-            // Mark as STARTING immediately to block unregister() during start operation
-            // This is intentional deviation from component's actual state (which is CREATED)
-            states.put(name, LifecycleState.STARTING);
-            log.debug("Registered component with dependencies: {}", name);
-            return component;
-        });
-        if (result != component) {
-            throw new LifecycleException("Component already registered: " + name);
-        }
 
-        // If coordinator is started, start this component immediately
-        if (isStarted.get()) {
-            try {
-                component.start()
-                    .orTimeout(5, TimeUnit.SECONDS)
-                    .whenComplete((v, ex) -> {
-                        if (ex != null) {
-                            log.error("Component {} failed to start", name, ex);
-                            states.put(name, LifecycleState.FAILED);
-                        } else {
-                            states.put(name, component.getState());
-                        }
-                    })
-                    .join(); // Wait for completion
-                log.debug("Started component immediately: {}", name);
-            } catch (Exception e) {
-                states.put(name, LifecycleState.FAILED);
-                throw new LifecycleException("Failed to start component: " + name, e);
+            // If coordinator is started, start this component immediately
+            if (isStarted.get()) {
+                try {
+                    component.start()
+                        .orTimeout(5, TimeUnit.SECONDS)
+                        .whenComplete((v, ex) -> {
+                            if (ex != null) {
+                                log.error("Component {} failed to start", name, ex);
+                                states.put(name, LifecycleState.FAILED);
+                            } else {
+                                states.put(name, component.getState());
+                            }
+                        })
+                        .join(); // Wait for completion
+                    log.debug("Started component immediately: {}", name);
+                } catch (Exception e) {
+                    states.put(name, LifecycleState.FAILED);
+                    throw new LifecycleException("Failed to start component: " + name, e);
+                }
+            } else {
+                // Coordinator not started - update state to actual component state
+                states.put(name, component.getState());
             }
-        } else {
-            // Coordinator not started - update state to actual component state
-            states.put(name, component.getState());
+        } finally {
+            inCoordinatorCall.set(false);
         }
     }
 
@@ -268,59 +312,70 @@ public class LifecycleCoordinator {
      * @throws LifecycleException if other components depend on this one
      */
     public void stopAndUnregister(String componentName) {
-        var component = components.get(componentName);
-        if (component == null) {
-            log.debug("Component {} not found - no-op", componentName);
-            return;
-        }
-
-        // CRITICAL: Check if any component depends on this one
-        for (var comp : components.values()) {
-            if (comp.dependencies().contains(componentName)) {
-                throw new LifecycleException(
-                    "Cannot remove " + componentName + " - " + comp.name() + " depends on it");
+        checkReentrancy();
+        inCoordinatorCall.set(true);
+        try {
+            var component = components.get(componentName);
+            if (component == null) {
+                log.debug("Component {} not found - no-op", componentName);
+                return;
             }
-        }
 
-        // Stop component if it's running
-        // FIX Luciferase-3f3o: Synchronize on component to prevent state-change race
-        // Same pattern as unregister() to ensure atomic state check
-        synchronized (component) {  // Prevent concurrent state changes during check
-            var state = component.getState();
-            // FIX Luciferase-vt8d: Defensive null check for contract violation
-            if (state == null) {
-                throw new LifecycleException(
-                    "Component " + componentName + " violated contract: getState() returned null");
-            }
-            if (state == LifecycleState.RUNNING) {
-                // FIX Issue #3 (Luciferase-7q6q): Only unregister on successful stop
-                // Previous: component removed even if stop() failed
-                try {
-                    component.stop()
-                        .orTimeout(5, TimeUnit.SECONDS)
-                        .join();
-                    states.put(componentName, component.getState());
-                    log.debug("Stopped component: {}", componentName);
-            } catch (Exception e) {
-                // Distinguish timeout from other errors for better diagnostics
-                if (e instanceof java.util.concurrent.TimeoutException ||
-                    (e.getCause() instanceof java.util.concurrent.TimeoutException)) {
-                    log.error("Component {} stop timed out after 5s, keeping in coordinator",
-                              componentName, e);
-                } else {
-                    log.error("Component {} stop failed with exception, keeping in coordinator",
-                              componentName, e);
+            // CRITICAL: Check if any component depends on this one
+            for (var comp : components.values()) {
+                if (comp.dependencies().contains(componentName)) {
+                    throw new LifecycleException(
+                        "Cannot remove " + componentName + " - " + comp.name() + " depends on it");
                 }
-                states.put(componentName, LifecycleState.FAILED);
-                throw new LifecycleException("Cannot unregister component that failed to stop", e);
             }
-        }
-        }  // End synchronized block (Luciferase-3f3o fix)
 
-        // Unregister the component (only reached if stop succeeded or component wasn't running)
-        components.remove(componentName);
-        states.remove(componentName);
-        log.debug("Unregistered component: {}", componentName);
+            // Stop component if it's running
+            // FIX Luciferase-3f3o: Synchronize on component to prevent state-change race
+            // Same pattern as unregister() to ensure atomic state check
+            synchronized (component) {  // Prevent concurrent state changes during check
+                var state = component.getState();
+                // FIX Luciferase-vt8d: Defensive null check for contract violation
+                if (state == null) {
+                    throw new LifecycleException(
+                        "Component " + componentName + " violated contract: getState() returned null");
+                }
+
+                // STARTING state: registerAndStart() uses .join() which blocks until
+                // component reaches RUNNING or FAILED, so STARTING is transient and
+                // rarely observed here. If encountered, treat as CREATED/STOPPED.
+                if (state == LifecycleState.RUNNING) {
+                    // FIX Issue #3 (Luciferase-7q6q): Only unregister on successful stop
+                    // Previous: component removed even if stop() failed
+                    try {
+                        component.stop()
+                            .orTimeout(5, TimeUnit.SECONDS)
+                            .join();
+                        states.put(componentName, component.getState());
+                        log.debug("Stopped component: {}", componentName);
+                } catch (Exception e) {
+                    // Distinguish timeout from other errors for better diagnostics
+                    if (e instanceof java.util.concurrent.TimeoutException ||
+                        (e.getCause() instanceof java.util.concurrent.TimeoutException)) {
+                        log.error("Component {} stop timed out after 5s, keeping in coordinator",
+                                  componentName, e);
+                    } else {
+                        log.error("Component {} stop failed with exception, keeping in coordinator",
+                                  componentName, e);
+                    }
+                    states.put(componentName, LifecycleState.FAILED);
+                    throw new LifecycleException("Cannot unregister component that failed to stop", e);
+                }
+            }
+            // STOPPED/CREATED/FAILED: Just remove without stop
+            }  // End synchronized block (Luciferase-3f3o fix)
+
+            // Unregister the component (only reached if stop succeeded or component wasn't running)
+            components.remove(componentName);
+            states.remove(componentName);
+            log.debug("Unregistered component: {}", componentName);
+        } finally {
+            inCoordinatorCall.set(false);
+        }
     }
 
     /**
@@ -334,15 +389,16 @@ public class LifecycleCoordinator {
      * @throws LifecycleException if circular dependency detected or component fails to start
      */
     public void start() {
-        // Idempotent: already started
-        if (!isStarted.compareAndSet(false, true)) {
-            log.debug("start() called but already started - idempotent no-op");
-            return;
-        }
-
-        log.info("Starting lifecycle coordinator with {} components", components.size());
-
+        checkReentrancy();
+        inCoordinatorCall.set(true);
         try {
+            // Idempotent: already started
+            if (!isStarted.compareAndSet(false, true)) {
+                log.debug("start() called but already started - idempotent no-op");
+                return;
+            }
+
+            log.info("Starting lifecycle coordinator with {} components", components.size());
             // Compute dependency layers using Kahn's algorithm
             var layers = computeLayers();
 
@@ -431,6 +487,8 @@ public class LifecycleCoordinator {
         } catch (Exception e) {
             isStarted.set(false);
             throw new LifecycleException("Unexpected error during startup", e);
+        } finally {
+            inCoordinatorCall.set(false);
         }
     }
 
@@ -446,15 +504,16 @@ public class LifecycleCoordinator {
      * @throws LifecycleException if shutdown fails
      */
     public void stop(long timeoutMs) {
-        // Idempotent: already stopped
-        if (!isStarted.compareAndSet(true, false)) {
-            log.debug("stop() called but already stopped - idempotent no-op");
-            return;
-        }
-
-        log.info("Stopping lifecycle coordinator with {} components, timeout: {}ms", components.size(), timeoutMs);
-
+        checkReentrancy();
+        inCoordinatorCall.set(true);
         try {
+            // Idempotent: already stopped
+            if (!isStarted.compareAndSet(true, false)) {
+                log.debug("stop() called but already stopped - idempotent no-op");
+                return;
+            }
+
+            log.info("Stopping lifecycle coordinator with {} components, timeout: {}ms", components.size(), timeoutMs);
             // Phase 4: Wait for Fireflies view stability (if configured)
             if (viewStabilityGate != null) {
                 log.debug("Waiting for Fireflies view stability before shutdown");
@@ -525,6 +584,8 @@ public class LifecycleCoordinator {
 
         } catch (Exception e) {
             throw new LifecycleException("Unexpected error during shutdown", e);
+        } finally {
+            inCoordinatorCall.set(false);
         }
     }
 
@@ -535,7 +596,13 @@ public class LifecycleCoordinator {
      * @return current state, or null if component not registered
      */
     public LifecycleState getState(String componentName) {
-        return states.get(componentName);
+        checkReentrancy();
+        inCoordinatorCall.set(true);
+        try {
+            return states.get(componentName);
+        } finally {
+            inCoordinatorCall.set(false);
+        }
     }
 
     /**
@@ -668,12 +735,7 @@ public class LifecycleCoordinator {
 
         try {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-            // Small delay to ensure all async state transitions complete
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException ignored) {
-            }
-            // Update states map after all stop futures complete
+            // Update states immediately - components use volatile/atomic per contract
             for (var comp : componentsToStop) {
                 states.put(comp.name(), comp.getState());
             }
