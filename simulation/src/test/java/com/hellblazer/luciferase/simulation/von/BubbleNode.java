@@ -10,22 +10,25 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
- * Adapter wrapping EnhancedBubble to implement VON Node interface.
+ * Test utility adapter wrapping EnhancedBubble to implement VON Node interface.
  * <p>
- * This adapter bridges the bubble lifecycle (Phase 1) with the VON discovery
- * protocol (Phase 2). It delegates spatial operations to the wrapped bubble
- * while emitting VON-specific events for protocol coordination.
+ * <strong>NOTE: This is a TEST-ONLY utility.</strong> Production code should use
+ * {@link Bubble} which extends EnhancedBubble and implements Node directly with
+ * full P2P transport integration.
  * <p>
- * Key Architectural Points:
- * - Bubbles ARE VON nodes (no separate entity)
- * - Position = tetrahedral centroid of bubble bounds
- * - Neighbors = bubbles with overlapping bounds OR within AOI radius
- * - Event emission for protocol coordination
+ * This lightweight adapter is provided for unit tests that need to test VON protocol
+ * logic without requiring Transport infrastructure. It wraps an existing EnhancedBubble
+ * and provides a simple event emission callback for test assertions.
+ * <p>
+ * <strong>Migration Path:</strong> Tests using BubbleNode should eventually migrate to
+ * using Bubble with MockTransport to test production code paths.
  * <p>
  * Thread-safe: EnhancedBubble provides thread-safety guarantees.
  *
  * @author hal.hildebrand
+ * @deprecated Test-only utility. Use {@link Bubble} for production code.
  */
+@Deprecated(since = "v4.0", forRemoval = true)
 public class BubbleNode implements Node {
 
     private final EnhancedBubble bubble;
@@ -69,9 +72,7 @@ public class BubbleNode implements Node {
         // Emit MOVE event for this neighbor
         eventEmitter.accept(new Event.Move(neighbor.id(), neighbor.position(), neighbor.bounds()));
 
-        // TODO: Check if neighbor is still in AOI radius
-        // TODO: Remove neighbor if out of range
-        // This will be implemented in MoveProtocol (Task 4)
+        // Note: AOI radius checking should be implemented in production Bubble class if needed
     }
 
     @Override

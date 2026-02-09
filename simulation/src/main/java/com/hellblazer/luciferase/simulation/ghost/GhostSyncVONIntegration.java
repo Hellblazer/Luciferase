@@ -5,7 +5,7 @@ package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
 
-import com.hellblazer.luciferase.simulation.von.BubbleNode;
+import com.hellblazer.luciferase.simulation.von.Node;
 import com.hellblazer.luciferase.simulation.von.SpatialNeighborIndex;
 import javafx.geometry.Point3D;
 import org.slf4j.Logger;
@@ -75,9 +75,9 @@ public class GhostSyncVONIntegration {
     private static final Logger log = LoggerFactory.getLogger(GhostSyncVONIntegration.class);
 
     /**
-     * VON node adapter for this bubble
+     * VON node for this bubble
      */
-    private final BubbleNode vonNode;
+    private final Node vonNode;
 
     /**
      * Ghost manager for cross-server synchronization
@@ -92,12 +92,12 @@ public class GhostSyncVONIntegration {
     /**
      * Create VON integration with all dependencies.
      *
-     * @param vonNode       VON node adapter for this bubble
+     * @param vonNode       VON node for this bubble
      * @param ghostManager  Ghost manager for cross-server sync
      * @param neighborIndex Spatial index for neighbor discovery
      */
     public GhostSyncVONIntegration(
-        BubbleNode vonNode,
+        Node vonNode,
         BubbleGhostManager<?, ?> ghostManager,
         SpatialNeighborIndex neighborIndex
     ) {
