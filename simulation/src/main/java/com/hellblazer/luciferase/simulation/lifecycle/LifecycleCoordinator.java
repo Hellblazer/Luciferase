@@ -121,6 +121,9 @@ public class LifecycleCoordinator {
      * If not started, the component is only registered and will start when coordinator.start() is called.
      * <p>
      * Dependencies must already be registered and satisfied.
+     * <p>
+     * FIX Luciferase-1k4s: Component state set to STARTING during registration (not actual component state)
+     * to prevent unregister() race. This marks intent to start and prevents removal during startup.
      *
      * @param component the component to register and start
      * @throws LifecycleException if component already registered or dependencies not satisfied
@@ -137,10 +140,13 @@ public class LifecycleCoordinator {
         }
 
         // FIX Issue #2 (Luciferase-7q6q): Use computeIfAbsent for atomic registration
-        // Previous: window where component in components map but not in states map
+        // FIX Luciferase-1k4s: Set state to STARTING in atomic block to prevent unregister race
+        // Previous: component.getState() returns CREATED, allowing unregister() to remove before start()
         var result = components.computeIfAbsent(name, k -> {
-            states.put(name, component.getState());
-            log.debug("Registered component: {}", name);
+            // Mark as STARTING immediately to block unregister() during start operation
+            // This is intentional deviation from component's actual state (which is CREATED)
+            states.put(name, LifecycleState.STARTING);
+            log.debug("Registered component: {} with STARTING state", name);
             return component;
         });
         if (result != component) {
@@ -166,6 +172,9 @@ public class LifecycleCoordinator {
                 states.put(name, LifecycleState.FAILED);
                 throw new LifecycleException("Failed to start component: " + name, e);
             }
+        } else {
+            // Coordinator not started - update state to actual component state
+            states.put(name, component.getState());
         }
     }
 
