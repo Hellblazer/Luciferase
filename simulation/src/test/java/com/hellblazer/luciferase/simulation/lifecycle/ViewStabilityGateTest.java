@@ -9,6 +9,7 @@
 package com.hellblazer.luciferase.simulation.lifecycle;
 
 import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.TimeUnit;
@@ -118,5 +119,28 @@ class ViewStabilityGateTest {
         // Then: Both should complete successfully
         assertDoesNotThrow(() -> future1.get(100, TimeUnit.MILLISECONDS));
         assertDoesNotThrow(() -> future2.get(100, TimeUnit.MILLISECONDS));
+    }
+
+    @Test
+    void testClockInjection_WithTestClock() throws Exception {
+        // Given: A monitor that becomes stable immediately
+        var mockMonitor = mock(FirefliesViewMonitor.class);
+        when(mockMonitor.isViewStable()).thenReturn(true);
+
+        var gate = new ViewStabilityGate(mockMonitor, 5000);  // 5s timeout
+
+        // And: TestClock for deterministic time control
+        var testClock = new TestClock(1000L);  // Start at t=1000ms
+        gate.setClock(testClock);
+
+        // When: Await stability
+        var future = gate.awaitStability();
+
+        // Then: Should complete successfully using the injected clock
+        assertDoesNotThrow(() -> future.get(100, TimeUnit.MILLISECONDS),
+            "Gate should complete successfully with TestClock injection");
+
+        // Verify monitor was queried
+        verify(mockMonitor, atLeastOnce()).isViewStable();
     }
 }

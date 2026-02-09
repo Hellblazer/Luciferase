@@ -9,6 +9,7 @@
 package com.hellblazer.luciferase.simulation.lifecycle;
 
 import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +49,7 @@ public class ViewStabilityGate {
 
     private final FirefliesViewMonitor viewMonitor;
     private final long timeoutMs;
+    private volatile Clock clock = Clock.system();
 
     /**
      * Create a ViewStabilityGate.
@@ -61,6 +63,18 @@ public class ViewStabilityGate {
         this.timeoutMs = timeoutMs;
 
         log.debug("ViewStabilityGate created: timeout={}ms", timeoutMs);
+    }
+
+    /**
+     * Set the clock for time measurements.
+     * <p>
+     * For testing with deterministic time control, inject a TestClock.
+     * Defaults to Clock.system() for production use.
+     *
+     * @param clock the clock implementation to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -78,7 +92,7 @@ public class ViewStabilityGate {
      */
     public CompletableFuture<Void> awaitStability() {
         var future = new CompletableFuture<Void>();
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
 
         // Use holder array for effectively final access in lambdas (fix for Luciferase-hwgf resource leak)
         final var schedulerHolder = new ScheduledExecutorService[1];
@@ -95,7 +109,7 @@ public class ViewStabilityGate {
             var pollingTask = schedulerHolder[0].scheduleAtFixedRate(() -> {
                 try {
                     // Check for timeout
-                    var elapsed = System.currentTimeMillis() - startTime;
+                    var elapsed = clock.currentTimeMillis() - startTime;
                     if (elapsed >= timeoutMs) {
                         future.completeExceptionally(
                             new java.util.concurrent.TimeoutException("View stability timeout after " + elapsed + "ms")
