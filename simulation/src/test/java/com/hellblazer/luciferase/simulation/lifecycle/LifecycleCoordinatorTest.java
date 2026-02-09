@@ -866,14 +866,14 @@ class LifecycleCoordinatorTest {
                         Thread.sleep(5); // Small delay to increase race probability
                         for (int j = 0; j < index; j += 2) {
                             var name = "Component" + j;
-                            var state = coordinator.getState(name);
-                            if (state == null) {
-                                // Expected if not yet registered
-                                continue;
-                            }
-                            // If state exists, it should be valid (not null)
-                            if (state == null) {
-                                inconsistencies.add(name + " has null state");
+                            // FIX Issue #2 (Luciferase-gotz): Check for dual-map inconsistency
+                            // Previous: unreachable code checking state == null twice
+                            // Access components map directly to detect race condition
+                            if (coordinator.components.containsKey(name)) {
+                                var state = coordinator.getState(name);
+                                if (state == null) {
+                                    inconsistencies.add(name + " in components but missing from states");
+                                }
                             }
                         }
                     }

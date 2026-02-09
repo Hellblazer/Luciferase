@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class LifecycleCoordinator {
     private static final Logger log = LoggerFactory.getLogger(LifecycleCoordinator.class);
 
-    private final ConcurrentHashMap<String, LifecycleComponent> components;
+    final ConcurrentHashMap<String, LifecycleComponent> components;  // Package-private for Test 27 dual-map race detection
     private final ConcurrentHashMap<String, LifecycleState> states;
     private final AtomicBoolean isStarted;
     private final ViewStabilityGate viewStabilityGate;  // Optional Fireflies integration
@@ -77,11 +77,16 @@ public class LifecycleCoordinator {
      */
     public void register(LifecycleComponent component) {
         var name = component.name();
-        if (components.putIfAbsent(name, component) != null) {
+        // FIX Issue #3 (Luciferase-qxy6): Use atomic pattern to prevent dual-map race
+        // Same pattern as registerAndStart() to ensure components and states updated atomically
+        var result = components.computeIfAbsent(name, k -> {
+            states.put(name, component.getState());
+            log.debug("Registered component: {}", name);
+            return component;
+        });
+        if (result != component) {
             throw new LifecycleException("Component already registered: " + name);
         }
-        states.put(name, component.getState());
-        log.debug("Registered component: {}", name);
     }
 
     /**
@@ -94,15 +99,18 @@ public class LifecycleCoordinator {
      */
     public void unregister(String componentName) {
         // FIX Issue #1 (Luciferase-7q6q): Use computeIfPresent for atomic check-and-remove
+        // FIX Issue #1 (Luciferase-bo26): Synchronize on component to prevent state-change race
         // Previous: check-then-act race between get() and remove()
         components.computeIfPresent(componentName, (name, comp) -> {
-            var state = comp.getState();
-            if (state != LifecycleState.STOPPED && state != LifecycleState.CREATED) {
-                throw new LifecycleException("Cannot unregister component in state: " + state);
+            synchronized (comp) {  // Prevent concurrent state changes during check
+                var state = comp.getState();
+                if (state != LifecycleState.STOPPED && state != LifecycleState.CREATED) {
+                    throw new LifecycleException("Cannot unregister component in state: " + state);
+                }
+                states.remove(name);
+                log.debug("Unregistered component: {}", name);
+                return null; // Remove from map
             }
-            states.remove(name);
-            log.debug("Unregistered component: {}", name);
-            return null; // Remove from map
         });
     }
 
