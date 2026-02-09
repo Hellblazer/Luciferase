@@ -51,7 +51,7 @@ The project uses **parallel GitHub Actions workflow** for fast feedback:
 
 - Java 25 (uses stable FFM API)
 - Maven 3.9.1+
-- JavaFX 24 (for visualization)
+- JavaFX 25 (for visualization)
 - LWJGL 3 (for OpenGL rendering)
 - Project is licensed under AGPL v3.0
 
@@ -144,7 +144,7 @@ Historical reference:
 
 ### Dependencies
 
-- **JavaFX 24**: For 3D visualization
+- **JavaFX 25**: For 3D visualization
 - **LWJGL 3**: OpenGL, GLFW, OpenCL bindings
 - **javax.vecmath**: Vector mathematics
 - **gRPC/Protobuf**: For distributed communication

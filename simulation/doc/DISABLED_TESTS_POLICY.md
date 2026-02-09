@@ -1,12 +1,13 @@
-# Disabled Tests Policy
+# Disabled Tests Policy - Simulation Module
 
-**Last Updated**: 2026-01-14
+**Last Updated**: 2026-02-08
 **Status**: Week 1 Gate Complete + Phase 7C Timing Tests
+**Scope**: Simulation module (see [TEST_FRAMEWORK_GUIDE.md](../../TEST_FRAMEWORK_GUIDE.md) for project-wide policy)
 
 ## Summary
 
-**Total Disabled Tests**: 1 class (VolumeAnimatorBenchmark)
-**CI-Disabled Tests**: 22 annotations (@DisabledIfEnvironmentVariable)
+**Truly Disabled**: 1 class (VolumeAnimatorBenchmark - manual benchmark)
+**CI-Disabled (Acceptable)**: 22 tests via @DisabledIfEnvironmentVariable (run locally, skip in CI)
 
 ## Policy
 
@@ -14,15 +15,12 @@
 
 Tests that run locally but are disabled in CI due to environmental variability are **ACCEPTABLE**.
 
-**Documented in**: `CLAUDE.md` - "Flaky Test Handling" section
+**Policy Reference**: [TEST_FRAMEWORK_GUIDE.md § Flaky Test Handling](../../TEST_FRAMEWORK_GUIDE.md#flaky-test-handling)
 
-**Example**:
+**Quick Example**:
 ```java
-@DisabledIfEnvironmentVariable(
-    named = "CI",
-    matches = "true",
-    disabledReason = "Flaky: probabilistic test with 30% packet loss"
-)
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+    disabledReason = "Flaky: probabilistic test with 30% packet loss")
 @Test
 void testFailureRecovery() {
     // Runs locally for development, skips in CI
@@ -34,6 +32,8 @@ void testFailureRecovery() {
 - Timing-sensitive tests (race conditions, timeout windows)
 - Resource-constrained tests (fail under CI load)
 - Performance tests with hard thresholds (GC, timing, throughput)
+
+For detailed decision criteria and diagnostic procedures, see [TEST_FRAMEWORK_GUIDE.md § Flaky Test Handling](../../TEST_FRAMEWORK_GUIDE.md#flaky-test-handling).
 
 ### Acceptable: Manual Benchmarks
 
@@ -135,3 +135,24 @@ void testFailureRecovery() {
 - Tests run successfully locally but fail in CI due to runner contention
 - Pattern: Same as other timing-sensitive tests (acceptable @DisabledIfEnvironmentVariable)
 - **Updated CI-Disabled Count**: 19 → 22
+
+---
+
+## Document Scope and Organization
+
+**This document**:
+- ✅ Provides simulation module disabled test inventory
+- ✅ Documents why tests are disabled
+- ✅ Shows progression (Week 1 Gate, Phase 7C updates)
+- ❌ Does NOT define project-wide policy (see TEST_FRAMEWORK_GUIDE.md)
+
+**Project-wide policy and guidance**:
+- See [TEST_FRAMEWORK_GUIDE.md § Flaky Test Handling](../../TEST_FRAMEWORK_GUIDE.md#flaky-test-handling)
+- Complete diagnostic procedures and decision criteria
+- Best practices for all test framework work
+
+---
+
+**Version**: 1.1
+**Last Updated**: 2026-02-08
+**Status**: Aligned with TEST_FRAMEWORK_GUIDE.md, maintains simulation-module test inventory

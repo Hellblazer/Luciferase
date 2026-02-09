@@ -139,10 +139,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
 
-      - name: Test Batch 1 (Fast unit tests - bubble, behavior, metrics, validation)
+      - name: Test Batch 1 (Fast unit tests - bubble, behavior, metrics, lifecycle, config, events)
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/bubble/**/*Test,**/behavior/**/*Test,**/metrics/**/*Test,**/validation/**/*Test,**/tumbler/**/*Test,**/viz/**/*Test,**/spatial/**/*Test' --file pom.xml
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/bubble/**/*Test,**/behavior/**/*Test,**/metrics/**/*Test,**/validation/**/*Test,**/tumbler/**/*Test,**/viz/**/*Test,**/spatial/**/*Test,**/lifecycle/**/*Test,**/config/**/*Test,**/events/**/*Test' --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -211,10 +211,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
 
-      - name: Test Batch 2 (VON overlay + transport + integration)
+      - name: Test Batch 2 (VON overlay + transport + integration + topology + animation)
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/von/**/*Test,**/transport/**/*Test,**/integration/**/*Test' --file pom.xml
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/von/**/*Test,**/transport/**/*Test,**/integration/**/*Test,**/topology/**/*Test,**/animation/**/*Test,**/entity/**/*Test,**/persistence/**/*Test,**/scheduling/**/*Test,**/tick/**/*Test' --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -524,8 +524,8 @@ jobs:
              [ "${{ needs.test-batch-5.result }}" != "success" ] || \
              [ "${{ needs.test-other-modules.result }}" != "success" ]; then
             echo "❌ Build FAILED: One or more test jobs failed"
-            echo "  test-batch-1 (bubble/behavior/metrics): ${{ needs.test-batch-1.result }}"
-            echo "  test-batch-2 (von/transport): ${{ needs.test-batch-2.result }}"
+            echo "  test-batch-1 (bubble/behavior/metrics/lifecycle): ${{ needs.test-batch-1.result }}"
+            echo "  test-batch-2 (von/transport/topology): ${{ needs.test-batch-2.result }}"
             echo "  test-batch-3 (causality/migration): ${{ needs.test-batch-3.result }}"
             echo "  test-batch-4 (distributed): ${{ needs.test-batch-4.result }}"
             echo "  test-batch-5 (consensus/ghost): ${{ needs.test-batch-5.result }}"

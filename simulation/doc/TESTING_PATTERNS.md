@@ -1,243 +1,124 @@
-# Testing Patterns for Luciferase Simulation
+# Simulation Module Testing Patterns
 
-**Last Updated**: 2026-01-13
+**Last Updated**: 2026-02-08
 **Status**: Current
+**Scope**: Simulation module-specific patterns and best practices
 
-This document catalogs testing patterns and best practices for the Luciferase simulation module, with emphasis on deterministic testing and flaky test handling.
+This document catalogs **simulation-specific** testing patterns and best practices. For general test framework guidance, performance test thresholds, and flaky test handling, see the authoritative reference: **TEST_FRAMEWORK_GUIDE.md** in the repository root.
 
 ---
 
 ## Table of Contents
 
-1. [Deterministic Testing with Clock Interface](#deterministic-testing-with-clock-interface)
-2. [Flaky Test Handling](#flaky-test-handling)
-3. [Network Simulation Testing](#network-simulation-testing)
-4. [Migration Testing Patterns](#migration-testing-patterns)
-5. [Ghost Layer Testing](#ghost-layer-testing)
-6. [CI-Specific Testing Considerations](#ci-specific-testing-considerations)
-7. [Concurrency Testing Patterns](#concurrency-testing-patterns)
+1. [Deterministic Testing with Clock Interface](#deterministic-testing-with-clock-interface) *(General pattern - reference TEST_FRAMEWORK_GUIDE.md)*
+2. [Flaky Test Handling](#flaky-test-handling) *(General pattern - reference TEST_FRAMEWORK_GUIDE.md)*
+3. [Network Simulation Testing](#network-simulation-testing) ⭐ *Simulation-specific*
+4. [Migration Testing Patterns](#migration-testing-patterns) ⭐ *Simulation-specific*
+5. [Ghost Layer Testing](#ghost-layer-testing) ⭐ *Simulation-specific*
+6. [CI-Specific Testing Considerations](#ci-specific-testing-considerations) *(General guidance - reference TEST_FRAMEWORK_GUIDE.md)*
+7. [Concurrency Testing Patterns](#concurrency-testing-patterns) ⭐ *Simulation-specific*
+
+---
+
+## Quick Reference
+
+For information on these topics, consult the authoritative **TEST_FRAMEWORK_GUIDE.md**:
+- [Test Execution commands](../../TEST_FRAMEWORK_GUIDE.md#test-execution)
+- [Performance Test Thresholds](../../TEST_FRAMEWORK_GUIDE.md#performance-test-thresholds)
+- [General Flaky Test Handling](../../TEST_FRAMEWORK_GUIDE.md#flaky-test-handling)
+- [Clock Interface Patterns](../../TEST_FRAMEWORK_GUIDE.md#deterministic-testing-patterns)
+- [Concurrent Test Constraints](../../TEST_FRAMEWORK_GUIDE.md#concurrent-test-constraints)
+- [CI/CD Test Distribution](../../TEST_FRAMEWORK_GUIDE.md#cicd-test-distribution)
 
 ---
 
 ## Deterministic Testing with Clock Interface
 
-### Overview
+**See**: [Clock Interface Patterns in TEST_FRAMEWORK_GUIDE.md](../../TEST_FRAMEWORK_GUIDE.md#deterministic-testing-patterns)
 
-The Clock interface enables deterministic control of time in tests, eliminating timing-dependent test flakiness.
+The Clock interface enables deterministic control of time in tests. This is a **general pattern used project-wide**, not simulation-specific.
 
 **Location**: `simulation/src/main/java/.../distributed/integration/Clock.java`
 
-### Pattern: Inject TestClock in Tests
-
+**Quick Reference**:
 ```java
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
-import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
-class MyServiceTest {
-    private TestClock testClock;
-    private MyService service;
-
-    @BeforeEach
-    void setUp() {
-        testClock = new TestClock();
-        testClock.setTime(1000L);  // Start at T=1000ms (absolute time)
-
-        service = new MyService();
-        service.setClock(testClock);  // Inject deterministic clock
-    }
-
-    @Test
-    void testTimeBasedBehavior() {
-        // Execute at T=1000ms
-        var result1 = service.doWork();
-
-        // Advance time by 500ms
-        testClock.advance(500);
-
-        // Execute at T=1500ms
-        var result2 = service.doWork();
-
-        // Verify time-dependent behavior
-        assertEquals(500, result2.elapsedSince(result1));
-    }
-}
-```
-
-### Pattern: Test Timeout Detection
-
-```java
-@Test
-void testTimeoutDetection() {
-    testClock.setTime(1000L);
+// Inject TestClock in tests
+@BeforeEach void setUp() {
+    testClock = new TestClock();
+    testClock.setTime(1000L);  // Absolute time mode
     service.setClock(testClock);
+}
 
-    var operation = service.startOperation();
-
-    // Simulate 200ms passing (exceeds 100ms timeout)
-    testClock.advance(200);
-
-    // Verify timeout detected
-    assertTrue(operation.isTimedOut());
+@Test void testTimeBasedBehavior() {
+    var result1 = service.doWork();  // At T=1000ms
+    testClock.advance(500);           // Move to T=1500ms
+    var result2 = service.doWork();
+    assertEquals(500, result2.elapsedSince(result1));
 }
 ```
 
-### Pattern: Test Time-Windowed Operations
-
-```java
-@Test
-void testBucketScheduling() {
-    testClock.setTime(0L);
-    scheduler.setClock(testClock);
-
-    // Schedule for 100ms bucket
-    scheduler.schedule(event, 100);
-
-    // Advance to bucket boundary
-    testClock.setTime(100);
-
-    // Verify event executed
-    assertTrue(event.wasExecuted());
-}
-```
-
-### TestClock Capabilities
-
-**Time Control**:
-- `setTime(long)` - Set absolute milliseconds since epoch (absolute mode)
-- `setSkew(long)` - Set time skew offset from system clock (relative mode)
+**Key Capabilities**:
+- `setTime(long)` - Set absolute milliseconds
 - `advance(long)` - Advance milliseconds by delta
-- `advanceNanos(long)` - Advance nanoseconds by delta (maintains 1:1,000,000 ratio)
+- `setSkew(long)` - Set time offset (hybrid mode)
+- Thread-safe via AtomicLong
 
-**Modes**:
-- **Absolute mode** (default): Returns exact set time
-- **Relative mode**: Adds offset to System.* (hybrid scenarios)
-
-**Thread Safety**: All operations use AtomicLong for thread-safe state
-
-**Time Ratio**: Maintains 1:1,000,000 ratio between millis and nanos
+For complete patterns (timeout testing, time-windowed operations, TestClock modes), see **TEST_FRAMEWORK_GUIDE.md § Deterministic Testing Patterns**.
 
 ---
 
 ## Flaky Test Handling
 
-### Overview
+**See**: [Flaky Test Handling in TEST_FRAMEWORK_GUIDE.md](../../TEST_FRAMEWORK_GUIDE.md#flaky-test-handling)
 
-Flaky tests are tests that fail non-deterministically due to timing, randomness, or resource contention. The @DisabledIfEnvironmentVariable pattern allows tests to run locally (valuable) but skip in CI (stable).
+The @DisabledIfEnvironmentVariable pattern is a **general pattern used project-wide**, not simulation-specific.
 
-### Pattern: @DisabledIfEnvironmentVariable
+### Quick Reference
 
 ```java
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
-import org.junit.jupiter.api.Test;
-
 @DisabledIfEnvironmentVariable(
     named = "CI",
     matches = "true",
-    disabledReason = "Flaky: probabilistic test with 30% packet loss"
+    disabledReason = "Flaky: [specific reason]"
 )
 @Test
+void testProbabilisticBehavior() {
+    // Runs locally for development, skips in CI
+}
+```
+
+**When to apply**:
+- Probabilistic tests (random failure injection, packet loss)
+- Timing-sensitive tests (race conditions, timeouts)
+- Tests that fail under CI load
+- Tests where determinism would defeat purpose
+
+### Simulation-Specific Examples
+
+**FailureRecoveryTest** (probability + network):
+```java
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+    disabledReason = "Flaky: probabilistic test with 30% packet loss")
+@Test
 void testFailureRecovery() {
-    // Configure probabilistic failure
-    fakeNetwork.setPacketLoss(0.3);  // 30% packet loss
-
-    // Execute test that verifies recovery behavior
+    fakeNetwork.setPacketLoss(0.3);
     var result = service.executeWithRetry();
-
-    // Verify recovery worked
     assertTrue(result.isSuccess());
 }
 ```
 
-### When to Apply
-
-Apply @DisabledIfEnvironmentVariable when:
-
-1. **Probabilistic Behavior**:
-   - Random failure injection
-   - Packet loss simulation
-   - Stochastic algorithms
-
-2. **Timing-Sensitive Tests**:
-   - Race conditions
-   - Timeout windows
-   - Thread synchronization
-
-3. **Resource-Constrained Tests**:
-   - Tests that fail under CI load
-   - Heavy parallelization
-   - Memory pressure scenarios
-
-4. **CI vs Local Divergence**:
-   - Passes locally, fails in CI
-   - Non-deterministic CI failures
-
-### Decision Criteria
-
-Ask these questions:
-
-1. **Is test valuable locally?** → YES
-2. **Does test fail non-deterministically in CI?** → YES
-3. **Would making deterministic defeat test purpose?** → YES
-4. **Then apply @DisabledIfEnvironmentVariable** ✅
-
-### Diagnostic Procedure
-
-When a test is suspected of being flaky:
-
-```bash
-# 1. Run in isolation
-mvn test -Dtest=SuspectTest -pl simulation
-
-# 2. Run repeatedly (20 times)
-for i in {1..20}; do
-    mvn test -Dtest=SuspectTest -pl simulation || echo "FAIL $i"
-done
-
-# 3. Check for probabilistic logic
-grep -rn "Random\|packet.*loss\|failure.*inject" src/test/java
-
-# 4. Check for timing dependencies
-grep -rn "Thread.sleep\|timeout\|race" src/test/java
-
-# 5. Run under load
-mvn test -pl simulation -DforkCount=4 -Dparallel=all
-```
-
-If failures are non-deterministic, apply the pattern.
-
-### Examples from H3.7 Phase 1
-
-**FailureRecoveryTest** (commit c14c217):
+**TwoNodeDistributedMigrationTest** (timing + distribution):
 ```java
-@DisabledIfEnvironmentVariable(
-    named = "CI",
-    matches = "true",
-    disabledReason = "Flaky: probabilistic test with 30% packet loss"
-)
-@Test
-void testFailureRecovery() {
-    // Uses FakeNetworkChannel with 30% packet loss
-    // Verifies recovery after network failures
-    // Intentionally non-deterministic
-}
-```
-
-**TwoNodeDistributedMigrationTest**:
-```java
-@DisabledIfEnvironmentVariable(
-    named = "CI",
-    matches = "true",
-    disabledReason = "Flaky: timing-sensitive distributed migration simulation"
-)
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+    disabledReason = "Flaky: timing-sensitive distributed migration simulation")
 @Test
 void testTwoNodeMigration() {
     // Network simulation with timing dependencies
     // Race conditions between nodes
-    // Fails under CI resource contention
 }
 ```
+
+For complete guidance (decision criteria, diagnostic procedure, best practices), see **TEST_FRAMEWORK_GUIDE.md § Flaky Test Handling**.
 
 ---
 
@@ -442,43 +323,40 @@ void testGhostBoundarySynchronization() {
 
 ## CI-Specific Testing Considerations
 
-### CI Environment Detection
+**See**: [CI/CD Test Distribution in TEST_FRAMEWORK_GUIDE.md](../../TEST_FRAMEWORK_GUIDE.md#cicd-test-distribution)
 
-Tests automatically detect CI environment via `CI=true` environment variable:
-
-```java
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true", ...)
-```
+Tests automatically detect CI environment via `CI=true` environment variable set in GitHub Actions.
 
 ### CI vs Local Behavior
 
-| Aspect | Local Development | CI Environment |
-|--------|-------------------|----------------|
-| Flaky tests | Run (valuable for development) | Skip (stability) |
-| Probabilistic tests | Run (verify behavior) | Skip (non-deterministic) |
-| Timing-sensitive tests | Run (may pass) | Skip (resource contention) |
+| Aspect | Local | CI |
+|--------|-------|-----|
+| Flaky tests | Run (development value) | Skip (@DisabledIfEnvironmentVariable) |
+| Probabilistic tests | Run (verify behavior) | Skip |
+| Timing-sensitive tests | Run (may pass) | Skip (contention) |
 | Full test suite | Always runs | Always runs (except @Disabled) |
 
 ### Running Skipped Tests Locally
 
 ```bash
-# Tests marked @DisabledIfEnvironmentVariable still run locally
+# Run with local behavior (tests marked @DisabledIfEnvironmentVariable run)
 mvn test -pl simulation
 
-# To simulate CI behavior locally, set CI=true
+# Simulate CI behavior locally
 CI=true mvn test -pl simulation
 
-# To force run a specific skipped test
+# Force run specific skipped test
 CI=false mvn test -Dtest=FlakyTest -pl simulation
 ```
 
-### CI Stability Recommendations
+### Simulation-Specific CI Stability Tips
 
-1. **Avoid System.* calls**: Use Clock interface for time
-2. **Avoid Thread.sleep()**: Use TestClock advancement
-3. **Avoid Random without seed**: Use seeded Random or disable in CI
-4. **Avoid resource contention**: Use dynamic ports, unique directories
-5. **Mark probabilistic tests**: Apply @DisabledIfEnvironmentVariable
+1. **Use TestClock**: Don't rely on System time (general rule - see TEST_FRAMEWORK_GUIDE.md)
+2. **FakeNetworkChannel timing**: Account for latency simulation in assertions
+3. **GhostStateManager sync**: Allow time for ghost boundary updates to propagate
+4. **Migration 2PC timing**: Use TestClock for deterministic timeout testing
+
+For complete CI/CD architecture and test distribution, see **TEST_FRAMEWORK_GUIDE.md § CI/CD Test Distribution**.
 
 ---
 
@@ -783,6 +661,23 @@ void testConcurrentInitializeAndTransition() throws InterruptedException {
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: 2026-01-13
+---
+
+## Document Organization
+
+**This document** (TESTING_PATTERNS.md in simulation/doc/):
+- ✅ Simulation-specific patterns (network, migration, ghost, concurrency)
+- ✅ Domain-specific code examples and considerations
+- ✅ References to general patterns in authoritative guide
+
+**Related documents**:
+- **TEST_FRAMEWORK_GUIDE.md** (root) - Authoritative reference for all test framework guidance
+- **DISABLED_TESTS_POLICY.md** (this directory) - Inventory of disabled tests and policy
+- **H3_DETERMINISM_EPIC.md** - Detailed Clock interface implementation plan
+
+---
+
+**Document Version**: 2.1 (Refactored for clarity, duplication removed)
+**Last Updated**: 2026-02-08
 **Maintainer**: Simulation Module Team
+**Status**: ✅ Focused on simulation-specific patterns, general patterns reference TEST_FRAMEWORK_GUIDE.md

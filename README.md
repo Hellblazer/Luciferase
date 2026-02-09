@@ -76,7 +76,7 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 
 - Java 25 (uses stable FFM API)
 - Maven 3.9.1+
-- JavaFX 24 (for visualization)
+- JavaFX 25 (for visualization)
 - LWJGL 3 (for OpenGL rendering)
 
 ## Build Instructions

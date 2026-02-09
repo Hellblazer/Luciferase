@@ -1,8 +1,11 @@
 # Test Framework & Configuration Guide
 
-**Last Updated**: 2026-01-20
-**Status**: Comprehensive consolidation of test patterns and recent fixes
+**Last Updated**: 2026-02-08
+**Status**: AUTHORITATIVE REFERENCE - Comprehensive consolidation of test patterns and recent fixes
 **Scope**: Luciferase test framework, performance test thresholds, CI/CD integration
+**Version**: 1.1
+
+> **Note**: This is the single authoritative reference for test framework documentation. Other test-related documents (TESTING_PATTERNS.md, DISABLED_TESTS_POLICY.md) reference this guide and provide domain-specific specializations.
 
 ---
 

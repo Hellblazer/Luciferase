@@ -404,6 +404,7 @@ newApi.doSomething(param1, param2);
 
 ---
 
-**Last Updated**: December 6, 2025  
-**Maintained By**: Documentation Owner  
+**Last Updated**: 2026-02-08
+**Maintained By**: Documentation Owner
 **Questions**: Create issue in project repository
+**Note**: Procedure document - for actual reviews, see `.github/reviews/` directory

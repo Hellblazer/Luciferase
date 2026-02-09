@@ -45,12 +45,12 @@ Implement **parallel CI test execution** following the Delos repository pattern 
 
 ```yaml
 compile (cache: luciferase-maven-{SHA})
-   ├─> test-batch-1 (bubble/behavior/metrics/validation/tumbler/viz/spatial)
-   ├─> test-batch-2 (von/transport/integration)
-   ├─> test-batch-3 (causality/migration/grid)
-   ├─> test-batch-4 (distributed/network/delos)
-   ├─> test-batch-5 (consensus/ghost)
-   └─> test-other-modules (grpc/common/lucien/sentry/render/portal/dyada-java)
+   ├─> test-batch-1 (modules: bubble, common, dyada-java)
+   ├─> test-batch-2 (modules: simulation, transport)
+   ├─> test-batch-3 (modules: migration, causality)
+   ├─> test-batch-4 (modules: distributed, network, delos)
+   ├─> test-batch-5 (modules: consensus, ghost)
+   └─> test-other-modules (modules: grpc, common, lucien, sentry, render, portal)
         └─> build-status (aggregator)
 ```yaml
 
@@ -114,7 +114,15 @@ restore-keys: |
 
 **Impact**: Compile time reduced from 10-12 minutes to **54 seconds** (12-13x speedup).
 
-### 3. Workflow YAML Structure
+### 3. Critical Clarification on Module vs Package Naming
+
+**Important Context**: The workflow architecture below uses Maven module names (referenced via `mvn test -pl`) NOT Java package names:
+- **Maven modules**: Top-level directories with pom.xml (e.g., bubble, common, dyada-java, simulation)
+- **Java packages**: Sub-packages within modules (e.g., bubble/behavior, bubble/metrics, simulation/von, simulation/transport)
+
+The actual Maven command for test-batch-1 is: `mvn test -pl bubble,common,dyada-java`
+
+### 4. Workflow YAML Structure
 
 **Key Features**:
 
