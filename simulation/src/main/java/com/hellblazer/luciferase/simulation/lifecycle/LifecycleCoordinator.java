@@ -93,19 +93,17 @@ public class LifecycleCoordinator {
      * @throws LifecycleException if component is not stopped
      */
     public void unregister(String componentName) {
-        var component = components.get(componentName);
-        if (component == null) {
-            return;
-        }
-
-        var state = component.getState();
-        if (state != LifecycleState.STOPPED && state != LifecycleState.CREATED) {
-            throw new LifecycleException("Cannot unregister component in state: " + state);
-        }
-
-        components.remove(componentName);
-        states.remove(componentName);
-        log.debug("Unregistered component: {}", componentName);
+        // FIX Issue #1 (Luciferase-7q6q): Use computeIfPresent for atomic check-and-remove
+        // Previous: check-then-act race between get() and remove()
+        components.computeIfPresent(componentName, (name, comp) -> {
+            var state = comp.getState();
+            if (state != LifecycleState.STOPPED && state != LifecycleState.CREATED) {
+                throw new LifecycleException("Cannot unregister component in state: " + state);
+            }
+            states.remove(name);
+            log.debug("Unregistered component: {}", name);
+            return null; // Remove from map
+        });
     }
 
     /**
@@ -130,12 +128,16 @@ public class LifecycleCoordinator {
             }
         }
 
-        // Register the component
-        if (components.putIfAbsent(name, component) != null) {
+        // FIX Issue #2 (Luciferase-7q6q): Use computeIfAbsent for atomic registration
+        // Previous: window where component in components map but not in states map
+        var result = components.computeIfAbsent(name, k -> {
+            states.put(name, component.getState());
+            log.debug("Registered component: {}", name);
+            return component;
+        });
+        if (result != component) {
             throw new LifecycleException("Component already registered: " + name);
         }
-        states.put(name, component.getState());
-        log.debug("Registered component: {}", name);
 
         // If coordinator is started, start this component immediately
         if (isStarted.get()) {
@@ -189,25 +191,22 @@ public class LifecycleCoordinator {
         // Stop component if it's running
         var state = component.getState();
         if (state == LifecycleState.RUNNING) {
+            // FIX Issue #3 (Luciferase-7q6q): Only unregister on successful stop
+            // Previous: component removed even if stop() failed
             try {
                 component.stop()
                     .orTimeout(5, TimeUnit.SECONDS)
-                    .whenComplete((v, ex) -> {
-                        if (ex != null) {
-                            log.warn("Component {} stop timeout or error", componentName, ex);
-                        } else {
-                            states.put(componentName, component.getState());
-                        }
-                    })
                     .join();
+                states.put(componentName, component.getState());
                 log.debug("Stopped component: {}", componentName);
             } catch (Exception e) {
-                log.warn("Error stopping component {}: {}", componentName, e.getMessage());
-                // Continue with unregistration despite error
+                log.error("Failed to stop component {}, keeping in coordinator", componentName, e);
+                states.put(componentName, LifecycleState.FAILED);
+                throw new LifecycleException("Cannot unregister component that failed to stop", e);
             }
         }
 
-        // Unregister the component
+        // Unregister the component (only reached if stop succeeded or component wasn't running)
         components.remove(componentName);
         states.remove(componentName);
         log.debug("Unregistered component: {}", componentName);

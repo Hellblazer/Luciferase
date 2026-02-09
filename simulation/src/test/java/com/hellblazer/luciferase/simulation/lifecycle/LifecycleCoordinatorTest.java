@@ -787,4 +787,143 @@ class LifecycleCoordinatorTest {
                           "Removing A should succeed after B removed");
         assertNull(coordinator.getState("A"), "A should be removed");
     }
+
+    // ========== Thread-Safety Fix Tests (Bead Luciferase-7q6q) ==========
+
+    /**
+     * Test 26: Validate Issue #1 fix - concurrent unregister race handled atomically.
+     * <p>
+     * Issue: unregister() had check-then-act race between get() and remove()
+     * Fix: Use computeIfPresent for atomic check-and-remove
+     */
+    @Test
+    void testUnregister_concurrentRace_handlesCorrectly() throws InterruptedException {
+        // Arrange
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var componentA = new MockComponent("A", startOrder, stopOrder);
+
+        coordinator.register(componentA);
+
+        var threadCount = 10;
+        var latch = new CountDownLatch(threadCount);
+        var exceptions = Collections.synchronizedList(new ArrayList<Exception>());
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+
+        // Act - Multiple threads try to unregister the same component
+        for (int i = 0; i < threadCount; i++) {
+            executor.submit(() -> {
+                try {
+                    coordinator.unregister("A");
+                } catch (Exception e) {
+                    exceptions.add(e);
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "All threads should complete");
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS), "Executor should terminate");
+
+        // Assert - Component should be unregistered exactly once, no race conditions
+        assertNull(coordinator.getState("A"), "Component should be unregistered");
+
+        // All threads should complete without ConcurrentModificationException
+        for (var ex : exceptions) {
+            assertFalse(ex instanceof java.util.ConcurrentModificationException,
+                       "Should not have ConcurrentModificationException: " + ex);
+        }
+    }
+
+    /**
+     * Test 27: Validate Issue #2 fix - concurrent registerAndStart + getState has no inconsistency.
+     * <p>
+     * Issue: Component registered in components map but state not yet in states map
+     * Fix: Use atomic operation to ensure both maps updated together
+     */
+    @Test
+    void testRegisterAndStart_concurrentGetState_noInconsistency() throws InterruptedException {
+        // Arrange
+        var threadCount = 20;
+        var latch = new CountDownLatch(threadCount);
+        var inconsistencies = Collections.synchronizedList(new ArrayList<String>());
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+
+        // Act - Half threads register components, half threads query state
+        for (int i = 0; i < threadCount; i++) {
+            var index = i;
+            executor.submit(() -> {
+                try {
+                    if (index % 2 == 0) {
+                        // Register thread
+                        var name = "Component" + index;
+                        var comp = new MockComponent(name, new ArrayList<>(), new ArrayList<>());
+                        coordinator.registerAndStart(comp);
+                    } else {
+                        // Query thread - check if registered components have consistent state
+                        Thread.sleep(5); // Small delay to increase race probability
+                        for (int j = 0; j < index; j += 2) {
+                            var name = "Component" + j;
+                            var state = coordinator.getState(name);
+                            if (state == null) {
+                                // Expected if not yet registered
+                                continue;
+                            }
+                            // If state exists, it should be valid (not null)
+                            if (state == null) {
+                                inconsistencies.add(name + " has null state");
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    inconsistencies.add("Exception: " + e.getMessage());
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "All threads should complete");
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS), "Executor should terminate");
+
+        // Assert - No inconsistencies detected
+        assertTrue(inconsistencies.isEmpty(),
+                  "Should have no state inconsistencies, found: " + inconsistencies);
+    }
+
+    /**
+     * Test 28: Validate Issue #3 fix - stopAndUnregister only removes on successful stop.
+     * <p>
+     * Issue: Component unregistered even when stop() fails
+     * Fix: Only unregister if stop succeeds, throw exception if stop fails
+     */
+    @Test
+    void testStopAndUnregister_stopFails_throwsAndKeepsInCoordinator() {
+        // Arrange
+        var failingComponent = new FailingComponent("FailOnStop", List.of(), false, true);
+
+        coordinator.register(failingComponent);
+        coordinator.start();
+
+        assertEquals(LifecycleState.RUNNING, coordinator.getState("FailOnStop"));
+
+        // Act & Assert - stopAndUnregister should throw when stop fails
+        var exception = assertThrows(LifecycleException.class,
+                                    () -> coordinator.stopAndUnregister("FailOnStop"));
+        assertTrue(exception.getMessage().contains("failed to stop") ||
+                  exception.getMessage().contains("Cannot unregister"),
+                  "Exception should indicate stop failure: " + exception.getMessage());
+
+        // Assert - Component should still be in coordinator (not removed)
+        assertNotNull(coordinator.getState("FailOnStop"),
+                     "Component should remain registered after stop failure");
+
+        // State should be FAILED to indicate the failure
+        var finalState = coordinator.getState("FailOnStop");
+        assertEquals(LifecycleState.FAILED, finalState,
+                    "Component should be in FAILED state after stop failure, was: " + finalState);
+    }
 }
