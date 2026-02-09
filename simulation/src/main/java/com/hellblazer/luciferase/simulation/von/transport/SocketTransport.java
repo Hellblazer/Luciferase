@@ -246,18 +246,32 @@ public final class SocketTransport implements NetworkTransport {
         var sentViewId = membership.getCurrentViewId();
 
         // Hook into Fireflies round timer to check view stability
+        // Optimization (Luciferase-hkhg): Use array to cache currentViewId across ticks to reduce allocations
+        final var cachedViewId = new Object[1];  // Single-element array for mutable capture
+        cachedViewId[0] = sentViewId;  // Initialize with sent view
+
         RealTimeController.TickListener checkStability = (simTime, lamportClock) -> {
             if (future.isDone()) {
                 return;  // Already completed or timed out
             }
 
             var currentViewId = membership.getCurrentViewId();
-            if (!currentViewId.equals(sentViewId)) {
-                // View changed - delivery uncertain, fail with exception
-                future.completeExceptionally(new TransportException(
-                    "View changed during send (sent in " + sentViewId + ", now " + currentViewId + ")"
-                ));
-            } else if (viewMonitor.isViewStable()) {
+
+            // Optimization: Reference equality check first (fast path when view unchanged)
+            if (currentViewId != cachedViewId[0]) {
+                // Reference changed - check value equality to confirm actual change
+                if (!currentViewId.equals(sentViewId)) {
+                    // View changed - delivery uncertain, fail with lazy exception message
+                    future.completeExceptionally(new TransportException(
+                        String.format("View changed during send (sent in %s, now %s)", sentViewId, currentViewId)
+                    ));
+                    return;
+                }
+                // Update cache if value is the same but reference changed (unusual but possible)
+                cachedViewId[0] = currentViewId;
+            }
+
+            if (viewMonitor.isViewStable()) {
                 // View stable - high probability of delivery
                 future.complete(factory.createAck(UUID.randomUUID(), neighborId));
             }

@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.distributed.migration.EntitySnapshot;
 import com.hellblazer.luciferase.simulation.distributed.migration.IdempotencyToken;
 
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -75,7 +76,8 @@ public sealed interface MigrationProtocolMessages extends Message {
                           UUID sourceId, UUID destId, long timestamp) implements MigrationProtocolMessages {
         public PrepareRequest(UUID transactionId, IdempotencyToken idempotencyToken, EntitySnapshot entitySnapshot,
                               UUID sourceId, UUID destId, Clock clock) {
-            this(transactionId, idempotencyToken, entitySnapshot, sourceId, destId, clock.currentTimeMillis());
+            this(transactionId, idempotencyToken, entitySnapshot, sourceId, destId,
+                 Objects.requireNonNull(clock, "clock").currentTimeMillis());
         }
     }
 
@@ -93,7 +95,8 @@ public sealed interface MigrationProtocolMessages extends Message {
     record PrepareResponse(UUID transactionId, boolean success, String reason, UUID destProcessId,
                            long timestamp) implements MigrationProtocolMessages {
         public PrepareResponse(UUID transactionId, boolean success, String reason, UUID destProcessId, Clock clock) {
-            this(transactionId, success, reason, destProcessId, clock.currentTimeMillis());
+            this(transactionId, success, reason, destProcessId,
+                 Objects.requireNonNull(clock, "clock").currentTimeMillis());
         }
     }
 
@@ -113,7 +116,7 @@ public sealed interface MigrationProtocolMessages extends Message {
      */
     record CommitRequest(UUID transactionId, boolean confirmed, long timestamp) implements MigrationProtocolMessages {
         public CommitRequest(UUID transactionId, boolean confirmed, Clock clock) {
-            this(transactionId, confirmed, clock.currentTimeMillis());
+            this(transactionId, confirmed, Objects.requireNonNull(clock, "clock").currentTimeMillis());
         }
     }
 
@@ -130,7 +133,7 @@ public sealed interface MigrationProtocolMessages extends Message {
     record CommitResponse(UUID transactionId, boolean success, String reason,
                           long timestamp) implements MigrationProtocolMessages {
         public CommitResponse(UUID transactionId, boolean success, String reason, Clock clock) {
-            this(transactionId, success, reason, clock.currentTimeMillis());
+            this(transactionId, success, reason, Objects.requireNonNull(clock, "clock").currentTimeMillis());
         }
     }
 
@@ -149,7 +152,7 @@ public sealed interface MigrationProtocolMessages extends Message {
      */
     record AbortRequest(UUID transactionId, String reason, long timestamp) implements MigrationProtocolMessages {
         public AbortRequest(UUID transactionId, String reason, Clock clock) {
-            this(transactionId, reason, clock.currentTimeMillis());
+            this(transactionId, reason, Objects.requireNonNull(clock, "clock").currentTimeMillis());
         }
     }
 
@@ -164,7 +167,7 @@ public sealed interface MigrationProtocolMessages extends Message {
      */
     record AbortResponse(UUID transactionId, boolean rolledBack, long timestamp) implements MigrationProtocolMessages {
         public AbortResponse(UUID transactionId, boolean rolledBack, Clock clock) {
-            this(transactionId, rolledBack, clock.currentTimeMillis());
+            this(transactionId, rolledBack, Objects.requireNonNull(clock, "clock").currentTimeMillis());
         }
     }
 }
