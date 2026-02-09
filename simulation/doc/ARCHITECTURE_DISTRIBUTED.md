@@ -695,8 +695,9 @@ metrics.recordRollbackFailure(entityId);
 
 - [H3_DETERMINISM_EPIC.md](H3_DETERMINISM_EPIC.md) - Deterministic testing with Clock interface
 - [SIMULATION_BUBBLES.md](SIMULATION_BUBBLES.md) - Detailed bubble architecture
-- [DISTRIBUTED_ANIMATION_ARCHITECTURE.md](DISTRIBUTED_ANIMATION_ARCHITECTURE.md) - Complete animation framework
 - [TESTING_PATTERNS.md](TESTING_PATTERNS.md) - Testing best practices
+- [archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v3.0.md](archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v3.0.md) - Legacy v3.0 architecture (archived)
+- [archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v4.0.md](archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v4.0.md) - Legacy v4.0 architecture (archived)
 
 ---
 

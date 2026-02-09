@@ -655,7 +655,7 @@ void testConcurrentInitializeAndTransition() throws InterruptedException {
 
 - [H3_DETERMINISM_EPIC.md](H3_DETERMINISM_EPIC.md) - Complete H3 determinism work
 - [H3.7_PHASE1_COMPLETION.md](H3.7_PHASE1_COMPLETION.md) - Phase 1 execution report
-- [DISTRIBUTED_ANIMATION_ARCHITECTURE.md](DISTRIBUTED_ANIMATION_ARCHITECTURE.md) - Distributed simulation architecture
+- [ARCHITECTURE_DISTRIBUTED.md](ARCHITECTURE_DISTRIBUTED.md) - Distributed simulation architecture
 - [TECHNICAL_DECISION_CONCURRENCY_TEST_FIX.md](TECHNICAL_DECISION_CONCURRENCY_TEST_FIX.md) - Concurrency test flakiness resolution
 - [SPRINT_A_RESTART_STATUS.md](SPRINT_A_RESTART_STATUS.md) - Sprint A restart after test fix
 
