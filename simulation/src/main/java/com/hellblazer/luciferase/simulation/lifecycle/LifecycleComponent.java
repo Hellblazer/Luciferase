@@ -12,21 +12,63 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Contract for components that participate in coordinated lifecycle management.
- * <p>
- * Components follow the lifecycle state machine:
+ * Lifecycle component interface for coordinator management.
+ *
+ * <p>Components implementing this interface can be registered with a
+ * {@link LifecycleCoordinator} for dependency-ordered startup and shutdown.
+ *
+ * <p>Components follow the lifecycle state machine:
  * <pre>
  * CREATED → STARTING → RUNNING → STOPPING → STOPPED
  *              ↓ (error) ↓
  *            FAILED
  * </pre>
- * <p>
- * All lifecycle operations (start/stop) are asynchronous and return CompletableFuture.
- * The LifecycleCoordinator uses dependency information to determine startup/shutdown ordering.
- * <p>
- * Implementations must be thread-safe for concurrent state queries.
+ *
+ * <h2>Memory Visibility Requirements</h2>
+ *
+ * <p>Implementations MUST ensure proper cross-thread visibility of state changes.
+ * Use volatile fields or {@link java.util.concurrent.atomic} classes for state
+ * storage. State transitions in {@link #start()} and {@link #stop()} MUST be
+ * visible to concurrent {@link #getState()} calls without additional synchronization.
+ *
+ * <p><b>Correct Implementation</b> (using AtomicReference):
+ * <pre>
+ * public class MyComponent implements LifecycleComponent {
+ *     private final AtomicReference&lt;LifecycleState&gt; state =
+ *         new AtomicReference&lt;&gt;(LifecycleState.CREATED);
+ *
+ *     public CompletableFuture&lt;Void&gt; start() {
+ *         state.set(LifecycleState.RUNNING);  // Atomic write
+ *         return CompletableFuture.completedFuture(null);
+ *     }
+ *
+ *     public LifecycleState getState() {
+ *         return state.get();  // Atomic read with memory barrier
+ *     }
+ * }
+ * </pre>
+ *
+ * <p><b>Incorrect Implementation</b> (plain field - DO NOT USE):
+ * <pre>
+ * private LifecycleState state;  // NOT volatile - WRONG!
+ *
+ * public CompletableFuture&lt;Void&gt; start() {
+ *     state = RUNNING;  // No memory barrier - invisible to other threads
+ *     return CompletableFuture.completedFuture(null);
+ * }
+ *
+ * public LifecycleState getState() {
+ *     return state;  // Stale reads possible
+ * }
+ * </pre>
+ *
+ * <p>Plain (non-volatile) fields can cause the coordinator to read stale state,
+ * leading to incorrect lifecycle decisions such as failing to detect component
+ * failures or attempting to unregister running components.
  *
  * @author hal.hildebrand
+ * @see LifecycleCoordinator
+ * @see LifecycleState
  */
 public interface LifecycleComponent {
 
@@ -62,10 +104,23 @@ public interface LifecycleComponent {
 
     /**
      * Get the current lifecycle state of this component.
-     * <p>
-     * Must be thread-safe for concurrent access.
      *
-     * @return current state, never null
+     * <p><b>Thread-Safety Constraint</b>: This method MUST NOT call back into
+     * the {@link LifecycleCoordinator} from which it was invoked. The coordinator
+     * may hold internal locks (ConcurrentHashMap segment locks) while querying
+     * component state. Callback attempts create lock cycles and cause deadlock.
+     *
+     * <p><b>Safe Pattern</b>:
+     * <pre>
+     * private final AtomicReference&lt;LifecycleState&gt; state =
+     *     new AtomicReference&lt;&gt;(LifecycleState.CREATED);
+     *
+     * public LifecycleState getState() {
+     *     return state.get();  // Simple read, no coordinator calls
+     * }
+     * </pre>
+     *
+     * @return current lifecycle state (never null)
      */
     LifecycleState getState();
 

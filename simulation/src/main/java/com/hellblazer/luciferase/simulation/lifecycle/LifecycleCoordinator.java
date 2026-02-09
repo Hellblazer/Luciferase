@@ -19,18 +19,90 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Coordinates lifecycle operations across multiple components with dependency ordering.
- * <p>
- * Uses Kahn's topological sort to compute dependency layers:
+ *
+ * <p>Uses Kahn's topological sort to compute dependency layers:
  * <ul>
  *   <li>Startup: Process layers 0→N sequentially, components within layer in parallel</li>
  *   <li>Shutdown: Process layers N→0 sequentially (reverse order)</li>
- *   <li>Circular dependencies: Detected and rejected with LifecycleException</li>
+ *   <li>Circular dependencies: Detected and rejected with {@link LifecycleException}</li>
  * </ul>
- * <p>
- * Thread-safe for concurrent registration and lifecycle operations.
- * Start/stop operations are idempotent.
+ *
+ * <h2>Thread-Safety Guarantees and Constraints</h2>
+ *
+ * <h3>Coordinator Operations (What the Coordinator Provides)</h3>
+ * <ul>
+ *   <li>All public methods are thread-safe for concurrent access from multiple threads</li>
+ *   <li>{@link ConcurrentHashMap} provides atomic map operations for registration/unregistration</li>
+ *   <li>{@link #start()} and {@link #stop(long)} are idempotent via {@link java.util.concurrent.atomic.AtomicBoolean} guards</li>
+ *   <li>{@link #unregister(String)} synchronizes on components to prevent state-change races</li>
+ *   <li>{@link #register(LifecycleComponent)} and {@link #registerAndStart(LifecycleComponent)} use
+ *       atomic {@code computeIfAbsent} to prevent dual-map inconsistencies</li>
+ * </ul>
+ *
+ * <h3>Component Implementation Requirements (What Components Must Provide)</h3>
+ * <ul>
+ *   <li><b>Memory Visibility</b>: State storage MUST use {@code volatile} fields or
+ *       {@link java.util.concurrent.atomic} classes to ensure cross-thread visibility.
+ *       See {@link LifecycleComponent} javadoc for correct patterns.</li>
+ *   <li><b>No Re-entrant Calls</b>: {@link LifecycleComponent#getState()} MUST NOT call back into
+ *       the coordinator. The coordinator holds internal locks while querying component state.
+ *       Re-entrant calls create lock cycles causing deadlock.</li>
+ *   <li><b>State Transition Visibility</b>: State changes in {@link LifecycleComponent#start()} and
+ *       {@link LifecycleComponent#stop()} MUST be visible to concurrent {@code getState()} calls
+ *       without additional synchronization.</li>
+ * </ul>
+ *
+ * <h3>Caller Responsibilities (How to Use the Coordinator Safely)</h3>
+ * <ul>
+ *   <li><b>Avoid Concurrent Lifecycle Changes</b>: Do NOT call {@link #unregister(String)} and
+ *       {@link #registerAndStart(LifecycleComponent)} concurrently for the same component.
+ *       While registerAndStart marks state as STARTING to reduce risk, external synchronization
+ *       is recommended if these operations may race.</li>
+ *   <li><b>Coordinate Start Operations</b>: Do NOT call {@link #unregister(String)} while another
+ *       thread may call {@link LifecycleComponent#start()} directly on the same component.
+ *       Use the coordinator's start methods or provide external synchronization.</li>
+ *   <li><b>Choose Registration Pattern</b>: Use {@link #register(LifecycleComponent)} followed by
+ *       {@link #start()} OR use {@link #registerAndStart(LifecycleComponent)}, but not both
+ *       concurrently for the same component.</li>
+ * </ul>
+ *
+ * <h3>Known Limitations</h3>
+ * <ul>
+ *   <li><b>State Check Atomicity</b>: While {@link #unregister(String)} synchronizes on the component
+ *       to check state, there remains a small window where external state changes (outside coordinator
+ *       control) could cause unexpected behavior. Components should primarily use coordinator methods
+ *       for state transitions.</li>
+ *   <li><b>Deadlock Detection</b>: No automatic detection of component callback deadlocks. Component
+ *       implementations must follow the no-callback contract documented in {@link LifecycleComponent}.</li>
+ *   <li><b>Dependency Resolution</b>: Dependencies are resolved at {@link #start()} time only.
+ *       Components added via {@link #registerAndStart(LifecycleComponent)} after coordinator has
+ *       started will have dependencies checked at registration but not re-validated against the
+ *       existing dependency graph.</li>
+ * </ul>
+ *
+ * <h3>Example Usage</h3>
+ * <pre>
+ * // Create coordinator
+ * var coordinator = new LifecycleCoordinator();
+ *
+ * // Register components with dependencies
+ * var database = new DatabaseComponent();
+ * var cache = new CacheComponent();
+ * cache.addDependency(database.name());  // Cache depends on Database
+ *
+ * coordinator.register(database);
+ * coordinator.register(cache);
+ *
+ * // Start all (database starts first due to dependency)
+ * coordinator.start();
+ *
+ * // Later: graceful shutdown (cache stops first)
+ * coordinator.stop(5000);  // 5 second timeout
+ * </pre>
  *
  * @author hal.hildebrand
+ * @see LifecycleComponent
+ * @see LifecycleState
  */
 public class LifecycleCoordinator {
     private static final Logger log = LoggerFactory.getLogger(LifecycleCoordinator.class);
@@ -217,7 +289,15 @@ public class LifecycleCoordinator {
                 states.put(componentName, component.getState());
                 log.debug("Stopped component: {}", componentName);
             } catch (Exception e) {
-                log.error("Failed to stop component {}, keeping in coordinator", componentName, e);
+                // Distinguish timeout from other errors for better diagnostics
+                if (e instanceof java.util.concurrent.TimeoutException ||
+                    (e.getCause() instanceof java.util.concurrent.TimeoutException)) {
+                    log.error("Component {} stop timed out after 5s, keeping in coordinator",
+                              componentName, e);
+                } else {
+                    log.error("Component {} stop failed with exception, keeping in coordinator",
+                              componentName, e);
+                }
                 states.put(componentName, LifecycleState.FAILED);
                 throw new LifecycleException("Cannot unregister component that failed to stop", e);
             }
