@@ -110,17 +110,32 @@ public class LifecycleCoordinator {
     private static final Logger log = LoggerFactory.getLogger(LifecycleCoordinator.class);
     private static final ThreadLocal<Boolean> inCoordinatorCall = ThreadLocal.withInitial(() -> false);
     private static final long MAX_LAYER_TIMEOUT_MS = 300_000; // 5 minutes
+    private static final long DEFAULT_COMPONENT_TIMEOUT_MS = 5000L; // 5 seconds per component
 
     final ConcurrentHashMap<String, LifecycleComponent> components;  // Package-private for Test 27 dual-map race detection
     private final ConcurrentHashMap<String, LifecycleState> states;
     private final AtomicBoolean isStarted;
     private final ViewStabilityGate viewStabilityGate;  // Optional Fireflies integration
+    private final long componentTimeoutMs;
 
     /**
      * Create a new lifecycle coordinator without Fireflies integration.
+     * Uses default timeout of 5 seconds per component.
      */
     public LifecycleCoordinator() {
-        this(null);
+        this(DEFAULT_COMPONENT_TIMEOUT_MS, null);
+    }
+
+    /**
+     * Create a new lifecycle coordinator with custom component timeout.
+     * <p>
+     * The timeout is used to calculate layer timeouts during startup:
+     * layerTimeout = min(layer.size() * componentTimeoutMs, MAX_LAYER_TIMEOUT_MS)
+     *
+     * @param componentTimeoutMs timeout in milliseconds per component (default: 5000ms)
+     */
+    public LifecycleCoordinator(long componentTimeoutMs) {
+        this(componentTimeoutMs, null);
     }
 
     /**
@@ -129,13 +144,28 @@ public class LifecycleCoordinator {
      * When a ViewStabilityGate is provided, shutdown will wait for view stability
      * before closing components, ensuring all messages sent within the current view
      * are delivered (Fireflies virtual synchrony guarantee).
+     * <p>
+     * Uses default timeout of 5 seconds per component.
      *
      * @param viewStabilityGate optional gate for view stability checking (null for no Fireflies integration)
      */
     public LifecycleCoordinator(ViewStabilityGate viewStabilityGate) {
+        this(DEFAULT_COMPONENT_TIMEOUT_MS, viewStabilityGate);
+    }
+
+    /**
+     * Create a new lifecycle coordinator with custom component timeout and Fireflies integration.
+     * <p>
+     * Master constructor - all other constructors delegate to this one.
+     *
+     * @param componentTimeoutMs timeout in milliseconds per component
+     * @param viewStabilityGate optional gate for view stability checking (null for no Fireflies integration)
+     */
+    public LifecycleCoordinator(long componentTimeoutMs, ViewStabilityGate viewStabilityGate) {
         this.components = new ConcurrentHashMap<>();
         this.states = new ConcurrentHashMap<>();
         this.isStarted = new AtomicBoolean(false);
+        this.componentTimeoutMs = componentTimeoutMs;
         this.viewStabilityGate = viewStabilityGate;
 
         if (viewStabilityGate != null) {
@@ -440,8 +470,8 @@ public class LifecycleCoordinator {
 
                 // Wait for all components in this layer to complete (with timeout)
                 try {
-                    // 5 seconds per component, capped at 5 minutes to prevent overflow
-                    var layerTimeout = Math.min(layer.size() * 5000L, MAX_LAYER_TIMEOUT_MS);
+                    // Configurable timeout per component, capped at 5 minutes to prevent overflow
+                    var layerTimeout = Math.min(layer.size() * componentTimeoutMs, MAX_LAYER_TIMEOUT_MS);
                     CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                         .orTimeout(layerTimeout, TimeUnit.MILLISECONDS)
                         .join();

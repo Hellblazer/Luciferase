@@ -1088,4 +1088,71 @@ class LifecycleCoordinatorTest {
         executor.shutdown();
         assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
     }
+
+    /**
+     * Test 31: Verify configurable component timeout functionality.
+     * <p>
+     * Setup: Create coordinator with custom 1000ms timeout per component
+     * Expected: Timeout calculation uses configured value instead of default 5000ms
+     */
+    @Test
+    void testConfigurableComponentTimeout() {
+        // Arrange - Create coordinator with 1000ms per component (instead of default 5000ms)
+        var customCoordinator = new LifecycleCoordinator(1000L);
+
+        var startOrder = Collections.synchronizedList(new ArrayList<String>());
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+
+        // Create 3 slow components that take 900ms each to start
+        var componentA = new SlowComponent("A", 900, 0);
+        var componentB = new SlowComponent("B", 900, 0);
+        var componentC = new SlowComponent("C", 900, 0);
+
+        customCoordinator.register(componentA);
+        customCoordinator.register(componentB);
+        customCoordinator.register(componentC);
+
+        // Act - Start should succeed because each component takes 900ms < 1000ms timeout
+        var startTime = System.currentTimeMillis();
+        customCoordinator.start();
+        var duration = System.currentTimeMillis() - startTime;
+
+        // Assert
+        assertEquals(LifecycleState.RUNNING, customCoordinator.getState("A"));
+        assertEquals(LifecycleState.RUNNING, customCoordinator.getState("B"));
+        assertEquals(LifecycleState.RUNNING, customCoordinator.getState("C"));
+
+        // With 1000ms timeout: 3 components × 1000ms = 3000ms max timeout
+        // Components take 900ms each in parallel = ~900ms actual time
+        assertTrue(duration < 2000, "Start should complete in < 2s with 1000ms timeout, took: " + duration + "ms");
+
+        customCoordinator.stop(5000);
+    }
+
+    /**
+     * Test 32: Verify default timeout behavior is unchanged (5000ms).
+     * <p>
+     * Ensures backward compatibility when using default constructor.
+     */
+    @Test
+    void testDefaultComponentTimeout() {
+        // Arrange - Use default constructor (should use 5000ms per component)
+        var defaultCoordinator = new LifecycleCoordinator();
+
+        // Create component that takes 4500ms to start (under default 5000ms)
+        var slowComponent = new SlowComponent("Slow", 4500, 0);
+        defaultCoordinator.register(slowComponent);
+
+        // Act - Should succeed with default 5000ms timeout
+        var startTime = System.currentTimeMillis();
+        defaultCoordinator.start();
+        var duration = System.currentTimeMillis() - startTime;
+
+        // Assert
+        assertEquals(LifecycleState.RUNNING, defaultCoordinator.getState("Slow"));
+        assertTrue(duration >= 4500 && duration < 8000,
+                   "Start should complete in 4.5-8s with default timeout, took: " + duration + "ms");
+
+        defaultCoordinator.stop(5000);
+    }
 }
