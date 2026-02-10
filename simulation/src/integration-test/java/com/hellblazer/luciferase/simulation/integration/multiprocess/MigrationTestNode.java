@@ -38,18 +38,39 @@ public class MigrationTestNode {
     private static final ConcurrentHashMap<UUID, TestEntity> entities = new ConcurrentHashMap<>();
     private static final AtomicLong lamportClock = new AtomicLong(0);
 
+    // Spatial bounds for this node (set during initialization)
+    private static float minX;
+    private static float maxX;
+
+    // Network and peer tracking
+    private static GrpcBubbleNetworkChannel networkChannel;
+    private static UUID nodeId;
+    private static UUID peerNodeId;
+    private static String nodeName;
+
     public static void main(String[] args) {
         if (args.length != 4) {
             System.err.println("Usage: MigrationTestNode <nodeName> <serverPort> <peerPort> <entityCount>");
             System.exit(1);
         }
 
-        var nodeName = args[0];
+        nodeName = args[0];
         var serverPort = Integer.parseInt(args[1]);
         var peerPort = Integer.parseInt(args[2]);
         var entityCount = Integer.parseInt(args[3]);
 
-        var nodeId = UUID.randomUUID();
+        nodeId = UUID.randomUUID();
+
+        // Define spatial bounds based on port (lower port = left half, higher port = right half)
+        if (serverPort < peerPort) {
+            minX = 0f;
+            maxX = 50f;
+            System.out.println("[" + nodeName + "] Spatial bounds: X ∈ [0, 50]");
+        } else {
+            minX = 50f;
+            maxX = 100f;
+            System.out.println("[" + nodeName + "] Spatial bounds: X ∈ [50, 100]");
+        }
 
         System.out.println("[" + nodeName + "] Starting node " + nodeId);
         System.out.println("[" + nodeName + "]   Server port: " + serverPort);
@@ -58,12 +79,12 @@ public class MigrationTestNode {
 
         try {
             // Create network channel
-            var networkChannel = new GrpcBubbleNetworkChannel();
+            networkChannel = new GrpcBubbleNetworkChannel();
             networkChannel.initialize(nodeId, "localhost:" + serverPort);
             System.out.println("[" + nodeName + "] gRPC server initialized");
 
             // Register peer node
-            var peerNodeId = UUID.randomUUID(); // In real setup, peer ID would be known
+            peerNodeId = UUID.randomUUID(); // In real setup, peer ID would be known
             networkChannel.registerNode(peerNodeId, "localhost:" + peerPort);
             System.out.println("[" + nodeName + "] Registered peer node at localhost:" + peerPort);
 
@@ -76,9 +97,23 @@ public class MigrationTestNode {
                 // Update lamport clock
                 lamportClock.updateAndGet(current -> Math.max(current, event.getLamportClock()) + 1);
 
-                // Add entity to local tracking
+                // Add entity to local tracking in middle of this node's territory
                 var entityId = event.getEntityId();
-                var entity = new TestEntity(entityId, new Point3f(0, 0, 0), new Vector3f(1, 0, 0));
+                // Place entity in center of this node's spatial bounds
+                var x = (minX + maxX) / 2f;  // Middle of our territory
+                var position = new Point3f(x, 50f, 50f);
+
+                // Give velocity that moves AWAY from boundary (prevent ping-pong)
+                // If minX==0 (Node1), entity came from Node2 (right), move left (negative X)
+                // If minX==50 (Node2), entity came from Node1 (left), move right (positive X)
+                var random = new java.util.Random();
+                var xVelocity = (minX == 0f) ? -0.5f : 0.5f;  // Away from boundary
+                var velocity = new Vector3f(
+                    xVelocity,
+                    (random.nextFloat() - 0.5f) * 0.2f,  // Small Y movement
+                    (random.nextFloat() - 0.5f) * 0.2f   // Small Z movement
+                );
+                var entity = new TestEntity(entityId, position, velocity);
                 entities.put(entityId, entity);
 
                 System.out.println("[" + nodeName + "] ENTITY_COUNT: " + entities.size());
@@ -98,15 +133,64 @@ public class MigrationTestNode {
             executor.scheduleAtFixedRate(() -> {
                 try {
                     // Increment lamport clock
-                    lamportClock.incrementAndGet();
+                    var clock = lamportClock.incrementAndGet();
 
-                    // Update all entities
-                    entities.values().forEach(entity -> entity.update(0.01f));
+                    // Update all entities and check for boundary crossing
+                    var toMigrate = new java.util.ArrayList<UUID>();
+                    entities.values().forEach(entity -> {
+                        entity.update(0.01f);
+
+                        // Check if entity crossed boundary
+                        if (entity.position.x < minX || entity.position.x > maxX) {
+                            toMigrate.add(entity.id);
+                        }
+                    });
+
+                    // Migrate entities that crossed boundaries
+                    if (!toMigrate.isEmpty()) {
+                        System.out.println("[" + nodeName + "] Processing " + toMigrate.size() + " migrations");
+                    }
+                    for (var entityId : toMigrate) {
+                        try {
+                            var entity = entities.get(entityId);
+                            if (entity == null) {
+                                System.err.println("[" + nodeName + "] WARNING: Entity " + entityId + " not found for migration");
+                                continue;
+                            }
+
+                            System.out.println("[" + nodeName + "] Migrating entity " + entityId +
+                                " at position (" + entity.position.x + ", " + entity.position.y + ", " + entity.position.z + ")");
+
+                            // Create and send departure event
+                            var departureEvent = new EntityDepartureEvent(
+                                entityId,
+                                nodeId,
+                                peerNodeId,
+                                EntityMigrationState.MIGRATING_OUT,
+                                clock
+                            );
+
+                            var sent = networkChannel.sendEntityDeparture(peerNodeId, departureEvent);
+                            System.out.println("[" + nodeName + "] sendEntityDeparture returned: " + sent);
+
+                            if (sent) {
+                                // Remove from local tracking
+                                var removed = entities.remove(entityId);
+                                System.out.println("[" + nodeName + "] ENTITY_MIGRATED: " + entityId +
+                                    " (removed=" + (removed != null) + ", count now: " + entities.size() + ")");
+                            } else {
+                                System.err.println("[" + nodeName + "] Failed to send migration for " + entityId);
+                            }
+                        } catch (Exception e) {
+                            System.err.println("[" + nodeName + "] Migration error: " + e.getMessage());
+                            e.printStackTrace(System.err);
+                        }
+                    }
 
                     // Periodically report entity count and lamport clock
-                    if (lamportClock.get() % 100 == 0) { // Every 100 ticks = 1 second
+                    if (clock % 100 == 0) { // Every 100 ticks = 1 second
                         System.out.println("[" + nodeName + "] ENTITY_COUNT: " + entities.size());
-                        System.out.println("[" + nodeName + "] LAMPORT_CLOCK: " + lamportClock.get());
+                        System.out.println("[" + nodeName + "] LAMPORT_CLOCK: " + clock);
                     }
                 } catch (Exception e) {
                     System.err.println("[" + nodeName + "] Update error: " + e.getMessage());
@@ -143,7 +227,7 @@ public class MigrationTestNode {
     }
 
     /**
-     * Spawn initial entities.
+     * Spawn initial entities within this node's spatial bounds.
      */
     private static void spawnEntities(String nodeName, int count) {
         var random = new Random(42); // Fixed seed for reproducibility
@@ -151,13 +235,13 @@ public class MigrationTestNode {
         for (int i = 0; i < count; i++) {
             var entityId = UUID.randomUUID();
 
-            // Random position within bounds
-            var x = random.nextFloat() * 100f;
+            // Random position within this node's spatial bounds
+            var x = minX + random.nextFloat() * (maxX - minX);  // Within [minX, maxX]
             var y = random.nextFloat() * 100f;
             var z = random.nextFloat() * 100f;
             var position = new Point3f(x, y, z);
 
-            // Random velocity
+            // Random velocity (bias towards boundary to encourage migration)
             var vx = (random.nextFloat() - 0.5f) * 2f; // -1 to 1
             var vy = (random.nextFloat() - 0.5f) * 2f;
             var vz = (random.nextFloat() - 0.5f) * 2f;
@@ -167,7 +251,7 @@ public class MigrationTestNode {
             entities.put(entityId, entity);
         }
 
-        System.out.println("[" + nodeName + "] Spawned " + count + " entities");
+        System.out.println("[" + nodeName + "] Spawned " + count + " entities in bounds [" + minX + ", " + maxX + "]");
     }
 
     /**
@@ -186,15 +270,14 @@ public class MigrationTestNode {
 
         /**
          * Update entity position based on velocity.
+         * No boundary wrapping - entities migrate when crossing boundaries.
          */
         void update(float dt) {
             position.x += velocity.x * dt;
             position.y += velocity.y * dt;
             position.z += velocity.z * dt;
 
-            // Simple boundary wrapping
-            if (position.x < 0f) position.x = 100f;
-            if (position.x > 100f) position.x = 0f;
+            // Y and Z wrap around (not migration boundaries)
             if (position.y < 0f) position.y = 100f;
             if (position.y > 100f) position.y = 0f;
             if (position.z < 0f) position.z = 100f;
