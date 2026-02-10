@@ -98,12 +98,54 @@
     </dependencies>
     <build>
         <plugins>
+            <!-- Add integration-test source directory -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.4.0</version>
+                <executions>
+                    <execution>
+                        <id>add-integration-test-source</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>add-test-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>src/integration-test/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <!--                <configuration>-->
-                <!--                    <argLine>-javaagent:${project.build.directory}/${sim.agent.jar}</argLine>-->
-                <!--                </configuration>-->
+                <configuration>
+                    <!-- Exclude integration tests from normal test phase -->
+                    <excludes>
+                        <exclude>**/integration/multiprocess/**/*Test.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <!-- Failsafe plugin for integration tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.0.0-M9</version>
+                <configuration>
+                    <includes>
+                        <include>**/integration/multiprocess/**/*Test.java</include>
+                    </includes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>com.hellblazer.primeMover</groupId>
