@@ -44,8 +44,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
-    disabledReason = "Ghost animation performance test: 189% overhead varies with CI runner speed, optimization planned for Phase 7B.5+")
 class VolumeAnimatorGhostTest {
 
     private EnhancedBubble bubble;
