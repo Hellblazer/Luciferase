@@ -1,5 +1,7 @@
 # Multi-Process Integration Tests
 
+**Last Updated**: 2026-02-10
+
 ## Overview
 
 These integration tests validate distributed simulation behavior with **real multi-process execution** using ProcessBuilder and actual gRPC network communication.
