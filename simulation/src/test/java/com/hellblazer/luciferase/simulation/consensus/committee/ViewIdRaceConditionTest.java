@@ -123,14 +123,16 @@ public class ViewIdRaceConditionTest {
     public void testDoubleCommitPrevention() throws Exception {
         // CRITICAL: Entity cannot migrate to both targets across view boundary
         var entityId = UUID.randomUUID();
-        var targetA = DigestAlgorithm.DEFAULT.digest("targetA");
-        var targetB = DigestAlgorithm.DEFAULT.digest("targetB");
+        // Use actual member IDs from members list (Byzantine validation requires nodes exist in view)
+        var source = members.get(0).getId();
+        var targetA = members.get(1).getId();
+        var targetB = members.get(2).getId();
 
         // t1: Committee votes to migrate entity to targetA in view1
         var proposal1 = new MigrationProposal(
             UUID.randomUUID(),
             entityId,
-            DigestAlgorithm.DEFAULT.digest("source"),
+            source,
             targetA,
             view1,
             System.currentTimeMillis()
@@ -156,7 +158,7 @@ public class ViewIdRaceConditionTest {
         var proposal2 = new MigrationProposal(
             UUID.randomUUID(),
             entityId,
-            DigestAlgorithm.DEFAULT.digest("source"),
+            source,
             targetB,
             view2,
             System.currentTimeMillis()
@@ -182,11 +184,12 @@ public class ViewIdRaceConditionTest {
     @Test
     public void testViewIdMatchingBetweenProposalAndVote() throws Exception {
         // Votes must have same viewId as proposal
+        // Use actual member IDs from members list (Byzantine validation requires nodes exist in view)
         var proposal = new MigrationProposal(
             UUID.randomUUID(),
             UUID.randomUUID(),
-            DigestAlgorithm.DEFAULT.digest("source"),
-            DigestAlgorithm.DEFAULT.digest("target"),
+            members.get(0).getId(),  // source
+            members.get(1).getId(),  // target
             view1,
             System.currentTimeMillis()
         );
@@ -210,11 +213,12 @@ public class ViewIdRaceConditionTest {
     public void testRaceConditionWith5NodeCommittee() throws Exception {
         // Byzantine scenario: view changes during voting
         var entityId = UUID.randomUUID();
+        // Use actual member IDs from members list (Byzantine validation requires nodes exist in view)
         var proposal = new MigrationProposal(
             UUID.randomUUID(),
             entityId,
-            DigestAlgorithm.DEFAULT.digest("source"),
-            DigestAlgorithm.DEFAULT.digest("target"),
+            members.get(0).getId(),  // source
+            members.get(1).getId(),  // target
             view1,
             System.currentTimeMillis()
         );
@@ -245,11 +249,12 @@ public class ViewIdRaceConditionTest {
     @Test
     public void testEarlyViewChangeInterrupt() throws Exception {
         // View change before any votes arrive (simulates slow network)
+        // Use actual member IDs from members list (Byzantine validation requires nodes exist in view)
         var proposal = new MigrationProposal(
             UUID.randomUUID(),
             UUID.randomUUID(),
-            DigestAlgorithm.DEFAULT.digest("source"),
-            DigestAlgorithm.DEFAULT.digest("target"),
+            members.get(0).getId(),  // source
+            members.get(1).getId(),  // target
             view1,
             System.currentTimeMillis()
         );
