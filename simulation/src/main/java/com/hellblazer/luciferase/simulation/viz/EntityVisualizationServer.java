@@ -25,6 +25,7 @@ import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.StampedLock;
 
 /**
  * WebSocket server for real-time entity visualization.
@@ -52,7 +53,7 @@ public class EntityVisualizationServer {
     private final Set<WsContext> clients = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean streaming = new AtomicBoolean(false);
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private final Object streamingLock = new Object();
+    private final StampedLock streamingLock = new StampedLock();
 
     private EnhancedBubble bubble;
     private SimulationBubble simulation;
@@ -281,25 +282,35 @@ public class EntityVisualizationServer {
 
     /**
      * Start streaming if conditions are met (clients connected and bubble available).
-     * Thread-safe using synchronized block to prevent TOCTOU race conditions.
+     * <p>
+     * Luciferase-t0v1: Refactored from synchronized to StampedLock.writeLock()
+     * for flexible concurrency control (modifies streaming state).
      */
     private void startStreamingIfNeeded() {
-        synchronized (streamingLock) {
+        long stamp = streamingLock.writeLock();
+        try {
             if (!clients.isEmpty() && bubble != null && !streaming.get()) {
                 startStreamingInternal();
             }
+        } finally {
+            streamingLock.unlockWrite(stamp);
         }
     }
 
     /**
      * Stop streaming if no clients are connected.
-     * Thread-safe using synchronized block to prevent TOCTOU race conditions.
+     * <p>
+     * Luciferase-t0v1: Refactored from synchronized to StampedLock.writeLock()
+     * for flexible concurrency control (modifies streaming state).
      */
     private void stopStreamingIfNoClients() {
-        synchronized (streamingLock) {
+        long stamp = streamingLock.writeLock();
+        try {
             if (clients.isEmpty() && streaming.get()) {
                 stopStreamingInternal();
             }
+        } finally {
+            streamingLock.unlockWrite(stamp);
         }
     }
 
@@ -327,10 +338,16 @@ public class EntityVisualizationServer {
 
     /**
      * Forcibly stop streaming (for shutdown).
+     * <p>
+     * Luciferase-t0v1: Refactored from synchronized to StampedLock.writeLock()
+     * for flexible concurrency control (modifies streaming state).
      */
     private void stopStreaming() {
-        synchronized (streamingLock) {
+        long stamp = streamingLock.writeLock();
+        try {
             stopStreamingInternal();
+        } finally {
+            streamingLock.unlockWrite(stamp);
         }
     }
 
