@@ -1,8 +1,8 @@
 # Distributed Architecture - Luciferase Simulation
 
-**Last Updated**: 2026-01-12
+**Last Updated**: 2026-02-10
 **Status**: Current
-**Scope**: Multi-bubble distributed simulation with causal consistency
+**Scope**: Multi-bubble distributed simulation with Byzantine consensus and causal consistency
 
 ---
 
@@ -12,10 +12,12 @@ Luciferase simulation module implements massively distributed 3D animation using
 
 **Key Architectural Principles**:
 - Emergent consistency boundaries (bubbles)
+- Byzantine consensus for migration decisions
 - Causal consistency within interaction range
 - Eventual consistency across bubbles
 - 2PC entity migration protocol
 - Ghost layer boundary synchronization
+- Fireflies view-based committee selection
 
 ---
 
@@ -24,10 +26,11 @@ Luciferase simulation module implements massively distributed 3D animation using
 1. [High-Level Architecture](#high-level-architecture)
 2. [Simulation Bubbles](#simulation-bubbles)
 3. [Entity Migration Protocol](#entity-migration-protocol)
-4. [Network Architecture](#network-architecture)
-5. [Ghost State Management](#ghost-state-management)
-6. [Process Coordination](#process-coordination)
-7. [Time Management](#time-management)
+4. [Consensus Layer](#consensus-layer)
+5. [Network Architecture](#network-architecture)
+6. [Ghost State Management](#ghost-state-management)
+7. [Process Coordination](#process-coordination)
+8. [Time Management](#time-management)
 
 ---
 
@@ -44,6 +47,11 @@ Luciferase simulation module implements massively distributed 3D animation using
 ┌─────────────────────────────────────────────────────┐
 │         Simulation Bubble Layer                     │
 │  (BucketScheduler, CausalRollback, Bubble)         │
+└─────────────────────────────────────────────────────┘
+                        │
+┌─────────────────────────────────────────────────────┐
+│         Consensus Layer (BFT)                       │
+│  (ViewCommitteeConsensus, CommitteeVotingProtocol) │
 └─────────────────────────────────────────────────────┘
                         │
 ┌─────────────────────────────────────────────────────┐
@@ -65,6 +73,11 @@ Luciferase simulation module implements massively distributed 3D animation using
 │         Spatial Index Layer                         │
 │  (Tetree, Forest, multi-tree support)              │
 └─────────────────────────────────────────────────────┘
+                        │
+┌─────────────────────────────────────────────────────┐
+│         Fireflies Membership Layer                  │
+│  (Virtual Synchrony, View Tracking, Gossip)        │
+└─────────────────────────────────────────────────────┘
 ```
 
 ### Key Components
@@ -74,10 +87,13 @@ Luciferase simulation module implements massively distributed 3D animation using
 | **VolumeAnimator** | Frame-rate controlled animation loop | `animation/` |
 | **BucketScheduler** | 100ms time bucket coordination | `bubble/` |
 | **CausalRollback** | Bounded rollback (GGPO-style) | `bubble/` |
+| **ViewCommitteeConsensus** | Byzantine consensus for migrations | `consensus/committee/` |
+| **CommitteeVotingProtocol** | Vote aggregation and quorum detection | `consensus/committee/` |
 | **CrossProcessMigration** | 2PC entity migration orchestrator | `distributed/migration/` |
 | **GhostStateManager** | Ghost lifecycle management | `ghost/` |
 | **RemoteBubbleProxy** | Remote bubble communication | `distributed/` |
 | **VONDiscoveryProtocol** | Voronoi-based area-of-interest | `distributed/` |
+| **FirefliesViewMonitor** | Membership view tracking | `causality/` |
 
 ---
 
@@ -276,6 +292,386 @@ public class IdempotencyStore {
 - Rollback failures (C3 violations)
 - Average migration duration
 - P50/P95/P99 latencies
+
+---
+
+## Consensus Layer
+
+### Overview
+
+The consensus layer provides **Byzantine fault-tolerant (BFT) agreement** on entity migration decisions before 2PC execution. Built on Delos Fireflies committee-based voting, it ensures all nodes agree on entity ownership changes even in the presence of Byzantine failures.
+
+**Location**: `consensus/committee/ViewCommitteeConsensus.java`
+
+**Purpose**: Prevent conflicting migration decisions that could violate entity conservation (no duplicates, no loss).
+
+### Why Byzantine Tolerance for Distributed Animation?
+
+Entity migration in distributed animation requires stronger guarantees than simple crash tolerance:
+
+**Problem Without Consensus**:
+```
+Timeline (without consensus):
+t1: Node A decides: Entity E migrates A → B
+t2: Node C decides: Entity E migrates A → C  ← CONFLICT!
+t3: 2PC executes both migrations
+Result: E duplicated in B and C → CORRUPTION
+```
+
+**Byzantine Threats**:
+1. **Clock Skew**: Nodes with incorrect clocks make bad migration decisions
+2. **Network Partition**: Split-brain scenarios create conflicting ownership claims
+3. **Buggy Nodes**: Software bugs cause incorrect migration proposals
+4. **Malicious Actors**: Intentional duplication or entity theft
+
+**Solution**: Committee-based BFT consensus ensures agreement before migration execution.
+
+### Architecture
+
+```java
+public class ViewCommitteeConsensus {
+    private FirefliesViewMonitor viewMonitor;      // Current view tracking
+    private ViewCommitteeSelector committeeSelector;  // Committee selection from view
+    private CommitteeVotingProtocol votingProtocol;  // Vote aggregation and quorum
+
+    // Track in-flight proposals for view change rollback
+    private final ConcurrentHashMap<UUID, ProposalTracking> pendingProposals;
+}
+```
+
+### Component Integration
+
+```
+┌─────────────────────────────────────────────────────────┐
+│         Animation Loop (VolumeAnimator)                 │
+│  Frame rendering at 60 FPS, entity updates every 16ms   │
+└────────────────────┬────────────────────────────────────┘
+                     │ Spatial boundary detection
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│         Migration Candidate Detection                    │
+│  Tetree spatial query: entities crossing bubble bounds  │
+└────────────────────┬────────────────────────────────────┘
+                     │ Generate MigrationProposal
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  CONSENSUS LAYER (ViewCommitteeConsensus)              │
+├─────────────────────────────────────────────────────────┤
+│  1. Check proposal.viewId == current view (abort if stale)
+│  2. Select committee: committeeSelector.selectCommittee(viewId)
+│  3. Submit to voting: votingProtocol.requestVote(proposal)
+│  4. Wait for quorum: (t + 1) votes required
+│  5. Verify viewId still matches (abort if view changed)
+│  6. Return approval decision: true/false
+└────────────────────┬────────────────────────────────────┘
+                     │ If approved: execute 2PC
+                     │ If rejected: abort migration
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  2PC MIGRATION PROTOCOL (CrossProcessMigration)        │
+├─────────────────────────────────────────────────────────┤
+│  PREPARE: Remove entity from source (100ms timeout)     │
+│  COMMIT:  Add entity to destination (100ms timeout)     │
+│  ABORT:   Rollback to source (100ms timeout)            │
+└────────────────────┬────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  Network Layer (GrpcBubbleNetworkChannel)              │
+│  Protobuf message serialization, gRPC streaming         │
+└─────────────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  Fireflies Membership (Virtual Synchrony)              │
+│  View tracking, failure detection, gossip broadcast     │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Committee Selection Algorithm
+
+**Deterministic Selection from Fireflies View**:
+```java
+public Set<Member> selectCommittee(Digest viewId) {
+    // Get current Fireflies view
+    var context = firefliesView.getContext();
+
+    // Deterministic BFT committee based on view hash
+    // Size: O(log n) - typically 5-11 nodes for small clusters
+    var committee = context.bftSubset(viewId);
+
+    return committee;
+}
+```
+
+**Committee Size by Cluster Size**:
+| Cluster Size | t (Byzantine Tolerance) | Quorum | Committee Size |
+|--------------|-------------------------|--------|----------------|
+| 2-3 nodes    | 0                       | 1      | 5              |
+| 4-7 nodes    | 1                       | 2      | 7              |
+| 8+ nodes     | 2                       | 3      | 9-11           |
+
+**Properties**:
+- **Deterministic**: Same view ID → same committee
+- **Byzantine Robust**: Committee size = O(log n) for BFT guarantees
+- **Auto-recalculates**: View changes trigger new committee selection
+
+### Voting Protocol
+
+**MigrationProposal Structure**:
+```java
+public record MigrationProposal(
+    UUID proposalId,           // Unique proposal identifier
+    String entityId,           // Entity to migrate
+    UUID sourceBubbleId,       // Current owner
+    UUID targetBubbleId,       // Destination
+    Digest viewId,             // CRITICAL: View at proposal time
+    long timestamp             // Proposal timestamp
+) {}
+```
+
+**Vote Request Flow**:
+```
+1. Proposer: Submit MigrationProposal to committee
+   ├─ Includes current viewId (view synchrony check)
+   └─ Timestamp for ordering
+
+2. Committee Members: Vote ACCEPT/REJECT based on:
+   ├─ Entity not already migrating (idempotency check)
+   ├─ Destination bubble has capacity (resource check)
+   ├─ Source bubble confirms ownership (state check)
+   └─ Proposal viewId matches current view (synchrony check)
+
+3. Quorum Detection: CommitteeVotingProtocol aggregates votes
+   ├─ Quorum = (t + 1) where t = Byzantine tolerance
+   ├─ t=0: 1 vote required (2-3 node clusters, no BFT)
+   ├─ t=1: 2 votes required (4-7 nodes, tolerates 1 Byzantine)
+   └─ t=2: 3 votes required (8+ nodes, tolerates 2 Byzantine)
+
+4. Approval Decision:
+   ├─ Quorum reached → Return true (execute 2PC migration)
+   ├─ Quorum failed → Return false (abort migration)
+   └─ View changed → Abort proposal (retry in new view)
+
+5. View Change Handling:
+   └─ All pending proposals automatically aborted
+       (Virtual Synchrony guarantee from Fireflies)
+```
+
+### Integration with 2PC Migration
+
+**Consensus BEFORE Execution**:
+```java
+// Migration workflow with consensus
+public CompletableFuture<Boolean> migrateEntity(String entityId, UUID target) {
+    // 1. Create proposal with current view
+    var proposal = new MigrationProposal(
+        UUID.randomUUID(),
+        entityId,
+        sourceBubbleId,
+        target,
+        viewMonitor.getCurrentViewId(),  // CRITICAL: View synchrony
+        clock.currentTimeMillis()
+    );
+
+    // 2. Request consensus approval
+    return consensus.requestConsensus(proposal)
+        .thenCompose(approved -> {
+            if (!approved) {
+                log.debug("Migration rejected by consensus: {}", entityId);
+                return CompletableFuture.completedFuture(false);
+            }
+
+            // 3. Execute 2PC migration (only if approved)
+            return migration.executeMigration(entityId, target);
+        });
+}
+```
+
+**When Each Component Activates**:
+| Component | Trigger | Frequency | Latency |
+|-----------|---------|-----------|---------|
+| **Spatial Boundary Detection** | Every simulation tick | 20 Hz (50ms) | ~5ms |
+| **Consensus Approval** | Migration candidate detected | ~10-100 Hz | ~50ms |
+| **2PC Migration** | Consensus approved | ~10-50 Hz | ~150ms |
+| **Ghost Synchronization** | Entity in ghost zone | 100 Hz (10ms) | ~5ms |
+| **Fireflies View Updates** | Membership change | ~0.1 Hz (10s) | ~100ms |
+
+### View Synchrony and Proposal Rollback
+
+**Problem Without View Synchrony**:
+```
+Timeline (without view ID check):
+t1: Committee approves E: A→B (viewId=V1)
+t2: View changes to V2 (node failure or join)
+t3: New committee approves E: C→D (viewId=V2)
+t4: E ends up in both B and D ← CORRUPTION!
+```
+
+**Solution: View ID Verification**:
+```java
+public CompletableFuture<Boolean> requestConsensus(MigrationProposal proposal) {
+    var currentViewId = getCurrentViewId();
+
+    // CRITICAL: Abort if proposal from old view
+    if (!proposal.viewId().equals(currentViewId)) {
+        log.debug("Proposal has stale viewId, aborting");
+        return CompletableFuture.completedFuture(false);
+    }
+
+    // ... proceed with voting ...
+
+    // Before execution: verify viewId still matches
+    return votingProtocol.requestVote(proposal)
+        .thenApply(approved -> {
+            if (!getCurrentViewId().equals(proposal.viewId())) {
+                log.warn("View changed during voting, aborting");
+                return false;  // View changed, abort
+            }
+            return approved;
+        });
+}
+```
+
+**View Change Handling**:
+```java
+public void onViewChange(Digest newViewId) {
+    log.info("View changed to {}, rolling back {} pending proposals",
+             newViewId, pendingProposals.size());
+
+    // Abort all pending proposals from old view
+    pendingProposals.values().forEach(tracking -> {
+        tracking.future().completeExceptionally(
+            new IllegalStateException("View changed during consensus")
+        );
+    });
+
+    pendingProposals.clear();
+}
+```
+
+**Virtual Synchrony Guarantee** (from Fireflies):
+- All messages sent within a stable view are delivered to all live members
+- View changes are atomic (no partial view updates)
+- Pending operations can safely abort on view change
+
+### Message Propagation
+
+**Fireflies Gossip Broadcast** (no separate P2P infrastructure needed):
+```
+Traditional All-Nodes Consensus (Raft):
+┌──────┐   ┌──────┐   ┌──────┐   ┌──────┐   ┌──────┐
+│Node 1│◄─►│Node 2│◄─►│Node 3│◄─►│Node 4│◄─►│Node 5│
+└──────┘   └──────┘   └──────┘   └──────┘   └──────┘
+  All nodes participate: O(n) messages per decision
+
+Committee-Based Consensus (ViewCommitteeConsensus):
+┌──────┐   ┌──────────────────────┐   ┌──────┐
+│Node 1│──►│ Committee (7 nodes)  │──►│Node 5│
+└──────┘   │ Selected from view   │   └──────┘
+           └──────────────────────┘
+  Only committee votes: O(log n) messages per decision
+```
+
+**Message Reduction**:
+- **Raft (all nodes)**: 10-node cluster = 45 messages per decision (O(n²))
+- **Committee (view-based)**: 10-node cluster = 3-5 messages per decision (O(log n))
+- **Reduction**: 10-100x fewer messages for large clusters
+
+### Performance Characteristics
+
+**Consensus Latency**:
+| Operation | Target | Typical |
+|-----------|--------|---------|
+| Committee selection | < 10ms | ~5ms |
+| Vote request broadcast | < 20ms | ~10ms |
+| Quorum detection | < 50ms | ~25ms |
+| Total consensus latency | < 100ms | ~50ms |
+
+**Byzantine Tolerance**:
+- **t=0** (2-3 nodes): No BFT, crash tolerance only
+- **t=1** (4-7 nodes): Tolerates 1 Byzantine failure
+- **t=2** (8+ nodes): Tolerates 2 Byzantine failures
+
+**Scalability**:
+- **Committee size**: O(log n) - grows slowly with cluster size
+- **Message complexity**: O(log n) - scales to large clusters
+- **View changes**: Automatic proposal rollback (no manual cleanup)
+
+### Fault Tolerance
+
+**Byzantine Failures**:
+- **Detection**: Quorum voting rejects Byzantine proposals
+- **Recovery**: Consensus failure triggers 2PC abort (no migration)
+- **Monitoring**: Byzantine detection events tracked in metrics
+
+**Network Partitions**:
+- **Detection**: Fireflies view changes on partition
+- **Recovery**: Pending proposals aborted, retry in new view
+- **Guarantee**: Virtual synchrony prevents split-brain
+
+**View Changes**:
+- **Detection**: FirefliesViewMonitor tracks view updates
+- **Recovery**: Auto-abort all pending proposals (safe retry)
+- **Performance**: View changes rare (~0.1 Hz in stable clusters)
+
+### Consensus Metrics
+
+**Tracked Metrics**:
+```java
+// Proposal tracking
+consensus.totalProposals               // Total proposals submitted
+consensus.approvedProposals            // Approved by quorum
+consensus.rejectedProposals            // Rejected by quorum
+consensus.abortedProposals             // Aborted due to view change
+
+// Latency tracking
+consensus.voteLatency.p50              // Median vote latency
+consensus.voteLatency.p95              // 95th percentile vote latency
+consensus.voteLatency.p99              // 99th percentile vote latency
+
+// Committee metrics
+consensus.committeeSize                // Current committee size
+consensus.quorumSize                   // Required quorum size
+consensus.byzantineTolerance           // Current t value
+
+// Byzantine detection
+consensus.byzantineVotes               // Votes from Byzantine nodes
+consensus.conflictingProposals         // Detected conflicts
+```
+
+### Configuration
+
+**Key Parameters**:
+```java
+// Byzantine tolerance parameters (Fireflies)
+double pByz = 0.1;        // Probability of Byzantine behavior
+int bias = 2;             // Byzantine tolerance multiplier
+double epsilon = 0.1;     // Tolerance factor
+
+// Quorum calculation
+int quorum = t + 1;       // where t = Byzantine tolerance
+
+// View synchrony
+long viewStableThreshold = 300;  // View stability window (ms)
+```
+
+**Tuning Guidelines**:
+
+**High Security** (Byzantine-resistant):
+- Increase `pByz` to 0.2 (larger committees)
+- Increase `bias` to 3 (higher BFT tolerance)
+- Monitor Byzantine detection events
+
+**High Performance** (low latency):
+- Reduce `pByz` to 0.05 (smaller committees)
+- Reduce `viewStableThreshold` to 200ms (faster view changes)
+- Accept t=0 for trusted clusters
+
+**High Reliability** (network partitions):
+- Increase `viewStableThreshold` to 500ms (more stable views)
+- Monitor view change frequency
+- Reduce proposal timeout (faster failure detection)
 
 ---
 
@@ -693,15 +1089,21 @@ metrics.recordRollbackFailure(entityId);
 
 ## Related Documentation
 
+### Architecture Decision Records
+- [ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md](ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md) - Migration and Consensus design rationale
+
+### Implementation Guides
 - [H3_DETERMINISM_EPIC.md](H3_DETERMINISM_EPIC.md) - Deterministic testing with Clock interface
 - [SIMULATION_BUBBLES.md](SIMULATION_BUBBLES.md) - Detailed bubble architecture
 - [TESTING_PATTERNS.md](TESTING_PATTERNS.md) - Testing best practices
-- [archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v3.0.md](archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v3.0.md) - Legacy v3.0 architecture (archived)
-- [archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v4.0.md](archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v4.0.md) - Legacy v4.0 architecture (archived)
+
+### Archived Designs
+- [archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v3.0.md](archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v3.0.md) - Legacy v3.0 architecture
+- [archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v4.0.md](archive/designs/DISTRIBUTED_ANIMATION_ARCHITECTURE_v4.0.md) - Legacy v4.0 architecture
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-01-12
-**Author**: knowledge-tidier (Haiku)
+**Document Version**: 2.0 (Added Consensus Layer documentation)
+**Last Updated**: 2026-02-10
+**Author**: knowledge-tidier (Haiku), consensus section added 2026-02-10
 **Status**: Current

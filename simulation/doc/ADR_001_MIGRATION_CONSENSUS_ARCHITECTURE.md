@@ -435,6 +435,9 @@ See `simulation/doc/GHOST_LAYER_CONSOLIDATION_ANALYSIS.md` for full consolidatio
 
 ## Related Documents
 
+### Architecture Documentation
+- **[ARCHITECTURE_DISTRIBUTED.md](ARCHITECTURE_DISTRIBUTED.md)** - Complete distributed architecture overview with Consensus Layer section
+
 ### ChromaDB References
 - `architecture::distributed::migration` - Migration protocol details
 - `decision::migration::phase-6b4-2pc-protocol` - 2PC decision rationale
