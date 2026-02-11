@@ -73,10 +73,10 @@
 **Pattern**: All public methods synchronized
 **Rationale**: **KEEP**
 - Complex state machine coordinating:
-  * Event queue (PriorityQueue)
-  * Gap detection state
-  * Pending events map
-  * Last processed timestamp
+  - Event queue (PriorityQueue)
+  - Gap detection state
+  - Pending events map
+  - Last processed timestamp
 - State interdependencies require coarse-grained locking
 - Synchronized simplifies reasoning about correctness
 - Performance: Event reprocessing is not hot path
@@ -112,11 +112,11 @@
 **Pattern**: All file operation methods synchronized
 **Rationale**: **KEEP**
 - Coordinates file I/O operations:
-  * append() - Write event
-  * flush() - Sync to disk
-  * checkpoint() - Mark snapshot point
-  * rotate() - Log rotation
-  * close() - Cleanup
+  - append() - Write event
+  - flush() - Sync to disk
+  - checkpoint() - Mark snapshot point
+  - rotate() - Log rotation
+  - close() - Cleanup
 - File operations not thread-safe, require serialization
 - Synchronized is simplest correct pattern for file I/O coordination
 
