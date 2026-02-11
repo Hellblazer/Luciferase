@@ -75,11 +75,8 @@ public class CrossProcessMigration {
 
     private static final Logger                log                   = LoggerFactory.getLogger(
     CrossProcessMigration.class);
-    private static final long                  PHASE_TIMEOUT_MS      = 100;
-    private static final long                  TOTAL_TIMEOUT_MS      = 300;
-    private static final long                  LOCK_TIMEOUT_MS       = 50;
-    private static final long                  LOCK_RETRY_INTERVAL_NS = 5_000_000;  // 5ms
-    private static final int                   MAX_LOCK_RETRIES      = 10;  // 50ms total
+    // Luciferase-65qu: Configurable timeouts (was hardcoded constants)
+    private final        MigrationConfig       config;
     private volatile     Clock                 clock                 = Clock.system();
     private final        IdempotencyStore      dedup;
     private final        MigrationMetrics      metrics;
@@ -105,9 +102,29 @@ public class CrossProcessMigration {
         this.clock = clock;
     }
 
+    /**
+     * Create CrossProcessMigration with default configuration.
+     * <p>
+     * Uses MigrationConfig.defaults() for typical LAN deployments.
+     *
+     * @param dedup   Idempotency store for exactly-once semantics
+     * @param metrics Migration metrics collector
+     */
     public CrossProcessMigration(IdempotencyStore dedup, MigrationMetrics metrics) {
+        this(dedup, metrics, MigrationConfig.defaults());
+    }
+
+    /**
+     * Create CrossProcessMigration with explicit configuration (Luciferase-65qu).
+     *
+     * @param dedup   Idempotency store for exactly-once semantics
+     * @param metrics Migration metrics collector
+     * @param config  Timeout and retry configuration
+     */
+    public CrossProcessMigration(IdempotencyStore dedup, MigrationMetrics metrics, MigrationConfig config) {
         this.dedup = dedup;
         this.metrics = metrics;
+        this.config = config;
         // Phase 4.2.2: Initialize Prime-Mover controller
         this.controller = new RealTimeController("CrossProcessMigration");
         this.controller.start();
@@ -232,7 +249,8 @@ public class CrossProcessMigration {
             metrics::recordRollbackFailure,
             metrics::recordAbort,
             dedup,
-            orphanedEntityIds::add  // Phase 2C: Pass orphaned entity tracking callback
+            orphanedEntityIds::add,  // Phase 2C: Pass orphaned entity tracking callback
+            config  // Luciferase-65qu: Pass timeout configuration
         );
 
         // Luciferase-77tn: Track entity with strong reference for lifecycle management
@@ -463,6 +481,7 @@ public class CrossProcessMigration {
         private final java.util.function.Consumer<String> recordAbort;
         private final IdempotencyStore                    dedup;
         private final java.util.function.Consumer<String> recordOrphanedEntity; // Phase 2C: Orphan tracking callback
+        private final MigrationConfig                     config;  // Luciferase-65qu: Timeout configuration
 
         public CrossProcessMigrationEntity(
             String entityId,
@@ -481,7 +500,8 @@ public class CrossProcessMigration {
             Runnable recordRollbackFailure,
             java.util.function.Consumer<String> recordAbort,
             IdempotencyStore dedup,
-            java.util.function.Consumer<String> recordOrphanedEntity  // Phase 2C: Orphan tracking
+            java.util.function.Consumer<String> recordOrphanedEntity,  // Phase 2C: Orphan tracking
+            MigrationConfig config  // Luciferase-65qu: Timeout configuration
         ) {
             this.entityId = entityId;
             this.source = source;
@@ -500,6 +520,7 @@ public class CrossProcessMigration {
             this.recordAbort = recordAbort;
             this.dedup = dedup;
             this.recordOrphanedEntity = recordOrphanedEntity;  // Phase 2C
+            this.config = config;  // Luciferase-65qu
         }
 
         /**
@@ -539,13 +560,13 @@ public class CrossProcessMigration {
             } else {
                 // Lock held by another migration
                 lockRetries++;
-                if (lockRetries > MAX_LOCK_RETRIES) {
+                if (lockRetries > config.maxLockRetries()) {
                     recordAlreadyMigrating.run();
                     log.debug("Entity {} already being migrated, rejecting concurrent attempt", entityId);
                     resultFuture.complete(MigrationResult.failure(entityId, "ALREADY_MIGRATING"));
                 } else {
                     // Retry after delay
-                    Kronos.sleep(LOCK_RETRY_INTERVAL_NS);
+                    Kronos.sleep(config.lockRetryIntervalNs());
                     this.acquireLock();
                 }
             }
@@ -591,9 +612,9 @@ public class CrossProcessMigration {
                 var prepareElapsed = clockSupplier.getAsLong() - prepareStart;
 
                 // Check per-phase timeout
-                if (prepareElapsed > PHASE_TIMEOUT_MS) {
+                if (prepareElapsed > config.phaseTimeoutMs()) {
                     log.warn("PREPARE phase timed out for entity {} ({}ms > {}ms)",
-                            entityId, prepareElapsed, PHASE_TIMEOUT_MS);
+                            entityId, prepareElapsed, config.phaseTimeoutMs());
                     recordFailure.accept("PREPARE_TIMEOUT");
                     failAndUnlock("TIMEOUT");
                     return;
@@ -637,9 +658,9 @@ public class CrossProcessMigration {
                 var commitElapsed = clockSupplier.getAsLong() - commitStart;
 
                 // Check per-phase timeout
-                if (commitElapsed > PHASE_TIMEOUT_MS) {
+                if (commitElapsed > config.phaseTimeoutMs()) {
                     log.warn("COMMIT phase timed out for entity {} ({}ms > {}ms)",
-                            entityId, commitElapsed, PHASE_TIMEOUT_MS);
+                            entityId, commitElapsed, config.phaseTimeoutMs());
                     recordFailure.accept("COMMIT_TIMEOUT");
                     // COMMIT failed, need to ABORT
                     abortReason = "COMMIT_TIMEOUT";
@@ -693,7 +714,7 @@ public class CrossProcessMigration {
 
                 // Check total timeout
                 var totalElapsed = clockSupplier.getAsLong() - phaseStartTime;
-                if (totalElapsed > TOTAL_TIMEOUT_MS) {
+                if (totalElapsed > config.totalTimeoutMs()) {
                     // Phase 2C: Enhanced error logging with full state
                     log.error("ABORT timed out for entity {} - CRITICAL: Entity may be lost " +
                               "(txn={}, source={}, dest={}, elapsed={}ms, snapshot=[epoch={}, position={}], reason={})",
