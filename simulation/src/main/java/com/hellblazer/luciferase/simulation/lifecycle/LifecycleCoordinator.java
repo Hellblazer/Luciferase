@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Coordinates lifecycle operations across multiple components with dependency ordering.
@@ -114,6 +115,7 @@ public class LifecycleCoordinator {
 
     final ConcurrentHashMap<String, LifecycleComponent> components;  // Package-private for Test 27 dual-map race detection
     private final ConcurrentHashMap<String, LifecycleState> states;
+    private final ConcurrentHashMap<String, ReentrantReadWriteLock> componentLocks;  // Luciferase-ucks: Per-component locks
     private final AtomicBoolean isStarted;
     private final ViewStabilityGate viewStabilityGate;  // Optional Fireflies integration
     private final long componentTimeoutMs;
@@ -164,6 +166,7 @@ public class LifecycleCoordinator {
     public LifecycleCoordinator(long componentTimeoutMs, ViewStabilityGate viewStabilityGate) {
         this.components = new ConcurrentHashMap<>();
         this.states = new ConcurrentHashMap<>();
+        this.componentLocks = new ConcurrentHashMap<>();  // Luciferase-ucks: Initialize per-component locks
         this.isStarted = new AtomicBoolean(false);
         this.componentTimeoutMs = componentTimeoutMs;
         this.viewStabilityGate = viewStabilityGate;
@@ -171,6 +174,19 @@ public class LifecycleCoordinator {
         if (viewStabilityGate != null) {
             log.debug("LifecycleCoordinator created with Fireflies view stability integration");
         }
+    }
+
+    /**
+     * Get or create a lock for the specified component.
+     * <p>
+     * Luciferase-ucks: Replaces synchronizing on external component instances with
+     * coordinator-managed per-component locks for thread-safe state checking.
+     *
+     * @param componentName the component name
+     * @return lock for the component
+     */
+    private ReentrantReadWriteLock getComponentLock(String componentName) {
+        return componentLocks.computeIfAbsent(componentName, k -> new ReentrantReadWriteLock());
     }
 
     /**
@@ -238,9 +254,12 @@ public class LifecycleCoordinator {
         try {
             // FIX Issue #1 (Luciferase-7q6q): Use computeIfPresent for atomic check-and-remove
             // FIX Issue #1 (Luciferase-bo26): Synchronize on component to prevent state-change race
+            // Luciferase-ucks: Use coordinator-managed per-component lock instead of synchronizing on external component
             // Previous: check-then-act race between get() and remove()
-            components.computeIfPresent(componentName, (name, comp) -> {
-                synchronized (comp) {  // Prevent concurrent state changes during check
+            var lock = getComponentLock(componentName);
+            lock.writeLock().lock();
+            try {
+                components.computeIfPresent(componentName, (name, comp) -> {
                     var state = comp.getState();
                     // FIX Luciferase-vt8d: Defensive null check for contract violation
                     if (state == null) {
@@ -253,8 +272,14 @@ public class LifecycleCoordinator {
                     states.remove(name);
                     log.debug("Unregistered component: {}", name);
                     return null; // Remove from map
+                });
+            } finally {
+                lock.writeLock().unlock();
+                // Clean up lock if component was removed
+                if (!components.containsKey(componentName)) {
+                    componentLocks.remove(componentName);
                 }
-            });
+            }
         } finally {
             inCoordinatorCall.set(false);
         }
@@ -360,8 +385,10 @@ public class LifecycleCoordinator {
 
             // Stop component if it's running
             // FIX Luciferase-3f3o: Synchronize on component to prevent state-change race
-            // Same pattern as unregister() to ensure atomic state check
-            synchronized (component) {  // Prevent concurrent state changes during check
+            // Luciferase-ucks: Use coordinator-managed per-component lock instead of synchronizing on external component
+            var lock = getComponentLock(componentName);
+            lock.writeLock().lock();
+            try {
                 var state = component.getState();
                 // FIX Luciferase-vt8d: Defensive null check for contract violation
                 if (state == null) {
@@ -381,27 +408,31 @@ public class LifecycleCoordinator {
                             .join();
                         states.put(componentName, component.getState());
                         log.debug("Stopped component: {}", componentName);
-                } catch (Exception e) {
-                    // Distinguish timeout from other errors for better diagnostics
-                    if (e instanceof java.util.concurrent.TimeoutException ||
-                        (e.getCause() instanceof java.util.concurrent.TimeoutException)) {
-                        log.error("Component {} stop timed out after 5s, keeping in coordinator",
-                                  componentName, e);
-                    } else {
-                        log.error("Component {} stop failed with exception, keeping in coordinator",
-                                  componentName, e);
+                    } catch (Exception e) {
+                        // Distinguish timeout from other errors for better diagnostics
+                        if (e instanceof java.util.concurrent.TimeoutException ||
+                            (e.getCause() instanceof java.util.concurrent.TimeoutException)) {
+                            log.error("Component {} stop timed out after 5s, keeping in coordinator",
+                                      componentName, e);
+                        } else {
+                            log.error("Component {} stop failed with exception, keeping in coordinator",
+                                      componentName, e);
+                        }
+                        states.put(componentName, LifecycleState.FAILED);
+                        throw new LifecycleException("Cannot unregister component that failed to stop", e);
                     }
-                    states.put(componentName, LifecycleState.FAILED);
-                    throw new LifecycleException("Cannot unregister component that failed to stop", e);
                 }
-            }
-            // STOPPED/CREATED/FAILED: Just remove without stop
-            }  // End synchronized block (Luciferase-3f3o fix)
+                // STOPPED/CREATED/FAILED: Just remove without stop
 
-            // Unregister the component (only reached if stop succeeded or component wasn't running)
-            components.remove(componentName);
-            states.remove(componentName);
-            log.debug("Unregistered component: {}", componentName);
+                // Unregister the component (only reached if stop succeeded or component wasn't running)
+                components.remove(componentName);
+                states.remove(componentName);
+                log.debug("Unregistered component: {}", componentName);
+            } finally {
+                lock.writeLock().unlock();
+                // Clean up lock after component removal
+                componentLocks.remove(componentName);
+            }
         } finally {
             inCoordinatorCall.set(false);
         }
@@ -753,14 +784,19 @@ public class LifecycleCoordinator {
     private void stopLayer(List<String> layer, long timeoutMs) {
         var perComponentTimeout = layer.isEmpty() ? timeoutMs : timeoutMs / layer.size();
 
+        // Luciferase-ucks: Use coordinator-managed per-component locks instead of synchronizing on external components
         var componentsToStop = layer.stream()
             .map(name -> components.get(name))
             .filter(Objects::nonNull)
             .filter(comp -> {
-                synchronized (comp) {  // Prevent concurrent state changes during check
+                var lock = getComponentLock(comp.name());
+                lock.readLock().lock();  // Read lock sufficient for state check
+                try {
                     var state = comp.getState();
                     // During rollback, stop components that are STARTING or RUNNING
                     return state == LifecycleState.STARTING || state == LifecycleState.RUNNING;
+                } finally {
+                    lock.readLock().unlock();
                 }
             })
             .toList();
