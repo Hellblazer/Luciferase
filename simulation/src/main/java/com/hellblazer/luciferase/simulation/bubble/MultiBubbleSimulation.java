@@ -27,6 +27,8 @@ import com.hellblazer.luciferase.simulation.ghost.DuplicateDetectionConfig;
 import com.hellblazer.luciferase.simulation.ghost.DuplicateEntityDetector;
 import com.hellblazer.luciferase.simulation.ghost.MigrationLog;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
 import java.util.*;
@@ -67,6 +69,8 @@ import java.util.stream.Collectors;
  * @see EnhancedBubble Reference implementation of orchestrator pattern
  */
 public class MultiBubbleSimulation implements AutoCloseable {
+
+    private static final Logger log = LoggerFactory.getLogger(MultiBubbleSimulation.class);
 
     /**
      * Default tick interval: 60fps (16.67ms).
@@ -297,8 +301,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
         } catch (Exception e) {
             // Log error but continue simulation
-            System.err.println("Error in tick " + executionEngine.getTickCount() + ": " + e.getMessage());
-            e.printStackTrace();
+            log.error("Error in tick {}: {}", executionEngine.getTickCount(), e.getMessage(), e);
         }
     }
 
