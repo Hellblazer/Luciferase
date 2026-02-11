@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.ref.WeakReference;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -160,8 +161,27 @@ public class CrossProcessMigration {
      * @param source   Source bubble reference
      * @param dest     Destination bubble reference
      * @return CompletableFuture with MigrationResult (completed asynchronously)
+     * @throws IllegalArgumentException if validation fails (Byzantine protection)
      */
     public CompletableFuture<MigrationResult> migrate(String entityId, BubbleReference source, BubbleReference dest) {
+        // Byzantine input validation (Luciferase-brtp)
+        Objects.requireNonNull(entityId, "entityId must not be null");
+        Objects.requireNonNull(source, "source must not be null");
+        Objects.requireNonNull(dest, "dest must not be null");
+
+        if (entityId.isEmpty()) {
+            throw new IllegalArgumentException("entityId must not be empty");
+        }
+
+        if (entityId.length() > 36) {
+            throw new IllegalArgumentException("entityId length must not exceed 36 characters (UUID standard)");
+        }
+
+        if (source.equals(dest)) {
+            throw new IllegalArgumentException(
+                String.format("source and dest must be different (self-migration not allowed): %s", source));
+        }
+
         // Create future to be completed by entity
         var future = new CompletableFuture<MigrationResult>();
 

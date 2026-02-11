@@ -82,6 +82,9 @@ public class ViewCommitteeConsensusTest {
         var committee = new java.util.LinkedHashSet<>(members);
         when(context.bftSubset(Mockito.any(Digest.class))).thenReturn((java.util.SequencedSet) committee);
 
+        // Mock allMembers() to return a new stream each time (Byzantine validation)
+        when(context.allMembers()).thenAnswer(invocation -> members.stream());
+
         // Create mock view monitor
         mockMonitor = new MockViewMonitor(view1);
 
@@ -113,8 +116,8 @@ public class ViewCommitteeConsensusTest {
         var proposal = new MigrationProposal(
             UUID.randomUUID(),
             UUID.randomUUID(),
-            DigestAlgorithm.DEFAULT.digest("source"),
-            DigestAlgorithm.DEFAULT.digest("target"),
+            members.get(0).getId(),  // Valid source from members
+            members.get(1).getId(),  // Valid target from members
             view1,
             System.currentTimeMillis()
         );
@@ -131,8 +134,8 @@ public class ViewCommitteeConsensusTest {
         var proposal = new MigrationProposal(
             UUID.randomUUID(),
             UUID.randomUUID(),
-            DigestAlgorithm.DEFAULT.digest("source"),
-            DigestAlgorithm.DEFAULT.digest("target"),
+            members.get(0).getId(),  // Valid source from members
+            members.get(1).getId(),  // Valid target from members
             view1,
             System.currentTimeMillis()
         );
@@ -156,8 +159,8 @@ public class ViewCommitteeConsensusTest {
         var proposal = new MigrationProposal(
             UUID.randomUUID(),
             UUID.randomUUID(),
-            DigestAlgorithm.DEFAULT.digest("source"),
-            DigestAlgorithm.DEFAULT.digest("target"),
+            members.get(0).getId(),
+            members.get(1).getId(),
             view1,
             System.currentTimeMillis()
         );
@@ -181,8 +184,8 @@ public class ViewCommitteeConsensusTest {
         var proposal = new MigrationProposal(
             UUID.randomUUID(),
             UUID.randomUUID(),
-            DigestAlgorithm.DEFAULT.digest("source"),
-            DigestAlgorithm.DEFAULT.digest("target"),
+            members.get(0).getId(),
+            members.get(1).getId(),
             view1,
             System.currentTimeMillis()
         );
@@ -205,8 +208,8 @@ public class ViewCommitteeConsensusTest {
         var proposal = new MigrationProposal(
             UUID.randomUUID(),
             UUID.randomUUID(),
-            DigestAlgorithm.DEFAULT.digest("source"),
-            DigestAlgorithm.DEFAULT.digest("target"),
+            members.get(0).getId(),
+            members.get(1).getId(),
             view1,  // Proposal tagged with view1
             System.currentTimeMillis()
         );
@@ -220,6 +223,122 @@ public class ViewCommitteeConsensusTest {
         // Should immediately return false (view mismatch)
         var result = future.get(100, TimeUnit.MILLISECONDS);
         assertFalse(result, "Proposal with old viewId should be rejected immediately");
+    }
+
+    // ===== Byzantine Input Validation Tests (Luciferase-brtp) =====
+
+    @Test
+    public void testMaliciousEntityIdInjection() throws Exception {
+        // Attack: null entityId
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(),
+            null,  // ATTACK: null entityId
+            members.get(0).getId(),
+            members.get(1).getId(),
+            view1,
+            System.currentTimeMillis()
+        );
+
+        var future = consensus.requestConsensus(proposal);
+        var result = future.get(100, TimeUnit.MILLISECONDS);
+
+        assertFalse(result, "Proposal with null entityId should be rejected");
+    }
+
+    @Test
+    public void testDestinationNotInView() throws Exception {
+        // Attack: targetNodeId not in current Fireflies view
+        var nonExistentNode = DigestAlgorithm.DEFAULT.digest("non-existent-node");
+
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            members.get(0).getId(),
+            nonExistentNode,  // ATTACK: target not in view
+            view1,
+            System.currentTimeMillis()
+        );
+
+        var future = consensus.requestConsensus(proposal);
+        var result = future.get(100, TimeUnit.MILLISECONDS);
+
+        assertFalse(result, "Proposal with target node not in view should be rejected");
+    }
+
+    @Test
+    public void testSelfMigrationAttack() throws Exception {
+        // Attack: source == target (self-migration)
+        var sourceAndTarget = members.get(0).getId();
+
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            sourceAndTarget,  // ATTACK: source == target
+            sourceAndTarget,
+            view1,
+            System.currentTimeMillis()
+        );
+
+        var future = consensus.requestConsensus(proposal);
+        var result = future.get(100, TimeUnit.MILLISECONDS);
+
+        assertFalse(result, "Proposal with source == target should be rejected");
+    }
+
+    @Test
+    public void testNullSourceNodeAttack() throws Exception {
+        // Attack: null sourceNodeId
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            null,  // ATTACK: null sourceNodeId
+            members.get(1).getId(),
+            view1,
+            System.currentTimeMillis()
+        );
+
+        var future = consensus.requestConsensus(proposal);
+        var result = future.get(100, TimeUnit.MILLISECONDS);
+
+        assertFalse(result, "Proposal with null sourceNodeId should be rejected");
+    }
+
+    @Test
+    public void testNullTargetNodeAttack() throws Exception {
+        // Attack: null targetNodeId
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            members.get(0).getId(),
+            null,  // ATTACK: null targetNodeId
+            view1,
+            System.currentTimeMillis()
+        );
+
+        var future = consensus.requestConsensus(proposal);
+        var result = future.get(100, TimeUnit.MILLISECONDS);
+
+        assertFalse(result, "Proposal with null targetNodeId should be rejected");
+    }
+
+    @Test
+    public void testSourceNodeNotInView() throws Exception {
+        // Attack: sourceNodeId not in current Fireflies view
+        var nonExistentNode = DigestAlgorithm.DEFAULT.digest("non-existent-source");
+
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            nonExistentNode,  // ATTACK: source not in view
+            members.get(1).getId(),
+            view1,
+            System.currentTimeMillis()
+        );
+
+        var future = consensus.requestConsensus(proposal);
+        var result = future.get(100, TimeUnit.MILLISECONDS);
+
+        assertFalse(result, "Proposal with source node not in view should be rejected");
     }
 
     // Mock Member implementation

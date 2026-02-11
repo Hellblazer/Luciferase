@@ -69,4 +69,19 @@ public class ViewCommitteeSelector {
         Objects.requireNonNull(viewDiadem, "viewDiadem must not be null");
         return context.bftSubset(viewDiadem);
     }
+
+    /**
+     * Check if a node exists in the current view.
+     * <p>
+     * Used for Byzantine input validation - verify target node exists
+     * before allowing migration proposal.
+     *
+     * @param nodeId Node identifier (member ID) to check
+     * @return true if node exists in current view, false otherwise
+     */
+    public boolean isNodeInView(Digest nodeId) {
+        Objects.requireNonNull(nodeId, "nodeId must not be null");
+        return context.allMembers()
+                      .anyMatch(member -> member.getId().equals(nodeId));
+    }
 }

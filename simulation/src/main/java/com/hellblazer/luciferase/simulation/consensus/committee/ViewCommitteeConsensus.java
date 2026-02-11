@@ -119,17 +119,23 @@ public class ViewCommitteeConsensus {
      * CRITICAL: View ID verification prevents double-commit race condition.
      * <p>
      * Workflow:
-     * 1. Check proposal.viewId == getCurrentViewId() (abort if stale)
-     * 2. Select committee for current view
-     * 3. Submit to voting protocol
-     * 4. Return CompletableFuture that resolves to approval decision
-     * 5. Before execution, verify viewId still matches (abort if changed)
+     * 1. Validate proposal inputs (Byzantine protection)
+     * 2. Check proposal.viewId == getCurrentViewId() (abort if stale)
+     * 3. Select committee for current view
+     * 4. Submit to voting protocol
+     * 5. Return CompletableFuture that resolves to approval decision
+     * 6. Before execution, verify viewId still matches (abort if changed)
      *
      * @param proposal migration proposal with viewId
      * @return CompletableFuture<Boolean> - true if approved, false if rejected or view changed
      */
     public CompletableFuture<Boolean> requestConsensus(MigrationProposal proposal) {
         Objects.requireNonNull(proposal, "proposal must not be null");
+
+        // Byzantine input validation - protect against malicious proposals
+        if (!validateProposal(proposal)) {
+            return CompletableFuture.completedFuture(false);
+        }
 
         var currentViewId = getCurrentViewId();
 
@@ -227,6 +233,69 @@ public class ViewCommitteeConsensus {
      */
     public boolean hasPendingProposals() {
         return !pendingProposals.isEmpty();
+    }
+
+    /**
+     * Validate migration proposal for Byzantine attacks.
+     * <p>
+     * Protection against malicious or invalid proposals:
+     * 1. Entity ID validation (UUID format, not null)
+     * 2. Source/target node validation (not null, exist in view)
+     * 3. Self-migration prevention (source != target)
+     * 4. Proposal ID validation (not null)
+     * <p>
+     * References: Luciferase-brtp (Byzantine Input Validation)
+     *
+     * @param proposal migration proposal to validate
+     * @return true if valid, false if invalid (rejects Byzantine attacks)
+     */
+    private boolean validateProposal(MigrationProposal proposal) {
+        // Validate proposal ID (UUID format enforced by type system)
+        if (proposal.proposalId() == null) {
+            log.warn("Rejected proposal with null proposalId");
+            return false;
+        }
+
+        // Validate entity ID (UUID format enforced by type system)
+        if (proposal.entityId() == null) {
+            log.warn("Rejected proposal {} with null entityId", proposal.proposalId());
+            return false;
+        }
+
+        // Validate source node ID
+        if (proposal.sourceNodeId() == null) {
+            log.warn("Rejected proposal {} with null sourceNodeId", proposal.proposalId());
+            return false;
+        }
+
+        // Validate target node ID
+        if (proposal.targetNodeId() == null) {
+            log.warn("Rejected proposal {} with null targetNodeId", proposal.proposalId());
+            return false;
+        }
+
+        // Prevent self-migration (source == target)
+        if (proposal.sourceNodeId().equals(proposal.targetNodeId())) {
+            log.warn("Rejected proposal {} with source == target (self-migration): {}",
+                    proposal.proposalId(), proposal.sourceNodeId());
+            return false;
+        }
+
+        // Validate target node exists in current Fireflies view
+        if (!committeeSelector.isNodeInView(proposal.targetNodeId())) {
+            log.warn("Rejected proposal {} with target node not in view: {}",
+                    proposal.proposalId(), proposal.targetNodeId());
+            return false;
+        }
+
+        // Validate source node exists in current Fireflies view (defensive)
+        if (!committeeSelector.isNodeInView(proposal.sourceNodeId())) {
+            log.warn("Rejected proposal {} with source node not in view: {}",
+                    proposal.proposalId(), proposal.sourceNodeId());
+            return false;
+        }
+
+        return true;
     }
 
     /**
