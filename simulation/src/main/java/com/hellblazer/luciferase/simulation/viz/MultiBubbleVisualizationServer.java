@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.StampedLock;
 
 /**
  * WebSocket server for visualizing multiple bubbles with entity streaming.
@@ -55,7 +56,7 @@ public class MultiBubbleVisualizationServer {
     private final TopologyEventStream topologyEventStream = new TopologyEventStream();
     private final AtomicBoolean streaming = new AtomicBoolean(false);
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private final Object streamingLock = new Object();
+    private final StampedLock streamingLock = new StampedLock();
 
     private List<EnhancedBubble> bubbles = new ArrayList<>();
     private Map<UUID, Point3f[]> bubbleVertices = new ConcurrentHashMap<>();
@@ -365,18 +366,24 @@ public class MultiBubbleVisualizationServer {
     // ========== Streaming Methods ==========
 
     private void startStreamingIfNeeded() {
-        synchronized (streamingLock) {
+        long stamp = streamingLock.writeLock();
+        try {
             if (!entityClients.isEmpty() && !bubbles.isEmpty() && !streaming.get()) {
                 startStreamingInternal();
             }
+        } finally {
+            streamingLock.unlockWrite(stamp);
         }
     }
 
     private void stopStreamingIfNoClients() {
-        synchronized (streamingLock) {
+        long stamp = streamingLock.writeLock();
+        try {
             if (entityClients.isEmpty() && streaming.get()) {
                 stopStreamingInternal();
             }
+        } finally {
+            streamingLock.unlockWrite(stamp);
         }
     }
 
