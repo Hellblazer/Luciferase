@@ -70,6 +70,11 @@ public class SimpleMigrationNode {
                     position.z + velocity.z * DELTA_TIME
                 );
 
+                // Clamp coordinates to positive values (Tetree requirement)
+                newPosition.x = Math.max(0.0f, Math.min(100.0f, newPosition.x));
+                newPosition.y = Math.max(0.0f, Math.min(100.0f, newPosition.y));
+                newPosition.z = Math.max(0.0f, Math.min(100.0f, newPosition.z));
+
                 // Check for boundary crossing
                 if (newPosition.x < minX || newPosition.x > maxX) {
                     // Migrate entity

@@ -3,7 +3,7 @@
  * Part of Luciferase Simulation Framework. Licensed under AGPL v3.0.
  */
 
-package com.hellblazer.luciferase.simulation.benchmarks.distributed;
+package com.hellblazer.luciferase.simulation.examples.benchmarks;
 
 import com.hellblazer.luciferase.simulation.behavior.PreyBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;

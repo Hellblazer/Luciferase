@@ -3,40 +3,47 @@
  * Part of Luciferase Simulation Framework. Licensed under AGPL v3.0.
  */
 
-package com.hellblazer.luciferase.simulation.benchmarks.distributed;
+package com.hellblazer.luciferase.simulation.examples.benchmarks;
 
 import com.hellblazer.luciferase.simulation.behavior.PreyBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.causality.EntityMigrationState;
 import com.hellblazer.luciferase.simulation.distributed.network.GrpcBubbleNetworkChannel;
 import com.hellblazer.luciferase.simulation.entity.EntityType;
+import com.hellblazer.luciferase.simulation.events.EntityDepartureEvent;
 import com.hellblazer.primeMover.annotations.Entity;
+import com.hellblazer.primeMover.annotations.NonEvent;
 import com.hellblazer.primeMover.api.Kronos;
 import com.hellblazer.primeMover.controllers.RealTimeController;
 import com.hellblazer.primeMover.runtime.Kairos;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
-import java.lang.management.ManagementFactory;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Simplified benchmark node for capacity measurement.
- * Tests how many entities can be handled before performance degrades.
+ * Simplified benchmark node for migration throughput measurement.
+ * Minimal dependencies, based on TwoNodeExample pattern.
  */
-public class SimpleCapacityNode {
+public class SimpleMigrationNode {
 
     private static final long TICK_INTERVAL_NS = 10_000_000; // 10ms = 100 TPS
     private static final Random RANDOM = new Random(42);
+    private static final AtomicInteger migrationsOut = new AtomicInteger(0);
+    private static final AtomicInteger migrationsIn = new AtomicInteger(0);
 
     private static String nodeName;
+    private static UUID nodeId;
+    private static UUID peerNodeId;
     private static EnhancedBubble bubble;
+    private static GrpcBubbleNetworkChannel networkChannel;
     private static ConcurrentHashMap<String, Vector3f> velocities = new ConcurrentHashMap<>();
     private static PreyBehavior behavior;
-    private static List<Long> tickLatencies = new ArrayList<>();
+    private static float minX;
+    private static float maxX;
 
     @Entity
     public static class SimulationEntity {
@@ -49,8 +56,6 @@ public class SimpleCapacityNode {
         }
 
         public void simulationTick() {
-            long startNs = System.nanoTime();
-
             // Update entities
             var entities = bubble.getAllEntityRecords();
             for (var entity : entities) {
@@ -65,69 +70,46 @@ public class SimpleCapacityNode {
                     position.z + velocity.z * DELTA_TIME
                 );
 
-                // Bounce off boundaries
-                if (newPosition.x < 0 || newPosition.x > 100) velocity.x *= -1;
-                if (newPosition.y < 0 || newPosition.y > 100) velocity.y *= -1;
-                if (newPosition.z < 0 || newPosition.z > 100) velocity.z *= -1;
-
                 // Clamp coordinates to positive values (Tetree requirement)
                 newPosition.x = Math.max(0.0f, Math.min(100.0f, newPosition.x));
                 newPosition.y = Math.max(0.0f, Math.min(100.0f, newPosition.y));
                 newPosition.z = Math.max(0.0f, Math.min(100.0f, newPosition.z));
 
-                bubble.updateEntityPosition(entityId, newPosition);
-            }
-
-            // Record latency
-            long endNs = System.nanoTime();
-            synchronized (tickLatencies) {
-                tickLatencies.add(endNs - startNs);
-                if (tickLatencies.size() > 1000) {
-                    tickLatencies.remove(0);
+                // Check for boundary crossing
+                if (newPosition.x < minX || newPosition.x > maxX) {
+                    // Migrate entity
+                    var departureEvent = new EntityDepartureEvent(
+                        UUID.nameUUIDFromBytes(entityId.getBytes()),
+                        bubble.id(),
+                        peerNodeId,
+                        EntityMigrationState.MIGRATING_OUT,
+                        System.nanoTime()
+                    );
+                    networkChannel.sendEntityDeparture(peerNodeId, departureEvent);
+                    bubble.removeEntity(entityId);
+                    migrationsOut.incrementAndGet();
+                } else {
+                    bubble.updateEntityPosition(entityId, newPosition);
                 }
             }
 
             tickCount++;
 
-            // Emit metrics every 100 ticks
+            // Emit migration count every 100 ticks
             if (tickCount % 100 == 0) {
-                emitMetrics();
+                System.out.println("[" + name + "] MIGRATION_COUNT: " + migrationsOut.get());
+                System.out.println("[" + name + "] ENTITY_COUNT: " + bubble.getAllEntityRecords().size());
             }
 
             // Schedule next tick
             Kronos.sleep(TICK_INTERVAL_NS);
             this.simulationTick();
         }
-
-        private void emitMetrics() {
-            // Calculate P99 latency
-            List<Long> sorted;
-            synchronized (tickLatencies) {
-                sorted = new ArrayList<>(tickLatencies);
-            }
-            sorted.sort(Long::compareTo);
-
-            double p99Ns = 0;
-            if (!sorted.isEmpty()) {
-                int p99Index = (int) Math.ceil(0.99 * sorted.size()) - 1;
-                p99Ns = sorted.get(Math.max(0, p99Index));
-            }
-            double p99Ms = p99Ns / 1_000_000.0;
-
-            // Get heap usage
-            var memoryBean = ManagementFactory.getMemoryMXBean();
-            var heapUsage = memoryBean.getHeapMemoryUsage();
-            long heapMB = heapUsage.getUsed() / (1024 * 1024);
-
-            System.out.println("[" + name + "] P99_LATENCY_MS: " + String.format("%.2f", p99Ms));
-            System.out.println("[" + name + "] HEAP_MB: " + heapMB);
-            System.out.println("[" + name + "] ENTITY_COUNT: " + bubble.getAllEntityRecords().size());
-        }
     }
 
     public static void main(String[] args) throws Exception {
         if (args.length != 4) {
-            System.err.println("Usage: SimpleCapacityNode <nodeName> <serverPort> <peerPort> <entityCount>");
+            System.err.println("Usage: SimpleMigrationNode <nodeName> <serverPort> <peerPort> <entityCount>");
             System.exit(1);
         }
 
@@ -136,12 +118,21 @@ public class SimpleCapacityNode {
         var peerPort = Integer.parseInt(args[2]);
         var entityCount = Integer.parseInt(args[3]);
 
-        // Initialize network (required but not used for capacity test)
-        var nodeId = UUID.randomUUID();
-        var peerNodeId = UUID.randomUUID();
-        var networkChannel = new GrpcBubbleNetworkChannel();
+        // Initialize network
+        nodeId = UUID.randomUUID();
+        peerNodeId = UUID.randomUUID();
+        networkChannel = new GrpcBubbleNetworkChannel();
         networkChannel.initialize(nodeId, "localhost:" + serverPort);
         networkChannel.registerNode(peerNodeId, "localhost:" + peerPort);
+
+        // Set spatial bounds
+        if (serverPort < peerPort) {
+            minX = 0f;
+            maxX = 50f;
+        } else {
+            minX = 50f;
+            maxX = 100f;
+        }
 
         // Create bubble
         byte spatialLevel = 10;
@@ -149,22 +140,40 @@ public class SimpleCapacityNode {
         bubble = new EnhancedBubble(nodeId, spatialLevel, targetFrameMs);
         behavior = new PreyBehavior();
 
-        // Spawn entities
-        for (int i = 0; i < entityCount; i++) {
-            var entityId = "entity-" + i;
-            var position = new Point3f(
-                RANDOM.nextFloat() * 100f,
-                RANDOM.nextFloat() * 100f,
-                RANDOM.nextFloat() * 100f
-            );
+        // Set up network listener
+        networkChannel.setEntityDepartureListener((sourceNodeId, event) -> {
+            var entityId = "entity-" + Math.abs(event.getEntityId().hashCode() % 10000);
+            var x = (minX + maxX) / 2f;
+            var position = new Point3f(x, RANDOM.nextFloat() * 50f, RANDOM.nextFloat() * 50f);
             var velocity = new Vector3f(
-                (RANDOM.nextFloat() - 0.5f) * 1.0f,
-                (RANDOM.nextFloat() - 0.5f) * 1.0f,
-                (RANDOM.nextFloat() - 0.5f) * 1.0f
+                (RANDOM.nextFloat() - 0.5f) * 2.0f,
+                (RANDOM.nextFloat() - 0.5f) * 0.5f,
+                (RANDOM.nextFloat() - 0.5f) * 0.5f
             );
 
             bubble.addEntity(entityId, position, EntityType.PREY);
             velocities.put(entityId, velocity);
+            migrationsIn.incrementAndGet();
+        });
+
+        // Spawn entities (if this is the spawning node)
+        if (entityCount > 0) {
+            for (int i = 0; i < entityCount; i++) {
+                var entityId = "entity-" + i;
+                var position = new Point3f(
+                    minX + RANDOM.nextFloat() * (maxX - minX),
+                    RANDOM.nextFloat() * 50f,
+                    RANDOM.nextFloat() * 50f
+                );
+                var velocity = new Vector3f(
+                    (RANDOM.nextFloat() - 0.5f) * 2.0f,  // Fast X velocity for migrations
+                    (RANDOM.nextFloat() - 0.5f) * 0.5f,
+                    (RANDOM.nextFloat() - 0.5f) * 0.5f
+                );
+
+                bubble.addEntity(entityId, position, EntityType.PREY);
+                velocities.put(entityId, velocity);
+            }
         }
 
         // Start simulation
@@ -175,7 +184,6 @@ public class SimpleCapacityNode {
         controller.start();
 
         System.out.println("[" + nodeName + "] READY");
-        System.out.println("[" + nodeName + "] Entity count: " + entityCount);
 
         // Start ticking
         entity.simulationTick();
