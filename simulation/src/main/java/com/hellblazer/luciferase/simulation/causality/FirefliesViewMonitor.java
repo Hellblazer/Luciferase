@@ -90,6 +90,19 @@ public class FirefliesViewMonitor {
     }
 
     /**
+     * View stability check result with viewId for race detection.
+     * <p>
+     * Used to prevent TOCTOU race conditions in migration code.
+     * Pattern: Check stability, prepare migration, validate viewId before execution.
+     * <p>
+     * References: Luciferase-yag5 (TOCTOU Race Fix), ViewCommitteeConsensus pattern (ADR_001)
+     *
+     * @param stable  Whether view is currently stable (no changes for threshold duration)
+     * @param viewId  Current view identifier (cryptographically unique per view)
+     */
+    public record ViewStabilityCheck(boolean stable, com.hellblazer.delos.cryptography.Digest viewId) {}
+
+    /**
      * Membership view from Fireflies.
      */
     private final MembershipView<?> membershipView;
@@ -266,19 +279,30 @@ public class FirefliesViewMonitor {
     }
 
     /**
-     * Check if view is currently stable.
-     * Returns true if no changes have occurred, or ticks since last view change >= threshold.
+     * Check view stability with viewId for race-free migration validation.
+     * <p>
+     * Returns both stability status and current viewId. Migration code should:
+     * 1. Call checkStability() to get stability + viewId
+     * 2. If stable, prepare migration
+     * 3. Before execution, validate viewId hasn't changed
+     * <p>
+     * This prevents TOCTOU race where view changes between stability check
+     * and migration execution. Same pattern as ViewCommitteeConsensus (ADR_001).
+     * <p>
+     * References: Luciferase-yag5 (TOCTOU Race Fix)
      *
-     * @return true if view is stable
+     * @return ViewStabilityCheck with stability status and current viewId
      */
-    public boolean isViewStable() {
+    public ViewStabilityCheck checkStability() {
+        var currentViewId = getCurrentViewId();
+
         // If no changes have occurred yet, view is stable (no perturbations)
         if (!hasChanged) {
             // Track that we transitioned to stable if not already (atomically)
             if (wasStable.compareAndSet(false, true)) {
                 timesStable.incrementAndGet();
             }
-            return true;
+            return new ViewStabilityCheck(true, currentViewId);
         }
 
         var ticksSinceChange = currentTime - lastViewChangeTime;
@@ -292,7 +316,20 @@ public class FirefliesViewMonitor {
             log.debug("View changed (became unstable): ticks={}, threshold={}", ticksSinceChange, config.stabilityThresholdTicks);
         }
 
-        return stable;
+        return new ViewStabilityCheck(stable, currentViewId);
+    }
+
+    /**
+     * Check if view is currently stable.
+     * Returns true if no changes have occurred, or ticks since last view change >= threshold.
+     * <p>
+     * DEPRECATED: Use checkStability() for race-free migration validation.
+     * This method is kept for backward compatibility with existing code.
+     *
+     * @return true if view is stable
+     */
+    public boolean isViewStable() {
+        return checkStability().stable();
     }
 
     /**

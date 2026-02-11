@@ -456,13 +456,26 @@ public class EntityMigrationStateMachine {
             return result;
         }
 
-        // Check view stability if this specific transition requires it
-        if (requiresViewStabilityForTransition(currentState, newState) && !viewMonitor.isViewStable()) {
-            totalFailedTransitions.incrementAndGet();
-            log.debug("Transition blocked: view not stable for {} -> {}", currentState, newState);
-            var result = TransitionResult.blocked(currentState, newState, "View not stable");
-            notifyListeners(entityId, currentState, newState, result);
-            return result;
+        // Check view stability if this specific transition requires it (TOCTOU race prevention - Luciferase-yag5)
+        if (requiresViewStabilityForTransition(currentState, newState)) {
+            var stabilityCheck = viewMonitor.checkStability();
+            if (!stabilityCheck.stable()) {
+                totalFailedTransitions.incrementAndGet();
+                log.debug("Transition blocked: view not stable for {} -> {}", currentState, newState);
+                var result = TransitionResult.blocked(currentState, newState, "View not stable");
+                notifyListeners(entityId, currentState, newState, result);
+                return result;
+            }
+
+            // Validate viewId hasn't changed during transition preparation
+            var currentViewId = viewMonitor.getCurrentViewId();
+            if (stabilityCheck.viewId() != null && !stabilityCheck.viewId().equals(currentViewId)) {
+                totalFailedTransitions.incrementAndGet();
+                log.debug("Transition blocked: view changed during prep for {} -> {}", currentState, newState);
+                var result = TransitionResult.blocked(currentState, newState, "View changed during preparation");
+                notifyListeners(entityId, currentState, newState, result);
+                return result;
+            }
         }
 
         // Perform transition

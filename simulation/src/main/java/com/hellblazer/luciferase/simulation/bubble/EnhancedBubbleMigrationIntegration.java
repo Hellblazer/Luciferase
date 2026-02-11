@@ -204,10 +204,14 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
     /**
      * Check for entities that have been in MIGRATING_IN state long enough
      * for view to stabilize, and commit their migrations.
+     * <p>
+     * TOCTOU Race Fix (Luciferase-yag5): Use viewId validation to prevent
+     * migrations from committing after view changes.
      */
     private void processPendingMigrations() {
-        // Check if view is stable
-        if (!viewMonitor.isViewStable()) {
+        // Check stability and capture viewId (TOCTOU race prevention)
+        var stabilityCheck = viewMonitor.checkStability();
+        if (!stabilityCheck.stable()) {
             return; // View not stable yet, wait
         }
 
@@ -221,6 +225,14 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
             // Check if stable for required ticks
             if (stableTicks >= viewStabilityTicks) {
                 try {
+                    // Validate viewId hasn't changed (TOCTOU race detection)
+                    var currentViewId = viewMonitor.getCurrentViewId();
+                    if (stabilityCheck.viewId() != null && !stabilityCheck.viewId().equals(currentViewId)) {
+                        log.debug("View changed during migration prep for entity {}, aborting commit", entityId);
+                        iterator.remove();  // Remove from pending, will retry in new view
+                        continue;
+                    }
+
                     // Flush deferred updates
                     optimisticMigrator.flushDeferredUpdates(entityId);
 
