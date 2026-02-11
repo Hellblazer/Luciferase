@@ -74,13 +74,22 @@ public class BubbleEntityStore {
     /**
      * Remove an entity from this store.
      * Removes from spatial index and notifies listeners.
+     * <p>
+     * THREAD-SAFETY: Removes from spatial index BEFORE idMapping to ensure
+     * getAllEntityRecords() never sees inconsistent state during concurrent access.
      *
      * @param entityId Entity to remove
      */
     public void removeEntity(String entityId) {
-        var internalId = idMapping.remove(entityId);
+        var internalId = idMapping.get(entityId);
         if (internalId != null) {
+            // CRITICAL: Remove from spatial index FIRST
+            // This ensures getAllEntityRecords() won't return partial/inconsistent results
+            // if queried concurrently during removal
             spatialIndex.removeEntity(internalId);
+
+            // Remove from idMapping LAST (atomic visibility point)
+            idMapping.remove(entityId);
 
             // Notify listeners
             for (var listener : listeners) {
