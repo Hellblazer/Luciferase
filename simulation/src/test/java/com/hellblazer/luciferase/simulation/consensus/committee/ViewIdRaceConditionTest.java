@@ -86,6 +86,10 @@ public class ViewIdRaceConditionTest {
         var committee = new java.util.LinkedHashSet<>(members.subList(0, 3));
         when(context.bftSubset(Mockito.any(Digest.class))).thenReturn((java.util.SequencedSet) committee);
 
+        // Mock allMembers for Byzantine validation (ViewCommitteeSelector.isNodeInView)
+        // Use thenAnswer to create fresh stream for each call (streams can only be consumed once)
+        when(context.allMembers()).thenAnswer(invocation -> members.stream());
+
         // Create view IDs
         view1 = DigestAlgorithm.DEFAULT.digest("view1".getBytes());
         view2 = DigestAlgorithm.DEFAULT.digest("view2".getBytes());

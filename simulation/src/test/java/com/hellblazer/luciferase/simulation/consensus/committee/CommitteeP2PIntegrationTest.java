@@ -263,6 +263,11 @@ public class CommitteeP2PIntegrationTest {
         when(mockContext.toleranceLevel()).thenReturn(1);
         when(mockContext.bftSubset(Mockito.any(Digest.class)))
             .thenReturn(new java.util.LinkedHashSet<>());
+
+        // Mock allMembers for Byzantine validation (ViewCommitteeSelector.isNodeInView)
+        // Use thenAnswer to create fresh stream for each call (streams can only be consumed once)
+        when(mockContext.allMembers()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+
         return mockContext;
     }
 
