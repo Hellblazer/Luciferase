@@ -264,11 +264,52 @@ public class CommitteeP2PIntegrationTest {
         when(mockContext.bftSubset(Mockito.any(Digest.class)))
             .thenReturn(new java.util.LinkedHashSet<>());
 
+        // Create mock members for Byzantine validation
+        // Tests use DigestAlgorithm.DEFAULT.digest("source"), digest("target"), digest("voter")
+        var members = new java.util.ArrayList<com.hellblazer.delos.membership.Member>();
+        members.add(new MockMember(DigestAlgorithm.DEFAULT.digest("source")));
+        members.add(new MockMember(DigestAlgorithm.DEFAULT.digest("target")));
+        members.add(new MockMember(DigestAlgorithm.DEFAULT.digest("voter")));
+
         // Mock allMembers for Byzantine validation (ViewCommitteeSelector.isNodeInView)
         // Use thenAnswer to create fresh stream for each call (streams can only be consumed once)
-        when(mockContext.allMembers()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        when(mockContext.allMembers()).thenAnswer(invocation -> members.stream());
 
         return mockContext;
+    }
+
+    /**
+     * Mock Member for testing.
+     */
+    private static class MockMember implements com.hellblazer.delos.membership.Member {
+        private final Digest id;
+
+        MockMember(Digest id) {
+            this.id = id;
+        }
+
+        @Override
+        public Digest getId() {
+            return id;
+        }
+
+        @Override
+        public int compareTo(com.hellblazer.delos.membership.Member o) {
+            return id.compareTo(o.getId());
+        }
+
+        @Override
+        public boolean verify(com.hellblazer.delos.cryptography.SigningThreshold threshold,
+                              com.hellblazer.delos.cryptography.JohnHancock signature,
+                              java.io.InputStream is) {
+            return true;
+        }
+
+        @Override
+        public boolean verify(com.hellblazer.delos.cryptography.JohnHancock signature,
+                              java.io.InputStream is) {
+            return true;
+        }
     }
 
     /**
