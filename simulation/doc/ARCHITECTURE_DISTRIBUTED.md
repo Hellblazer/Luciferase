@@ -184,6 +184,68 @@ public class CrossProcessMigration {
 
 ### 2PC Protocol Flow
 
+**Sequence Diagram** (Luciferase-0sod):
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Migration as CrossProcessMigration
+    participant Dedup as IdempotencyStore
+    participant Source as Source Bubble
+    participant Dest as Destination Bubble
+    participant Metrics
+
+    Client->>Migration: migrateEntity(entityId, token, dest)
+
+    Note over Migration: Acquire entity lock (C1)
+    Migration->>Migration: entityLock.tryLock(50ms)
+
+    Migration->>Dedup: checkDuplicate(token)
+    alt Token already processed
+        Dedup-->>Migration: Duplicate detected
+        Migration-->>Client: Return cached result
+    else New migration
+        Dedup-->>Migration: New token, proceed
+
+        Note over Migration,Source: Phase 1: PREPARE (100ms timeout)
+        Migration->>Source: removeEntity(entityId)
+        alt Success
+            Source-->>Migration: Entity removed
+
+            Note over Migration,Dest: Phase 2: COMMIT (100ms timeout)
+            Migration->>Dest: addEntity(entityId, position, content)
+            alt Success
+                Dest-->>Migration: Entity added
+                Migration->>Metrics: recordSuccess()
+                Migration->>Dedup: storeResult(token, SUCCESS)
+                Migration->>Migration: Release lock
+                Migration-->>Client: SUCCESS
+            else Commit failed
+                Dest-->>Migration: Add failed
+                Note over Migration,Source: Phase 3: ABORT
+                Migration->>Source: addEntity(entityId) [ROLLBACK]
+                alt Rollback success
+                    Source-->>Migration: Entity restored
+                    Migration->>Metrics: recordRollback()
+                else Rollback failed
+                    Source-->>Migration: Restore failed
+                    Migration->>Metrics: recordRollbackFailure()
+                    Note over Migration: ORPHANED ENTITY
+                end
+                Migration->>Migration: Release lock
+                Migration-->>Client: FAILURE
+            end
+        else Prepare failed
+            Source-->>Migration: Remove failed
+            Migration->>Metrics: recordFailure()
+            Migration->>Migration: Release lock
+            Migration-->>Client: FAILURE
+        end
+    end
+```
+
+**Text-based Flow** (legacy documentation):
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │  Phase 1: PREPARE (Remove from source)             │
@@ -215,6 +277,8 @@ public class CrossProcessMigration {
 │  4. Release lock                                    │
 └─────────────────────────────────────────────────────┘
 ```
+
+**Implementation**: See `CrossProcessMigration.java:migrateEntity()` method
 
 ### Key Guarantees
 
@@ -430,7 +494,73 @@ public record MigrationProposal(
 ) {}
 ```
 
-**Vote Request Flow**:
+**Byzantine Consensus Sequence Diagram** (Luciferase-0sod):
+
+```mermaid
+sequenceDiagram
+    participant Proposer as Proposer Node
+    participant Monitor as ViewMonitor
+    participant Selector as CommitteeSelector
+    participant Committee as Committee Members
+    participant Protocol as VotingProtocol
+    participant Ballot as BallotBox
+
+    Proposer->>Monitor: getCurrentView()
+    Monitor-->>Proposer: viewId (e.g., view1)
+
+    Proposer->>Proposer: Create MigrationProposal<br/>(entityId, source, dest, viewId)
+
+    Proposer->>Selector: selectCommittee(viewId)
+    Selector->>Selector: context.bftSubset(viewId)<br/>[Deterministic selection]
+    Selector-->>Proposer: Committee members (5-11 nodes)
+
+    Proposer->>Protocol: requestConsensus(proposal)
+
+    Note over Protocol: View synchrony check
+    Protocol->>Monitor: Verify viewId == currentView
+    alt View changed
+        Monitor-->>Protocol: View mismatch
+        Protocol-->>Proposer: ABORT (stale proposal)
+    else View matches
+        Monitor-->>Protocol: View matches, proceed
+
+        Note over Protocol,Committee: Broadcast vote request
+        loop For each committee member
+            Protocol->>Committee: RequestVote(proposal)
+            Committee->>Committee: Validate proposal:<br/>1. Entity not migrating<br/>2. Destination has capacity<br/>3. Source confirms ownership<br/>4. viewId matches
+            alt Proposal valid
+                Committee-->>Protocol: ACCEPT
+            else Proposal invalid or Byzantine
+                Committee-->>Protocol: REJECT
+            end
+            Protocol->>Ballot: recordVote(member, vote)
+        end
+
+        Note over Ballot: Quorum detection (t+1 votes)
+        Ballot->>Ballot: Count ACCEPT votes
+        alt Quorum reached (≥ t+1 votes)
+            Ballot-->>Protocol: Quorum APPROVED
+
+            Note over Protocol: Final view check
+            Protocol->>Monitor: Verify viewId == currentView
+            alt View still matches
+                Monitor-->>Protocol: View matches
+                Protocol-->>Proposer: CONSENSUS APPROVED
+                Note over Proposer: Execute 2PC migration
+            else View changed during voting
+                Monitor-->>Protocol: View changed
+                Protocol-->>Proposer: ABORT (view changed)
+                Note over Proposer: Retry in new view
+            end
+        else Quorum failed
+            Ballot-->>Protocol: Quorum REJECTED
+            Protocol-->>Proposer: CONSENSUS REJECTED
+            Note over Proposer: Abort migration
+        end
+    end
+```
+
+**Vote Request Flow** (text-based legacy documentation):
 ```
 1. Proposer: Submit MigrationProposal to committee
    ├─ Includes current viewId (view synchrony check)
@@ -457,6 +587,8 @@ public record MigrationProposal(
    └─ All pending proposals automatically aborted
        (Virtual Synchrony guarantee from Fireflies)
 ```
+
+**Implementation**: See `ViewCommitteeConsensus.java:requestConsensus()` method
 
 ### Integration with 2PC Migration
 
@@ -787,7 +919,68 @@ public class GhostStateManager {
 
 ### Ghost Synchronization
 
-**Protocol**:
+**Ghost Synchronization Sequence Diagram** (Luciferase-0sod):
+
+```mermaid
+sequenceDiagram
+    participant Entity as Entity (moving)
+    participant Source as Source Bubble
+    participant Detector as BoundaryDetector
+    participant Neighbors as Neighbor Bubbles
+    participant Ghost as Ghost Entities
+
+    Note over Entity,Source: Entity moves near boundary
+
+    loop Every animation frame
+        Entity->>Source: updatePosition(newPosition)
+        Source->>Detector: checkBoundary(entityId, position)
+
+        alt Entity enters ghost zone
+            Detector-->>Source: ENTERING_GHOST_ZONE
+
+            Note over Source,Neighbors: Ghost creation
+            Source->>Source: markAsGhost(entityId, timestamp)
+            loop For each neighbor bubble
+                Source->>Neighbors: createGhost(entityId, position, velocity)
+                Neighbors->>Ghost: addGhost(entityId, state)
+                Ghost-->>Neighbors: Ghost created
+            end
+
+            Note over Source,Ghost: Sub-frame synchronization (10ms interval)
+            loop While in ghost zone
+                Source->>Source: updateLocal(entityId, newState)
+                Source->>Neighbors: syncGhost(entityId, newState)
+                Neighbors->>Ghost: updateGhost(entityId, newState)
+                Ghost-->>Neighbors: Ghost updated
+            end
+
+        else Entity exits ghost zone (no migration)
+            Detector-->>Source: EXITING_GHOST_ZONE
+
+            Note over Source,Neighbors: Ghost cleanup
+            loop For each neighbor bubble
+                Source->>Neighbors: removeGhost(entityId)
+                Neighbors->>Ghost: deleteGhost(entityId)
+                Ghost-->>Neighbors: Ghost removed
+            end
+            Source->>Source: unmarkAsGhost(entityId)
+
+        else Entity migrates to neighbor
+            Detector-->>Source: MIGRATION_REQUIRED
+
+            Note over Source,Neighbors: Ghost becomes authoritative
+            Source->>Neighbors: promoteGhost(entityId)
+            Neighbors->>Ghost: promoteToLocal(entityId)
+            Ghost-->>Neighbors: Now local entity
+            Source->>Source: removeLocal(entityId)
+
+            Note over Neighbors: Migration complete, cleanup other ghosts
+            Neighbors->>Neighbors: syncBoundaryGhosts()
+        end
+    end
+```
+
+**Protocol** (text-based legacy documentation):
 1. Entity enters ghost zone (spatial detection)
 2. Source bubble notifies neighboring bubbles (ghost creation)
 3. Ghost entity synchronized at sub-frame rate (60+ FPS)
@@ -795,6 +988,8 @@ public class GhostStateManager {
 5. Entity migrates → ghost becomes authoritative
 
 **Synchronization Frequency**: Sub-frame (100 FPS animation → 10ms sync interval)
+
+**Implementation**: See `GhostStateManager.java:updateGhost()` and `BoundaryDetector.java:checkBoundary()` methods
 
 ### Ghost Lifecycle
 
