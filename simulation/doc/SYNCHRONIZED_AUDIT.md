@@ -159,20 +159,23 @@
 ## Architectural Patterns Learned
 
 ### When to Use synchronized
-1. **File I/O coordination** - Simple serialization (WriteAheadLog)
-2. **Complex state machines** - Multiple interdependent fields (EventReprocessor)
-3. **TOCTOU prevention** - Critical atomicity requirements (FirefliesViewMonitor)
-4. **Socket I/O** - Serializing network writes (SocketClient)
-5. **Simple atomic operations** - When StampedLock adds no benefit (LatencyTracker, CommitteeBallotBox)
+
+- **File I/O coordination** - Simple serialization (WriteAheadLog)
+- **Complex state machines** - Multiple interdependent fields (EventReprocessor)
+- **TOCTOU prevention** - Critical atomicity requirements (FirefliesViewMonitor)
+- **Socket I/O** - Serializing network writes (SocketClient)
+- **Simple atomic operations** - When StampedLock adds no benefit (LatencyTracker, CommitteeBallotBox)
 
 ### When to Use StampedLock
-1. **Read-heavy patterns** - Many readers, few writers (EntityVisualizationServer streaming state)
-2. **Fine-grained locks** - Small critical sections (MultiBubbleVisualizationServer)
-3. **Performance-critical paths** - Hot loops where contention is measured
+
+- **Read-heavy patterns** - Many readers, few writers (EntityVisualizationServer streaming state)
+- **Fine-grained locks** - Small critical sections (MultiBubbleVisualizationServer)
+- **Performance-critical paths** - Hot loops where contention is measured
 
 ### When to Use ReentrantReadWriteLock
-1. **Read/write workloads** - Clear separation of read vs write operations (CausalRollback checkpoints)
-2. **Per-component locking** - Need multiple independent locks (LifecycleCoordinator)
+
+- **Read/write workloads** - Clear separation of read vs write operations (CausalRollback checkpoints)
+- **Per-component locking** - Need multiple independent locks (LifecycleCoordinator)
 
 ## Epic Goal Achievement
 
