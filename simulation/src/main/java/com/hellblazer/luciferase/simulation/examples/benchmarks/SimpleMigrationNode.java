@@ -70,8 +70,13 @@ public class SimpleMigrationNode {
                     position.z + velocity.z * DELTA_TIME
                 );
 
+                // Bounce off outer walls (x=0 and x=100) to create oscillation
+                if (newPosition.x < 0.0f || newPosition.x > 100.0f) {
+                    velocity.x *= -1;  // Reverse direction
+                    newPosition.x = Math.max(0.0f, Math.min(100.0f, newPosition.x));
+                }
+
                 // Clamp coordinates to positive values (Tetree requirement)
-                newPosition.x = Math.max(0.0f, Math.min(100.0f, newPosition.x));
                 newPosition.y = Math.max(0.0f, Math.min(100.0f, newPosition.y));
                 newPosition.z = Math.max(0.0f, Math.min(100.0f, newPosition.z));
 
@@ -140,35 +145,52 @@ public class SimpleMigrationNode {
         bubble = new EnhancedBubble(nodeId, spatialLevel, targetFrameMs);
         behavior = new PreyBehavior();
 
-        // Set up network listener
+        // Set up network listener - preserve oscillating trajectory
         networkChannel.setEntityDepartureListener((sourceNodeId, event) -> {
             var entityId = "entity-" + Math.abs(event.getEntityId().hashCode() % 10000);
-            var x = (minX + maxX) / 2f;
-            var position = new Point3f(x, RANDOM.nextFloat() * 50f, RANDOM.nextFloat() * 50f);
-            var velocity = new Vector3f(
-                (RANDOM.nextFloat() - 0.5f) * 2.0f,
-                (RANDOM.nextFloat() - 0.5f) * 0.5f,
-                (RANDOM.nextFloat() - 0.5f) * 0.5f
+
+            // Place incoming entity just inside boundary with velocity pointing inward
+            // This ensures it continues oscillating pattern: cross boundary, bounce off wall, return
+            float boundaryX = 50f;
+            float offsetX = (minX < maxX) ? 5f : -5f;  // Just inside this node's region
+            var position = new Point3f(
+                boundaryX + offsetX,
+                RANDOM.nextFloat() * 100f,  // Preserve spatial distribution
+                RANDOM.nextFloat() * 100f
             );
+
+            // Velocity points away from boundary (toward wall) to complete oscillation
+            float velocityX = (minX < maxX) ? 25.0f : -25.0f;
+            var velocity = new Vector3f(velocityX, 0.0f, 0.0f);
 
             bubble.addEntity(entityId, position, EntityType.PREY);
             velocities.put(entityId, velocity);
             migrationsIn.incrementAndGet();
         });
 
-        // Spawn entities (if this is the spawning node)
+        // Spawn entities with controlled oscillating trajectories for sustained migration
         if (entityCount > 0) {
             for (int i = 0; i < entityCount; i++) {
                 var entityId = "entity-" + i;
+
+                // Position entities near the boundary WITHIN this node's region
+                // Node1 (0-50): spawn at x~45 moving right
+                // Node2 (50-100): spawn at x~55 moving left
+                float boundaryX = 50f;
+                float offsetX = (minX < maxX) ? -5f : 5f;  // Inside this node's region
                 var position = new Point3f(
-                    minX + RANDOM.nextFloat() * (maxX - minX),
-                    RANDOM.nextFloat() * 50f,
-                    RANDOM.nextFloat() * 50f
+                    boundaryX + offsetX,  // Just before boundary
+                    (i / 10) * 10f + 5f,  // Distribute in Y (0-100)
+                    (i % 10) * 10f + 5f   // Distribute in Z (0-100)
                 );
+
+                // Velocity points toward boundary for immediate migration
+                // After bounce, entities oscillate back creating sustained traffic
+                float velocityX = (minX < maxX) ? 25.0f : -25.0f;  // Toward boundary
                 var velocity = new Vector3f(
-                    (RANDOM.nextFloat() - 0.5f) * 2.0f,  // Fast X velocity for migrations
-                    (RANDOM.nextFloat() - 0.5f) * 0.5f,
-                    (RANDOM.nextFloat() - 0.5f) * 0.5f
+                    velocityX,
+                    0.0f,  // No Y movement for predictable behavior
+                    0.0f   // No Z movement for predictable behavior
                 );
 
                 bubble.addEntity(entityId, position, EntityType.PREY);
