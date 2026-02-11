@@ -59,6 +59,20 @@ public record SimulationGhostEntity<ID extends EntityID, Content>(
 ) {
 
     /**
+     * Compact constructor for validation (Luciferase-r73c).
+     * Fail-fast approach: validates ghost position is non-null at construction time.
+     * This prevents null positions from entering the system.
+     *
+     * @throws NullPointerException if ghost or ghost.getPosition() is null
+     */
+    public SimulationGhostEntity {
+        java.util.Objects.requireNonNull(ghost, "Ghost entity must not be null");
+        java.util.Objects.requireNonNull(ghost.getPosition(),
+            "Ghost entity position must not be null (id=" + (ghost.getEntityId() != null ? ghost.getEntityId() : "unknown") + ")");
+        java.util.Objects.requireNonNull(sourceBubbleId, "Source bubble ID must not be null");
+    }
+
+    /**
      * Convenience accessor for entity ID (delegates to ghost).
      *
      * @return Entity identifier

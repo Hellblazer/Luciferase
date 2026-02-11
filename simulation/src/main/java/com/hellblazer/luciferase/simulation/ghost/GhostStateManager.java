@@ -224,6 +224,8 @@ public class GhostStateManager {
 
         var entityId = (StringEntityID) event.entityId();
         var position = event.position();
+        // Luciferase-r73c: Validate position to prevent null propagation (fail-fast approach)
+        Objects.requireNonNull(position, "Ghost entity position must not be null (entityId=" + entityId + ")");
         var velocity = new Vector3f(event.velocity());
         var timestamp = event.timestamp();
 
@@ -396,6 +398,15 @@ public class GhostStateManager {
 
     /**
      * Create SimulationGhostEntity from EntityUpdateEvent.
+     * Luciferase-r73c: Validates position is non-null (fail-fast approach).
+     *
+     * @param entityId Entity identifier
+     * @param position Entity position (must not be null)
+     * @param sourceBubbleId Source bubble ID
+     * @param timestamp Creation timestamp
+     * @param bucket Simulation time bucket
+     * @return SimulationGhostEntity with validated non-null position
+     * @throws NullPointerException if position is null
      */
     @SuppressWarnings("rawtypes")
     private SimulationGhostEntity<StringEntityID, EntityData> createGhostEntity(
@@ -405,6 +416,9 @@ public class GhostStateManager {
         long timestamp,
         long bucket
     ) {
+        // Luciferase-r73c: Fail-fast validation to prevent null position in system
+        Objects.requireNonNull(position, "Ghost entity position must not be null (entityId=" + entityId + ")");
+
         // Create EntityData (content)
         EntityData content = new EntityData<>(entityId, position, (byte) 10, null);
 
