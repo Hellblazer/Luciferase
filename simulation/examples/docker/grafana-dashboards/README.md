@@ -1,5 +1,9 @@
 # Grafana Dashboards
 
+**Last Updated**: 2026-02-11
+**Status**: Active
+**Owner**: Project Maintainers
+
 Place Grafana dashboard JSON files in this directory. They will be automatically provisioned when the container starts.
 
 ## Creating Dashboards
