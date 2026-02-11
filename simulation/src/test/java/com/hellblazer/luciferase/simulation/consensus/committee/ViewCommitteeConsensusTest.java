@@ -341,6 +341,146 @@ public class ViewCommitteeConsensusTest {
         assertFalse(result, "Proposal with source node not in view should be rejected");
     }
 
+    // ===== Advanced Byzantine Attack Scenarios (Luciferase-qe2v) =====
+
+    @Test
+    public void testMaliciousVoterYesForInvalidProposal() throws Exception {
+        // Attack: Committee member votes YES for invalid proposal (null entityId)
+        // System should reject proposal during validation, not trust committee vote
+        var invalidProposal = new MigrationProposal(
+            UUID.randomUUID(),
+            null,  // ATTACK: invalid proposal with null entityId
+            members.get(0).getId(),
+            members.get(1).getId(),
+            view1,
+            System.currentTimeMillis()
+        );
+
+        var future = consensus.requestConsensus(invalidProposal);
+
+        // Even if malicious committee member votes YES, proposal validation should reject
+        votingProtocol.recordVote(new Vote(invalidProposal.proposalId(), members.get(0).getId(), true, view1));
+
+        var result = future.get(100, TimeUnit.MILLISECONDS);
+        assertFalse(result, "Invalid proposal should be rejected even if committee votes YES");
+    }
+
+    @Test
+    public void testVoteReplayAttackWithOldViewId() throws Exception {
+        // Attack: Attacker replays valid votes from old view in new view
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            members.get(0).getId(),
+            members.get(1).getId(),
+            view2,  // Proposal for view2
+            System.currentTimeMillis()
+        );
+
+        // Change to view2
+        mockMonitor.setCurrentViewId(view2);
+        var future = consensus.requestConsensus(proposal);
+
+        // ATTACK: Record vote with old view1 ID (vote replay attack)
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(0).getId(), true, view1));  // Old view1
+
+        // Submit valid NO votes with correct view2 to reach quorum
+        // This verifies the old view1 vote was ignored (didn't count toward YES quorum)
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(1).getId(), false, view2));
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(2).getId(), false, view2));
+
+        // Should reject (2 NO votes from quorum, old view1 vote ignored)
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertFalse(result, "Votes with old viewId should be ignored and not count toward quorum");
+    }
+
+    @Test
+    public void testSybilAttackMultipleIdentities() throws Exception {
+        // Attack: Attacker creates multiple fake member IDs to flood proposals
+        var fakeId1 = DigestAlgorithm.DEFAULT.digest("fake-member-1");
+        var fakeId2 = DigestAlgorithm.DEFAULT.digest("fake-member-2");
+        var fakeId3 = DigestAlgorithm.DEFAULT.digest("fake-member-3");
+
+        // Submit multiple proposals from fake identities
+        var proposal1 = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            fakeId1,  // ATTACK: fake source member
+            members.get(1).getId(),
+            view1,
+            System.currentTimeMillis()
+        );
+
+        var proposal2 = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            fakeId2,  // ATTACK: another fake source member
+            members.get(1).getId(),
+            view1,
+            System.currentTimeMillis()
+        );
+
+        var future1 = consensus.requestConsensus(proposal1);
+        var future2 = consensus.requestConsensus(proposal2);
+
+        // Both proposals should be rejected (fake IDs not in view)
+        var result1 = future1.get(100, TimeUnit.MILLISECONDS);
+        var result2 = future2.get(100, TimeUnit.MILLISECONDS);
+
+        assertFalse(result1, "Proposal from fake member should be rejected");
+        assertFalse(result2, "Multiple proposals from fake members should all be rejected");
+    }
+
+    @Test
+    public void testSplitBrainScenarioConflictingQuorums() throws Exception {
+        // Attack: Network partition causes two concurrent proposals with different views
+        // System should prevent split-brain by rejecting stale votes from old view
+        var proposal1 = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            members.get(0).getId(),
+            members.get(1).getId(),
+            view1,  // Proposal for view1
+            System.currentTimeMillis()
+        );
+
+        // Start with view1
+        var future1 = consensus.requestConsensus(proposal1);
+
+        // Record one YES vote in view1 (below quorum)
+        votingProtocol.recordVote(new Vote(proposal1.proposalId(), members.get(0).getId(), true, view1));
+
+        // Switch to view2 (simulating partition recovery)
+        mockMonitor.setCurrentViewId(view2);
+        consensus.onViewChange(view2);
+
+        // Proposal1 should abort due to view change (returns false for retry)
+        var result1 = future1.get(1, TimeUnit.SECONDS);
+        assertFalse(result1, "Proposal should abort on view change to prevent split-brain");
+
+        // New proposal in view2
+        var proposal2 = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            members.get(1).getId(),
+            members.get(2).getId(),
+            view2,
+            System.currentTimeMillis()
+        );
+
+        var future2 = consensus.requestConsensus(proposal2);
+
+        // ATTACK: Attacker tries to replay old view1 votes
+        votingProtocol.recordVote(new Vote(proposal2.proposalId(), members.get(0).getId(), true, view1));
+
+        // Submit valid votes in view2 to reach quorum
+        votingProtocol.recordVote(new Vote(proposal2.proposalId(), members.get(1).getId(), true, view2));
+        votingProtocol.recordVote(new Vote(proposal2.proposalId(), members.get(2).getId(), true, view2));
+
+        var result2 = future2.get(1, TimeUnit.SECONDS);
+        assertTrue(result2, "New proposal in view2 should succeed (old view1 votes ignored)");
+    }
+
     // Mock Member implementation
     private static class MockMember implements Member {
         private final Digest id;
