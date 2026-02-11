@@ -25,6 +25,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Collectors;
 
 /**
@@ -118,6 +119,12 @@ public class EntityMigrationStateMachine {
      * Thread-safe collection using CopyOnWriteArrayList for concurrent reads during iteration.
      */
     private final CopyOnWriteArrayList<MigrationStateListener> listeners;
+
+    /**
+     * Lock for timeout processing (Luciferase-tmub).
+     * Replaced synchronized method with StampedLock for better concurrency control.
+     */
+    private final StampedLock timeoutLock = new StampedLock();
 
     /**
      * Clock for deterministic testing.
@@ -795,17 +802,22 @@ public class EntityMigrationStateMachine {
     }
 
     /**
-     * Process timed-out entities by triggering appropriate rollback (Phase 7D.1 Part 2).
+     * Process timed-out entities by triggering appropriate rollback (Phase 7D.1 Part 2, Luciferase-tmub).
      *
      * Timeout handling:
      * - MIGRATING_OUT state -> transition to ROLLBACK_OWNED
      * - MIGRATING_IN state -> transition to GHOST
+     * <p>
+     * Synchronization: Uses StampedLock write lock for exclusive access during timeout processing.
+     * Replaced synchronized keyword to allow more flexible locking patterns in future.
      *
      * @param currentTimeMs Current wall clock time in milliseconds
      * @return Number of entities rolled back
      */
-    public synchronized int processTimeouts(long currentTimeMs) {
-        var timedOut = checkTimeouts(currentTimeMs);
+    public int processTimeouts(long currentTimeMs) {
+        long stamp = timeoutLock.writeLock();
+        try {
+            var timedOut = checkTimeouts(currentTimeMs);
         int rolledBack = 0;
 
         for (var entityId : timedOut) {
@@ -851,7 +863,10 @@ public class EntityMigrationStateMachine {
             }
         }
 
-        return rolledBack;
+            return rolledBack;
+        } finally {
+            timeoutLock.unlockWrite(stamp);
+        }
     }
 
     /**
