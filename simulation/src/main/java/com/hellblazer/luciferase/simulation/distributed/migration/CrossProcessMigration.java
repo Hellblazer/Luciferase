@@ -92,6 +92,11 @@ public class CrossProcessMigration {
     private final        Set<String>           orphanedEntityIds                                                    = ConcurrentHashMap.newKeySet();
     // Phase 4.2.2: Prime-Mover controller for event-driven execution
     private final        RealTimeController    controller;
+    // Luciferase-77tn: Track active entities with strong references for lifecycle management
+    // Use entityId as key for cleanup on future completion
+    private final        Map<String, CrossProcessMigrationEntity> activeEntities = new ConcurrentHashMap<>();
+    // Periodic cleanup task for orphaned entities (>5min timeout)
+    private final        ScheduledExecutorService cleanupScheduler;
 
     /**
      * Set the clock source for deterministic testing.
@@ -106,14 +111,35 @@ public class CrossProcessMigration {
         // Phase 4.2.2: Initialize Prime-Mover controller
         this.controller = new RealTimeController("CrossProcessMigration");
         this.controller.start();
+
+        // Luciferase-77tn: Initialize periodic cleanup scheduler
+        // Runs every 60 seconds to clean up orphaned entities (>5min timeout)
+        this.cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            var thread = new Thread(r, "CrossProcessMigration-Cleanup");
+            thread.setDaemon(true);
+            return thread;
+        });
+        this.cleanupScheduler.scheduleAtFixedRate(this::cleanupOrphanedEntities, 60, 60, TimeUnit.SECONDS);
     }
 
     /**
-     * Stop the controller (for cleanup).
+     * Stop the controller and cleanup scheduler.
      */
     public void stop() {
         if (controller != null) {
             controller.stop();
+        }
+        // Luciferase-77tn: Shutdown cleanup scheduler
+        if (cleanupScheduler != null) {
+            cleanupScheduler.shutdown();
+            try {
+                if (!cleanupScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    cleanupScheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                cleanupScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
@@ -209,6 +235,21 @@ public class CrossProcessMigration {
             orphanedEntityIds::add  // Phase 2C: Pass orphaned entity tracking callback
         );
 
+        // Luciferase-77tn: Track entity with strong reference for lifecycle management
+        activeEntities.put(entityId, entity);
+
+        // Luciferase-77tn: Chain cleanup on future completion (success or failure)
+        // This guarantees cleanup when migration finishes, preventing memory leak
+        future.whenComplete((result, exception) -> {
+            activeEntities.remove(entityId);
+            if (log.isDebugEnabled()) {
+                var resultStr = result != null ? (result.success() ? "SUCCESS" : "FAILURE:" + result.reason()) : "null";
+                var exStr = exception != null ? exception.getClass().getSimpleName() : "none";
+                log.debug("Entity {} removed from active tracking (result={}, exception={})",
+                         entityId, resultStr, exStr);
+            }
+        });
+
         // Set controller context and start entity
         Kairos.setController(controller);
         entity.startMigration();
@@ -261,6 +302,61 @@ public class CrossProcessMigration {
      */
     public Set<String> getOrphanedEntities() {
         return Set.copyOf(orphanedEntityIds);
+    }
+
+    /**
+     * Luciferase-77tn: Get active entity count (for monitoring).
+     * <p>
+     * Returns the number of CrossProcessMigrationEntity instances currently tracked.
+     * This includes entities in all states: ACQUIRING_LOCK, PREPARE, COMMIT, ABORT.
+     * <p>
+     * Use this for:
+     * - Memory leak detection (should be 0 after all migrations complete)
+     * - Operational health monitoring (detect stuck migrations)
+     * - Capacity planning (track concurrent migration load)
+     *
+     * @return Number of active migration entities
+     */
+    public int getActiveEntityCount() {
+        return activeEntities.size();
+    }
+
+    /**
+     * Luciferase-77tn: Periodic cleanup of orphaned entities (>5min timeout).
+     * <p>
+     * This is a safety net for entities that never complete due to:
+     * - CompletableFuture never resolved (programming error)
+     * - PrimeMover controller shutdown without cleanup
+     * - Unhandled exceptions in state machine
+     * <p>
+     * Runs every 60 seconds. Removes entities older than 5 minutes.
+     * <p>
+     * Normal operations should NOT trigger this cleanup - it indicates
+     * a bug if entities are being cleaned up here.
+     */
+    private void cleanupOrphanedEntities() {
+        try {
+            var now = clock.currentTimeMillis();
+            var timeout = 5 * 60 * 1000; // 5 minutes
+
+            var iterator = activeEntities.entrySet().iterator();
+            while (iterator.hasNext()) {
+                var entry = iterator.next();
+                var entityId = entry.getKey();
+                var entity = entry.getValue();
+
+                // Check entity age (use phaseStartTime from entity)
+                var entityAge = now - entity.phaseStartTime;
+                if (entityAge > timeout) {
+                    log.warn("Cleaning up orphaned entity {} (age={}ms > timeout={}ms) - indicates bug",
+                             entityId, entityAge, timeout);
+                    iterator.remove();
+                    metrics.recordFailure("ORPHANED_CLEANUP");
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error during orphaned entity cleanup", e);
+        }
     }
 
     /**
@@ -346,7 +442,8 @@ public class CrossProcessMigration {
 
         // State tracking
         private       State                               currentState;
-        private       long                                phaseStartTime;
+        // Package-private for cleanup access (Luciferase-77tn)
+                      long                                phaseStartTime;
         private       int                                 lockRetries = 0;
         private       EntitySnapshot                      snapshot;
         private       IdempotencyToken                    token;
