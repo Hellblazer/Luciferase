@@ -6,6 +6,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * GGPO-style bounded rollback for handling late-arriving messages in distributed simulation.
@@ -102,6 +103,7 @@ public class CausalRollback<ID extends EntityID, Content> {
     }
 
     private final Deque<Checkpoint<ID, Content>> checkpoints;
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     /**
      * Create a new causal rollback manager.
@@ -114,23 +116,31 @@ public class CausalRollback<ID extends EntityID, Content> {
      * Create a checkpoint at the specified bucket.
      * <p>
      * Automatically evicts checkpoints beyond MAX_ROLLBACK_BUCKETS.
+     * <p>
+     * Luciferase-qr44: Refactored from synchronized to ReentrantReadWriteLock.writeLock()
+     * for flexible concurrency control (modifies checkpoints deque).
      *
      * @param bucket               Bucket number
      * @param states               Entity states at this bucket
      * @param processedMigrations  Migration UUIDs processed up to this bucket
      */
-    public synchronized void checkpoint(long bucket, Map<ID, Content> states, Set<UUID> processedMigrations) {
-        // Create immutable copies
-        var immutableStates = Map.copyOf(states);
-        var immutableMigrations = Set.copyOf(processedMigrations);
+    public void checkpoint(long bucket, Map<ID, Content> states, Set<UUID> processedMigrations) {
+        lock.writeLock().lock();
+        try {
+            // Create immutable copies
+            var immutableStates = Map.copyOf(states);
+            var immutableMigrations = Set.copyOf(processedMigrations);
 
-        var checkpoint = new Checkpoint<>(bucket, immutableStates, immutableMigrations);
+            var checkpoint = new Checkpoint<>(bucket, immutableStates, immutableMigrations);
 
-        checkpoints.addLast(checkpoint);
+            checkpoints.addLast(checkpoint);
 
-        // Maintain bounded window
-        while (checkpoints.size() > MAX_ROLLBACK_BUCKETS) {
-            checkpoints.removeFirst();
+            // Maintain bounded window
+            while (checkpoints.size() > MAX_ROLLBACK_BUCKETS) {
+                checkpoints.removeFirst();
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
@@ -141,50 +151,58 @@ public class CausalRollback<ID extends EntityID, Content> {
      * - No rollback: Message is for current or future bucket
      * - Rollback: Message is for past bucket within rollback window
      * - Rejected: Message is for bucket beyond rollback window
+     * <p>
+     * Luciferase-qr44: Refactored from synchronized to ReentrantReadWriteLock.writeLock()
+     * for flexible concurrency control (modifies checkpoints deque).
      *
      * @param messageBucket Bucket number of the incoming message
      * @return RollbackResult indicating outcome and restored state if rolled back
      */
-    public synchronized RollbackResult<ID, Content> rollbackIfNeeded(long messageBucket) {
-        if (checkpoints.isEmpty()) {
-            return RollbackResult.noRollback();
-        }
-
-        long latestBucket = getLatestBucket();
-
-        // No rollback needed for current or future messages
-        if (messageBucket >= latestBucket) {
-            return RollbackResult.noRollback();
-        }
-
-        long oldestBucket = getOldestBucket();
-
-        // Reject messages beyond rollback window
-        if (messageBucket < oldestBucket) {
-            return RollbackResult.rejected();
-        }
-
-        // Find checkpoint to rollback to (most recent checkpoint before messageBucket)
-        Checkpoint<ID, Content> targetCheckpoint = null;
-        for (var checkpoint : checkpoints) {
-            if (checkpoint.bucket() <= messageBucket) {
-                targetCheckpoint = checkpoint;
-            } else {
-                break;  // Checkpoints are ordered, stop when we pass messageBucket
+    public RollbackResult<ID, Content> rollbackIfNeeded(long messageBucket) {
+        lock.writeLock().lock();
+        try {
+            if (checkpoints.isEmpty()) {
+                return RollbackResult.noRollback();
             }
-        }
 
-        if (targetCheckpoint == null) {
-            // This shouldn't happen given the checks above, but handle defensively
-            return RollbackResult.rejected();
-        }
+            long latestBucket = getLatestBucket();
 
-        // Discard checkpoints after rollback target
-        while (!checkpoints.isEmpty() && checkpoints.getLast().bucket() > targetCheckpoint.bucket()) {
-            checkpoints.removeLast();
-        }
+            // No rollback needed for current or future messages
+            if (messageBucket >= latestBucket) {
+                return RollbackResult.noRollback();
+            }
 
-        return RollbackResult.rolledBack(targetCheckpoint.bucket(), targetCheckpoint.states());
+            long oldestBucket = getOldestBucket();
+
+            // Reject messages beyond rollback window
+            if (messageBucket < oldestBucket) {
+                return RollbackResult.rejected();
+            }
+
+            // Find checkpoint to rollback to (most recent checkpoint before messageBucket)
+            Checkpoint<ID, Content> targetCheckpoint = null;
+            for (var checkpoint : checkpoints) {
+                if (checkpoint.bucket() <= messageBucket) {
+                    targetCheckpoint = checkpoint;
+                } else {
+                    break;  // Checkpoints are ordered, stop when we pass messageBucket
+                }
+            }
+
+            if (targetCheckpoint == null) {
+                // This shouldn't happen given the checks above, but handle defensively
+                return RollbackResult.rejected();
+            }
+
+            // Discard checkpoints after rollback target
+            while (!checkpoints.isEmpty() && checkpoints.getLast().bucket() > targetCheckpoint.bucket()) {
+                checkpoints.removeLast();
+            }
+
+            return RollbackResult.rolledBack(targetCheckpoint.bucket(), targetCheckpoint.states());
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     /**
