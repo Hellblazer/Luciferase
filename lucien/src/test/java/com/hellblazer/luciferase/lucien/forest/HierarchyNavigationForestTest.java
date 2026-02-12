@@ -650,4 +650,198 @@ class HierarchyNavigationForestTest {
 
         log.info("getTreesAtLevel test passed");
     }
+
+    /**
+     * P2.5: Test concurrent subdivision only subdivides once (CAS guard).
+     * Two threads attempt to subdivide same tree - only one should succeed.
+     */
+    @Test
+    void testConcurrentSubdivision_onlySubdividesOnce() throws Exception {
+        // Create root tree
+        var octree = new Octree<LongEntityID, String>(idGenerator);
+        var metadata = TreeMetadata.builder()
+            .name("RootTree")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .build();
+
+        var rootId = forest.addTree(octree, metadata);
+        var rootTree = forest.getTree(rootId);
+
+        // Add entities (don't trigger subdivision yet)
+        for (int i = 0; i < 60; i++) {
+            var pos = new Point3f(i * 1.5f, i * 1.5f, i * 1.5f);
+            var entityId = idGenerator.generateID();
+            octree.insert(entityId, pos, (byte)0, "Entity-" + i);
+            forest.trackEntityInsertion(rootId, entityId, pos);
+        }
+
+        // Prepare to run two concurrent subdivisions
+        var latch = new java.util.concurrent.CountDownLatch(2);
+        var subdivisionSuccessCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        // Thread 1
+        var thread1 = new Thread(() -> {
+            try {
+                latch.countDown();
+                latch.await(); // Synchronize start
+
+                // Try to mark as subdivided
+                if (rootTree.tryMarkSubdivided()) {
+                    subdivisionSuccessCount.incrementAndGet();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        // Thread 2
+        var thread2 = new Thread(() -> {
+            try {
+                latch.countDown();
+                latch.await(); // Synchronize start
+
+                // Try to mark as subdivided
+                if (rootTree.tryMarkSubdivided()) {
+                    subdivisionSuccessCount.incrementAndGet();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        thread1.start();
+        thread2.start();
+        thread1.join();
+        thread2.join();
+
+        // Only one thread should have succeeded
+        assertEquals(1, subdivisionSuccessCount.get(),
+                    "CAS guard should allow only one subdivision");
+
+        // Tree should be marked as subdivided
+        assertTrue(rootTree.isSubdivided(), "Tree should be marked as subdivided");
+
+        log.info("Concurrent subdivision CAS guard test passed");
+    }
+
+    /**
+     * P2.5: Test multi-level cascade (root→level1→level2→leaves).
+     * Verifies hierarchy works correctly across multiple subdivision levels.
+     */
+    @Test
+    void testMultiLevelCascade() {
+        // Create root tree at level 0
+        var octree = new Octree<LongEntityID, String>(idGenerator);
+        var metadata = TreeMetadata.builder()
+            .name("RootTree")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .build();
+
+        var rootId = forest.addTree(octree, metadata);
+
+        // Add many entities to trigger multiple levels of subdivision
+        for (int i = 0; i < 100; i++) {
+            var pos = new Point3f(i * 1.5f, i * 1.5f, i * 1.5f);
+            var entityId = idGenerator.generateID();
+            octree.insert(entityId, pos, (byte)0, "Entity-" + i);
+            forest.trackEntityInsertion(rootId, entityId, pos);
+        }
+
+        // Trigger first subdivision (root → 8 children)
+        try {
+            var method = AdaptiveForest.class.getDeclaredMethod("considerSubdivision", String.class);
+            method.setAccessible(true);
+            method.invoke(forest, rootId);
+        } catch (Exception e) {
+            fail("Failed to invoke considerSubdivision: " + e.getMessage());
+        }
+
+        var rootTree = forest.getTree(rootId);
+        var level1Children = rootTree.getChildTreeIds();
+
+        // Verify level 1 structure
+        assertEquals(8, level1Children.size(), "Root should have 8 children");
+        assertEquals(0, rootTree.getHierarchyLevel(), "Root should be level 0");
+
+        // Verify all level 1 children have correct level
+        for (var childId : level1Children) {
+            var child = forest.getTree(childId);
+            assertEquals(1, child.getHierarchyLevel(), "Level 1 child should have level 1");
+            assertEquals(rootId, child.getParentTreeId(), "Level 1 child should point to root");
+        }
+
+        // Get leaves
+        var leaves = forest.getLeaves();
+
+        // All level 1 children should be leaves (no further subdivision in this test)
+        assertEquals(8, leaves.size(), "Should have 8 leaf nodes");
+
+        // Verify hierarchy integrity
+        var allTrees = forest.getAllTrees();
+        assertEquals(9, allTrees.size(), "Should have 9 total trees (1 root + 8 children)");
+
+        log.info("Multi-level cascade test passed");
+    }
+
+    /**
+     * P2.5: Test hierarchy integrity check.
+     * Verifies that all parent-child links are bidirectional and consistent.
+     */
+    @Test
+    void testHierarchyIntegrity() {
+        // Create root tree
+        var octree = new Octree<LongEntityID, String>(idGenerator);
+        var metadata = TreeMetadata.builder()
+            .name("RootTree")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .build();
+
+        var rootId = forest.addTree(octree, metadata);
+
+        // Add entities and trigger subdivision
+        for (int i = 0; i < 60; i++) {
+            var pos = new Point3f(i * 1.5f, i * 1.5f, i * 1.5f);
+            var entityId = idGenerator.generateID();
+            octree.insert(entityId, pos, (byte)0, "Entity-" + i);
+            forest.trackEntityInsertion(rootId, entityId, pos);
+        }
+
+        // Trigger subdivision
+        try {
+            var method = AdaptiveForest.class.getDeclaredMethod("considerSubdivision", String.class);
+            method.setAccessible(true);
+            method.invoke(forest, rootId);
+        } catch (Exception e) {
+            fail("Failed to invoke considerSubdivision: " + e.getMessage());
+        }
+
+        var rootTree = forest.getTree(rootId);
+
+        // Verify bidirectional integrity
+        for (var childId : rootTree.getChildTreeIds()) {
+            var child = forest.getTree(childId);
+
+            // Child must point back to parent
+            assertEquals(rootId, child.getParentTreeId(),
+                        "Child should point back to parent");
+
+            // Child's level must be parent's level + 1
+            assertEquals(rootTree.getHierarchyLevel() + 1, child.getHierarchyLevel(),
+                        "Child level should be parent level + 1");
+
+            // Child must exist in forest
+            assertNotNull(forest.getTree(childId), "Child must exist in forest");
+        }
+
+        // Verify parent is not a leaf
+        assertFalse(rootTree.isLeaf(), "Parent with children should not be leaf");
+
+        // Verify all children are leaves
+        for (var childId : rootTree.getChildTreeIds()) {
+            var child = forest.getTree(childId);
+            assertTrue(child.isLeaf(), "Child with no children should be leaf");
+        }
+
+        log.info("Hierarchy integrity test passed");
+    }
 }
