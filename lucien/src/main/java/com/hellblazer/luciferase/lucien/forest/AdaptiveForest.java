@@ -26,11 +26,14 @@ import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
+import com.hellblazer.luciferase.lucien.tetree.BeySubdivision;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Point3i;
 import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.*;
@@ -670,14 +673,306 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
      * @param region the density region
      */
     private void subdivideTetrahedral(TreeNode<Key, ID, Content> parentTree, DensityRegion region) {
-        // TODO: Implement dual-path tetrahedral subdivision (Steps 4-6)
-        // This stub will be replaced with full implementation in Phase 1 Steps 4-6
-        throw new UnsupportedOperationException(
-            "Tetrahedral subdivision not yet implemented. " +
-            "Requires: (1) dual-path dispatcher, (2) subdivideCubicToTets (6 S0-S5 children), " +
-            "(3) subdivideTetToSubTets (8 Bey children), (4) redistributeEntitiesTetrahedral. " +
-            "See Phase 1 architecture v2 for complete specification."
-        );
+        // Atomic guard: prevent double-subdivision race condition
+        if (!parentTree.tryMarkSubdivided()) {
+            return; // Another thread is already subdividing this tree
+        }
+
+        var bounds = parentTree.getTreeBounds();
+
+        // Pattern matching dispatch on TreeBounds type
+        switch(bounds) {
+            case CubicBounds cubic -> subdivideCubicToTets(parentTree, region, cubic);
+            case TetrahedralBounds tet -> subdivideTetToSubTets(parentTree, region, tet);
+            case null -> {
+                // Fallback for trees without TreeBounds (legacy or error state)
+                log.warn("TreeBounds null for tree {}, falling back to OCTANT",
+                         parentTree.getTreeId());
+                subdivideOctant(parentTree, region);
+            }
+        }
+    }
+
+    /**
+     * Case A: Subdivide cubic bounds into 6 S0-S5 characteristic tetrahedra.
+     *
+     * Creates 6 child trees, one for each S0-S5 type that tiles the parent cube.
+     * All 6 children share the same anchor point and level.
+     *
+     * @param parentTree the parent tree with cubic bounds
+     * @param region the density region
+     * @param cubicBounds the cubic bounds to subdivide
+     */
+    private void subdivideCubicToTets(TreeNode<Key, ID, Content> parentTree,
+                                       DensityRegion region,
+                                       CubicBounds cubicBounds) {
+        var aabb = cubicBounds.bounds();
+
+        // Pre-validate: coordinates must be non-negative for Tetree
+        if (aabb.getMinX() < 0 || aabb.getMinY() < 0 || aabb.getMinZ() < 0) {
+            log.warn("Negative coordinates in bounds for tree {}, falling back to OCTANT",
+                     parentTree.getTreeId());
+            subdivideOctant(parentTree, region);
+            return;
+        }
+
+        // 1. Compute containing cube (max dimension for cubic shape)
+        float maxDim = Math.max(
+            aabb.getMaxX() - aabb.getMinX(),
+            Math.max(aabb.getMaxY() - aabb.getMinY(),
+                     aabb.getMaxZ() - aabb.getMinZ()));
+
+        // 2. Compute Tetree level from cube edge length
+        byte tetLevel = computeTetLevelFromCubeSize(maxDim);
+        if (tetLevel < 0) {
+            log.warn("Invalid tetree level for edge length {}, falling back to OCTANT", maxDim);
+            subdivideOctant(parentTree, region);
+            return;
+        }
+
+        int cellSize = 1 << (21 - tetLevel);
+
+        // 3. Snap anchor to grid
+        int anchorX = ((int)(aabb.getMinX() / cellSize)) * cellSize;
+        int anchorY = ((int)(aabb.getMinY() / cellSize)) * cellSize;
+        int anchorZ = ((int)(aabb.getMinZ() / cellSize)) * cellSize;
+
+        // 4. Create 6 child trees (one per S0-S5 type)
+        var childTrees = new ArrayList<TreeNode<Key, ID, Content>>(6);
+        var childBounds = new ArrayList<TetrahedralBounds>(6);
+
+        for (byte type = 0; type < 6; type++) {
+            var tet = new Tet(anchorX, anchorY, anchorZ, tetLevel, type);
+            var tetBounds = new TetrahedralBounds(tet);
+            var childTree = createChildTreeWithBounds(parentTree, tetBounds, type);
+            childTrees.add(childTree);
+            childBounds.add(tetBounds);
+        }
+
+        // 5. Redistribute entities using containsPoint, first-match-wins
+        redistributeEntitiesTetrahedral(parentTree, childTrees, childBounds, region);
+
+        // 6. Remove parent tree
+        removeTree(parentTree.getTreeId());
+    }
+
+    /**
+     * Case B: Subdivide tetrahedral bounds into 8 Bey subdivision children.
+     *
+     * Uses Bey subdivision to create 8 smaller tetrahedra from the parent tet.
+     *
+     * @param parentTree the parent tree with tetrahedral bounds
+     * @param region the density region
+     * @param tetBounds the tetrahedral bounds to subdivide
+     */
+    private void subdivideTetToSubTets(TreeNode<Key, ID, Content> parentTree,
+                                        DensityRegion region,
+                                        TetrahedralBounds tetBounds) {
+        var parentTet = tetBounds.tet();
+
+        // 1. Bey subdivision: 8 children
+        Tet[] beyChildren = BeySubdivision.subdivide(parentTet);
+
+        // 2. Create 8 child trees
+        var childTrees = new ArrayList<TreeNode<Key, ID, Content>>(8);
+        var childBounds = new ArrayList<TetrahedralBounds>(8);
+
+        for (int i = 0; i < 8; i++) {
+            var childTet = beyChildren[i];
+            var childTetBounds = new TetrahedralBounds(childTet);
+            var childTree = createChildTreeWithBounds(parentTree, childTetBounds, i);
+            childTrees.add(childTree);
+            childBounds.add(childTetBounds);
+        }
+
+        // 3. Redistribute entities, first-match-wins
+        redistributeEntitiesTetrahedral(parentTree, childTrees, childBounds, region);
+
+        // 4. Remove parent tree
+        removeTree(parentTree.getTreeId());
+    }
+
+    /**
+     * Create a child tree with specified bounds (cubic or tetrahedral).
+     *
+     * Sets TreeBounds and hierarchy level in the child.
+     *
+     * @param parentTree the parent tree
+     * @param bounds the bounds for the child (CubicBounds or TetrahedralBounds)
+     * @param childIndex the index of this child
+     * @return the new child tree
+     */
+    @SuppressWarnings("unchecked")
+    private TreeNode<Key, ID, Content> createChildTreeWithBounds(
+            TreeNode<Key, ID, Content> parentTree,
+            TreeBounds bounds,
+            int childIndex) {
+
+        // Determine tree type based on bounds type
+        AbstractSpatialIndex<Key, ID, Content> childSpatialIndex;
+
+        if (bounds instanceof TetrahedralBounds) {
+            // Tetrahedral bounds -> use Tetree
+            childSpatialIndex = (AbstractSpatialIndex<Key, ID, Content>) new Tetree<ID, Content>(idGenerator);
+        } else {
+            // Cubic bounds -> use Octree
+            childSpatialIndex = (AbstractSpatialIndex<Key, ID, Content>) new Octree<ID, Content>(idGenerator);
+        }
+
+        // Create metadata for child
+        var parentMetadata = parentTree.getMetadata("metadata");
+        var childMetadata = TreeMetadata.builder()
+            .name("SubTree")
+            .treeType(bounds instanceof TetrahedralBounds ?
+                     TreeMetadata.TreeType.TETREE : TreeMetadata.TreeType.OCTREE)
+            .property("parentId", parentTree.getTreeId())
+            .property("childIndex", childIndex)
+            .property("subdivisionTime", System.currentTimeMillis())
+            .build();
+
+        // Add to forest
+        var childId = addTree(childSpatialIndex, childMetadata);
+        var childTree = getTree(childId);
+
+        // Expand bounds
+        var aabb = bounds.toAABB();
+        childTree.expandGlobalBounds(aabb);
+
+        // Set TreeBounds (polymorphic, type-safe)
+        childTree.setTreeBounds(bounds);
+
+        // Set hierarchy level
+        childTree.setHierarchyLevel(parentTree.getHierarchyLevel() + 1);
+
+        return childTree;
+    }
+
+    /**
+     * Redistribute entities from parent to tetrahedral children using first-match-wins.
+     *
+     * Entities on boundaries are assigned to the first child that contains them.
+     * Orphaned entities (not contained by any child) are assigned to nearest centroid.
+     *
+     * @param parentTree the parent tree
+     * @param childTrees the child trees
+     * @param childBounds the bounds for each child
+     * @param parentRegion the parent density region
+     */
+    private void redistributeEntitiesTetrahedral(
+            TreeNode<Key, ID, Content> parentTree,
+            List<TreeNode<Key, ID, Content>> childTrees,
+            List<TetrahedralBounds> childBounds,
+            DensityRegion<ID> parentRegion) {
+
+        var orphanCount = new AtomicInteger(0);
+        var parentIndex = parentTree.getSpatialIndex();
+
+        for (Map.Entry<ID, Point3f> entry : parentRegion.entityPositions.entrySet()) {
+            var entityId = entry.getKey();
+            var position = entry.getValue();
+            boolean assigned = false;
+
+            // First-match-wins: iterate children in index order
+            for (int i = 0; i < childBounds.size(); i++) {
+                if (childBounds.get(i).containsPoint(position.x, position.y, position.z)) {
+                    assignEntityToChild(parentIndex, entityId, position, childTrees.get(i));
+                    assigned = true;
+                    break;
+                }
+            }
+
+            // Fallback: nearest centroid for boundary edge cases
+            if (!assigned) {
+                orphanCount.incrementAndGet();
+                var nearestIdx = findNearestTetCentroid(position, childBounds);
+                assignEntityToChild(parentIndex, entityId, position, childTrees.get(nearestIdx));
+            }
+        }
+
+        if (orphanCount.get() > 0) {
+            log.debug("Assigned {} boundary entities to nearest centroid", orphanCount.get());
+        }
+    }
+
+    /**
+     * Find the index of the tetrahedral bounds with nearest centroid to the point.
+     *
+     * @param point the point to measure from
+     * @param childBounds the list of tetrahedral bounds
+     * @return the index of the nearest child
+     */
+    private int findNearestTetCentroid(Point3f point, List<TetrahedralBounds> childBounds) {
+        int nearestIdx = 0;
+        float minDistSq = Float.MAX_VALUE;
+
+        for (int i = 0; i < childBounds.size(); i++) {
+            var centroid = childBounds.get(i).centroid();
+            float dx = point.x - centroid.x;
+            float dy = point.y - centroid.y;
+            float dz = point.z - centroid.z;
+            float distSq = dx*dx + dy*dy + dz*dz;
+
+            if (distSq < minDistSq) {
+                minDistSq = distSq;
+                nearestIdx = i;
+            }
+        }
+
+        return nearestIdx;
+    }
+
+    /**
+     * Assign an entity to a child tree during redistribution.
+     *
+     * @param parentIndex the parent spatial index
+     * @param entityId the entity ID
+     * @param position the entity position
+     * @param childTree the child tree to assign to
+     */
+    private void assignEntityToChild(AbstractSpatialIndex<Key, ID, Content> parentIndex,
+                                      ID entityId, Point3f position,
+                                      TreeNode<Key, ID, Content> childTree) {
+        // Get entity content from parent index
+        var content = parentIndex.getEntity(entityId);
+        if (content != null) {
+            // Remove from parent and add to child
+            parentIndex.removeEntity(entityId);
+            childTree.getSpatialIndex().insert(entityId, position, (byte)0, content);
+
+            // Update density tracking
+            trackEntityInsertion(childTree.getTreeId(), entityId, position);
+        }
+    }
+
+    /**
+     * Compute the appropriate tetree level for a given cube edge length.
+     *
+     * At level L, cellSize = 1 << (21 - L), so for a given edge length,
+     * we find the level where cellSize >= edge.
+     *
+     * @param cubeSize the edge length of the cube
+     * @return the tetree level, or -1 if out of range
+     */
+    private byte computeTetLevelFromCubeSize(float cubeSize) {
+        // Find the smallest level where cellSize >= cubeSize
+        // cellSize = 1 << (21 - level)
+        // So: 1 << (21 - level) >= cubeSize
+        //     21 - level >= log2(cubeSize)
+        //     level <= 21 - log2(cubeSize)
+
+        if (cubeSize <= 0 || cubeSize > (1 << 21)) {
+            return -1; // Out of range
+        }
+
+        // Find the level where cellSize is just large enough
+        for (byte level = 0; level <= 21; level++) {
+            int cellSize = 1 << (21 - level);
+            if (cellSize >= cubeSize) {
+                return level;
+            }
+        }
+
+        return -1; // Should not reach here
     }
 
     /**
