@@ -75,7 +75,8 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             BINARY_Y,    // Binary split along Y axis
             BINARY_Z,    // Binary split along Z axis
             ADAPTIVE,    // Choose split axis based on entity distribution
-            K_MEANS      // Use k-means clustering for subdivision
+            K_MEANS,     // Use k-means clustering for subdivision
+            TETRAHEDRAL  // Dual-path tetrahedral subdivision (Phase 1: cubic→6 S0-S5 tets, tet→8 Bey children)
         }
         
         private AdaptationConfig(Builder builder) {
@@ -445,6 +446,9 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             case K_MEANS:
                 subdivideKMeans(treeNode, region);
                 break;
+            case TETRAHEDRAL:
+                subdivideTetrahedral(treeNode, region);
+                break;
             default:
                 subdivideOctant(treeNode, region);
         }
@@ -647,11 +651,35 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         
         // Redistribute entities based on clustering
         redistributeEntitiesByClusters(parentTree, childTrees, region, clusters);
-        
+
         // Remove parent tree
         removeTree(parentTree.getTreeId());
     }
-    
+
+    /**
+     * Subdivide tree using dual-path tetrahedral strategy (Phase 1).
+     *
+     * Dispatches based on parent TreeBounds type:
+     * - CubicBounds parent → 6 S0-S5 characteristic tetrahedra (Case A)
+     * - TetrahedralBounds parent → 8 Bey subdivision children (Case B)
+     *
+     * CRITICAL: Uses pattern matching on TreeBounds sealed interface to ensure
+     * type-safe dispatch to correct subdivision algorithm.
+     *
+     * @param parentTree the tree to subdivide
+     * @param region the density region
+     */
+    private void subdivideTetrahedral(TreeNode<Key, ID, Content> parentTree, DensityRegion region) {
+        // TODO: Implement dual-path tetrahedral subdivision (Steps 4-6)
+        // This stub will be replaced with full implementation in Phase 1 Steps 4-6
+        throw new UnsupportedOperationException(
+            "Tetrahedral subdivision not yet implemented. " +
+            "Requires: (1) dual-path dispatcher, (2) subdivideCubicToTets (6 S0-S5 children), " +
+            "(3) subdivideTetToSubTets (8 Bey children), (4) redistributeEntitiesTetrahedral. " +
+            "See Phase 1 architecture v2 for complete specification."
+        );
+    }
+
     /**
      * Simple k-means clustering implementation
      */
