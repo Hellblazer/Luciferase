@@ -507,4 +507,147 @@ class HierarchyNavigationForestTest {
 
         log.info("getLeaves test passed");
     }
+
+    /**
+     * P2.4: Test queryHierarchy() with isLeaf() filtering.
+     * Only leaf nodes should be returned by default.
+     */
+    @Test
+    void testQueryHierarchyFiltersToLeaves() {
+        // Create root tree
+        var octree = new Octree<LongEntityID, String>(idGenerator);
+        var metadata = TreeMetadata.builder()
+            .name("RootTree")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .build();
+
+        var rootId = forest.addTree(octree, metadata);
+
+        // Add entities and trigger subdivision
+        for (int i = 0; i < 60; i++) {
+            var pos = new Point3f(i * 1.5f, i * 1.5f, i * 1.5f);
+            var entityId = idGenerator.generateID();
+            octree.insert(entityId, pos, (byte)0, "Entity-" + i);
+            forest.trackEntityInsertion(rootId, entityId, pos);
+        }
+
+        // Trigger subdivision
+        try {
+            var method = AdaptiveForest.class.getDeclaredMethod("considerSubdivision", String.class);
+            method.setAccessible(true);
+            method.invoke(forest, rootId);
+        } catch (Exception e) {
+            fail("Failed to invoke considerSubdivision: " + e.getMessage());
+        }
+
+        // Query all trees at level 1
+        var level1Trees = forest.queryHierarchy(t -> t.getHierarchyLevel() == 1);
+
+        // Should get 8 children (all at level 1 and all leaves)
+        assertEquals(8, level1Trees.size(), "Should get 8 leaf trees at level 1");
+
+        // All should be leaves
+        for (var tree : level1Trees) {
+            assertTrue(tree.isLeaf(), "Query should only return leaf nodes");
+        }
+
+        // Root should NOT be in results (it's not a leaf)
+        assertFalse(level1Trees.stream().anyMatch(t -> t.getTreeId().equals(rootId)),
+                   "Root should not be in query results (not a leaf)");
+
+        log.info("queryHierarchy with isLeaf filtering test passed");
+    }
+
+    /**
+     * P2.4: Test findLeavesUnder() returns only leaves in subtree.
+     */
+    @Test
+    void testFindLeavesUnder() {
+        // Create root tree
+        var octree = new Octree<LongEntityID, String>(idGenerator);
+        var metadata = TreeMetadata.builder()
+            .name("RootTree")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .build();
+
+        var rootId = forest.addTree(octree, metadata);
+
+        // Add entities and trigger subdivision
+        for (int i = 0; i < 60; i++) {
+            var pos = new Point3f(i * 1.5f, i * 1.5f, i * 1.5f);
+            var entityId = idGenerator.generateID();
+            octree.insert(entityId, pos, (byte)0, "Entity-" + i);
+            forest.trackEntityInsertion(rootId, entityId, pos);
+        }
+
+        // Trigger subdivision
+        try {
+            var method = AdaptiveForest.class.getDeclaredMethod("considerSubdivision", String.class);
+            method.setAccessible(true);
+            method.invoke(forest, rootId);
+        } catch (Exception e) {
+            fail("Failed to invoke considerSubdivision: " + e.getMessage());
+        }
+
+        // Find leaves under root
+        var leavesUnderRoot = forest.findLeavesUnder(rootId);
+
+        // Should get 8 leaves (all children)
+        assertEquals(8, leavesUnderRoot.size(), "Should find 8 leaves under root");
+
+        // All should be leaves
+        for (var leaf : leavesUnderRoot) {
+            assertTrue(leaf.isLeaf(), "Should only return leaf nodes");
+        }
+
+        log.info("findLeavesUnder test passed");
+    }
+
+    /**
+     * P2.4: Test getTreesAtLevel() returns exact level matches.
+     */
+    @Test
+    void testGetTreesAtLevel() {
+        // Create root tree
+        var octree = new Octree<LongEntityID, String>(idGenerator);
+        var metadata = TreeMetadata.builder()
+            .name("RootTree")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .build();
+
+        var rootId = forest.addTree(octree, metadata);
+
+        // Add entities and trigger subdivision
+        for (int i = 0; i < 60; i++) {
+            var pos = new Point3f(i * 1.5f, i * 1.5f, i * 1.5f);
+            var entityId = idGenerator.generateID();
+            octree.insert(entityId, pos, (byte)0, "Entity-" + i);
+            forest.trackEntityInsertion(rootId, entityId, pos);
+        }
+
+        // Trigger subdivision
+        try {
+            var method = AdaptiveForest.class.getDeclaredMethod("considerSubdivision", String.class);
+            method.setAccessible(true);
+            method.invoke(forest, rootId);
+        } catch (Exception e) {
+            fail("Failed to invoke considerSubdivision: " + e.getMessage());
+        }
+
+        // Get trees at level 0 (root)
+        var level0Trees = forest.getTreesAtLevel(0);
+        assertEquals(1, level0Trees.size(), "Should have 1 tree at level 0 (root)");
+        assertEquals(rootId, level0Trees.get(0).getTreeId(), "Level 0 tree should be root");
+
+        // Get trees at level 1 (children)
+        var level1Trees = forest.getTreesAtLevel(1);
+        assertEquals(8, level1Trees.size(), "Should have 8 trees at level 1 (children)");
+
+        // All level 1 trees should be leaves
+        for (var tree : level1Trees) {
+            assertTrue(tree.isLeaf(), "Level 1 trees should be leaves");
+        }
+
+        log.info("getTreesAtLevel test passed");
+    }
 }

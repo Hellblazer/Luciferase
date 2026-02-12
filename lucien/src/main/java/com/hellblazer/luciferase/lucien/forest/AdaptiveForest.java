@@ -1526,6 +1526,51 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             .collect(Collectors.toList());
     }
 
+    // ========================================
+    // Query Methods with isLeaf() Filtering (Phase 2.4)
+    // ========================================
+
+    /**
+     * Query hierarchy with custom predicate (defaults to leaves only).
+     * This prevents duplicate results from parent+children spatial overlap.
+     *
+     * @param predicate the filter predicate
+     * @return list of matching leaf trees
+     */
+    public List<TreeNode<Key, ID, Content>> queryHierarchy(
+            java.util.function.Predicate<TreeNode<Key, ID, Content>> predicate) {
+        return getAllTrees().stream()
+            .filter(TreeNode::isLeaf)  // Default: only query leaves
+            .filter(predicate)
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Find leaves under specific node.
+     * Returns only leaf descendants of the given node.
+     *
+     * @param rootId the root node ID
+     * @return list of leaf descendants
+     */
+    public List<TreeNode<Key, ID, Content>> findLeavesUnder(String rootId) {
+        return getDescendants(rootId).stream()
+            .filter(TreeNode::isLeaf)
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Get trees at specific hierarchy level.
+     * Filters entire forest by exact level match.
+     *
+     * @param level the hierarchy level
+     * @return list of trees at the specified level
+     */
+    public List<TreeNode<Key, ID, Content>> getTreesAtLevel(int level) {
+        return getAllTrees().stream()
+            .filter(t -> t.getHierarchyLevel() == level)
+            .collect(Collectors.toList());
+    }
+
     // Getters
     public AdaptationConfig getAdaptationConfig() {
         return adaptationConfig;
