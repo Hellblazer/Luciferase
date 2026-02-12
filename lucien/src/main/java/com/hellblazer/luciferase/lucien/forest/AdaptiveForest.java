@@ -527,26 +527,55 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
     }
     
     /**
+     * Establish bidirectional hierarchy links between parent and children.
+     * Sets parent→children and child→parent relationships, propagates hierarchy level.
+     *
+     * @param parent the parent tree node
+     * @param children the list of child tree nodes
+     */
+    private void establishHierarchy(TreeNode<Key, ID, Content> parent,
+                                     List<TreeNode<Key, ID, Content>> children) {
+        for (var child : children) {
+            // Set parent link (atomic)
+            child.setParentTreeId(parent.getTreeId());
+
+            // Set level (volatile write)
+            child.setHierarchyLevel(parent.getHierarchyLevel() + 1);
+
+            // Add to parent's child list (CopyOnWriteArrayList)
+            parent.addChildTreeId(child.getTreeId());
+        }
+
+        log.debug("Established hierarchy: parent {} has {} children at level {}",
+                 parent.getTreeId(), children.size(), parent.getHierarchyLevel() + 1);
+    }
+
+    /**
      * Subdivide tree into 8 octants
      */
     private void subdivideOctant(TreeNode<Key, ID, Content> parentTree, DensityRegion region) {
+        // Atomic guard: prevent double-subdivision race condition
+        if (!parentTree.tryMarkSubdivided()) {
+            return; // Another thread is already subdividing this tree
+        }
+
         var bounds = region.bounds;
         var center = bounds.getCenter();
-        
+
         // Create 8 child trees
         var childTrees = new ArrayList<TreeNode<Key, ID, Content>>(8);
-        
+
         for (int i = 0; i < 8; i++) {
             var childBounds = createOctantBounds(bounds, i);
             var childTree = createChildTree(parentTree, childBounds, i);
             childTrees.add(childTree);
         }
-        
+
         // Redistribute entities to child trees
         redistributeEntities(parentTree, childTrees, region);
-        
-        // Remove parent tree
-        removeTree(parentTree.getTreeId());
+
+        // Establish hierarchy (Phase 2 - preserve parent)
+        establishHierarchy(parentTree, childTrees);
     }
     
     /**
@@ -575,23 +604,28 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
      * Binary subdivision along a specific axis
      */
     private void subdivideBinary(TreeNode<Key, ID, Content> parentTree, DensityRegion region, int axis) {
+        // Atomic guard: prevent double-subdivision race condition
+        if (!parentTree.tryMarkSubdivided()) {
+            return; // Another thread is already subdividing this tree
+        }
+
         var bounds = region.bounds;
         var center = bounds.getCenter();
-        
+
         // Create two child trees split along the specified axis
         var bounds1 = createBinarySplitBounds(bounds, axis, false);
         var bounds2 = createBinarySplitBounds(bounds, axis, true);
-        
+
         var child1 = createChildTree(parentTree, bounds1, 0);
         var child2 = createChildTree(parentTree, bounds2, 1);
-        
+
         var childTrees = Arrays.asList(child1, child2);
-        
+
         // Redistribute entities
         redistributeEntities(parentTree, childTrees, region);
-        
-        // Remove parent tree
-        removeTree(parentTree.getTreeId());
+
+        // Establish hierarchy (Phase 2 - preserve parent)
+        establishHierarchy(parentTree, childTrees);
     }
     
     /**
@@ -635,6 +669,11 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             subdivideOctant(parentTree, region);
             return;
         }
+
+        // Atomic guard: prevent double-subdivision race condition
+        if (!parentTree.tryMarkSubdivided()) {
+            return; // Another thread is already subdividing this tree
+        }
         
         // Perform k-means clustering with k=8
         var clusters = performKMeansClustering(positions, 8);
@@ -655,8 +694,8 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         // Redistribute entities based on clustering
         redistributeEntitiesByClusters(parentTree, childTrees, region, clusters);
 
-        // Remove parent tree
-        removeTree(parentTree.getTreeId());
+        // Establish hierarchy (Phase 2 - preserve parent)
+        establishHierarchy(parentTree, childTrees);
     }
 
     /**
@@ -752,8 +791,8 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         // 5. Redistribute entities using containsPoint, first-match-wins
         redistributeEntitiesTetrahedral(parentTree, childTrees, childBounds, region);
 
-        // 6. Remove parent tree
-        removeTree(parentTree.getTreeId());
+        // 6. Establish hierarchy (Phase 2 - preserve parent)
+        establishHierarchy(parentTree, childTrees);
     }
 
     /**
@@ -788,8 +827,8 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         // 3. Redistribute entities, first-match-wins
         redistributeEntitiesTetrahedral(parentTree, childTrees, childBounds, region);
 
-        // 4. Remove parent tree
-        removeTree(parentTree.getTreeId());
+        // 4. Establish hierarchy (Phase 2 - preserve parent)
+        establishHierarchy(parentTree, childTrees);
     }
 
     /**
@@ -1398,15 +1437,104 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
                point.z >= bounds.getMinZ() && point.z <= bounds.getMaxZ();
     }
     
+    // ========================================
+    // Hierarchy Navigation Methods (Phase 2.3)
+    // ========================================
+
+    /**
+     * Get all ancestors from node to root.
+     * Traces the parent chain from the given node up to the root.
+     *
+     * @param treeId the tree ID to start from
+     * @return list of ancestor trees, ordered from immediate parent to root
+     */
+    public List<TreeNode<Key, ID, Content>> getAncestors(String treeId) {
+        var result = new ArrayList<TreeNode<Key, ID, Content>>();
+        var current = getTree(treeId);
+
+        while (current != null && current.getParentTreeId() != null) {
+            var parentId = current.getParentTreeId();
+            var parent = getTree(parentId);
+            if (parent != null) {
+                result.add(parent);
+            }
+            current = parent;
+        }
+
+        return result;
+    }
+
+    /**
+     * Get all descendants of a node (recursive).
+     * Returns all children, grandchildren, etc.
+     *
+     * @param treeId the root tree ID
+     * @return list of all descendant trees
+     */
+    public List<TreeNode<Key, ID, Content>> getDescendants(String treeId) {
+        var result = new ArrayList<TreeNode<Key, ID, Content>>();
+        var root = getTree(treeId);
+        if (root == null) return result;
+
+        collectDescendants(root, result);
+        return result;
+    }
+
+    /**
+     * Helper method to recursively collect descendants.
+     *
+     * @param node the current node
+     * @param accumulator the list to accumulate results
+     */
+    private void collectDescendants(TreeNode<Key, ID, Content> node,
+                                     List<TreeNode<Key, ID, Content>> accumulator) {
+        for (var childId : node.getChildTreeIds()) {
+            var child = getTree(childId);
+            if (child != null) {
+                accumulator.add(child);
+                collectDescendants(child, accumulator); // Recursive
+            }
+        }
+    }
+
+    /**
+     * Get entire subtree (node + all descendants).
+     * Includes the root node itself plus all descendants.
+     *
+     * @param treeId the root tree ID
+     * @return list containing root and all descendants
+     */
+    public List<TreeNode<Key, ID, Content>> getSubtree(String treeId) {
+        var result = new ArrayList<TreeNode<Key, ID, Content>>();
+        var root = getTree(treeId);
+        if (root != null) {
+            result.add(root);
+            result.addAll(getDescendants(treeId));
+        }
+        return result;
+    }
+
+    /**
+     * Get all leaf nodes in the forest.
+     * A leaf node has no children.
+     *
+     * @return list of all leaf trees
+     */
+    public List<TreeNode<Key, ID, Content>> getLeaves() {
+        return getAllTrees().stream()
+            .filter(TreeNode::isLeaf)
+            .collect(Collectors.toList());
+    }
+
     // Getters
     public AdaptationConfig getAdaptationConfig() {
         return adaptationConfig;
     }
-    
+
     public int getSubdivisionCount() {
         return subdivisionCount.get();
     }
-    
+
     public int getMergeCount() {
         return mergeCount.get();
     }
