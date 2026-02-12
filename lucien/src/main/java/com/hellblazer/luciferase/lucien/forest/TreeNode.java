@@ -26,8 +26,11 @@ import org.slf4j.LoggerFactory;
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * A TreeNode wraps a spatial index tree with forest-specific metadata and capabilities.
@@ -74,6 +77,23 @@ public class TreeNode<Key extends SpatialKey<Key>, ID extends EntityID, Content>
     private final AtomicInteger maxDepth;
     private final AtomicLong nodeCount;
     private volatile long lastUpdateTime;
+
+    // ========== Hierarchy Fields (Phase 1 - Tetrahedral Forest Enhancement) ==========
+
+    /** TreeBounds defining the spatial region covered by this tree (AABB or tetrahedral) */
+    private volatile TreeBounds treeBounds;
+
+    /** CAS guard to prevent double-subdivision race condition */
+    private final AtomicBoolean subdivided;
+
+    /** Parent tree ID in the hierarchy (null for root trees) */
+    private final AtomicReference<String> parentTreeId;
+
+    /** Child tree IDs after subdivision */
+    private final CopyOnWriteArrayList<String> childTreeIds;
+
+    /** Level in the hierarchy (0 = root, increases with subdivision) */
+    private volatile int hierarchyLevel;
     
     /**
      * Create a new TreeNode wrapping a spatial index.
@@ -90,10 +110,17 @@ public class TreeNode<Key extends SpatialKey<Key>, ID extends EntityID, Content>
         this.maxDepth = new AtomicInteger(0);
         this.nodeCount = new AtomicLong(0);
         this.lastUpdateTime = System.currentTimeMillis();
-        
+
         // Initialize global bounds as null to indicate no entities yet
         this.globalBounds = null;
-        
+
+        // Initialize hierarchy fields (Phase 1 - Tetrahedral Forest Enhancement)
+        this.treeBounds = null;
+        this.subdivided = new AtomicBoolean(false);
+        this.parentTreeId = new AtomicReference<>(null);
+        this.childTreeIds = new CopyOnWriteArrayList<>();
+        this.hierarchyLevel = 0;
+
         log.debug("Created TreeNode with ID: {}", treeId);
     }
     
@@ -355,10 +382,140 @@ public class TreeNode<Key extends SpatialKey<Key>, ID extends EntityID, Content>
         }
     }
     
+    // ========== Hierarchy Accessors (Phase 1 - Tetrahedral Forest Enhancement) ==========
+
+    /**
+     * Get the TreeBounds defining this tree's spatial region.
+     *
+     * @return the tree bounds (null if not set)
+     */
+    public TreeBounds getTreeBounds() {
+        return treeBounds;
+    }
+
+    /**
+     * Set the TreeBounds defining this tree's spatial region.
+     *
+     * @param bounds the tree bounds (CubicBounds or TetrahedralBounds)
+     */
+    public void setTreeBounds(TreeBounds bounds) {
+        this.treeBounds = bounds;
+    }
+
+    /**
+     * Atomically mark this tree as subdivided.
+     * Uses CAS (compare-and-set) to prevent double-subdivision race condition.
+     *
+     * @return true if this thread won the race and marked as subdivided, false if already subdivided
+     */
+    public boolean tryMarkSubdivided() {
+        return subdivided.compareAndSet(false, true);
+    }
+
+    /**
+     * Check if this tree has been subdivided.
+     *
+     * @return true if subdivided (has children)
+     */
+    public boolean isSubdivided() {
+        return subdivided.get();
+    }
+
+    /**
+     * Get the parent tree ID in the hierarchy.
+     *
+     * @return parent tree ID (null for root trees)
+     */
+    public String getParentTreeId() {
+        return parentTreeId.get();
+    }
+
+    /**
+     * Set the parent tree ID in the hierarchy.
+     *
+     * @param parentId parent tree ID
+     */
+    public void setParentTreeId(String parentId) {
+        this.parentTreeId.set(parentId);
+    }
+
+    /**
+     * Get an unmodifiable view of child tree IDs.
+     *
+     * @return list of child tree IDs
+     */
+    public List<String> getChildTreeIds() {
+        return Collections.unmodifiableList(childTreeIds);
+    }
+
+    /**
+     * Add a child tree ID.
+     *
+     * @param childId child tree ID to add
+     */
+    public void addChildTreeId(String childId) {
+        childTreeIds.add(childId);
+    }
+
+    /**
+     * Remove a child tree ID.
+     *
+     * @param childId child tree ID to remove
+     */
+    public void removeChildTreeId(String childId) {
+        childTreeIds.remove(childId);
+    }
+
+    /**
+     * Check if this tree is a leaf (has no children).
+     *
+     * @return true if leaf (no children)
+     */
+    public boolean isLeaf() {
+        return childTreeIds.isEmpty();
+    }
+
+    /**
+     * Check if this tree is a root (has no parent).
+     *
+     * @return true if root (no parent)
+     */
+    public boolean isRoot() {
+        return parentTreeId.get() == null;
+    }
+
+    /**
+     * Get the hierarchy level (0 = root, increases with subdivision).
+     *
+     * @return hierarchy level
+     */
+    public int getHierarchyLevel() {
+        return hierarchyLevel;
+    }
+
+    /**
+     * Set the hierarchy level.
+     *
+     * @param level hierarchy level
+     */
+    public void setHierarchyLevel(int level) {
+        this.hierarchyLevel = level;
+    }
+
+    /**
+     * Check if this tree has children.
+     *
+     * @return true if has children
+     */
+    public boolean hasChildren() {
+        return !childTreeIds.isEmpty();
+    }
+
     @Override
     public String toString() {
-        return String.format("TreeNode[id=%s, entities=%d, depth=%d, nodes=%d, neighbors=%d]",
-                           treeId, entityCount.get(), maxDepth.get(), nodeCount.get(), neighbors.size());
+        return String.format("TreeNode[id=%s, entities=%d, depth=%d, nodes=%d, neighbors=%d, level=%d, children=%d]",
+                           treeId, entityCount.get(), maxDepth.get(), nodeCount.get(), neighbors.size(),
+                           hierarchyLevel, childTreeIds.size());
     }
     
     @Override

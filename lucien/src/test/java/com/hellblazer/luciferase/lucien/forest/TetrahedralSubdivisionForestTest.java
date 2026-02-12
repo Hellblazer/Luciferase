@@ -184,4 +184,141 @@ class TetrahedralSubdivisionForestTest {
         // For S1 type, centroid will differ from cube center
         // (this is the critical test - centroid != cube center for tets)
     }
+
+    // ========== TreeNode Hierarchy Fields Tests (Step 2) ==========
+
+    @Test
+    void testTreeNodeTreeBoundsFieldAccessors() {
+        // Test treeBounds field with get/set accessors
+        var bounds = new EntityBounds(
+            new Point3f(0.0f, 0.0f, 0.0f),
+            new Point3f(100.0f, 100.0f, 100.0f)
+        );
+        var treeNode = TestTreeNode.create("test-tree-1", bounds);
+
+        // Initially null
+        assertNull(treeNode.getTreeBounds());
+
+        // Set cubic bounds
+        var cubicBounds = new CubicBounds(bounds);
+        treeNode.setTreeBounds(cubicBounds);
+        assertEquals(cubicBounds, treeNode.getTreeBounds());
+
+        // Set tetrahedral bounds
+        var tet = new Tet(0, 0, 0, (byte) 5, (byte) 0);
+        var tetBounds = new TetrahedralBounds(tet);
+        treeNode.setTreeBounds(tetBounds);
+        assertEquals(tetBounds, treeNode.getTreeBounds());
+    }
+
+    @Test
+    void testTreeNodeSubdividedCASGuard() {
+        // Test CAS guard prevents double-subdivision
+        var bounds = new EntityBounds(
+            new Point3f(0.0f, 0.0f, 0.0f),
+            new Point3f(100.0f, 100.0f, 100.0f)
+        );
+        var treeNode = TestTreeNode.create("test-tree-2", bounds);
+
+        // Initially not subdivided
+        assertFalse(treeNode.isSubdivided());
+
+        // First call succeeds (wins the race)
+        assertTrue(treeNode.tryMarkSubdivided(), "First tryMarkSubdivided should return true");
+        assertTrue(treeNode.isSubdivided(), "Should be marked as subdivided after first call");
+
+        // Second call fails (loses the race)
+        assertFalse(treeNode.tryMarkSubdivided(), "Second tryMarkSubdivided should return false");
+        assertTrue(treeNode.isSubdivided(), "Should still be marked as subdivided");
+    }
+
+    @Test
+    void testTreeNodeHierarchyFields() {
+        // Test parentTreeId, childTreeIds, hierarchyLevel accessors
+        var bounds = new EntityBounds(
+            new Point3f(0.0f, 0.0f, 0.0f),
+            new Point3f(100.0f, 100.0f, 100.0f)
+        );
+        var parentNode = TestTreeNode.create("parent-tree", bounds);
+        var child1 = TestTreeNode.create("child-1", bounds);
+        var child2 = TestTreeNode.create("child-2", bounds);
+
+        // Initially no parent, no children, level 0
+        assertNull(parentNode.getParentTreeId());
+        assertTrue(parentNode.getChildTreeIds().isEmpty());
+        assertEquals(0, parentNode.getHierarchyLevel());
+
+        // Set hierarchy level
+        parentNode.setHierarchyLevel(1);
+        assertEquals(1, parentNode.getHierarchyLevel());
+
+        // Add children
+        parentNode.addChildTreeId("child-1");
+        parentNode.addChildTreeId("child-2");
+        assertEquals(2, parentNode.getChildTreeIds().size());
+        assertTrue(parentNode.getChildTreeIds().contains("child-1"));
+        assertTrue(parentNode.getChildTreeIds().contains("child-2"));
+
+        // Set parent on children
+        child1.setParentTreeId("parent-tree");
+        child2.setParentTreeId("parent-tree");
+        assertEquals("parent-tree", child1.getParentTreeId());
+        assertEquals("parent-tree", child2.getParentTreeId());
+
+        // Remove a child
+        parentNode.removeChildTreeId("child-1");
+        assertEquals(1, parentNode.getChildTreeIds().size());
+        assertFalse(parentNode.getChildTreeIds().contains("child-1"));
+        assertTrue(parentNode.getChildTreeIds().contains("child-2"));
+    }
+
+    @Test
+    void testTreeNodeIsLeafLogic() {
+        // Test isLeaf() returns true when childTreeIds empty
+        var bounds = new EntityBounds(
+            new Point3f(0.0f, 0.0f, 0.0f),
+            new Point3f(100.0f, 100.0f, 100.0f)
+        );
+        var treeNode = TestTreeNode.create("test-tree-leaf", bounds);
+
+        // Initially a leaf (no children)
+        assertTrue(treeNode.isLeaf(), "Node with no children should be a leaf");
+
+        // Add a child - no longer a leaf
+        treeNode.addChildTreeId("child-1");
+        assertFalse(treeNode.isLeaf(), "Node with children should not be a leaf");
+
+        // Remove child - becomes leaf again
+        treeNode.removeChildTreeId("child-1");
+        assertTrue(treeNode.isLeaf(), "Node with no children should be a leaf again");
+    }
+
+    // ========== Helper class for TreeNode testing ==========
+
+    /**
+     * Test helper to create TreeNode instances without needing full AdaptiveForest setup.
+     * Creates a minimal TreeNode with a stub spatial index for testing hierarchy fields.
+     */
+    private static class TestTreeNode {
+        static TreeNode<com.hellblazer.luciferase.lucien.octree.MortonKey,
+                       com.hellblazer.luciferase.lucien.entity.LongEntityID,
+                       Object> create(String treeId, EntityBounds bounds) {
+            // Create a minimal Octree for testing TreeNode hierarchy fields
+            // We use a simple EntityIDGenerator for LongEntityID
+            var idGenerator = new com.hellblazer.luciferase.lucien.entity.EntityIDGenerator<com.hellblazer.luciferase.lucien.entity.LongEntityID>() {
+                private long counter = 0;
+                @Override
+                public com.hellblazer.luciferase.lucien.entity.LongEntityID generateID() {
+                    return new com.hellblazer.luciferase.lucien.entity.LongEntityID(counter++);
+                }
+            };
+
+            var stubIndex = new com.hellblazer.luciferase.lucien.octree.Octree<com.hellblazer.luciferase.lucien.entity.LongEntityID, Object>(
+                idGenerator,
+                Integer.MAX_VALUE, // max entities (won't subdivide)
+                (byte) 10 // max depth
+            );
+            return new TreeNode<>(treeId, stubIndex);
+        }
+    }
 }
