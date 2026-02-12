@@ -94,6 +94,11 @@ public class TreeNode<Key extends SpatialKey<Key>, ID extends EntityID, Content>
 
     /** Level in the hierarchy (0 = root, increases with subdivision) */
     private volatile int hierarchyLevel;
+
+    // ========== Server Assignment Tracking (Phase 3 - Tumbler Integration) ==========
+
+    /** Optional server assignment for distributed deployment (managed by ForestToTumblerBridge) */
+    private volatile String assignedServerId;
     
     /**
      * Create a new TreeNode wrapping a spatial index.
@@ -511,10 +516,36 @@ public class TreeNode<Key extends SpatialKey<Key>, ID extends EntityID, Content>
         return !childTreeIds.isEmpty();
     }
 
+    // ========== Server Assignment Accessors (Phase 3 - Tumbler Integration) ==========
+
+    /**
+     * Get the assigned server ID for this tree.
+     *
+     * This is optional tracking managed by ForestToTumblerBridge. Returns null if no server assigned.
+     *
+     * @return assigned server ID, or null if unassigned
+     */
+    public String getAssignedServerId() {
+        return assignedServerId;
+    }
+
+    /**
+     * Set the assigned server ID for this tree.
+     *
+     * This is optional tracking managed by ForestToTumblerBridge.
+     *
+     * @param serverId server ID to assign
+     */
+    public void setAssignedServerId(String serverId) {
+        this.assignedServerId = serverId;
+    }
+
     @Override
     public String toString() {
-        return String.format("TreeNode[id=%s, entities=%d, depth=%d, nodes=%d, neighbors=%d, level=%d, children=%d]",
-                           treeId, entityCount.get(), maxDepth.get(), nodeCount.get(), neighbors.size(),
+        return String.format("TreeNode[id=%s, server=%s, entities=%d, depth=%d, nodes=%d, neighbors=%d, level=%d, children=%d]",
+                           treeId,
+                           assignedServerId != null ? assignedServerId : "unassigned",
+                           entityCount.get(), maxDepth.get(), nodeCount.get(), neighbors.size(),
                            hierarchyLevel, childTreeIds.size());
     }
     

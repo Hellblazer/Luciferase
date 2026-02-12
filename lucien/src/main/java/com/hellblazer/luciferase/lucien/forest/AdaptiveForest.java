@@ -213,37 +213,97 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
     private final AtomicInteger subdivisionCount;
     private final AtomicInteger mergeCount;
     private volatile boolean adaptationEnabled = true;
+
+    // Phase 3: Event system
+    private final String forestId;
+    private final CopyOnWriteArrayList<ForestEventListener> eventListeners;
     
     /**
      * Create an adaptive forest with specified configuration
      */
-    public AdaptiveForest(ForestConfig forestConfig, AdaptationConfig adaptationConfig, 
+    public AdaptiveForest(ForestConfig forestConfig, AdaptationConfig adaptationConfig,
                          EntityIDGenerator<ID> idGenerator) {
+        this(forestConfig, adaptationConfig, idGenerator, java.util.UUID.randomUUID().toString());
+    }
+
+    /**
+     * Create an adaptive forest with specified configuration and forest ID
+     */
+    public AdaptiveForest(ForestConfig forestConfig, AdaptationConfig adaptationConfig,
+                         EntityIDGenerator<ID> idGenerator, String forestId) {
         super(forestConfig);
         this.adaptationConfig = Objects.requireNonNull(adaptationConfig);
         this.idGenerator = Objects.requireNonNull(idGenerator);
+        this.forestId = Objects.requireNonNull(forestId);
         this.densityRegions = new ConcurrentHashMap<>();
         this.operationCounter = new AtomicInteger(0);
         this.subdivisionCount = new AtomicInteger(0);
         this.mergeCount = new AtomicInteger(0);
-        
+        this.eventListeners = new CopyOnWriteArrayList<>();
+
         // Create adaptation executor for background processing
         this.adaptationExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             var thread = new Thread(r, "AdaptiveForest-Adaptation");
             thread.setDaemon(true);
             return thread;
         });
-        
+
         // Schedule periodic density analysis
         adaptationExecutor.scheduleWithFixedDelay(
             this::performDensityAnalysis,
             10, 10, TimeUnit.SECONDS
         );
-        
-        log.info("Created AdaptiveForest with adaptation config: max={}, min={}, density={}", 
-                adaptationConfig.maxEntitiesPerTree, 
+
+        log.info("Created AdaptiveForest [{}] with adaptation config: max={}, min={}, density={}",
+                forestId,
+                adaptationConfig.maxEntitiesPerTree,
                 adaptationConfig.minEntitiesPerTree,
                 adaptationConfig.densityThreshold);
+    }
+
+    /**
+     * Add an event listener to receive forest lifecycle notifications.
+     *
+     * @param listener the listener to add
+     */
+    public void addEventListener(ForestEventListener listener) {
+        if (listener != null) {
+            eventListeners.add(listener);
+            log.debug("Added event listener: {}", listener.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Remove an event listener.
+     *
+     * @param listener the listener to remove
+     */
+    public void removeEventListener(ForestEventListener listener) {
+        if (listener != null) {
+            eventListeners.remove(listener);
+            log.debug("Removed event listener: {}", listener.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Emit an event to all registered listeners.
+     *
+     * Listeners are invoked synchronously but exceptions are caught and logged
+     * to ensure one failing listener doesn't impact others.
+     *
+     * @param event the event to emit
+     */
+    private void emitEvent(ForestEvent event) {
+        for (var listener : eventListeners) {
+            try {
+                listener.onEvent(event);
+            } catch (Exception e) {
+                log.warn("Event listener {} threw exception for event {}: {}",
+                        listener.getClass().getSimpleName(),
+                        event.getClass().getSimpleName(),
+                        e.getMessage(), e);
+            }
+        }
     }
     
     /**
@@ -546,8 +606,56 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             parent.addChildTreeId(child.getTreeId());
         }
 
-        log.debug("Established hierarchy: parent {} has {} children at level {}",
-                 parent.getTreeId(), children.size(), parent.getHierarchyLevel() + 1);
+        // Determine subdivision strategy and child shape
+        var strategy = determineSubdivisionStrategy(children.size());
+        var childShape = determineChildShape(children);
+
+        // Emit TreeSubdivided event
+        var childIds = children.stream()
+            .map(TreeNode::getTreeId)
+            .collect(Collectors.toList());
+
+        emitEvent(new ForestEvent.TreeSubdivided(
+            System.currentTimeMillis(),
+            forestId,
+            parent.getTreeId(),
+            childIds,
+            strategy,
+            childShape
+        ));
+
+        log.debug("Established hierarchy: parent {} has {} {} children at level {}",
+                 parent.getTreeId(), children.size(), childShape, parent.getHierarchyLevel() + 1);
+    }
+
+    /**
+     * Determine subdivision strategy based on number of children.
+     */
+    private AdaptationConfig.SubdivisionStrategy determineSubdivisionStrategy(int childCount) {
+        if (childCount == 8) {
+            return AdaptationConfig.SubdivisionStrategy.OCTANT;
+        } else if (childCount == 6 || childCount == 8) {
+            return AdaptationConfig.SubdivisionStrategy.TETRAHEDRAL;
+        } else if (childCount == 2) {
+            // Could be binary split (BINARY_X, BINARY_Y, BINARY_Z)
+            return AdaptationConfig.SubdivisionStrategy.ADAPTIVE;
+        } else {
+            return adaptationConfig.getSubdivisionStrategy();
+        }
+    }
+
+    /**
+     * Determine child region shape based on their TreeBounds.
+     */
+    private RegionShape determineChildShape(List<TreeNode<Key, ID, Content>> children) {
+        if (children.isEmpty()) {
+            return RegionShape.CUBIC;
+        }
+
+        var firstChildBounds = children.get(0).getTreeBounds();
+        return firstChildBounds instanceof TetrahedralBounds
+            ? RegionShape.TETRAHEDRAL
+            : RegionShape.CUBIC;
     }
 
     /**
@@ -883,6 +991,16 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         // Set hierarchy level
         childTree.setHierarchyLevel(parentTree.getHierarchyLevel() + 1);
 
+        // Emit TreeAdded event
+        emitEvent(new ForestEvent.TreeAdded(
+            System.currentTimeMillis(),
+            forestId,
+            childId,
+            bounds,
+            bounds instanceof TetrahedralBounds ? RegionShape.TETRAHEDRAL : RegionShape.CUBIC,
+            parentTree.getTreeId()
+        ));
+
         return childTree;
     }
 
@@ -1187,7 +1305,23 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         var childId = addTree(childSpatialIndex, childMetadata);
         var childTree = getTree(childId);
         childTree.expandGlobalBounds(bounds);
-        
+
+        // Create CubicBounds for event
+        var cubicBounds = new CubicBounds(bounds);
+
+        // Set hierarchy level
+        childTree.setHierarchyLevel(parentTree.getHierarchyLevel() + 1);
+
+        // Emit TreeAdded event
+        emitEvent(new ForestEvent.TreeAdded(
+            System.currentTimeMillis(),
+            forestId,
+            childId,
+            cubicBounds,
+            RegionShape.CUBIC,
+            parentTree.getTreeId()
+        ));
+
         return childTree;
     }
     
