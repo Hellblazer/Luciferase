@@ -259,7 +259,7 @@ For large clusters (n>1000), consider dynamic threshold: `threshold = max(30, 10
 **Quantitative Improvement** (estimated):
 - Leader election overhead: **Eliminated** (deterministic committee selection)
 - View change latency: **~200ms** (gossip convergence) vs **150-300ms** (Raft election)
-- Consensus throughput: **300K-680K migrations/sec** (parallelized committees)
+- Migration throughput: **2K-5K migrations/sec** per node (limited by 2PC latency ~150ms)
 - Spatial routing: **O(1)** via TetreeKeyRouter (vs O(1) leader lookup but with bottleneck)
 
 **Verdict**: **Fireflies is the correct choice** for distributed spatial simulation with high migration rates and spatial locality requirements.

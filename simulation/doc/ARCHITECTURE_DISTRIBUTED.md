@@ -8,10 +8,10 @@
 
 ## Overview
 
-Luciferase simulation module implements massively distributed 3D animation using emergent consistency boundaries (simulation bubbles) with causal consistency guarantees. Built on PrimeMover discrete event simulation with Tetree spatial indexing.
+Luciferase simulation module implements massively distributed 3D animation using fixed-volume spatial partitioning (simulation bubbles) with causal consistency guarantees. Built on PrimeMover discrete event simulation with Tetree spatial indexing.
 
 **Key Architectural Principles**:
-- Emergent consistency boundaries (bubbles)
+- Deterministic spatial assignment (bubbles)
 - Byzantine consensus for migration decisions
 - Causal consistency within interaction range
 - Eventual consistency across bubbles
@@ -86,7 +86,6 @@ Luciferase simulation module implements massively distributed 3D animation using
 |-----------|----------------|----------|
 | **VolumeAnimator** | Frame-rate controlled animation loop | `animation/` |
 | **BucketScheduler** | 100ms time bucket coordination | `bubble/` |
-| **CausalRollback** | Bounded rollback (GGPO-style) | `bubble/` |
 | **ViewCommitteeConsensus** | Byzantine consensus for migrations | `consensus/committee/` |
 | **CommitteeVotingProtocol** | Vote aggregation and quorum detection | `consensus/committee/` |
 | **CrossProcessMigration** | 2PC entity migration orchestrator | `distributed/migration/` |
@@ -101,12 +100,12 @@ Luciferase simulation module implements massively distributed 3D animation using
 
 ### Concept
 
-A **simulation bubble** is an emergent connected component of interacting entities. Bubbles form dynamically based on entity proximity and interaction range.
+A **simulation bubble** is a fixed spatial volume assigned to a cluster node via deterministic hashing. Entities are assigned to bubbles based on their TetreeKey spatial position.
 
 **Properties**:
-- Causal consistency within bubble (bounded rollback window)
+- Causal consistency within bubble (Lamport clocks)
 - Eventual consistency across bubbles
-- Dynamic formation and dissolution
+- Deterministic spatial assignment via TetreeKeyRouter
 - 100ms time bucket coordination
 
 ### Bucket Scheduler
@@ -136,22 +135,7 @@ public class BucketSynchronizedController {
 - Duration: 100ms
 - Alignment: All nodes synchronize on bucket boundaries
 - Execution: Events within bucket execute in causal order
-- Rollback: Up to 2 buckets (100-200ms window)
-
-### Causal Rollback
-
-**Purpose**: Handle divergence between nodes within interaction range.
-
-**Algorithm** (GGPO-style):
-1. Detect divergence (state mismatch)
-2. Roll back to last common state (within 2-bucket window)
-3. Re-execute events with corrected inputs
-4. Converge to consistent state
-
-**Bounded Window**: 100-200ms (2 buckets)
-- Short enough for low latency
-- Long enough for network jitter
-- Prevents cascading rollbacks
+- No rollback: Events execute prospectively with Lamport clock causality
 
 ---
 
