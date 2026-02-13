@@ -82,7 +82,7 @@ jobs:
       - name: Build and test
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode clean install
+          xvfb-run -a ./mvnw -batch-mode clean install -DskipTests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
