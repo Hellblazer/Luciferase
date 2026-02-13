@@ -6,6 +6,7 @@ import java.util.*;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
@@ -107,6 +108,11 @@ public class PrismVsOctreeComparisonTest {
     }
     
     @Test
+    @DisabledIfEnvironmentVariable(
+        named = "CI",
+        matches = "true",
+        disabledReason = "Performance test: 5ms threshold fails under CI load. Range query performance varies with system contention."
+    )
     void testRangeQueryPerformanceComparison() {
         // Insert test entities
         var positions = generateValidPrismPositions(300);

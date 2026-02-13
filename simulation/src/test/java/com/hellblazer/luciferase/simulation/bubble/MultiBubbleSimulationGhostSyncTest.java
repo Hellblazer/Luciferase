@@ -377,11 +377,8 @@ class MultiBubbleSimulationGhostSyncTest {
 
         simulation.start();
 
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // Wait for entities to initialize with polling (up to 2 seconds)
+        waitForEntityCount(simulation, 50, 2000);
 
         simulation.stop();
 
