@@ -118,7 +118,7 @@ for (Node candidate : candidates) {
 }
 ```
 
-**No Voronoi**: System uses k-NN spatial index, not Voronoi cell calculations.
+**Naming Note**: "VON" (Voronoi Overlay Network) is a naming legacy. The implementation uses **k-NN spatial index** (k=10), NOT Voronoi diagrams. This avoids expensive Voronoi cell recomputation on every bubble movement.
 
 ### JOIN Protocol
 

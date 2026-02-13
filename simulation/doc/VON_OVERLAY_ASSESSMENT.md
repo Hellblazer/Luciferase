@@ -8,7 +8,9 @@
 
 ## Summary
 
-VON (Voronoi Overlay Network) is **actively used for mobile bubble coordination**. The MOVE protocol is fully implemented and manages bubble position updates, neighbor discovery, and load balancing.
+VON is **actively used for mobile bubble coordination**. The MOVE protocol is fully implemented and manages bubble position updates, neighbor discovery, and load balancing.
+
+**Architectural Note**: "VON" (Voronoi Overlay Network) is a naming legacy from the original design. The current implementation uses **k-NN spatial index queries** (k=10) for neighbor discovery, NOT Voronoi diagram calculations. This provides O(log n) performance via Tetree spatial index without the overhead of recomputing Voronoi cells on every bubble movement.
 
 **Architectural Note**: This implementation differs from other simulation documentation which describes fixed-volume spatial partitioning. The codebase implements mobile bubbles where boundaries adapt to entity distributions.
 

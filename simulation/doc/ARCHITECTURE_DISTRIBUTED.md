@@ -265,6 +265,8 @@ List<Node> nearestBubbles = spatialIndex.findKNearest(position, 10);
 
 **No Global Registry**: Bubbles discover neighbors via ghost arrivals and spatial queries (fully distributed).
 
+**Naming Note**: "VON" (Voronoi Overlay Network) is a naming legacy. The implementation uses **k-NN spatial index** (k=10), NOT Voronoi diagrams. This avoids expensive Voronoi cell recomputation on every bubble movement.
+
 ---
 
 ## Entity Migration Protocol
