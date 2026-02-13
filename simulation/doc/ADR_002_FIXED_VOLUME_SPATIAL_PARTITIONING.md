@@ -38,9 +38,37 @@ Bubbles have **fixed spatial boundaries** defined by:
 
 Entities assigned to bubbles via spatial hashing of their TetreeKey position.
 
+### Byzantine Consensus Before Migration
+
+**Why Required**: Entity ownership must be agreed upon before migration to prevent duplication.
+
+**Threat Model**:
+- Clock skew: Nodes with incorrect clocks make conflicting migration decisions
+- Network partition: Split-brain scenarios create conflicting ownership claims
+- Buggy nodes: Software bugs cause incorrect migration proposals
+- Race conditions: Concurrent migrations of same entity to different destinations
+
+**Solution**: Committee-based Byzantine consensus (via Fireflies) ensures all nodes agree on migration before 2PC execution.
+
+**Integration**:
+```
+1. Spatial boundary detection → Entity crosses bubble boundary
+2. Migration proposal created → Tagged with current Fireflies view ID
+3. Byzantine consensus → Committee votes ACCEPT/REJECT (quorum required)
+4. If approved → Execute 2PC migration (PREPARE/COMMIT/ABORT)
+5. If rejected → Abort migration (entity stays in source)
+```
+
+**Byzantine Tolerance**:
+- t=0 (2-3 nodes): No BFT, crash tolerance only
+- t=1 (4-7 nodes): Tolerates 1 Byzantine failure
+- t=2 (8+ nodes): Tolerates 2 Byzantine failures
+
+**See**: FIREFLIES_ARCHITECTURE_ASSESSMENT.md for detailed consensus implementation.
+
 ### Migration Protocol
 
-**Two-Phase Commit (2PC)** without rollback:
+**Two-Phase Commit (2PC)** for ownership transfer:
 
 ```
 PREPARE: Remove entity from source bubble (100ms timeout)
@@ -51,10 +79,10 @@ ABORT: Restore entity to source (100ms timeout)
 ```
 
 **Characteristics**:
-- Latency: ~150ms per migration (3 phases)
-- Throughput: 2K-5K migrations/sec per node
+- Latency: ~150ms per migration (3 phases with 100ms timeouts)
+- Throughput: 100-200 migrations/sec per node (concurrent execution)
 - Exactly-once: Idempotency tokens prevent duplication
-- No rollback: Entities never "go back in time"
+- No time-travel rollback: Entities never "go back in time"
 
 ### Consistency Model
 
@@ -100,15 +128,17 @@ No rollback eliminates:
 
 ## Trade-offs Accepted
 
-### No Rollback
-- **Accepted**: Migration failures abort cleanly, no state rewind
-- **Impact**: Entities may briefly pause during migration retry
-- **Mitigation**: 2PC ensures exactly-once semantics, idempotency prevents duplication
+### No Time-Travel Rollback
+- **Accepted**: No GGPO-style state rewind (entities never "go back in time")
+- **Impact**: Simulation cannot undo events after they execute
+- **Mitigation**: Byzantine consensus prevents bad decisions before execution
+- **Note**: 2PC ABORT is **failure recovery** (restore entity to source on commit failure), NOT time-travel rollback
 
 ### Fixed Throughput
-- **Accepted**: 2K-5K migrations/sec limited by 2PC latency
-- **Impact**: Not suitable for >5K migrations/sec workloads
+- **Accepted**: 100-200 migrations/sec per node (validated in tests)
+- **Impact**: Not suitable for >200 migrations/sec per-node workloads
 - **Mitigation**: Sufficient for spatial simulation use cases (entities move slowly relative to migration capacity)
+- **Evidence**: PerformanceResilienceValidationTest validates >100 migrations/sec throughput
 
 ### Static Bounds
 - **Accepted**: Bubbles don't move to follow entity clusters
@@ -166,9 +196,10 @@ No rollback eliminates:
 Implementation already follows fixed-volume architecture. Documentation alignment only.
 
 ### Performance Expectations
-- Migration latency: ~150ms (validated in tests)
-- Migration throughput: 2K-5K/sec per node (2PC latency bound)
+- Migration latency: ~150ms per migration (3-phase 2PC protocol)
+- Migration throughput: 100-200/sec per node (test-validated, concurrent execution)
 - Spatial routing: O(1) via hash lookup
+- Evidence: PerformanceResilienceValidationTest.testThroughputBenchmark()
 
 ---
 

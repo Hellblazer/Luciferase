@@ -70,6 +70,7 @@ Remove ghost from bubble B OR promote ghost to local entity
 - Detect entities entering/exiting ghost zones (spatial containment check)
 - Track ghost entity metadata (creation time, last sync)
 - Coordinate ghost lifecycle (create, update, remove)
+- Dead reckoning for ghost position estimation between sync intervals (Phase 7B.3)
 
 **Key Methods**:
 ```java
@@ -78,27 +79,65 @@ public void unmarkAsGhost(String entityId);
 public long getGhostDuration(String entityId);
 ```
 
+**Implementation Note**: GhostStateManager includes dead reckoning complexity (DeadReckoningEstimator) for extrapolating ghost entity positions between 10ms sync intervals. This reduces perceived latency for remote ghosts but is not required for basic ghost layer operation. Dead reckoning is an optimization added in Phase 7B.3, not core to the fixed-volume architecture.
+
 ### Boundary Detection
 
-**Algorithm**:
+#### Tetrahedral Bubbles → AABB Conversion
+
+**Challenge**: Luciferase uses **tetrahedral spatial indexing** (Tetree), but ghost zone detection requires axis-aligned boundaries for O(1) checks.
+
+**Solution**: `TetrahedralBounds.toAABB()` converts tetrahedron vertices to AABB:
+
 ```java
-public boolean isInGhostZone(Point3f position, BubbleBounds bounds, float zoneWidth) {
-    // Check distance to each face
-    boolean nearMinX = (position.x - bounds.getMinX()) < zoneWidth;
-    boolean nearMaxX = (bounds.getMaxX() - position.x) < zoneWidth;
-    boolean nearMinY = (position.y - bounds.getMinY()) < zoneWidth;
-    boolean nearMaxY = (bounds.getMaxY() - position.y) < zoneWidth;
-    boolean nearMinZ = (position.z - bounds.getMinZ()) < zoneWidth;
-    boolean nearMaxZ = (bounds.getMaxZ() - position.z) < zoneWidth;
+// TetrahedralBounds.toAABB() implementation
+public AABB toAABB() {
+    var coords = tet.coordinates();  // Get 4 vertices (v0, v1, v2, v3)
+
+    // Compute min/max across all vertices
+    float minX = Math.min(Math.min(coords[0].x, coords[1].x),
+                          Math.min(coords[2].x, coords[3].x));
+    float maxX = Math.max(Math.max(coords[0].x, coords[1].x),
+                          Math.max(coords[2].x, coords[3].x));
+    // ... similarly for Y and Z
+
+    return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+}
+```
+
+**Properties**:
+- Conservative: AABB encompasses entire tetrahedron
+- Fast: O(1) computation from 4 vertices
+- Validated: TetrahedralSubdivisionForestTest.testTetrahedralBoundsToAABBComputesBoundingBox()
+
+**Ghost Zone Algorithm** (uses AABB):
+```java
+public boolean isInGhostZone(Point3f position, TetrahedralBounds tetBounds, float zoneWidth) {
+    var aabb = tetBounds.toAABB();  // Convert tet → AABB
+
+    // Check distance to each AABB face
+    boolean nearMinX = (position.x - aabb.getMinX()) < zoneWidth;
+    boolean nearMaxX = (aabb.getMaxX() - position.x) < zoneWidth;
+    boolean nearMinY = (position.y - aabb.getMinY()) < zoneWidth;
+    boolean nearMaxY = (aabb.getMaxY() - position.y) < zoneWidth;
+    boolean nearMinZ = (position.z - aabb.getMinZ()) < zoneWidth;
+    boolean nearMaxZ = (aabb.getMaxZ() - position.z) < zoneWidth;
 
     return nearMinX || nearMaxX || nearMinY || nearMaxY || nearMinZ || nearMaxZ;
 }
 ```
 
+**Why AABB vs Precise Tetrahedral Containment**:
+- Ghost detection needs boundary proximity, not precise containment
+- AABB check is O(1) with 6 comparisons
+- Precise tet containment is O(1) but requires barycentric coordinates (more complex)
+- Conservative AABB is acceptable: Slightly larger ghost zone is safe
+
 **Properties**:
-- O(1) containment check (6 comparisons)
+- O(1) containment check (6 comparisons after AABB conversion)
 - Deterministic: Same position always yields same result
 - No probabilistic detection or emergent formation
+- Works for all tetrahedral types (S0-S5, Bey subdivision)
 
 ### Ghost Synchronization
 

@@ -102,9 +102,10 @@ Phase 3: ABORT (rollback)
 - Timeout handling: Failed migrations abort cleanly
 
 **Performance**:
-- Latency: ~150ms per migration (3 phases)
-- Throughput: 2K-5K migrations/sec per node
+- Latency: ~150ms per migration (3 phases with 100ms timeouts)
+- Throughput: 100-200 migrations/sec per node (test-validated)
 - Concurrent: Multiple migrations in parallel (lock-free)
+- Evidence: PerformanceResilienceValidationTest validates >100 migrations/sec
 
 ### Byzantine Consensus
 
@@ -165,10 +166,10 @@ LOCAL ENTITY → [enters ghost zone] → GHOST ENTITY
 
 | Metric | Target | Realistic |
 |--------|--------|-----------|
-| Migrations per second (per node) | 2K-5K | ~3K |
+| Migrations per second (per node) | 100-200 | ~150 |
 | Ghost sync updates per second | 1000+ | ~2000 |
 | Entities per bubble | 5K-10K | ~5000 |
-| Concurrent migrations | 50+ | ~100 |
+| Concurrent migrations | 10-20 | ~15 |
 
 ### Scalability
 
