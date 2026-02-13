@@ -179,23 +179,23 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         final AtomicReference<Float> density = new AtomicReference<>(0.0f);
         final ConcurrentHashMap<ID, Point3f> entityPositions = new ConcurrentHashMap<>();
         volatile long lastUpdateTime = System.currentTimeMillis();
-        
+
         DensityRegion(String treeId, EntityBounds bounds) {
             this.treeId = treeId;
             this.bounds = bounds;
         }
-        
+
         void updateDensity() {
             float volume = calculateVolume(bounds);
             if (volume > 0) {
                 density.set(entityCount.get() / volume);
             }
         }
-        
+
         float getDensity() {
             return density.get();
         }
-        
+
         private float calculateVolume(EntityBounds bounds) {
             float width = bounds.getMaxX() - bounds.getMinX();
             float height = bounds.getMaxY() - bounds.getMinY();
@@ -318,33 +318,50 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
     @Override
     public String addTree(AbstractSpatialIndex<Key, ID, Content> spatialIndex, TreeMetadata metadata) {
         var treeId = super.addTree(spatialIndex, metadata);
-        
+
         // Initialize density tracking for the new tree
         var treeNode = getTree(treeId);
         if (treeNode != null) {
-            var bounds = treeNode.getGlobalBounds();
-            if (bounds == null) {
-                // Initialize with a default bounds
-                bounds = new EntityBounds(
-                    new Point3f(0, 0, 0),
-                    new Point3f(100, 100, 100)
-                );
-                // Initialize bounds by expanding from empty
-                treeNode.expandGlobalBounds(bounds);
+            EntityBounds bounds = null;
+
+            // Check if bounds were provided in metadata
+            if (metadata != null) {
+                var treeBounds = metadata.getProperty("initialBounds", TreeBounds.class);
+                if (treeBounds != null) {
+                    bounds = treeBounds.toAABB();
+                    treeNode.expandGlobalBounds(bounds);
+                    treeNode.setTreeBounds(treeBounds);
+                    log.debug("Tree {} initialized with metadata bounds: {}", treeId, bounds);
+                }
             }
+
+            // Fall back to getting existing bounds or creating default
+            if (bounds == null) {
+                bounds = treeNode.getGlobalBounds();
+                if (bounds == null) {
+                    // Initialize with a default bounds
+                    bounds = new EntityBounds(
+                        new Point3f(0, 0, 0),
+                        new Point3f(100, 100, 100)
+                    );
+                    // Initialize bounds by expanding from empty
+                    treeNode.expandGlobalBounds(bounds);
+                }
+            }
+
             var region = new DensityRegion<ID>(treeId, bounds);
             densityRegions.put(treeId, region);
         }
-        
+
         return treeId;
     }
-    
+
     @Override
     public boolean removeTree(String treeId) {
         densityRegions.remove(treeId);
         return super.removeTree(treeId);
     }
-    
+
     /**
      * Track entity insertion for density analysis
      */
@@ -870,13 +887,16 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
                      aabb.getMaxZ() - aabb.getMinZ()));
 
         // 2. Compute Tetree level from cube edge length
-        byte tetLevel = computeTetLevelFromCubeSize(maxDim);
-        if (tetLevel < 0) {
+        // The S0-S5 children are ONE LEVEL DEEPER than the containing cube
+        byte parentTetLevel = computeTetLevelFromCubeSize(maxDim);
+        if (parentTetLevel < 0 || parentTetLevel >= 21) {
             log.warn("Invalid tetree level for edge length {}, falling back to OCTANT", maxDim);
             subdivideOctant(parentTree, region);
             return;
         }
 
+        // Children are at level + 1 (subdivision creates finer resolution)
+        byte tetLevel = (byte)(parentTetLevel + 1);
         int cellSize = 1 << (21 - tetLevel);
 
         // 3. Snap anchor to grid

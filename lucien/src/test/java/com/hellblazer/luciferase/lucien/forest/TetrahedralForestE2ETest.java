@@ -77,20 +77,17 @@ class TetrahedralForestE2ETest {
 
         // 1. Create initial tree with cubic bounds
         var spatialIndex = new Octree<>(idGenerator);
-        var metadata = TreeMetadata.builder()
-            .name("Root")
-            .treeType(TreeMetadata.TreeType.OCTREE)
-            .build();
-        var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
-        var root = forest.getTree(rootId);
-
-        // Set initial bounds for the root tree
         var rootBounds = new EntityBounds(
             new Point3f(0.0f, 0.0f, 0.0f),
             new Point3f(1000.0f, 1000.0f, 1000.0f)
         );
-        root.expandGlobalBounds(rootBounds);
-        root.setTreeBounds(new CubicBounds(rootBounds));
+        var metadata = TreeMetadata.builder()
+            .name("Root")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .property("initialBounds", new CubicBounds(rootBounds))
+            .build();
+        var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
+        var root = forest.getTree(rootId);
 
         // 2. Add entities to trigger subdivision (exceed maxEntitiesPerTree*1.5=15)
         for (int i = 0; i < 20; i++) {
@@ -199,19 +196,17 @@ class TetrahedralForestE2ETest {
 
         // 1. Create root tree with cubic bounds
         var spatialIndex = new Octree<>(idGenerator);
-        var metadata = TreeMetadata.builder()
-            .name("CascadeRoot")
-            .treeType(TreeMetadata.TreeType.OCTREE)
-            .build();
-        var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
-        var root = forest.getTree(rootId);
-
         var rootBounds = new EntityBounds(
             new Point3f(0.0f, 0.0f, 0.0f),
             new Point3f(2000.0f, 2000.0f, 2000.0f)
         );
-        root.expandGlobalBounds(rootBounds);
-        root.setTreeBounds(new CubicBounds(rootBounds));
+        var metadata = TreeMetadata.builder()
+            .name("CascadeRoot")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .property("initialBounds", new CubicBounds(rootBounds))
+            .build();
+        var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
+        var root = forest.getTree(rootId);
 
         // 2. Add entities to trigger first-level subdivision (cubic → 6 tets)
         for (int i = 0; i < 8; i++) {
@@ -330,19 +325,17 @@ class TetrahedralForestE2ETest {
 
         // 1. Create first tree (region A)
         var regionASpatialIndex = new Octree<>(idGenerator);
-        var regionAMetadata = TreeMetadata.builder()
-            .name("RegionA")
-            .treeType(TreeMetadata.TreeType.OCTREE)
-            .build();
-        var regionAId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) regionASpatialIndex, regionAMetadata);
-        var regionATree = forest.getTree(regionAId);
-
         var regionABounds = new EntityBounds(
             new Point3f(0.0f, 0.0f, 0.0f),
             new Point3f(1000.0f, 1000.0f, 1000.0f)
         );
-        regionATree.expandGlobalBounds(regionABounds);
-        regionATree.setTreeBounds(new CubicBounds(regionABounds));
+        var regionAMetadata = TreeMetadata.builder()
+            .name("RegionA")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .property("initialBounds", new CubicBounds(regionABounds))
+            .build();
+        var regionAId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) regionASpatialIndex, regionAMetadata);
+        var regionATree = forest.getTree(regionAId);
 
         // Add entities to region A (need >7.5)
         for (int i = 0; i < 10; i++) {
@@ -354,19 +347,17 @@ class TetrahedralForestE2ETest {
 
         // 2. Create second tree (region B)
         var regionBSpatialIndex = new Octree<>(idGenerator);
-        var regionBMetadata = TreeMetadata.builder()
-            .name("RegionB")
-            .treeType(TreeMetadata.TreeType.OCTREE)
-            .build();
-        var regionBId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) regionBSpatialIndex, regionBMetadata);
-        var regionBTree = forest.getTree(regionBId);
-
         var regionBBounds = new EntityBounds(
             new Point3f(2000.0f, 2000.0f, 2000.0f),
             new Point3f(3000.0f, 3000.0f, 3000.0f)
         );
-        regionBTree.expandGlobalBounds(regionBBounds);
-        regionBTree.setTreeBounds(new CubicBounds(regionBBounds));
+        var regionBMetadata = TreeMetadata.builder()
+            .name("RegionB")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .property("initialBounds", new CubicBounds(regionBBounds))
+            .build();
+        var regionBId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) regionBSpatialIndex, regionBMetadata);
+        var regionBTree = forest.getTree(regionBId);
 
         // Add entities to region B (need >7.5)
         for (int i = 0; i < 10; i++) {
@@ -445,19 +436,17 @@ class TetrahedralForestE2ETest {
 
         // 1. Create root tree
         var spatialIndex = new Octree<>(idGenerator);
-        var metadata = TreeMetadata.builder()
-            .name("QueryRoot")
-            .treeType(TreeMetadata.TreeType.OCTREE)
-            .build();
-        var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
-        var root = forest.getTree(rootId);
-
         var rootBounds = new EntityBounds(
             new Point3f(0.0f, 0.0f, 0.0f),
             new Point3f(1000.0f, 1000.0f, 1000.0f)
         );
-        root.expandGlobalBounds(rootBounds);
-        root.setTreeBounds(new CubicBounds(rootBounds));
+        var metadata = TreeMetadata.builder()
+            .name("QueryRoot")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .property("initialBounds", new CubicBounds(rootBounds))
+            .build();
+        var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
+        var root = forest.getTree(rootId);
 
         // 2. Add entities and subdivide (need >5*1.5=7.5, use 10)
         for (int i = 0; i < 10; i++) {
