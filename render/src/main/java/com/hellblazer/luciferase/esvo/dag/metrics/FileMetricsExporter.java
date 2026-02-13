@@ -60,9 +60,12 @@ public class FileMetricsExporter implements MetricsExporter {
                 Files.createDirectories(parent);
             }
 
-            // Initialize file for JSON format
+            // Initialize file for both formats to ensure clean state
             if (format == Format.JSON) {
                 Files.writeString(outputPath, "[", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            } else if (format == Format.CSV) {
+                // Truncate CSV file to ensure clean state (prevents file system race conditions)
+                Files.newOutputStream(outputPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING).close();
             }
         } catch (IOException e) {
             log.warn("Failed to initialize exporter at {}: {}", outputPath, e.getMessage());
