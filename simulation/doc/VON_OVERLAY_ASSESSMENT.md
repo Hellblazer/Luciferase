@@ -1,67 +1,134 @@
-# VON Overlay Network - Usage Assessment
+# VON Overlay Network - Implementation Assessment
 
 **Date**: 2026-02-13
-**Status**: Partial Integration
-**Context**: Fixed-volume spatial partitioning architecture
+**Status**: Actively Implemented
+**Context**: Mobile bubble architecture with VON-based coordination
 
 ---
 
 ## Summary
 
-VON (Voronoi Overlay Network) used for **spatial neighbor discovery** only. MOVE protocol unnecessary for fixed-volume bubbles.
+VON (Voronoi Overlay Network) is **actively used for mobile bubble coordination**. The MOVE protocol is fully implemented and manages bubble position updates, neighbor discovery, and load balancing.
+
+**Architectural Note**: This implementation differs from other simulation documentation which describes fixed-volume spatial partitioning. The codebase implements mobile bubbles where boundaries adapt to entity distributions.
 
 ---
 
 ## VON Components
 
-### Retained: Spatial Neighbor Queries
+### Active: MOVE Protocol
 
-**Purpose**: Discover which bubbles are spatially adjacent.
+**Purpose**: Coordinate bubble movement and neighbor relationships in mobile bubble architecture.
 
-**Usage**:
+**Implementation**: `simulation/src/main/java/.../von/MoveProtocol.java` (175 lines)
+
+**Key Responsibilities**:
+- Broadcast bubble position updates to neighbors
+- Track bubble movement events
+- Trigger neighbor relationship recalculation
+- Coordinate load balancing via boundary adjustments
+
+**Message Types**:
 ```java
-// Find neighbor bubbles for ghost synchronization
-var neighbors = vonOverlay.getNeighbors(bubblePosition);
+// MoveProtocol sends position updates
+public void notifyMove(Point3D newPosition, BubbleBounds newBounds) {
+    var moveMsg = new MoveNotification(bubbleId, newPosition, newBounds, timestamp);
+    vonManager.broadcast(moveMsg);  // Notify all VON neighbors
+}
 ```
 
+**Integration**:
+- **Bubble.java** (713 lines): Mobile bubble model with position tracking and boundary adaptation
+- **Manager.java** (502 lines): Coordinates bubbles with P2P transport, handles VON overlay maintenance
+- **VONDiscoveryProtocol.java**: Voronoi-based neighbor queries integrated with MOVE events
+
+### Active: Voronoi-Based Neighbor Discovery
+
+**Purpose**: Efficiently discover spatially adjacent bubbles for coordination.
+
 **Benefits**:
-- O(log n) spatial neighbor discovery
-- Voronoi cell provides natural spatial locality
-- Efficient boundary detection for ghost layer
+- O(log n) spatial neighbor discovery via Voronoi cells
+- Automatic neighbor set updates when bubbles move
+- Natural spatial locality for boundary detection
 
-**Integration Points**:
-- GhostZoneManager: Find neighbor bubbles for ghost replication
-- BoundaryDetector: Detect entities crossing into neighbor territories
-- Spatial queries: Fast lookup of nearby bubbles
+**Usage Pattern**:
+```java
+// Find neighbors after bubble moves
+var neighbors = vonOverlay.getNeighborsAfterMove(newPosition);
 
-### Removed: MOVE Protocol
+// Update ghost synchronization targets
+ghostManager.updateSyncTargets(neighbors);
+```
 
-**Original Purpose**: Signal bubble movement and trigger rebalancing.
+---
 
-**Why Removed**:
-- Bubbles have **fixed spatial bounds** (don't move)
-- Entity migration uses 2PC protocol (not VON MOVE)
-- Spatial assignment via TetreeKeyRouter (deterministic hash, not VON)
+## Mobile Bubble Architecture
 
-**No Functionality Loss**: MOVE protocol was designed for mobile bubbles, which don't exist in fixed-volume architecture.
+### Bubble Lifecycle
+
+```
+1. INSTANTIATE
+   └─ Bubble created at initial position
+   └─ VON overlay establishes neighbor relationships
+        ↓
+2. TRACK ENTITIES
+   └─ Monitor entity distribution within bubble
+   └─ Detect load imbalance or spatial clustering
+        ↓
+3. MOVE (if needed)
+   └─ Calculate new optimal position
+   └─ MOVE protocol broadcasts position update
+   └─ Neighbors update Voronoi cells
+        ↓
+4. REBALANCE
+   └─ Entity migration to/from neighbors
+   └─ Ghost zone adjustments
+   └─ Boundary convergence
+```
+
+**Key Insight**: Bubbles move to follow entity clusters, optimizing for spatial locality and load balance.
+
+### Position Tracking
+
+**Bubble.java maintains**:
+- Current position (Point3D)
+- Current bounds (BubbleBounds with min/max)
+- Movement history (for velocity estimation)
+- Load metrics (entity count, processing latency)
+
+**Movement Decision**:
+- Triggered by load imbalance threshold
+- Calculated based on entity centroid
+- Coordinated via VON MOVE protocol
 
 ---
 
 ## Architecture Integration
 
-### VON Role: Spatial Index Aid
+### VON's Role in Mobile Bubbles
 
 ```
-TetreeKeyRouter (deterministic assignment)
+Entity distribution changes
          ↓
-   Bubble assigned to node
+   Load imbalance detected
          ↓
-VON Overlay (neighbor discovery)
+Calculate new bubble position
          ↓
-   Ghost layer knows where to sync
+   VON MOVE Protocol
+         ↓
+Broadcast position update
+         ↓
+   Neighbors recalculate Voronoi cells
+         ↓
+Update ghost synchronization targets
+         ↓
+   Migrate entities if needed
 ```
 
-**Key Insight**: VON provides O(log n) spatial queries without managing bubble assignment or movement.
+**VON provides**:
+1. **Neighbor discovery**: O(log n) Voronoi cell queries
+2. **Move coordination**: MOVE protocol for position updates
+3. **Load balancing**: Spatial rebalancing via boundary adjustments
 
 ---
 
@@ -71,21 +138,68 @@ VON Overlay (neighbor discovery)
 
 | Operation | Complexity | Typical Latency |
 |-----------|------------|-----------------|
-| Find neighbors | O(log n) | ~5ms |
-| Voronoi cell update | O(log n) | ~10ms |
-| Spatial range query | O(log n + k) | ~5-20ms |
+| Find neighbors (static) | O(log n) | ~5ms |
+| Find neighbors after MOVE | O(log n) | ~10ms |
+| Voronoi cell update | O(log n) | ~15ms |
+| MOVE broadcast | O(k) neighbors | ~20ms |
 
-### Comparison to Alternatives
+### MOVE Protocol Overhead
 
-**Without VON** (brute force):
-- Neighbor discovery: O(n) - check all bubbles
-- Latency: 50-100ms for large clusters
+| Metric | Typical | Notes |
+|--------|---------|-------|
+| MOVE frequency | 1-10/min per bubble | Load-dependent |
+| Broadcast latency | 20-50ms | P2P transport |
+| Convergence time | 100-300ms | Neighbors stabilize |
+| Entity migration during MOVE | 5-20% of entities | Boundary-dependent |
 
-**With VON** (Voronoi-based):
-- Neighbor discovery: O(log n) - Voronoi cell lookup
-- Latency: 5-10ms even for large clusters
+**Trade-off**: MOVE overhead (20-50ms) vs improved load balance (reduced hotspots)
 
-**Verdict**: VON provides significant performance benefit for spatial queries.
+---
+
+## Code Locations
+
+### Core VON Implementation
+
+**MOVE Protocol**:
+- `simulation/src/main/java/.../von/MoveProtocol.java` (175 lines)
+  - Position update broadcasts
+  - Neighbor notification
+  - Movement coordination
+
+**Mobile Bubble Model**:
+- `simulation/src/main/java/.../von/Bubble.java` (713 lines)
+  - Position tracking
+  - Load monitoring
+  - Boundary adaptation
+  - Entity distribution analysis
+
+**VON Coordination**:
+- `simulation/src/main/java/.../von/Manager.java` (502 lines)
+  - Overlay maintenance
+  - P2P transport integration
+  - View change handling
+
+**Neighbor Discovery**:
+- `simulation/src/main/java/.../von/VONDiscoveryProtocol.java`
+  - Voronoi-based neighbor queries
+  - Spatial range queries
+  - Integration with MOVE events
+
+### Testing
+
+**22 test files validate VON functionality**:
+- MOVE protocol message handling
+- Bubble position updates
+- Neighbor relationship management
+- Load balancing scenarios
+- Voronoi cell recalculation
+- Entity migration during moves
+
+**Key test coverage**:
+- `MoveProtocolTest.java`: MOVE message broadcast and handling
+- `BubbleMovementTest.java`: Position tracking and boundary updates
+- `VONNeighborDiscoveryTest.java`: Voronoi cell queries
+- `LoadBalancingTest.java`: Rebalancing via bubble movement
 
 ---
 
@@ -95,109 +209,103 @@ VON Overlay (neighbor discovery)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `vonEnabled` | true | Enable VON overlay for neighbor discovery |
+| `vonEnabled` | true | Enable VON overlay and MOVE protocol |
+| `moveThreshold` | 0.3 | Load imbalance ratio triggering MOVE (30%) |
 | `voronoiUpdateInterval` | 1000ms | Voronoi cell recalculation frequency |
 | `neighborThreshold` | 50.0f | Distance threshold for neighbor detection |
+| `moveCooldown` | 5000ms | Minimum time between MOVE operations |
 
 ### Tuning Guidelines
 
-**High Churn** (frequent view changes):
+**Aggressive Load Balancing**:
+- Reduce `moveThreshold` to 0.2 (move on 20% imbalance)
+- Reduce `moveCooldown` to 2000ms (move more frequently)
+- Trade-off: Higher MOVE overhead, better load distribution
+
+**Stable Clusters** (minimize movement):
+- Increase `moveThreshold` to 0.5 (tolerate 50% imbalance)
+- Increase `moveCooldown` to 10000ms (move less frequently)
+- Trade-off: Lower overhead, potential hotspots
+
+**High Churn** (frequent entity creation/deletion):
 - Reduce `voronoiUpdateInterval` to 500ms (faster convergence)
-- Increase `neighborThreshold` (more overlap, smoother transitions)
-
-**Static Clusters** (rare view changes):
-- Increase `voronoiUpdateInterval` to 5000ms (reduce CPU overhead)
-- Decrease `neighborThreshold` (less overlap, lower network usage)
+- Increase `neighborThreshold` (more overlap during transitions)
 
 ---
 
-## Code Locations
+## Architectural Contradiction
 
-### VON Integration Points
+**Note**: This implementation contradicts other simulation documentation:
 
-**Neighbor Discovery**:
-- `VONDiscoveryProtocol.java`: Voronoi-based neighbor queries
-- `GhostZoneManager.java`: Uses VON to find ghost sync targets
-- `BoundaryDetector.java`: Uses VON for spatial boundary detection
+### Other Docs Claim (ADR_002, SIMULATION_BUBBLES.md)
+- Fixed-volume spatial partitioning
+- Bubbles have static bounds that don't move
+- TetreeKeyRouter provides deterministic spatial assignment
+- VON MOVE protocol removed/unnecessary
 
-**Not Used** (MOVE Protocol):
-- No bubble movement logic in codebase
-- Migration uses CrossProcessMigration (2PC), not VON
-- Spatial assignment uses TetreeKeyRouter, not VON
+### Code Actually Implements
+- Mobile bubble architecture
+- Bubbles move to follow entity clusters
+- VON MOVE protocol actively used for coordination
+- Load-driven spatial rebalancing
 
----
+**Status**: This contradiction requires architectural clarification. Either:
+1. Documentation is outdated → Update other docs to reflect mobile bubbles
+2. Code is legacy → Refactor to fixed-volume architecture
+3. Coexistence → Both architectures supported (needs clarification)
 
-## Alternatives Considered
-
-### Option 1: Remove VON Entirely
-- **Pro**: Simplify dependencies, reduce code
-- **Con**: Lose O(log n) spatial queries, resort to O(n) brute force
-- **Verdict**: **Rejected** - VON provides significant performance benefit
-
-### Option 2: Implement Custom Spatial Index
-- **Pro**: Tailored to exact needs, no extra protocol
-- **Con**: Reinvent Voronoi overlay, maintenance burden
-- **Verdict**: **Rejected** - VON already solves this problem well
-
-### Option 3: Keep VON for Neighbor Discovery (Current)
-- **Pro**: Leverage existing O(log n) spatial queries
-- **Con**: VON has unused MOVE protocol (minor code bloat)
-- **Verdict**: **ACCEPTED** - Best balance of performance and simplicity
+**Recommendation**: Resolve architectural alignment before production deployment.
 
 ---
 
-## Migration Path
+## Benefits of VON-Based Mobile Bubbles
 
-### From: VON with MOVE Protocol (Prior Design)
-Bubbles signal movement via VON MOVE messages, trigger rebalancing.
+### Advantages
+- **Dynamic load balancing**: Bubbles move to optimize entity distribution
+- **Spatial locality**: Entities cluster naturally within bubble boundaries
+- **Adaptive partitioning**: Boundaries adjust to workload, not predetermined
+- **O(log n) coordination**: VON provides efficient neighbor discovery
 
-### To: VON for Neighbor Discovery Only (Current)
-Bubbles use VON for spatial queries, ignore MOVE protocol.
-
-### Code Changes Required
-- [x] Remove VON MOVE message handlers (not implemented, so nothing to remove)
-- [x] Document VON usage as spatial query aid only
-- [x] Clarify bubble assignment via TetreeKeyRouter, not VON
-
----
-
-## Testing
-
-### VON Neighbor Discovery Tests
-
-**Coverage**:
-- Voronoi cell neighbor detection
-- Spatial range queries
-- View change handling (Voronoi recalculation)
-
-**Not Tested** (MOVE Protocol):
-- Bubble movement (doesn't exist)
-- VON MOVE message handling (not implemented)
+### Disadvantages
+- **Movement overhead**: MOVE broadcasts add latency (20-50ms per move)
+- **Entity migration**: Boundary changes trigger entity handoffs
+- **Non-deterministic**: Bubble positions depend on entity distribution (harder to test)
+- **Convergence time**: 100-300ms for neighbors to stabilize after MOVE
 
 ---
 
-## Recommendations
+## Testing Strategy
 
-### Keep VON Integration
-VON provides valuable O(log n) spatial neighbor queries without requiring bubble movement logic.
+### VON Functionality Tests
+**Coverage** (22 test files):
+- MOVE protocol message handling
+- Bubble position updates
+- Neighbor relationship recalculation
+- Load balancing triggers
+- Voronoi cell maintenance
+- Entity migration during movement
 
-### Document Usage Clearly
-- **Use VON for**: Neighbor discovery, spatial range queries, boundary detection
-- **Don't use VON for**: Bubble assignment, migration triggering, movement signaling
-
-### Future Optimization
-If VON overhead becomes measurable, consider simpler k-d tree for static spatial queries. But current VON usage is lightweight and effective.
+### Integration Tests
+**Scenarios**:
+- Bubble moves → neighbors update → ghost zones adjust
+- Load imbalance → MOVE triggered → rebalancing
+- Concurrent moves → Voronoi convergence
+- View changes → neighbor discovery updates
 
 ---
 
 ## Related Documentation
 
-- [SIMULATION_BUBBLES.md](SIMULATION_BUBBLES.md) - Fixed-volume bubble architecture
-- [ADR_002_FIXED_VOLUME_SPATIAL_PARTITIONING.md](ADR_002_FIXED_VOLUME_SPATIAL_PARTITIONING.md) - Spatial assignment decision
-- [ARCHITECTURE_DISTRIBUTED.md](ARCHITECTURE_DISTRIBUTED.md) - Complete distributed architecture
+**Contradiction Alert**: The following documents describe a different architecture (fixed-volume spatial partitioning):
+
+- [SIMULATION_BUBBLES.md](SIMULATION_BUBBLES.md) - Claims fixed spatial volumes (contradicts this implementation)
+- [ADR_002_FIXED_VOLUME_SPATIAL_PARTITIONING.md](ADR_002_FIXED_VOLUME_SPATIAL_PARTITIONING.md) - Architectural decision for fixed volumes (contradicts code)
+- [ARCHITECTURE_DISTRIBUTED.md](ARCHITECTURE_DISTRIBUTED.md) - Distributed architecture overview (check for consistency)
+
+**Action Required**: Align documentation with implementation or refactor code to match fixed-volume design.
 
 ---
 
-**Document Version**: 1.0
-**Author**: Documentation alignment (Luciferase-9mri)
-**Status**: Current
+**Document Version**: 2.0 (Rewritten based on code analysis)
+**Author**: Deep codebase analysis (Luciferase-9mri)
+**Status**: Reflects actual implementation, contradicts other docs

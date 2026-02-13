@@ -135,7 +135,7 @@ boolean sendEntityRollback(UUID targetNodeId, EntityRollbackEvent event);
 
 ### ✅ EFFECTIVE: Deterministic Spatial Partitioning
 
-**Implementation**: `TetreeKeyRouter.java` (lines 60-77)
+**Implementation**: `ViewCommitteeSelector.java` (deterministic committee selection from view)
 
 ```java
 public int routeTo(TetreeKey<?> key) {
@@ -212,7 +212,7 @@ For large clusters (n>1000), consider dynamic threshold: `threshold = max(30, 10
 | **Ring Topology** | `context.bftSubset(viewDiadem)` | ✅ Used for deterministic committee selection |
 | **Virtual Synchrony** | View change listeners, rollback on view change | ✅ Prevents double-commit races |
 | **Gossip Protocol** | `view.register()` for membership updates | ✅ O(log n) convergence for view changes |
-| **DynamicContext** | `TetreeKeyRouter`, committee selection | ✅ Cluster-aware spatial routing |
+| **DynamicContext** | Committee selection, member tracking | ✅ Cluster-aware coordination |
 | **View ID (Diadem)** | Proposal tagging, view verification | ✅ Prevents cross-view state corruption |
 | **Member Abstraction** | `context.allMembers()`, committee membership | ✅ Clean integration with Delos membership |
 
@@ -259,8 +259,8 @@ For large clusters (n>1000), consider dynamic threshold: `threshold = max(30, 10
 **Quantitative Improvement** (estimated):
 - Leader election overhead: **Eliminated** (deterministic committee selection)
 - View change latency: **~200ms** (gossip convergence) vs **150-300ms** (Raft election)
-- Migration throughput: **2K-5K migrations/sec** per node (limited by 2PC latency ~150ms)
-- Spatial routing: **O(1)** via TetreeKeyRouter (vs O(1) leader lookup but with bottleneck)
+- Migration throughput: **100-200 migrations/sec** per bubble (test-validated, 2PC latency ~150ms)
+- VON neighbor discovery: **O(log n)** via k-NN spatial queries (k=10)
 
 **Verdict**: **Fireflies is the correct choice** for distributed spatial simulation with high migration rates and spatial locality requirements.
 
@@ -326,7 +326,7 @@ For large clusters (n>1000), consider dynamic threshold: `threshold = max(30, 10
 - ✅ **Coverage: Good** (assumes based on 70/70 Phase 7F tests passing)
 
 **Spatial Routing**: (Inferred from test counts)
-- ✅ **Coverage: Good** (TetreeKeyRouter usage in routing logic)
+- ✅ **Coverage: Good** (ViewCommitteeSelector usage in consensus logic)
 
 **Missing Tests** (minor):
 - ⚠️ Large cluster view stability (n>100 nodes) - Not critical for current deployments

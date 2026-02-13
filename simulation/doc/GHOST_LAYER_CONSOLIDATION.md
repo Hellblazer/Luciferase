@@ -1,152 +1,176 @@
-# Ghost Layer: Deterministic Boundary Zones
+# Ghost Layer: Boundary Synchronization for Mobile Bubbles
 
-**Date**: 2026-02-13
-**Status**: Implemented
-**Architecture**: Deterministic boundary zones for fixed-volume bubbles
-**ADR**: [ADR_002_FIXED_VOLUME_SPATIAL_PARTITIONING.md](ADR_002_FIXED_VOLUME_SPATIAL_PARTITIONING.md)
+**Status**: Current
+**Architecture**: Ghost synchronization with dead reckoning for mobile bubble boundaries
 
 ---
 
 ## Summary
 
-Ghost layer provides **deterministic boundary synchronization** for entities near fixed bubble boundaries. Ghost zones are pre-computed spatial regions, not emergent formations.
+Ghost layer provides boundary synchronization between mobile bubbles. Entities near bubble boundaries are replicated as "ghost entities" for smooth handoff and sub-frame coherence.
 
 ---
 
 ## Architecture
 
-### Ghost Zone Definition
+### Ghost State Management
 
-A ghost zone is a **fixed spatial region** along bubble boundaries where entities are replicated to neighboring bubbles.
+**Location**: `ghost/GhostStateManager.java` (499 lines)
 
-```
-Bubble A Bounds: (0,0,0) to (100,100,100)
-Ghost Zone Width: 10.0f units
+```java
+public class GhostStateManager {
+    private volatile Clock clock = Clock.system();
 
-Ghost Zone (negative X boundary):
-  Min: (0, 0, 0)
-  Max: (10, 100, 100)
+    private final Map<StringEntityID, GhostState> ghostStates;  // Position + velocity
+    private final DeadReckoningEstimator deadReckoning;  // Extrapolation
+    private final GhostLifecycleStateMachine lifecycle;  // State transitions
 
-Ghost Zone (positive X boundary):
-  Min: (90, 0, 0)
-  Max: (100, 100, 100)
-```
-
-**Properties**:
-- Width: Configurable (default 10.0f units)
-- Location: Determined by bubble bounds (fixed, not emergent)
-- Coverage: All 6 faces of cubic bubble (X±, Y±, Z±)
-
-### Ghost Entity Lifecycle
-
-```
-Entity at (5, 50, 50) - Inside bubble A ghost zone
-         ↓
-GhostZoneManager detects position
-         ↓
-Create ghost in neighbor bubble B
-         ↓
-Synchronize at 10ms interval
-         ↓
-Entity moves to (95, 50, 50) - Exits ghost zone OR migrates
-         ↓
-Remove ghost from bubble B OR promote ghost to local entity
+    record GhostState(GhostEntity entity, Vector3f velocity)
+}
 ```
 
-**States**:
-1. **Local Entity**: Outside ghost zone, only in owning bubble
-2. **Ghost Entity**: Inside ghost zone, replicated to neighbors
-3. **Migrated**: Crosses boundary, ownership transferred via 2PC
+**Responsibilities**:
+- Track ghost entity position and velocity
+- Extrapolate position via dead reckoning between updates
+- Detect and cull stale ghosts (TTL=500ms)
+- Manage lifecycle state transitions (CREATE → UPDATE → STALE → EXPIRED)
+- Clamp extrapolated positions to bubble bounds
 
 ---
 
-## Implementation
+## Ghost Lifecycle
 
-### GhostZoneManager
+### State Machine
 
-**Location**: `lucien/src/main/java/com/hellblazer/luciferase/lucien/ghost/GhostStateManager.java`
-
-**Responsibilities**:
-- Detect entities entering/exiting ghost zones (spatial containment check)
-- Track ghost entity metadata (creation time, last sync)
-- Coordinate ghost lifecycle (create, update, remove)
-- Dead reckoning for ghost position estimation between sync intervals (Phase 7B.3)
-
-**Key Methods**:
-```java
-public void markAsGhost(String entityId, long timestamp);
-public void unmarkAsGhost(String entityId);
-public long getGhostDuration(String entityId);
+```
+CREATE → UPDATE → STALE → EXPIRED
 ```
 
-**Implementation Note**: GhostStateManager includes dead reckoning complexity (DeadReckoningEstimator) for extrapolating ghost entity positions between 10ms sync intervals. This reduces perceived latency for remote ghosts but is not required for basic ghost layer operation. Dead reckoning is an optimization added in Phase 7B.3, not core to the fixed-volume architecture.
+**State Transitions**:
+- **CREATE**: Ghost arrives from network, add to ghostStates map
+- **UPDATE**: Receive position/velocity update, reset staleness timer
+- **STALE**: No update for >500ms, mark for cleanup
+- **EXPIRED**: Removed from ghostStates map
 
-### Boundary Detection
+### Operations
 
-#### Tetrahedral Bubbles → AABB Conversion
-
-**Challenge**: Luciferase uses **tetrahedral spatial indexing** (Tetree), but ghost zone detection requires axis-aligned boundaries for O(1) checks.
-
-**Solution**: `TetrahedralBounds.toAABB()` converts tetrahedron vertices to AABB:
-
+**Update Ghost** (receive from network):
 ```java
-// TetrahedralBounds.toAABB() implementation
-public AABB toAABB() {
-    var coords = tet.coordinates();  // Get 4 vertices (v0, v1, v2, v3)
+public void updateGhost(UUID sourceBubbleId, EntityUpdateEvent event) {
+    var existingState = ghostStates.get(entityId);
+    if (existingState == null) {
+        lifecycle.onCreate(entityId, sourceBubbleId, timestamp);
+    }
+    lifecycle.onUpdate(entityId, timestamp);
 
-    // Compute min/max across all vertices
-    float minX = Math.min(Math.min(coords[0].x, coords[1].x),
-                          Math.min(coords[2].x, coords[3].x));
-    float maxX = Math.max(Math.max(coords[0].x, coords[1].x),
-                          Math.max(coords[2].x, coords[3].x));
-    // ... similarly for Y and Z
+    var newState = new GhostState(ghostEntity, velocity);
+    ghostStates.put(entityId, newState);
 
-    return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+    deadReckoning.onAuthoritativeUpdate(adapter, position);
+}
+```
+
+**Get Ghost Position** (with dead reckoning):
+```java
+public Point3f getGhostPosition(StringEntityID entityId, long currentTime) {
+    var predictedPosition = deadReckoning.predict(adapter, currentTime);
+    return clampToBounds(predictedPosition);  // Clamp to bubble bounds
+}
+```
+
+**Cull Stale Ghosts** (periodic cleanup):
+```java
+public void tick(long currentTime) {
+    var expiredCount = lifecycle.expireStaleGhosts(currentTime);
+    for (var entityId : ghostStates.keySet()) {
+        if (lifecycle.getState(entityId) == null) {
+            removeGhost(entityId);  // Cleanup expired
+        }
+    }
+}
+```
+
+---
+
+## Dead Reckoning
+
+### Purpose
+
+Extrapolate ghost position between network updates (10ms sync interval) using stored velocity.
+
+### Mechanism
+
+**Prediction Formula**:
+```
+predictedPosition = lastKnownPosition + velocity × deltaTime
+```
+
+**Implementation**:
+```java
+// DeadReckoningEstimator extrapolates position
+public Point3f predict(DeadReckoningAdapter adapter, long currentTime) {
+    var lastUpdate = adapter.getLastUpdateTime();
+    var deltaTime = currentTime - lastUpdate;
+
+    var position = adapter.getPosition();
+    var velocity = adapter.getVelocity();
+
+    return position.add(velocity.scale(deltaTime / 1000.0f));  // Convert ms to seconds
+}
+```
+
+**Benefits**:
+- Smooth animation between network updates
+- Reduced perceived latency for remote ghosts
+- Sub-frame coherence (60+ FPS animation with 10ms sync)
+
+### Boundary Clamping
+
+**Problem**: Dead reckoning can extrapolate position outside bubble bounds.
+
+**Solution**: Clamp predicted position to bubble bounds.
+
+**Implementation**:
+```java
+private Point3f clampToBounds(Point3f position) {
+    if (bounds.contains(position)) {
+        return position;  // Already within bounds
+    }
+
+    // Convert to RDGCS (recursive diamond grid coordinate system)
+    var rdgPos = bounds.toRDG(position);
+
+    // Clamp to min/max bounds
+    var clampedRdg = new Point3i(
+        Math.max(rdgMin.x, Math.min(rdgMax.x, rdgPos.x)),
+        Math.max(rdgMin.y, Math.min(rdgMax.y, rdgPos.y)),
+        Math.max(rdgMin.z, Math.min(rdgMax.z, rdgPos.z))
+    );
+
+    // Convert back to Cartesian
+    return bounds.toCartesian(clampedRdg);
 }
 ```
 
 **Properties**:
-- Conservative: AABB encompasses entire tetrahedron
-- Fast: O(1) computation from 4 vertices
-- Validated: TetrahedralSubdivisionForestTest.testTetrahedralBoundsToAABBComputesBoundingBox()
+- Prevents ghosts from appearing outside bubble visual region
+- Uses RDGCS coordinate system (tetrahedral subdivision)
+- Conservative clamping (keeps ghost visible at boundary)
 
-**Ghost Zone Algorithm** (uses AABB):
-```java
-public boolean isInGhostZone(Point3f position, TetrahedralBounds tetBounds, float zoneWidth) {
-    var aabb = tetBounds.toAABB();  // Convert tet → AABB
+---
 
-    // Check distance to each AABB face
-    boolean nearMinX = (position.x - aabb.getMinX()) < zoneWidth;
-    boolean nearMaxX = (aabb.getMaxX() - position.x) < zoneWidth;
-    boolean nearMinY = (position.y - aabb.getMinY()) < zoneWidth;
-    boolean nearMaxY = (aabb.getMaxY() - position.y) < zoneWidth;
-    boolean nearMinZ = (position.z - aabb.getMinZ()) < zoneWidth;
-    boolean nearMaxZ = (aabb.getMaxZ() - position.z) < zoneWidth;
+## Ghost Synchronization
 
-    return nearMinX || nearMaxX || nearMinY || nearMaxY || nearMinZ || nearMaxZ;
-}
+### Protocol
+
+**Frequency**: 10ms interval (sub-frame for 60+ FPS animation)
+
+**Flow**:
 ```
-
-**Why AABB vs Precise Tetrahedral Containment**:
-- Ghost detection needs boundary proximity, not precise containment
-- AABB check is O(1) with 6 comparisons
-- Precise tet containment is O(1) but requires barycentric coordinates (more complex)
-- Conservative AABB is acceptable: Slightly larger ghost zone is safe
-
-**Properties**:
-- O(1) containment check (6 comparisons after AABB conversion)
-- Deterministic: Same position always yields same result
-- No probabilistic detection or emergent formation
-- Works for all tetrahedral types (S0-S5, Bey subdivision)
-
-### Ghost Synchronization
-
-**Protocol**:
-```
-Every 10ms (sub-frame for 60 FPS animation):
+Every 10ms:
   1. For each entity in ghost zone:
      2. Get current state (position, velocity, content)
-     3. Send ghost update to neighbor bubbles (via gRPC)
+     3. Send ghost update to neighbor bubbles (via P2P transport)
      4. Update lastSync timestamp
 ```
 
@@ -161,7 +185,52 @@ public record GhostUpdate(
 ) {}
 ```
 
-**Network Protocol**: Direct gRPC messages (not Fireflies gossip)
+**Network Protocol**: Direct P2P messages via bubble transport.
+
+---
+
+## VON Integration
+
+### Ghost-Based Neighbor Discovery
+
+**Location**: `ghost/GhostSyncVONIntegration.java`
+
+**Discovery Pattern**:
+```java
+public void onGhostBatchReceived(UUID fromBubbleId) {
+    if (!vonNode.neighbors().contains(fromBubbleId)) {
+        vonNode.addNeighbor(fromBubbleId);  // Discover via ghost arrival
+        ghostManager.onVONNeighborAdded(fromBubbleId);  // Enable bidirectional sync
+    }
+}
+```
+
+**Core Thesis**: "Ghost layer + VON protocols = fully distributed animation with no global state"
+
+**Integration Points**:
+1. **VON JOIN**: Initialize ghost relationships with all neighbors
+2. **VON MOVE**: Discover new boundary neighbors via ghost arrivals
+3. **Ghost Batch**: Primary neighbor discovery mechanism
+
+### MOVE Event Handling
+
+**When bubble moves**:
+```java
+public void onVONMove(Point3D newPosition) {
+    var nearbyNodes = neighborIndex.findKNearest(newPosition, 10);
+    for (var nearbyNode : nearbyNodes) {
+        if (neighborIndex.isBoundaryNeighbor(vonNode, nearbyNode)) {
+            vonNode.addNeighbor(nearbyId);
+            ghostManager.onVONNeighborAdded(nearbyId);  // Register for ghost sync
+        }
+    }
+}
+```
+
+**Properties**:
+- k-NN spatial query (k=10) finds nearby bubbles
+- Boundary neighbor detection enables ghost sync
+- Automatic registration with ghost manager
 
 ---
 
@@ -176,7 +245,7 @@ Phase 1 (in source bubble):
   └─ Entity is local, ghost exists in destination
        ↓
 Phase 2 (migration decision):
-  └─ 2PC protocol begins (consensus + PREPARE)
+  └─ Byzantine consensus + 2PC protocol begins
        ↓
 Phase 3 (in destination bubble):
   └─ Ghost promoted to local entity
@@ -193,7 +262,7 @@ Phase 4 (cleanup):
 | Aspect | Ghost Sync | Entity Migration |
 |--------|-----------|------------------|
 | **Frequency** | 10ms (continuous) | As needed (rare) |
-| **Latency** | ~5ms (direct gRPC) | ~150ms (2PC + consensus) |
+| **Latency** | ~5ms (direct P2P) | ~150ms (2PC + consensus) |
 | **Purpose** | Sub-frame coherence | Ownership transfer |
 | **Reversible** | Yes (entity can leave zone) | No (atomic transfer) |
 
@@ -204,7 +273,7 @@ Phase 4 (cleanup):
 ### Ghost Synchronization Overhead
 
 | Metric | Target | Typical |
-|--------|--------|---------|
+|--------|--------|---------| |
 | Sync frequency | 100 Hz (10ms) | 100 Hz |
 | Network overhead per ghost | ~100 bytes/update | ~80 bytes |
 | Sync latency | < 10ms | ~5ms |
@@ -214,17 +283,17 @@ Phase 4 (cleanup):
 - 20 ghosts × 100 Hz × 80 bytes = 160 KB/sec
 - Negligible for modern networks (< 1% of 1 Gbps link)
 
-### Ghost Zone Coverage
+### Dead Reckoning Accuracy
 
-**Typical Configuration**:
-- Bubble size: 1000 units³ (10×10×10)
-- Ghost zone width: 10 units
-- Ghost zone volume: ~280 units³ (6 faces × ~47 units²/face × 10 units)
-- Coverage: ~28% of bubble volume
+| Metric | Target | Typical |
+|--------|--------|---------|
+| Prediction error | < 5 units | ~2 units |
+| Staleness threshold | 500ms | 500ms |
+| Extrapolation interval | 10ms | 10ms |
 
 **Trade-off**:
-- Larger zones: Smoother handoff, higher network overhead
-- Smaller zones: Lower overhead, more migration "jumps"
+- Shorter sync interval: More network overhead, better accuracy
+- Longer sync interval: Less overhead, more prediction error
 
 ---
 
@@ -234,20 +303,19 @@ Phase 4 (cleanup):
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `GHOST_ZONE_WIDTH` | 10.0f | Zone width along each boundary face |
 | `GHOST_SYNC_INTERVAL_MS` | 10 | Synchronization frequency |
+| `GHOST_TTL_MS` | 500 | Staleness threshold for ghost expiration |
 | `GHOST_ENABLED` | true | Enable ghost layer (disable for testing) |
 
 ### Tuning Guidelines
 
 **Smooth Animation** (60+ FPS):
 - Keep `GHOST_SYNC_INTERVAL_MS` at 10ms (sub-frame)
-- Increase `GHOST_ZONE_WIDTH` to 15-20 units (more overlap)
+- Reduce `GHOST_TTL_MS` to 300ms (faster staleness detection)
 
 **Low Network Usage**:
-- Reduce `GHOST_ZONE_WIDTH` to 5 units (less overlap)
 - Increase `GHOST_SYNC_INTERVAL_MS` to 20ms (lower frequency)
-- Trade-off: May see "jumps" at boundaries
+- Trade-off: May see small "jumps" at boundaries
 
 **Testing**:
 - Set `GHOST_ENABLED` to false (disable ghost layer)
@@ -258,132 +326,37 @@ Phase 4 (cleanup):
 
 ## Testing
 
-### Ghost Zone Detection Tests
+### Ghost Layer Tests
 
 **Coverage**:
-- Entity enters ghost zone → ghost created
-- Entity exits ghost zone → ghost removed
-- Entity migrates → ghost promoted to local
+- Ghost lifecycle state transitions (CREATE → UPDATE → STALE → EXPIRED)
+- Dead reckoning extrapolation accuracy
+- Boundary clamping (prevents ghost escape)
+- Staleness detection and cleanup
+- VON integration (ghost-based neighbor discovery)
 
 **Test Files**:
-- `TetrahedralForestE2ETest.java:testGhostLayerWithTetrahedralForest()` (lines 597-681)
-- `TetrahedralForestE2ETest.java:testGhostLayerWithBeySubdivision()` (lines 899-1027)
+- `GhostStateManagerTest.java`: Lifecycle and dead reckoning
+- `GhostSyncVONIntegrationTest.java`: VON neighbor discovery via ghosts
+- `TetrahedralForestE2ETest.java`: End-to-end ghost synchronization
 
 **Validated**:
-- ✅ Ghost zones created for all 6 tetrahedral children (S0-S5 subdivision)
-- ✅ Ghost zones created for all 8 Bey grandchildren (Case B subdivision)
-- ✅ AABB computation for tetrahedral bounds (required for ghost detection)
-- ✅ AABB non-degeneracy (positive extents in X, Y, Z)
-
-### Ghost Synchronization Tests
-
-**Coverage**:
-- Ghost update frequency (10ms interval)
-- Network message format (GhostUpdate serialization)
-- Concurrent ghost updates (lock-free)
-
-**Test Pattern** (from H3_DETERMINISM_EPIC.md):
-```java
-var testClock = new TestClock();
-ghostManager.setClock(testClock);
-
-// T=0: Entity enters ghost zone
-testClock.setMillis(0);
-ghostManager.markAsGhost("entity1", testClock.currentTimeMillis());
-
-// T=10: First sync
-testClock.advance(10);
-ghostManager.syncGhosts();  // Should trigger network update
-
-// Verify sync timestamp
-assertEquals(10, ghostManager.getLastSync("entity1"));
-```
-
----
-
-## Comparison to Prior Designs
-
-### Emergent Boundary Formation (NOT IMPLEMENTED)
-
-**Prior Vision**:
-- Ghost zones form dynamically based on entity interactions
-- Boundaries emerge from spatial clustering
-- No pre-computed zones
-
-**Why Rejected**:
-- Non-deterministic (hard to test)
-- Unpredictable network overhead (unknown ghost count)
-- Complex implementation (cluster detection algorithms)
-
-### Fixed Deterministic Zones (CURRENT)
-
-**Implementation**:
-- Ghost zones defined by fixed bubble bounds
-- Deterministic containment checks (O(1))
-- Predictable overhead (based on zone width)
-
-**Benefits**:
-- Testable (deterministic behavior)
-- Predictable performance (known network overhead)
-- Simple implementation (spatial containment only)
-
----
-
-## Integration Points
-
-### Spatial Index Layer
-
-**Ghost detection uses Tetree spatial queries**:
-- `Tetree.contains()`: Check if entity in boundary region
-- `TetrahedralBounds.toAABB()`: Convert tet bounds to AABB for ghost detection
-- `Forest.getTree()`: Lookup neighbor trees for ghost synchronization
-
-**Validated**: TetrahedralForestE2ETest validates ghost AABB computation (lines 663-677)
-
-### Network Layer
-
-**Ghost sync uses direct gRPC**:
-- `BubbleNetworkChannel.sendGhostUpdate()`: Send ghost state to neighbor
-- `GhostMessageHandler.handleGhostUpdate()`: Receive ghost update from neighbor
-
-**Not using Fireflies gossip**: Ghost sync is targeted point-to-point, not cluster-wide broadcast
-
-### Migration Protocol
-
-**Ghost promotion during 2PC**:
-- Phase 1 (PREPARE): Source removes local entity (ghost remains in destination)
-- Phase 2 (COMMIT): Destination promotes ghost to local entity
-- Phase 3 (cleanup): Remove ghost from other neighbors
-
-**Integration**: CrossProcessMigration coordinates with GhostStateManager during ownership transfer
-
----
-
-## Future Optimizations (Not Planned)
-
-### Adaptive Ghost Zone Width
-- **Idea**: Dynamically adjust zone width based on entity velocity
-- **Benefit**: Fast-moving entities get larger zones (smoother handoff)
-- **Trade-off**: Complexity, non-deterministic overhead
-- **Status**: Not needed for current use cases
-
-### Ghost Prediction
-- **Idea**: Extrapolate entity position between sync intervals
-- **Benefit**: Reduce perceived latency for remote ghosts
-- **Trade-off**: Prediction errors, synchronization complexity
-- **Status**: 10ms sync interval is sufficient for 60 FPS animation
+- ✅ Ghost updates received from neighbors
+- ✅ Dead reckoning prediction accuracy (< 5 units error)
+- ✅ Staleness detection (>500ms expiration)
+- ✅ Boundary clamping (ghosts don't escape bounds)
+- ✅ VON neighbor discovery via ghost arrivals
 
 ---
 
 ## Related Documentation
 
-- [SIMULATION_BUBBLES.md](SIMULATION_BUBBLES.md) - Overall bubble architecture
-- [ADR_002_FIXED_VOLUME_SPATIAL_PARTITIONING.md](ADR_002_FIXED_VOLUME_SPATIAL_PARTITIONING.md) - Fixed-volume decision
+- [SIMULATION_BUBBLES.md](SIMULATION_BUBBLES.md) - Mobile bubble architecture
+- [VON_OVERLAY_ASSESSMENT.md](VON_OVERLAY_ASSESSMENT.md) - VON architecture and MOVE protocol
 - [ARCHITECTURE_DISTRIBUTED.md](ARCHITECTURE_DISTRIBUTED.md) - Complete distributed architecture
-- [.pm/ghost-layer-validation-findings.md](../../.pm/ghost-layer-validation-findings.md) - Test coverage validation
 
 ---
 
-**Document Version**: 1.0
-**Author**: Documentation alignment (Luciferase-9mri)
+**Document Version**: 2.0 (Mobile bubble architecture)
+**Last Updated**: 2026-02-13
 **Status**: Current
