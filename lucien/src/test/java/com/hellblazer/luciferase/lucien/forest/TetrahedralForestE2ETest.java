@@ -47,6 +47,33 @@ import static org.junit.jupiter.api.Assertions.*;
 class TetrahedralForestE2ETest {
 
     /**
+     * Helper method to wait for tree subdivision to complete.
+     *
+     * @param tree the tree to wait for
+     * @param maxWaitMs maximum wait time in milliseconds
+     * @return actual wait time in milliseconds
+     * @throws AssertionError if subdivision doesn't complete within timeout
+     */
+    private int waitForSubdivision(TreeNode<?, ?, ?> tree, int maxWaitMs) {
+        int waited = 0;
+        while (waited < maxWaitMs) {
+            try {
+                Thread.sleep(50);
+                waited += 50;
+                if (tree.isSubdivided()) {
+                    return waited;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        fail(String.format("Tree %s did not subdivide within %dms (waited %dms)",
+                          tree.getTreeId(), maxWaitMs, waited));
+        return waited; // unreachable
+    }
+
+    /**
      * End-to-end test: Create forest → cubic subdivision → 6 tet children → verify hierarchy → verify events.
      *
      * This test validates the complete Phase 1-3 workflow for CUBIC_TO_TET subdivision.
@@ -104,18 +131,8 @@ class TetrahedralForestE2ETest {
         // 3. Trigger CUBIC_TO_TET subdivision manually
         forest.checkAndAdapt();
 
-        // Wait for async subdivision to complete (poll up to 2 seconds)
-        int maxWait = 2000;
-        int waited = 0;
-        while (!root.isSubdivided() && waited < maxWait) {
-            try {
-                Thread.sleep(50);
-                waited += 50;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
+        // Wait for async subdivision to complete
+        waitForSubdivision(root, 2000);
 
         // 4. Verify subdivision occurred: should have 1 parent + 6 children = 7 trees
         assertTrue(forest.getAllTrees().size() >= 7,
@@ -217,19 +234,8 @@ class TetrahedralForestE2ETest {
         }
 
         forest.checkAndAdapt();
-        // Poll for subdivision completion (up to 2 seconds)
-        int maxWait = 2000;
-        int waited = 0;
-        while (waited < maxWait) {
-            try {
-                Thread.sleep(50);
-                waited += 50;
-                if (root.isSubdivided()) break;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
+        // Wait for first subdivision to complete
+        waitForSubdivision(root, 2000);
 
         // 3. Verify first subdivision: 6 tet children
         assertEquals(6, root.getChildTreeIds().size(), "Should have 6 tet children after first subdivision");
@@ -249,19 +255,8 @@ class TetrahedralForestE2ETest {
 
         // 5. Trigger second-level subdivision
         forest.checkAndAdapt();
-        // Poll for targetTet subdivision completion (up to 2 seconds)
-        int maxWait2 = 2000;
-        int waited2 = 0;
-        while (waited2 < maxWait2) {
-            try {
-                Thread.sleep(50);
-                waited2 += 50;
-                if (targetTet.isSubdivided()) break;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
+        // Wait for targetTet subdivision to complete
+        waitForSubdivision(targetTet, 2000);
 
         // 6. Verify cascade: parent has 6 children, one child has 8 children
         assertEquals(6, root.getChildTreeIds().size(), "Root should still have 6 children");
@@ -369,19 +364,9 @@ class TetrahedralForestE2ETest {
 
         // 3. Trigger subdivisions
         forest.checkAndAdapt();
-        // Poll for both regions to subdivide (up to 2 seconds)
-        int maxWait = 2000;
-        int waited = 0;
-        while (waited < maxWait) {
-            try {
-                Thread.sleep(50);
-                waited += 50;
-                if (regionATree.isSubdivided() && regionBTree.isSubdivided()) break;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
+        // Wait for both regions to subdivide
+        waitForSubdivision(regionATree, 2000);
+        waitForSubdivision(regionBTree, 2000);
 
         // 4. Verify both subdivisions occurred independently
         assertTrue(regionATree.isSubdivided(), "Region A should be subdivided");
@@ -457,19 +442,8 @@ class TetrahedralForestE2ETest {
         }
 
         forest.checkAndAdapt();
-        // Poll for subdivision completion (up to 2 seconds)
-        int maxWait = 2000;
-        int waited = 0;
-        while (waited < maxWait) {
-            try {
-                Thread.sleep(50);
-                waited += 50;
-                if (root.isSubdivided()) break;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
+        // Wait for subdivision to complete
+        waitForSubdivision(root, 2000);
 
         // 3. Verify subdivision created children
         assertTrue(root.isSubdivided(), "Root should be subdivided");
@@ -542,16 +516,16 @@ class TetrahedralForestE2ETest {
         var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
         var root = forest.getTree(rootId);
 
-        // 2. Add 15 entities with known positions (need >5*1.5=7.5 to trigger subdivision)
+        // 2. Add 10 entities with known positions (need >5*1.5=7.5 to trigger subdivision)
         var entityIds = new ArrayList<LongEntityID>();
         var entityPositions = new ArrayList<Point3f>();
 
-        for (int i = 0; i < 15; i++) {
+        for (int i = 0; i < 10; i++) {
             var entityId = idGenerator.generateID();
             var position = new Point3f(
-                50.0f + i * 25.0f,
-                50.0f + i * 25.0f,
-                50.0f + i * 25.0f
+                50.0f + i * 40.0f,
+                50.0f + i * 40.0f,
+                50.0f + i * 40.0f
             );
             entityIds.add(entityId);
             entityPositions.add(position);
@@ -562,19 +536,8 @@ class TetrahedralForestE2ETest {
         // 3. Trigger subdivision
         forest.checkAndAdapt();
 
-        // Poll for subdivision completion
-        int maxWait = 2000;
-        int waited = 0;
-        while (waited < maxWait) {
-            try {
-                Thread.sleep(50);
-                waited += 50;
-                if (root.isSubdivided()) break;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
+        // Wait for subdivision to complete
+        waitForSubdivision(root, 2000);
 
         // 4. Verify subdivision occurred
         assertTrue(root.isSubdivided(), "Root should be subdivided");
@@ -587,22 +550,16 @@ class TetrahedralForestE2ETest {
                            "Child should have TetrahedralBounds for containsUltraFast");
         }
 
-        // 6. Verify entities were redistributed (children are non-empty, parent is no longer leaf)
-        boolean hasNonEmptyChild = false;
+        // 6. Verify entities were redistributed: count total entities across all children
+        int totalChildEntities = 0;
         for (var childId : root.getChildTreeIds()) {
             var child = forest.getTree(childId);
             var childIndex = child.getSpatialIndex();
-
-            // Check if child has entities by querying a sample position
-            var sampleResults = childIndex.lookup(new Point3f(250.0f, 250.0f, 250.0f), (byte) 0);
-            if (!sampleResults.isEmpty()) {
-                hasNonEmptyChild = true;
-                break;
-            }
+            totalChildEntities += childIndex.entityCount();
         }
 
-        assertTrue(hasNonEmptyChild,
-                  "At least one child should have redistributed entities");
+        assertEquals(10, totalChildEntities,
+                    "All 10 entities should be redistributed to children (no loss)");
 
         // 7. Verify parent is no longer a leaf (entities moved to children)
         assertFalse(root.isLeaf(), "Parent should not be a leaf after subdivision");
@@ -684,19 +641,8 @@ class TetrahedralForestE2ETest {
         // 3. Trigger subdivision
         forest.checkAndAdapt();
 
-        // Poll for subdivision completion
-        int maxWait = 2000;
-        int waited = 0;
-        while (waited < maxWait) {
-            try {
-                Thread.sleep(50);
-                waited += 50;
-                if (root.isSubdivided()) break;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
+        // Wait for subdivision to complete
+        waitForSubdivision(root, 2000);
 
         // 4. Verify subdivision occurred
         assertTrue(root.isSubdivided(), "Root should be subdivided");
@@ -764,7 +710,7 @@ class TetrahedralForestE2ETest {
         var forest = new AdaptiveForest<>(forestConfig, adaptationConfig, idGenerator, "distributed-forest");
         forest.addEventListener(bridge);
 
-        // 1. Create root tree (bridge assigns to server-0 via round-robin)
+        // 1. Create root tree
         var spatialIndex = new Octree<>(idGenerator);
         var rootBounds = new EntityBounds(
             new Point3f(0.0f, 0.0f, 0.0f),
@@ -778,13 +724,13 @@ class TetrahedralForestE2ETest {
         var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
         var root = forest.getTree(rootId);
 
-        // NOTE: Root won't have server assignment until subdivision occurs
-        // (ForestToTumblerBridge assigns parent server during TreeSubdivided event)
+        // Server assignment occurs during subdivision (not during addTree):
+        // ForestToTumblerBridge.handleTreeSubdivided assigns parent if null, then children inherit
 
-        // 2. Add entities to trigger subdivision (need >7.5)
-        for (int i = 0; i < 12; i++) {
+        // 2. Add entities to trigger subdivision (need >7.5, use 10)
+        for (int i = 0; i < 10; i++) {
             var entityId = idGenerator.generateID();
-            var position = new Point3f(150.0f + i * 30.0f, 150.0f, 150.0f);
+            var position = new Point3f(150.0f + i * 40.0f, 150.0f, 150.0f);
             spatialIndex.insert(entityId, position, (byte) 0, "Dist " + i);
             forest.trackEntityInsertion(rootId, entityId, position);
         }
@@ -792,19 +738,8 @@ class TetrahedralForestE2ETest {
         // 3. Trigger subdivision
         forest.checkAndAdapt();
 
-        // Poll for subdivision completion
-        int maxWait = 2000;
-        int waited = 0;
-        while (waited < maxWait) {
-            try {
-                Thread.sleep(50);
-                waited += 50;
-                if (root.isSubdivided()) break;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
+        // Wait for subdivision to complete
+        waitForSubdivision(root, 2000);
 
         // 4. Verify subdivision occurred
         assertTrue(root.isSubdivided(), "Root should be subdivided");
@@ -846,6 +781,115 @@ class TetrahedralForestE2ETest {
         // Should have root + 6 children = 7 assignments
         assertTrue(allAssignments.size() >= 7,
                   "Bridge should track root and all children (at least 7 assignments)");
+
+        // 9. Verify round-robin pattern: create second root, should get different server
+        var spatialIndex2 = new Octree<>(idGenerator);
+        var rootBounds2 = new EntityBounds(
+            new Point3f(1000.0f, 1000.0f, 1000.0f),
+            new Point3f(1600.0f, 1600.0f, 1600.0f)
+        );
+        var metadata2 = TreeMetadata.builder()
+            .name("DistRoot2")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .property("initialBounds", new CubicBounds(rootBounds2))
+            .build();
+        var rootId2 = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex2, metadata2);
+        var root2 = forest.getTree(rootId2);
+
+        // Add entities to second root (need >7.5, use 10)
+        for (int i = 0; i < 10; i++) {
+            var entityId = idGenerator.generateID();
+            var position = new Point3f(1100.0f + i * 40.0f, 1100.0f, 1100.0f);
+            spatialIndex2.insert(entityId, position, (byte) 0, "Dist2 " + i);
+            forest.trackEntityInsertion(rootId2, entityId, position);
+        }
+
+        // Trigger second subdivision
+        forest.checkAndAdapt();
+        waitForSubdivision(root2, 2000);
+
+        // Verify round-robin: second root should have different server (likely server-1, but any != server-0)
+        var rootServer2 = bridge.getServerAssignment(rootId2);
+        assertNotNull(rootServer2, "Second root should have server assignment after subdivision");
+        assertNotEquals(rootServer, rootServer2,
+                       "Round-robin should assign different servers to independent roots");
+
+        // Cleanup
+        forest.shutdown();
+    }
+
+    /**
+     * Negative test: verify subdivision does NOT occur when entity count is below threshold.
+     *
+     * Verifies that subdivision threshold enforcement works correctly:
+     * - Entity count below maxEntitiesPerTree * 1.5 should NOT trigger subdivision
+     * - Tree remains a leaf with all entities in parent
+     */
+    @Test
+    void testNoSubdivisionBelowThreshold() {
+        var bridge = new ForestToTumblerBridge();
+        var forestConfig = ForestConfig.defaultConfig();
+
+        // Set high threshold to ensure we stay below it
+        var adaptationConfig = AdaptiveForest.AdaptationConfig.builder()
+            .subdivisionStrategy(AdaptiveForest.AdaptationConfig.SubdivisionStrategy.TETRAHEDRAL)
+            .maxEntitiesPerTree(20) // Threshold = 20 * 1.5 = 30 entities
+            .enableAutoSubdivision(false)
+            .build();
+
+        var idCounter = new AtomicLong(0);
+        var idGenerator = new EntityIDGenerator<LongEntityID>() {
+            @Override
+            public LongEntityID generateID() {
+                return new LongEntityID(idCounter.getAndIncrement());
+            }
+        };
+        var forest = new AdaptiveForest<>(forestConfig, adaptationConfig, idGenerator, "no-subdivision-forest");
+        forest.addEventListener(bridge);
+
+        // 1. Create root tree
+        var spatialIndex = new Octree<>(idGenerator);
+        var rootBounds = new EntityBounds(
+            new Point3f(0.0f, 0.0f, 0.0f),
+            new Point3f(800.0f, 800.0f, 800.0f)
+        );
+        var metadata = TreeMetadata.builder()
+            .name("NoSubdivisionRoot")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .property("initialBounds", new CubicBounds(rootBounds))
+            .build();
+        var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
+        var root = forest.getTree(rootId);
+
+        // 2. Add 10 entities (well below threshold of 30)
+        for (int i = 0; i < 10; i++) {
+            var entityId = idGenerator.generateID();
+            var position = new Point3f(200.0f + i * 50.0f, 200.0f, 200.0f);
+            spatialIndex.insert(entityId, position, (byte) 0, "NoSub " + i);
+            forest.trackEntityInsertion(rootId, entityId, position);
+        }
+
+        // 3. Trigger adaptation check
+        forest.checkAndAdapt();
+
+        // 4. Wait a bit to ensure subdivision would have completed if triggered
+        try {
+            Thread.sleep(500); // Half the normal wait time
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        // 5. Verify NO subdivision occurred
+        assertFalse(root.isSubdivided(), "Root should NOT be subdivided when below threshold");
+        assertTrue(root.isLeaf(), "Root should remain a leaf");
+        assertTrue(root.getChildTreeIds().isEmpty(), "Root should have no children");
+
+        // 6. Verify all entities remain in parent
+        assertEquals(10, spatialIndex.entityCount(), "All 10 entities should remain in parent tree");
+
+        // 7. Verify no server assignment (only occurs during subdivision)
+        assertNull(bridge.getServerAssignment(rootId),
+                  "Root should have no server assignment without subdivision");
 
         // Cleanup
         forest.shutdown();
