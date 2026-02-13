@@ -46,6 +46,9 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class TetrahedralForestE2ETest {
 
+    /** Ghost zone width used in tests requiring ghost boundary detection. */
+    private static final float GHOST_ZONE_WIDTH = 10.0f;
+
     /**
      * Helper method to wait for tree subdivision to complete.
      *
@@ -71,6 +74,46 @@ class TetrahedralForestE2ETest {
         fail(String.format("Tree %s did not subdivide within %dms (waited %dms)",
                           tree.getTreeId(), maxWaitMs, waited));
         return waited; // unreachable
+    }
+
+    /**
+     * Helper method to validate tetrahedral AABB bounds for ghost boundary detection.
+     *
+     * Verifies that:
+     * - AABB can be computed from tetrahedral vertices
+     * - AABB is non-degenerate (positive extents in all dimensions)
+     * - AABB values are valid (no NaN or Infinity)
+     *
+     * @param tetBounds the tetrahedral bounds to validate
+     * @param contextMessage context message for assertion failures
+     */
+    private void assertValidGhostAABB(TetrahedralBounds tetBounds, String contextMessage) {
+        // Verify AABB can be computed (required for ghost boundary detection)
+        var aabb = tetBounds.toAABB();
+        assertNotNull(aabb, contextMessage + ": AABB should be computable for ghost boundary detection");
+
+        // Verify AABB is non-degenerate (positive extents)
+        assertTrue(aabb.getMaxX() > aabb.getMinX(),
+                  contextMessage + ": AABB should have positive X extent");
+        assertTrue(aabb.getMaxY() > aabb.getMinY(),
+                  contextMessage + ": AABB should have positive Y extent");
+        assertTrue(aabb.getMaxZ() > aabb.getMinZ(),
+                  contextMessage + ": AABB should have positive Z extent");
+
+        // Verify AABB is within valid ranges (no NaN or Infinity)
+        assertFalse(Float.isNaN(aabb.getMinX()), contextMessage + ": AABB min X should not be NaN");
+        assertFalse(Float.isNaN(aabb.getMaxX()), contextMessage + ": AABB max X should not be NaN");
+        assertFalse(Float.isNaN(aabb.getMinY()), contextMessage + ": AABB min Y should not be NaN");
+        assertFalse(Float.isNaN(aabb.getMaxY()), contextMessage + ": AABB max Y should not be NaN");
+        assertFalse(Float.isNaN(aabb.getMinZ()), contextMessage + ": AABB min Z should not be NaN");
+        assertFalse(Float.isNaN(aabb.getMaxZ()), contextMessage + ": AABB max Z should not be NaN");
+
+        assertFalse(Float.isInfinite(aabb.getMinX()), contextMessage + ": AABB min X should not be infinite");
+        assertFalse(Float.isInfinite(aabb.getMaxX()), contextMessage + ": AABB max X should not be infinite");
+        assertFalse(Float.isInfinite(aabb.getMinY()), contextMessage + ": AABB min Y should not be infinite");
+        assertFalse(Float.isInfinite(aabb.getMaxY()), contextMessage + ": AABB max Y should not be infinite");
+        assertFalse(Float.isInfinite(aabb.getMinZ()), contextMessage + ": AABB min Z should not be infinite");
+        assertFalse(Float.isInfinite(aabb.getMaxZ()), contextMessage + ": AABB max Z should not be infinite");
     }
 
     /**
@@ -597,7 +640,7 @@ class TetrahedralForestE2ETest {
 
         // Enable ghost zones in forest config
         var forestConfig = ForestConfig.builder()
-            .withGhostZones(10.0f)  // 10-unit ghost zone width
+            .withGhostZones(GHOST_ZONE_WIDTH)
             .build();
 
         var adaptationConfig = AdaptiveForest.AdaptationConfig.builder()
@@ -657,23 +700,15 @@ class TetrahedralForestE2ETest {
 
         // 6. Verify ghost zones are enabled in config
         assertTrue(forestConfig.isGhostZonesEnabled(), "Ghost zones should be enabled");
-        assertEquals(10.0f, forestConfig.getGhostZoneWidth(), 0.001f,
-                    "Ghost zone width should be 10.0");
+        assertEquals(GHOST_ZONE_WIDTH, forestConfig.getGhostZoneWidth(), 0.001f,
+                    "Ghost zone width should match configured value");
 
         // 7. Verify tetrahedral AABB bounds are compatible with ghost boundary detection
         // (Ghost detection uses AABB bounds, not precise tetrahedral containment)
         for (var childId : root.getChildTreeIds()) {
             var child = forest.getTree(childId);
             var tetBounds = (TetrahedralBounds) child.getTreeBounds();
-
-            // Verify AABB can be computed (required for ghost boundary detection)
-            var aabb = tetBounds.toAABB();
-            assertNotNull(aabb, "AABB should be computable for ghost boundary detection");
-
-            // Verify AABB is non-degenerate
-            assertTrue(aabb.getMaxX() > aabb.getMinX(), "AABB should have positive X extent");
-            assertTrue(aabb.getMaxY() > aabb.getMinY(), "AABB should have positive Y extent");
-            assertTrue(aabb.getMaxZ() > aabb.getMinZ(), "AABB should have positive Z extent");
+            assertValidGhostAABB(tetBounds, "Case A child (6-tet subdivision)");
         }
 
         // Cleanup
@@ -910,7 +945,7 @@ class TetrahedralForestE2ETest {
 
         // Enable ghost zones in forest config
         var forestConfig = ForestConfig.builder()
-            .withGhostZones(10.0f)  // 10-unit ghost zone width
+            .withGhostZones(GHOST_ZONE_WIDTH)
             .build();
 
         var adaptationConfig = AdaptiveForest.AdaptationConfig.builder()
@@ -929,6 +964,11 @@ class TetrahedralForestE2ETest {
         var forest = new AdaptiveForest<>(forestConfig, adaptationConfig, idGenerator, "bey-ghost-forest");
         forest.addEventListener(bridge);
 
+        // Verify ghost zones are configured correctly (prerequisite for test)
+        assertTrue(forestConfig.isGhostZonesEnabled(), "Ghost zones should be enabled");
+        assertEquals(GHOST_ZONE_WIDTH, forestConfig.getGhostZoneWidth(), 0.001f,
+                    "Ghost zone width should match configured value");
+
         // 1. Create root tree with cubic bounds
         var spatialIndex = new Octree<>(idGenerator);
         var rootBounds = new EntityBounds(
@@ -944,6 +984,8 @@ class TetrahedralForestE2ETest {
         var root = forest.getTree(rootId);
 
         // 2. Add entities to trigger Case A subdivision (cubic → 6 tets)
+        // Spread entities across X-axis within root bounds (0-400) to trigger subdivision
+        // Position pattern: 100.0 + i*20.0 distributes entities evenly, exceeding threshold
         for (int i = 0; i < 10; i++) {
             var entityId = idGenerator.generateID();
             var position = new Point3f(100.0f + i * 20.0f, 100.0f, 100.0f);
@@ -957,7 +999,8 @@ class TetrahedralForestE2ETest {
 
         // 4. Verify Case A subdivision created 6 tetrahedral children
         assertTrue(root.isSubdivided(), "Root should be subdivided (Case A)");
-        assertEquals(6, root.getChildTreeIds().size(), "Should have 6 tetrahedral children (Case A)");
+        assertEquals(6, root.getChildTreeIds().size(),
+                    "Should have 6 tetrahedral children (S0-S5 subdivision of cube)");
 
         // 5. Pick first child and add entities to trigger Case B subdivision (tet → 8 subtets)
         var firstChildId = root.getChildTreeIds().get(0);
@@ -965,6 +1008,8 @@ class TetrahedralForestE2ETest {
         var childIndex = firstChild.getSpatialIndex();
 
         // Add entities within the first child's bounds to trigger Bey subdivision
+        // Position pattern: 50.0 + i*5.0 concentrates entities in first child's space
+        // This exceeds maxEntitiesPerTree=5 threshold to trigger Bey subdivision
         for (int i = 0; i < 10; i++) {
             var entityId = idGenerator.generateID();
             var position = new Point3f(50.0f + i * 5.0f, 50.0f, 50.0f);
@@ -981,41 +1026,15 @@ class TetrahedralForestE2ETest {
         assertEquals(8, firstChild.getChildTreeIds().size(),
                     "Should have 8 tetrahedral grandchildren (Case B - Bey subdivision)");
 
-        // 8. Verify all 8 grandchildren have tetrahedral bounds (required for ghost AABB)
+        // 8. Verify all 8 grandchildren have tetrahedral bounds and valid ghost AABBs
         for (var grandchildId : firstChild.getChildTreeIds()) {
             var grandchild = forest.getTree(grandchildId);
             assertInstanceOf(TetrahedralBounds.class, grandchild.getTreeBounds(),
                            "Grandchild should have TetrahedralBounds for ghost AABB calculation");
-        }
 
-        // 9. Verify ghost zones are enabled in config
-        assertTrue(forestConfig.isGhostZonesEnabled(), "Ghost zones should be enabled");
-        assertEquals(10.0f, forestConfig.getGhostZoneWidth(), 0.001f,
-                    "Ghost zone width should be 10.0");
-
-        // 10. Verify tetrahedral AABB bounds are compatible with ghost boundary detection
-        // for all 8 Bey-subdivided grandchildren
-        for (var grandchildId : firstChild.getChildTreeIds()) {
-            var grandchild = forest.getTree(grandchildId);
+            // Verify tetrahedral AABB bounds are compatible with ghost boundary detection
             var tetBounds = (TetrahedralBounds) grandchild.getTreeBounds();
-
-            // Verify AABB can be computed (required for ghost boundary detection)
-            var aabb = tetBounds.toAABB();
-            assertNotNull(aabb, "AABB should be computable for Bey grandchild ghost boundary detection");
-
-            // Verify AABB is non-degenerate
-            assertTrue(aabb.getMaxX() > aabb.getMinX(),
-                      "Bey grandchild AABB should have positive X extent");
-            assertTrue(aabb.getMaxY() > aabb.getMinY(),
-                      "Bey grandchild AABB should have positive Y extent");
-            assertTrue(aabb.getMaxZ() > aabb.getMinZ(),
-                      "Bey grandchild AABB should have positive Z extent");
-
-            // Verify AABB is within reasonable bounds (not degenerate to zero or NaN)
-            assertFalse(Float.isNaN(aabb.getMinX()), "AABB min X should not be NaN");
-            assertFalse(Float.isNaN(aabb.getMaxX()), "AABB max X should not be NaN");
-            assertFalse(Float.isInfinite(aabb.getMinX()), "AABB min X should not be infinite");
-            assertFalse(Float.isInfinite(aabb.getMaxX()), "AABB max X should not be infinite");
+            assertValidGhostAABB(tetBounds, "Case B grandchild (8-tet Bey subdivision)");
         }
 
         // Cleanup
