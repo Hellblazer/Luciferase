@@ -44,17 +44,45 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * Compares dual-path tetrahedral subdivision (CUBIC_TO_TET → TET_TO_SUBTET)
  * against octant subdivision for baseline.
  *
- * Run with: mvn test -pl lucien -Dtest=SubdivisionPerformanceBenchmark -Pperformance
- * Disable assertions for accurate measurements: -da
+ * <h3>JVM Warmup Strategy</h3>
+ * Uses light warmup (5 iterations) for representative "typical" performance,
+ * not peak C2-optimized performance. For rigorous JIT analysis, use JMH framework.
+ *
+ * <h3>GC Impact</h3>
+ * Run with: -Xlog:gc* to observe GC impact on measurements.
+ *
+ * <h3>Usage</h3>
+ * Run with: mvn test -pl lucien -Dtest=SubdivisionPerformanceBenchmark -Pperformance -da
+ * Use -da to disable assertions for accurate measurements.
+ * Use -Dperformance.strict=true to fail tests if targets not met.
  *
  * @author hal.hildebrand
  */
 @Disabled("Performance benchmark - enable manually or run with -Pperformance")
 public class SubdivisionPerformanceBenchmark {
 
+    // Benchmark configuration
     private static final int WARMUP_ITERATIONS = 5;
     private static final int MEASUREMENT_ITERATIONS = 20;
     private static final Random RANDOM = new Random(42); // Fixed seed for reproducibility
+
+    // Entity position configuration
+    private static final float MIN_POSITION = 50.0f;
+    private static final float POSITION_RANGE = 900.0f; // Entities distributed in [50, 950]
+
+    // Forest bounds configuration
+    private static final float FOREST_MIN = 0.0f;
+    private static final float FOREST_MAX = 1000.0f;
+
+    // Subdivision wait configuration
+    private static final int MAX_SUBDIVISION_WAIT_MS = 5000;
+    private static final int SUBDIVISION_POLL_INTERVAL_MS = 50;
+
+    // Performance validation (use -Dperformance.strict=true to enable)
+    private static final boolean STRICT_MODE = Boolean.getBoolean("performance.strict");
+    private static final double TARGET_SUBDIVISION_MS = 10.0;
+    private static final double TARGET_REDISTRIBUTION_MS_PER_1000 = 5.0;
+    private static final double TARGET_TRAVERSAL_MS = 1.0;
 
     private EntityIDGenerator<LongEntityID> idGenerator;
     private List<Point3f> testPositions;
@@ -83,6 +111,7 @@ public class SubdivisionPerformanceBenchmark {
         System.out.println("Target: <10ms per operation\n");
 
         int[] entityCounts = {10, 20, 50, 100};
+        boolean anyFailures = false;
 
         for (int entityCount : entityCounts) {
             // Test CUBIC_TO_TET (cubic → 6 tets)
@@ -94,19 +123,28 @@ public class SubdivisionPerformanceBenchmark {
             // Test OCTANT for baseline
             long octantTime = measureOctantSubdivision(entityCount);
 
+            double tetMs = tetSubdivisionTime / 1_000_000.0;
+            double tetCascadeMs = tetCascadeTime / 1_000_000.0;
+
             System.out.printf("Entities: %d%n", entityCount);
             System.out.printf("  Tetrahedral (cubic→6 tets):  %6.2f ms %s%n",
-                tetSubdivisionTime / 1_000_000.0,
-                tetSubdivisionTime / 1_000_000.0 < 10.0 ? "✓" : "✗ (exceeds target)");
+                tetMs, tetMs < TARGET_SUBDIVISION_MS ? "✓" : "✗ (exceeds target)");
             System.out.printf("  Tetrahedral (cascade):        %6.2f ms %s%n",
-                tetCascadeTime / 1_000_000.0,
-                tetCascadeTime / 1_000_000.0 < 10.0 ? "✓" : "✗ (exceeds target)");
+                tetCascadeMs, tetCascadeMs < TARGET_SUBDIVISION_MS ? "✓" : "✗ (exceeds target)");
             System.out.printf("  Octant (baseline):            %6.2f ms%n",
                 octantTime / 1_000_000.0);
             System.out.printf("  Speedup vs Octant:            %.2fx (cubic→6), %.2fx (cascade)%n",
                 (double) octantTime / tetSubdivisionTime,
                 (double) octantTime / tetCascadeTime);
             System.out.println();
+
+            if (tetMs >= TARGET_SUBDIVISION_MS || tetCascadeMs >= TARGET_SUBDIVISION_MS) {
+                anyFailures = true;
+            }
+        }
+
+        if (STRICT_MODE && anyFailures) {
+            throw new AssertionError("Subdivision performance targets not met (see output above)");
         }
     }
 
@@ -120,6 +158,7 @@ public class SubdivisionPerformanceBenchmark {
         System.out.println("Target: <5ms per 1000 entities\n");
 
         int[] entityCounts = {100, 500, 1000, 2000, 5000};
+        boolean anyFailures = false;
 
         for (int entityCount : entityCounts) {
             long tetRedistTime = measureTetrahedralRedistribution(entityCount);
@@ -132,13 +171,21 @@ public class SubdivisionPerformanceBenchmark {
             System.out.printf("  Tetrahedral: %6.2f ms total, %6.2f ms/1000 entities %s%n",
                 tetRedistTime / 1_000_000.0,
                 tetTimePerThousand,
-                tetTimePerThousand < 5.0 ? "✓" : "✗ (exceeds target)");
+                tetTimePerThousand < TARGET_REDISTRIBUTION_MS_PER_1000 ? "✓" : "✗ (exceeds target)");
             System.out.printf("  Octant:      %6.2f ms total, %6.2f ms/1000 entities%n",
                 octantRedistTime / 1_000_000.0,
                 octantTimePerThousand);
             System.out.printf("  Speedup vs Octant: %.2fx%n",
                 (double) octantRedistTime / tetRedistTime);
             System.out.println();
+
+            if (tetTimePerThousand >= TARGET_REDISTRIBUTION_MS_PER_1000) {
+                anyFailures = true;
+            }
+        }
+
+        if (STRICT_MODE && anyFailures) {
+            throw new AssertionError("Redistribution performance targets not met (see output above)");
         }
     }
 
@@ -153,21 +200,104 @@ public class SubdivisionPerformanceBenchmark {
 
         // Test different hierarchy depths
         int[] depths = {1, 2, 3}; // levels deep
+        boolean anyFailures = false;
 
         for (int depth : depths) {
             long tetTraversalTime = measureTetrahedralTraversal(depth);
             long octantTraversalTime = measureOctantTraversal(depth);
 
+            double tetMs = tetTraversalTime / 1_000_000.0;
+
             System.out.printf("Hierarchy depth: %d levels%n", depth);
             System.out.printf("  Tetrahedral: %6.3f ms per path %s%n",
-                tetTraversalTime / 1_000_000.0,
-                tetTraversalTime / 1_000_000.0 < 1.0 ? "✓" : "✗ (exceeds target)");
+                tetMs, tetMs < TARGET_TRAVERSAL_MS ? "✓" : "✗ (exceeds target)");
             System.out.printf("  Octant:      %6.3f ms per path%n",
                 octantTraversalTime / 1_000_000.0);
             System.out.printf("  Speedup vs Octant: %.2fx%n",
                 (double) octantTraversalTime / tetTraversalTime);
             System.out.println();
+
+            if (tetMs >= TARGET_TRAVERSAL_MS) {
+                anyFailures = true;
+            }
         }
+
+        if (STRICT_MODE && anyFailures) {
+            throw new AssertionError("Traversal performance targets not met (see output above)");
+        }
+    }
+
+    /**
+     * Benchmark memory usage comparison.
+     * Measures heap memory consumption for tetrahedral vs octant forests.
+     */
+    @Test
+    void benchmarkMemoryUsage() {
+        System.out.println("\n=== Memory Usage Comparison ===");
+        System.out.println("Note: Run with sufficient warmup for accurate GC-stabilized measurements\n");
+
+        int[] entityCounts = {100, 500, 1000};
+
+        for (int entityCount : entityCounts) {
+            // Measure tetrahedral memory
+            System.gc();
+            try {
+                Thread.sleep(100); // Allow GC to settle
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            Runtime runtime = Runtime.getRuntime();
+            long tetBeforeMem = runtime.totalMemory() - runtime.freeMemory();
+
+            var tetForest = createAndSubdivideTetrahedralForest(entityCount, false);
+
+            System.gc();
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            long tetAfterMem = runtime.totalMemory() - runtime.freeMemory();
+            long tetMemUsed = tetAfterMem - tetBeforeMem;
+
+            tetForest.shutdown();
+
+            // Measure octant memory
+            System.gc();
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            long octBeforeMem = runtime.totalMemory() - runtime.freeMemory();
+
+            var octForest = createAndSubdivideOctantForest(entityCount);
+
+            System.gc();
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            long octAfterMem = runtime.totalMemory() - runtime.freeMemory();
+            long octMemUsed = octAfterMem - octBeforeMem;
+
+            octForest.shutdown();
+
+            System.out.printf("Entities: %d%n", entityCount);
+            System.out.printf("  Tetrahedral: %6.2f KB%n", tetMemUsed / 1024.0);
+            System.out.printf("  Octant:      %6.2f KB%n", octMemUsed / 1024.0);
+            System.out.printf("  Ratio (Tet/Oct): %.2fx%n",
+                tetMemUsed > 0 ? (double) tetMemUsed / octMemUsed : 0.0);
+            System.out.println();
+        }
+
+        System.out.println("Note: Memory measurements are approximate due to GC behavior.");
+        System.out.println("      For precise profiling, use a dedicated memory profiler.");
     }
 
     /**
@@ -229,6 +359,9 @@ public class SubdivisionPerformanceBenchmark {
             System.out.println("\n✓ ALL PERFORMANCE TARGETS MET");
         } else {
             System.out.println("\n✗ Some performance targets not met - see above for details");
+            if (STRICT_MODE) {
+                throw new AssertionError("Comprehensive benchmark performance targets not met");
+            }
         }
     }
 
@@ -429,8 +562,8 @@ public class SubdivisionPerformanceBenchmark {
     private TreeNode<?, ?, ?> populateForest(AdaptiveForest<MortonKey, LongEntityID, String> forest, int entityCount) {
         var spatialIndex = new Octree<>(idGenerator);
         var rootBounds = new EntityBounds(
-            new Point3f(0.0f, 0.0f, 0.0f),
-            new Point3f(1000.0f, 1000.0f, 1000.0f)
+            new Point3f(FOREST_MIN, FOREST_MIN, FOREST_MIN),
+            new Point3f(FOREST_MAX, FOREST_MAX, FOREST_MAX)
         );
         var metadata = TreeMetadata.builder()
             .name("PerfRoot")
@@ -443,9 +576,9 @@ public class SubdivisionPerformanceBenchmark {
         for (int i = 0; i < entityCount; i++) {
             var entityId = idGenerator.generateID();
             var position = new Point3f(
-                RANDOM.nextFloat() * 900.0f + 50.0f,
-                RANDOM.nextFloat() * 900.0f + 50.0f,
-                RANDOM.nextFloat() * 900.0f + 50.0f
+                RANDOM.nextFloat() * POSITION_RANGE + MIN_POSITION,
+                RANDOM.nextFloat() * POSITION_RANGE + MIN_POSITION,
+                RANDOM.nextFloat() * POSITION_RANGE + MIN_POSITION
             );
             spatialIndex.insert(entityId, position, (byte) 0, "Entity-" + i);
             forest.trackEntityInsertion(rootId, entityId, position);
@@ -523,13 +656,8 @@ public class SubdivisionPerformanceBenchmark {
             }
 
             forest.checkAndAdapt();
-            Thread.yield(); // Give adaptation thread time to work
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
+            // Wait for subdivisions at this level to complete (polling-based, not sleep-based)
+            waitForLevelSubdivision(forest, level, MAX_SUBDIVISION_WAIT_MS);
         }
 
         return forest;
@@ -562,30 +690,81 @@ public class SubdivisionPerformanceBenchmark {
             }
 
             forest.checkAndAdapt();
-            Thread.yield();
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
+            // Wait for subdivisions at this level to complete (polling-based, not sleep-based)
+            waitForLevelSubdivision(forest, level, MAX_SUBDIVISION_WAIT_MS);
         }
 
         return forest;
     }
 
+    /**
+     * Wait for tree subdivision to complete with polling.
+     *
+     * @param tree tree to wait for
+     * @param maxWaitMs maximum wait time in milliseconds
+     * @throws IllegalStateException if subdivision doesn't complete within timeout (in strict mode)
+     */
     private void waitForSubdivision(TreeNode<?, ?, ?> tree, int maxWaitMs) {
         int waited = 0;
         while (waited < maxWaitMs) {
             try {
-                Thread.sleep(50);
-                waited += 50;
+                Thread.sleep(SUBDIVISION_POLL_INTERVAL_MS);
+                waited += SUBDIVISION_POLL_INTERVAL_MS;
                 if (tree.isSubdivided()) {
                     return;
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                break;
+                System.err.println("WARNING: Subdivision wait interrupted after " + waited + "ms");
+                return;
+            }
+        }
+
+        // Subdivision did not complete within timeout
+        String warning = String.format(
+            "WARNING: Tree %s subdivision did not complete within %dms (waited %dms). " +
+            "This may invalidate benchmark results.",
+            tree.getTreeId(), maxWaitMs, waited
+        );
+        System.err.println(warning);
+
+        if (STRICT_MODE) {
+            throw new IllegalStateException(warning);
+        }
+    }
+
+    /**
+     * Wait for multiple trees at a given level to subdivide.
+     * Uses polling with timeout to avoid imprecise sleep-based waiting.
+     *
+     * @param forest forest containing trees
+     * @param level hierarchy level to check
+     * @param maxWaitMs maximum wait time in milliseconds
+     */
+    private void waitForLevelSubdivision(AdaptiveForest<MortonKey, LongEntityID, String> forest,
+                                          int level, int maxWaitMs) {
+        int waited = 0;
+        while (waited < maxWaitMs) {
+            var treesAtLevel = forest.getTreesAtLevel(level);
+            boolean allSubdivided = true;
+
+            for (var tree : treesAtLevel) {
+                if (!tree.isSubdivided() && tree.getSpatialIndex().entityCount() > 10) {
+                    allSubdivided = false;
+                    break;
+                }
+            }
+
+            if (allSubdivided) {
+                return;
+            }
+
+            try {
+                Thread.sleep(SUBDIVISION_POLL_INTERVAL_MS);
+                waited += SUBDIVISION_POLL_INTERVAL_MS;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
             }
         }
     }
