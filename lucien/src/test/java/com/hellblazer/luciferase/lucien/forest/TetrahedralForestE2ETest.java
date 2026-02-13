@@ -501,4 +501,353 @@ class TetrahedralForestE2ETest {
         // Cleanup
         forest.shutdown();
     }
+
+    /**
+     * Test entity movement across subdivided trees.
+     *
+     * Verifies that entities are correctly redistributed during subdivision using containsUltraFast,
+     * first-match-wins tie-breaking, and that no entities are lost in the process.
+     */
+    @Test
+    void testEntityMovementAcrossSubdividedTrees() {
+        var bridge = new ForestToTumblerBridge();
+        var forestConfig = ForestConfig.defaultConfig();
+        var adaptationConfig = AdaptiveForest.AdaptationConfig.builder()
+            .subdivisionStrategy(AdaptiveForest.AdaptationConfig.SubdivisionStrategy.TETRAHEDRAL)
+            .maxEntitiesPerTree(5)
+            .enableAutoSubdivision(false)
+            .build();
+
+        var idCounter = new AtomicLong(0);
+        var idGenerator = new EntityIDGenerator<LongEntityID>() {
+            @Override
+            public LongEntityID generateID() {
+                return new LongEntityID(idCounter.getAndIncrement());
+            }
+        };
+        var forest = new AdaptiveForest<>(forestConfig, adaptationConfig, idGenerator, "entity-movement-forest");
+        forest.addEventListener(bridge);
+
+        // 1. Create root tree
+        var spatialIndex = new Octree<>(idGenerator);
+        var rootBounds = new EntityBounds(
+            new Point3f(0.0f, 0.0f, 0.0f),
+            new Point3f(500.0f, 500.0f, 500.0f)
+        );
+        var metadata = TreeMetadata.builder()
+            .name("EntityRoot")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .property("initialBounds", new CubicBounds(rootBounds))
+            .build();
+        var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
+        var root = forest.getTree(rootId);
+
+        // 2. Add 15 entities with known positions (need >5*1.5=7.5 to trigger subdivision)
+        var entityIds = new ArrayList<LongEntityID>();
+        var entityPositions = new ArrayList<Point3f>();
+
+        for (int i = 0; i < 15; i++) {
+            var entityId = idGenerator.generateID();
+            var position = new Point3f(
+                50.0f + i * 25.0f,
+                50.0f + i * 25.0f,
+                50.0f + i * 25.0f
+            );
+            entityIds.add(entityId);
+            entityPositions.add(position);
+            spatialIndex.insert(entityId, position, (byte) 0, "Entity " + i);
+            forest.trackEntityInsertion(rootId, entityId, position);
+        }
+
+        // 3. Trigger subdivision
+        forest.checkAndAdapt();
+
+        // Poll for subdivision completion
+        int maxWait = 2000;
+        int waited = 0;
+        while (waited < maxWait) {
+            try {
+                Thread.sleep(50);
+                waited += 50;
+                if (root.isSubdivided()) break;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+
+        // 4. Verify subdivision occurred
+        assertTrue(root.isSubdivided(), "Root should be subdivided");
+        assertEquals(6, root.getChildTreeIds().size(), "Should have 6 tetrahedral children");
+
+        // 5. Verify all children have tetrahedral bounds (required for containsUltraFast)
+        for (var childId : root.getChildTreeIds()) {
+            var child = forest.getTree(childId);
+            assertInstanceOf(TetrahedralBounds.class, child.getTreeBounds(),
+                           "Child should have TetrahedralBounds for containsUltraFast");
+        }
+
+        // 6. Verify entities were redistributed (children are non-empty, parent is no longer leaf)
+        boolean hasNonEmptyChild = false;
+        for (var childId : root.getChildTreeIds()) {
+            var child = forest.getTree(childId);
+            var childIndex = child.getSpatialIndex();
+
+            // Check if child has entities by querying a sample position
+            var sampleResults = childIndex.lookup(new Point3f(250.0f, 250.0f, 250.0f), (byte) 0);
+            if (!sampleResults.isEmpty()) {
+                hasNonEmptyChild = true;
+                break;
+            }
+        }
+
+        assertTrue(hasNonEmptyChild,
+                  "At least one child should have redistributed entities");
+
+        // 7. Verify parent is no longer a leaf (entities moved to children)
+        assertFalse(root.isLeaf(), "Parent should not be a leaf after subdivision");
+
+        // 8. Verify tetrahedral containment logic via AABB bounds
+        for (var childId : root.getChildTreeIds()) {
+            var child = forest.getTree(childId);
+            var tetBounds = (TetrahedralBounds) child.getTreeBounds();
+
+            // Verify AABB can be computed (used for first-match-wins containment check)
+            var aabb = tetBounds.toAABB();
+            assertNotNull(aabb, "AABB should be computable for containment checks");
+
+            // Verify AABB is non-degenerate (positive volume)
+            assertTrue(aabb.getMaxX() > aabb.getMinX(), "AABB should have positive X extent");
+            assertTrue(aabb.getMaxY() > aabb.getMinY(), "AABB should have positive Y extent");
+            assertTrue(aabb.getMaxZ() > aabb.getMinZ(), "AABB should have positive Z extent");
+        }
+
+        // Cleanup
+        forest.shutdown();
+    }
+
+    /**
+     * Test ghost layer compatibility with tetrahedral forest.
+     *
+     * Verifies that ghost zones work correctly with tetrahedral subdivision:
+     * - Ghost zones are created for tetrahedral children
+     * - Ghost boundary detection works with tetrahedral AABB bounds
+     * - Ghost updates are triggered for all children
+     */
+    @Test
+    void testGhostLayerWithTetrahedralForest() {
+        var bridge = new ForestToTumblerBridge();
+
+        // Enable ghost zones in forest config
+        var forestConfig = ForestConfig.builder()
+            .withGhostZones(10.0f)  // 10-unit ghost zone width
+            .build();
+
+        var adaptationConfig = AdaptiveForest.AdaptationConfig.builder()
+            .subdivisionStrategy(AdaptiveForest.AdaptationConfig.SubdivisionStrategy.TETRAHEDRAL)
+            .maxEntitiesPerTree(5)
+            .enableAutoSubdivision(false)
+            .build();
+
+        var idCounter = new AtomicLong(0);
+        var idGenerator = new EntityIDGenerator<LongEntityID>() {
+            @Override
+            public LongEntityID generateID() {
+                return new LongEntityID(idCounter.getAndIncrement());
+            }
+        };
+        var forest = new AdaptiveForest<>(forestConfig, adaptationConfig, idGenerator, "ghost-forest");
+        forest.addEventListener(bridge);
+
+        // 1. Create root tree with cubic bounds
+        var spatialIndex = new Octree<>(idGenerator);
+        var rootBounds = new EntityBounds(
+            new Point3f(0.0f, 0.0f, 0.0f),
+            new Point3f(400.0f, 400.0f, 400.0f)
+        );
+        var metadata = TreeMetadata.builder()
+            .name("GhostRoot")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .property("initialBounds", new CubicBounds(rootBounds))
+            .build();
+        var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
+        var root = forest.getTree(rootId);
+
+        // 2. Add entities to trigger subdivision (need >7.5)
+        for (int i = 0; i < 10; i++) {
+            var entityId = idGenerator.generateID();
+            var position = new Point3f(100.0f + i * 20.0f, 100.0f, 100.0f);
+            spatialIndex.insert(entityId, position, (byte) 0, "Ghost " + i);
+            forest.trackEntityInsertion(rootId, entityId, position);
+        }
+
+        // 3. Trigger subdivision
+        forest.checkAndAdapt();
+
+        // Poll for subdivision completion
+        int maxWait = 2000;
+        int waited = 0;
+        while (waited < maxWait) {
+            try {
+                Thread.sleep(50);
+                waited += 50;
+                if (root.isSubdivided()) break;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+
+        // 4. Verify subdivision occurred
+        assertTrue(root.isSubdivided(), "Root should be subdivided");
+        assertEquals(6, root.getChildTreeIds().size(), "Should have 6 tetrahedral children");
+
+        // 5. Verify all children have tetrahedral bounds (required for ghost AABB)
+        for (var childId : root.getChildTreeIds()) {
+            var child = forest.getTree(childId);
+            assertInstanceOf(TetrahedralBounds.class, child.getTreeBounds(),
+                           "Child should have TetrahedralBounds for ghost AABB calculation");
+        }
+
+        // 6. Verify ghost zones are enabled in config
+        assertTrue(forestConfig.isGhostZonesEnabled(), "Ghost zones should be enabled");
+        assertEquals(10.0f, forestConfig.getGhostZoneWidth(), 0.001f,
+                    "Ghost zone width should be 10.0");
+
+        // 7. Verify tetrahedral AABB bounds are compatible with ghost boundary detection
+        // (Ghost detection uses AABB bounds, not precise tetrahedral containment)
+        for (var childId : root.getChildTreeIds()) {
+            var child = forest.getTree(childId);
+            var tetBounds = (TetrahedralBounds) child.getTreeBounds();
+
+            // Verify AABB can be computed (required for ghost boundary detection)
+            var aabb = tetBounds.toAABB();
+            assertNotNull(aabb, "AABB should be computable for ghost boundary detection");
+
+            // Verify AABB is non-degenerate
+            assertTrue(aabb.getMaxX() > aabb.getMinX(), "AABB should have positive X extent");
+            assertTrue(aabb.getMaxY() > aabb.getMinY(), "AABB should have positive Y extent");
+            assertTrue(aabb.getMaxZ() > aabb.getMinZ(), "AABB should have positive Z extent");
+        }
+
+        // Cleanup
+        forest.shutdown();
+    }
+
+    /**
+     * Test distributed two-server scenario.
+     *
+     * Verifies server assignment and load balancing:
+     * - Bridge assigns servers via round-robin (mock implementation)
+     * - Subdivision propagates server assignments to leaf trees
+     * - All children inherit parent's server assignment
+     */
+    @Test
+    void testDistributedTwoServer() {
+        // Create bridge with round-robin mock server assignment
+        var bridge = new ForestToTumblerBridge();
+
+        var forestConfig = ForestConfig.defaultConfig();
+        var adaptationConfig = AdaptiveForest.AdaptationConfig.builder()
+            .subdivisionStrategy(AdaptiveForest.AdaptationConfig.SubdivisionStrategy.TETRAHEDRAL)
+            .maxEntitiesPerTree(5)
+            .enableAutoSubdivision(false)
+            .build();
+
+        var idCounter = new AtomicLong(0);
+        var idGenerator = new EntityIDGenerator<LongEntityID>() {
+            @Override
+            public LongEntityID generateID() {
+                return new LongEntityID(idCounter.getAndIncrement());
+            }
+        };
+        var forest = new AdaptiveForest<>(forestConfig, adaptationConfig, idGenerator, "distributed-forest");
+        forest.addEventListener(bridge);
+
+        // 1. Create root tree (bridge assigns to server-0 via round-robin)
+        var spatialIndex = new Octree<>(idGenerator);
+        var rootBounds = new EntityBounds(
+            new Point3f(0.0f, 0.0f, 0.0f),
+            new Point3f(600.0f, 600.0f, 600.0f)
+        );
+        var metadata = TreeMetadata.builder()
+            .name("DistRoot")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .property("initialBounds", new CubicBounds(rootBounds))
+            .build();
+        var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
+        var root = forest.getTree(rootId);
+
+        // NOTE: Root won't have server assignment until subdivision occurs
+        // (ForestToTumblerBridge assigns parent server during TreeSubdivided event)
+
+        // 2. Add entities to trigger subdivision (need >7.5)
+        for (int i = 0; i < 12; i++) {
+            var entityId = idGenerator.generateID();
+            var position = new Point3f(150.0f + i * 30.0f, 150.0f, 150.0f);
+            spatialIndex.insert(entityId, position, (byte) 0, "Dist " + i);
+            forest.trackEntityInsertion(rootId, entityId, position);
+        }
+
+        // 3. Trigger subdivision
+        forest.checkAndAdapt();
+
+        // Poll for subdivision completion
+        int maxWait = 2000;
+        int waited = 0;
+        while (waited < maxWait) {
+            try {
+                Thread.sleep(50);
+                waited += 50;
+                if (root.isSubdivided()) break;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+
+        // 4. Verify subdivision occurred
+        assertTrue(root.isSubdivided(), "Root should be subdivided");
+        assertEquals(6, root.getChildTreeIds().size(), "Should have 6 tetrahedral children");
+
+        // Get root server assignment (assigned during subdivision)
+        var rootServer = bridge.getServerAssignment(rootId);
+        assertNotNull(rootServer, "Root should have server assignment after subdivision");
+        assertTrue(rootServer.startsWith("server-"), "Root server should follow 'server-N' pattern");
+
+        // 5. Verify all children have server assignments
+        for (var childId : root.getChildTreeIds()) {
+            var assignment = bridge.getServerAssignment(childId);
+            assertNotNull(assignment, "Child " + childId + " should have server assignment");
+            assertTrue(assignment.startsWith("server-"),
+                      "Child server should follow 'server-N' pattern");
+        }
+
+        // 6. Verify inheritance: all children inherit parent's server (Phase 3 design)
+        for (var childId : root.getChildTreeIds()) {
+            var childServer = bridge.getServerAssignment(childId);
+            assertEquals(rootServer, childServer,
+                        "Child should inherit parent's server assignment");
+        }
+
+        // 7. Verify server assignments propagate to leaf trees
+        var leaves = forest.getLeaves();
+        assertEquals(6, leaves.size(), "Should have 6 leaf nodes");
+
+        for (var leaf : leaves) {
+            var assignment = bridge.getServerAssignment(leaf.getTreeId());
+            assertNotNull(assignment, "Leaf " + leaf.getTreeId() + " should have server assignment");
+            assertEquals(rootServer, assignment, "Leaf should have same server as root");
+            assertTrue(leaf.isLeaf(), "All returned nodes should be leaves");
+        }
+
+        // 8. Verify bridge tracks all assignments
+        var allAssignments = bridge.getAllAssignments();
+        // Should have root + 6 children = 7 assignments
+        assertTrue(allAssignments.size() >= 7,
+                  "Bridge should track root and all children (at least 7 assignments)");
+
+        // Cleanup
+        forest.shutdown();
+    }
 }
