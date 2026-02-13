@@ -382,6 +382,9 @@ class MultiBubbleSimulationGhostSyncTest {
 
         simulation.stop();
 
+        // Wait for simulation to fully stop before assertions
+        waitForStop(simulation, 1000);
+
         var allEntities = simulation.getAllEntities();
         var realEntities = simulation.getRealEntities();
 
