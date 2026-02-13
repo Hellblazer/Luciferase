@@ -50,7 +50,7 @@ Luciferase simulation module implements massively distributed 3D animation using
                         │
 ┌─────────────────────────────────────────────────────┐
 │         VON Coordination Layer                      │
-│  (MoveProtocol, VONDiscoveryProtocol, AOI)         │
+│  (MoveProtocol, GhostSyncVONIntegration, AOI)      │
 └─────────────────────────────────────────────────────┘
                         │
 ┌─────────────────────────────────────────────────────┐
@@ -91,7 +91,7 @@ Luciferase simulation module implements massively distributed 3D animation using
 | **Bubble** | VON-enabled mobile bubble with P2P transport | `von/Bubble.java` |
 | **Manager** | Bubble lifecycle coordination (JOIN/MOVE/LEAVE) | `von/Manager.java` |
 | **MoveProtocol** | AOI-based neighbor management with k-NN discovery | `von/MoveProtocol.java` |
-| **VONDiscoveryProtocol** | Spatial neighbor queries and boundary detection | `von/VONDiscoveryProtocol.java` |
+| **GhostSyncVONIntegration** | VON-Ghost coordination and neighbor discovery | `ghost/GhostSyncVONIntegration.java` |
 | **ViewCommitteeConsensus** | Byzantine consensus for entity migrations | `consensus/committee/` |
 | **CrossProcessMigration** | 2PC entity migration with PrimeMover @Entity | `distributed/migration/` |
 | **GhostStateManager** | Ghost lifecycle with dead reckoning | `ghost/GhostStateManager.java` |
@@ -754,6 +754,51 @@ public void sendToNeighbor(UUID neighborId, Message message) {
 - Registry lookup for neighbor resolution
 - Extensible to network transport (gRPC)
 
+### LocalServerTransport.Registry Detailed Role
+
+**Purpose**: Central registry for in-process P2P transport between bubbles.
+
+**Core Responsibilities**:
+1. **Bubble Registration**: Maps UUID → LocalServerTransport for each active bubble
+2. **Transport Lifecycle**: Creates transport instances with shared executor service
+3. **Message Routing**: Enables neighbor lookup for direct message delivery
+4. **Resource Management**: Coordinates shutdown of all transports on cleanup
+
+**Architecture Pattern**: Service Locator with dependency injection.
+
+**Lifecycle**:
+```java
+// 1. Create shared registry
+var registry = LocalServerTransport.Registry.create();
+
+// 2. Register bubbles (called by Manager)
+var transport1 = registry.register(bubbleId1);
+var transport2 = registry.register(bubbleId2);
+
+// 3. Bubbles communicate via registry lookup
+transport1.sendToNeighbor(bubbleId2, message);  // Registry resolves bubbleId2 → transport2
+
+// 4. Unregister on shutdown
+registry.unregister(bubbleId1);
+```
+
+**Thread Safety**:
+- Uses `ConcurrentHashMap<UUID, LocalServerTransport>` for concurrent registration/lookup
+- Thread-safe operations: `register()`, `unregister()`, `lookup()`
+- No external synchronization required
+
+**Testing Benefits**:
+- Zero network overhead (in-memory message passing)
+- Deterministic delivery order with per-destination executors
+- Failure injection support (partition, delay, exception)
+- Supports multi-bubble integration tests (TestClusterBuilder pattern)
+
+**Production Replacement**:
+- Registry pattern unchanged in distributed deployment
+- LocalServerTransport → gRPC-based SocketTransport
+- UUID lookup → Fireflies membership + gRPC connection pool
+- Same Transport interface, different implementation
+
 ### Message Protocol
 
 **Message Types** (Java records):
@@ -897,6 +942,183 @@ var msg = new MoveNotification(id, pos, bounds, 0);  // timestamp from testClock
 | `K_NN` | 10 | k-nearest neighbors for discovery |
 | `JOIN_RETRY_MAX` | 5 | Max JOIN retry attempts |
 
+### Troubleshooting Guide: Common Migration Failures
+
+**Problem**: Migration timeout (exceeds 300ms total)
+
+**Symptoms**:
+- `MigrationResult.TIMEOUT` returned
+- Logs show "Migration exceeded total timeout" warnings
+- Entity stuck in limbo (neither source nor destination)
+
+**Diagnosis**:
+```java
+// Check migration metrics
+var metrics = migration.getMetrics();
+log.info("Phase breakdown: PREPARE={}ms, COMMIT={}ms, ABORT={}ms",
+         metrics.avgPrepareLatency(), metrics.avgCommitLatency(), metrics.avgAbortLatency());
+```
+
+**Causes**:
+1. Network latency spike (check P99 transport latency)
+2. Lock contention (concurrent migrations of nearby entities)
+3. Source/destination bubble overloaded (check CPU and entity count)
+4. Byzantine consensus slow (check Fireflies view stability)
+
+**Solutions**:
+- Increase `TOTAL_TIMEOUT_MS` from 300ms to 500ms
+- Reduce concurrent migration parallelism (lower thread pool)
+- Increase per-phase timeout (`PHASE_TIMEOUT_MS` from 100ms to 150ms)
+- Profile hotspots with JFR (Java Flight Recorder)
+
+---
+
+**Problem**: Migration PREPARE phase failure
+
+**Symptoms**:
+- Entity not removed from source bubble
+- Migration aborts with "PREPARE_FAILED" reason
+- Source bubble still owns entity after migration attempt
+
+**Diagnosis**:
+```java
+// Check entity existence in source
+if (!source.containsEntity(entityId)) {
+    log.error("Entity {} not found in source bubble", entityId);
+}
+```
+
+**Causes**:
+1. Entity already migrated (idempotency failure)
+2. Concurrent migration of same entity (lock timeout)
+3. Entity removed by application before migration
+4. Source bubble crashed during PREPARE
+
+**Solutions**:
+- Check idempotency store (30s expiration, may need tuning)
+- Increase per-entity lock timeout (50ms default)
+- Add application-level migration coordination
+- Enable comprehensive logging (`log.debug` → `log.trace`)
+
+---
+
+**Problem**: Migration COMMIT phase failure (entity duplication risk)
+
+**Symptoms**:
+- Entity removed from source but not added to destination
+- Migration enters ABORT phase for rollback
+- Logs show "COMMIT_FAILED" with rollback attempt
+
+**Diagnosis**:
+```java
+// Check destination capacity
+if (dest.getEntityCount() >= dest.getCapacity()) {
+    log.error("Destination bubble {} at capacity", dest.id());
+}
+```
+
+**Causes**:
+1. Destination bubble at capacity (entity limit reached)
+2. Destination crashed between PREPARE and COMMIT
+3. Network partition (destination unreachable)
+4. Byzantine validation failure (invalid entity state)
+
+**Solutions**:
+- Increase destination capacity or spawn new bubble
+- Retry migration to different destination
+- Check network health (partition detection)
+- Validate entity state before migration proposal
+
+---
+
+**Problem**: ABORT rollback failure (orphaned entity)
+
+**Symptoms**:
+- Entity not in source OR destination
+- Log shows "ABORT/Rollback FAILED - CRITICAL"
+- `MigrationMetrics.orphanedEntities` count increases
+
+**Diagnosis**:
+```java
+// Check orphaned entity tracking
+var orphans = metrics.getOrphanedEntities();
+log.critical("Orphaned entities requiring manual recovery: {}", orphans);
+```
+
+**Causes**:
+1. Source bubble crashed during ABORT
+2. Network partition prevents rollback
+3. Source storage corruption
+4. Concurrent entity deletion
+
+**Solutions**:
+- **Immediate**: Log orphaned entity ID for manual recovery
+- **Short-term**: Spawn entity in fallback bubble with logged state
+- **Long-term**: Implement automated orphan reconciliation
+- **Prevention**: Increase ABORT timeout, enable transaction logging
+
+---
+
+**Problem**: Byzantine consensus rejection (migration never executes)
+
+**Symptoms**:
+- Consensus returns `false` (not approved)
+- Migration never reaches 2PC phases
+- Logs show "Consensus rejected proposal"
+
+**Diagnosis**:
+```java
+// Check view ID mismatch
+if (!proposal.viewId().equals(currentViewId)) {
+    log.warn("Proposal stale: proposalView={}, currentView={}",
+             proposal.viewId(), currentViewId);
+}
+```
+
+**Causes**:
+1. Fireflies view changed during proposal (most common)
+2. Insufficient quorum (Byzantine failures in committee)
+3. Invalid proposal (validation checks failed)
+4. Concurrent conflicting migration proposals
+
+**Solutions**:
+- Retry with new view ID (automatic in most cases)
+- Wait for view stability before retrying (monitor `viewMonitor`)
+- Check Fireflies health (gossip frequency, failure detector)
+- Add application-level conflict resolution
+
+---
+
+**Problem**: High migration latency (>500ms P95)
+
+**Symptoms**:
+- Migrations succeed but take excessive time
+- Animation stuttering or frame drops
+- Entity positions stale across bubbles
+
+**Diagnosis**:
+```java
+// Profile migration phases
+var p95 = metrics.getP95Latency();
+if (p95 > 500) {
+    log.warn("Migration P95 latency {}ms exceeds target 300ms", p95);
+}
+```
+
+**Causes**:
+1. Consensus overhead (committee size too large)
+2. Network round-trip latency (geographic distribution)
+3. Lock contention (too many concurrent migrations)
+4. GC pauses during migration
+
+**Solutions**:
+- Reduce Byzantine tolerance (smaller committees, lower t)
+- Use regional clusters (reduce network latency)
+- Implement migration backpressure (rate limiting)
+- Tune JVM GC (reduce pause times)
+
+---
+
 ### Tuning Guidelines
 
 **Low Latency** (< 100ms target):
@@ -913,6 +1135,130 @@ var msg = new MoveNotification(id, pos, bounds, 0);  // timestamp from testClock
 - Increase Byzantine tolerance (larger committees)
 - Reduce GHOST_TTL_MS to 300ms (faster staleness detection)
 - Enable comprehensive metrics tracking
+
+---
+
+## Deployment Scenario Example
+
+### 3-Bubble Distributed Cluster
+
+**Scenario**: Distribute 10,000 entities across 3 bubbles with spatial locality.
+
+**Initial Setup**:
+```
+Bubble A: Position (0, 0, 0), Bounds [(-50, -50, -50), (50, 50, 50)]
+Bubble B: Position (100, 0, 0), Bounds [(50, -50, -50), (150, 50, 50)]
+Bubble C: Position (0, 100, 0), Bounds [(-50, 50, -50), (50, 150, 50)]
+```
+
+**Deployment Steps**:
+
+**1. Bootstrap Phase** (Bubble A is entry point)
+```
+t=0ms:   Bubble A starts, initializes Fireflies view
+t=50ms:  Bubble A enters ACTIVE state (no neighbors yet)
+t=100ms: Bubble B starts, sends JoinRequest to Bubble A
+t=150ms: Bubble A responds with JoinResponse(neighbors=[])
+t=200ms: Bubble B enters ACTIVE, adds Bubble A as neighbor
+t=250ms: Bubble A adds Bubble B as neighbor (bidirectional)
+t=300ms: Ghost synchronization establishes between A-B boundary
+```
+
+**2. Third Bubble Joins**
+```
+t=400ms: Bubble C starts, sends JoinRequest to Bubble A (entry point)
+t=450ms: Bubble A responds with JoinResponse(neighbors=[B])
+t=500ms: Bubble C sends JoinRequest to Bubble B
+t=550ms: Bubble B accepts Bubble C as neighbor
+t=600ms: k-NN discovery identifies A-C and B-C as neighbors
+t=650ms: Ghost zones established for all 3 bubble boundaries
+```
+
+**3. Entity Distribution**
+```
+Initial: 10,000 entities randomly spawned across 3 bubbles
+  - Bubble A: 3,400 entities
+  - Bubble B: 3,300 entities
+  - Bubble C: 3,300 entities
+
+t=1000ms: Entity migration begins based on spatial proximity
+  - 120 entities near A-B boundary migrate (consensus approval required)
+  - 95 entities near A-C boundary migrate
+  - 80 entities near B-C boundary migrate
+
+t=1500ms: Stable distribution achieved
+  - Bubble A: 3,200 entities (net loss of 200)
+  - Bubble B: 3,410 entities (net gain of 110)
+  - Bubble C: 3,390 entities (net gain of 90)
+```
+
+**4. Migration Flow Example** (Entity E123 crosses A→B boundary)
+```
+t=2000ms: Entity E123 position update crosses boundary threshold
+t=2001ms: Bubble A detects boundary crossing via ghost zone monitoring
+t=2002ms: Create MigrationProposal(E123, sourceA, destB, viewId=V1)
+t=2003ms: ViewCommitteeConsensus selects BFT committee (3 nodes, t=0)
+t=2020ms: Committee votes ACCEPT (quorum reached)
+t=2021ms: 2PC Phase 1 (PREPARE): Remove E123 from Bubble A
+t=2025ms: 2PC Phase 2 (COMMIT): Add E123 to Bubble B
+t=2030ms: Migration SUCCESS, metrics updated (30ms latency)
+```
+
+**5. Ghost Synchronization** (Continuous background)
+```
+Every 10ms:
+  - Bubble A broadcasts ghost updates for entities in A-B and A-C ghost zones
+  - Bubble B receives ghost updates from A, applies dead reckoning
+  - Bubble C receives ghost updates from A, applies dead reckoning
+
+Ghost zone size: 10% of bubble bounds = ~10 units
+Entities in ghost zones: ~5-8% of total entities per bubble (~170 entities)
+Network traffic: 170 entities × 3 bubbles × 100 Hz = 51,000 updates/sec
+```
+
+**6. Load Balancing Trigger** (Bubble B overloaded)
+```
+t=5000ms: Bubble B processes 4,500 entities (entity influx from migration)
+t=5100ms: Frame processing latency exceeds 16ms target → 22ms (38% over)
+t=5200ms: Manager detects load imbalance, calculates new position
+t=5250ms: Bubble B broadcasts MOVE(newPosition=(120, 0, 0), newBounds)
+t=5300ms: Neighbors A and C update AOI, discover B's new position
+t=5400ms: Entity redistribution begins (200 entities migrate B→A, 150 entities B→C)
+t=5900ms: Rebalancing complete, frame latency returns to 14ms
+```
+
+**Network Topology**:
+```
+       Bubble A (3,200 entities)
+         /  \
+        /    \
+   Ghost    Ghost
+    Zone     Zone
+      /        \
+Bubble B     Bubble C
+(3,410)      (3,390)
+     \        /
+      \      /
+      Ghost Zone
+```
+
+**Scaling to 10 Bubbles**:
+- Each bubble maintains 10-15 VON neighbors (k-NN with k=10)
+- Total migrations: 100-200 per second per bubble
+- Ghost synchronization: 50,000-80,000 updates/sec cluster-wide
+- Byzantine consensus: O(log n) committee size and message complexity
+
+**Failure Scenario** (Bubble B crashes):
+```
+t=10000ms: Bubble B process crashes (ungraceful shutdown)
+t=10300ms: Fireflies detects B's heartbeat failure (view change triggered)
+t=10350ms: View changes from V1 → V2, all pending proposals aborted
+t=10400ms: Bubbles A and C remove B from neighbor sets
+t=10450ms: Ghost zones cleanup (B's ghost entities expired)
+t=10500ms: Entities owned by B become orphaned (logged for recovery)
+t=10600ms: Manual intervention or automated recovery spawns Bubble B'
+t=11000ms: Bubble B' re-joins via Bubble A, recovers orphaned entities
+```
 
 ---
 

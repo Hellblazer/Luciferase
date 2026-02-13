@@ -42,7 +42,7 @@ public void notifyMove(Point3D newPosition, BubbleBounds newBounds) {
 **Integration**:
 - **Bubble.java** (713 lines): Mobile bubble model with position tracking and boundary adaptation
 - **Manager.java** (502 lines): Coordinates bubbles with P2P transport, handles VON overlay maintenance
-- **VONDiscoveryProtocol.java**: Voronoi-based neighbor queries integrated with MOVE events
+- **GhostSyncVONIntegration.java**: VON-Ghost coordination for neighbor discovery via ghost arrivals and k-NN queries
 
 ### Active: Voronoi-Based Neighbor Discovery
 
@@ -181,10 +181,10 @@ Update ghost synchronization targets
   - P2P transport integration
   - View change handling
 
-**Neighbor Discovery**:
-- `simulation/src/main/java/.../von/VONDiscoveryProtocol.java`
-  - Voronoi-based neighbor queries
-  - Spatial range queries
+**VON-Ghost Integration**:
+- `simulation/src/main/java/.../ghost/GhostSyncVONIntegration.java`
+  - Ghost-based neighbor discovery
+  - k-NN spatial queries (k=10)
   - Integration with MOVE events
 
 ### Testing

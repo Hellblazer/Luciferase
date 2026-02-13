@@ -31,7 +31,7 @@ Layer 3: GHOST LAYER
   GhostStateManager, dead reckoning, boundary synchronization
          | uses
 Layer 2: VON PROTOCOL
-  MoveProtocol, VONDiscoveryProtocol, AOI management
+  MoveProtocol, GhostSyncVONIntegration, AOI management
          | uses
 Layer 1: SPATIAL INDEX
   Tetree, k-NN queries, spatial containment
@@ -137,6 +137,14 @@ for (Node candidate : candidates) {
 
 **Idempotency**: Introduction tracking prevents duplicate JOIN processing.
 
+**Network Failure Recovery**:
+- **Timeout Handling**: Each JOIN attempt has 100ms timeout (configurable)
+- **Retry Logic**: Max 5 attempts with exponential backoff before aborting
+- **Partial JOIN Recovery**: If neighbor subset responds, bubble enters active state with reduced neighbor set
+- **Orphaned Bubble Detection**: If all retries fail, bubble logs critical error and shuts down gracefully
+- **Cleanup on Failure**: Transport resources released, lifecycle coordinator notified
+- **Metrics Tracking**: JOIN failures logged with reason (TIMEOUT, NETWORK_PARTITION, REJECTION)
+
 ### MOVE Protocol
 
 **Location**: `von/MoveProtocol.java` (175 lines)
@@ -157,6 +165,33 @@ for (Node candidate : candidates) {
 - **Neighbor Pruning**: Drop neighbors when distance > AOI + buffer
 
 **When Triggered**: External caller (Manager or application) invokes `move()` when bubble position changes significantly.
+
+**Load Balancing Strategy**:
+Bubbles move to optimize entity distribution and reduce processing hotspots.
+
+**Triggers**:
+1. **Entity Count Imbalance**: When bubble entity count exceeds 1.3x average (30% threshold)
+2. **Processing Latency**: When frame processing time exceeds target by 20%
+3. **Spatial Clustering**: When entity centroid drifts >10% of bubble bounds from center
+
+**Rebalancing Algorithm**:
+1. Calculate entity centroid (weighted average of entity positions)
+2. Compute optimal new position (moves toward high-density region)
+3. Broadcast MOVE to all neighbors
+4. Wait for neighbor acknowledgments (ensures AOI updates)
+5. Migrate boundary entities to/from neighbors as needed
+6. Update ghost zones to reflect new boundaries
+
+**AOI Adjustment**:
+- AOI radius scales with entity density (range: 50-200 units)
+- Higher density → smaller AOI (reduce neighbor count, lower ghost sync overhead)
+- Lower density → larger AOI (maintain connectivity, improve discovery)
+
+**Migration Flow**:
+- Entities within 10% of new boundaries migrate to nearest neighbor
+- Migration uses 2PC protocol for exactly-once semantics
+- Byzantine consensus approval required before migration
+- Target: Complete rebalancing within 500ms (95th percentile)
 
 ### LEAVE Protocol
 
@@ -215,6 +250,35 @@ public float calculateNC(Bubble bubble) {
 ```
 
 **Target**: NC ≥ 0.8 indicates good neighbor awareness.
+
+**NC Monitoring Strategy**:
+Manager continuously monitors neighbor consistency to detect discovery failures.
+
+**Calculation Frequency**:
+- **Active monitoring**: Every 1000ms (1 Hz) during normal operation
+- **High-frequency mode**: Every 100ms when NC drops below threshold
+- **Triggered checks**: After MOVE, JOIN, or LEAVE events
+
+**Thresholds and Actions**:
+| NC Range | Status | Action |
+|----------|--------|--------|
+| ≥ 0.9 | Excellent | No action |
+| 0.8 - 0.89 | Good | Log at DEBUG level |
+| 0.6 - 0.79 | Warning | Log at WARN, increase k-NN to 15 |
+| 0.4 - 0.59 | Critical | Log at ERROR, trigger immediate k-NN discovery (k=20) |
+| < 0.4 | Failure | Force re-JOIN via nearest acceptor |
+
+**Recovery Procedures**:
+1. **Increased Discovery** (NC 0.6-0.79): Temporarily increase k-NN parameter from 10 to 15-20
+2. **Forced MOVE** (NC 0.4-0.59): Broadcast MOVE even if position unchanged (refreshes neighbor awareness)
+3. **Re-JOIN** (NC < 0.4): Disconnect from current neighbors, re-join via spatial query for nearest acceptor
+4. **Metrics Alerting**: NC violations logged to metrics system for operational visibility
+
+**Causes of Low NC**:
+- Network partitions (neighbors unreachable)
+- High bubble churn (frequent JOIN/LEAVE)
+- AOI radius too small (misses nearby neighbors)
+- k-NN parameter too low (insufficient discovery)
 
 ---
 
@@ -387,7 +451,7 @@ public void onGhostBatchReceived(UUID fromBubbleId) {
 ### Completed
 
 - [x] Mobile bubble architecture (Bubble.java)
-- [x] VON neighbor discovery (MoveProtocol, VONDiscoveryProtocol)
+- [x] VON neighbor discovery (MoveProtocol, GhostSyncVONIntegration, k-NN spatial queries)
 - [x] P2P transport (LocalServerTransport.Registry)
 - [x] JOIN/MOVE/LEAVE protocols
 - [x] 2PC entity migration (CrossProcessMigration)
