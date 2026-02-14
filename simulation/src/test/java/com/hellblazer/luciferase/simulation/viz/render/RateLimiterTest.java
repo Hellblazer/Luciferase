@@ -145,4 +145,59 @@ class RateLimiterTest {
         // But not 2 more
         assertFalse(rateLimiter.allowRequest("192.168.1.1"));
     }
+
+    @Test
+    void testRejectionCounter() {
+        // Initial rejection count should be 0
+        assertEquals(0, rateLimiter.getRejectionCount(), "Initial rejection count should be 0");
+
+        // Fill up the limit (5 requests)
+        for (int i = 0; i < 5; i++) {
+            rateLimiter.allowRequest("192.168.1.1");
+        }
+
+        // Rejection count still 0 (no rejections yet)
+        assertEquals(0, rateLimiter.getRejectionCount(), "No rejections yet");
+
+        // Next 3 requests should be rejected
+        for (int i = 0; i < 3; i++) {
+            assertFalse(rateLimiter.allowRequest("192.168.1.1"),
+                        "Request should be rejected");
+        }
+
+        // Rejection count should be 3
+        assertEquals(3, rateLimiter.getRejectionCount(), "Should have 3 rejections");
+
+        // Additional rejection
+        rateLimiter.allowRequest("192.168.1.1");
+        assertEquals(4, rateLimiter.getRejectionCount(), "Should have 4 rejections");
+    }
+
+    @Test
+    void testRejectionCounter_MultipleIPs() {
+        String ip1 = "192.168.1.1";
+        String ip2 = "192.168.1.2";
+
+        // Fill up both IPs
+        for (int i = 0; i < 5; i++) {
+            rateLimiter.allowRequest(ip1);
+            rateLimiter.allowRequest(ip2);
+        }
+
+        // No rejections yet
+        assertEquals(0, rateLimiter.getRejectionCount());
+
+        // Reject from ip1 (2 times)
+        rateLimiter.allowRequest(ip1);
+        rateLimiter.allowRequest(ip1);
+
+        // Reject from ip2 (3 times)
+        rateLimiter.allowRequest(ip2);
+        rateLimiter.allowRequest(ip2);
+        rateLimiter.allowRequest(ip2);
+
+        // Total rejections should be 5 (across all IPs)
+        assertEquals(5, rateLimiter.getRejectionCount(),
+                     "Should track rejections across all IPs");
+    }
 }

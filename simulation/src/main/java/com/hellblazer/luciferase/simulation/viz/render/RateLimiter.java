@@ -12,6 +12,7 @@ import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Simple sliding window rate limiter.
@@ -28,6 +29,7 @@ public class RateLimiter {
     private final int maxRequestsPerMinute;
     private final long windowMs = 60_000L;  // 1 minute window
     private final Clock clock;
+    private final AtomicLong rejectionCount = new AtomicLong(0);
 
     /**
      * Create a rate limiter with the given maximum requests per minute.
@@ -59,6 +61,18 @@ public class RateLimiter {
             return true;
         }
 
+        rejectionCount.incrementAndGet();  // Track rejection
         return false;  // Rate limit exceeded
+    }
+
+    /**
+     * Get total number of requests rejected due to rate limiting.
+     * <p>
+     * This counter never resets and is useful for operator tuning.
+     *
+     * @return Total rejection count since server start
+     */
+    public long getRejectionCount() {
+        return rejectionCount.get();
     }
 }

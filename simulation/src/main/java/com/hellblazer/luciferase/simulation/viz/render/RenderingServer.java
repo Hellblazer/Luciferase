@@ -395,6 +395,13 @@ public class RenderingServer implements AutoCloseable {
             metrics.put("cache", cacheMetrics);
         }
 
+        // Rate limiter metrics (znlz)
+        if (rateLimiter != null) {
+            var rateLimitMetrics = new java.util.HashMap<String, Object>();
+            rateLimitMetrics.put("rejectionCount", rateLimiter.getRejectionCount());
+            metrics.put("rateLimiter", rateLimitMetrics);
+        }
+
         ctx.json(metrics);
     }
 }

@@ -9,6 +9,7 @@
 package com.hellblazer.luciferase.simulation.viz.render;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -539,5 +540,82 @@ class RenderingServerTest {
                    "Error message should mention keystore file not found");
         assertTrue(exception.getMessage().contains("/nonexistent/path/to/keystore.jks"),
                    "Error message should include the invalid path");
+    }
+
+    @Test
+    void testRateLimiterMetrics() throws Exception {
+        // Configure with rate limiting enabled (5 requests per minute)
+        var security = new SecurityConfig(
+            null,              // No API key
+            false,             // No redaction
+            false,             // No TLS
+            null,              // No keystore
+            null,              // No keystore password
+            null,              // No key manager password
+            true,              // Rate limiting enabled
+            5                  // 5 requests per minute
+        );
+
+        var config = new RenderingServerConfig(
+            0,                          // Dynamic port
+            List.of(),
+            2,
+            security,
+            CacheConfig.testing(),
+            BuildConfig.testing(),
+            1_000
+        );
+
+        var testClock = new TestClock();
+        testClock.setTime(1000L);
+
+        server = new RenderingServer(config);
+        server.setClock(testClock);
+        server.start();
+
+        var client = HttpClient.newHttpClient();
+
+        // Make 5 requests (all should succeed)
+        for (int i = 0; i < 5; i++) {
+            var request = HttpRequest.newBuilder()
+                                     .uri(URI.create("http://localhost:" + server.port() + "/api/health"))
+                                     .GET()
+                                     .build();
+            var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, response.statusCode(), "Request " + (i + 1) + " should succeed");
+        }
+
+        // Make 3 more requests (all should be rejected with 429)
+        for (int i = 0; i < 3; i++) {
+            var request = HttpRequest.newBuilder()
+                                     .uri(URI.create("http://localhost:" + server.port() + "/api/health"))
+                                     .GET()
+                                     .build();
+            var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            assertEquals(429, response.statusCode(), "Request should be rate limited");
+        }
+
+        // Advance time by 61 seconds to reset the rate limit window
+        testClock.setTime(1000L + 61_000L);
+
+        // Check metrics endpoint for rejection count (this request should now succeed)
+        var metricsRequest = HttpRequest.newBuilder()
+                                        .uri(URI.create("http://localhost:" + server.port() + "/api/metrics"))
+                                        .GET()
+                                        .build();
+
+        var metricsResponse = client.send(metricsRequest, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, metricsResponse.statusCode(), "Metrics endpoint should return 200 OK");
+
+        var json = jsonMapper.readTree(metricsResponse.body());
+
+        // Verify rate limiter metrics
+        assertTrue(json.has("rateLimiter"), "Response should have 'rateLimiter' field");
+        var rateLimiterMetrics = json.get("rateLimiter");
+        assertTrue(rateLimiterMetrics.has("rejectionCount"), "RateLimiter should have 'rejectionCount' field");
+        assertEquals(3, rateLimiterMetrics.get("rejectionCount").asLong(),
+                     "Should have 3 rejections");
+
+        server.stop();
     }
 }
