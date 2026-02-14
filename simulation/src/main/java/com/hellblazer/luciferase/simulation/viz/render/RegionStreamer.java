@@ -118,16 +118,24 @@ public class RegionStreamer implements AutoCloseable {
     void onConnectInternal(WsContextWrapper ctx) {
         var sessionId = ctx.sessionId();
 
-        // Enforce client limit
-        if (sessions.size() >= config.maxClientsPerServer()) {
+        // CRITICAL FIX: Atomic client limit enforcement using computeIfAbsent.
+        // Previous check-then-put pattern was racy: two threads could both pass
+        // the size check and both add sessions, exceeding maxClientsPerServer.
+        var session = sessions.computeIfAbsent(sessionId, id -> {
+            // Size check happens INSIDE atomic computeIfAbsent
+            if (sessions.size() >= config.maxClientsPerServer()) {
+                return null;  // Signals rejection
+            }
+            return new ClientSession(id, ctx, clock.currentTimeMillis());
+        });
+
+        if (session == null) {
             log.warn("Client limit reached ({}), rejecting connection {}",
                 config.maxClientsPerServer(), sessionId);
             ctx.closeSession(4001, "Server full");
             return;
         }
 
-        var session = new ClientSession(sessionId, ctx, clock.currentTimeMillis());
-        sessions.put(sessionId, session);
         viewportTracker.registerClient(sessionId);
 
         log.info("Client connected: {} (total: {})", sessionId, sessions.size());
@@ -150,19 +158,19 @@ public class RegionStreamer implements AutoCloseable {
             var json = JSON_MAPPER.readTree(message);
             var type = json.get("type");
             if (type == null) {
-                sendError(ctx, "Missing 'type' field");
+                sendError(session, "Missing 'type' field");
                 return;
             }
 
             switch (type.asText()) {
                 case "REGISTER_CLIENT" -> handleRegisterClient(ctx, session, json);
                 case "UPDATE_VIEWPORT" -> handleUpdateViewport(ctx, session, json);
-                default -> sendError(ctx, "Unknown message type: " + type.asText());
+                default -> sendError(session, "Unknown message type: " + type.asText());
             }
 
         } catch (Exception e) {
             log.error("Error processing message from {}: {}", sessionId, e.getMessage(), e);
-            sendError(ctx, "Invalid JSON: " + e.getMessage());
+            sendError(session, "Invalid JSON: " + e.getMessage());
         }
     }
 
@@ -187,13 +195,13 @@ public class RegionStreamer implements AutoCloseable {
     private void handleRegisterClient(WsContextWrapper ctx, ClientSession session, JsonNode json) {
         var clientId = json.get("clientId");
         if (clientId == null) {
-            sendError(ctx, "Missing 'clientId' field");
+            sendError(session, "Missing 'clientId' field");
             return;
         }
 
         var viewportNode = json.get("viewport");
         if (viewportNode == null) {
-            sendError(ctx, "Missing 'viewport' field");
+            sendError(session, "Missing 'viewport' field");
             return;
         }
 
@@ -207,7 +215,7 @@ public class RegionStreamer implements AutoCloseable {
 
         } catch (Exception e) {
             log.error("Error parsing viewport for {}: {}", session.sessionId, e.getMessage());
-            sendError(ctx, "Invalid viewport: " + e.getMessage());
+            sendError(session, "Invalid viewport: " + e.getMessage());
         }
     }
 
@@ -217,13 +225,13 @@ public class RegionStreamer implements AutoCloseable {
     private void handleUpdateViewport(WsContextWrapper ctx, ClientSession session, JsonNode json) {
         var clientId = json.get("clientId");
         if (clientId == null) {
-            sendError(ctx, "Missing 'clientId' field");
+            sendError(session, "Missing 'clientId' field");
             return;
         }
 
         var viewportNode = json.get("viewport");
         if (viewportNode == null) {
-            sendError(ctx, "Missing 'viewport' field");
+            sendError(session, "Missing 'viewport' field");
             return;
         }
 
@@ -236,7 +244,7 @@ public class RegionStreamer implements AutoCloseable {
 
         } catch (Exception e) {
             log.error("Error parsing viewport for {}: {}", session.sessionId, e.getMessage());
-            sendError(ctx, "Invalid viewport: " + e.getMessage());
+            sendError(session, "Invalid viewport: " + e.getMessage());
         }
     }
 
@@ -281,10 +289,10 @@ public class RegionStreamer implements AutoCloseable {
     /**
      * Send error response to client (thread-safe).
      */
-    private void sendError(WsContextWrapper ctx, String message) {
+    private void sendError(ClientSession session, String message) {
         try {
             var errorJson = String.format("{\"type\":\"ERROR\",\"message\":\"%s\"}", message);
-            sendSafe(ctx, errorJson);
+            sendSafe(session, errorJson);
         } catch (Exception e) {
             log.error("Failed to send error response: {}", e.getMessage());
         }
@@ -292,10 +300,14 @@ public class RegionStreamer implements AutoCloseable {
 
     /**
      * Thread-safe send wrapper (Fix 2 from architecture).
+     * <p>
+     * CRITICAL FIX: Synchronize on ClientSession, not WsContextWrapper.
+     * Each wrap() call creates a new instance, so synchronizing on ctx
+     * provides no actual thread-safety.
      */
-    private void sendSafe(WsContextWrapper ctx, String json) {
-        synchronized (ctx) {
-            ctx.send(json);
+    private void sendSafe(ClientSession session, String json) {
+        synchronized (session) {
+            session.wsContext.send(json);
         }
     }
 
@@ -528,6 +540,40 @@ public class RegionStreamer implements AutoCloseable {
      */
     public int connectedClientCount() {
         return sessions.size();
+    }
+
+    /**
+     * Callback from AdaptiveRegionManager when a region build completes (Phase 3 Day 7).
+     * <p>
+     * This allows RegionStreamer to immediately send the built region to waiting clients
+     * without polling the cache.
+     *
+     * @param regionId     Region that was built
+     * @param builtRegion  The built region data
+     */
+    public void onRegionBuilt(RegionId regionId, RegionBuilder.BuiltRegion builtRegion) {
+        log.debug("Region {} built, notifying streaming clients", regionId);
+
+        // Find all clients that need this region and send it immediately
+        for (var session : sessions.values()) {
+            if (session.state != ClientSessionState.STREAMING) {
+                continue;
+            }
+
+            // Check if this client is viewing this region
+            var visible = viewportTracker.visibleRegions(session.sessionId);
+            var needsRegion = visible.stream()
+                .anyMatch(vr -> vr.regionId().equals(regionId) && vr.lodLevel() == builtRegion.lodLevel());
+
+            if (needsRegion && session.pendingSends.get() < config.maxPendingSendsPerClient()) {
+                // Send immediately without waiting for next streaming cycle
+                if (regionCache != null) {
+                    var cacheKey = new RegionCache.CacheKey(regionId, builtRegion.lodLevel());
+                    var cached = regionCache.get(cacheKey);
+                    cached.ifPresent(cachedRegion -> sendBinaryFrameAsync(session, cachedRegion));
+                }
+            }
+        }
     }
 
     /**

@@ -67,6 +67,9 @@ public class AdaptiveRegionManager {
     private volatile RegionBuilder builder;
     private volatile RegionCache cache;
 
+    // Phase 3 components (setter injection)
+    private volatile RegionStreamer regionStreamer;
+
     /**
      * Create region manager from configuration.
      *
@@ -109,6 +112,16 @@ public class AdaptiveRegionManager {
     public void setCache(RegionCache cache) {
         this.cache = cache;
         log.info("RegionCache wired to AdaptiveRegionManager");
+    }
+
+    /**
+     * Set the region streamer for Phase 3 integration (setter injection).
+     *
+     * @param streamer Region streamer instance
+     */
+    public void setRegionStreamer(RegionStreamer streamer) {
+        this.regionStreamer = streamer;
+        log.info("RegionStreamer wired to AdaptiveRegionManager");
     }
 
     /**
@@ -183,6 +196,11 @@ public class AdaptiveRegionManager {
                         state.buildVersion().incrementAndGet();
                         log.debug("Region {} built successfully (version {})",
                                 region, state.buildVersion().get());
+                    }
+
+                    // Notify RegionStreamer of build completion (Phase 3)
+                    if (regionStreamer != null) {
+                        regionStreamer.onRegionBuilt(region, builtRegion);
                     }
                 }
             });

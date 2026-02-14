@@ -112,19 +112,23 @@ public class ViewportTracker {
      * @param viewport New viewport parameters
      */
     public void updateViewport(String clientId, ClientViewport viewport) {
-        // Construct lucien Frustum3D from camera parameters
-        var eye = new Point3f(viewport.eye().x, viewport.eye().y, viewport.eye().z);
-        var lookAt = new Point3f(viewport.lookAt().x, viewport.lookAt().y, viewport.lookAt().z);
-        var up = new Vector3f(viewport.up().x, viewport.up().y, viewport.up().z);
-
-        var frustum = Frustum3D.createPerspective(
-            eye, lookAt, up,
-            viewport.fovY(), viewport.aspectRatio(),
-            viewport.nearPlane(), viewport.farPlane()
-        );
+        // CRITICAL FIX: Move frustum construction INSIDE compute() lambda.
+        // If constructed outside, a race exists: removeClient() could run between
+        // frustum construction and compute(), causing a zombie client to be created.
 
         // Update client state atomically
         clients.compute(clientId, (id, oldState) -> {
+            // Construct lucien Frustum3D from camera parameters (NOW atomic with state update)
+            var eye = new Point3f(viewport.eye().x, viewport.eye().y, viewport.eye().z);
+            var lookAt = new Point3f(viewport.lookAt().x, viewport.lookAt().y, viewport.lookAt().z);
+            var up = new Vector3f(viewport.up().x, viewport.up().y, viewport.up().z);
+
+            var frustum = Frustum3D.createPerspective(
+                eye, lookAt, up,
+                viewport.fovY(), viewport.aspectRatio(),
+                viewport.nearPlane(), viewport.farPlane()
+            );
+
             var lastVisible = oldState != null ? oldState.lastVisible : List.<VisibleRegion>of();
             return new ClientViewportState(
                 clientId,

@@ -14,6 +14,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
+import io.javalin.websocket.WsContext;
 import org.eclipse.jetty.server.HttpConfiguration;
 import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.SecureRequestCustomizer;
@@ -71,6 +72,10 @@ public class RenderingServer implements AutoCloseable {
     private RegionBuilder regionBuilder;
     private RegionCache regionCache;
 
+    // Phase 3 components
+    private ViewportTracker viewportTracker;
+    private RegionStreamer regionStreamer;
+
     // w1tk: Rate limiter (null if rate limiting disabled)
     private RateLimiter rateLimiter;
 
@@ -104,6 +109,12 @@ public class RenderingServer implements AutoCloseable {
         if (regionBuilder != null) {
             regionBuilder.setClock(clock);
         }
+        if (viewportTracker != null) {
+            viewportTracker.setClock(clock);
+        }
+        if (regionStreamer != null) {
+            regionStreamer.setClock(clock);
+        }
         // RegionCache doesn't need clock (uses system time for TTL)
     }
 
@@ -132,6 +143,24 @@ public class RenderingServer implements AutoCloseable {
         // Wire Phase 2 components to region manager
         regionManager.setBuilder(regionBuilder);
         regionManager.setCache(regionCache);
+
+        // Create Phase 3 components
+        viewportTracker = new ViewportTracker(
+            regionManager,
+            config.streaming()
+        );
+        viewportTracker.setClock(clock);
+
+        regionStreamer = new RegionStreamer(
+            viewportTracker,
+            regionCache,
+            regionManager,
+            config.streaming()
+        );
+        regionStreamer.setClock(clock);
+
+        // Wire RegionStreamer to AdaptiveRegionManager for build completion callbacks
+        regionManager.setRegionStreamer(regionStreamer);
 
         // Backfill any existing dirty regions
         regionManager.backfillDirtyRegions();
@@ -254,18 +283,12 @@ public class RenderingServer implements AutoCloseable {
         app.get("/api/info", this::handleInfo);
         app.get("/api/metrics", this::handleMetrics);  // M2: New metrics endpoint
 
-        // WebSocket endpoint (Phase 3 will implement actual streaming)
+        // WebSocket endpoint - Phase 3 streaming
         app.ws("/ws/render", ws -> {
-            ws.onConnect(ctx -> {
-                log.info("Client connected to /ws/render: {}", ctx.sessionId());
-            });
-            ws.onClose(ctx -> {
-                log.info("Client disconnected from /ws/render: {}", ctx.sessionId());
-            });
-            ws.onMessage(ctx -> {
-                log.debug("Received message from client {}: {}", ctx.sessionId(), ctx.message());
-            });
-            // Phase 3 will implement region streaming protocol here
+            ws.onConnect(regionStreamer::onConnect);
+            ws.onMessage(msgCtx -> regionStreamer.onMessage(msgCtx, msgCtx.message()));
+            ws.onClose(closeCtx -> regionStreamer.onClose(closeCtx, closeCtx.status(), closeCtx.reason()));
+            ws.onError(regionStreamer::onError);
         });
 
         app.start(config.port());
@@ -273,6 +296,9 @@ public class RenderingServer implements AutoCloseable {
 
         // Start consuming upstream entity streams
         entityConsumer.start();
+
+        // Start Phase 3 streaming
+        regionStreamer.start();
 
         log.info("RenderingServer started on port {}", port());
     }
@@ -304,6 +330,13 @@ public class RenderingServer implements AutoCloseable {
 
         // Stop consuming entity streams
         entityConsumer.close();
+
+        // Stop Phase 3 streaming
+        if (regionStreamer != null) {
+            regionStreamer.stop();
+            regionStreamer.close();
+            regionStreamer = null;
+        }
 
         // rp9u: Clear endpoint cache
         if (endpointCache != null) {
@@ -375,6 +408,24 @@ public class RenderingServer implements AutoCloseable {
      */
     public RegionCache getRegionCache() {
         return regionCache;
+    }
+
+    /**
+     * Get the viewport tracker (Phase 3).
+     *
+     * @return ViewportTracker instance, or null if not started
+     */
+    public ViewportTracker getViewportTracker() {
+        return viewportTracker;
+    }
+
+    /**
+     * Get the region streamer (Phase 3).
+     *
+     * @return RegionStreamer instance, or null if not started
+     */
+    public RegionStreamer getRegionStreamer() {
+        return regionStreamer;
     }
 
     @Override
