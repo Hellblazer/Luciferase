@@ -170,6 +170,7 @@ public class RegionCache implements AutoCloseable {
             if (winner == null) {
                 // Only the winner invalidates unpinned cache and updates memory
                 unpinnedCache.invalidate(key);
+                unpinnedCache.cleanUp(); // Force immediate weight update
                 pinnedMemoryBytes.addAndGet(region.sizeBytes());
 
                 log.debug("Pinned region {} LOD {} ({} bytes)",

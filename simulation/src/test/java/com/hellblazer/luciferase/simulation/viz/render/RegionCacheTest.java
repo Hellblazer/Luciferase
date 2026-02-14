@@ -262,6 +262,30 @@ class RegionCacheTest {
     }
 
     @Test
+    void testPin_immediateMemoryAccuracy() {
+        // Regression test for h86g: pin() must call cleanUp() for immediate accuracy
+        var region = createTestRegion(new RegionId(1L, 0), 1000);
+        var key = new RegionCache.CacheKey(new RegionId(1L, 0), 0);
+        var cached = RegionCache.CachedRegion.from(region, System.currentTimeMillis());
+
+        // Put in unpinned cache
+        cache.put(key, cached);
+        long totalBefore = cache.getTotalMemoryBytes();
+        assertTrue(totalBefore >= 1000, "Total memory should include region");
+
+        // Pin and immediately check total memory
+        boolean pinned = cache.pin(key);
+        assertTrue(pinned, "Pin should succeed");
+
+        // Critical: getTotalMemoryBytes() must be accurate IMMEDIATELY after pin()
+        // Without cleanUp() in pin(), weightedSize remains stale until next maintenance
+        long totalAfter = cache.getTotalMemoryBytes();
+        assertEquals(1072, cache.getPinnedMemoryBytes(), "Pinned memory should be exact");
+        assertEquals(0, cache.getUnpinnedMemoryBytes(), "Unpinned memory should be 0");
+        assertEquals(1072, totalAfter, "Total memory should match pinned (no stale weightedSize)");
+    }
+
+    @Test
     void testUnpin_movesBetweenCaches() throws InterruptedException {
         // This is the inverse of testPin_movesBetweenCaches
         var region = createTestRegion(new RegionId(1L, 0), 1000);
