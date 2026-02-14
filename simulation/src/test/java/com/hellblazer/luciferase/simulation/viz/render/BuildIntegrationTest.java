@@ -32,6 +32,27 @@ class BuildIntegrationTest {
         }
     }
 
+    /**
+     * Poll until the expected number of builds complete, or timeout.
+     * Provides deterministic async coordination for integration tests.
+     *
+     * @param expectedCount Minimum number of builds expected to complete
+     * @param timeout Maximum time to wait
+     * @throws InterruptedException if interrupted while polling
+     */
+    private void awaitBuilds(int expectedCount, Duration timeout) throws InterruptedException {
+        long startMs = System.currentTimeMillis();
+        var builder = server.getRegionBuilder();
+
+        while (builder.getTotalBuilds() < expectedCount) {
+            Thread.sleep(50);  // 50ms poll interval
+            if (System.currentTimeMillis() - startMs > timeout.toMillis()) {
+                fail("Timeout waiting for " + expectedCount + " builds, got: " +
+                     builder.getTotalBuilds());
+            }
+        }
+    }
+
     @Test
     void testEntityUpdateTriggersScheduleBuild() throws Exception {
         // Create and start server (wires builder/cache automatically)
@@ -44,8 +65,8 @@ class BuildIntegrationTest {
 
         assertNotNull(builder, "Builder should be created on start");
 
-        // Initial queue should be empty (after backfill completes)
-        Thread.sleep(100);  // Allow backfill to complete
+        // Brief wait for async initialization (no backfill expected in this test)
+        Thread.sleep(50);
         int initialQueueDepth = builder.getQueueDepth();
 
         // Add entity (should trigger scheduleBuild)
@@ -88,10 +109,11 @@ class BuildIntegrationTest {
         regionManager.scheduleBuild(region, true);
 
         // Wait for build to complete and cache to be populated
-        Thread.sleep(500);
+        int initialBuilds = builder.getTotalBuilds();
+        awaitBuilds(initialBuilds + 1, Duration.ofSeconds(2));
 
         int buildsAfterFirst = builder.getTotalBuilds();
-        assertTrue(buildsAfterFirst > 0, "Should have completed at least one build");
+        assertTrue(buildsAfterFirst > initialBuilds, "Should have completed at least one build");
 
         // Verify cache has the region
         var cacheKey = new RegionCache.CacheKey(region, 0);
@@ -100,7 +122,8 @@ class BuildIntegrationTest {
         // Schedule another build for the same region - should skip due to cache hit
         regionManager.scheduleBuild(region, true);
 
-        Thread.sleep(100);
+        // Brief wait to allow cache check to happen (no build should start)
+        Thread.sleep(50);
 
         // Total builds should NOT increase (cache hit)
         int buildsAfterSecond = builder.getTotalBuilds();
@@ -124,7 +147,9 @@ class BuildIntegrationTest {
         var region = regionManager.regionForPosition(100.0f, 100.0f, 100.0f);
         regionManager.scheduleBuild(region, true);
 
-        Thread.sleep(500);  // Wait for build
+        // Wait for first build to complete
+        int initialBuilds = builder.getTotalBuilds();
+        awaitBuilds(initialBuilds + 1, Duration.ofSeconds(2));
 
         var cacheKey = new RegionCache.CacheKey(region, 0);
         assertTrue(cache.get(cacheKey).isPresent(), "Region should be cached");
@@ -144,7 +169,8 @@ class BuildIntegrationTest {
         // Schedule rebuild
         regionManager.scheduleBuild(region, true);
 
-        Thread.sleep(500);  // Wait for rebuild
+        // Wait for second build to complete
+        awaitBuilds(buildsAfterFirst + 1, Duration.ofSeconds(2));
 
         // Should have triggered a new build
         int buildsAfterRebuild = builder.getTotalBuilds();
@@ -190,15 +216,22 @@ class BuildIntegrationTest {
         // Explicitly trigger backfill
         regionManager.backfillDirtyRegions();
 
-        // Wait for backfill builds to queue/complete
-        Thread.sleep(500);
+        // Wait for backfill builds to complete (polling for at least 3 builds)
+        long startMs = System.currentTimeMillis();
+        long timeoutMs = Duration.ofSeconds(2).toMillis();
+        while (builder.getTotalBuilds() < 3) {
+            Thread.sleep(50);  // 50ms poll interval
+            if (System.currentTimeMillis() - startMs > timeoutMs) {
+                fail("Timeout waiting for 3 backfill builds, got: " + builder.getTotalBuilds());
+            }
+        }
 
         // Should have queued or completed builds for dirty regions
         int totalBuilds = builder.getTotalBuilds();
         int queueDepth = builder.getQueueDepth();
 
-        assertTrue(totalBuilds > 0 || queueDepth > 0,
-                  "Backfill should have queued/completed builds. Total: " + totalBuilds +
+        assertTrue(totalBuilds >= 3,
+                  "Backfill should have completed 3 builds for 3 dirty regions. Total: " + totalBuilds +
                   ", Queue: " + queueDepth);
 
         // Cleanup
