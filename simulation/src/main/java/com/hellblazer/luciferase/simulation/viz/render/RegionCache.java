@@ -345,6 +345,7 @@ public class RegionCache implements AutoCloseable {
             // Step 2: Evict oldest pinned regions if still over target
             long bytesToEvict = totalMemory - targetMemory;
             var pinnedEntries = pinnedCache.entrySet().stream()
+                    .filter(entry -> entry.getValue() != null)
                     .sorted((e1, e2) -> Long.compare(
                             e1.getValue().lastAccessedMs(),
                             e2.getValue().lastAccessedMs()
@@ -443,8 +444,9 @@ public class RegionCache implements AutoCloseable {
 
             // C1: Warn if region size exceeds Integer.MAX_VALUE (Caffeine weigher will clamp)
             if (sizeBytes > Integer.MAX_VALUE) {
-                log.warn("Region {} LOD {} size {} exceeds Integer.MAX_VALUE, " +
-                        "Caffeine weigher will clamp to {} for eviction priority",
+                log.warn("Region {} LOD {} size {} exceeds Integer.MAX_VALUE. " +
+                        "Caffeine weigher will clamp to {} for eviction priority. " +
+                        "This region will appear lower priority than its actual size suggests.",
                         builtRegion.regionId(), builtRegion.lodLevel(),
                         sizeBytes, Integer.MAX_VALUE);
             }

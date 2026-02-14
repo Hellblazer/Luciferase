@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 
+import static com.hellblazer.luciferase.simulation.viz.render.TestUtils.awaitBuilds;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -29,27 +30,6 @@ class BuildIntegrationTest {
     void tearDown() {
         if (server != null) {
             server.close();
-        }
-    }
-
-    /**
-     * Poll until the expected number of builds complete, or timeout.
-     * Provides deterministic async coordination for integration tests.
-     *
-     * @param expectedCount Minimum number of builds expected to complete
-     * @param timeout Maximum time to wait
-     * @throws InterruptedException if interrupted while polling
-     */
-    private void awaitBuilds(int expectedCount, Duration timeout) throws InterruptedException {
-        long startMs = System.currentTimeMillis();
-        var builder = server.getRegionBuilder();
-
-        while (builder.getTotalBuilds() < expectedCount) {
-            Thread.sleep(50);  // 50ms poll interval
-            if (System.currentTimeMillis() - startMs > timeout.toMillis()) {
-                fail("Timeout waiting for " + expectedCount + " builds, got: " +
-                     builder.getTotalBuilds());
-            }
         }
     }
 
@@ -110,7 +90,7 @@ class BuildIntegrationTest {
 
         // Wait for build to complete and cache to be populated
         int initialBuilds = builder.getTotalBuilds();
-        awaitBuilds(initialBuilds + 1, Duration.ofSeconds(2));
+        awaitBuilds(builder, initialBuilds + 1, Duration.ofSeconds(2));
 
         int buildsAfterFirst = builder.getTotalBuilds();
         assertTrue(buildsAfterFirst > initialBuilds, "Should have completed at least one build");
@@ -149,7 +129,7 @@ class BuildIntegrationTest {
 
         // Wait for first build to complete
         int initialBuilds = builder.getTotalBuilds();
-        awaitBuilds(initialBuilds + 1, Duration.ofSeconds(2));
+        awaitBuilds(builder, initialBuilds + 1, Duration.ofSeconds(2));
 
         var cacheKey = new RegionCache.CacheKey(region, 0);
         assertTrue(cache.get(cacheKey).isPresent(), "Region should be cached");
@@ -170,7 +150,7 @@ class BuildIntegrationTest {
         regionManager.scheduleBuild(region, true);
 
         // Wait for second build to complete
-        awaitBuilds(buildsAfterFirst + 1, Duration.ofSeconds(2));
+        awaitBuilds(builder, buildsAfterFirst + 1, Duration.ofSeconds(2));
 
         // Should have triggered a new build
         int buildsAfterRebuild = builder.getTotalBuilds();

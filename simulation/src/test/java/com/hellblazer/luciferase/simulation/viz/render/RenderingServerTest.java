@@ -196,6 +196,18 @@ class RenderingServerTest {
         assertTrue(memoryPressure >= 0.0 && memoryPressure <= 1.0,
                   "memoryPressure should be between 0.0 and 1.0, got: " + memoryPressure);
 
+        // Verify avgBuildTimeMs is reasonable (not negative, not huge)
+        double avgBuildTimeMs = builder.get("avgBuildTimeMs").asDouble();
+        assertTrue(avgBuildTimeMs >= 0.0 && avgBuildTimeMs < 10_000.0,
+                  "avgBuildTimeMs should be reasonable, got: " + avgBuildTimeMs);
+
+        // Verify cache counts match reality
+        long totalCount = cache.get("totalCount").asLong();
+        long pinnedCount = cache.get("pinnedCount").asLong();
+        long unpinnedCount = cache.get("unpinnedCount").asLong();
+        assertEquals(totalCount, pinnedCount + unpinnedCount,
+                    "totalCount should equal sum of pinned + unpinned");
+
         server.stop();
     }
 

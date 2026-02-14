@@ -336,7 +336,8 @@ public class RegionBuilder implements AutoCloseable {
      */
     public long getAverageBuildTimeNs() {
         int builds = totalBuilds.get();
-        return builds > 0 ? totalBuildTimeNs.get() / builds : 0;
+        long totalTime = totalBuildTimeNs.get();
+        return builds > 0 ? totalTime / builds : 0;
     }
 
     // ===== Legacy methods for Day 2 tests =====

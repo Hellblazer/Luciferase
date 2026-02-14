@@ -303,7 +303,8 @@ public class RenderingServer implements AutoCloseable {
             builderMetrics.put("totalBuilds", regionBuilder.getTotalBuilds());
             builderMetrics.put("failedBuilds", regionBuilder.getFailedBuilds());
             builderMetrics.put("queueDepth", regionBuilder.getQueueDepth());
-            builderMetrics.put("avgBuildTimeMs", regionBuilder.getAverageBuildTimeNs() / 1_000_000.0);
+            builderMetrics.put("avgBuildTimeMs",
+                (double) regionBuilder.getAverageBuildTimeNs() / 1_000_000.0);
             metrics.put("builder", builderMetrics);
         }
 
