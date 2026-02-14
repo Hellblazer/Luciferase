@@ -73,7 +73,8 @@ public class RegionCache implements AutoCloseable {
 
         this.unpinnedCache = Caffeine.newBuilder()
                 .maximumWeight(unpinnedMaxWeight)
-                .weigher((Weigher<CacheKey, CachedRegion>) (key, value) -> (int) value.sizeBytes())
+                .weigher((Weigher<CacheKey, CachedRegion>) (key, value) ->
+                    (int) Math.min(value.sizeBytes(), Integer.MAX_VALUE))
                 .expireAfterAccess(ttl)
                 .removalListener((CacheKey key, CachedRegion value, RemovalCause cause) -> {
                     if (value != null) {
@@ -93,6 +94,9 @@ public class RegionCache implements AutoCloseable {
      *
      * <p>Checks pinned cache first (O(1)), then Caffeine unpinned cache (O(1) amortized).
      *
+     * <p>C2 FIX: Updates lastAccessedMs timestamp on cache hits using atomic computeIfPresent
+     * for pinned regions. Caffeine automatically tracks access time for unpinned regions.
+     *
      * @param key Cache key (RegionId + LOD level)
      * @return Cached region if present, empty otherwise
      */
@@ -101,13 +105,15 @@ public class RegionCache implements AutoCloseable {
             return Optional.empty();
         }
 
-        // Check pinned first
-        var pinned = pinnedCache.get(key);
-        if (pinned != null) {
-            return Optional.of(pinned);
+        // Check pinned cache first - atomic timestamp update
+        var updated = pinnedCache.computeIfPresent(key, (k, region) ->
+            region.withAccess(System.currentTimeMillis())
+        );
+        if (updated != null) {
+            return Optional.of(updated);
         }
 
-        // Check unpinned Caffeine cache
+        // Check unpinned Caffeine cache (already tracks access time internally)
         var unpinned = unpinnedCache.getIfPresent(key);
         return Optional.ofNullable(unpinned);
     }
@@ -138,6 +144,10 @@ public class RegionCache implements AutoCloseable {
      * <p>Moves region from unpinned Caffeine cache to pinned ConcurrentHashMap.
      * Pinned regions are exempt from LRU eviction.
      *
+     * <p>C3 FIX: Uses putIfAbsent for atomic claim - only the winning thread
+     * invalidates the unpinned cache and updates memory tracking. This prevents
+     * double-counting of pinnedMemoryBytes in concurrent pin operations.
+     *
      * @param key Cache key
      * @return true if region was pinned, false if not found
      */
@@ -147,19 +157,24 @@ public class RegionCache implements AutoCloseable {
         }
 
         // Check if already pinned
-        if (pinnedCache.containsKey(key)) {
+        var existing = pinnedCache.get(key);
+        if (existing != null) {
             return true;
         }
 
-        // Get from unpinned cache and move to pinned
+        // Get from unpinned cache
         var region = unpinnedCache.getIfPresent(key);
         if (region != null) {
-            unpinnedCache.invalidate(key);
-            pinnedCache.put(key, region);
-            pinnedMemoryBytes.addAndGet(region.sizeBytes());
+            // Atomic claim - only one thread wins the race
+            var winner = pinnedCache.putIfAbsent(key, region);
+            if (winner == null) {
+                // Only the winner invalidates unpinned cache and updates memory
+                unpinnedCache.invalidate(key);
+                pinnedMemoryBytes.addAndGet(region.sizeBytes());
 
-            log.debug("Pinned region {} LOD {} ({} bytes)",
-                    key.regionId(), key.lodLevel(), region.sizeBytes());
+                log.debug("Pinned region {} LOD {} ({} bytes)",
+                        key.regionId(), key.lodLevel(), region.sizeBytes());
+            }
             return true;
         }
 
@@ -171,6 +186,10 @@ public class RegionCache implements AutoCloseable {
      *
      * <p>Moves region from pinned ConcurrentHashMap to unpinned Caffeine cache.
      * Region becomes subject to LRU eviction.
+     *
+     * <p>C3 NOTE: ConcurrentHashMap.remove() is atomic - if multiple threads
+     * call unpin() concurrently, only one will receive the region (others get null).
+     * This prevents double-subtraction from pinnedMemoryBytes.
      *
      * @param key Cache key
      * @return true if region was unpinned, false if not found
@@ -341,13 +360,21 @@ public class RegionCache implements AutoCloseable {
                 var key = entry.getKey();
                 var region = entry.getValue();
 
-                pinnedCache.remove(key);
-                pinnedMemoryBytes.addAndGet(-region.sizeBytes());
-                bytesEvicted += region.sizeBytes();
-                evictedCount++;
+                // C4 FIX: Null check for concurrent removals
+                if (region == null) {
+                    continue;
+                }
 
-                log.debug("Emergency evicted pinned region {} LOD {} ({} bytes)",
-                        key.regionId(), key.lodLevel(), region.sizeBytes());
+                // C4 FIX: Atomic remove - only removes if value matches
+                // Prevents double-eviction if another thread removes concurrently
+                if (pinnedCache.remove(key, region)) {
+                    pinnedMemoryBytes.addAndGet(-region.sizeBytes());
+                    bytesEvicted += region.sizeBytes();
+                    evictedCount++;
+
+                    log.debug("Emergency evicted pinned region {} LOD {} ({} bytes)",
+                            key.regionId(), key.lodLevel(), region.sizeBytes());
+                }
             }
 
             log.warn("Emergency eviction complete: evicted {} pinned regions ({} bytes), " +
@@ -410,11 +437,21 @@ public class RegionCache implements AutoCloseable {
          * Create cached region from built region.
          */
         public static CachedRegion from(RegionBuilder.BuiltRegion builtRegion, long currentTimeMs) {
+            long sizeBytes = builtRegion.estimatedSizeBytes();
+
+            // C1: Warn if region size exceeds Integer.MAX_VALUE (Caffeine weigher will clamp)
+            if (sizeBytes > Integer.MAX_VALUE) {
+                log.warn("Region {} LOD {} size {} exceeds Integer.MAX_VALUE, " +
+                        "Caffeine weigher will clamp to {} for eviction priority",
+                        builtRegion.regionId(), builtRegion.lodLevel(),
+                        sizeBytes, Integer.MAX_VALUE);
+            }
+
             return new CachedRegion(
                     builtRegion,
                     currentTimeMs,
                     currentTimeMs,
-                    builtRegion.estimatedSizeBytes()
+                    sizeBytes
             );
         }
 
