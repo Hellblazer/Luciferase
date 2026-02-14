@@ -23,6 +23,9 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -65,6 +68,9 @@ public class RenderingServer implements AutoCloseable {
 
     // w1tk: Rate limiter (null if rate limiting disabled)
     private RateLimiter rateLimiter;
+
+    // bfgm: Scheduled executor for periodic dirty region backfill retry
+    private ScheduledExecutorService backfillRetryExecutor;
 
     /**
      * Create rendering server with configuration.
@@ -121,6 +127,28 @@ public class RenderingServer implements AutoCloseable {
 
         // Backfill any existing dirty regions
         regionManager.backfillDirtyRegions();
+
+        // bfgm: Schedule periodic backfill retry for dirty regions skipped due to queue backpressure
+        backfillRetryExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            var thread = new Thread(r, "backfill-retry");
+            thread.setDaemon(true);
+            return thread;
+        });
+        backfillRetryExecutor.scheduleAtFixedRate(
+            () -> {
+                try {
+                    int skipped = regionManager.backfillDirtyRegions();
+                    if (skipped > 0) {
+                        log.debug("Periodic backfill retry: {} regions still skipped due to queue backpressure", skipped);
+                    }
+                } catch (Exception e) {
+                    log.error("Error during periodic backfill retry", e);
+                }
+            },
+            10,   // Initial delay: 10 seconds
+            10,   // Period: retry every 10 seconds
+            TimeUnit.SECONDS
+        );
 
         // w1tk: Initialize rate limiter if enabled
         if (config.security().rateLimitEnabled()) {
@@ -223,6 +251,20 @@ public class RenderingServer implements AutoCloseable {
         }
 
         log.info("Stopping RenderingServer");
+
+        // bfgm: Stop periodic backfill retry executor
+        if (backfillRetryExecutor != null) {
+            backfillRetryExecutor.shutdown();
+            try {
+                if (!backfillRetryExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    backfillRetryExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                backfillRetryExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            backfillRetryExecutor = null;
+        }
 
         // Stop consuming entity streams
         entityConsumer.close();
