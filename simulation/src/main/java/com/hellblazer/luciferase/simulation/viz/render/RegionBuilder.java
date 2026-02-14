@@ -47,6 +47,8 @@ public class RegionBuilder implements AutoCloseable {
     private final ConcurrentHashMap<RegionId, CircuitBreakerState> circuitBreakers; // C3
     private final ExecutorService buildPool;
     private final AtomicInteger queueSize;
+    private final AtomicInteger totalBuilds;
+    private final AtomicInteger failedBuilds;
     private final int maxQueueDepth;
     private final int maxDepth;
     private final int gridResolution;
@@ -66,6 +68,8 @@ public class RegionBuilder implements AutoCloseable {
         this.invisibleBuilds = new ConcurrentSkipListSet<>(); // S2
         this.circuitBreakers = new ConcurrentHashMap<>(); // C3
         this.queueSize = new AtomicInteger(0);
+        this.totalBuilds = new AtomicInteger(0);
+        this.failedBuilds = new AtomicInteger(0);
         this.maxQueueDepth = maxQueueDepth;
         this.maxDepth = maxDepth;
         this.gridResolution = gridResolution;
@@ -131,7 +135,200 @@ public class RegionBuilder implements AutoCloseable {
     }
 
     /**
-     * Build ESVO octree from voxel positions (basic implementation for Day 2 testing).
+     * Submit a build request with C1 backpressure.
+     *
+     * @param request Build request
+     * @return CompletableFuture with built region
+     * @throws BuildQueueFullException if queue is full and cannot accept request
+     * @throws CircuitBreakerOpenException if circuit breaker is open for this region
+     */
+    public CompletableFuture<BuiltRegion> build(BuildRequest request)
+            throws BuildQueueFullException, CircuitBreakerOpenException {
+
+        if (closed) {
+            throw new IllegalStateException("RegionBuilder is closed");
+        }
+
+        // C3: Check circuit breaker
+        var breaker = circuitBreakers.get(request.regionId());
+        if (breaker != null && breaker.isOpen(clock.currentTimeMillis())) {
+            throw new CircuitBreakerOpenException(
+                    "Circuit breaker open for region " + request.regionId());
+        }
+
+        // C1: Backpressure handling
+        if (queueSize.get() >= maxQueueDepth) {
+            if (request.visible()) {
+                // Visible build when full: evict lowest-priority invisible build
+                if (!evictLowestPriority()) {
+                    // No invisible builds to evict - queue is all visible
+                    throw new BuildQueueFullException(
+                            "Build queue full with all visible builds");
+                }
+            } else {
+                // Invisible build when full: reject
+                throw new BuildQueueFullException(
+                        "Build queue full, rejecting invisible build");
+            }
+        }
+
+        // Add to queue
+        buildQueue.offer(request);
+        queueSize.incrementAndGet();
+
+        // Track invisible builds for O(log n) eviction (S2)
+        if (!request.visible()) {
+            invisibleBuilds.add(request);
+        }
+
+        // Return future that will be completed by worker thread
+        var future = new CompletableFuture<BuiltRegion>();
+
+        // Note: In full implementation, worker threads poll queue and complete futures
+        // For now, build synchronously for testing
+        buildPool.submit(() -> {
+            try {
+                var result = doBuild(request);
+                future.complete(result);
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            } finally {
+                queueSize.decrementAndGet();
+                if (!request.visible()) {
+                    invisibleBuilds.remove(request);
+                }
+            }
+        });
+
+        return future;
+    }
+
+    /**
+     * Evict lowest-priority invisible build (S2: O(log n) via ConcurrentSkipListSet).
+     *
+     * @return true if a build was evicted, false if no invisible builds exist
+     */
+    private boolean evictLowestPriority() {
+        // S2: O(log n) eviction using ConcurrentSkipListSet.pollFirst()
+        var evicted = invisibleBuilds.pollFirst();
+        if (evicted != null) {
+            buildQueue.remove(evicted);
+            queueSize.decrementAndGet();
+            log.debug("Evicted invisible build for region {} (oldest invisible)",
+                    evicted.regionId());
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Build region from request, dispatching to ESVO or ESVT builder.
+     *
+     * @param request Build request
+     * @return Built region with serialized data
+     */
+    private BuiltRegion doBuild(BuildRequest request) throws IOException {
+        long startNs = System.nanoTime();
+        totalBuilds.incrementAndGet();
+
+        try {
+            // Convert positions to voxels
+            var voxels = positionsToVoxels(request.positions(), request.bounds());
+
+            // Dispatch to appropriate builder
+            byte[] serialized;
+            if (request.type() == BuildType.ESVO) {
+                serialized = buildAndSerializeESVO(voxels);
+            } else {
+                serialized = buildAndSerializeESVT(voxels);
+            }
+
+            // Compress if large enough
+            byte[] data = SerializationUtils.compress(serialized);
+            boolean compressed = SerializationUtils.isCompressed(data);
+
+            long buildTimeNs = System.nanoTime() - startNs;
+
+            // C3: Clear circuit breaker on success
+            circuitBreakers.remove(request.regionId());
+
+            log.debug("Built {} region {} in {}ms ({}compressed, {} bytes)",
+                    request.type(), request.regionId(),
+                    buildTimeNs / 1_000_000.0,
+                    compressed ? "" : "un",
+                    data.length);
+
+            return new BuiltRegion(
+                    request.regionId(),
+                    request.lodLevel(),
+                    request.type(),
+                    data,
+                    compressed,
+                    buildTimeNs,
+                    clock.currentTimeMillis()
+            );
+
+        } catch (Exception e) {
+            failedBuilds.incrementAndGet();
+
+            // C3: Update circuit breaker
+            var breaker = circuitBreakers.computeIfAbsent(
+                    request.regionId(),
+                    k -> new CircuitBreakerState()
+            );
+            breaker.recordFailure(clock.currentTimeMillis());
+
+            log.error("Build failed for region {}: {}", request.regionId(), e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Build and serialize ESVO octree.
+     */
+    private byte[] buildAndSerializeESVO(List<Point3i> voxels) throws IOException {
+        // Use try-with-resources for OctreeBuilder
+        try (var builder = new OctreeBuilder(maxDepth)) {
+            var octreeData = builder.buildFromVoxels(voxels, maxDepth);
+            return SerializationUtils.serializeESVO(octreeData);
+        }
+    }
+
+    /**
+     * Build and serialize ESVT tetree.
+     */
+    private byte[] buildAndSerializeESVT(List<Point3i> voxels) {
+        // ESVTBuilder: instantiate per-build (not AutoCloseable)
+        var builder = new ESVTBuilder();
+        var esvtData = builder.buildFromVoxels(voxels, maxDepth, gridResolution);
+        return SerializationUtils.serializeESVT(esvtData);
+    }
+
+    /**
+     * Get current queue depth.
+     */
+    public int getQueueDepth() {
+        return queueSize.get();
+    }
+
+    /**
+     * Get total builds processed.
+     */
+    public int getTotalBuilds() {
+        return totalBuilds.get();
+    }
+
+    /**
+     * Get failed builds count.
+     */
+    public int getFailedBuilds() {
+        return failedBuilds.get();
+    }
+
+    // ===== Legacy methods for Day 2 tests =====
+
+    /**
+     * Build ESVO octree from voxel positions (Day 2 testing only).
      *
      * @param voxels Voxel coordinates
      * @return ESVO octree data
@@ -143,7 +340,7 @@ public class RegionBuilder implements AutoCloseable {
     }
 
     /**
-     * Build ESVT tetree from voxel positions (basic implementation for Day 2 testing).
+     * Build ESVT tetree from voxel positions (Day 2 testing only).
      *
      * @param voxels Voxel coordinates
      * @return ESVT tetree data
@@ -249,11 +446,14 @@ public class RegionBuilder implements AutoCloseable {
     }
 
     /**
-     * Circuit breaker state for tracking build failures (C3 scaffolding).
+     * Circuit breaker state for tracking build failures (C3 implementation).
      *
-     * <p>Future enhancement: Track consecutive failures and block retries.
+     * <p>After 3 consecutive failures, block retries for 60 seconds.
      */
     static class CircuitBreakerState {
+        private static final int FAILURE_THRESHOLD = 3;
+        private static final long TIMEOUT_MS = 60_000; // 60 seconds
+
         private int consecutiveFailures;
         private long lastFailureTime;
 
@@ -262,6 +462,33 @@ public class RegionBuilder implements AutoCloseable {
             this.lastFailureTime = 0;
         }
 
-        // C3: Placeholder for future circuit breaker logic
+        /**
+         * Record a build failure.
+         */
+        void recordFailure(long currentTimeMs) {
+            consecutiveFailures++;
+            lastFailureTime = currentTimeMs;
+        }
+
+        /**
+         * Check if circuit breaker is open (blocking retries).
+         *
+         * @param currentTimeMs Current time in milliseconds
+         * @return true if circuit breaker is open
+         */
+        boolean isOpen(long currentTimeMs) {
+            if (consecutiveFailures >= FAILURE_THRESHOLD) {
+                long timeSinceFailure = currentTimeMs - lastFailureTime;
+                return timeSinceFailure < TIMEOUT_MS;
+            }
+            return false;
+        }
+
+        /**
+         * Get consecutive failure count.
+         */
+        int getConsecutiveFailures() {
+            return consecutiveFailures;
+        }
     }
 }
