@@ -40,14 +40,18 @@ public class TestClock implements Clock {
     private final AtomicBoolean absoluteMode;
 
     /**
-     * Creates a new test clock initialized to current system time in relative mode.
+     * Creates a new test clock initialized to current system time in absolute mode.
+     * <p>
+     * Absolute mode ensures deterministic behavior when using advance() - the clock
+     * value is fixed and does not drift with real System.currentTimeMillis().
      */
     public TestClock() {
+        long now = System.currentTimeMillis();
         this.offset = new AtomicLong(0);
-        this.absoluteTime = new AtomicLong(0);
-        this.absoluteNanos = new AtomicLong(0);
+        this.absoluteTime = new AtomicLong(now);
+        this.absoluteNanos = new AtomicLong(now * 1_000_000);
         this.nanoOffset = new AtomicLong(0);
-        this.absoluteMode = new AtomicBoolean(false);
+        this.absoluteMode = new AtomicBoolean(true);  // Start in absolute mode for determinism
     }
 
     /**

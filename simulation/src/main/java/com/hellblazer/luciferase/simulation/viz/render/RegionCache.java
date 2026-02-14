@@ -261,11 +261,7 @@ public class RegionCache implements AutoCloseable {
      * @return Total bytes used by cache
      */
     public long getTotalMemoryBytes() {
-        long unpinnedBytes = unpinnedCache.policy().eviction()
-                .map(eviction -> eviction.weightedSize().getAsLong())
-                .orElse(0L);
-
-        return pinnedMemoryBytes.get() + unpinnedBytes;
+        return pinnedMemoryBytes.get() + getUnpinnedMemoryBytes();
     }
 
     /**
@@ -280,9 +276,16 @@ public class RegionCache implements AutoCloseable {
     /**
      * Get unpinned memory usage.
      *
+     * <p>Triggers Caffeine maintenance to ensure weightedSize is up-to-date.
+     * Caffeine updates weightedSize asynchronously, so we force a cleanup cycle
+     * to get the current accurate value.
+     *
      * @return Bytes used by unpinned regions (Caffeine)
      */
     public long getUnpinnedMemoryBytes() {
+        // Force Caffeine to update internal eviction policy weights
+        unpinnedCache.cleanUp();
+
         return unpinnedCache.policy().eviction()
                 .map(eviction -> eviction.weightedSize().getAsLong())
                 .orElse(0L);
