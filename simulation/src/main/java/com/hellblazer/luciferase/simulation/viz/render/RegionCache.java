@@ -50,9 +50,13 @@ public class RegionCache implements AutoCloseable {
     private final ConcurrentHashMap<CacheKey, CachedRegion> pinnedCache;
     private final AtomicLong pinnedMemoryBytes;
     private final AtomicBoolean emergencyEvicting; // C4: Concurrency guard
+    private final AtomicLong pinnedAccessCount; // P3: Track accesses for sampling
     private final long maxMemoryBytes;
     private final Duration ttl;
     private volatile boolean closed;
+
+    // P3: Update timestamp only on 1% of accesses (reduces allocation by ~99%)
+    private static final int ACCESS_SAMPLING_RATE = 100;
 
     /**
      * Create RegionCache with Caffeine-based LRU eviction.
@@ -65,6 +69,7 @@ public class RegionCache implements AutoCloseable {
         this.ttl = ttl;
         this.pinnedMemoryBytes = new AtomicLong(0);
         this.pinnedCache = new ConcurrentHashMap<>();
+        this.pinnedAccessCount = new AtomicLong(0); // P3: Initialize access counter
         this.emergencyEvicting = new AtomicBoolean(false); // C4: Initially not evicting
         this.closed = false;
 
@@ -97,6 +102,9 @@ public class RegionCache implements AutoCloseable {
      * <p>C2 FIX: Updates lastAccessedMs timestamp on cache hits using atomic computeIfPresent
      * for pinned regions. Caffeine automatically tracks access time for unpinned regions.
      *
+     * <p>P3 OPTIMIZATION: Samples timestamp updates (1 in 100 accesses) to reduce allocation
+     * overhead for pinned regions while maintaining access tracking.
+     *
      * @param key Cache key (RegionId + LOD level)
      * @return Cached region if present, empty otherwise
      */
@@ -105,12 +113,18 @@ public class RegionCache implements AutoCloseable {
             return Optional.empty();
         }
 
-        // Check pinned cache first - atomic timestamp update
-        var updated = pinnedCache.computeIfPresent(key, (k, region) ->
-            region.withAccess(System.currentTimeMillis())
-        );
-        if (updated != null) {
-            return Optional.of(updated);
+        // Check pinned cache first
+        var pinned = pinnedCache.get(key);
+        if (pinned != null) {
+            // P3: Update timestamp only on sampled accesses (1% rate = 99% allocation reduction)
+            long accessNumber = pinnedAccessCount.incrementAndGet();
+            if (accessNumber % ACCESS_SAMPLING_RATE == 0) {
+                var updated = pinnedCache.computeIfPresent(key, (k, region) ->
+                    region.withAccess(System.currentTimeMillis())
+                );
+                return Optional.ofNullable(updated);
+            }
+            return Optional.of(pinned);
         }
 
         // Check unpinned Caffeine cache (already tracks access time internally)

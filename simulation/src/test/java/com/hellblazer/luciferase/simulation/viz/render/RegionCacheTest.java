@@ -627,8 +627,11 @@ class RegionCacheTest {
             smallCache.pin(key4);
 
             // Access middle region (key2) to update its timestamp to newest
+            // P3: Multiple accesses needed for sampling-based timestamp update (1 in 100)
             Thread.sleep(10);
-            smallCache.get(key2);  // C2 fix: Atomic timestamp update via computeIfPresent()
+            for (int i = 0; i < 200; i++) {
+                smallCache.get(key2);  // C2 fix: Atomic timestamp update via computeIfPresent()
+            }
 
             // Trigger emergency eviction
             int evicted = smallCache.emergencyEvict();
@@ -848,6 +851,74 @@ class RegionCacheTest {
         // Verify stats contain reasonable values (may be slightly stale)
         assertTrue(stats.totalMemoryBytes() >= 0, "Stats should have non-negative memory");
         assertTrue(stats.totalCount() >= 0, "Stats should have non-negative count");
+    }
+
+    // ===== P3: Pinned Access Sampling Tests =====
+
+    @Test
+    void testPinnedAccessSampling_functionalCorrectness() throws InterruptedException {
+        // Verify pinned regions remain accessible with sampling optimization
+        var regionId = new RegionId(1, 0);
+        var key = new RegionCache.CacheKey(regionId, 0);
+        var builtRegion = createTestRegion(regionId, 1000);
+        var cachedRegion = RegionCache.CachedRegion.from(builtRegion, 100L);
+
+        cache.put(key, cachedRegion);
+        cache.pin(key);
+
+        // Access 200 times - should always succeed despite sampling
+        for (int i = 0; i < 200; i++) {
+            var result = cache.get(key);
+            assertTrue(result.isPresent(), "Pinned region should always be accessible");
+            assertEquals(regionId, result.get().builtRegion().regionId());
+        }
+    }
+
+    @Test
+    void testPinnedAccessSampling_timestampEventuallyUpdates() throws InterruptedException {
+        // Verify timestamp is updated at least once during sampled accesses
+        var regionId = new RegionId(1, 0);
+        var key = new RegionCache.CacheKey(regionId, 0);
+        var builtRegion = createTestRegion(regionId, 1000);
+        var initialTime = 1000L;
+        var cachedRegion = RegionCache.CachedRegion.from(builtRegion, initialTime);
+
+        cache.put(key, cachedRegion);
+        cache.pin(key);
+
+        // Wait to ensure timestamp difference
+        Thread.sleep(50);
+
+        // Access 200 times (>= 2 * sampling rate = 2 * 100)
+        // At least 2 accesses should trigger timestamp update
+        for (int i = 0; i < 200; i++) {
+            cache.get(key);
+        }
+
+        // Verify timestamp was updated at least once
+        var result = cache.get(key);
+        assertTrue(result.isPresent());
+        long lastAccessed = result.get().lastAccessedMs();
+        assertTrue(lastAccessed > initialTime,
+                "Timestamp should update during sampled accesses: initial=" + initialTime + ", lastAccessed=" + lastAccessed);
+    }
+
+    @Test
+    void testPinnedAccessSampling_unpinnedCacheUnaffected() {
+        // Verify sampling doesn't affect unpinned cache behavior
+        var regionId = new RegionId(1, 0);
+        var key = new RegionCache.CacheKey(regionId, 0);
+        var builtRegion = createTestRegion(regionId, 1000);
+        var cachedRegion = RegionCache.CachedRegion.from(builtRegion, 100L);
+
+        cache.put(key, cachedRegion);
+        // Don't pin - stays in unpinned cache
+
+        // Access many times - should still work (Caffeine tracks access internally)
+        for (int i = 0; i < 200; i++) {
+            var result = cache.get(key);
+            assertTrue(result.isPresent(), "Unpinned region should be accessible");
+        }
     }
 
     // ===== Helper Methods =====
