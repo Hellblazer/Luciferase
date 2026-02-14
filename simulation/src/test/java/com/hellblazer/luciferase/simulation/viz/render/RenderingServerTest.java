@@ -712,4 +712,99 @@ class RenderingServerTest {
 
         server.stop();
     }
+
+    @Test
+    void testHealthEndpointCaching() throws Exception {
+        var config = RenderingServerConfig.testing();
+        server = new RenderingServer(config);
+        server.start();
+
+        var client = HttpClient.newHttpClient();
+        var healthUri = URI.create("http://localhost:" + server.port() + "/api/health");
+
+        // First request - should compute fresh response
+        var request1 = HttpRequest.newBuilder().uri(healthUri).GET().build();
+        var response1 = client.send(request1, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response1.statusCode());
+        String body1 = response1.body();
+
+        // Second request immediately - should return cached response
+        var request2 = HttpRequest.newBuilder().uri(healthUri).GET().build();
+        var response2 = client.send(request2, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response2.statusCode());
+        String body2 = response2.body();
+
+        // Responses should be identical (cached)
+        assertEquals(body1, body2, "Response within TTL should be cached");
+
+        // Wait for cache to expire (1s TTL + 100ms buffer)
+        Thread.sleep(1100);
+
+        // Third request after 1s TTL - should compute fresh response
+        var request3 = HttpRequest.newBuilder().uri(healthUri).GET().build();
+        var response3 = client.send(request3, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response3.statusCode());
+        String body3 = response3.body();
+
+        // Response after TTL should differ (freshly computed with new uptime)
+        var json1 = jsonMapper.readTree(body1);
+        var json3 = jsonMapper.readTree(body3);
+        assertTrue(json3.get("uptime").asLong() > json1.get("uptime").asLong(),
+                  "Uptime should increase after TTL expires");
+
+        server.stop();
+    }
+
+    @Test
+    void testMetricsEndpointCaching() throws Exception {
+        var config = RenderingServerConfig.testing();
+        server = new RenderingServer(config);
+        server.start();
+
+        var client = HttpClient.newHttpClient();
+        var metricsUri = URI.create("http://localhost:" + server.port() + "/api/metrics");
+
+        // First request - should compute fresh response
+        var request1 = HttpRequest.newBuilder().uri(metricsUri).GET().build();
+        var response1 = client.send(request1, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response1.statusCode());
+        String body1 = response1.body();
+
+        // Second request immediately - should return cached response
+        var request2 = HttpRequest.newBuilder().uri(metricsUri).GET().build();
+        var response2 = client.send(request2, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response2.statusCode());
+        String body2 = response2.body();
+
+        assertEquals(body1, body2, "Metrics response within TTL should be cached");
+
+        server.stop();
+    }
+
+    @Test
+    void testHealthAndMetricsCachedSeparately() throws Exception {
+        var config = RenderingServerConfig.testing();
+        server = new RenderingServer(config);
+        server.start();
+
+        var client = HttpClient.newHttpClient();
+        var healthUri = URI.create("http://localhost:" + server.port() + "/api/health");
+        var metricsUri = URI.create("http://localhost:" + server.port() + "/api/metrics");
+
+        // Request health endpoint
+        var healthRequest = HttpRequest.newBuilder().uri(healthUri).GET().build();
+        var healthResponse = client.send(healthRequest, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, healthResponse.statusCode());
+
+        // Request metrics endpoint - should not return health response
+        var metricsRequest = HttpRequest.newBuilder().uri(metricsUri).GET().build();
+        var metricsResponse = client.send(metricsRequest, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, metricsResponse.statusCode());
+
+        // Verify responses are different (separate cache keys)
+        assertNotEquals(healthResponse.body(), metricsResponse.body(),
+                       "Health and metrics should be cached separately");
+
+        server.stop();
+    }
 }

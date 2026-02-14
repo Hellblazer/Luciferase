@@ -8,6 +8,9 @@
  */
 package com.hellblazer.luciferase.simulation.viz.render;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -22,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -52,6 +56,7 @@ public class RenderingServer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(RenderingServer.class);
     private static final String VERSION = "1.0.0-SNAPSHOT";
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
     private final RenderingServerConfig config;
     private final AdaptiveRegionManager regionManager;
@@ -68,6 +73,9 @@ public class RenderingServer implements AutoCloseable {
 
     // w1tk: Rate limiter (null if rate limiting disabled)
     private RateLimiter rateLimiter;
+
+    // rp9u: Endpoint response cache (1s TTL to reduce overhead from frequent polling)
+    private Cache<String, String> endpointCache;
 
     // bfgm: Scheduled executor for periodic dirty region backfill retry
     private ScheduledExecutorService backfillRetryExecutor;
@@ -155,6 +163,12 @@ public class RenderingServer implements AutoCloseable {
             rateLimiter = new RateLimiter(config.security().rateLimitRequestsPerMinute(), clock);
             log.info("Rate limiting enabled: {} requests/minute", config.security().rateLimitRequestsPerMinute());
         }
+
+        // rp9u: Initialize endpoint response cache (1s TTL)
+        endpointCache = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofSeconds(1))
+            .maximumSize(10)  // Small cache - only health and metrics endpoints
+            .build();
 
         // wwi6: Validate keystore path exists before Jetty starts (for clear error messages)
         if (config.security().tlsEnabled()) {
@@ -291,6 +305,11 @@ public class RenderingServer implements AutoCloseable {
         // Stop consuming entity streams
         entityConsumer.close();
 
+        // rp9u: Clear endpoint cache
+        if (endpointCache != null) {
+            endpointCache.invalidateAll();
+        }
+
         // Close Phase 2 components
         if (regionBuilder != null) {
             regionBuilder.close();
@@ -367,8 +386,18 @@ public class RenderingServer implements AutoCloseable {
      * Handle /api/health endpoint.
      * <p>
      * Returns: {"status":"healthy","uptime":12345,"regions":42,"entities":156}
+     * <p>
+     * rp9u: Cached for 1 second to reduce overhead from frequent monitoring polls.
      */
     private void handleHealth(Context ctx) {
+        // rp9u: Check cache first
+        String cached = endpointCache.getIfPresent("health");
+        if (cached != null) {
+            ctx.contentType("application/json").result(cached);
+            return;
+        }
+
+        // Compute fresh response
         long uptime = clock.currentTimeMillis() - startTimeMs;
         var regions = regionManager.getAllRegions();
         int totalEntities = regions.stream()
@@ -378,12 +407,22 @@ public class RenderingServer implements AutoCloseable {
             })
             .sum();
 
-        ctx.json(Map.of(
+        var response = Map.of(
             "status", "healthy",
             "uptime", uptime,
             "regions", regions.size(),
             "entities", totalEntities
-        ));
+        );
+
+        // Serialize to JSON and cache
+        try {
+            String jsonString = JSON_MAPPER.writeValueAsString(response);
+            endpointCache.put("health", jsonString);
+            ctx.contentType("application/json").result(jsonString);
+        } catch (Exception e) {
+            log.error("Failed to serialize health response", e);
+            ctx.json(response);  // Fallback to Javalin's JSON serialization
+        }
     }
 
     /**
@@ -429,8 +468,18 @@ public class RenderingServer implements AutoCloseable {
      * Handle /api/metrics endpoint (M2).
      * <p>
      * Returns builder and cache statistics.
+     * <p>
+     * rp9u: Cached for 1 second to reduce overhead from frequent monitoring polls.
      */
     private void handleMetrics(Context ctx) {
+        // rp9u: Check cache first
+        String cached = endpointCache.getIfPresent("metrics");
+        if (cached != null) {
+            ctx.contentType("application/json").result(cached);
+            return;
+        }
+
+        // Compute fresh response
         var metrics = new java.util.HashMap<String, Object>();
 
         // Builder metrics
@@ -466,6 +515,14 @@ public class RenderingServer implements AutoCloseable {
             metrics.put("rateLimiter", rateLimitMetrics);
         }
 
-        ctx.json(metrics);
+        // Serialize to JSON and cache
+        try {
+            String jsonString = JSON_MAPPER.writeValueAsString(metrics);
+            endpointCache.put("metrics", jsonString);
+            ctx.contentType("application/json").result(jsonString);
+        } catch (Exception e) {
+            log.error("Failed to serialize metrics response", e);
+            ctx.json(metrics);  // Fallback to Javalin's JSON serialization
+        }
     }
 }
