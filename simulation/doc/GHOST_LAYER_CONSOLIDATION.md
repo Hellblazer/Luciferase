@@ -1,7 +1,10 @@
 # Ghost Layer: Boundary Synchronization for Mobile Bubbles
 
+**Last Updated**: 2026-02-14
 **Status**: Current
 **Architecture**: Ghost synchronization with dead reckoning for mobile bubble boundaries
+
+**Note**: For complete ghost layer architecture, see [ARCHITECTURE_DISTRIBUTED.md § Ghost Layer](ARCHITECTURE_DISTRIBUTED.md#ghost-layer). This document contains implementation-specific details.
 
 ---
 
@@ -351,9 +354,7 @@ Phase 4 (cleanup):
 
 ## Related Documentation
 
-- [SIMULATION_BUBBLES.md](SIMULATION_BUBBLES.md) - Mobile bubble architecture
-- [VON_OVERLAY_ASSESSMENT.md](VON_OVERLAY_ASSESSMENT.md) - VON architecture and MOVE protocol
-- [ARCHITECTURE_DISTRIBUTED.md](ARCHITECTURE_DISTRIBUTED.md) - Complete distributed architecture
+- [ARCHITECTURE_DISTRIBUTED.md](ARCHITECTURE_DISTRIBUTED.md) - Complete distributed architecture (see § Mobile Bubble Architecture and § VON Coordination)
 
 ---
 

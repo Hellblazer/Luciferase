@@ -1,5 +1,6 @@
 # Distributed Architecture - Luciferase Simulation
 
+**Last Updated**: 2026-02-14
 **Status**: Current
 **Scope**: Multi-bubble distributed simulation with VON coordination and Byzantine consensus
 
@@ -21,15 +22,15 @@ Luciferase simulation module implements massively distributed 3D animation using
 
 ## Table of Contents
 
-1. [High-Level Architecture](#high-level-architecture)
-2. [Mobile Bubble Architecture](#mobile-bubble-architecture)
-3. [VON Coordination](#von-coordination)
-4. [Entity Migration Protocol](#entity-migration-protocol)
-5. [Consensus Layer](#consensus-layer)
-6. [Ghost Layer](#ghost-layer)
-7. [Network Architecture](#network-architecture)
-8. [Time Management](#time-management)
-9. [Performance Characteristics](#performance-characteristics)
+1. [High-Level Architecture](#high-level-architecture) - Component stack and key components
+2. [Mobile Bubble Architecture](#mobile-bubble-architecture) - Mobile bubbles with VON neighbor discovery
+3. [VON Coordination](#von-coordination) - MOVE protocol and neighbor management
+4. [Entity Migration Protocol](#entity-migration-protocol) - 2PC migration with Byzantine consensus
+5. [Consensus Layer](#consensus-layer) - BFT committee consensus
+6. [Ghost Layer](#ghost-layer) - Dead reckoning and eventual consistency
+7. [Network Architecture](#network-architecture) - P2P transport and communication
+8. [Time Management](#time-management) - Deterministic time with Clock interface
+9. [Performance Characteristics](#performance-characteristics) - Scalability and throughput
 
 ---
 
@@ -37,51 +38,29 @@ Luciferase simulation module implements massively distributed 3D animation using
 
 ### Component Stack
 
-```
-┌─────────────────────────────────────────────────────┐
-│         Application Layer                           │
-│  (VolumeAnimator, Entity factories, animation loop) │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│         Mobile Bubble Layer                         │
-│  (Bubble, Manager, VON neighbor discovery)         │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│         VON Coordination Layer                      │
-│  (MoveProtocol, GhostSyncVONIntegration, AOI)      │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│         Consensus Layer (BFT)                       │
-│  (ViewCommitteeConsensus, CommitteeVotingProtocol) │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│         Migration & Coordination Layer              │
-│  (CrossProcessMigration, 2PC state machine)        │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│         Network & Communication Layer               │
-│  (P2P Transport, LocalServerTransport, gRPC)       │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│         Ghost Layer                                 │
-│  (GhostStateManager, dead reckoning, ghost sync)   │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│         Spatial Index Layer                         │
-│  (Tetree, Forest, k-NN neighbor discovery)         │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│         Fireflies Membership Layer                  │
-│  (Virtual Synchrony, View Tracking, BFT)           │
-└─────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    A["Application Layer<br/><small>VolumeAnimator, Entity factories, animation loop</small>"]
+    B["Mobile Bubble Layer<br/><small>Bubble, Manager, VON neighbor discovery</small>"]
+    C["VON Coordination Layer<br/><small>MoveProtocol, GhostSyncVONIntegration, AOI</small>"]
+    D["Consensus Layer (BFT)<br/><small>ViewCommitteeConsensus, CommitteeVotingProtocol</small>"]
+    E["Migration & Coordination Layer<br/><small>CrossProcessMigration, 2PC state machine</small>"]
+    F["Network & Communication Layer<br/><small>P2P Transport, LocalServerTransport, gRPC</small>"]
+    G["Ghost Layer<br/><small>GhostStateManager, dead reckoning, ghost sync</small>"]
+    H["Spatial Index Layer<br/><small>Tetree, Forest, k-NN neighbor discovery</small>"]
+    I["Fireflies Membership Layer<br/><small>Virtual Synchrony, View Tracking, BFT</small>"]
+
+    A --> B --> C --> D --> E --> F --> G --> H --> I
+
+    style A fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
+    style B fill:#fff4e6,stroke:#ff9800,stroke-width:2px
+    style C fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+    style D fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
+    style E fill:#fff3e0,stroke:#ff6f00,stroke-width:2px
+    style F fill:#e0f2f1,stroke:#009688,stroke-width:2px
+    style G fill:#fce4ec,stroke:#e91e63,stroke-width:2px
+    style H fill:#f1f8e9,stroke:#8bc34a,stroke-width:2px
+    style I fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
 ```
 
 ### Key Components
@@ -1267,7 +1246,6 @@ t=11000ms: Bubble B' re-joins via Bubble A, recovers orphaned entities
 ### Implementation Guides
 - [H3_DETERMINISM_EPIC.md](H3_DETERMINISM_EPIC.md) - Deterministic testing with Clock interface
 - [TESTING_PATTERNS.md](TESTING_PATTERNS.md) - Testing best practices
-- [VON_OVERLAY_ASSESSMENT.md](VON_OVERLAY_ASSESSMENT.md) - VON architecture and MOVE protocol
 
 ### ADRs
 - [ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md](ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md) - Migration and Consensus design

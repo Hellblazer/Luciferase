@@ -30,52 +30,79 @@ serialized results for streaming (Phase 3).
 
 ## 2. Bead Hierarchy
 
-```
-Epic: Luciferase-r47c  Phase 2: GPU Integration
-  |
-  +-- Luciferase-jbbx  Phase 2A: Core Build Pipeline
-  |     |
-  |     +-- Luciferase-an6a  SerializationUtils (Day 1)
-  |     +-- Luciferase-q8fp  GpuESVOBuilder records + positionsToVoxels (Day 2)
-  |     +-- Luciferase-58co  GpuESVOBuilder pipeline + C1 backpressure (Day 3)
-  |
-  +-- Luciferase-wxu9  Phase 2B: Region Caching
-  |     |
-  |     +-- Luciferase-f7xd  RegionCache core (Day 4)
-  |     +-- Luciferase-lzjb  RegionCache M1 + TTL (Day 5)
-  |
-  +-- Luciferase-gix5  Phase 2C: Integration and Testing
-        |
-        +-- Luciferase-7h3l  Integration wiring (Day 6)
-        +-- Luciferase-2yfa  Final testing + quality gates (Day 7-7.5)
+```mermaid
+graph TB
+    Epic["Epic: Luciferase-r47c<br/>Phase 2: GPU Integration"]
+
+    P2A["Phase 2A: Luciferase-jbbx<br/>Core Build Pipeline"]
+    P2B["Phase 2B: Luciferase-wxu9<br/>Region Caching"]
+    P2C["Phase 2C: Luciferase-gix5<br/>Integration and Testing"]
+
+    D1["Luciferase-an6a<br/>SerializationUtils (Day 1)"]
+    D2["Luciferase-q8fp<br/>GpuESVOBuilder records + positionsToVoxels (Day 2)"]
+    D3["Luciferase-58co<br/>GpuESVOBuilder pipeline + C1 backpressure (Day 3)"]
+
+    D4["Luciferase-f7xd<br/>RegionCache core (Day 4)"]
+    D5["Luciferase-lzjb<br/>RegionCache M1 + TTL (Day 5)"]
+
+    D6["Luciferase-7h3l<br/>Integration wiring (Day 6)"]
+    D7["Luciferase-2yfa<br/>Final testing + quality gates (Day 7-7.5)"]
+
+    Epic --> P2A
+    Epic --> P2B
+    Epic --> P2C
+
+    P2A --> D1
+    P2A --> D2
+    P2A --> D3
+
+    P2B --> D4
+    P2B --> D5
+
+    P2C --> D6
+    P2C --> D7
+
+    style Epic fill:#e1f5ff,stroke:#0066cc,stroke-width:3px
+    style P2A fill:#fff4e6,stroke:#ff9800,stroke-width:2px
+    style P2B fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+    style P2C fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
 ```
 
 ---
 
 ## 3. Dependency Graph
 
-```
-Luciferase-an6a  SerializationUtils [Day 1]
-        |
-        v
-Luciferase-q8fp  GpuESVOBuilder records [Day 2]
-        |                           \
-        v                            \
-Luciferase-58co  GpuESVOBuilder      Luciferase-f7xd  RegionCache core [Day 4]
-  pipeline + C1 [Day 3]                     |
-        |                                   v
-        |                          Luciferase-lzjb  RegionCache M1 [Day 5]
-        |                                   |
-        +-----------------------------------+
-        |
-        v
-Luciferase-7h3l  Integration wiring [Day 6]
-        |
-        v
-Luciferase-2yfa  Final testing [Day 7-7.5]
+```mermaid
+graph TD
+    an6a["Luciferase-an6a<br/>SerializationUtils<br/><small>Day 1</small>"]
+    q8fp["Luciferase-q8fp<br/>GpuESVOBuilder records<br/><small>Day 2</small>"]
+    58co["Luciferase-58co<br/>GpuESVOBuilder pipeline + C1<br/><small>Day 3</small>"]
+    f7xd["Luciferase-f7xd<br/>RegionCache core<br/><small>Day 4</small>"]
+    lzjb["Luciferase-lzjb<br/>RegionCache M1<br/><small>Day 5</small>"]
+    7h3l["Luciferase-7h3l<br/>Integration wiring<br/><small>Day 6</small>"]
+    2yfa["Luciferase-2yfa<br/>Final testing<br/><small>Day 7-7.5</small>"]
+
+    an6a --> q8fp
+    q8fp --> 58co
+    q8fp --> f7xd
+    f7xd --> lzjb
+    58co --> 7h3l
+    lzjb --> 7h3l
+    7h3l --> 2yfa
+
+    style an6a fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style q8fp fill:#e1f5ff,stroke:#0288d1,stroke-width:2px
+    style 58co fill:#b3e5fc,stroke:#0277bd,stroke-width:3px
+    style f7xd fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style lzjb fill:#ffe0b2,stroke:#ef6c00,stroke-width:2px
+    style 7h3l fill:#c8e6c9,stroke:#388e3c,stroke-width:3px
+    style 2yfa fill:#a5d6a7,stroke:#2e7d32,stroke-width:3px
+
+    classDef criticalPath fill:#ffcdd2,stroke:#c62828,stroke-width:4px
+    class an6a,q8fp,58co,7h3l,2yfa criticalPath
 ```
 
-**Critical Path**: an6a -> q8fp -> 58co -> 7h3l -> 2yfa (5 sequential steps)
+**Critical Path** (highlighted in red): an6a → q8fp → 58co → 7h3l → 2yfa (5 sequential steps)
 **Parallel Opportunity**: f7xd (Day 4) can start after q8fp (Day 2), overlapping with 58co (Day 3)
 
 ---

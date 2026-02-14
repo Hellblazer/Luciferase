@@ -6,6 +6,8 @@
 **Related Bead**: Luciferase-d15x (BUG-003)
 **Context**: H3 Determinism Epic (simulation/doc/H3_DETERMINISM_EPIC.md)
 
+**Note**: This ADR-002 supersedes the previously archived ADR-002 "Fixed Volume Spatial Partitioning" decision (see `archive/ADR_002_OBSOLETE_FIXED_VOLUME.md`). The numbering collision is historical - the original ADR-002 was obsoleted and archived before this ADR-002 was created.
+
 ---
 
 ## Context
