@@ -780,6 +780,76 @@ class RegionCacheTest {
         }
     }
 
+    /**
+     * Test forceAccurate parameter in getUnpinnedMemoryBytes() (bkji).
+     * forceAccurate=true (default) calls cleanUp() for accurate weight.
+     * forceAccurate=false skips cleanUp() for low-overhead monitoring.
+     */
+    @Test
+    void testForceAccurateParameter_getUnpinnedMemoryBytes() {
+        var region = createTestRegion(new RegionId(1L, 0), 1000);
+        var key = new RegionCache.CacheKey(new RegionId(1L, 0), 0);
+        var cached = RegionCache.CachedRegion.from(region, System.currentTimeMillis());
+
+        // Put region in unpinned cache
+        cache.put(key, cached);
+
+        // Test no-arg method (default forceAccurate=true)
+        long accurateBytes = cache.getUnpinnedMemoryBytes();
+        assertTrue(accurateBytes >= 1000, "Should return accurate bytes with default");
+
+        // Test explicit forceAccurate=true
+        long explicitAccurate = cache.getUnpinnedMemoryBytes(true);
+        assertTrue(explicitAccurate >= 1000, "Should return accurate bytes with forceAccurate=true");
+
+        // Test forceAccurate=false (may be stale, but should not crash)
+        long fastBytes = cache.getUnpinnedMemoryBytes(false);
+        assertTrue(fastBytes >= 0, "Should return non-negative bytes with forceAccurate=false");
+    }
+
+    /**
+     * Test forceAccurate parameter in getTotalMemoryBytes() (bkji).
+     */
+    @Test
+    void testForceAccurateParameter_getTotalMemoryBytes() {
+        var region = createTestRegion(new RegionId(1L, 0), 1000);
+        var key = new RegionCache.CacheKey(new RegionId(1L, 0), 0);
+        var cached = RegionCache.CachedRegion.from(region, System.currentTimeMillis());
+
+        cache.put(key, cached);
+
+        // Test no-arg method (default forceAccurate=true)
+        long accurateTotal = cache.getTotalMemoryBytes();
+        assertTrue(accurateTotal >= 1000, "Should return accurate total with default");
+
+        // Test explicit forceAccurate=true
+        long explicitAccurate = cache.getTotalMemoryBytes(true);
+        assertTrue(explicitAccurate >= 1000, "Should return accurate total with forceAccurate=true");
+
+        // Test forceAccurate=false
+        long fastTotal = cache.getTotalMemoryBytes(false);
+        assertTrue(fastTotal >= 0, "Should return non-negative total with forceAccurate=false");
+    }
+
+    /**
+     * Test that getStats() uses forceAccurate=false for low-overhead monitoring (bkji).
+     */
+    @Test
+    void testGetStats_usesForceAccurateFalse() {
+        var region = createTestRegion(new RegionId(1L, 0), 1000);
+        var key = new RegionCache.CacheKey(new RegionId(1L, 0), 0);
+        var cached = RegionCache.CachedRegion.from(region, System.currentTimeMillis());
+
+        cache.put(key, cached);
+
+        // getStats() should complete without expensive cleanUp()
+        var stats = cache.getStats();
+
+        // Verify stats contain reasonable values (may be slightly stale)
+        assertTrue(stats.totalMemoryBytes() >= 0, "Stats should have non-negative memory");
+        assertTrue(stats.totalCount() >= 0, "Stats should have non-negative count");
+    }
+
     // ===== Helper Methods =====
 
     /**

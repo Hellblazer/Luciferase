@@ -239,11 +239,13 @@ public class RegionCache implements AutoCloseable {
     /**
      * Get current cache statistics.
      *
+     * <p>Uses forceAccurate=false for low-overhead monitoring (bkji).
+     *
      * @return Cache stats including Caffeine hit rate
      */
     public CacheStats getStats() {
         var caffeineStats = unpinnedCache.stats();
-        long totalMemory = getTotalMemoryBytes();
+        long totalMemory = getTotalMemoryBytes(false); // bkji: Use fast path for monitoring
 
         return new CacheStats(
                 pinnedCache.size(),
@@ -259,10 +261,24 @@ public class RegionCache implements AutoCloseable {
     /**
      * Get total memory usage (pinned + unpinned).
      *
+     * <p>Defaults to forceAccurate=true for backward compatibility.
+     *
      * @return Total bytes used by cache
      */
     public long getTotalMemoryBytes() {
-        return pinnedMemoryBytes.get() + getUnpinnedMemoryBytes();
+        return getTotalMemoryBytes(true);
+    }
+
+    /**
+     * Get total memory usage (pinned + unpinned) with configurable accuracy.
+     *
+     * <p>bkji: Reduce cleanUp() overhead for monitoring vs critical decisions.
+     *
+     * @param forceAccurate If true, calls cleanUp() for accurate weight; if false, skips cleanUp() for low-overhead monitoring
+     * @return Total bytes used by cache
+     */
+    public long getTotalMemoryBytes(boolean forceAccurate) {
+        return pinnedMemoryBytes.get() + getUnpinnedMemoryBytes(forceAccurate);
     }
 
     /**
@@ -281,11 +297,31 @@ public class RegionCache implements AutoCloseable {
      * Caffeine updates weightedSize asynchronously, so we force a cleanup cycle
      * to get the current accurate value.
      *
+     * <p>Defaults to forceAccurate=true for backward compatibility.
+     *
      * @return Bytes used by unpinned regions (Caffeine)
      */
     public long getUnpinnedMemoryBytes() {
-        // Force Caffeine to update internal eviction policy weights
-        unpinnedCache.cleanUp();
+        return getUnpinnedMemoryBytes(true);
+    }
+
+    /**
+     * Get unpinned memory usage with configurable accuracy (bkji).
+     *
+     * <p>bkji: Reduce cleanUp() overhead for monitoring vs critical decisions.
+     * <ul>
+     *   <li>forceAccurate=true: Calls cleanUp() for accurate weight (use in emergencyEvict())</li>
+     *   <li>forceAccurate=false: Skips cleanUp() for low-overhead monitoring (use in getStats())</li>
+     * </ul>
+     *
+     * @param forceAccurate If true, calls cleanUp() for accurate weight; if false, returns potentially stale value
+     * @return Bytes used by unpinned regions (Caffeine)
+     */
+    public long getUnpinnedMemoryBytes(boolean forceAccurate) {
+        if (forceAccurate) {
+            // Force Caffeine to update internal eviction policy weights
+            unpinnedCache.cleanUp();
+        }
 
         return unpinnedCache.policy().eviction()
                 .map(eviction -> eviction.weightedSize().getAsLong())
@@ -323,7 +359,8 @@ public class RegionCache implements AutoCloseable {
         }
 
         try {
-            long totalMemory = getTotalMemoryBytes();
+            // bkji: Use forceAccurate=true for critical emergency eviction decisions
+            long totalMemory = getTotalMemoryBytes(true);
             long emergencyThreshold = (long) (maxMemoryBytes * 0.9); // 90% triggers emergency
             long targetMemory = (long) (maxMemoryBytes * 0.75); // Evict down to 75%
 
@@ -339,8 +376,8 @@ public class RegionCache implements AutoCloseable {
             // Step 1: Force Caffeine to cleanup expired/LRU entries
             unpinnedCache.cleanUp();
 
-            // Re-check memory after Caffeine cleanup
-            totalMemory = getTotalMemoryBytes();
+            // Re-check memory after Caffeine cleanup (bkji: forceAccurate=true for critical decision)
+            totalMemory = getTotalMemoryBytes(true);
             if (totalMemory < targetMemory) {
                 log.info("Caffeine cleanup sufficient, memory now {} bytes", totalMemory);
                 return 0;
