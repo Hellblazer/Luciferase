@@ -21,6 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -60,6 +62,9 @@ public class RenderingServer implements AutoCloseable {
     // Phase 2 components
     private RegionBuilder regionBuilder;
     private RegionCache regionCache;
+
+    // w1tk: Rate limiter (null if rate limiting disabled)
+    private RateLimiter rateLimiter;
 
     /**
      * Create rendering server with configuration.
@@ -117,6 +122,12 @@ public class RenderingServer implements AutoCloseable {
         // Backfill any existing dirty regions
         regionManager.backfillDirtyRegions();
 
+        // w1tk: Initialize rate limiter if enabled
+        if (config.security().rateLimitEnabled()) {
+            rateLimiter = new RateLimiter(config.security().rateLimitRequestsPerMinute());
+            log.info("Rate limiting enabled: {} requests/minute", config.security().rateLimitRequestsPerMinute());
+        }
+
         app = Javalin.create(javalinConfig -> {
             javalinConfig.showJavalinBanner = false;
             javalinConfig.http.defaultContentType = "application/json";
@@ -147,6 +158,21 @@ public class RenderingServer implements AutoCloseable {
                 log.info("TLS/HTTPS enabled with keystore: {}", config.security().keystorePath());
             }
         });
+
+        // w1tk: Add rate limiting filter
+        if (rateLimiter != null) {
+            app.before(ctx -> {
+                String clientIp = ctx.ip();
+                if (!rateLimiter.allowRequest(clientIp)) {
+                    throw new RateLimitExceededException();
+                }
+            });
+
+            // Handle rate limit exceptions
+            app.exception(RateLimitExceededException.class, (e, ctx) -> {
+                ctx.status(429).json(Map.of("error", "Too Many Requests"));
+            });
+        }
 
         // REST endpoints
         app.get("/api/health", this::handleHealth);
@@ -351,5 +377,52 @@ public class RenderingServer implements AutoCloseable {
         }
 
         ctx.json(metrics);
+    }
+
+    /**
+     * Exception thrown when rate limit is exceeded (w1tk).
+     */
+    private static class RateLimitExceededException extends RuntimeException {
+        public RateLimitExceededException() {
+            super("Rate limit exceeded");
+        }
+    }
+
+    /**
+     * Simple sliding window rate limiter (w1tk).
+     * <p>
+     * Tracks requests per IP address using a sliding window of 1 minute.
+     * Thread-safe using ConcurrentHashMap and ConcurrentLinkedQueue.
+     */
+    private static class RateLimiter {
+        private final ConcurrentHashMap<String, ConcurrentLinkedQueue<Long>> requestTimestamps = new ConcurrentHashMap<>();
+        private final int maxRequestsPerMinute;
+        private final long windowMs = 60_000L;  // 1 minute window
+
+        public RateLimiter(int maxRequestsPerMinute) {
+            this.maxRequestsPerMinute = maxRequestsPerMinute;
+        }
+
+        /**
+         * Check if request from given IP should be allowed.
+         *
+         * @param ip Client IP address
+         * @return true if allowed, false if rate limit exceeded
+         */
+        public boolean allowRequest(String ip) {
+            long now = System.currentTimeMillis();
+            var timestamps = requestTimestamps.computeIfAbsent(ip, k -> new ConcurrentLinkedQueue<>());
+
+            // Remove timestamps outside the sliding window
+            timestamps.removeIf(timestamp -> now - timestamp > windowMs);
+
+            // Check if under limit
+            if (timestamps.size() < maxRequestsPerMinute) {
+                timestamps.offer(now);
+                return true;
+            }
+
+            return false;  // Rate limit exceeded
+        }
     }
 }

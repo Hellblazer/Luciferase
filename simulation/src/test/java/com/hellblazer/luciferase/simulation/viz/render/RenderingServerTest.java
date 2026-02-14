@@ -347,4 +347,51 @@ class RenderingServerTest {
 
         server.stop();
     }
+
+    @Test
+    void testRateLimiting() throws Exception {
+        // Configure server with rate limiting (5 requests/min for easy testing)
+        var security = new SecurityConfig(
+            null,     // No API key
+            false,    // No redaction
+            false,    // No TLS
+            null, null, null,
+            true,     // Rate limiting enabled
+            5         // Limit: 5 requests per minute
+        );
+
+        var config = new RenderingServerConfig(
+            0, List.of(), 2,
+            security,
+            CacheConfig.testing(),
+            BuildConfig.testing(),
+            1_000
+        );
+
+        server = new RenderingServer(config);
+        server.start();
+
+        int port = server.port();
+        var client = HttpClient.newHttpClient();
+
+        // Make 5 requests (should all succeed)
+        for (int i = 0; i < 5; i++) {
+            var request = HttpRequest.newBuilder()
+                                     .uri(URI.create("http://localhost:" + port + "/api/health"))
+                                     .GET()
+                                     .build();
+            var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, response.statusCode(), "Request " + (i + 1) + " should succeed");
+        }
+
+        // 6th request should be rate-limited
+        var request = HttpRequest.newBuilder()
+                                 .uri(URI.create("http://localhost:" + port + "/api/health"))
+                                 .GET()
+                                 .build();
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(429, response.statusCode(), "6th request should be rate-limited (429 Too Many Requests)");
+
+        server.stop();
+    }
 }
