@@ -347,23 +347,28 @@ public class RegionCache implements AutoCloseable {
             }
 
             // Step 2: Evict oldest pinned regions if still over target
+            // mauo: Use min-heap for O(n + k log n) complexity instead of O(n log n) sort
             long bytesToEvict = totalMemory - targetMemory;
-            var pinnedEntries = pinnedCache.entrySet().stream()
-                    .filter(entry -> entry.getValue() != null)
-                    .sorted((e1, e2) -> Long.compare(
-                            e1.getValue().lastAccessedMs(),
-                            e2.getValue().lastAccessedMs()
-                    ))
-                    .collect(Collectors.toList());
+
+            // Build min-heap ordered by lastAccessedMs (oldest first)
+            var evictionQueue = new java.util.PriorityQueue<java.util.Map.Entry<CacheKey, CachedRegion>>(
+                    pinnedCache.size(),
+                    (e1, e2) -> Long.compare(e1.getValue().lastAccessedMs(), e2.getValue().lastAccessedMs())
+            );
+
+            // Add all pinned entries to heap - O(n)
+            for (var entry : pinnedCache.entrySet()) {
+                if (entry.getValue() != null) {
+                    evictionQueue.offer(entry);
+                }
+            }
 
             int evictedCount = 0;
             long bytesEvicted = 0;
 
-            for (var entry : pinnedEntries) {
-                if (bytesEvicted >= bytesToEvict) {
-                    break;
-                }
-
+            // Poll oldest entries until bytesToEvict reached - O(k log n)
+            while (!evictionQueue.isEmpty() && bytesEvicted < bytesToEvict) {
+                var entry = evictionQueue.poll();
                 var key = entry.getKey();
                 var region = entry.getValue();
 
