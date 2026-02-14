@@ -50,6 +50,7 @@ public class RegionStreamer implements AutoCloseable {
 
     // --- Streaming State (Day 6) ---
     private final AtomicBoolean streaming;
+    private volatile Thread streamingThread;
 
     // --- Clock ---
     private volatile Clock clock = Clock.system();
@@ -200,6 +201,7 @@ public class RegionStreamer implements AutoCloseable {
             var viewport = parseViewport(viewportNode);
             viewportTracker.updateViewport(session.sessionId, viewport);
             session.state = ClientSessionState.STREAMING;
+            session.lastViewport = viewport;  // Day 6: Store for diffing
 
             log.debug("Registered client {} with viewport", session.sessionId);
 
@@ -228,6 +230,7 @@ public class RegionStreamer implements AutoCloseable {
         try {
             var viewport = parseViewport(viewportNode);
             viewportTracker.updateViewport(session.sessionId, viewport);
+            session.lastViewport = viewport;  // Day 6: Store for diffing
 
             log.debug("Updated viewport for client {}", session.sessionId);
 
@@ -296,6 +299,228 @@ public class RegionStreamer implements AutoCloseable {
         }
     }
 
+    // --- Streaming Loop (Day 6) ---
+
+    /**
+     * Start the background streaming thread.
+     * <p>
+     * Idempotent: does nothing if already streaming.
+     */
+    public void start() {
+        if (streaming.compareAndSet(false, true)) {
+            streamingThread = new Thread(this::streamingLoop, "RegionStreamer-" + hashCode());
+            streamingThread.setDaemon(true);
+            streamingThread.start();
+            log.info("RegionStreamer started");
+        }
+    }
+
+    /**
+     * Stop the background streaming thread.
+     * <p>
+     * Blocks until thread terminates (up to 5 seconds).
+     */
+    public void stop() {
+        if (streaming.compareAndSet(true, false)) {
+            var thread = streamingThread;
+            if (thread != null) {
+                try {
+                    thread.join(5000);
+                    if (thread.isAlive()) {
+                        log.warn("Streaming thread did not terminate within 5 seconds");
+                        thread.interrupt();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("Interrupted while stopping streaming thread", e);
+                }
+                streamingThread = null;
+            }
+            log.info("RegionStreamer stopped");
+        }
+    }
+
+    /**
+     * Check if streaming is active.
+     *
+     * @return true if streaming thread is running
+     */
+    public boolean isStreaming() {
+        return streaming.get();
+    }
+
+    /**
+     * Main streaming loop - runs periodically to send binary frames to clients.
+     */
+    private void streamingLoop() {
+        log.debug("Streaming loop started");
+        while (streaming.get()) {
+            try {
+                streamingCycle();
+                Thread.sleep(config.streamingIntervalMs());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.debug("Streaming loop interrupted");
+                break;
+            } catch (Exception e) {
+                log.error("Error in streaming cycle: {}", e.getMessage(), e);
+                // Continue loop - don't crash on single cycle error
+            }
+        }
+        log.debug("Streaming loop terminated");
+    }
+
+    /**
+     * Execute one streaming cycle: compute viewport diffs and send binary frames.
+     * <p>
+     * Algorithm:
+     * <ol>
+     *   <li>For each STREAMING client:</li>
+     *   <li>  Compute viewport diff (added/removed/LOD-changed regions)</li>
+     *   <li>  For each added region:</li>
+     *   <li>    Check backpressure (pendingSends < maxPendingSendsPerClient)</li>
+     *   <li>    Build region on-demand via RegionBuilder</li>
+     *   <li>    Encode to binary frame via BinaryFrameCodec</li>
+     *   <li>    Send asynchronously</li>
+     *   <li>  Unpin removed regions (only if no other clients viewing)</li>
+     * </ol>
+     */
+    private void streamingCycle() {
+        for (var session : sessions.values()) {
+            if (session.state != ClientSessionState.STREAMING) {
+                continue;
+            }
+
+            try {
+                streamToClient(session);
+            } catch (Exception e) {
+                log.error("Error streaming to client {}: {}", session.sessionId, e.getMessage(), e);
+                // Continue to next client - don't crash entire cycle
+            }
+        }
+    }
+
+    /**
+     * Stream binary frames to a single client.
+     *
+     * @param session Client session
+     */
+    private void streamToClient(ClientSession session) {
+        // Compute viewport diff
+        var diff = viewportTracker.diffViewport(session.sessionId);
+
+        if (diff.isEmpty()) {
+            return; // No changes since last cycle
+        }
+
+        // Handle added regions (new regions or closer regions with higher LOD)
+        for (var visibleRegion : diff.added()) {
+            // Backpressure check
+            if (session.pendingSends.get() >= config.maxPendingSendsPerClient()) {
+                log.debug("Skipping region {} for client {} - backpressure (pending: {})",
+                    visibleRegion.regionId(), session.sessionId, session.pendingSends.get());
+                continue;
+            }
+
+            // TODO Day 7 integration: Build region on-demand via RegionBuilder
+            // For now, check if region is already cached
+            if (regionCache != null) {
+                var cacheKey = new RegionCache.CacheKey(visibleRegion.regionId(), visibleRegion.lodLevel());
+                var cached = regionCache.get(cacheKey);
+
+                if (cached.isPresent()) {
+                    sendBinaryFrameAsync(session, cached.get());
+                } else {
+                    // Region not cached - would trigger RegionBuilder in Day 7
+                    log.trace("Region {} LOD {} not cached, would trigger build in Day 7",
+                        visibleRegion.regionId(), visibleRegion.lodLevel());
+                }
+            }
+        }
+
+        // Handle LOD-changed regions (same region, different LOD)
+        for (var visibleRegion : diff.lodChanged()) {
+            if (session.pendingSends.get() >= config.maxPendingSendsPerClient()) {
+                continue;
+            }
+
+            if (regionCache != null) {
+                var cacheKey = new RegionCache.CacheKey(visibleRegion.regionId(), visibleRegion.lodLevel());
+                var cached = regionCache.get(cacheKey);
+
+                if (cached.isPresent()) {
+                    sendBinaryFrameAsync(session, cached.get());
+                }
+            }
+        }
+
+        // Handle removed regions - unpin if no other clients viewing (Fix 1)
+        unpinRegionsNotVisibleToAnyClient(diff.removed());
+    }
+
+    /**
+     * Send binary frame asynchronously to client.
+     * <p>
+     * Increments pendingSends counter, encodes to binary frame, sends via WebSocket.
+     * Decrements counter on completion.
+     *
+     * @param session Client session
+     * @param cachedRegion Cached region to send
+     */
+    private void sendBinaryFrameAsync(ClientSession session, RegionCache.CachedRegion cachedRegion) {
+        session.pendingSends.incrementAndGet();
+
+        try {
+            var builtRegion = cachedRegion.builtRegion();
+
+            // Encode to binary WebSocket frame
+            var frame = com.hellblazer.luciferase.simulation.viz.render.protocol.BinaryFrameCodec.encode(
+                builtRegion
+            );
+
+            // Send binary frame (thread-safe via synchronization)
+            synchronized (session.wsContext) {
+                session.wsContext.sendBinary(frame);
+            }
+
+            log.trace("Sent binary frame for region {} LOD {} to client {} ({} bytes)",
+                builtRegion.regionId(), builtRegion.lodLevel(), session.sessionId, frame.remaining());
+
+        } catch (Exception e) {
+            log.error("Failed to send binary frame to client {}: {}", session.sessionId, e.getMessage());
+        } finally {
+            session.pendingSends.decrementAndGet();
+        }
+    }
+
+    /**
+     * Unpin regions that are no longer visible to ANY client (Fix 1).
+     * <p>
+     * Uses viewportTracker.allVisibleRegions() to check if other clients still need the region.
+     * Only unpins if no clients are viewing.
+     *
+     * @param removed Regions removed from this client's viewport
+     */
+    private void unpinRegionsNotVisibleToAnyClient(java.util.Set<RegionId> removed) {
+        if (regionCache == null || removed.isEmpty()) {
+            return;
+        }
+
+        var allVisible = viewportTracker.allVisibleRegions();
+
+        for (var regionId : removed) {
+            if (!allVisible.contains(regionId)) {
+                // No clients need this region - safe to unpin
+                // Try all LOD levels (we don't know which LOD was pinned)
+                for (int lod = 0; lod <= config.maxLodLevel(); lod++) {
+                    var cacheKey = new RegionCache.CacheKey(regionId, lod);
+                    regionCache.unpin(cacheKey);
+                }
+                log.debug("Unpinned region {} - no longer visible to any client", regionId);
+            }
+        }
+    }
+
     // --- Lifecycle Methods ---
 
     /**
@@ -314,7 +539,7 @@ public class RegionStreamer implements AutoCloseable {
 
     @Override
     public void close() {
-        streaming.set(false);
+        stop();
         sessions.clear();
     }
 
@@ -330,6 +555,7 @@ public class RegionStreamer implements AutoCloseable {
         final AtomicLong lastViewportUpdateMs;
         final AtomicLong lastActivityMs;
         final AtomicInteger pendingSends;
+        volatile ClientViewport lastViewport;  // Day 6: Track last viewport for diffing
 
         ClientSession(String sessionId, WsContextWrapper wsContext, long currentTimeMs) {
             this.sessionId = sessionId;
@@ -338,6 +564,7 @@ public class RegionStreamer implements AutoCloseable {
             this.lastViewportUpdateMs = new AtomicLong(0);
             this.lastActivityMs = new AtomicLong(currentTimeMs);
             this.pendingSends = new AtomicInteger(0);
+            this.lastViewport = null;
         }
     }
 
@@ -360,6 +587,7 @@ public class RegionStreamer implements AutoCloseable {
     interface WsContextWrapper {
         String sessionId();
         void send(String message);
+        void sendBinary(java.nio.ByteBuffer data);  // Day 6: Binary frame delivery
         void closeSession(int statusCode, String reason);
 
         /**
@@ -375,6 +603,11 @@ public class RegionStreamer implements AutoCloseable {
                 @Override
                 public void send(String message) {
                     ctx.send(message);
+                }
+
+                @Override
+                public void sendBinary(java.nio.ByteBuffer data) {
+                    ctx.send(data);
                 }
 
                 @Override
