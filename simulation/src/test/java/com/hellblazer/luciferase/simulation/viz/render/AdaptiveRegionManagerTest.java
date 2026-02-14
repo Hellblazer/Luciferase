@@ -393,4 +393,34 @@ class AdaptiveRegionManagerTest {
         int skipped = testManager.backfillDirtyRegions();
         assertEquals(0, skipped, "Should return 0 when builder not wired");
     }
+
+    @Test
+    void testUpdateEntity_enforcesEntityLimit() {
+        // Test that entity count limit is enforced per region (vtet)
+        var testConfig = RenderingServerConfig.testing(); // maxEntitiesPerRegion = 1000
+        var testManager = new AdaptiveRegionManager(testConfig);
+
+        // Fill a region to its limit
+        for (int i = 0; i < 1000; i++) {
+            testManager.updateEntity("entity" + i, 10f, 10f, 10f, "test");
+        }
+
+        // Verify region has 1000 entities
+        var region = testManager.regionForPosition(10f, 10f, 10f);
+        var state = testManager.getRegionState(region);
+        assertEquals(1000, state.entities().size(), "Region should have exactly 1000 entities");
+
+        // Attempt to add one more entity to same region should fail
+        assertThrows(IllegalStateException.class,
+                () -> testManager.updateEntity("entity1000", 10f, 10f, 10f, "test"),
+                "Should reject entity when region is at capacity");
+
+        // Updating an existing entity should still work
+        assertDoesNotThrow(() -> testManager.updateEntity("entity0", 11f, 10f, 10f, "test"),
+                "Should allow updating existing entity even at capacity");
+
+        // Adding to a different region should work
+        assertDoesNotThrow(() -> testManager.updateEntity("entity1000", 500f, 500f, 500f, "test"),
+                "Should allow adding entity to different region");
+    }
 }

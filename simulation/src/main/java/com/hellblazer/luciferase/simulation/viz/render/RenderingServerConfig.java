@@ -31,7 +31,8 @@ public record RenderingServerConfig(
     int regionLevel,
     SecurityConfig security,
     CacheConfig cache,
-    BuildConfig build
+    BuildConfig build,
+    int maxEntitiesPerRegion  // vtet: Limit entities per region to prevent unbounded accumulation
 ) {
     /**
      * Validate configuration for cross-field consistency.
@@ -63,7 +64,8 @@ public record RenderingServerConfig(
             4,                                         // 2^4 = 16 regions per axis
             SecurityConfig.secure(apiKey, true),       // Secure with TLS enabled
             CacheConfig.defaults(),                    // 256 MB cache
-            BuildConfig.defaults()                     // Default build params
+            BuildConfig.defaults(),                    // Default build params
+            10_000                                     // Max 10k entities per region
         );
         config.validate();  // Ensure valid
         return config;
@@ -82,7 +84,8 @@ public record RenderingServerConfig(
             4,                           // 2^4 = 16 regions per axis = 4096 regions total
             SecurityConfig.permissive(), // No authentication
             CacheConfig.defaults(),      // 256 MB cache
-            BuildConfig.defaults()       // Default build params
+            BuildConfig.defaults(),      // Default build params
+            10_000                       // Max 10k entities per region
         );
     }
 
@@ -96,7 +99,8 @@ public record RenderingServerConfig(
             2,                           // 2^2 = 4 regions per axis = 64 regions (fast tests)
             SecurityConfig.permissive(), // Permissive for tests
             CacheConfig.testing(),       // 16 MB cache
-            BuildConfig.testing()        // Small build params
+            BuildConfig.testing(),       // Small build params
+            1_000                        // Lower limit for tests (1k per region)
         );
     }
 }

@@ -60,7 +60,7 @@ class RenderingServerConfigTest {
             4,
             new SecurityConfig("test-key", false, false, null, null, null, false, 0),  // API key but TLS disabled
             new CacheConfig(256 * 1024 * 1024L),
-            BuildConfig.defaults()
+            BuildConfig.defaults(), 10_000
         );
 
         var exception = assertThrows(IllegalArgumentException.class, config::validate);
@@ -76,7 +76,7 @@ class RenderingServerConfigTest {
             4,
             new SecurityConfig("test-key", true, true, null, null, null, true, 100),  // API key with TLS enabled
             new CacheConfig(256 * 1024 * 1024L),
-            BuildConfig.defaults()
+            BuildConfig.defaults(), 10_000
         );
 
         assertDoesNotThrow(config::validate);
@@ -91,7 +91,7 @@ class RenderingServerConfigTest {
             4,
             SecurityConfig.permissive(),  // No API key, TLS disabled
             new CacheConfig(256 * 1024 * 1024L),
-            BuildConfig.defaults()
+            BuildConfig.defaults(), 10_000
         );
 
         assertDoesNotThrow(config::validate);
@@ -146,7 +146,8 @@ class RenderingServerConfigTest {
             4,
             SecurityConfig.permissive(),
             new CacheConfig(256 * 1024 * 1024L),
-            buildConfig
+            buildConfig,
+            10_000
         );
 
         assertEquals(500, config.build().maxQueueDepth());
@@ -170,7 +171,8 @@ class RenderingServerConfigTest {
             4,
             SecurityConfig.permissive(),
             new CacheConfig(256 * 1024 * 1024L),
-            buildConfig
+            buildConfig,
+            10_000
         );
 
         assertEquals(30_000L, config.build().circuitBreakerTimeoutMs());

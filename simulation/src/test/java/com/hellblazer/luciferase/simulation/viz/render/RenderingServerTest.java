@@ -119,7 +119,7 @@ class RenderingServerTest {
             4,
             SecurityConfig.permissive(),
             CacheConfig.defaults(),
-            BuildConfig.defaults()
+            BuildConfig.defaults(), 10_000
         );
         server = new RenderingServer(config);
         server.start();

@@ -53,6 +53,7 @@ public class AdaptiveRegionManager {
     private final float worldMax;
     private final float regionSize;
     private final int regionsPerAxis;
+    private final int maxEntitiesPerRegion;  // vtet: Limit to prevent unbounded accumulation
 
     // Region state: entity positions, dirty flag, build version
     private final ConcurrentHashMap<RegionId, RegionState> regions = new ConcurrentHashMap<>();
@@ -77,9 +78,10 @@ public class AdaptiveRegionManager {
         this.worldMax = 1024.0f;  // Default world size
         this.regionsPerAxis = 1 << regionLevel;  // 2^level
         this.regionSize = (worldMax - worldMin) / regionsPerAxis;
+        this.maxEntitiesPerRegion = config.maxEntitiesPerRegion();
 
-        log.info("AdaptiveRegionManager initialized: level={}, regionsPerAxis={}, regionSize={}",
-                 regionLevel, regionsPerAxis, regionSize);
+        log.info("AdaptiveRegionManager initialized: level={}, regionsPerAxis={}, regionSize={}, maxEntitiesPerRegion={}",
+                 regionLevel, regionsPerAxis, regionSize, maxEntitiesPerRegion);
     }
 
     /**
@@ -288,6 +290,14 @@ public class AdaptiveRegionManager {
         }
 
         var newState = regions.computeIfAbsent(newRegion, this::createRegionState);
+
+        // vtet: Check entity count limit before adding new entity
+        boolean isNewEntityInRegion = newState.entities.stream().noneMatch(e -> e.id().equals(entityId));
+        if (isNewEntityInRegion && newState.entities.size() >= maxEntitiesPerRegion) {
+            throw new IllegalStateException(String.format(
+                    "Region %s has reached maximum entity limit of %d. Cannot add entity %s",
+                    newRegion, maxEntitiesPerRegion, entityId));
+        }
 
         // Update or add entity in new region
         var position = new EntityPosition(entityId, x, y, z, type);
