@@ -394,4 +394,53 @@ class RenderingServerTest {
 
         server.stop();
     }
+
+    @Test
+    void testInfoRedaction() throws Exception {
+        // Configure server with info redaction enabled
+        var upstreams = List.of(
+            new UpstreamConfig(URI.create("ws://sensitive-server:7080/ws/entities"), "upstream1"),
+            new UpstreamConfig(URI.create("ws://internal-host:8080/ws/data"), "upstream2")
+        );
+
+        var security = new SecurityConfig(
+            null,     // No API key
+            true,     // Redaction enabled
+            false,    // No TLS
+            null, null, null,
+            false, 0  // No rate limiting
+        );
+
+        var config = new RenderingServerConfig(
+            0, upstreams, 2,
+            security,
+            CacheConfig.testing(),
+            BuildConfig.testing(),
+            1_000
+        );
+
+        server = new RenderingServer(config);
+        server.start();
+
+        var client = HttpClient.newHttpClient();
+        var request = HttpRequest.newBuilder()
+                                 .uri(URI.create("http://localhost:" + server.port() + "/api/info"))
+                                 .GET()
+                                 .build();
+
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+
+        var json = jsonMapper.readTree(response.body());
+
+        // Verify upstreams are redacted (count only, no URIs)
+        assertTrue(json.has("upstreamCount"), "Should have upstreamCount field");
+        assertEquals(2, json.get("upstreamCount").asInt(), "Should show upstream count");
+        assertFalse(json.has("upstreams"), "Should NOT have upstreams field (redacted)");
+
+        // Verify memory info is redacted (if present)
+        // The current /api/info doesn't expose memory, but if it did, we'd check for percentages
+
+        server.stop();
+    }
 }

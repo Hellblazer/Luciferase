@@ -317,18 +317,26 @@ public class RenderingServer implements AutoCloseable {
      * Returns server capabilities and configuration.
      */
     private void handleInfo(Context ctx) {
-        var upstreamsInfo = config.upstreams().stream()
-            .map(u -> Map.of(
-                "uri", u.uri().toString(),
-                "label", u.label()
-            ))
-            .collect(Collectors.toList());
-
         // Use HashMap for >10 entries (Map.of() has max 10 pairs)
         var info = new java.util.HashMap<String, Object>();
         info.put("version", VERSION);
         info.put("port", port());
-        info.put("upstreams", upstreamsInfo);
+
+        // 1sa4: Redact upstream URIs if security enabled
+        if (config.security().redactSensitiveInfo()) {
+            // Show count only, hide URIs
+            info.put("upstreamCount", config.upstreams().size());
+        } else {
+            // Show full upstream details
+            var upstreamsInfo = config.upstreams().stream()
+                .map(u -> Map.of(
+                    "uri", u.uri().toString(),
+                    "label", u.label()
+                ))
+                .collect(Collectors.toList());
+            info.put("upstreams", upstreamsInfo);
+        }
+
         info.put("regionLevel", config.regionLevel());
         info.put("gridResolution", config.build().gridResolution());
         info.put("maxBuildDepth", config.build().maxBuildDepth());
