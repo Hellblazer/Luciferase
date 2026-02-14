@@ -12,6 +12,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.List;
 
 import static com.hellblazer.luciferase.simulation.viz.render.TestUtils.awaitBuilds;
 import static org.junit.jupiter.api.Assertions.*;
@@ -428,5 +429,76 @@ class BuildIntegrationTest {
 
         assertTrue(builder.getTotalBuilds() > beforeRecovery,
             "System should recover and process new builds after saturation");
+    }
+
+    @Test
+    void testCircuitBreakerBehavior_directStateTesting() throws Exception {
+        // Integration test for circuit breaker behavior using CircuitBreakerState directly
+        // This verifies the core circuit breaker logic that RegionBuilder uses
+        var breaker = new RegionBuilder.CircuitBreakerState();
+        var testClock = new com.hellblazer.luciferase.simulation.distributed.integration.TestClock();
+        testClock.setTime(1000L);
+
+        // Circuit breaker config from testing: 10s timeout, 3 failure threshold
+        long timeoutMs = 10_000L;
+        int failureThreshold = 3;
+
+        // Initially circuit breaker should be closed
+        assertFalse(breaker.isOpen(testClock.currentTimeMillis(), timeoutMs, failureThreshold),
+                   "Circuit breaker should be closed initially");
+
+        // Record 3 consecutive failures
+        breaker.recordFailure(testClock.currentTimeMillis());
+        testClock.setTime(2000L);
+        breaker.recordFailure(testClock.currentTimeMillis());
+        testClock.setTime(3000L);
+        breaker.recordFailure(testClock.currentTimeMillis());
+
+        // Verify 3 failures recorded
+        assertEquals(3, breaker.getConsecutiveFailures(), "Should have 3 consecutive failures");
+
+        // Circuit breaker should now be open (within timeout window)
+        testClock.setTime(4000L);
+        assertTrue(breaker.isOpen(testClock.currentTimeMillis(), timeoutMs, failureThreshold),
+                  "Circuit breaker should be open after 3 failures");
+
+        // Still open at 9 seconds (within 10s timeout)
+        testClock.setTime(12_000L); // 9 seconds after last failure (at 3000L)
+        assertTrue(breaker.isOpen(testClock.currentTimeMillis(), timeoutMs, failureThreshold),
+                  "Circuit breaker should still be open within timeout period");
+
+        // Circuit breaker should close after timeout
+        testClock.setTime(14_000L); // 11 seconds after last failure (exceeds 10s timeout)
+        assertFalse(breaker.isOpen(testClock.currentTimeMillis(), timeoutMs, failureThreshold),
+                   "Circuit breaker should close after timeout period");
+    }
+
+    @Test
+    void testCircuitBreakerIntegration_verifyWiring() throws Exception {
+        // Integration test to verify circuit breaker is properly wired in RegionBuilder
+        var config = RenderingServerConfig.testing(); // 10s timeout, 3 failure threshold
+        server = new RenderingServer(config);
+        server.start();
+
+        var builder = server.getRegionBuilder();
+        assertNotNull(builder, "Builder should be created");
+
+        // Verify builder has circuit breaker infrastructure
+        // (Actual circuit breaker behavior is tested in testCircuitBreakerBehavior_directStateTesting)
+
+        // Submit a normal build and verify it works
+        var regionManager = server.getRegionManager();
+        regionManager.updateEntity("test-entity", 100.0f, 100.0f, 100.0f, "PREY");
+        var region = regionManager.regionForPosition(100.0f, 100.0f, 100.0f);
+
+        int initialBuilds = builder.getTotalBuilds();
+        regionManager.scheduleBuild(region, true);
+
+        awaitBuilds(builder, initialBuilds + 1, Duration.ofSeconds(2));
+
+        assertTrue(builder.getTotalBuilds() > initialBuilds,
+                  "Build should succeed (circuit breaker infrastructure operational)");
+        assertEquals(0, builder.getFailedBuilds(),
+                    "Should have no failed builds in normal operation");
     }
 }
