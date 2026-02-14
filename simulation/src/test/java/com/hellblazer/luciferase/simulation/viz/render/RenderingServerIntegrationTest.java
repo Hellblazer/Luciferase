@@ -71,7 +71,7 @@ class RenderingServerIntegrationTest {
             )
         );
         var config = new RenderingServerConfig(
-            0, upstreams, 2, 16, 4, 16*1024*1024L, 5_000L, false, 1, SparseStructureType.ESVO
+            0, upstreams, 2, 16, 4, 16*1024*1024L, 5_000L, 1, SparseStructureType.ESVO
         );
         renderingServer = new RenderingServer(config);
         renderingServer.start();
@@ -178,7 +178,7 @@ class RenderingServerIntegrationTest {
             )
         );
         var config = new RenderingServerConfig(
-            0, upstreams, 2, 16, 4, 16*1024*1024L, 5_000L, false, 1, SparseStructureType.ESVO
+            0, upstreams, 2, 16, 4, 16*1024*1024L, 5_000L, 1, SparseStructureType.ESVO
         );
         renderingServer = new RenderingServer(config);
         renderingServer.start();
@@ -294,8 +294,7 @@ class RenderingServerConfigExtensions {
             config.maxBuildDepth(),
             config.maxCacheMemoryBytes(),
             config.regionTtlMs(),
-            config.gpuEnabled(),
-            config.gpuPoolSize(),
+            config.buildPoolSize(),
             config.defaultStructureType()
         );
     }

@@ -51,6 +51,10 @@ public class RenderingServer implements AutoCloseable {
     private volatile long startTimeMs;
     private volatile Clock clock = Clock.system();
 
+    // Phase 2 components
+    private RegionBuilder regionBuilder;
+    private RegionCache regionCache;
+
     /**
      * Create rendering server with configuration.
      *
@@ -72,6 +76,10 @@ public class RenderingServer implements AutoCloseable {
         this.clock = clock;
         this.regionManager.setClock(clock);
         this.entityConsumer.setClock(clock);
+        if (regionBuilder != null) {
+            regionBuilder.setClock(clock);
+        }
+        // RegionCache doesn't need clock (uses system time for TTL)
     }
 
     /**
@@ -86,6 +94,28 @@ public class RenderingServer implements AutoCloseable {
 
         log.info("Starting RenderingServer");
 
+        // Create Phase 2 components
+        var ttl = java.time.Duration.ofMillis(config.regionTtlMs());
+        regionBuilder = new RegionBuilder(
+            config.buildPoolSize(),
+            100,  // maxQueueDepth (sensible default)
+            config.maxBuildDepth(),
+            config.gridResolution()
+        );
+        regionBuilder.setClock(clock);
+
+        regionCache = new RegionCache(
+            config.maxCacheMemoryBytes(),
+            ttl
+        );
+
+        // Wire Phase 2 components to region manager
+        regionManager.setBuilder(regionBuilder);
+        regionManager.setCache(regionCache);
+
+        // Backfill any existing dirty regions
+        regionManager.backfillDirtyRegions();
+
         app = Javalin.create(javalinConfig -> {
             javalinConfig.showJavalinBanner = false;
             javalinConfig.http.defaultContentType = "application/json";
@@ -94,6 +124,7 @@ public class RenderingServer implements AutoCloseable {
         // REST endpoints
         app.get("/api/health", this::handleHealth);
         app.get("/api/info", this::handleInfo);
+        app.get("/api/metrics", this::handleMetrics);  // M2: New metrics endpoint
 
         // WebSocket endpoint (Phase 3 will implement actual streaming)
         app.ws("/ws/render", ws -> {
@@ -132,6 +163,16 @@ public class RenderingServer implements AutoCloseable {
         // Stop consuming entity streams
         entityConsumer.close();
 
+        // Close Phase 2 components
+        if (regionBuilder != null) {
+            regionBuilder.close();
+            regionBuilder = null;
+        }
+        if (regionCache != null) {
+            regionCache.close();
+            regionCache = null;
+        }
+
         // Stop Javalin server
         if (app != null) {
             app.stop();
@@ -169,6 +210,24 @@ public class RenderingServer implements AutoCloseable {
      */
     public EntityStreamConsumer getEntityConsumer() {
         return entityConsumer;
+    }
+
+    /**
+     * Get the region builder (Phase 2).
+     *
+     * @return RegionBuilder instance, or null if not started
+     */
+    public RegionBuilder getRegionBuilder() {
+        return regionBuilder;
+    }
+
+    /**
+     * Get the region cache (Phase 2).
+     *
+     * @return RegionCache instance, or null if not started
+     */
+    public RegionCache getRegionCache() {
+        return regionCache;
     }
 
     @Override
@@ -220,7 +279,7 @@ public class RenderingServer implements AutoCloseable {
         info.put("regionLevel", config.regionLevel());
         info.put("gridResolution", config.gridResolution());
         info.put("maxBuildDepth", config.maxBuildDepth());
-        info.put("gpuEnabled", config.gpuEnabled());
+        info.put("buildPoolSize", config.buildPoolSize());
         info.put("structureType", config.defaultStructureType().toString());
         info.put("worldMin", regionManager.worldMin());
         info.put("worldMax", regionManager.worldMax());
@@ -228,5 +287,40 @@ public class RenderingServer implements AutoCloseable {
         info.put("regionsPerAxis", regionManager.regionsPerAxis());
 
         ctx.json(info);
+    }
+
+    /**
+     * Handle /api/metrics endpoint (M2).
+     * <p>
+     * Returns builder and cache statistics.
+     */
+    private void handleMetrics(Context ctx) {
+        var metrics = new java.util.HashMap<String, Object>();
+
+        // Builder metrics
+        if (regionBuilder != null) {
+            var builderMetrics = new java.util.HashMap<String, Object>();
+            builderMetrics.put("totalBuilds", regionBuilder.getTotalBuilds());
+            builderMetrics.put("failedBuilds", regionBuilder.getFailedBuilds());
+            builderMetrics.put("queueDepth", regionBuilder.getQueueDepth());
+            // avgBuildTimeNs requires tracking - omit for now (will be in followup)
+            metrics.put("builder", builderMetrics);
+        }
+
+        // Cache metrics
+        if (regionCache != null) {
+            var cacheStats = regionCache.getStats();
+            var cacheMetrics = new java.util.HashMap<String, Object>();
+            cacheMetrics.put("pinnedCount", cacheStats.pinnedCount());
+            cacheMetrics.put("unpinnedCount", cacheStats.unpinnedCount());
+            cacheMetrics.put("totalCount", cacheStats.totalCount());
+            cacheMetrics.put("totalMemoryBytes", cacheStats.totalMemoryBytes());
+            cacheMetrics.put("caffeineHitRate", cacheStats.caffeineHitRate());
+            cacheMetrics.put("caffeineMissRate", cacheStats.caffeineMissRate());
+            cacheMetrics.put("caffeineEvictionCount", cacheStats.caffeineEvictionCount());
+            metrics.put("cache", cacheMetrics);
+        }
+
+        ctx.json(metrics);
     }
 }

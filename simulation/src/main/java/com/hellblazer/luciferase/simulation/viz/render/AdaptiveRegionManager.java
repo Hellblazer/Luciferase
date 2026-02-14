@@ -62,6 +62,10 @@ public class AdaptiveRegionManager {
 
     private volatile Clock clock = Clock.system();
 
+    // Phase 2 components (setter injection)
+    private volatile RegionBuilder builder;
+    private volatile RegionCache cache;
+
     /**
      * Create region manager from configuration.
      *
@@ -83,6 +87,134 @@ public class AdaptiveRegionManager {
      */
     public void setClock(Clock clock) {
         this.clock = clock;
+    }
+
+    /**
+     * Set the region builder for Phase 2 integration (setter injection).
+     *
+     * @param builder Region builder instance
+     */
+    public void setBuilder(RegionBuilder builder) {
+        this.builder = builder;
+        log.info("RegionBuilder wired to AdaptiveRegionManager");
+    }
+
+    /**
+     * Set the region cache for Phase 2 integration (setter injection).
+     *
+     * @param cache Region cache instance
+     */
+    public void setCache(RegionCache cache) {
+        this.cache = cache;
+        log.info("RegionCache wired to AdaptiveRegionManager");
+    }
+
+    /**
+     * Schedule a build for a region (Phase 2).
+     * <p>
+     * Submits a build request to the RegionBuilder with appropriate priority.
+     * Visible regions get high priority, invisible regions get low priority.
+     * <p>
+     * No-op if builder not wired yet.
+     *
+     * @param region  Region to build
+     * @param visible Whether region is currently visible to clients
+     */
+    public void scheduleBuild(RegionId region, boolean visible) {
+        if (builder == null) {
+            log.debug("Builder not wired, skipping build for region {}", region);
+            return;
+        }
+
+        var state = regions.get(region);
+        if (state == null || state.entities().isEmpty()) {
+            log.debug("Region {} has no entities, skipping build", region);
+            return;
+        }
+
+        // Check cache first
+        if (cache != null) {
+            var cacheKey = new RegionCache.CacheKey(region, 0);  // LOD 0 for now
+            if (cache.get(cacheKey).isPresent()) {
+                log.debug("Region {} LOD 0 found in cache, skipping build", region);
+                return;
+            }
+        }
+
+        // Convert entities to positions
+        var positions = state.entities().stream()
+            .map(e -> new javax.vecmath.Point3f(e.x(), e.y(), e.z()))
+            .collect(java.util.stream.Collectors.toList());
+
+        var bounds = boundsForRegion(region);
+
+        // Create build request
+        var request = new RegionBuilder.BuildRequest(
+            region,
+            positions,
+            bounds,
+            0,  // LOD level
+            visible,
+            RegionBuilder.BuildType.ESVO,  // Use default type for now
+            clock.currentTimeMillis()
+        );
+
+        // Submit async build
+        try {
+            builder.build(request).whenComplete((builtRegion, error) -> {
+                if (error != null) {
+                    log.error("Build failed for region {}: {}", region, error.getMessage());
+                } else {
+                    // Cache the built region
+                    if (cache != null) {
+                        var cachedRegion = RegionCache.CachedRegion.from(
+                            builtRegion,
+                            clock.currentTimeMillis()
+                        );
+                        var cacheKey = new RegionCache.CacheKey(region, 0);
+                        cache.put(cacheKey, cachedRegion);
+                    }
+
+                    // Mark region clean
+                    if (state != null) {
+                        state.dirty().set(false);
+                        state.buildVersion().incrementAndGet();
+                        log.debug("Region {} built successfully (version {})",
+                                region, state.buildVersion().get());
+                    }
+                }
+            });
+        } catch (RegionBuilder.BuildQueueFullException | RegionBuilder.CircuitBreakerOpenException e) {
+            log.warn("Failed to schedule build for region {}: {}", region, e.getMessage());
+        }
+    }
+
+    /**
+     * Backfill dirty regions with low-priority invisible builds (S3).
+     * <p>
+     * Scans all dirty regions and schedules invisible (low-priority) builds
+     * for each. This is called after wiring builder/cache to ensure all dirty
+     * regions eventually get rebuilt.
+     * <p>
+     * No-op if builder not wired yet.
+     */
+    public void backfillDirtyRegions() {
+        if (builder == null) {
+            log.debug("Builder not wired, skipping backfill");
+            return;
+        }
+
+        var dirty = dirtyRegions();
+        if (dirty.isEmpty()) {
+            log.debug("No dirty regions to backfill");
+            return;
+        }
+
+        log.info("Backfilling {} dirty regions with low-priority builds", dirty.size());
+
+        for (var region : dirty) {
+            scheduleBuild(region, false);  // invisible = low priority
+        }
     }
 
     /**

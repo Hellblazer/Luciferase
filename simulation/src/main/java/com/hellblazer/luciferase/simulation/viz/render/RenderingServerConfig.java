@@ -22,8 +22,7 @@ import java.util.List;
  * @param maxBuildDepth          Max ESVO/ESVT tree depth within a region (default 8)
  * @param maxCacheMemoryBytes    Region cache memory limit (default 256 MB)
  * @param regionTtlMs            TTL for invisible cached regions (default 30 seconds)
- * @param gpuEnabled             Attempt GPU acceleration (default true)
- * @param gpuPoolSize            Number of concurrent GPU build slots (default 1)
+ * @param buildPoolSize          Number of concurrent build threads (default 1)
  * @param defaultStructureType   ESVO or ESVT (default ESVO)
  * @author hal.hildebrand
  */
@@ -35,8 +34,7 @@ public record RenderingServerConfig(
     int maxBuildDepth,
     long maxCacheMemoryBytes,
     long regionTtlMs,
-    boolean gpuEnabled,
-    int gpuPoolSize,
+    int buildPoolSize,
     SparseStructureType defaultStructureType
 ) {
     /**
@@ -51,8 +49,7 @@ public record RenderingServerConfig(
             8,                           // max 8 levels deep within each region
             256 * 1024 * 1024L,          // 256 MB cache
             30_000L,                     // 30 second TTL
-            true,                        // try GPU
-            1,                           // 1 GPU build slot
+            1,                           // 1 build thread
             SparseStructureType.ESVO     // ESVO format
         );
     }
@@ -69,8 +66,7 @@ public record RenderingServerConfig(
             4,                           // shallow tree
             16 * 1024 * 1024L,           // 16 MB cache
             5_000L,                      // 5s TTL
-            false,                       // CPU only
-            1,
+            1,                           // 1 build thread
             SparseStructureType.ESVO
         );
     }
