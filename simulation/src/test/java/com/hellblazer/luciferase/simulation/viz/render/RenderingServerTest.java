@@ -618,4 +618,98 @@ class RenderingServerTest {
 
         server.stop();
     }
+
+    @Test
+    void testApiKeyAuthentication_validKey() throws Exception {
+        // Create server with API key authentication enabled
+        var security = new SecurityConfig("test-api-key-12345", false, false, null, null, null, false, 0);
+        var config = new RenderingServerConfig(0, List.of(), 2, security,
+                                               CacheConfig.testing(), BuildConfig.testing(), 1000);
+        server = new RenderingServer(config);
+        server.start();
+
+        var client = HttpClient.newHttpClient();
+
+        // Request with valid API key should succeed
+        var request = HttpRequest.newBuilder()
+                                 .uri(URI.create("http://localhost:" + server.port() + "/api/health"))
+                                 .header("Authorization", "Bearer test-api-key-12345")
+                                 .GET()
+                                 .build();
+
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), "Valid API key should allow access");
+
+        server.stop();
+    }
+
+    @Test
+    void testApiKeyAuthentication_missingAuth() throws Exception {
+        // Create server with API key authentication enabled
+        var security = new SecurityConfig("test-api-key-12345", false, false, null, null, null, false, 0);
+        var config = new RenderingServerConfig(0, List.of(), 2, security,
+                                               CacheConfig.testing(), BuildConfig.testing(), 1000);
+        server = new RenderingServer(config);
+        server.start();
+
+        var client = HttpClient.newHttpClient();
+
+        // Request without Authorization header should fail
+        var request = HttpRequest.newBuilder()
+                                 .uri(URI.create("http://localhost:" + server.port() + "/api/health"))
+                                 .GET()
+                                 .build();
+
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(401, response.statusCode(), "Missing authentication should return 401");
+
+        server.stop();
+    }
+
+    @Test
+    void testApiKeyAuthentication_invalidKey() throws Exception {
+        // Create server with API key authentication enabled
+        var security = new SecurityConfig("test-api-key-12345", false, false, null, null, null, false, 0);
+        var config = new RenderingServerConfig(0, List.of(), 2, security,
+                                               CacheConfig.testing(), BuildConfig.testing(), 1000);
+        server = new RenderingServer(config);
+        server.start();
+
+        var client = HttpClient.newHttpClient();
+
+        // Request with invalid API key should fail
+        var request = HttpRequest.newBuilder()
+                                 .uri(URI.create("http://localhost:" + server.port() + "/api/health"))
+                                 .header("Authorization", "Bearer wrong-api-key")
+                                 .GET()
+                                 .build();
+
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(401, response.statusCode(), "Invalid API key should return 401");
+
+        server.stop();
+    }
+
+    @Test
+    void testNoAuthentication_whenDisabled() throws Exception {
+        // Create server with authentication disabled (apiKey = null)
+        var security = new SecurityConfig(null, false, false, null, null, null, false, 0);
+        var config = new RenderingServerConfig(0, List.of(), 2, security,
+                                               CacheConfig.testing(), BuildConfig.testing(), 1000);
+        server = new RenderingServer(config);
+        server.start();
+
+        var client = HttpClient.newHttpClient();
+
+        // Request without authentication should succeed when auth disabled
+        var request = HttpRequest.newBuilder()
+                                 .uri(URI.create("http://localhost:" + server.port() + "/api/health"))
+                                 .GET()
+                                 .build();
+
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), "Should allow access when auth disabled");
+
+        server.stop();
+    }
 }

@@ -198,6 +198,28 @@ public class RenderingServer implements AutoCloseable {
             }
         });
 
+        // jgpu: Add authentication filter (API key)
+        if (config.security().apiKey() != null) {
+            app.before("/api/*", ctx -> {
+                String authHeader = ctx.header("Authorization");
+
+                // Check for Bearer token format
+                if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                    ctx.status(401).json(Map.of("error", "Unauthorized"));
+                    return;
+                }
+
+                // Extract and validate API key
+                String providedKey = authHeader.substring(7); // Remove "Bearer " prefix
+                if (!config.security().apiKey().equals(providedKey)) {
+                    ctx.status(401).json(Map.of("error", "Unauthorized"));
+                    return;
+                }
+
+                // Authentication successful - continue to endpoint
+            });
+        }
+
         // w1tk: Add rate limiting filter
         if (rateLimiter != null) {
             app.before(ctx -> {
