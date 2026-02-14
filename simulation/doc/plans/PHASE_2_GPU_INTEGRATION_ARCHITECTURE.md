@@ -1243,28 +1243,43 @@ public void setClock(Clock clock) {
 
 ### 4.3 Wiring Diagram
 
-```
-                      RenderingServer
-                      (lifecycle, wiring)
-                            |
-            +---------------+---------------+
-            |               |               |
-   EntityStreamConsumer  AdaptiveRegionManager  RegionCache
-   (upstream WS client)  (region grid, dirty)  (LRU, pinning)
-            |               |                      ^
-            |-- updateEntity -->                   |
-                            |                      |
-                            |-- scheduleBuild() -->|-- cache miss -->|
-                            |                      |                 |
-                            |               GpuESVOBuilder           |
-                            |               (build queue, workers)   |
-                            |                      |                 |
-                            |               [OctreeBuilder]          |
-                            |               [ESVTBuilder]            |
-                            |               [SerializationUtils]     |
-                            |                      |                 |
-                            |                      |-- put() ------->|
-                            |<-- completion -------|
+```mermaid
+graph TB
+    RS["RenderingServer<br/><small>lifecycle, wiring</small>"]
+
+    subgraph Components["Core Components"]
+        ESC["EntityStreamConsumer<br/><small>upstream WS client</small>"]
+        ARM["AdaptiveRegionManager<br/><small>region grid, dirty tracking</small>"]
+        RC["RegionCache<br/><small>LRU, pinning</small>"]
+    end
+
+    subgraph BuildPipeline["Build Pipeline"]
+        GESVO["GpuESVOBuilder<br/><small>build queue, workers</small>"]
+        OB["OctreeBuilder<br/><small>render module</small>"]
+        EB["ESVTBuilder<br/><small>render module</small>"]
+        SU["SerializationUtils<br/><small>gzip + version</small>"]
+    end
+
+    RS --> ESC
+    RS --> ARM
+    RS --> RC
+
+    ESC -->|updateEntity| ARM
+    ARM -->|scheduleBuild| GESVO
+    GESVO -->|cache miss| RC
+    GESVO --> OB
+    GESVO --> EB
+    GESVO --> SU
+    GESVO -->|put| RC
+    GESVO -->|completion| ARM
+
+    style RS fill:#e1f5ff,stroke:#0066cc,stroke-width:3px
+    style Components fill:#fff4e6,stroke:#ff9800,stroke-width:2px
+    style BuildPipeline fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+    style ESC fill:#ffe0b2,stroke:#ff9800
+    style ARM fill:#ffcc80,stroke:#ff9800,stroke-width:2px
+    style GESVO fill:#ce93d8,stroke:#9c27b0,stroke-width:2px
+    style RC fill:#fff59d,stroke:#fbc02d,stroke-width:2px
 ```
 
 ---

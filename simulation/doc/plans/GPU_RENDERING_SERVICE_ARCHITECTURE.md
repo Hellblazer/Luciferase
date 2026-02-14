@@ -37,42 +37,48 @@ new WebSocket endpoint (port 7090).
 
 ### 2.1 System Context
 
-```
- Simulation Layer (unchanged)
- +-------------------------------+     +----------------------------------+
- | EntityVisualizationServer     |     | MultiBubbleVisualizationServer   |
- | port 7080                     |     | port 7081                        |
- | ws://.../ws/entities           |     | ws://.../ws/entities              |
- +----------|--------------------+     +----------|------------------------+
-            |  JSON entity frames                 |  JSON entity frames
-            +------------------+------------------+
-                               |
-                               v
- Rendering Layer (NEW)
- +-------------------------------------------------------------+
- | RenderingServer  (port 7090)                                  |
- |                                                               |
- |  EntityStreamConsumer ------> AdaptiveRegionManager           |
- |  (upstream WS client)         (region octree, dirty tracking) |
- |                                      |                        |
- |                                      v                        |
- |                               GpuESVOBuilder                  |
- |                               (GPU/CPU builds per region)     |
- |                                      |                        |
- |                                      v                        |
- |                               RegionCache                     |
- |                               (LRU, multi-LOD)                |
- |                                      |                        |
- |  ViewportTracker <--- client ------->|                        |
- |  (frustum cull, LOD)                 |                        |
- |                                      v                        |
- |                               RegionStreamer                  |
- |                               (binary WS frames)              |
- +---------|------|------|---------------------------------------+
-           |      |      |
-           v      v      v
-      Client A  Client B  Client C
-      (WebGPU)  (WebGL)   (CPU)
+```mermaid
+graph TB
+    subgraph Simulation["Simulation Layer (unchanged)"]
+        EVS["EntityVisualizationServer<br/>port 7080<br/>ws://.../ws/entities"]
+        MBVS["MultiBubbleVisualizationServer<br/>port 7081<br/>ws://.../ws/entities"]
+    end
+
+    subgraph Rendering["Rendering Layer (NEW)<br/>RenderingServer port 7090"]
+        ESC["EntityStreamConsumer<br/><small>upstream WS client</small>"]
+        ARM["AdaptiveRegionManager<br/><small>region octree, dirty tracking</small>"]
+        GESVO["GpuESVOBuilder<br/><small>GPU/CPU builds per region</small>"]
+        RC["RegionCache<br/><small>LRU, multi-LOD</small>"]
+        VT["ViewportTracker<br/><small>frustum cull, LOD</small>"]
+        RS["RegionStreamer<br/><small>binary WS frames</small>"]
+    end
+
+    subgraph Clients["Browser Clients"]
+        CA["Client A<br/><small>WebGPU</small>"]
+        CB["Client B<br/><small>WebGL</small>"]
+        CC["Client C<br/><small>CPU</small>"]
+    end
+
+    EVS -->|JSON entity frames| ESC
+    MBVS -->|JSON entity frames| ESC
+    ESC --> ARM
+    ARM --> GESVO
+    GESVO --> RC
+    RC --> RS
+    VT <-->|viewport updates| Clients
+    VT --> RC
+    RS --> CA
+    RS --> CB
+    RS --> CC
+
+    style Simulation fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style Rendering fill:#fff3e0,stroke:#f57c00,stroke-width:3px
+    style Clients fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style ESC fill:#bbdefb,stroke:#1976d2
+    style ARM fill:#ffcc80,stroke:#f57c00
+    style GESVO fill:#ffb74d,stroke:#f57c00,stroke-width:2px
+    style RC fill:#ffe082,stroke:#f57c00
+    style RS fill:#fff59d,stroke:#f57c00
 ```
 
 ### 2.2 Module Placement

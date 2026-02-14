@@ -75,7 +75,7 @@ One-time fixes and technical changes (not ongoing patterns):
 Archived documents remain accessible via git history and can be referenced by relative path:
 
 ```markdown
-See archived analysis: [GHOST_LAYER_CONSOLIDATION_ANALYSIS.md](archive/analysis/GHOST_LAYER_CONSOLIDATION_ANALYSIS.md)
+See archived analysis: [GHOST_LAYER_CONSOLIDATION_ANALYSIS.md](analysis/GHOST_LAYER_CONSOLIDATION_ANALYSIS.md)
 ```
 
 ## Current Documentation
