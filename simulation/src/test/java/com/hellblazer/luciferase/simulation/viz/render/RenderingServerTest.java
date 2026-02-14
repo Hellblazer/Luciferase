@@ -280,4 +280,71 @@ class RenderingServerTest {
 
         server.stop();
     }
+
+    @Test
+    void testTlsEnabled() throws Exception {
+        // Configure TLS with test keystore
+        var keystorePath = getClass().getResource("/test-keystore.jks").getPath();
+        var security = new SecurityConfig(
+            null,              // No API key
+            false,             // No redaction
+            true,              // TLS enabled
+            keystorePath,      // Keystore path
+            "changeit",        // Keystore password
+            "changeit",        // Key manager password
+            false,             // No rate limiting
+            0                  // Rate limit N/A
+        );
+
+        var config = new RenderingServerConfig(
+            0,                          // Dynamic port
+            List.of(),
+            2,
+            security,
+            CacheConfig.testing(),
+            BuildConfig.testing(),
+            1_000
+        );
+
+        server = new RenderingServer(config);
+        server.start();
+
+        int port = server.port();
+
+        // Create trust-all SSL context for testing with self-signed cert
+        var trustAllCerts = new javax.net.ssl.TrustManager[]{
+            new javax.net.ssl.X509TrustManager() {
+                public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                    return new java.security.cert.X509Certificate[0];
+                }
+
+                public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {
+                }
+
+                public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {
+                }
+            }
+        };
+
+        var sslContext = javax.net.ssl.SSLContext.getInstance("TLS");
+        sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
+
+        var client = HttpClient.newBuilder()
+                               .sslContext(sslContext)
+                               .build();
+
+        var request = HttpRequest.newBuilder()
+                                 .uri(URI.create("https://localhost:" + port + "/api/health"))
+                                 .GET()
+                                 .build();
+
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode(), "HTTPS health endpoint should return 200 OK");
+
+        var json = jsonMapper.readTree(response.body());
+        assertEquals("healthy", json.get("status").asText(), "Status should be 'healthy'");
+
+        server.stop();
+    }
 }

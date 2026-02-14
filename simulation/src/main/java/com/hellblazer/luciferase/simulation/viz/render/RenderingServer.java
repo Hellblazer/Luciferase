@@ -11,6 +11,12 @@ package com.hellblazer.luciferase.simulation.viz.render;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
+import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
+import org.eclipse.jetty.server.SecureRequestCustomizer;
+import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.server.SslConnectionFactory;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -114,6 +120,32 @@ public class RenderingServer implements AutoCloseable {
         app = Javalin.create(javalinConfig -> {
             javalinConfig.showJavalinBanner = false;
             javalinConfig.http.defaultContentType = "application/json";
+
+            // jc5f: Configure TLS/HTTPS if enabled
+            if (config.security().tlsEnabled()) {
+                javalinConfig.jetty.modifyServer(server -> {
+                    var sslContextFactory = new org.eclipse.jetty.util.ssl.SslContextFactory.Server();
+                    sslContextFactory.setKeyStorePath(config.security().keystorePath());
+                    sslContextFactory.setKeyStorePassword(config.security().keystorePassword());
+                    sslContextFactory.setKeyManagerPassword(config.security().keyManagerPassword());
+
+                    var httpsConfig = new org.eclipse.jetty.server.HttpConfiguration();
+                    httpsConfig.setSecureScheme("https");
+                    httpsConfig.setSecurePort(config.port());
+                    httpsConfig.addCustomizer(new org.eclipse.jetty.server.SecureRequestCustomizer());
+
+                    var httpsConnector = new org.eclipse.jetty.server.ServerConnector(
+                        server,
+                        new org.eclipse.jetty.server.SslConnectionFactory(sslContextFactory, "http/1.1"),
+                        new org.eclipse.jetty.server.HttpConnectionFactory(httpsConfig)
+                    );
+
+                    // Replace HTTP connector with HTTPS connector
+                    server.setConnectors(new org.eclipse.jetty.server.Connector[]{httpsConnector});
+                });
+
+                log.info("TLS/HTTPS enabled with keystore: {}", config.security().keystorePath());
+            }
         });
 
         // REST endpoints
