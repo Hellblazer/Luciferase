@@ -439,6 +439,13 @@ public class RegionBuilder implements AutoCloseable {
             long timestamp
     ) implements Comparable<BuildRequest> {
 
+        /**
+         * Compact constructor with defensive copy to prevent external mutation.
+         */
+        public BuildRequest {
+            positions = List.copyOf(positions);
+        }
+
         @Override
         public int compareTo(BuildRequest other) {
             // Visible builds have priority over invisible
