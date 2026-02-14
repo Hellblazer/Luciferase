@@ -178,16 +178,11 @@ class BuildIntegrationTest {
                   "Should have at least 3 dirty regions, got: " + dirtyRegions.size());
 
         // Now create and wire builder/cache (S3: should trigger backfill)
-        var builder = new RegionBuilder(
-            config.buildPoolSize(),
-            100,
-            config.maxBuildDepth(),
-            config.gridResolution()
-        );
+        var builder = new RegionBuilder(config.build());
 
         var cache = new RegionCache(
-            config.maxCacheMemoryBytes(),
-            Duration.ofMillis(config.regionTtlMs())
+            config.cache().maxCacheMemoryBytes(),
+            Duration.ofMillis(30_000L)  // 30 second TTL
         );
 
         regionManager.setBuilder(builder);

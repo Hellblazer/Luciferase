@@ -71,7 +71,12 @@ class RenderingServerIntegrationTest {
             )
         );
         var config = new RenderingServerConfig(
-            0, upstreams, 2, 16, 4, 16*1024*1024L, 5_000L, 1, SparseStructureType.ESVO
+            0,
+            upstreams,
+            2,
+            SecurityConfig.permissive(),
+            CacheConfig.testing(),
+            BuildConfig.testing()
         );
         renderingServer = new RenderingServer(config);
         renderingServer.start();
@@ -178,7 +183,12 @@ class RenderingServerIntegrationTest {
             )
         );
         var config = new RenderingServerConfig(
-            0, upstreams, 2, 16, 4, 16*1024*1024L, 5_000L, 1, SparseStructureType.ESVO
+            0,
+            upstreams,
+            2,
+            SecurityConfig.permissive(),
+            CacheConfig.testing(),
+            BuildConfig.testing()
         );
         renderingServer = new RenderingServer(config);
         renderingServer.start();
@@ -290,12 +300,9 @@ class RenderingServerConfigExtensions {
             config.port(),
             upstreams,
             config.regionLevel(),
-            config.gridResolution(),
-            config.maxBuildDepth(),
-            config.maxCacheMemoryBytes(),
-            config.regionTtlMs(),
-            config.buildPoolSize(),
-            config.defaultStructureType()
+            config.security(),
+            config.cache(),
+            config.build()
         );
     }
 }

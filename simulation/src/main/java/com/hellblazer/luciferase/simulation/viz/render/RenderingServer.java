@@ -95,17 +95,12 @@ public class RenderingServer implements AutoCloseable {
         log.info("Starting RenderingServer");
 
         // Create Phase 2 components
-        var ttl = java.time.Duration.ofMillis(config.regionTtlMs());
-        regionBuilder = new RegionBuilder(
-            config.buildPoolSize(),
-            100,  // maxQueueDepth (sensible default)
-            config.maxBuildDepth(),
-            config.gridResolution()
-        );
+        var ttl = java.time.Duration.ofMillis(30_000L);  // 30 second TTL (default)
+        regionBuilder = new RegionBuilder(config.build());
         regionBuilder.setClock(clock);
 
         regionCache = new RegionCache(
-            config.maxCacheMemoryBytes(),
+            config.cache().maxCacheMemoryBytes(),
             ttl
         );
 
@@ -277,10 +272,10 @@ public class RenderingServer implements AutoCloseable {
         info.put("port", port());
         info.put("upstreams", upstreamsInfo);
         info.put("regionLevel", config.regionLevel());
-        info.put("gridResolution", config.gridResolution());
-        info.put("maxBuildDepth", config.maxBuildDepth());
-        info.put("buildPoolSize", config.buildPoolSize());
-        info.put("structureType", config.defaultStructureType().toString());
+        info.put("gridResolution", config.build().gridResolution());
+        info.put("maxBuildDepth", config.build().maxBuildDepth());
+        info.put("buildPoolSize", config.build().buildPoolSize());
+        info.put("structureType", "ESVO");  // Default structure type
         info.put("worldMin", regionManager.worldMin());
         info.put("worldMax", regionManager.worldMax());
         info.put("regionSize", regionManager.regionSize());

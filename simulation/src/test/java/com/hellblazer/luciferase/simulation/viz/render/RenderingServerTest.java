@@ -114,7 +114,12 @@ class RenderingServerTest {
             new UpstreamConfig(URI.create("ws://localhost:7080/ws/entities"), "upstream1")
         );
         var config = new RenderingServerConfig(
-            0, upstreams, 4, 64, 8, 256*1024*1024L, 30_000L, 1, SparseStructureType.ESVO
+            0,
+            upstreams,
+            4,
+            SecurityConfig.permissive(),
+            CacheConfig.defaults(),
+            BuildConfig.defaults()
         );
         server = new RenderingServer(config);
         server.start();

@@ -54,6 +54,8 @@ public class RegionBuilder implements AutoCloseable {
     private final int maxQueueDepth;
     private final int maxDepth;
     private final int gridResolution;
+    private final long circuitBreakerTimeoutMs;
+    private final int circuitBreakerFailureThreshold;
     private volatile Clock clock;
     private volatile boolean closed;
 
@@ -66,6 +68,37 @@ public class RegionBuilder implements AutoCloseable {
      * @param gridResolution Voxel grid resolution (e.g., 64 for 64³ grid)
      */
     public RegionBuilder(int buildPoolSize, int maxQueueDepth, int maxDepth, int gridResolution) {
+        this(buildPoolSize, maxQueueDepth, maxDepth, gridResolution, 60_000L, 3);
+    }
+
+    /**
+     * Create RegionBuilder with BuildConfig.
+     *
+     * @param buildConfig Build configuration
+     */
+    public RegionBuilder(BuildConfig buildConfig) {
+        this(
+            buildConfig.buildPoolSize(),
+            buildConfig.maxQueueDepth(),
+            buildConfig.maxBuildDepth(),
+            buildConfig.gridResolution(),
+            buildConfig.circuitBreakerTimeoutMs(),
+            buildConfig.circuitBreakerFailureThreshold()
+        );
+    }
+
+    /**
+     * Create RegionBuilder with full configuration.
+     *
+     * @param buildPoolSize Number of builder threads
+     * @param maxQueueDepth Maximum build queue depth
+     * @param maxDepth Maximum octree/tetree depth
+     * @param gridResolution Voxel grid resolution
+     * @param circuitBreakerTimeoutMs Circuit breaker timeout in milliseconds
+     * @param circuitBreakerFailureThreshold Number of consecutive failures before circuit opens
+     */
+    public RegionBuilder(int buildPoolSize, int maxQueueDepth, int maxDepth, int gridResolution,
+                         long circuitBreakerTimeoutMs, int circuitBreakerFailureThreshold) {
         this.buildQueue = new PriorityBlockingQueue<>(maxQueueDepth);
         this.invisibleBuilds = new ConcurrentSkipListSet<>(); // S2
         this.circuitBreakers = new ConcurrentHashMap<>(); // C3
@@ -76,6 +109,8 @@ public class RegionBuilder implements AutoCloseable {
         this.maxQueueDepth = maxQueueDepth;
         this.maxDepth = maxDepth;
         this.gridResolution = gridResolution;
+        this.circuitBreakerTimeoutMs = circuitBreakerTimeoutMs;
+        this.circuitBreakerFailureThreshold = circuitBreakerFailureThreshold;
         this.clock = Clock.system();
         this.closed = false;
 
@@ -87,8 +122,10 @@ public class RegionBuilder implements AutoCloseable {
             return thread;
         });
 
-        log.info("RegionBuilder created: buildPoolSize={}, maxQueueDepth={}, maxDepth={}, gridResolution={}",
-                buildPoolSize, maxQueueDepth, maxDepth, gridResolution);
+        log.info("RegionBuilder created: buildPoolSize={}, maxQueueDepth={}, maxDepth={}, gridResolution={}, " +
+                "circuitBreakerTimeoutMs={}, circuitBreakerFailureThreshold={}",
+                buildPoolSize, maxQueueDepth, maxDepth, gridResolution,
+                circuitBreakerTimeoutMs, circuitBreakerFailureThreshold);
     }
 
     /**
@@ -154,7 +191,9 @@ public class RegionBuilder implements AutoCloseable {
 
         // C3: Check circuit breaker
         var breaker = circuitBreakers.get(request.regionId());
-        if (breaker != null && breaker.isOpen(clock.currentTimeMillis())) {
+        if (breaker != null && breaker.isOpen(clock.currentTimeMillis(),
+                                               circuitBreakerTimeoutMs,
+                                               circuitBreakerFailureThreshold)) {
             throw new CircuitBreakerOpenException(
                     "Circuit breaker open for region " + request.regionId());
         }
@@ -463,12 +502,12 @@ public class RegionBuilder implements AutoCloseable {
     /**
      * Circuit breaker state for tracking build failures (C3 implementation).
      *
-     * <p>After 3 consecutive failures, block retries for 60 seconds.
+     * <p>After configured consecutive failures, block retries for configured timeout.
+     * <p>NOTE: Unsynchronized fields (consecutiveFailures, lastFailureTime) are safe
+     * because CircuitBreakerState is only accessed from ConcurrentHashMap.compute()
+     * operations which provide atomicity.
      */
     static class CircuitBreakerState {
-        private static final int FAILURE_THRESHOLD = 3;
-        private static final long TIMEOUT_MS = 60_000; // 60 seconds
-
         private int consecutiveFailures;
         private long lastFailureTime;
 
@@ -489,12 +528,14 @@ public class RegionBuilder implements AutoCloseable {
          * Check if circuit breaker is open (blocking retries).
          *
          * @param currentTimeMs Current time in milliseconds
+         * @param timeoutMs Circuit breaker timeout
+         * @param failureThreshold Consecutive failures before opening
          * @return true if circuit breaker is open
          */
-        boolean isOpen(long currentTimeMs) {
-            if (consecutiveFailures >= FAILURE_THRESHOLD) {
+        boolean isOpen(long currentTimeMs, long timeoutMs, int failureThreshold) {
+            if (consecutiveFailures >= failureThreshold) {
                 long timeSinceFailure = currentTimeMs - lastFailureTime;
-                return timeSinceFailure < TIMEOUT_MS;
+                return timeSinceFailure < timeoutMs;
             }
             return false;
         }

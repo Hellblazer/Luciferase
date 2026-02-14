@@ -13,44 +13,76 @@ import java.util.List;
 /**
  * Configuration for the GPU-accelerated rendering server.
  * <p>
+ * Uses composition pattern with SecurityConfig, CacheConfig, and BuildConfig sub-records.
+ * <p>
  * Thread-safe: immutable record.
  *
- * @param port                   Server listen port (0 for dynamic assignment in tests)
- * @param upstreams              List of upstream simulation server configurations
- * @param regionLevel            Octree depth for region subdivision (3-6, default 4 = 16^3 regions)
- * @param gridResolution         Voxel grid resolution per region (32-128, default 64)
- * @param maxBuildDepth          Max ESVO/ESVT tree depth within a region (default 8)
- * @param maxCacheMemoryBytes    Region cache memory limit (default 256 MB)
- * @param regionTtlMs            TTL for invisible cached regions (default 30 seconds)
- * @param buildPoolSize          Number of concurrent build threads (default 1)
- * @param defaultStructureType   ESVO or ESVT (default ESVO)
+ * @param port         Server listen port (0 for dynamic assignment in tests)
+ * @param upstreams    List of upstream simulation server configurations
+ * @param regionLevel  Octree depth for region subdivision (3-6, default 4 = 16^3 regions)
+ * @param security     Security configuration (API keys, TLS, rate limiting)
+ * @param cache        Cache configuration (memory limits)
+ * @param build        Build configuration (pool size, queue depth, circuit breaker)
  * @author hal.hildebrand
  */
 public record RenderingServerConfig(
     int port,
     List<UpstreamConfig> upstreams,
     int regionLevel,
-    int gridResolution,
-    int maxBuildDepth,
-    long maxCacheMemoryBytes,
-    long regionTtlMs,
-    int buildPoolSize,
-    SparseStructureType defaultStructureType
+    SecurityConfig security,
+    CacheConfig cache,
+    BuildConfig build
 ) {
     /**
-     * Create default configuration for development.
+     * Validate configuration for cross-field consistency.
+     * <p>
+     * Throws IllegalArgumentException if API key authentication is enabled without TLS.
+     *
+     * @throws IllegalArgumentException if configuration is invalid
      */
+    public void validate() {
+        if (security.apiKey() != null && !security.tlsEnabled()) {
+            throw new IllegalArgumentException(
+                "TLS must be enabled when using API key authentication"
+            );
+        }
+    }
+
+    /**
+     * Create secure configuration with API key authentication and TLS.
+     * <p>
+     * Recommended for production deployments.
+     *
+     * @param apiKey API key for authentication (required)
+     * @return Secure configuration with TLS enabled
+     */
+    public static RenderingServerConfig secureDefaults(String apiKey) {
+        var config = new RenderingServerConfig(
+            7090,                                      // Production port
+            List.of(),                                 // No upstreams by default
+            4,                                         // 2^4 = 16 regions per axis
+            SecurityConfig.secure(apiKey, true),       // Secure with TLS enabled
+            CacheConfig.defaults(),                    // 256 MB cache
+            BuildConfig.defaults()                     // Default build params
+        );
+        config.validate();  // Ensure valid
+        return config;
+    }
+
+    /**
+     * Create default configuration for development.
+     *
+     * @deprecated Use secureDefaults(apiKey) for production or testing() for tests
+     */
+    @Deprecated(since = "2026-02-14")
     public static RenderingServerConfig defaults() {
         return new RenderingServerConfig(
             7090,                        // Production port
             List.of(),                   // No upstreams by default
             4,                           // 2^4 = 16 regions per axis = 4096 regions total
-            64,                          // 64^3 voxel resolution per region
-            8,                           // max 8 levels deep within each region
-            256 * 1024 * 1024L,          // 256 MB cache
-            30_000L,                     // 30 second TTL
-            1,                           // 1 build thread
-            SparseStructureType.ESVO     // ESVO format
+            SecurityConfig.permissive(), // No authentication
+            CacheConfig.defaults(),      // 256 MB cache
+            BuildConfig.defaults()       // Default build params
         );
     }
 
@@ -62,12 +94,9 @@ public record RenderingServerConfig(
             0,                           // Dynamic port
             List.of(),                   // No upstreams by default
             2,                           // 2^2 = 4 regions per axis = 64 regions (fast tests)
-            16,                          // 16^3 voxels (small)
-            4,                           // shallow tree
-            16 * 1024 * 1024L,           // 16 MB cache
-            5_000L,                      // 5s TTL
-            1,                           // 1 build thread
-            SparseStructureType.ESVO
+            SecurityConfig.permissive(), // Permissive for tests
+            CacheConfig.testing(),       // 16 MB cache
+            BuildConfig.testing()        // Small build params
         );
     }
 }

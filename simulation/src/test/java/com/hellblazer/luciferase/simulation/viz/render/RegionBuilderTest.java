@@ -316,13 +316,13 @@ class RegionBuilderTest {
         breaker.recordFailure(now + 1000);
         breaker.recordFailure(now + 2000);
 
-        // Circuit breaker should be open
-        assertTrue(breaker.isOpen(now + 3000),
+        // Circuit breaker should be open (default 60s timeout, 3 failures)
+        assertTrue(breaker.isOpen(now + 3000, 60_000L, 3),
                 "Circuit breaker should be open after 3 failures");
         assertEquals(3, breaker.getConsecutiveFailures());
 
         // After 60 seconds, circuit breaker should close
-        assertFalse(breaker.isOpen(now + 63000),
+        assertFalse(breaker.isOpen(now + 63000, 60_000L, 3),
                 "Circuit breaker should close after 60s timeout");
     }
 
@@ -335,7 +335,7 @@ class RegionBuilderTest {
         breaker.recordFailure(now);
         breaker.recordFailure(now + 1000);
 
-        assertFalse(breaker.isOpen(now + 2000),
+        assertFalse(breaker.isOpen(now + 2000, 60_000L, 3),
                 "Circuit breaker should not open with only 2 failures");
 
         // After success, circuit breaker state is cleared by removing from map
