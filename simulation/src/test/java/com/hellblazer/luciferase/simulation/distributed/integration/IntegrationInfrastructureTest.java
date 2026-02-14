@@ -178,7 +178,6 @@ class IntegrationInfrastructureTest {
         var bubble2 = UUID.randomUUID();
 
         // Start monitoring
-        testClock.setSkew(0);
         heapMonitor.start(50);
 
         // Register initial entities

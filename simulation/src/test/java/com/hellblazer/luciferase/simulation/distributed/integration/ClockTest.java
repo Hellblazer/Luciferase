@@ -82,7 +82,6 @@ class ClockTest {
         var clock = new TestClock(initialTime);
 
         assertEquals(initialTime, clock.currentTimeMillis());
-        assertTrue(clock.isAbsoluteMode());
     }
 
     @Test
@@ -103,7 +102,6 @@ class ClockTest {
         clock.advance(300);
 
         assertEquals(600L, clock.currentTimeMillis());
-        assertEquals(600L, clock.getOffset());
     }
 
     @Test
@@ -124,24 +122,13 @@ class ClockTest {
     // ==================== TestClock Time Setting Tests ====================
 
     @Test
-    void testSetTimeOverridesOffset() {
+    void testSetTimeOverridesPreviousTime() {
         var clock = new TestClock(1000L);
         clock.advance(500);
         assertEquals(1500L, clock.currentTimeMillis());
 
         clock.setTime(2000L);
         assertEquals(2000L, clock.currentTimeMillis());
-        assertEquals(0L, clock.getOffset()); // Offset reset
-    }
-
-    @Test
-    void testSetTimeEnablesAbsoluteMode() {
-        var clock = new TestClock(); // Starts in relative mode
-        assertFalse(clock.isAbsoluteMode());
-
-        clock.setTime(5000L);
-        assertTrue(clock.isAbsoluteMode());
-        assertEquals(5000L, clock.currentTimeMillis());
     }
 
     @Test
@@ -151,67 +138,6 @@ class ClockTest {
         clock.advance(500);
 
         assertEquals(10500L, clock.currentTimeMillis());
-    }
-
-    // ==================== TestClock Skew Tests ====================
-
-    @Test
-    void testSetSkewPositive() {
-        var clock = new TestClock();
-        clock.setSkew(500);
-
-        var systemTime = System.currentTimeMillis();
-        var clockTime = clock.currentTimeMillis();
-
-        // Clock should be ~500ms ahead of system time
-        assertTrue(clockTime >= systemTime + 495, "Clock should be ~500ms ahead");
-        assertTrue(clockTime <= systemTime + 510, "Clock should be ~500ms ahead");
-    }
-
-    @Test
-    void testSetSkewNegative() {
-        var clock = new TestClock();
-        clock.setSkew(-500);
-
-        var systemTime = System.currentTimeMillis();
-        var clockTime = clock.currentTimeMillis();
-
-        // Clock should be ~500ms behind system time
-        assertTrue(clockTime <= systemTime - 490, "Clock should be ~500ms behind");
-        assertTrue(clockTime >= systemTime - 510, "Clock should be ~500ms behind");
-    }
-
-    @Test
-    void testSetSkewDisablesAbsoluteMode() {
-        var clock = new TestClock(1000L); // Absolute mode
-        assertTrue(clock.isAbsoluteMode());
-
-        clock.setSkew(100);
-        assertFalse(clock.isAbsoluteMode());
-    }
-
-    // ==================== TestClock Reset Tests ====================
-
-    @Test
-    void testResetClearsOffset() {
-        var clock = new TestClock();
-        clock.advance(1000);
-        clock.reset();
-
-        assertEquals(0L, clock.getOffset());
-        assertFalse(clock.isAbsoluteMode());
-    }
-
-    @Test
-    void testResetFromAbsoluteMode() {
-        var clock = new TestClock(5000L);
-        clock.advance(1000);
-        clock.reset();
-
-        // Should now be at current system time
-        var systemTime = System.currentTimeMillis();
-        var clockTime = clock.currentTimeMillis();
-        assertTrue(Math.abs(clockTime - systemTime) < 10);
     }
 
     // ==================== TestClock Concurrency Tests ====================
@@ -235,9 +161,8 @@ class ClockTest {
 
         latch.await();
 
-        var expectedOffset = threads * advancesPerThread * advanceAmount;
-        assertEquals(expectedOffset, clock.getOffset());
-        assertEquals(expectedOffset, clock.currentTimeMillis());
+        var expectedTime = threads * advancesPerThread * advanceAmount;
+        assertEquals(expectedTime, clock.currentTimeMillis());
     }
 
     @Test

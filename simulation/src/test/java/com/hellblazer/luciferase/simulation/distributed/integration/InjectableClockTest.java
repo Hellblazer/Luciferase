@@ -65,15 +65,14 @@ class InjectableClockTest {
     }
 
     @Test
-    void testTestClockSetSkew() {
+    void testTestClockSetTime() {
         var testClock = new TestClock();
-        var initialTime = testClock.currentTimeMillis();
 
-        testClock.setSkew(5000);
-        assertEquals(5000, testClock.getSkew(), "Skew should be set correctly");
+        testClock.setTime(5000);
+        assertEquals(5000, testClock.currentTimeMillis());
 
-        var afterSkew = testClock.currentTimeMillis();
-        assertTrue(afterSkew >= initialTime + 5000, "Clock time should reflect skew");
+        testClock.advance(1000);
+        assertEquals(6000, testClock.currentTimeMillis());
     }
 
     @Test
@@ -81,23 +80,22 @@ class InjectableClockTest {
         var clock1 = new TestClock();
         var clock2 = new TestClock();
 
-        clock1.setSkew(1000);
-        clock2.setSkew(2000);
+        clock1.setTime(1000);
+        clock2.setTime(2000);
 
-        assertEquals(1000, clock1.getSkew());
-        assertEquals(2000, clock2.getSkew());
+        assertEquals(1000, clock1.currentTimeMillis());
+        assertEquals(2000, clock2.currentTimeMillis());
 
         var time1 = clock1.currentTimeMillis();
         var time2 = clock2.currentTimeMillis();
 
-        assertTrue(Math.abs((time2 - time1) - 1000) < 10,
-                   "Clock difference should match skew difference");
+        assertEquals(1000, time2 - time1, "Clock difference should be 1000ms");
     }
 
     @Test
     void testClockUnderConcurrentReads() throws InterruptedException {
         var testClock = new TestClock();
-        testClock.setSkew(10000);
+        testClock.setTime(10000);
 
         var threadCount = 10;
         var readsPerThread = 1000;
