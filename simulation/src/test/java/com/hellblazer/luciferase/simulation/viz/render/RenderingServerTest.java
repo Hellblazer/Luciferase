@@ -507,4 +507,37 @@ class RenderingServerTest {
 
         server.stop();
     }
+
+    @Test
+    void testTlsWithInvalidKeystorePath() {
+        // Configure TLS with non-existent keystore path
+        var security = new SecurityConfig(
+            null,              // No API key
+            false,             // No redaction
+            true,              // TLS enabled
+            "/nonexistent/path/to/keystore.jks",  // Invalid path
+            "changeit",        // Keystore password
+            "changeit",        // Key manager password
+            false,             // No rate limiting
+            0                  // Rate limit N/A
+        );
+
+        var config = new RenderingServerConfig(
+            0,                          // Dynamic port
+            List.of(),
+            2,
+            security,
+            CacheConfig.testing(),
+            BuildConfig.testing(),
+            1_000
+        );
+
+        server = new RenderingServer(config);
+
+        var exception = assertThrows(IllegalStateException.class, () -> server.start());
+        assertTrue(exception.getMessage().contains("Keystore file not found"),
+                   "Error message should mention keystore file not found");
+        assertTrue(exception.getMessage().contains("/nonexistent/path/to/keystore.jks"),
+                   "Error message should include the invalid path");
+    }
 }

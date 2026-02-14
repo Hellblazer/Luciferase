@@ -20,6 +20,8 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -126,6 +128,17 @@ public class RenderingServer implements AutoCloseable {
         if (config.security().rateLimitEnabled()) {
             rateLimiter = new RateLimiter(config.security().rateLimitRequestsPerMinute(), clock);
             log.info("Rate limiting enabled: {} requests/minute", config.security().rateLimitRequestsPerMinute());
+        }
+
+        // wwi6: Validate keystore path exists before Jetty starts (for clear error messages)
+        if (config.security().tlsEnabled()) {
+            var keystorePath = Paths.get(config.security().keystorePath());
+            if (!Files.exists(keystorePath)) {
+                throw new IllegalStateException(
+                    "Keystore file not found: " + config.security().keystorePath() +
+                    ". Ensure the keystore file exists and the path is correct."
+                );
+            }
         }
 
         app = Javalin.create(javalinConfig -> {
