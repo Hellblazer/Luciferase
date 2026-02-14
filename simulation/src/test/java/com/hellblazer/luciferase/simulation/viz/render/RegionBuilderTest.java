@@ -533,4 +533,52 @@ class RegionBuilderTest {
             // Expected - build may fail or timeout
         }
     }
+
+    // ===== Thread Pool Validation Tests =====
+
+    @Test
+    void testConstructor_rejectsInvalidPoolSize() {
+        var exception = assertThrows(IllegalArgumentException.class,
+                () -> new RegionBuilder(0, 100, 10, 64),
+                "Should reject buildPoolSize < 1");
+        assertTrue(exception.getMessage().contains("buildPoolSize must be >= 1"));
+        assertTrue(exception.getMessage().contains("got: 0"));
+    }
+
+    @Test
+    void testConstructor_rejectsNegativePoolSize() {
+        var exception = assertThrows(IllegalArgumentException.class,
+                () -> new RegionBuilder(-5, 100, 10, 64),
+                "Should reject negative buildPoolSize");
+        assertTrue(exception.getMessage().contains("buildPoolSize must be >= 1"));
+        assertTrue(exception.getMessage().contains("got: -5"));
+    }
+
+    @Test
+    void testConstructor_acceptsMinimumPoolSize() {
+        // buildPoolSize=1 should be valid
+        try (var builder = new RegionBuilder(1, 100, 10, 64)) {
+            assertNotNull(builder);
+        }
+    }
+
+    @Test
+    void testConstructor_acceptsRecommendedPoolSize() {
+        // buildPoolSize=4 (within recommended 2-8 range) should be valid
+        try (var builder = new RegionBuilder(4, 100, 10, 64)) {
+            assertNotNull(builder);
+        }
+    }
+
+    @Test
+    void testConstructor_warnsWhenExceedingAvailableProcessors() {
+        // This test validates that very large pool sizes don't throw exception
+        // (Warning is logged but construction succeeds)
+        int excessivePoolSize = Runtime.getRuntime().availableProcessors() + 10;
+
+        try (var builder = new RegionBuilder(excessivePoolSize, 100, 10, 64)) {
+            assertNotNull(builder);
+            // Construction should succeed despite warning
+        }
+    }
 }

@@ -90,15 +90,34 @@ public class RegionBuilder implements AutoCloseable {
     /**
      * Create RegionBuilder with full configuration.
      *
-     * @param buildPoolSize Number of builder threads
+     * <p><strong>Thread Pool Sizing:</strong>
+     * <ul>
+     *   <li>Recommended: 2-8 threads (balance between parallelism and overhead)</li>
+     *   <li>Minimum: 1 thread (enforced)</li>
+     *   <li>Warning issued if exceeds available CPU cores</li>
+     * </ul>
+     *
+     * @param buildPoolSize Number of builder threads (recommended: 2-8)
      * @param maxQueueDepth Maximum build queue depth
      * @param maxDepth Maximum octree/tetree depth
      * @param gridResolution Voxel grid resolution
      * @param circuitBreakerTimeoutMs Circuit breaker timeout in milliseconds
      * @param circuitBreakerFailureThreshold Number of consecutive failures before circuit opens
+     * @throws IllegalArgumentException if buildPoolSize < 1
      */
     public RegionBuilder(int buildPoolSize, int maxQueueDepth, int maxDepth, int gridResolution,
                          long circuitBreakerTimeoutMs, int circuitBreakerFailureThreshold) {
+        // Validate thread pool size
+        if (buildPoolSize < 1) {
+            throw new IllegalArgumentException("buildPoolSize must be >= 1, got: " + buildPoolSize);
+        }
+
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        if (buildPoolSize > availableProcessors) {
+            log.warn("buildPoolSize ({}) exceeds available processors ({}). Recommended range: 2-8 threads",
+                     buildPoolSize, availableProcessors);
+        }
+
         this.buildQueue = new PriorityBlockingQueue<>(maxQueueDepth);
         this.invisibleBuilds = new ConcurrentSkipListSet<>(); // S2
         this.circuitBreakers = new ConcurrentHashMap<>(); // C3
