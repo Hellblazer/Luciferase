@@ -77,7 +77,8 @@ class RenderingServerIntegrationTest {
             SecurityConfig.permissive(),
             CacheConfig.testing(),
             BuildConfig.testing(),
-            1_000
+            1_000,
+            StreamingConfig.testing()
         );
         renderingServer = new RenderingServer(config);
         renderingServer.start();
@@ -190,7 +191,8 @@ class RenderingServerIntegrationTest {
             SecurityConfig.permissive(),
             CacheConfig.testing(),
             BuildConfig.testing(),
-            1_000
+            1_000,
+            StreamingConfig.testing()
         );
         renderingServer = new RenderingServer(config);
         renderingServer.start();
@@ -305,7 +307,8 @@ class RenderingServerConfigExtensions {
             config.security(),
             config.cache(),
             config.build(),
-            config.maxEntitiesPerRegion()
+            config.maxEntitiesPerRegion(),
+            config.streaming()
         );
     }
 }

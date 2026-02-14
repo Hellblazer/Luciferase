@@ -120,7 +120,9 @@ class RenderingServerTest {
             4,
             SecurityConfig.permissive(),
             CacheConfig.defaults(),
-            BuildConfig.defaults(), 10_000
+            BuildConfig.defaults(),
+            10_000,
+            StreamingConfig.testing()
         );
         server = new RenderingServer(config);
         server.start();
@@ -304,7 +306,8 @@ class RenderingServerTest {
             security,
             CacheConfig.testing(),
             BuildConfig.testing(),
-            1_000
+            1_000,
+            StreamingConfig.testing()
         );
 
         server = new RenderingServer(config);
@@ -366,7 +369,8 @@ class RenderingServerTest {
             security,
             CacheConfig.testing(),
             BuildConfig.testing(),
-            1_000
+            1_000,
+            StreamingConfig.testing()
         );
 
         server = new RenderingServer(config);
@@ -413,7 +417,8 @@ class RenderingServerTest {
             security,
             CacheConfig.testing(),
             BuildConfig.testing(),
-            1_000
+            1_000,
+            StreamingConfig.testing()
         );
 
         server = new RenderingServer(config);
@@ -481,7 +486,8 @@ class RenderingServerTest {
             security,
             CacheConfig.testing(),
             BuildConfig.testing(),
-            1_000
+            1_000,
+            StreamingConfig.testing()
         );
 
         server = new RenderingServer(config);
@@ -530,7 +536,8 @@ class RenderingServerTest {
             security,
             CacheConfig.testing(),
             BuildConfig.testing(),
-            1_000
+            1_000,
+            StreamingConfig.testing()
         );
 
         server = new RenderingServer(config);
@@ -563,7 +570,8 @@ class RenderingServerTest {
             security,
             CacheConfig.testing(),
             BuildConfig.testing(),
-            1_000
+            1_000,
+            StreamingConfig.testing()
         );
 
         var testClock = new TestClock();
@@ -624,7 +632,8 @@ class RenderingServerTest {
         // Create server with API key authentication enabled
         var security = new SecurityConfig("test-api-key-12345", false, false, null, null, null, false, 0);
         var config = new RenderingServerConfig(0, List.of(), 2, security,
-                                               CacheConfig.testing(), BuildConfig.testing(), 1000);
+                                               CacheConfig.testing(), BuildConfig.testing(), 1000,
+                                               StreamingConfig.testing());
         server = new RenderingServer(config);
         server.start();
 
@@ -648,7 +657,8 @@ class RenderingServerTest {
         // Create server with API key authentication enabled
         var security = new SecurityConfig("test-api-key-12345", false, false, null, null, null, false, 0);
         var config = new RenderingServerConfig(0, List.of(), 2, security,
-                                               CacheConfig.testing(), BuildConfig.testing(), 1000);
+                                               CacheConfig.testing(), BuildConfig.testing(), 1000,
+                                               StreamingConfig.testing());
         server = new RenderingServer(config);
         server.start();
 
@@ -671,7 +681,8 @@ class RenderingServerTest {
         // Create server with API key authentication enabled
         var security = new SecurityConfig("test-api-key-12345", false, false, null, null, null, false, 0);
         var config = new RenderingServerConfig(0, List.of(), 2, security,
-                                               CacheConfig.testing(), BuildConfig.testing(), 1000);
+                                               CacheConfig.testing(), BuildConfig.testing(), 1000,
+                                               StreamingConfig.testing());
         server = new RenderingServer(config);
         server.start();
 
@@ -695,7 +706,8 @@ class RenderingServerTest {
         // Create server with authentication disabled (apiKey = null)
         var security = new SecurityConfig(null, false, false, null, null, null, false, 0);
         var config = new RenderingServerConfig(0, List.of(), 2, security,
-                                               CacheConfig.testing(), BuildConfig.testing(), 1000);
+                                               CacheConfig.testing(), BuildConfig.testing(), 1000,
+                                               StreamingConfig.testing());
         server = new RenderingServer(config);
         server.start();
 

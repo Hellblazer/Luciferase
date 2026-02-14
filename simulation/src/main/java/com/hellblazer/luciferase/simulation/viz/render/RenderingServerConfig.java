@@ -13,16 +13,18 @@ import java.util.List;
 /**
  * Configuration for the GPU-accelerated rendering server.
  * <p>
- * Uses composition pattern with SecurityConfig, CacheConfig, and BuildConfig sub-records.
+ * Uses composition pattern with SecurityConfig, CacheConfig, BuildConfig, and StreamingConfig sub-records.
  * <p>
  * Thread-safe: immutable record.
  *
- * @param port         Server listen port (0 for dynamic assignment in tests)
- * @param upstreams    List of upstream simulation server configurations
- * @param regionLevel  Octree depth for region subdivision (3-6, default 4 = 16^3 regions)
- * @param security     Security configuration (API keys, TLS, rate limiting)
- * @param cache        Cache configuration (memory limits)
- * @param build        Build configuration (pool size, queue depth, circuit breaker)
+ * @param port                 Server listen port (0 for dynamic assignment in tests)
+ * @param upstreams            List of upstream simulation server configurations
+ * @param regionLevel          Octree depth for region subdivision (3-6, default 4 = 16^3 regions)
+ * @param security             Security configuration (API keys, TLS, rate limiting)
+ * @param cache                Cache configuration (memory limits)
+ * @param build                Build configuration (pool size, queue depth, circuit breaker)
+ * @param maxEntitiesPerRegion Limit entities per region to prevent unbounded accumulation
+ * @param streaming            Streaming configuration (viewport tracking, LOD thresholds)
  * @author hal.hildebrand
  */
 public record RenderingServerConfig(
@@ -32,7 +34,8 @@ public record RenderingServerConfig(
     SecurityConfig security,
     CacheConfig cache,
     BuildConfig build,
-    int maxEntitiesPerRegion  // vtet: Limit entities per region to prevent unbounded accumulation
+    int maxEntitiesPerRegion,
+    StreamingConfig streaming
 ) {
     /**
      * Validate configuration for cross-field consistency.
@@ -65,7 +68,8 @@ public record RenderingServerConfig(
             SecurityConfig.secure(apiKey, true),       // Secure with TLS enabled
             CacheConfig.defaults(),                    // 256 MB cache
             BuildConfig.defaults(),                    // Default build params
-            10_000                                     // Max 10k entities per region
+            10_000,                                    // Max 10k entities per region
+            StreamingConfig.defaults()                 // Default streaming config
         );
         config.validate();  // Ensure valid
         return config;
@@ -85,7 +89,8 @@ public record RenderingServerConfig(
             SecurityConfig.permissive(), // No authentication
             CacheConfig.defaults(),      // 256 MB cache
             BuildConfig.defaults(),      // Default build params
-            10_000                       // Max 10k entities per region
+            10_000,                      // Max 10k entities per region
+            StreamingConfig.defaults()   // Default streaming config
         );
     }
 
@@ -100,7 +105,8 @@ public record RenderingServerConfig(
             SecurityConfig.permissive(), // Permissive for tests
             CacheConfig.testing(),       // 16 MB cache
             BuildConfig.testing(),       // Small build params
-            1_000                        // Lower limit for tests (1k per region)
+            1_000,                       // Lower limit for tests (1k per region)
+            StreamingConfig.testing()    // Test streaming config
         );
     }
 }
