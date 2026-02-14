@@ -143,6 +143,63 @@ class RenderingServerTest {
     }
 
     @Test
+    void testMetricsEndpoint() throws Exception {
+        var config = RenderingServerConfig.testing();
+        server = new RenderingServer(config);
+        server.start();
+
+        // Trigger some builds to populate metrics
+        var regionManager = server.getRegionManager();
+        regionManager.updateEntity("entity1", 100.0f, 100.0f, 100.0f, "PREY");
+        var region = regionManager.regionForPosition(100.0f, 100.0f, 100.0f);
+        regionManager.scheduleBuild(region, true);
+
+        // Wait for build to complete
+        Thread.sleep(200);
+
+        var client = HttpClient.newHttpClient();
+        var request = HttpRequest.newBuilder()
+                                 .uri(URI.create("http://localhost:" + server.port() + "/api/metrics"))
+                                 .GET()
+                                 .build();
+
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode(), "Metrics endpoint should return 200 OK");
+
+        var json = jsonMapper.readTree(response.body());
+
+        // Verify builder metrics
+        assertTrue(json.has("builder"), "Response should have 'builder' field");
+        var builder = json.get("builder");
+        assertTrue(builder.has("totalBuilds"), "Builder should have 'totalBuilds' field");
+        assertTrue(builder.has("failedBuilds"), "Builder should have 'failedBuilds' field");
+        assertTrue(builder.has("queueDepth"), "Builder should have 'queueDepth' field");
+        assertTrue(builder.has("avgBuildTimeMs"), "Builder should have 'avgBuildTimeMs' field");
+        assertTrue(builder.get("avgBuildTimeMs").isDouble(), "avgBuildTimeMs should be double");
+
+        // Verify cache metrics
+        assertTrue(json.has("cache"), "Response should have 'cache' field");
+        var cache = json.get("cache");
+        assertTrue(cache.has("pinnedCount"), "Cache should have 'pinnedCount' field");
+        assertTrue(cache.has("unpinnedCount"), "Cache should have 'unpinnedCount' field");
+        assertTrue(cache.has("totalCount"), "Cache should have 'totalCount' field");
+        assertTrue(cache.has("totalMemoryBytes"), "Cache should have 'totalMemoryBytes' field");
+        assertTrue(cache.has("caffeineHitRate"), "Cache should have 'caffeineHitRate' field");
+        assertTrue(cache.has("caffeineMissRate"), "Cache should have 'caffeineMissRate' field");
+        assertTrue(cache.has("caffeineEvictionCount"), "Cache should have 'caffeineEvictionCount' field");
+        assertTrue(cache.has("memoryPressure"), "Cache should have 'memoryPressure' field");
+        assertTrue(cache.get("memoryPressure").isDouble(), "memoryPressure should be double");
+
+        // Verify memoryPressure is in valid range [0.0, 1.0]
+        double memoryPressure = cache.get("memoryPressure").asDouble();
+        assertTrue(memoryPressure >= 0.0 && memoryPressure <= 1.0,
+                  "memoryPressure should be between 0.0 and 1.0, got: " + memoryPressure);
+
+        server.stop();
+    }
+
+    @Test
     void testWebSocketEndpointAcceptsConnections() throws Exception {
         var config = RenderingServerConfig.testing();
         server = new RenderingServer(config);

@@ -242,14 +242,16 @@ public class RegionCache implements AutoCloseable {
      */
     public CacheStats getStats() {
         var caffeineStats = unpinnedCache.stats();
+        long totalMemory = getTotalMemoryBytes();
 
         return new CacheStats(
                 pinnedCache.size(),
                 unpinnedCache.estimatedSize(),
-                getTotalMemoryBytes(),
+                totalMemory,
                 caffeineStats.hitRate(),
                 caffeineStats.missRate(),
-                caffeineStats.evictionCount()
+                caffeineStats.evictionCount(),
+                (double) totalMemory / maxMemoryBytes
         );
     }
 
@@ -477,7 +479,8 @@ public class RegionCache implements AutoCloseable {
             long totalMemoryBytes,
             double caffeineHitRate,
             double caffeineMissRate,
-            long caffeineEvictionCount
+            long caffeineEvictionCount,
+            double memoryPressure
     ) {
         /**
          * Get total cached region count.

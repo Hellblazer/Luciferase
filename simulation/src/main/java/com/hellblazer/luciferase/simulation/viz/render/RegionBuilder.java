@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * CPU-based region builder for ESVO/ESVT sparse voxel structures.
@@ -49,6 +50,7 @@ public class RegionBuilder implements AutoCloseable {
     private final AtomicInteger queueSize;
     private final AtomicInteger totalBuilds;
     private final AtomicInteger failedBuilds;
+    private final AtomicLong totalBuildTimeNs;
     private final int maxQueueDepth;
     private final int maxDepth;
     private final int gridResolution;
@@ -70,6 +72,7 @@ public class RegionBuilder implements AutoCloseable {
         this.queueSize = new AtomicInteger(0);
         this.totalBuilds = new AtomicInteger(0);
         this.failedBuilds = new AtomicInteger(0);
+        this.totalBuildTimeNs = new AtomicLong(0);
         this.maxQueueDepth = maxQueueDepth;
         this.maxDepth = maxDepth;
         this.gridResolution = gridResolution;
@@ -248,6 +251,7 @@ public class RegionBuilder implements AutoCloseable {
             boolean compressed = SerializationUtils.isCompressed(data);
 
             long buildTimeNs = System.nanoTime() - startNs;
+            totalBuildTimeNs.addAndGet(buildTimeNs);
 
             // C3: Clear circuit breaker on success
             circuitBreakers.remove(request.regionId());
@@ -323,6 +327,16 @@ public class RegionBuilder implements AutoCloseable {
      */
     public int getFailedBuilds() {
         return failedBuilds.get();
+    }
+
+    /**
+     * Get average build time in nanoseconds.
+     *
+     * @return Average build time, or 0 if no builds completed
+     */
+    public long getAverageBuildTimeNs() {
+        int builds = totalBuilds.get();
+        return builds > 0 ? totalBuildTimeNs.get() / builds : 0;
     }
 
     // ===== Legacy methods for Day 2 tests =====

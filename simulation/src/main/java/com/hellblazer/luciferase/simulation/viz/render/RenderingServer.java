@@ -303,7 +303,7 @@ public class RenderingServer implements AutoCloseable {
             builderMetrics.put("totalBuilds", regionBuilder.getTotalBuilds());
             builderMetrics.put("failedBuilds", regionBuilder.getFailedBuilds());
             builderMetrics.put("queueDepth", regionBuilder.getQueueDepth());
-            // avgBuildTimeNs requires tracking - omit for now (will be in followup)
+            builderMetrics.put("avgBuildTimeMs", regionBuilder.getAverageBuildTimeNs() / 1_000_000.0);
             metrics.put("builder", builderMetrics);
         }
 
@@ -318,6 +318,7 @@ public class RenderingServer implements AutoCloseable {
             cacheMetrics.put("caffeineHitRate", cacheStats.caffeineHitRate());
             cacheMetrics.put("caffeineMissRate", cacheStats.caffeineMissRate());
             cacheMetrics.put("caffeineEvictionCount", cacheStats.caffeineEvictionCount());
+            cacheMetrics.put("memoryPressure", cacheStats.memoryPressure());
             metrics.put("cache", cacheMetrics);
         }
 
