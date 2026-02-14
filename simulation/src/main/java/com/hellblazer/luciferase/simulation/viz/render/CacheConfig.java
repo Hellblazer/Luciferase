@@ -12,6 +12,18 @@ package com.hellblazer.luciferase.simulation.viz.render;
  * Cache configuration for the rendering server.
  * <p>
  * Thread-safe: immutable record.
+ * <p>
+ * <b>Emergency Eviction Thresholds:</b>
+ * <ul>
+ *   <li><b>Trigger</b>: Emergency eviction activates when total memory usage
+ *       (pinned + unpinned) reaches 90% of maxCacheMemoryBytes</li>
+ *   <li><b>Target</b>: Eviction removes least-recently-used entries until
+ *       total memory drops to 75% of maxCacheMemoryBytes</li>
+ *   <li><b>Implementation</b>: See RegionCache.emergencyEvict() for details</li>
+ * </ul>
+ * <p>
+ * These thresholds ensure cache memory stays bounded even when pinned regions
+ * temporarily exceed normal limits (e.g., during high-frequency entity updates).
  *
  * @param maxCacheMemoryBytes Maximum cache memory in bytes
  * @author hal.hildebrand
