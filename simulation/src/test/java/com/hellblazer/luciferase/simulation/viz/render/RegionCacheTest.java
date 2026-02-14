@@ -261,6 +261,276 @@ class RegionCacheTest {
         assertTrue(cache.get(key).isPresent(), "Region should still be cached after unpin");
     }
 
+    @Test
+    void testUnpin_movesBetweenCaches() throws InterruptedException {
+        // This is the inverse of testPin_movesBetweenCaches
+        var region = createTestRegion(new RegionId(1L, 0), 1000);
+        var key = new RegionCache.CacheKey(new RegionId(1L, 0), 0);
+        var cached = RegionCache.CachedRegion.from(region, System.currentTimeMillis());
+
+        // Put and pin first
+        cache.put(key, cached);
+        cache.pin(key);
+
+        // Verify in pinned cache
+        assertEquals(1072, cache.getPinnedMemoryBytes());
+        var stats = cache.getStats();
+        assertEquals(1, stats.pinnedCount());
+        assertEquals(0, stats.unpinnedCount());
+
+        // Unpin - moves to unpinned cache
+        boolean unpinned = cache.unpin(key);
+        assertTrue(unpinned, "Unpin should succeed");
+        assertEquals(0, cache.getPinnedMemoryBytes());
+
+        stats = cache.getStats();
+        assertEquals(0, stats.pinnedCount());
+        assertEquals(1, stats.unpinnedCount());
+
+        // Region should still be accessible in unpinned cache
+        assertTrue(cache.get(key).isPresent());
+    }
+
+    @Test
+    void testInvalidate_removesAllLODs() throws InterruptedException {
+        var regionId = new RegionId(1L, 0);
+
+        // Cache same region at 3 LOD levels
+        var lod0Key = new RegionCache.CacheKey(regionId, 0);
+        var lod1Key = new RegionCache.CacheKey(regionId, 1);
+        var lod2Key = new RegionCache.CacheKey(regionId, 2);
+
+        long now = System.currentTimeMillis();
+        cache.put(lod0Key, RegionCache.CachedRegion.from(createTestRegion(regionId, 1000), now));
+        cache.put(lod1Key, RegionCache.CachedRegion.from(createTestRegion(regionId, 500), now));
+        cache.put(lod2Key, RegionCache.CachedRegion.from(createTestRegion(regionId, 250), now));
+
+        // Verify all cached
+        assertTrue(cache.get(lod0Key).isPresent());
+        assertTrue(cache.get(lod1Key).isPresent());
+        assertTrue(cache.get(lod2Key).isPresent());
+
+        // Invalidate each LOD separately
+        cache.invalidate(lod0Key);
+        assertFalse(cache.get(lod0Key).isPresent(), "LOD 0 should be invalidated");
+        assertTrue(cache.get(lod1Key).isPresent(), "LOD 1 should still exist");
+        assertTrue(cache.get(lod2Key).isPresent(), "LOD 2 should still exist");
+
+        cache.invalidate(lod1Key);
+        cache.invalidate(lod2Key);
+
+        // All should be gone
+        assertFalse(cache.get(lod0Key).isPresent());
+        assertFalse(cache.get(lod1Key).isPresent());
+        assertFalse(cache.get(lod2Key).isPresent());
+    }
+
+    @Test
+    void testCacheInvalidationOnDirty() throws InterruptedException {
+        var region = createTestRegion(new RegionId(1L, 0), 1000);
+        var key = new RegionCache.CacheKey(new RegionId(1L, 0), 0);
+        var cached = RegionCache.CachedRegion.from(region, System.currentTimeMillis());
+
+        // Cache and pin
+        cache.put(key, cached);
+        cache.pin(key);
+
+        assertTrue(cache.get(key).isPresent());
+        assertEquals(1, cache.getStats().pinnedCount());
+
+        // Invalidate removes from pinned cache
+        cache.invalidate(key);
+
+        assertFalse(cache.get(key).isPresent(), "Invalidated region should not be present");
+        assertEquals(0, cache.getStats().pinnedCount(), "Pinned count should be 0");
+        assertEquals(0, cache.getPinnedMemoryBytes(), "Pinned memory should be 0");
+    }
+
+    @Test
+    void testEmergencyEviction_triggersAbove90Percent() throws InterruptedException {
+        // Create cache with 1KB max
+        var smallCache = new RegionCache(1000, Duration.ofMinutes(5));
+
+        try {
+            long now = System.currentTimeMillis();
+
+            // Add and pin regions totaling ~960 bytes (96% of 1000 bytes, exceeds 90% threshold)
+            // Each region: 200 bytes data + 72 overhead = 272 bytes
+            // 3 regions × 272 = 816 bytes (safe)
+            // 4 regions × 272 = 1088 bytes (exceeds 90% threshold of 900 bytes)
+
+            var region1 = createTestRegion(new RegionId(1L, 0), 200);
+            var region2 = createTestRegion(new RegionId(2L, 0), 200);
+            var region3 = createTestRegion(new RegionId(3L, 0), 200);
+            var region4 = createTestRegion(new RegionId(4L, 0), 200);
+
+            var key1 = new RegionCache.CacheKey(new RegionId(1L, 0), 0);
+            var key2 = new RegionCache.CacheKey(new RegionId(2L, 0), 0);
+            var key3 = new RegionCache.CacheKey(new RegionId(3L, 0), 0);
+            var key4 = new RegionCache.CacheKey(new RegionId(4L, 0), 0);
+
+            // Pin all regions to force emergency eviction (Caffeine can't help)
+            smallCache.put(key1, RegionCache.CachedRegion.from(region1, now));
+            smallCache.pin(key1);
+            Thread.sleep(10);
+            smallCache.put(key2, RegionCache.CachedRegion.from(region2, now + 10));
+            smallCache.pin(key2);
+            Thread.sleep(10);
+            smallCache.put(key3, RegionCache.CachedRegion.from(region3, now + 20));
+            smallCache.pin(key3);
+            Thread.sleep(10);
+            smallCache.put(key4, RegionCache.CachedRegion.from(region4, now + 30));
+            smallCache.pin(key4);
+
+            // Verify over 90% threshold
+            long totalMemory = smallCache.getTotalMemoryBytes();
+            assertTrue(totalMemory > 900, "Should be over 90% threshold, got: " + totalMemory);
+
+            // Trigger emergency eviction
+            int evictedCount = smallCache.emergencyEvict();
+
+            // Should have evicted some pinned regions
+            assertTrue(evictedCount > 0, "Should have evicted at least one region");
+
+            // Memory should now be below 75% target (750 bytes)
+            long finalMemory = smallCache.getTotalMemoryBytes();
+            assertTrue(finalMemory <= 750,
+                    "Memory should be below 75% target (750 bytes), got: " + finalMemory);
+
+        } finally {
+            smallCache.close();
+        }
+    }
+
+    @Test
+    void testConcurrentEmergencyEviction_onlyOneThreadEvicts() throws InterruptedException {
+        // Create cache with 1KB max
+        var smallCache = new RegionCache(1000, Duration.ofMinutes(5));
+
+        try {
+            long now = System.currentTimeMillis();
+
+            // Add and pin regions to exceed 90% threshold
+            for (int i = 0; i < 4; i++) {
+                var region = createTestRegion(new RegionId(i, 0), 200);
+                var key = new RegionCache.CacheKey(new RegionId(i, 0), 0);
+                smallCache.put(key, RegionCache.CachedRegion.from(region, now));
+                smallCache.pin(key);
+            }
+
+            // Launch multiple concurrent emergency eviction attempts
+            var latch = new java.util.concurrent.CountDownLatch(5);
+            var evictedCounts = new java.util.concurrent.ConcurrentHashMap<Integer, Integer>();
+
+            for (int i = 0; i < 5; i++) {
+                final int threadId = i;
+                new Thread(() -> {
+                    int count = smallCache.emergencyEvict();
+                    evictedCounts.put(threadId, count);
+                    latch.countDown();
+                }).start();
+            }
+
+            // Wait for all threads to complete
+            latch.await(5, java.util.concurrent.TimeUnit.SECONDS);
+
+            // C4 guard verification: only one thread should have performed eviction
+            long threadsWithEvictions = evictedCounts.values().stream()
+                    .filter(count -> count > 0)
+                    .count();
+
+            assertTrue(threadsWithEvictions <= 1,
+                    "C4 guard should allow at most one thread to evict, got: " + threadsWithEvictions);
+
+            // At least one thread should have succeeded
+            int totalEvicted = evictedCounts.values().stream()
+                    .mapToInt(Integer::intValue)
+                    .sum();
+            assertTrue(totalEvicted > 0, "At least one thread should have evicted regions");
+
+        } finally {
+            smallCache.close();
+        }
+    }
+
+    @Test
+    void testCaffeineStats_hitMissTracking() {
+        var region1 = createTestRegion(new RegionId(1L, 0), 1000);
+        var region2 = createTestRegion(new RegionId(2L, 0), 1000);
+
+        var key1 = new RegionCache.CacheKey(new RegionId(1L, 0), 0);
+        var key2 = new RegionCache.CacheKey(new RegionId(2L, 0), 0);
+        var keyMiss = new RegionCache.CacheKey(new RegionId(999L, 0), 0);
+
+        long now = System.currentTimeMillis();
+        cache.put(key1, RegionCache.CachedRegion.from(region1, now));
+        cache.put(key2, RegionCache.CachedRegion.from(region2, now));
+
+        // Generate hits
+        cache.get(key1); // hit
+        cache.get(key1); // hit
+        cache.get(key2); // hit
+
+        // Generate misses
+        cache.get(keyMiss); // miss
+        cache.get(keyMiss); // miss
+
+        var stats = cache.getStats();
+
+        // Verify Caffeine stats tracking
+        // Note: Stats may include some baseline hits/misses from internal operations
+        assertTrue(stats.caffeineHitRate() > 0.0, "Should have some hits");
+        assertTrue(stats.caffeineMissRate() > 0.0, "Should have some misses");
+
+        // Overall hit rate should be reasonable (hits / (hits + misses))
+        // With 3 hits and 2 misses, expect ~60% hit rate
+        assertTrue(stats.caffeineHitRate() > 0.5,
+                "Hit rate should be > 50%, got: " + stats.caffeineHitRate());
+    }
+
+    @Test
+    void testConcurrentAccess_noCorruption() throws InterruptedException {
+        var latch = new java.util.concurrent.CountDownLatch(10);
+        var errors = new java.util.concurrent.ConcurrentHashMap<Integer, Exception>();
+
+        // Spawn 10 threads doing concurrent operations
+        for (int i = 0; i < 10; i++) {
+            final int threadId = i;
+            new Thread(() -> {
+                try {
+                    var region = createTestRegion(new RegionId(threadId, 0), 1000);
+                    var key = new RegionCache.CacheKey(new RegionId(threadId, 0), 0);
+                    var cached = RegionCache.CachedRegion.from(region, System.currentTimeMillis());
+
+                    // Concurrent put/get/pin/unpin
+                    cache.put(key, cached);
+                    cache.get(key);
+                    cache.pin(key);
+                    cache.get(key);
+                    cache.unpin(key);
+                    cache.get(key);
+                    cache.invalidate(key);
+
+                } catch (Exception e) {
+                    errors.put(threadId, e);
+                } finally {
+                    latch.countDown();
+                }
+            }).start();
+        }
+
+        // Wait for all threads
+        latch.await(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        // Verify no errors
+        assertTrue(errors.isEmpty(), "Should have no concurrency errors, got: " + errors);
+
+        // Verify cache is still functional
+        var stats = cache.getStats();
+        assertNotNull(stats);
+        assertTrue(stats.totalMemoryBytes() >= 0);
+    }
+
     // ===== Helper Methods =====
 
     /**

@@ -10,7 +10,9 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 /**
  * Hybrid cache for built ESVO/ESVT regions with Caffeine LRU and manual pinning.
@@ -47,6 +49,7 @@ public class RegionCache implements AutoCloseable {
     private final Cache<CacheKey, CachedRegion> unpinnedCache;
     private final ConcurrentHashMap<CacheKey, CachedRegion> pinnedCache;
     private final AtomicLong pinnedMemoryBytes;
+    private final AtomicBoolean emergencyEvicting; // C4: Concurrency guard
     private final long maxMemoryBytes;
     private final Duration ttl;
     private volatile boolean closed;
@@ -62,6 +65,7 @@ public class RegionCache implements AutoCloseable {
         this.ttl = ttl;
         this.pinnedMemoryBytes = new AtomicLong(0);
         this.pinnedCache = new ConcurrentHashMap<>();
+        this.emergencyEvicting = new AtomicBoolean(false); // C4: Initially not evicting
         this.closed = false;
 
         // Configure Caffeine with 90% of maxMemory (10% headroom for pinned regions)
@@ -261,6 +265,101 @@ public class RegionCache implements AutoCloseable {
         return unpinnedCache.policy().eviction()
                 .map(eviction -> eviction.weightedSize().getAsLong())
                 .orElse(0L);
+    }
+
+    /**
+     * Emergency eviction (M1) with C4 concurrency guard.
+     *
+     * <p>Triggered when total memory exceeds 90% of maxMemoryBytes.
+     * Evicts oldest pinned regions until memory drops below 75% target.
+     *
+     * <p><strong>C4 Guard:</strong> Uses AtomicBoolean compareAndSet to ensure only one thread
+     * performs emergency eviction at a time, preventing over-eviction.
+     *
+     * <p><strong>Algorithm:</strong>
+     * <ol>
+     *   <li>Acquire C4 guard via compareAndSet (false → true)</li>
+     *   <li>Force Caffeine cleanup to evict expired/LRU entries first</li>
+     *   <li>If still over 75%, evict oldest pinned regions by lastAccessedMs</li>
+     *   <li>Release C4 guard (true → false)</li>
+     * </ol>
+     *
+     * @return Number of pinned regions evicted (0 if guard acquisition failed or Caffeine cleanup sufficient)
+     */
+    public int emergencyEvict() {
+        if (closed) {
+            return 0;
+        }
+
+        // C4: Acquire concurrency guard (only one thread can evict at a time)
+        if (!emergencyEvicting.compareAndSet(false, true)) {
+            log.debug("Emergency eviction already in progress, skipping");
+            return 0;
+        }
+
+        try {
+            long totalMemory = getTotalMemoryBytes();
+            long emergencyThreshold = (long) (maxMemoryBytes * 0.9); // 90% triggers emergency
+            long targetMemory = (long) (maxMemoryBytes * 0.75); // Evict down to 75%
+
+            if (totalMemory < emergencyThreshold) {
+                log.debug("Memory {} below emergency threshold {}, no eviction needed",
+                        totalMemory, emergencyThreshold);
+                return 0;
+            }
+
+            log.warn("Emergency eviction triggered: {} bytes / {} max ({}%)",
+                    totalMemory, maxMemoryBytes, (totalMemory * 100 / maxMemoryBytes));
+
+            // Step 1: Force Caffeine to cleanup expired/LRU entries
+            unpinnedCache.cleanUp();
+
+            // Re-check memory after Caffeine cleanup
+            totalMemory = getTotalMemoryBytes();
+            if (totalMemory < targetMemory) {
+                log.info("Caffeine cleanup sufficient, memory now {} bytes", totalMemory);
+                return 0;
+            }
+
+            // Step 2: Evict oldest pinned regions if still over target
+            long bytesToEvict = totalMemory - targetMemory;
+            var pinnedEntries = pinnedCache.entrySet().stream()
+                    .sorted((e1, e2) -> Long.compare(
+                            e1.getValue().lastAccessedMs(),
+                            e2.getValue().lastAccessedMs()
+                    ))
+                    .collect(Collectors.toList());
+
+            int evictedCount = 0;
+            long bytesEvicted = 0;
+
+            for (var entry : pinnedEntries) {
+                if (bytesEvicted >= bytesToEvict) {
+                    break;
+                }
+
+                var key = entry.getKey();
+                var region = entry.getValue();
+
+                pinnedCache.remove(key);
+                pinnedMemoryBytes.addAndGet(-region.sizeBytes());
+                bytesEvicted += region.sizeBytes();
+                evictedCount++;
+
+                log.debug("Emergency evicted pinned region {} LOD {} ({} bytes)",
+                        key.regionId(), key.lodLevel(), region.sizeBytes());
+            }
+
+            log.warn("Emergency eviction complete: evicted {} pinned regions ({} bytes), " +
+                            "memory now {} bytes",
+                    evictedCount, bytesEvicted, getTotalMemoryBytes());
+
+            return evictedCount;
+
+        } finally {
+            // C4: Release guard
+            emergencyEvicting.set(false);
+        }
     }
 
     @Override
