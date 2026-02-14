@@ -124,7 +124,7 @@ public class RenderingServer implements AutoCloseable {
 
         // w1tk: Initialize rate limiter if enabled
         if (config.security().rateLimitEnabled()) {
-            rateLimiter = new RateLimiter(config.security().rateLimitRequestsPerMinute());
+            rateLimiter = new RateLimiter(config.security().rateLimitRequestsPerMinute(), clock);
             log.info("Rate limiting enabled: {} requests/minute", config.security().rateLimitRequestsPerMinute());
         }
 
@@ -401,14 +401,18 @@ public class RenderingServer implements AutoCloseable {
      * <p>
      * Tracks requests per IP address using a sliding window of 1 minute.
      * Thread-safe using ConcurrentHashMap and ConcurrentLinkedQueue.
+     * <p>
+     * Uses injected Clock for deterministic testing.
      */
     private static class RateLimiter {
         private final ConcurrentHashMap<String, ConcurrentLinkedQueue<Long>> requestTimestamps = new ConcurrentHashMap<>();
         private final int maxRequestsPerMinute;
         private final long windowMs = 60_000L;  // 1 minute window
+        private final Clock clock;
 
-        public RateLimiter(int maxRequestsPerMinute) {
+        public RateLimiter(int maxRequestsPerMinute, Clock clock) {
             this.maxRequestsPerMinute = maxRequestsPerMinute;
+            this.clock = clock;
         }
 
         /**
@@ -418,7 +422,7 @@ public class RenderingServer implements AutoCloseable {
          * @return true if allowed, false if rate limit exceeded
          */
         public boolean allowRequest(String ip) {
-            long now = System.currentTimeMillis();
+            long now = clock.currentTimeMillis();  // Use injected clock
             var timestamps = requestTimestamps.computeIfAbsent(ip, k -> new ConcurrentLinkedQueue<>());
 
             // Remove timestamps outside the sliding window
