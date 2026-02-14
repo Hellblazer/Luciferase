@@ -60,10 +60,28 @@ public class TestUtils {
     public static void awaitBuilds(RegionBuilder builder,
                                    int expectedCount,
                                    Duration timeout) throws InterruptedException {
+        awaitBuilds(builder, expectedCount, timeout, 50);
+    }
+
+    /**
+     * Poll until expected build count is reached or timeout occurs.
+     * <p>
+     * Convenience wrapper for RegionBuilder build completion with custom poll interval.
+     *
+     * @param builder RegionBuilder to poll
+     * @param expectedCount Minimum number of builds expected to complete
+     * @param timeout Maximum time to wait
+     * @param pollIntervalMs Poll interval in milliseconds
+     * @throws InterruptedException if interrupted while polling
+     */
+    public static void awaitBuilds(RegionBuilder builder,
+                                   int expectedCount,
+                                   Duration timeout,
+                                   long pollIntervalMs) throws InterruptedException {
         long startMs = System.currentTimeMillis();
 
         while (builder.getTotalBuilds() < expectedCount) {
-            Thread.sleep(50);  // 50ms poll interval
+            Thread.sleep(pollIntervalMs);
             long elapsedMs = System.currentTimeMillis() - startMs;
             if (elapsedMs > timeout.toMillis()) {
                 fail(String.format(

@@ -218,4 +218,220 @@ class BuildIntegrationTest {
         builder.close();
         cache.close();
     }
+
+    @Test
+    void testFullPipeline_multipleEntitiesMultipleRegions() throws Exception {
+        // Test full pipeline with 50 entities across 5 regions
+        var config = RenderingServerConfig.testing();
+        server = new RenderingServer(config);
+        server.start();
+
+        var regionManager = server.getRegionManager();
+        var builder = server.getRegionBuilder();
+        var cache = server.getRegionCache();
+
+        // Add 50 entities distributed across 5 regions
+        // Testing config: regionLevel=2 -> 4 regions per axis, regionSize=256
+        // Place entities in regions (0,0,0), (1,0,0), (0,1,0), (0,0,1), (1,1,0)
+        for (int i = 0; i < 50; i++) {
+            float x, y, z;
+            int regionIndex = i % 5;
+            switch (regionIndex) {
+                case 0 -> { x = 64.0f; y = 64.0f; z = 64.0f; }      // Region (0,0,0)
+                case 1 -> { x = 300.0f; y = 64.0f; z = 64.0f; }     // Region (1,0,0)
+                case 2 -> { x = 64.0f; y = 300.0f; z = 64.0f; }     // Region (0,1,0)
+                case 3 -> { x = 64.0f; y = 64.0f; z = 300.0f; }     // Region (0,0,1)
+                default -> { x = 300.0f; y = 300.0f; z = 64.0f; }   // Region (1,1,0)
+            }
+            // Add slight offset to avoid exact duplicates
+            x += (i / 5) * 10.0f;
+            y += (i / 5) * 10.0f;
+
+            String type = (i % 2 == 0) ? "PREY" : "PREDATOR";
+            regionManager.updateEntity("entity" + i, x, y, z, type);
+        }
+
+        // Trigger builds for all 5 regions
+        var allRegions = regionManager.getAllRegions();
+        assertEquals(5, allRegions.size(), "Should have 5 distinct regions");
+
+        int initialBuilds = builder.getTotalBuilds();
+        for (var region : allRegions) {
+            regionManager.scheduleBuild(region, true);
+        }
+
+        // Wait for builds to complete (at least some, cache may skip others)
+        Thread.sleep(500); // Give builds time to process
+
+        // Verify all 5 regions are cached
+        int cachedRegions = 0;
+        for (var region : allRegions) {
+            var cacheKey = new RegionCache.CacheKey(region, 0);
+            if (cache.get(cacheKey).isPresent()) {
+                cachedRegions++;
+            }
+        }
+        assertEquals(5, cachedRegions, "All 5 regions should be cached");
+
+        // Verify builder metrics
+        int totalBuilds = builder.getTotalBuilds();
+        int buildsCompleted = totalBuilds - initialBuilds;
+        assertTrue(buildsCompleted > 0, "Should have completed at least 1 build, got: " + buildsCompleted);
+        assertEquals(0, builder.getFailedBuilds(), "Should have no failed builds");
+
+        // Verify cache stats
+        var stats = cache.getStats();
+        assertTrue(stats.totalCount() >= 5, "Cache should have at least 5 regions");
+        assertTrue(stats.memoryPressure() > 0.0, "Memory pressure should be non-zero");
+    }
+
+    @Test
+    void testPerformanceGate_buildLatencyP50Under50ms() throws Exception {
+        // Performance gate: P50 build latency < 50ms
+        var config = RenderingServerConfig.testing();
+        server = new RenderingServer(config);
+        server.start();
+
+        var regionManager = server.getRegionManager();
+        var builder = server.getRegionBuilder();
+        var cache = server.getRegionCache();
+
+        // Run 20 builds to get P50 measurement
+        // Use different regions to avoid cache hits
+        long[] buildTimes = new long[20];
+
+        for (int i = 0; i < 20; i++) {
+            // Spread entities across different regions (regionSize=256)
+            float x = 100.0f + ((i % 4) * 300.0f);
+            float y = 100.0f + ((i / 4) * 300.0f);
+            float z = 64.0f;
+
+            regionManager.updateEntity("entity" + i, x, y, z, "PREY");
+            var region = regionManager.regionForPosition(x, y, z);
+
+            // Invalidate cache to force rebuild
+            var cacheKey = new RegionCache.CacheKey(region, 0);
+            cache.invalidate(cacheKey);
+
+            int buildsBefore = builder.getTotalBuilds();
+            long startNs = System.nanoTime();
+
+            regionManager.scheduleBuild(region, true);
+            awaitBuilds(builder, buildsBefore + 1, Duration.ofSeconds(1), 1); // 1ms polling
+
+            buildTimes[i] = (System.nanoTime() - startNs) / 1_000_000; // Convert to ms
+        }
+
+        // Calculate P50 (median)
+        java.util.Arrays.sort(buildTimes);
+        long p50 = buildTimes[10]; // 50th percentile
+
+        assertTrue(p50 < 50,
+            "P50 build latency should be < 50ms, got: " + p50 + "ms");
+    }
+
+    @Test
+    void testPerformanceGate_buildLatencyP99Under200ms() throws Exception {
+        // Performance gate: P99 build latency < 200ms
+        var config = RenderingServerConfig.testing();
+        server = new RenderingServer(config);
+        server.start();
+
+        var regionManager = server.getRegionManager();
+        var builder = server.getRegionBuilder();
+        var cache = server.getRegionCache();
+
+        // Run 100 builds to get accurate P99 measurement
+        // Use fewer unique regions and accept some cache hits
+        long[] buildTimes = new long[100];
+
+        for (int i = 0; i < 100; i++) {
+            // Spread across 10 different regions (regionSize=256)
+            int regionIndex = i % 10;
+            float x = 100.0f + ((regionIndex % 4) * 300.0f);
+            float y = 100.0f + ((regionIndex / 4) * 300.0f);
+            float z = 64.0f;
+
+            regionManager.updateEntity("entity" + i, x, y, z, "PREY");
+            var region = regionManager.regionForPosition(x, y, z);
+
+            // Invalidate cache to force rebuild
+            var cacheKey = new RegionCache.CacheKey(region, 0);
+            cache.invalidate(cacheKey);
+
+            int buildsBefore = builder.getTotalBuilds();
+            long startNs = System.nanoTime();
+
+            regionManager.scheduleBuild(region, true);
+            awaitBuilds(builder, buildsBefore + 1, Duration.ofSeconds(1), 1); // 1ms polling
+
+            buildTimes[i] = (System.nanoTime() - startNs) / 1_000_000; // Convert to ms
+        }
+
+        // Calculate P99 (99th percentile)
+        java.util.Arrays.sort(buildTimes);
+        long p99 = buildTimes[98]; // 99th percentile (0-indexed)
+
+        assertTrue(p99 < 200,
+            "P99 build latency should be < 200ms, got: " + p99 + "ms");
+    }
+
+    @Test
+    void testGracefulDegradation_queueSaturation() throws Exception {
+        // Test graceful degradation under queue saturation (M4)
+        var config = RenderingServerConfig.testing(); // maxQueueDepth = 100
+        server = new RenderingServer(config);
+        server.start();
+
+        var regionManager = server.getRegionManager();
+        var builder = server.getRegionBuilder();
+        var cache = server.getRegionCache();
+
+        // Rapidly schedule 150 builds (exceeds queue capacity of 100)
+        int scheduledBuilds = 0;
+        for (int i = 0; i < 150; i++) {
+            float pos = 100.0f + (i * 2.0f);
+            regionManager.updateEntity("entity" + i, pos, pos, pos, "PREY");
+            var region = regionManager.regionForPosition(pos, pos, pos);
+
+            try {
+                regionManager.scheduleBuild(region, true);
+                scheduledBuilds++;
+            } catch (Exception e) {
+                // Expected: some builds may be rejected when queue is full
+                assertTrue(e.getMessage().contains("queue") || e.getMessage().contains("full"),
+                    "Should fail with queue-related message: " + e.getMessage());
+            }
+        }
+
+        // Wait for queue to drain
+        Thread.sleep(1000);
+
+        // Verify graceful degradation
+        int totalBuilds = builder.getTotalBuilds();
+        int failedBuilds = builder.getFailedBuilds();
+        int queueDepth = builder.getQueueDepth();
+
+        assertTrue(totalBuilds > 0, "Should have completed some builds");
+        assertTrue(queueDepth < 100, "Queue should have drained");
+
+        // Either all scheduled builds succeeded, or some were rejected gracefully
+        assertTrue(scheduledBuilds <= 150, "Should not exceed attempted builds");
+
+        // System should remain operational - verify by scheduling another build
+        regionManager.updateEntity("recovery_test", 500.0f, 500.0f, 500.0f, "PREY");
+        var region = regionManager.regionForPosition(500.0f, 500.0f, 500.0f);
+
+        // Invalidate cache to ensure this build actually runs
+        var cacheKey = new RegionCache.CacheKey(region, 0);
+        cache.invalidate(cacheKey);
+
+        int beforeRecovery = builder.getTotalBuilds();
+        regionManager.scheduleBuild(region, true);
+
+        awaitBuilds(builder, beforeRecovery + 1, Duration.ofSeconds(2));
+
+        assertTrue(builder.getTotalBuilds() > beforeRecovery,
+            "System should recover and process new builds after saturation");
+    }
 }
