@@ -232,6 +232,20 @@ public class AdaptiveRegionManager {
      * @param type     Entity type (e.g., "PREY", "PREDATOR")
      */
     public void updateEntity(String entityId, float x, float y, float z, String type) {
+        // bjjn: Input validation to prevent NaN/Inf injection and unbounded data
+        if (entityId == null || entityId.length() > 256) {
+            throw new IllegalArgumentException("Entity ID must be non-null and <= 256 characters");
+        }
+        if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z)) {
+            throw new IllegalArgumentException(
+                    String.format("Coordinates must be finite (not NaN/Inf): x=%f, y=%f, z=%f", x, y, z));
+        }
+
+        // Clamp coordinates to world bounds
+        x = Math.max(worldMin, Math.min(worldMax, x));
+        y = Math.max(worldMin, Math.min(worldMax, y));
+        z = Math.max(worldMin, Math.min(worldMax, z));
+
         var newRegion = regionForPosition(x, y, z);
         var oldRegion = entityRegionMap.get(entityId);
 

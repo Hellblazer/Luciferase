@@ -239,4 +239,110 @@ class AdaptiveRegionManagerTest {
 
         assertEquals(1000, totalEntities, "All 1000 entities should be tracked");
     }
+
+    @Test
+    void testUpdateEntity_rejectsNaNCoordinates() {
+        var testConfig = RenderingServerConfig.testing();
+        var testManager = new AdaptiveRegionManager(testConfig);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> testManager.updateEntity("entity1", Float.NaN, 0f, 0f, "test"),
+                "Should reject NaN x coordinate");
+        assertThrows(IllegalArgumentException.class,
+                () -> testManager.updateEntity("entity1", 0f, Float.NaN, 0f, "test"),
+                "Should reject NaN y coordinate");
+        assertThrows(IllegalArgumentException.class,
+                () -> testManager.updateEntity("entity1", 0f, 0f, Float.NaN, "test"),
+                "Should reject NaN z coordinate");
+    }
+
+    @Test
+    void testUpdateEntity_rejectsInfCoordinates() {
+        var testConfig = RenderingServerConfig.testing();
+        var testManager = new AdaptiveRegionManager(testConfig);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> testManager.updateEntity("entity1", Float.POSITIVE_INFINITY, 0f, 0f, "test"),
+                "Should reject +Inf x coordinate");
+        assertThrows(IllegalArgumentException.class,
+                () -> testManager.updateEntity("entity1", Float.NEGATIVE_INFINITY, 0f, 0f, "test"),
+                "Should reject -Inf x coordinate");
+        assertThrows(IllegalArgumentException.class,
+                () -> testManager.updateEntity("entity1", 0f, Float.POSITIVE_INFINITY, 0f, "test"),
+                "Should reject +Inf y coordinate");
+        assertThrows(IllegalArgumentException.class,
+                () -> testManager.updateEntity("entity1", 0f, 0f, Float.NEGATIVE_INFINITY, "test"),
+                "Should reject -Inf z coordinate");
+    }
+
+    @Test
+    void testUpdateEntity_clampsOutOfBoundsCoordinates() {
+        var testConfig = RenderingServerConfig.testing();
+        var testManager = new AdaptiveRegionManager(testConfig);
+
+        float worldMin = 0f;
+        float worldMax = 1024f;
+        int maxRegionIndex = 3; // level 2 = 4x4x4 grid
+
+        // Out-of-bounds coordinates should be clamped to world bounds
+        testManager.updateEntity("entity1", worldMax + 100f, worldMax + 100f, worldMax + 100f, "test");
+
+        var region = testManager.regionForPosition(worldMax + 100f, worldMax + 100f, worldMax + 100f);
+        var coords = MortonCurve.decode(region.mortonCode());
+
+        // Should clamp to max region index
+        assertEquals(maxRegionIndex, coords[0], "Out-of-bounds x should clamp to max region");
+        assertEquals(maxRegionIndex, coords[1], "Out-of-bounds y should clamp to max region");
+        assertEquals(maxRegionIndex, coords[2], "Out-of-bounds z should clamp to max region");
+
+        // Negative coordinates should clamp to min
+        testManager.updateEntity("entity2", worldMin - 100f, worldMin - 100f, worldMin - 100f, "test");
+
+        var regionMin = testManager.regionForPosition(worldMin - 100f, worldMin - 100f, worldMin - 100f);
+        var coordsMin = MortonCurve.decode(regionMin.mortonCode());
+
+        // Should clamp to min region index (0)
+        assertEquals(0, coordsMin[0], "Out-of-bounds negative x should clamp to min region");
+        assertEquals(0, coordsMin[1], "Out-of-bounds negative y should clamp to min region");
+        assertEquals(0, coordsMin[2], "Out-of-bounds negative z should clamp to min region");
+    }
+
+    @Test
+    void testUpdateEntity_rejectsNullEntityId() {
+        var testConfig = RenderingServerConfig.testing();
+        var testManager = new AdaptiveRegionManager(testConfig);
+
+        assertThrows(IllegalArgumentException.class, () -> testManager.updateEntity(null, 0f, 0f, 0f, "test"),
+                "Should reject null entity ID");
+    }
+
+    @Test
+    void testUpdateEntity_rejectsLongEntityId() {
+        var testConfig = RenderingServerConfig.testing();
+        var testManager = new AdaptiveRegionManager(testConfig);
+
+        // Create 257-character string (exceeds 256 limit)
+        var longId = "a".repeat(257);
+
+        assertThrows(IllegalArgumentException.class, () -> testManager.updateEntity(longId, 0f, 0f, 0f, "test"),
+                "Should reject entity ID > 256 characters");
+    }
+
+    @Test
+    void testUpdateEntity_acceptsMaxLengthEntityId() {
+        var testConfig = RenderingServerConfig.testing();
+        var testManager = new AdaptiveRegionManager(testConfig);
+
+        // Create 256-character string (exactly at limit)
+        var maxLengthId = "a".repeat(256);
+
+        // Should NOT throw - exactly at limit is valid
+        assertDoesNotThrow(() -> testManager.updateEntity(maxLengthId, 0f, 0f, 0f, "test"),
+                "Should accept entity ID exactly 256 characters");
+
+        // Verify entity was actually added
+        var entities = testManager.getRegionState(testManager.regionForPosition(0f, 0f, 0f)).entities();
+        assertTrue(entities.stream().anyMatch(e -> e.id().equals(maxLengthId)),
+                "Entity with max-length ID should be tracked");
+    }
 }
