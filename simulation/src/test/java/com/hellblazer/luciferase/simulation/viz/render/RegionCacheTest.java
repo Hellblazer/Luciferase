@@ -531,6 +531,231 @@ class RegionCacheTest {
         assertTrue(stats.totalMemoryBytes() >= 0);
     }
 
+    // ===== Critical Bug Coverage Tests (Luciferase-4k0q) =====
+
+    /**
+     * T1: Test integer overflow prevention in Caffeine weigher.
+     * C1 Fix: Weigher clamps to Integer.MAX_VALUE, CachedRegion.from() logs warning.
+     */
+    @Test
+    void testIntegerOverflow_caffeineWeigherClamps() {
+        var regionId = new RegionId(1L, 0);
+        var key = new RegionCache.CacheKey(regionId, 0);
+
+        // Create normal test region
+        var builtRegion = createTestRegion(regionId, 1000);
+
+        // Manually create CachedRegion with sizeBytes > Integer.MAX_VALUE (3GB)
+        // This simulates a huge region without requiring 3GB of actual memory
+        long now = System.currentTimeMillis();
+        var hugeRegion = new RegionCache.CachedRegion(
+                builtRegion,
+                now,
+                now,
+                3_000_000_000L  // 3GB > Integer.MAX_VALUE
+        );
+
+        // C1 Fix: Put should succeed without overflow exception (weigher clamps internally)
+        cache.put(key, hugeRegion);
+
+        // Verify cached successfully despite huge size
+        assertTrue(cache.get(key).isPresent(), "Huge region should be cached");
+
+        // Verify sizeBytes preserved correctly (not clamped in CachedRegion)
+        assertEquals(3_000_000_000L, cache.get(key).get().sizeBytes(),
+                "CachedRegion should preserve full size even when weigher clamps to Integer.MAX_VALUE");
+    }
+
+    /**
+     * T2: Test access timestamp updates on cache hits.
+     * C2 Fix: computeIfPresent() atomically updates lastAccessedMs in pinned cache.
+     * Strategy: Test indirectly via emergencyEvict() LRU behavior.
+     */
+    @Test
+    void testAccessTimestamp_recentlyAccessedRetainedDuringEviction() throws InterruptedException {
+        var smallCache = new RegionCache(1000, Duration.ofMinutes(5));
+
+        try {
+            long now = System.currentTimeMillis();
+
+            // Create 4 regions with staggered timestamps (total: 4 × 272 = 1088 bytes, exceeds 90%)
+            var region1 = createTestRegion(new RegionId(1L, 0), 200);
+            var region2 = createTestRegion(new RegionId(2L, 0), 200);
+            var region3 = createTestRegion(new RegionId(3L, 0), 200);
+            var region4 = createTestRegion(new RegionId(4L, 0), 200);
+
+            var key1 = new RegionCache.CacheKey(new RegionId(1L, 0), 0);
+            var key2 = new RegionCache.CacheKey(new RegionId(2L, 0), 0);
+            var key3 = new RegionCache.CacheKey(new RegionId(3L, 0), 0);
+            var key4 = new RegionCache.CacheKey(new RegionId(4L, 0), 0);
+
+            // Pin all with staggered timestamps (oldest to newest: key1 → key4)
+            smallCache.put(key1, RegionCache.CachedRegion.from(region1, now));
+            smallCache.pin(key1);
+            Thread.sleep(10);
+            smallCache.put(key2, RegionCache.CachedRegion.from(region2, now + 10));
+            smallCache.pin(key2);
+            Thread.sleep(10);
+            smallCache.put(key3, RegionCache.CachedRegion.from(region3, now + 20));
+            smallCache.pin(key3);
+            Thread.sleep(10);
+            smallCache.put(key4, RegionCache.CachedRegion.from(region4, now + 30));
+            smallCache.pin(key4);
+
+            // Access middle region (key2) to update its timestamp to newest
+            Thread.sleep(10);
+            smallCache.get(key2);  // C2 fix: Atomic timestamp update via computeIfPresent()
+
+            // Trigger emergency eviction
+            int evicted = smallCache.emergencyEvict();
+
+            // Should evict at least 2 regions to get under 75% target (750 bytes)
+            assertTrue(evicted >= 2, "Should evict at least 2 regions, got: " + evicted);
+
+            // Recently-accessed key2 should be retained (LRU semantic)
+            assertTrue(smallCache.get(key2).isPresent(),
+                    "Recently accessed region should be retained by LRU eviction");
+
+            // Oldest region (key1) should be evicted first
+            assertFalse(smallCache.get(key1).isPresent(),
+                    "Oldest region should be evicted first");
+
+        } finally {
+            smallCache.close();
+        }
+    }
+
+    /**
+     * T3: Test concurrent pin/unpin race condition.
+     * C3 Fix: putIfAbsent() atomic claim prevents double-counting, ConcurrentHashMap.remove() atomicity prevents double-subtraction.
+     */
+    @Test
+    void testConcurrentPinUnpin_noDoubleCountingOrSubtraction() throws InterruptedException {
+        var region = createTestRegion(new RegionId(1L, 0), 1000);
+        var key = new RegionCache.CacheKey(new RegionId(1L, 0), 0);
+        var cached = RegionCache.CachedRegion.from(region, System.currentTimeMillis());
+
+        // Put region in unpinned cache
+        cache.put(key, cached);
+
+        // Test concurrent pin (5 threads racing)
+        var pinLatch = new java.util.concurrent.CountDownLatch(5);
+        var pinResults = new java.util.concurrent.ConcurrentHashMap<Integer, Boolean>();
+
+        for (int i = 0; i < 5; i++) {
+            final int threadId = i;
+            new Thread(() -> {
+                boolean result = cache.pin(key);
+                pinResults.put(threadId, result);
+                pinLatch.countDown();
+            }).start();
+        }
+
+        pinLatch.await(2, java.util.concurrent.TimeUnit.SECONDS);
+
+        // C3 Fix verification: Memory counted exactly once despite concurrent pins
+        assertEquals(1072, cache.getPinnedMemoryBytes(),
+                "Pinned memory should be counted exactly once (1000 data + 72 overhead)");
+
+        // All threads should report success (already-pinned is also success)
+        assertTrue(pinResults.values().stream().allMatch(result -> result),
+                "All pin attempts should succeed");
+
+        // Test concurrent unpin (5 threads racing)
+        var unpinLatch = new java.util.concurrent.CountDownLatch(5);
+        var unpinResults = new java.util.concurrent.ConcurrentHashMap<Integer, Boolean>();
+
+        for (int i = 0; i < 5; i++) {
+            final int threadId = i;
+            new Thread(() -> {
+                boolean result = cache.unpin(key);
+                unpinResults.put(threadId, result);
+                unpinLatch.countDown();
+            }).start();
+        }
+
+        unpinLatch.await(2, java.util.concurrent.TimeUnit.SECONDS);
+
+        // C3 Fix verification: Memory subtracted exactly once (atomic ConcurrentHashMap.remove())
+        assertEquals(0, cache.getPinnedMemoryBytes(),
+                "Pinned memory should be zero after concurrent unpins (no double-subtraction)");
+
+        // Exactly one thread should have successfully unpinned (returned true)
+        long successfulUnpins = unpinResults.values().stream()
+                .filter(result -> result)
+                .count();
+        assertEquals(1, successfulUnpins,
+                "Exactly one thread should successfully unpin (others get null from remove)");
+    }
+
+    /**
+     * T4: Test null handling in emergency eviction during concurrent removal.
+     * C4 Fix: Null check + atomic remove(key, value) prevents NPE and double-eviction.
+     */
+    @Test
+    void testEmergencyEviction_nullSafeDuringConcurrentRemoval() throws InterruptedException {
+        var smallCache = new RegionCache(1000, Duration.ofMinutes(5));
+
+        try {
+            long now = System.currentTimeMillis();
+
+            // Pin regions to exceed 90% threshold (4 × 272 = 1088 bytes)
+            for (int i = 0; i < 4; i++) {
+                var region = createTestRegion(new RegionId(i, 0), 200);
+                var key = new RegionCache.CacheKey(new RegionId(i, 0), 0);
+                smallCache.put(key, RegionCache.CachedRegion.from(region, now));
+                smallCache.pin(key);
+            }
+
+            // Concurrent scenario: Thread A evicts, Thread B removes concurrently
+            var evictionStarted = new java.util.concurrent.CountDownLatch(1);
+            var errors = new java.util.concurrent.ConcurrentHashMap<String, Exception>();
+
+            // Thread A: Emergency eviction
+            Thread evictionThread = new Thread(() -> {
+                try {
+                    evictionStarted.countDown();
+                    int evicted = smallCache.emergencyEvict();
+                    assertTrue(evicted >= 0, "Eviction should complete without error");
+                } catch (Exception e) {
+                    errors.put("eviction", e);
+                }
+            });
+
+            // Thread B: Concurrent removal during eviction
+            Thread removalThread = new Thread(() -> {
+                try {
+                    evictionStarted.await(1, java.util.concurrent.TimeUnit.SECONDS);
+                    // Remove regions concurrently while Thread A is evicting
+                    for (int i = 0; i < 4; i++) {
+                        smallCache.invalidate(new RegionCache.CacheKey(new RegionId(i, 0), 0));
+                    }
+                } catch (Exception e) {
+                    errors.put("removal", e);
+                }
+            });
+
+            evictionThread.start();
+            removalThread.start();
+
+            evictionThread.join(2000);
+            removalThread.join(2000);
+
+            // C4 Fix verification: No NPE when entry.getValue() returns null
+            assertTrue(errors.isEmpty(),
+                    "Should handle concurrent removal without NPE or errors, got: " + errors);
+
+            // Final state should be consistent (no negative memory)
+            assertTrue(smallCache.getTotalMemoryBytes() >= 0,
+                    "Total memory should never be negative");
+            assertTrue(smallCache.getPinnedMemoryBytes() >= 0,
+                    "Pinned memory should never be negative");
+
+        } finally {
+            smallCache.close();
+        }
+    }
+
     // ===== Helper Methods =====
 
     /**
