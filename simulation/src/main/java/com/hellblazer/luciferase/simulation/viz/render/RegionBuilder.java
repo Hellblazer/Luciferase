@@ -517,25 +517,25 @@ public class RegionBuilder implements AutoCloseable {
      * Circuit breaker state for tracking build failures (C3 implementation).
      *
      * <p>After configured consecutive failures, block retries for configured timeout.
-     * <p>NOTE: Unsynchronized fields (consecutiveFailures, lastFailureTime) are safe
-     * because CircuitBreakerState is only accessed from ConcurrentHashMap.compute()
-     * operations which provide atomicity.
+     * <p>Thread-safe: Uses AtomicInteger and AtomicLong to ensure visibility and
+     * atomicity of concurrent updates from multiple build worker threads.
      */
     static class CircuitBreakerState {
-        private int consecutiveFailures;
-        private long lastFailureTime;
+        private final AtomicInteger consecutiveFailures;
+        private final AtomicLong lastFailureTime;
 
         CircuitBreakerState() {
-            this.consecutiveFailures = 0;
-            this.lastFailureTime = 0;
+            this.consecutiveFailures = new AtomicInteger(0);
+            this.lastFailureTime = new AtomicLong(0);
         }
 
         /**
          * Record a build failure.
+         * <p>Thread-safe: Atomic increment and update operations.
          */
         void recordFailure(long currentTimeMs) {
-            consecutiveFailures++;
-            lastFailureTime = currentTimeMs;
+            consecutiveFailures.incrementAndGet();
+            lastFailureTime.set(currentTimeMs);
         }
 
         /**
@@ -547,8 +547,8 @@ public class RegionBuilder implements AutoCloseable {
          * @return true if circuit breaker is open
          */
         boolean isOpen(long currentTimeMs, long timeoutMs, int failureThreshold) {
-            if (consecutiveFailures >= failureThreshold) {
-                long timeSinceFailure = currentTimeMs - lastFailureTime;
+            if (consecutiveFailures.get() >= failureThreshold) {
+                long timeSinceFailure = currentTimeMs - lastFailureTime.get();
                 return timeSinceFailure < timeoutMs;
             }
             return false;
@@ -556,9 +556,10 @@ public class RegionBuilder implements AutoCloseable {
 
         /**
          * Get consecutive failure count.
+         * <p>Thread-safe: Atomic read operation.
          */
         int getConsecutiveFailures() {
-            return consecutiveFailures;
+            return consecutiveFailures.get();
         }
     }
 }

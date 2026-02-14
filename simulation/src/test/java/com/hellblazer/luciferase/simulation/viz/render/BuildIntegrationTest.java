@@ -501,4 +501,48 @@ class BuildIntegrationTest {
         assertEquals(0, builder.getFailedBuilds(),
                     "Should have no failed builds in normal operation");
     }
+
+    @Test
+    void testCircuitBreakerThreadSafety() throws Exception {
+        // Thread safety test for CircuitBreakerState
+        // Verifies concurrent recordFailure() calls don't lose updates
+        var breaker = new RegionBuilder.CircuitBreakerState();
+        var testClock = new com.hellblazer.luciferase.simulation.distributed.integration.TestClock();
+        testClock.setTime(1000L);
+
+        int numThreads = 10;
+        int failuresPerThread = 100;
+        int expectedTotalFailures = numThreads * failuresPerThread;
+
+        var threads = new java.util.ArrayList<Thread>();
+        var latch = new java.util.concurrent.CountDownLatch(1);
+
+        // Spawn threads that will all record failures concurrently
+        for (int i = 0; i < numThreads; i++) {
+            var thread = new Thread(() -> {
+                try {
+                    latch.await();  // Wait for all threads to be ready
+                    for (int j = 0; j < failuresPerThread; j++) {
+                        breaker.recordFailure(testClock.currentTimeMillis());
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            threads.add(thread);
+            thread.start();
+        }
+
+        // Release all threads at once to maximize contention
+        latch.countDown();
+
+        // Wait for all threads to complete
+        for (var thread : threads) {
+            thread.join();
+        }
+
+        // Verify all failures were recorded (no lost updates)
+        assertEquals(expectedTotalFailures, breaker.getConsecutiveFailures(),
+                    "All concurrent recordFailure() calls should be counted (thread-safe)");
+    }
 }
