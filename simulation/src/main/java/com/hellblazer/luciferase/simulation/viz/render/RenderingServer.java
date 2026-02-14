@@ -23,8 +23,6 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -398,56 +396,5 @@ public class RenderingServer implements AutoCloseable {
         }
 
         ctx.json(metrics);
-    }
-
-    /**
-     * Exception thrown when rate limit is exceeded (w1tk).
-     */
-    private static class RateLimitExceededException extends RuntimeException {
-        public RateLimitExceededException() {
-            super("Rate limit exceeded");
-        }
-    }
-
-    /**
-     * Simple sliding window rate limiter (w1tk).
-     * <p>
-     * Tracks requests per IP address using a sliding window of 1 minute.
-     * Thread-safe using ConcurrentHashMap and ConcurrentLinkedQueue.
-     * <p>
-     * Uses injected Clock for deterministic testing.
-     */
-    private static class RateLimiter {
-        private final ConcurrentHashMap<String, ConcurrentLinkedQueue<Long>> requestTimestamps = new ConcurrentHashMap<>();
-        private final int maxRequestsPerMinute;
-        private final long windowMs = 60_000L;  // 1 minute window
-        private final Clock clock;
-
-        public RateLimiter(int maxRequestsPerMinute, Clock clock) {
-            this.maxRequestsPerMinute = maxRequestsPerMinute;
-            this.clock = clock;
-        }
-
-        /**
-         * Check if request from given IP should be allowed.
-         *
-         * @param ip Client IP address
-         * @return true if allowed, false if rate limit exceeded
-         */
-        public boolean allowRequest(String ip) {
-            long now = clock.currentTimeMillis();  // Use injected clock
-            var timestamps = requestTimestamps.computeIfAbsent(ip, k -> new ConcurrentLinkedQueue<>());
-
-            // Remove timestamps outside the sliding window
-            timestamps.removeIf(timestamp -> now - timestamp > windowMs);
-
-            // Check if under limit
-            if (timestamps.size() < maxRequestsPerMinute) {
-                timestamps.offer(now);
-                return true;
-            }
-
-            return false;  // Rate limit exceeded
-        }
     }
 }
