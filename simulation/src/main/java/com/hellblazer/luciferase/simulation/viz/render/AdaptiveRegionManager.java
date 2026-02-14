@@ -198,23 +198,50 @@ public class AdaptiveRegionManager {
      * <p>
      * No-op if builder not wired yet.
      */
-    public void backfillDirtyRegions() {
+    /**
+     * Backfill dirty regions with low-priority builds.
+     * <p>
+     * xox5: Checks queue depth before submitting each build to prevent overwhelming the builder.
+     * Skips regions if queue is too full (>80% of max depth).
+     *
+     * @return Number of regions skipped due to queue backpressure
+     */
+    public int backfillDirtyRegions() {
         if (builder == null) {
             log.debug("Builder not wired, skipping backfill");
-            return;
+            return 0;
         }
 
         var dirty = dirtyRegions();
         if (dirty.isEmpty()) {
             log.debug("No dirty regions to backfill");
-            return;
+            return 0;
         }
 
         log.info("Backfilling {} dirty regions with low-priority builds", dirty.size());
 
+        int maxQueueDepth = builder.getMaxQueueDepth();
+        int queueThreshold = (int) (maxQueueDepth * 0.8);
+        int skipped = 0;
+
         for (var region : dirty) {
+            int currentDepth = builder.getQueueDepth();
+            if (currentDepth > queueThreshold) {
+                skipped++;
+                if (skipped == 1) {  // Log warning only once
+                    log.warn("Queue depth {} exceeds threshold {} (80% of max {}), skipping remaining dirty regions",
+                            currentDepth, queueThreshold, maxQueueDepth);
+                }
+                continue;
+            }
             scheduleBuild(region, false);  // invisible = low priority
         }
+
+        if (skipped > 0) {
+            log.warn("Skipped {} dirty regions due to queue backpressure", skipped);
+        }
+
+        return skipped;
     }
 
     /**

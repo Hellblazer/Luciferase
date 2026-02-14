@@ -355,6 +355,13 @@ public class RegionBuilder implements AutoCloseable {
     }
 
     /**
+     * Get maximum queue depth configuration.
+     */
+    public int getMaxQueueDepth() {
+        return maxQueueDepth;
+    }
+
+    /**
      * Get total builds processed.
      */
     public int getTotalBuilds() {

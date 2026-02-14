@@ -345,4 +345,52 @@ class AdaptiveRegionManagerTest {
         assertTrue(entities.stream().anyMatch(e -> e.id().equals(maxLengthId)),
                 "Entity with max-length ID should be tracked");
     }
+
+    @Test
+    void testBackfillDirtyRegions_withBuilder() throws InterruptedException {
+        // Test that backfill works correctly with builder wired (xox5)
+        var testConfig = RenderingServerConfig.testing();
+        var testManager = new AdaptiveRegionManager(testConfig);
+
+        // Create a builder with normal queue
+        var builder = new RegionBuilder(1, 50, 4, 16);
+        var cache = new RegionCache(16 * 1024 * 1024, java.time.Duration.ofSeconds(30));
+
+        testManager.setBuilder(builder);
+        testManager.setCache(cache);
+
+        // Create dirty regions by adding entities
+        for (int i = 0; i < 5; i++) {
+            testManager.updateEntity("entity" + i, i * 10f, i * 10f, i * 10f, "test");
+        }
+
+        // Backfill should process regions without skipping (queue has capacity)
+        int skipped = testManager.backfillDirtyRegions();
+
+        // With normal queue capacity, nothing should be skipped
+        assertEquals(0, skipped, "Should not skip regions when queue has capacity");
+
+        // Verify queue depth is reasonable
+        int queueDepth = builder.getQueueDepth();
+        assertTrue(queueDepth >= 0, "Queue depth should be non-negative");
+        assertTrue(queueDepth <= 50, "Queue depth should not exceed max");
+
+        // Cleanup
+        builder.close();
+        cache.close();
+    }
+
+    @Test
+    void testBackfillDirtyRegions_withoutBuilder() {
+        // Test that backfill handles missing builder gracefully
+        var testConfig = RenderingServerConfig.testing();
+        var testManager = new AdaptiveRegionManager(testConfig);
+
+        // Create dirty regions
+        testManager.updateEntity("entity1", 10f, 10f, 10f, "test");
+
+        // Backfill without builder should return 0 (no operations performed)
+        int skipped = testManager.backfillDirtyRegions();
+        assertEquals(0, skipped, "Should return 0 when builder not wired");
+    }
 }
