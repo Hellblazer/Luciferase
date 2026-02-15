@@ -29,7 +29,7 @@ public class MyJavaFXTest extends JavaFXTestBase {
         });
     }
 }
-```
+```text
 
 ### 2. Run Tests
 
@@ -42,7 +42,7 @@ mvn test -pl portal -Dtest=MyJavaFXTest
 
 # Run in headless mode (for CI/CD)
 mvn test -pl portal -Dtestfx.headless=true
-```
+```text
 
 ## JavaFXTestBase Features
 
@@ -71,7 +71,7 @@ public void testSceneGraph() throws Exception {
         assertEquals(1, root.getChildren().size());
     });
 }
-```
+```text
 
 #### `isJavaFXInitialized()`
 
@@ -82,7 +82,7 @@ Checks if JavaFX toolkit is initialized:
 public void testInitialization() {
     assertTrue(isJavaFXInitialized());
 }
-```
+```text
 
 ## Headless Mode (CI/CD)
 
@@ -92,7 +92,7 @@ To run tests in headless mode without a display:
 
 ```bash
 mvn test -Dtestfx.headless=true
-```
+```text
 
 This automatically configures:
 
@@ -110,7 +110,7 @@ For GitHub Actions, GitLab CI, or other CI systems:
 # .github/workflows/test.yml
 - name: Run JavaFX Tests
   run: mvn test -pl portal -Dtestfx.headless=true
-```
+```text
 
 ### Maven Configuration
 
@@ -126,7 +126,7 @@ For persistent headless configuration, add to `portal/pom.xml`:
         </systemPropertyVariables>
     </configuration>
 </plugin>
-```
+```text
 
 ## Best Practices
 
@@ -148,7 +148,7 @@ public void testBad() {
     var box = new Box(1.0, 1.0, 1.0); // Not on FX thread!
     assertEquals(1.0, box.getWidth());
 }
-```
+```text
 
 ### 2. Keep Tests Isolated
 
@@ -170,7 +170,7 @@ public void testIsolated2() throws Exception {
         // ... test code
     });
 }
-```
+```text
 
 ### 3. Test Rendering Logic, Not Rendering
 
@@ -186,7 +186,7 @@ public void testTransforms() throws Exception {
         // Don't test actual pixels on screen
     });
 }
-```
+```text
 
 ### 4. Use Descriptive Test Names
 
@@ -200,7 +200,7 @@ public void testOctreeNodeRendererCreatesCorrectNumberOfChildren() {
 public void testMaterialAppliedToAllNodes() {
     // Clear what this tests
 }
-```
+```text
 
 ## Testing Patterns
 
@@ -221,7 +221,7 @@ public void testSceneGraphHierarchy() throws Exception {
         assertTrue(root.getChildren().contains(child2));
     });
 }
-```
+```text
 
 ### Testing Custom Renderers
 
@@ -239,7 +239,7 @@ public void testOctreeNodeRenderer() throws Exception {
         // Verify structure
     });
 }
-```
+```text
 
 ### Testing Transforms
 
@@ -258,7 +258,7 @@ public void testNodeTransforms() throws Exception {
         assertEquals(45.0, box.getRotate());
     });
 }
-```
+```text
 
 ### Testing Materials
 
@@ -277,7 +277,7 @@ public void testMaterialProperties() throws Exception {
         assertEquals(Color.WHITE, material.getSpecularColor());
     });
 }
-```
+```text
 
 ## Example Tests
 
@@ -318,7 +318,7 @@ public void test() throws Exception {
         var box = new Box(1.0, 1.0, 1.0); // OK
     });
 }
-```
+```text
 
 ### Headless Mode Fails
 
@@ -343,7 +343,7 @@ The following dependencies are configured in `portal/pom.xml`:
     <artifactId>testfx-junit5</artifactId>
     <scope>test</scope>
 </dependency>
-```
+```text
 
 TestFX version is managed in the root `pom.xml`: **4.0.18**
 

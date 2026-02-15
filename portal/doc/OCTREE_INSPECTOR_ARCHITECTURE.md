@@ -43,7 +43,7 @@ graph TD
     E --> E1["InteractionController<br/>mouse/keyboard"]
     E --> E2["AnimationController<br/>camera paths"]
     E --> E3["RebuildController<br/>dynamic updates"]
-```
+```text
 
 ### Module Integration Map
 
@@ -94,7 +94,7 @@ graph TB
     PORTAL --> RENDER
     PORTAL --> COMMON
     RENDER --> COMMON
-```
+```text
 
 ## Component Specifications
 
@@ -147,7 +147,7 @@ public class OctreeInspectorApp extends Application {
         }
     }
 }
-```
+```text
 
 **Key Design Decisions**:
 
@@ -193,7 +193,7 @@ public class ProceduralVoxelGenerator {
     private List<Point3i> generateSierpinskiPyramid(int resolution, 
                                                     int iterations);
 }
-```
+```text
 
 **Design Rationale**:
 
@@ -255,7 +255,7 @@ public class ESVOBridge {
         return ESVOPerformanceMonitor.getInstance().getMetrics();
     }
 }
-```
+```text
 
 **Integration Points**:
 
@@ -325,7 +325,7 @@ public class OctreeRenderer {
         LEVEL_BANDS      // Distinct color per level
     }
 }
-```
+```text
 
 **Rendering Strategy**:
 
@@ -388,7 +388,7 @@ public class RayVisualizer {
         ));
     }
 }
-```
+```text
 
 ### 6. ControlPanel
 
@@ -450,7 +450,7 @@ public class ControlPanel extends VBox {
         setStyle("-fx-background-color: #f4f4f4;");
     }
 }
-```
+```text
 
 **UI Layout**:
 
@@ -479,7 +479,7 @@ public class ControlPanel extends VBox {
 │  ☐ Animation                │
 │  Speed: [====●===] 1.0      │
 └─────────────────────────────┘
-```
+```text
 
 ### 7. CameraView Integration
 
@@ -505,7 +505,7 @@ cameraView.fitHeightProperty().bind(root.heightProperty());
 
 // Add to layout
 root.setCenter(cameraView);
-```
+```text
 
 **Benefits**:
 
@@ -539,7 +539,7 @@ Group grid = adaptiveGrid.constructForLevel(
     null  // viewFrustum (optional)
 );
 gridGroup.getChildren().add(grid);
-```
+```text
 
 **Grid Behavior**:
 
@@ -576,7 +576,7 @@ sequenceDiagram
     Note over Build: ProceduralVoxelGenerator<br/>ESVOBridge.buildOctree()<br/>Initial rendering
     Build->>Loop: Start Render Loop
     Note over Loop: JavaFX AnimationTimer<br/>Update performance overlay
-```
+```text
 
 ### 2. Octree Rebuild Flow
 
@@ -598,7 +598,7 @@ flowchart TD
     E --> F
     F --> G
     G --> H
-```
+```text
 
 ### 3. Ray Casting Flow
 
@@ -616,7 +616,7 @@ flowchart TD
     C --> D
     D --> E
     E --> F
-```
+```text
 
 ## Event Handling Architecture
 
@@ -661,7 +661,7 @@ public class InteractionController {
         });
     }
 }
-```
+```text
 
 ### Mouse Interaction
 
@@ -691,7 +691,7 @@ public class InteractionController {
         // Use camera view matrix and projection
     }
 }
-```
+```text
 
 ## Performance Considerations
 
@@ -723,7 +723,7 @@ public class OctreeRenderer {
         return createBatchedMesh(visibleNodes);
     }
 }
-```
+```text
 
 ### 2. Background Processing
 
@@ -758,7 +758,7 @@ public class RebuildController {
             }, buildExecutor);
     }
 }
-```
+```text
 
 ### 3. Memory Management
 
@@ -788,7 +788,7 @@ public class MemoryManager {
         // Stream from disk for very large datasets
     }
 }
-```
+```text
 
 ## Testing Strategy
 
@@ -821,7 +821,7 @@ public class ESVOBridgeTest {
         assertTrue(octree.getNodeCount() > 0);
     }
 }
-```
+```text
 
 ### Integration Tests
 
@@ -850,7 +850,7 @@ public class OctreeInspectorIntegrationTest extends JavaFXTestBase {
         });
     }
 }
-```
+```text
 
 ### Visual Tests
 
@@ -896,7 +896,7 @@ portal/src/test/java/com/hellblazer/luciferase/portal/esvo/
 portal/doc/
 ├── OCTREE_INSPECTOR_ARCHITECTURE.md     # This document
 └── ESVO_OCTREE_INSPECTOR_PLAN.md        # Implementation plan
-```
+```text
 
 ## Dependencies Summary
 

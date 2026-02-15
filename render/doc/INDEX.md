@@ -199,13 +199,13 @@ Technical architecture documentation.
 
 Planning artifacts, audit reports, and superseded documents are archived in `archive/`:
 
-```
+```text
 archive/
 ├── phase2/          - Phase 2 planning artifacts
 ├── phase5a5/        - Phase 5A5 plan, audit, revisions
 ├── gpu-testing/     - Earlier GPU testing documents
 └── plans/           - Completed implementation plans
-```
+```text
 
 See [archive/README.md](archive/README.md) for details on when to reference archived documentation.
 

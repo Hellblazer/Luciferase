@@ -62,7 +62,7 @@ public class SimulationEntity {
         return "result";
     }
 }
-```
+```java
 
 ### 3. Bytecode Transformation
 
@@ -90,7 +90,7 @@ try {
 } catch (Throwable t) {
     log.error("Event evaluation failed", t);  // Full stack trace available
 }
-```
+```java
 
 ---
 
@@ -124,7 +124,7 @@ The project is already configured with PrimeMover 1.0.6 in root `pom.xml`:
         </dependency>
     </dependencies>
 </dependencyManagement>
-```
+```xml
 
 ### Maven Plugin Configuration
 
@@ -144,7 +144,7 @@ The primemover-maven-plugin is configured in simulation and other modules:
         </execution>
     </executions>
 </plugin>
-```
+```xml
 
 ---
 
@@ -172,7 +172,7 @@ void testDeterministicBehavior() {
     // Verify deterministic behavior
     assertEquals(expectedBlockCount, controller.getTotalEvents());
 }
-```
+```java
 
 ### Clock Injection Pattern
 
@@ -189,7 +189,7 @@ void testTimingBehavior() {
     testClock.advance(500);
     assertEquals(1500L, service.getLastTimestamp());
 }
-```
+```java
 
 ### Integration Testing
 
@@ -211,7 +211,7 @@ void testDistributedSimulation() {
 
     // Both maintain correct timing despite simulated delays
 }
-```
+```java
 
 ---
 
@@ -253,13 +253,13 @@ Bytecode transformation may be slightly faster due to improved algorithms:
 Already done in root pom.xml:
 ```xml
 <prime-mover.version>1.0.6</prime-mover.version>
-```
+```xml
 
 #### Step 2: Rebuild
 
 ```bash
 mvn clean install
-```
+```bash
 
 #### Step 3: Test
 
@@ -269,7 +269,7 @@ mvn test -pl simulation
 
 # Run all tests
 mvn test
-```
+```bash
 
 #### Step 4: Verify Improvements
 
@@ -278,7 +278,7 @@ Check that clock-dependent tests are now more reliable:
 ```bash
 # Tests that were flaky in 1.0.5 should now be stable
 mvn test -pl simulation -Dtest=InjectableClockTest
-```
+```bash
 
 ### Rollback Instructions
 
@@ -286,7 +286,7 @@ If you need to revert to 1.0.5:
 
 ```xml
 <prime-mover.version>1.0.5</prime-mover.version>
-```
+```xml
 
 Then rebuild. However, rollback is **not recommended** because:
 - 1.0.6 fixes deterministic testing issues
@@ -323,7 +323,7 @@ Tested and working on:
 ```java
 var controller = new RealTimeController();
 Kronos.setController(controller);
-```
+```java
 
 ### Issue: Event evaluation exceptions disappear
 
@@ -335,7 +335,7 @@ try {
     // Exception should now be visible
     log.error("Event failed", t);
 }
-```
+```java
 
 ### Issue: Blocking operations timeout
 
@@ -346,7 +346,7 @@ public void blockingOperation() {
     Kronos.blockingSleep(100);
     // ...
 }
-```
+```java
 
 ---
 

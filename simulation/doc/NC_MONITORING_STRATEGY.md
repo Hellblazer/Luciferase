@@ -44,7 +44,7 @@ public float calculateNC(Bubble bubble) {
 
     return (float) knownNeighbors / actualNeighbors;
 }
-```
+```text
 
 ### Metric Components
 
@@ -77,18 +77,18 @@ public float calculateNC(Bubble bubble) {
 ### 2.1 Metric Definition
 
 **Primary Metric**: Per-bubble NC
-```
+```text
 NC(bubble) = |bubble.neighbors()| / |bubbles_within_aoi(bubble.position(), aoiRadius)|
-```
+```text
 
 **Aggregate Metrics**:
-```
+```text
 NC_mean   = Σ NC(bubble_i) / total_bubbles
 NC_min    = min(NC(bubble_i))  // Worst-case consistency
 NC_p50    = median(NC(bubble_i))
 NC_p95    = 95th percentile(NC(bubble_i))
 NC_p99    = 99th percentile(NC(bubble_i))
-```
+```text
 
 ### 2.2 Target Thresholds
 
@@ -115,7 +115,7 @@ controller.addTickListener((simTime, lamportClock) -> {
         collectNCMetrics();
     }
 });
-```
+```text
 
 **Benefits**:
 - Low overhead (0.1% at 100Hz, 10 tick interval)
@@ -132,7 +132,7 @@ bubble.addEventListener(event -> {
         scheduleNCMetric(bubble.id());  // Delayed 300ms for view stability
     }
 });
-```
+```text
 
 **Benefits**:
 - Zero overhead during steady state
@@ -293,7 +293,7 @@ record NCSnapshot(long timestamp, List<Float> values, NCStats stats) {}
 record NCStats(float mean, float min, float max, float p50, float p95, float p99) {
     static final NCStats EMPTY = new NCStats(0, 0, 0, 0, 0, 0);
 }
-```
+```text
 
 ### 3.2 Integration Points
 
@@ -322,7 +322,7 @@ public class Manager {
         }
     }
 }
-```
+```text
 
 **Production Usage**:
 ```java
@@ -336,12 +336,12 @@ manager.enableMetrics(prometheusRegistry, 10);
 // ... normal VON operations ...
 
 // Metrics auto-collected every 100ms
-```
+```text
 
 ### 3.3 Metrics Exposure
 
 **Prometheus Metrics** (recommended):
-```
+```text
 # HELP von_nc_mean Average neighbor consistency across all bubbles
 # TYPE von_nc_mean gauge
 von_nc_mean 0.987
@@ -357,7 +357,7 @@ von_nc_p95 0.991
 # HELP von_bubbles_total Total number of managed bubbles
 # TYPE von_bubbles_total gauge
 von_bubbles_total 47
-```
+```text
 
 **Grafana Dashboard Queries**:
 ```promql
@@ -369,7 +369,7 @@ von_nc_min < 0.95 for 5s
 
 # Recovery rate
 rate(von_nc_recovery_total[1m])
-```
+```text
 
 ## 4. Relationship to Fireflies Virtual Synchrony
 
@@ -390,7 +390,7 @@ rate(von_nc_recovery_total[1m])
 - **Impact on NC**: Eliminates false-positive ACK failures that would prevent neighbor updates
 
 **NC Monitoring Validates Fix**:
-```
+```yaml
 BEFORE Fix (TOCTOU race):
 - False ACK failures → missed neighbor updates → NC degradation
 - Expected: NC oscillates 0.85-0.95 during view changes
@@ -398,23 +398,23 @@ BEFORE Fix (TOCTOU race):
 AFTER Fix:
 - Correct ACK semantics → reliable neighbor updates → stable NC
 - Expected: NC > 0.95 sustained, brief dips during view transitions
-```
+```text
 
 ### 4.3 Expected Behavior
 
 **Steady State** (no joins/leaves/moves):
-```
+```text
 NC_min  = 1.00  (all neighbors known)
 NC_mean = 1.00
-```
+```text
 
 **View Transition** (Fireflies membership change):
-```
+```text
 t=0ms:    View stable, NC = 1.00
 t=50ms:   Member leaves, view unstable
 t=100ms:  LEAVE messages propagating, NC drops to 0.92 (transient)
 t=300ms:  View stabilizes (30 ticks), NC recovers to 1.00
-```
+```text
 
 **Acceptable Pattern**:
 - Brief NC dips (< 300ms) during view transitions
@@ -459,7 +459,7 @@ void testNCMetricsCalculation() {
     assertEquals(1.0f, manager.calculateNC(bubble1), 0.01f);
     assertEquals(1.0f, manager.calculateNC(bubble2), 0.01f);
 }
-```
+```text
 
 **Integration Test**: Verify alerting during view transitions
 ```java
@@ -489,7 +489,7 @@ void testNCDegradationDuringViewChange() {
     // Should recover to NC > 0.95
     assertTrue(recovered.stats().min() > 0.95f, "NC should recover after view stabilizes");
 }
-```
+```text
 
 ## 7. Production Deployment Plan
 

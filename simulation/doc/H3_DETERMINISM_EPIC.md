@@ -78,7 +78,7 @@ public class MyService {
         // ... business logic
     }
 }
-```
+```text
 
 ### For Tests
 
@@ -98,7 +98,7 @@ void testTimeAdvancement() {
 
     // Deterministic, reproducible behavior
 }
-```
+```text
 
 ---
 

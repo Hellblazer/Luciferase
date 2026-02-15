@@ -30,7 +30,7 @@ public class GhostStateManager {
 
     record GhostState(GhostEntity entity, Vector3f velocity)
 }
-```
+```text
 
 **Responsibilities**:
 - Track ghost entity position and velocity
@@ -45,9 +45,9 @@ public class GhostStateManager {
 
 ### State Machine
 
-```
+```text
 CREATE → UPDATE → STALE → EXPIRED
-```
+```text
 
 **State Transitions**:
 - **CREATE**: Ghost arrives from network, add to ghostStates map
@@ -71,7 +71,7 @@ public void updateGhost(UUID sourceBubbleId, EntityUpdateEvent event) {
 
     deadReckoning.onAuthoritativeUpdate(adapter, position);
 }
-```
+```text
 
 **Get Ghost Position** (with dead reckoning):
 ```java
@@ -79,7 +79,7 @@ public Point3f getGhostPosition(StringEntityID entityId, long currentTime) {
     var predictedPosition = deadReckoning.predict(adapter, currentTime);
     return clampToBounds(predictedPosition);  // Clamp to bubble bounds
 }
-```
+```text
 
 **Cull Stale Ghosts** (periodic cleanup):
 ```java
@@ -91,7 +91,7 @@ public void tick(long currentTime) {
         }
     }
 }
-```
+```text
 
 ---
 
@@ -104,9 +104,9 @@ Extrapolate ghost position between network updates (10ms sync interval) using st
 ### Mechanism
 
 **Prediction Formula**:
-```
+```text
 predictedPosition = lastKnownPosition + velocity × deltaTime
-```
+```text
 
 **Implementation**:
 ```java
@@ -120,7 +120,7 @@ public Point3f predict(DeadReckoningAdapter adapter, long currentTime) {
 
     return position.add(velocity.scale(deltaTime / 1000.0f));  // Convert ms to seconds
 }
-```
+```text
 
 **Benefits**:
 - Smooth animation between network updates
@@ -153,7 +153,7 @@ private Point3f clampToBounds(Point3f position) {
     // Convert back to Cartesian
     return bounds.toCartesian(clampedRdg);
 }
-```
+```text
 
 **Properties**:
 - Prevents ghosts from appearing outside bubble visual region
@@ -169,13 +169,13 @@ private Point3f clampToBounds(Point3f position) {
 **Frequency**: 10ms interval (sub-frame for 60+ FPS animation)
 
 **Flow**:
-```
+```yaml
 Every 10ms:
   1. For each entity in ghost zone:
      2. Get current state (position, velocity, content)
      3. Send ghost update to neighbor bubbles (via P2P transport)
      4. Update lastSync timestamp
-```
+```text
 
 **Message Format**:
 ```java
@@ -186,7 +186,7 @@ public record GhostUpdate(
     Content content,
     long timestamp
 ) {}
-```
+```text
 
 **Network Protocol**: Direct P2P messages via bubble transport.
 
@@ -206,7 +206,7 @@ public void onGhostBatchReceived(UUID fromBubbleId) {
         ghostManager.onVONNeighborAdded(fromBubbleId);  // Enable bidirectional sync
     }
 }
-```
+```text
 
 **Core Thesis**: "Ghost layer + VON protocols = fully distributed animation with no global state"
 
@@ -228,7 +228,7 @@ public void onVONMove(Point3D newPosition) {
         }
     }
 }
-```
+```text
 
 **Properties**:
 - k-NN spatial query (k=10) finds nearby bubbles
@@ -243,7 +243,7 @@ public void onVONMove(Point3D newPosition) {
 
 When entity migrates across boundary:
 
-```
+```yaml
 Phase 1 (in source bubble):
   └─ Entity is local, ghost exists in destination
        ↓
@@ -256,7 +256,7 @@ Phase 3 (in destination bubble):
        ↓
 Phase 4 (cleanup):
   └─ Other ghost copies removed (no longer in ghost zone)
-```
+```text
 
 **Key Insight**: Ghost already exists in destination before migration, enabling smooth handoff.
 

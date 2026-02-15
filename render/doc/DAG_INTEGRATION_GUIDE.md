@@ -37,7 +37,7 @@ var dag = DAGBuilder.from(svo).build();
 System.out.printf("Compression: %.2fx%n", dag.getCompressionRatio());
 System.out.printf("Memory saved: %d bytes%n",
     dag.getMetadata().memorySavedBytes());
-```
+```text
 
 That's it! The default configuration uses SHA-256 hashing, balanced compression strategy, and automatic validation.
 
@@ -52,7 +52,7 @@ var dag = DAGBuilder.from(svo)
     .withProgressCallback(progress -> updateUI(progress))  // UI updates
     .withValidation(true)  // Structural validation (default: enabled)
     .build();
-```
+```text
 
 ## Configuration Reference
 
@@ -71,7 +71,7 @@ var dag = DAGBuilder.from(svo)
 ```java
 // Fast hashing for performance
 .withHashAlgorithm(HashAlgorithm.XXHASH64)
-```
+```text
 
 ### Compression Strategies
 
@@ -92,7 +92,7 @@ var dag = DAGBuilder.from(svo)
 ```java
 // Aggressive compression
 .withCompressionStrategy(CompressionStrategy.AGGRESSIVE)
-```
+```text
 
 ### Progress Callbacks
 
@@ -111,7 +111,7 @@ Monitor compression progress for UI updates or logging:
     // VALIDATION (90-100%)
     // COMPLETE (100%)
 })
-```
+```text
 
 ### Validation
 
@@ -127,7 +127,7 @@ Structural validation verifies:
 
 // Disable for maximum performance
 .withValidation(false)
-```
+```text
 
 ## Metrics Collection
 
@@ -152,7 +152,7 @@ System.out.printf("Total: %d compressions%n", summary.totalCompressions());
 System.out.printf("Average time: %.2fms%n", summary.averageTimeMs());
 System.out.printf("Time range: [%dms, %dms]%n",
     summary.minTimeMs(), summary.maxTimeMs());
-```
+```text
 
 ### Cache Metrics
 
@@ -169,7 +169,7 @@ cacheCollector.recordEviction(); // Cache entry removed
 // Check effectiveness
 var cacheMetrics = cacheCollector.getMetrics();
 System.out.printf("Hit rate: %.1f%%%n", cacheMetrics.hitRate() * 100);
-```
+```text
 
 ### Export to Files
 
@@ -195,13 +195,13 @@ try (var exporter = new FileMetricsExporter(
 
     exporter.exportCompression(compressionMetrics);
 }
-```
+```text
 
 **CSV Format**:
 ```csv
 timestamp,sourceNodeCount,compressedNodeCount,uniqueInternalNodes,uniqueLeafNodes,compressionRatio,compressionPercent,memorySavedBytes,buildTimeMs
 1705776000000,10240,2048,1536,512,5.00,80.00,65536,250
-```
+```text
 
 **JSON Format**:
 ```json
@@ -216,7 +216,7 @@ timestamp,sourceNodeCount,compressedNodeCount,uniqueInternalNodes,uniqueLeafNode
   "memorySavedBytes": 65536,
   "buildTimeMs": 250
 }]
-```
+```text
 
 ## Serialization
 
@@ -229,7 +229,7 @@ var dag = DAGBuilder.from(svo).build();
 
 // Serialize to file
 DAGSerializer.serialize(dag, Path.of("scene.dag"));
-```
+```text
 
 ### Load DAG from Disk
 
@@ -241,7 +241,7 @@ var dag = DAGSerializer.deserialize(Path.of("scene.dag"));
 System.out.printf("Loaded DAG: %d nodes, %.2fx compression%n",
     dag.nodeCount(),
     dag.getCompressionRatio());
-```
+```text
 
 ### Configuration Preservation
 
@@ -261,7 +261,7 @@ DAGBuilder.from(svo)
     .withHashAlgorithm(HashAlgorithm.SHA256)  // Better collision resistance
     .withCompressionStrategy(CompressionStrategy.AGGRESSIVE)
     .build();
-```
+```text
 
 **Fast Compression** (minimize build time)
 ```java
@@ -269,7 +269,7 @@ DAGBuilder.from(svo)
     .withHashAlgorithm(HashAlgorithm.XXHASH64)  // 50x faster hashing
     .withValidation(false)  // Skip validation
     .build();
-```
+```text
 
 ### Batch Processing
 
@@ -287,19 +287,19 @@ var dags = octrees.parallelStream()
         .withValidation(false)  // Reduce overhead
         .build())
     .toList();
-```
+```text
 
 ### Memory Budget
 
 DAGBuilder peak memory usage during build:
-```
+```text
 peakMemory ≈ 2.5 * sourceNodeCount * 16 bytes
 
 Example:
   1M nodes → ~40 MB peak
   10M nodes → ~400 MB peak
   100M nodes → ~4 GB peak
-```
+```text
 
 To avoid OOM with large octrees:
 1. Increase JVM heap: `-Xmx8g`
@@ -356,7 +356,7 @@ var dag = DAGBuilder.from(svo)
 
 // Render DAG (same API as SVO)
 renderOctree(dag);
-```
+```text
 
 ### LWJGL Rendering
 
@@ -367,7 +367,7 @@ glBufferData(GL_SHADER_STORAGE_BUFFER, nodeBuffer, GL_STATIC_DRAW);
 
 // DAG uses absolute addressing - simpler shaders
 // No far pointer handling needed
-```
+```text
 
 ### Network Transmission
 
@@ -380,7 +380,7 @@ var bytes = DAGSerializer.toBytes(dag);
 
 // Send over network (4-15x smaller than SVO)
 socket.write(bytes);
-```
+```text
 
 ## Best Practices
 

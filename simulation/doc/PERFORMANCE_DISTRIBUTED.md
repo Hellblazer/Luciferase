@@ -59,7 +59,7 @@ mvn test -Dtest=DistributedMigrationBenchmark
 
 # Run specific entity count
 mvn test -Dtest=DistributedMigrationBenchmark#migrationThroughput100Entities
-```
+```text
 
 **Expected Results**:
 - 50 entities: > 100 migrations/sec
@@ -87,7 +87,7 @@ mvn test -Dtest=DistributedCapacityBenchmark
 
 # Run specific entity count
 mvn test -Dtest=DistributedCapacityBenchmark#capacity5000Entities
-```
+```text
 
 **Expected Results**:
 - 1000 entities: P99 < 25ms, heap < 200MB
@@ -120,7 +120,7 @@ mvn test -Dtest=DistributedCapacityBenchmark#capacity5000Entities
 ```bash
 # TODO: Add Docker-based LAN simulation
 # Use tc (traffic control) to add 1ms latency
-```
+```text
 
 ### WAN Simulation (50ms)
 
@@ -131,7 +131,7 @@ mvn test -Dtest=DistributedCapacityBenchmark#capacity5000Entities
 ```bash
 # TODO: Add Docker-based WAN simulation
 # Use tc to add 50ms latency (cross-region simulation)
-```
+```text
 
 ---
 
@@ -161,7 +161,7 @@ mvn test -Dtest=DistributedCapacityBenchmark#capacity5000Entities
 var memoryBean = ManagementFactory.getMemoryMXBean();
 var heapUsage = memoryBean.getHeapMemoryUsage();
 long heapMB = heapUsage.getUsed() / (1024 * 1024);
-```
+```text
 
 ### Network Bandwidth
 
@@ -185,7 +185,7 @@ long heapMB = heapUsage.getUsed() / (1024 * 1024);
 @Warmup(iterations = 2, time = 5, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 5, time = 10, timeUnit = TimeUnit.SECONDS)
 @Fork(1)
-```
+```text
 
 **Rationale**:
 - **Warmup**: 2 iterations × 5s = 10s warmup (JIT compilation stabilization)
@@ -208,7 +208,7 @@ var pb = new ProcessBuilder(
 pb.redirectErrorStream(true);
 pb.redirectOutput(logFile.toFile());
 var process = pb.start();
-```
+```text
 
 **Markers**: Nodes emit markers for synchronization:
 - `READY` - Node initialized and listening
@@ -324,7 +324,7 @@ var process = pb.start();
 # - Total migrations (Node1 + Node2)
 # - Migrations per second
 # - Scaling efficiency vs 2x ideal
-```
+```text
 
 **Infrastructure**:
 - SimpleMigrationNode (minimal distributed benchmark)

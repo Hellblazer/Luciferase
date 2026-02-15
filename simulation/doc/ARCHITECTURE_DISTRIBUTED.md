@@ -61,7 +61,7 @@ graph TB
     style G fill:#fce4ec,stroke:#e91e63,stroke-width:2px
     style H fill:#f1f8e9,stroke:#8bc34a,stroke-width:2px
     style I fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
-```
+```text
 
 ### Key Components
 
@@ -106,7 +106,7 @@ public class Bubble extends EnhancedBubble implements Node {
 
     record NeighborState(UUID nodeId, Point3D position, BubbleBounds bounds, long lastUpdateMs)
 }
-```
+```text
 
 **Key Operations**:
 - `initiateJoin(UUID acceptorId)`: Contact entry point, receive neighbor list
@@ -126,7 +126,7 @@ public void onGhostBatchReceived(UUID fromBubbleId) {
         ghostManager.onVONNeighborAdded(fromBubbleId);  // Enable bidirectional sync
     }
 }
-```
+```text
 
 **Secondary Mechanism**: Spatial k-NN queries (k=10)
 ```java
@@ -137,7 +137,7 @@ for (Node candidate : candidates) {
         addNeighbor(candidate.id());
     }
 }
-```
+```text
 
 **No Voronoi**: System uses k-NN spatial index, not Voronoi cell calculations.
 
@@ -161,14 +161,14 @@ for (Node candidate : candidates) {
 **When triggered**: External caller (Manager or application) invokes `move()` when bubble position changes.
 
 **6-Step Flow**:
-```
+```text
 1. Update position in spatial index
 2. Notify all current neighbors (broadcast MOVE message)
 3. Discover new neighbors via k-NN (k=10)
 4. Add new neighbors within AOI radius
 5. Drop neighbors outside AOI + buffer (maxDistance = aoiRadius + 10.0f)
 6. Emit MOVE event for observers
-```
+```text
 
 **AOI Management**:
 - **AOI Radius**: Configurable (default based on bubble bounds)
@@ -197,7 +197,7 @@ public float calculateNC(Bubble bubble) {
     int actualNeighbors = countBubblesWithinAOI(bubble);
     return (float) knownNeighbors / actualNeighbors;  // Range: 0.0 to 1.0
 }
-```
+```text
 
 **Target**: NC ≥ 0.8 indicates good neighbor awareness.
 
@@ -228,7 +228,7 @@ public Bubble createBubble() {
     bubbles.put(id, bubble);
     return bubble;
 }
-```
+```text
 
 **Clock Propagation**: Manager sets clock on all bubbles for deterministic testing.
 
@@ -238,7 +238,7 @@ public Bubble createBubble() {
 ```java
 // Find k=10 nearest bubbles to a position
 List<Node> nearestBubbles = spatialIndex.findKNearest(position, 10);
-```
+```text
 
 **Boundary Detection**: Uses spatial queries to identify bubbles within AOI.
 
@@ -269,16 +269,16 @@ public static class CrossProcessMigrationEntity {
     private final ReentrantLock entityLock;  // C1: Per-entity migration lock
     private final EntitySnapshot snapshot;  // Captured entity state
 }
-```
+```text
 
 ### 2PC State Machine
 
 **State Transitions**:
-```
+```text
 ACQUIRING_LOCK → PREPARE → COMMIT → SUCCESS
                          ↓ (on failure)
                        ABORT → ROLLBACK_COMPLETE
-```
+```text
 
 ### Migration Flow
 
@@ -295,7 +295,7 @@ public CompletableFuture<MigrationResult> migrate(
     entity.startMigration();  // Start PrimeMover state machine
     return entity.getFuture();
 }
-```
+```text
 
 **Phase 1: PREPARE** (Remove from source)
 ```java
@@ -309,7 +309,7 @@ private void prepare() {
     currentState = State.COMMIT;
     commit();  // Transition to COMMIT
 }
-```
+```text
 
 **Phase 2: COMMIT** (Add to destination)
 ```java
@@ -323,7 +323,7 @@ private void commit() {
     }
     succeedAndUnlock(totalLatency);  // Success
 }
-```
+```text
 
 **Phase 3: ABORT** (Rollback on failure)
 ```java
@@ -336,7 +336,7 @@ private void abort() {
     }
     failAndUnlock(abortReason);
 }
-```
+```text
 
 ### Key Guarantees
 
@@ -370,7 +370,7 @@ private final Map<String, CrossProcessMigrationEntity> activeEntities;
 future.whenComplete((result, exception) -> {
     activeEntities.remove(entityId);  // Cleanup after completion
 });
-```
+```text
 
 **Periodic Orphan Cleanup**: Migrations >5min timeout are logged and cleaned up.
 
@@ -389,7 +389,7 @@ private boolean isTimedOut(long startTime) {
     var elapsed = clock.currentTimeMillis() - startTime;
     return elapsed > totalTimeoutMs;
 }
-```
+```text
 
 ### Idempotency Store
 
@@ -410,7 +410,7 @@ public class IdempotencyStore {
         return age < TOKEN_EXPIRATION_MS;
     }
 }
-```
+```text
 
 **Token Expiration**: 30 seconds (balances memory vs duplicate detection window)
 
@@ -441,12 +441,12 @@ Byzantine fault-tolerant (BFT) agreement on entity migration decisions before 2P
 ### Why Byzantine Tolerance?
 
 **Problem Without Consensus**:
-```
+```text
 t1: Node A decides: Entity E migrates A → B
 t2: Node C decides: Entity E migrates A → C  ← CONFLICT!
 t3: 2PC executes both migrations
 Result: E duplicated in B and C → CORRUPTION
-```
+```text
 
 **Byzantine Threats**:
 1. Clock skew: Incorrect clocks → bad migration decisions
@@ -466,17 +466,17 @@ public class ViewCommitteeConsensus {
 
     private final ConcurrentHashMap<UUID, ProposalTracking> pendingProposals;
 }
-```
+```text
 
 ### Migration Flow with Consensus
 
-```
+```text
 1. Spatial boundary detection → Entity crosses bubble boundary
 2. Create MigrationProposal with current Fireflies view ID
 3. Byzantine consensus → Committee votes ACCEPT/REJECT
 4. If quorum approved → Execute 2PC migration
 5. If rejected or view changed → Abort migration
-```
+```text
 
 ### Committee Selection
 
@@ -487,7 +487,7 @@ public Set<Member> selectCommittee(Digest viewId) {
     var committee = context.bftSubset(viewId);  // O(log n) size
     return committee;
 }
-```
+```text
 
 **Committee Size by Cluster**:
 | Cluster Size | Byzantine Tolerance (t) | Quorum | Committee Size |
@@ -508,7 +508,7 @@ public record MigrationProposal(
     Digest viewId,  // CRITICAL: View synchrony check
     long timestamp
 ) {}
-```
+```text
 
 **Consensus Flow**:
 ```java
@@ -529,7 +529,7 @@ public CompletableFuture<Boolean> requestConsensus(MigrationProposal proposal) {
             return approved;
         });
 }
-```
+```text
 
 **Vote Decision Criteria**:
 - Entity not already migrating (idempotency check)
@@ -549,7 +549,7 @@ public void onViewChange(Digest newViewId) {
     });
     pendingProposals.clear();  // All pending proposals aborted
 }
-```
+```text
 
 **Virtual Synchrony Guarantee** (from Fireflies):
 - All messages sent within stable view delivered to all live members
@@ -598,7 +598,7 @@ public class GhostStateManager {
 
     record GhostState(GhostEntity entity, Vector3f velocity)
 }
-```
+```text
 
 ### Ghost Lifecycle
 
@@ -635,7 +635,7 @@ public void tick(long currentTime) {
         }
     }
 }
-```
+```text
 
 ### Dead Reckoning
 
@@ -661,7 +661,7 @@ private Point3f clampToBounds(Point3f position) {
     );
     return bounds.toCartesian(clampedRdg);
 }
-```
+```text
 
 ### Ghost Synchronization
 
@@ -685,7 +685,7 @@ public void onGhostBatchReceived(UUID fromBubbleId) {
         ghostManager.onVONNeighborAdded(fromBubbleId);  // Enable sync
     }
 }
-```
+```text
 
 **Core Thesis**: "Ghost layer + VON protocols = fully distributed animation with no global state"
 
@@ -715,7 +715,7 @@ public class LocalServerTransport {
         }
     }
 }
-```
+```text
 
 **Message Delivery**:
 ```java
@@ -725,7 +725,7 @@ public void sendToNeighbor(UUID neighborId, Message message) {
         neighborTransport.deliver(message);  // Direct local delivery
     }
 }
-```
+```text
 
 **Properties**:
 - In-process message passing (for local multi-bubble testing)
@@ -759,7 +759,7 @@ transport1.sendToNeighbor(bubbleId2, message);  // Registry resolves bubbleId2 �
 
 // 4. Unregister on shutdown
 registry.unregister(bubbleId1);
-```
+```text
 
 **Thread Safety**:
 - Uses `ConcurrentHashMap<UUID, LocalServerTransport>` for concurrent registration/lookup
@@ -824,7 +824,7 @@ public interface Clock {
         return () -> fixedTime;
     }
 }
-```
+```text
 
 ### TestClock (Deterministic Testing)
 
@@ -849,7 +849,7 @@ bubble.setClock(testClock);
 
 // Control time progression
 testClock.advance(100);  // T=1100ms
-```
+```text
 
 ### MessageFactory (Record Time Injection)
 
@@ -866,7 +866,7 @@ public record MoveNotification(UUID bubbleId, Point3D position, BubbleBounds bou
 // In tests
 MessageFactory.setClock(testClock);
 var msg = new MoveNotification(id, pos, bounds, 0);  // timestamp from testClock
-```
+```text
 
 ---
 
@@ -936,7 +936,7 @@ var msg = new MoveNotification(id, pos, bounds, 0);  // timestamp from testClock
 var metrics = migration.getMetrics();
 log.info("Phase breakdown: PREPARE={}ms, COMMIT={}ms, ABORT={}ms",
          metrics.avgPrepareLatency(), metrics.avgCommitLatency(), metrics.avgAbortLatency());
-```
+```text
 
 **Causes**:
 1. Network latency spike (check P99 transport latency)
@@ -965,7 +965,7 @@ log.info("Phase breakdown: PREPARE={}ms, COMMIT={}ms, ABORT={}ms",
 if (!source.containsEntity(entityId)) {
     log.error("Entity {} not found in source bubble", entityId);
 }
-```
+```text
 
 **Causes**:
 1. Entity already migrated (idempotency failure)
@@ -994,7 +994,7 @@ if (!source.containsEntity(entityId)) {
 if (dest.getEntityCount() >= dest.getCapacity()) {
     log.error("Destination bubble {} at capacity", dest.id());
 }
-```
+```text
 
 **Causes**:
 1. Destination bubble at capacity (entity limit reached)
@@ -1022,7 +1022,7 @@ if (dest.getEntityCount() >= dest.getCapacity()) {
 // Check orphaned entity tracking
 var orphans = metrics.getOrphanedEntities();
 log.critical("Orphaned entities requiring manual recovery: {}", orphans);
-```
+```text
 
 **Causes**:
 1. Source bubble crashed during ABORT
@@ -1052,7 +1052,7 @@ if (!proposal.viewId().equals(currentViewId)) {
     log.warn("Proposal stale: proposalView={}, currentView={}",
              proposal.viewId(), currentViewId);
 }
-```
+```text
 
 **Causes**:
 1. Fireflies view changed during proposal (most common)
@@ -1082,7 +1082,7 @@ var p95 = metrics.getP95Latency();
 if (p95 > 500) {
     log.warn("Migration P95 latency {}ms exceeds target 300ms", p95);
 }
-```
+```text
 
 **Causes**:
 1. Consensus overhead (committee size too large)
@@ -1124,16 +1124,16 @@ if (p95 > 500) {
 **Scenario**: Distribute 10,000 entities across 3 bubbles with spatial locality.
 
 **Initial Setup**:
-```
+```text
 Bubble A: Position (0, 0, 0), Bounds [(-50, -50, -50), (50, 50, 50)]
 Bubble B: Position (100, 0, 0), Bounds [(50, -50, -50), (150, 50, 50)]
 Bubble C: Position (0, 100, 0), Bounds [(-50, 50, -50), (50, 150, 50)]
-```
+```text
 
 **Deployment Steps**:
 
 **1. Bootstrap Phase** (Bubble A is entry point)
-```
+```text
 t=0ms:   Bubble A starts, initializes Fireflies view
 t=50ms:  Bubble A enters ACTIVE state (no neighbors yet)
 t=100ms: Bubble B starts, sends JoinRequest to Bubble A
@@ -1141,20 +1141,20 @@ t=150ms: Bubble A responds with JoinResponse(neighbors=[])
 t=200ms: Bubble B enters ACTIVE, adds Bubble A as neighbor
 t=250ms: Bubble A adds Bubble B as neighbor (bidirectional)
 t=300ms: Ghost synchronization establishes between A-B boundary
-```
+```text
 
 **2. Third Bubble Joins**
-```
+```text
 t=400ms: Bubble C starts, sends JoinRequest to Bubble A (entry point)
 t=450ms: Bubble A responds with JoinResponse(neighbors=[B])
 t=500ms: Bubble C sends JoinRequest to Bubble B
 t=550ms: Bubble B accepts Bubble C as neighbor
 t=600ms: k-NN discovery identifies A-C and B-C as neighbors
 t=650ms: Ghost zones established for all 3 bubble boundaries
-```
+```text
 
 **3. Entity Distribution**
-```
+```text
 Initial: 10,000 entities randomly spawned across 3 bubbles
   - Bubble A: 3,400 entities
   - Bubble B: 3,300 entities
@@ -1169,10 +1169,10 @@ t=1500ms: Stable distribution achieved
   - Bubble A: 3,200 entities (net loss of 200)
   - Bubble B: 3,410 entities (net gain of 110)
   - Bubble C: 3,390 entities (net gain of 90)
-```
+```text
 
 **4. Migration Flow Example** (Entity E123 crosses A→B boundary)
-```
+```text
 t=2000ms: Entity E123 position update crosses boundary threshold
 t=2001ms: Bubble A detects boundary crossing via ghost zone monitoring
 t=2002ms: Create MigrationProposal(E123, sourceA, destB, viewId=V1)
@@ -1181,10 +1181,10 @@ t=2020ms: Committee votes ACCEPT (quorum reached)
 t=2021ms: 2PC Phase 1 (PREPARE): Remove E123 from Bubble A
 t=2025ms: 2PC Phase 2 (COMMIT): Add E123 to Bubble B
 t=2030ms: Migration SUCCESS, metrics updated (30ms latency)
-```
+```text
 
 **5. Ghost Synchronization** (Continuous background)
-```
+```yaml
 Every 10ms:
   - Bubble A broadcasts ghost updates for entities in A-B and A-C ghost zones
   - Bubble B receives ghost updates from A, applies dead reckoning
@@ -1193,10 +1193,10 @@ Every 10ms:
 Ghost zone size: 10% of bubble bounds = ~10 units
 Entities in ghost zones: ~5-8% of total entities per bubble (~170 entities)
 Network traffic: 170 entities × 3 bubbles × 100 Hz = 51,000 updates/sec
-```
+```text
 
 **6. Load Balancing Trigger** (Bubble B overloaded)
-```
+```text
 t=5000ms: Bubble B processes 4,500 entities (entity influx from migration)
 t=5100ms: Frame processing latency exceeds 16ms target → 22ms (38% over)
 t=5200ms: Manager detects load imbalance, calculates new position
@@ -1204,10 +1204,10 @@ t=5250ms: Bubble B broadcasts MOVE(newPosition=(120, 0, 0), newBounds)
 t=5300ms: Neighbors A and C update AOI, discover B's new position
 t=5400ms: Entity redistribution begins (200 entities migrate B→A, 150 entities B→C)
 t=5900ms: Rebalancing complete, frame latency returns to 14ms
-```
+```text
 
 **Network Topology**:
-```
+```yaml
        Bubble A (3,200 entities)
          /  \
         /    \
@@ -1219,7 +1219,7 @@ Bubble B     Bubble C
      \        /
       \      /
       Ghost Zone
-```
+```text
 
 **Scaling to 10 Bubbles**:
 - Each bubble maintains 10-15 VON neighbors (k-NN with k=10)
@@ -1228,7 +1228,7 @@ Bubble B     Bubble C
 - Byzantine consensus: O(log n) committee size and message complexity
 
 **Failure Scenario** (Bubble B crashes):
-```
+```text
 t=10000ms: Bubble B process crashes (ungraceful shutdown)
 t=10300ms: Fireflies detects B's heartbeat failure (view change triggered)
 t=10350ms: View changes from V1 → V2, all pending proposals aborted
@@ -1237,7 +1237,7 @@ t=10450ms: Ghost zones cleanup (B's ghost entities expired)
 t=10500ms: Entities owned by B become orphaned (logged for recovery)
 t=10600ms: Manual intervention or automated recovery spawns Bubble B'
 t=11000ms: Bubble B' re-joins via Bubble A, recovers orphaned entities
-```
+```text
 
 ---
 

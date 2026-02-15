@@ -368,42 +368,41 @@ graph TD
 
 ### Design Pattern 1: Auto-Tuning Pipeline
 
-```text
-┌─────────────────────────────────┐
-│ Load/Create Scene (DAG)         │
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────┐
-│ Detect GPU Vendor               │
-│ → GPUVendorDetector             │
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────┐
-│ Load/Generate Tuning Config     │
-│ → GPUAutoTuner                  │
-│   - Try cache first             │
-│   - Load profile for vendor     │
-│   - Generate from occupancy     │
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────┐
-│ Compile Kernel with Options     │
-│ → EnhancedOpenCLKernel          │
-│   - Standard: DAG_TRAVERSAL, etc│
-│   - Vendor: GPU-specific flags  │
-│   - Tuning: WORKGROUP_SIZE, etc│
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────┐
-│ Render Scene                    │
-│ → GPU kernel execution          │
-│ → Retrieve results              │
-└─────────────────────────────────┘
-```text
+```mermaid
+graph TD
+    A["Load/Create Scene<br/>DAG"]
+    B["Detect GPU Vendor<br/>GPUVendorDetector"]
+    C["Load/Generate Tuning Config<br/>GPUAutoTuner"]
+    C1["Try cache first"]
+    C2["Load profile for vendor"]
+    C3["Generate from occupancy"]
+    D["Compile Kernel with Options<br/>EnhancedOpenCLKernel"]
+    D1["Standard: DAG_TRAVERSAL, etc"]
+    D2["Vendor: GPU-specific flags"]
+    D3["Tuning: WORKGROUP_SIZE, etc"]
+    E["Render Scene<br/>GPU kernel execution<br/>Retrieve results"]
+
+    A --> B
+    B --> C
+    C --> C1
+    C --> C2
+    C --> C3
+    C1 --> D
+    C2 --> D
+    C3 --> D
+    D --> D1
+    D --> D2
+    D --> D3
+    D1 --> E
+    D2 --> E
+    D3 --> E
+
+    style A fill:#4A90E2
+    style B fill:#7ED321
+    style C fill:#7ED321
+    style D fill:#F5A623
+    style E fill:#50E3C2
+```
 
 ### Design Pattern 2: Performance-Aware Decision Making
 

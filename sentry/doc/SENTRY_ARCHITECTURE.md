@@ -78,7 +78,7 @@ flowchart TD
     C -->|Yes| D
     D --> B
     C -->|No| E
-```
+```text
 
 ### 3. Spatial Publish/Subscribe Framework
 
@@ -117,7 +117,7 @@ flowchart TD
 
     F["Expected time: O(n^1/3)<br/>for uniformly distributed points"]
     E --> F
-```
+```text
 
 ### Incremental Construction
 
@@ -140,7 +140,7 @@ flowchart TD
     F -->|No| G
     G --> F
     F -->|Yes| H
-```
+```text
 
 ### Vertex Deletion
 
@@ -161,7 +161,7 @@ flowchart TD
     D -->|Yes| C
     D -->|No| E
     E --> F
-```
+```text
 
 ## Performance Characteristics
 

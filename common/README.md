@@ -61,7 +61,7 @@ int capacity = floats.capacity();
 
 // Clear all elements
 floats.clear();
-```
+```java
 
 ### IntArrayList
 
@@ -83,7 +83,7 @@ for (int i : data) {
 
 // Access
 int value = ints.get(2);
-```
+```java
 
 ### ShortArrayList
 
@@ -99,7 +99,7 @@ shorts.add((short) 200);
 
 // Great for storing small integers efficiently
 int size = shorts.size();
-```
+```java
 
 ### OaHashSet
 
@@ -125,7 +125,7 @@ for (String s : set) {
 // Size and removal
 int size = set.size();
 set.remove("beta");
-```
+```java
 
 ### IdentitySet
 
@@ -143,7 +143,7 @@ identitySet.add(obj2);
 
 // Contains checks identity, not equals
 boolean hasObj1 = identitySet.contains(obj1); // true
-```
+```java
 
 ## Mesh Package
 
@@ -194,7 +194,7 @@ mvn test -pl common
 
 # Run specific test class
 mvn test -pl common -Dtest=FloatArrayListTest
-```
+```bash
 
 ## Dependencies
 

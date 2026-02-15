@@ -23,7 +23,7 @@ The gRPC module provides Protocol Buffer message definitions and gRPC services f
 grpc/
 └── src/main/proto/lucien/
     └── ghost.proto              # Ghost layer Protocol Buffer definitions
-```
+```text
 
 ## Protocol Buffer Definitions
 
@@ -59,7 +59,7 @@ service GhostExchange {
     rpc SyncGhosts(SyncRequest) returns (SyncResponse);
     rpc GetGhostStats(StatsRequest) returns (StatsResponse);
 }
-```
+```protobuf
 
 ## Usage Example
 
@@ -103,7 +103,7 @@ GhostBatch batch = ghostStub.requestGhosts(request);
 for (GhostElement ghost : batch.getElementsList()) {
     System.out.println("Ghost entity: " + ghost.getEntityId());
 }
-```
+```java
 
 ### Server Example
 
@@ -135,7 +135,7 @@ public class GhostExchangeService
         responseObserver.onCompleted();
     }
 }
-```
+```java
 
 ## Integration with Lucien Forest
 
@@ -159,7 +159,7 @@ mvn compile -pl grpc
 
 # Run tests
 mvn test -pl grpc
-```
+```bash
 
 Generated files are placed in `target/generated-sources/protobuf/`.
 

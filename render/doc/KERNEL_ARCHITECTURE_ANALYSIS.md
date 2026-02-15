@@ -75,13 +75,13 @@ This document consolidates the architectural analysis of existing GPU kernels (E
 // In SVO kernel:
 uint sparseIndex = popcount(childMask & ((1u << octant) - 1));
 uint childIdx = parentPtr + sparseIndex;
-```
+```text
 
 **DAG (Absolute Addressing)**:
 ```c
 // In DAG kernel (PROPOSED):
 uint childIdx = childPtr + octant;  // Direct absolute index
-```
+```text
 
 **Implication**:
 - DAG removes parent offset calculation
@@ -91,18 +91,18 @@ uint childIdx = childPtr + octant;  // Direct absolute index
 ### Memory Layout Optimization
 
 **Current (SVO) Node Structure**:
-```
+```text
 Byte 0-3:   [valid|childptr(14)|far|childmask|leafmask] (32 bits)
 Byte 4-7:   [contour_ptr(24)|contour_mask(8)]           (32 bits)
 Total:      8 bytes per node
-```
+```text
 
 **DAG Node Structure**:
-```
+```text
 Byte 0-3:   [valid|childptr(14)|far|childmask|leafmask] (32 bits)  ← IDENTICAL
 Byte 4-7:   [contour_ptr(24)|contour_mask(8)]           (32 bits)  ← IDENTICAL
 Total:      8 bytes per node
-```
+```text
 
 **Key Insight**: DAG nodes use SAME format as SVO nodes!
 - Only interpretation changes (absolute vs relative)
@@ -116,13 +116,13 @@ Total:      8 bytes per node
 **File**: `/Users/hal.hildebrand/git/Luciferase/render/src/main/java/.../sparse/gpu/AbstractOpenCLRenderer.java`
 
 **Lifecycle Pattern**:
-```
+```text
 1. Constructor(width, height)
 2. initialize()                     // Compile kernel, acquire OpenCL context
 3. uploadData(spatialData)          // Upload to GPU
 4. renderFrame(...)                 // Generate rays, execute kernel, read results
 5. dispose() or close()             // Cleanup
-```
+```text
 
 **Key Methods to Override**:
 - `getKernelSource()`: Return kernel source string
@@ -134,7 +134,7 @@ Total:      8 bytes per node
 protected static final int LOCAL_WORK_SIZE = 64;        // Work group size
 protected static final int RAY_SIZE_FLOATS = 8;          // 32 bytes per ray
 protected static final int RESULT_SIZE_FLOATS = 4;       // 16 bytes per result
-```
+```text
 
 ---
 
@@ -143,7 +143,7 @@ protected static final int RESULT_SIZE_FLOATS = 4;       // 16 bytes per result
 ### Ray Buffers (Input)
 
 **CPU → GPU Transfer**:
-```
+```text
 FloatBuffer cpuRayBuffer (CPU staging)
     ↓ malloc(rayCount * 8 floats)
     ↓ fill with: [ox, oy, oz, dx, dy, dz, tmin, tmax]
@@ -152,14 +152,14 @@ FloatBuffer cpuRayBuffer (CPU staging)
 OpenCLBuffer rayBuffer (GPU device memory)
     ↓ CL_MEM_READ_ONLY
     ↓ copy via clEnqueueWriteBuffer()
-```
+```text
 
 **Alignment**: 64-byte cache-line alignment (via `memAlignedAlloc`)
 
 ### Result Buffers (Output)
 
 **GPU → CPU Transfer**:
-```
+```text
 OpenCLBuffer resultBuffer (GPU device memory)
     ↓ CL_MEM_WRITE_ONLY
     ↓ copy via clEnqueueReadBuffer()
@@ -167,7 +167,7 @@ OpenCLBuffer resultBuffer (GPU device memory)
 FloatBuffer cpuResultBuffer (CPU staging)
     ↓ [hitX, hitY, hitZ, distance]
     ↓ process to image (RGBA)
-```
+```text
 
 ---
 
@@ -194,7 +194,7 @@ typedef struct {
     float3 normal;           // Surface normal
     uint voxelValue;         // Voxel attributes
 } IntersectionResult;
-```
+```text
 
 ### Kernel Function Signature
 
@@ -206,7 +206,7 @@ __kernel void rayTraverseDAG(
     const uint nodeCount,                  // Input: total nodes
     __global IntersectionResult* results   // Output: intersection results
 )
-```
+```text
 
 ### Core Algorithm
 
@@ -221,7 +221,7 @@ for (uint octant = 0; octant < 8; octant++) {
         }
     }
 }
-```
+```text
 
 ---
 

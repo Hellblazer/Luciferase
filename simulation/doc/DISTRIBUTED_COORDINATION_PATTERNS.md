@@ -37,7 +37,7 @@ public class ProcessCoordinator {
         controller.start();
     }
 }
-```
+```text
 
 **@Entity Inner Class Pattern**:
 
@@ -54,7 +54,7 @@ public static class ProcessCoordinatorEntity {
         this.coordinationTick(); // Recursive scheduling
     }
 }
-```
+```text
 
 **Key Points**:
 - @Entity on inner class (avoids Prime-Mover generic issues)
@@ -95,7 +95,7 @@ public class ProcessCoordinator {
         }
     }
 }
-```
+```text
 
 **Benefits**:
 - No periodic heartbeat polling
@@ -124,7 +124,7 @@ public boolean isCoordinator() {
     var coordinator = getCoordinator();
     return transport.getLocalId().equals(coordinator);
 }
-```
+```text
 
 **Characteristics**:
 - **Deterministic**: Same view always produces same coordinator
@@ -170,7 +170,7 @@ public static class ProcessCoordinatorEntity {
         this.coordinationTick();
     }
 }
-```
+```text
 
 **Characteristics**:
 - 10ms polling detects all topology changes
@@ -198,7 +198,7 @@ public class ProcessCoordinator {
         () -> clock.currentTimeMillis()
     );
 }
-```
+```text
 
 **Testing Pattern**:
 
@@ -212,7 +212,7 @@ void testRateLimiting() {
     testClock.setMillis(1000);
     // ... test logic ...
 }
-```
+```text
 
 **Benefits**:
 - Reproducible time-dependent tests
@@ -239,7 +239,7 @@ coordinator.registerProcess(processId, bubbleIds);
 
 // Stop gracefully
 coordinator.stop();
-```
+```text
 
 ### Pattern: Mock Fireflies View for Testing
 
@@ -252,7 +252,7 @@ mockView.setMembers(Set.of(process1, process2, process3));
 
 // Simulate failures
 mockView.setMembers(Set.of(process1, process3)); // process2 failed
-```
+```text
 
 ### Pattern: Test Coordinator Selection
 
@@ -271,7 +271,7 @@ void testCoordinatorSelection() {
     assertEquals(uuid1, coordinator.getCoordinator());
     assertTrue(coordinator.isCoordinator()); // for uuid1
 }
-```
+```text
 
 ### Pattern: Test View Change Handling
 
@@ -295,7 +295,7 @@ void testProcessFailure() {
     // Verify process2 unregistered
     assertNull(coordinator.getRegistry().getProcess(process2));
 }
-```
+```text
 
 ## Migration from Phase 3 to Phase 4
 
@@ -306,12 +306,12 @@ If you have code using old ProcessCoordinator patterns:
 **Before**:
 ```java
 var coordinator = new ProcessCoordinator(transport);
-```
+```text
 
 **After**:
 ```java
 var coordinator = new ProcessCoordinator(transport, membershipView);
-```
+```text
 
 ### Change 2: No Heartbeat Methods
 
@@ -319,13 +319,13 @@ var coordinator = new ProcessCoordinator(transport, membershipView);
 ```java
 coordinator.updateHeartbeat(processId);
 boolean alive = coordinator.isAlive(processId);
-```
+```text
 
 **After**:
 ```java
 // Heartbeat methods removed - use Fireflies view changes
 // Failure detection automatic via handleViewChange()
-```
+```text
 
 ### Change 3: No Election Protocol
 
@@ -333,14 +333,14 @@ boolean alive = coordinator.isAlive(processId);
 ```java
 coordinator.conductElection();
 UUID coordinator = coordinator.getCurrentCoordinator();
-```
+```text
 
 **After**:
 ```java
 // Election removed - use ring ordering
 UUID coordinator = coordinator.getCoordinator();
 boolean isCoord = coordinator.isCoordinator();
-```
+```text
 
 ### Change 4: Event-Driven Access
 
@@ -348,7 +348,7 @@ boolean isCoord = coordinator.isCoordinator();
 ```java
 // Blocking methods
 coordinator.broadcastTopologyUpdate(bubbles);
-```
+```text
 
 **After**:
 ```java
@@ -356,7 +356,7 @@ coordinator.broadcastTopologyUpdate(bubbles);
 // Topology updates automatic on registry changes
 // Broadcasts rate-limited (1/second)
 coordinator.registerProcess(processId, bubbles); // Triggers update
-```
+```text
 
 ## Testing Guidelines
 
@@ -379,7 +379,7 @@ void testMyFeature() {
 
     coordinator.stop();
 }
-```
+```text
 
 ### Integration Tests
 
@@ -396,7 +396,7 @@ void testMultiProcess() throws Exception {
 
     cluster.stop();
 }
-```
+```text
 
 ### Deterministic Time Testing
 
@@ -420,7 +420,7 @@ void testRateLimiting() {
     coordinator.registerProcess(process3, bubbles3);
     testClock.setMillis(1100); // > 1000ms cooldown
 }
-```
+```text
 
 ## Performance Characteristics
 

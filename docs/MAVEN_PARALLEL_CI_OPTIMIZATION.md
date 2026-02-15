@@ -53,25 +53,25 @@ graph TD
     F --> I
     G --> I
     H --> I
-```
+```text
 
 ### Parallel Execution Timeline
 
 **Sequential (Before)**:
-```
+```text
 compile: 54s
 test-all: 20-30min (sequential)
 ────────────────────────────────
 Total: 21-31min
-```
+```text
 
 **Parallel (Current)**:
-```
+```text
 compile: 54s
 tests: 8-9min (all in parallel)
 ────────────────────────────────
 Total: 9-12min (55% faster)
-```
+```text
 
 ---
 
@@ -104,7 +104,7 @@ Tests are strategically grouped by:
 **Configuration**:
 ```bash
 mvn test -pl bubble,common,dyada-java
-```
+```bash
 
 #### test-batch-2: Von/Transport Integration (8-9 minutes)
 
@@ -121,7 +121,7 @@ mvn test -pl bubble,common,dyada-java
 **Configuration**:
 ```bash
 mvn test -pl simulation,transport
-```
+```bash
 
 **Duration**: 8-9 minutes due to:
 - Network simulation overhead
@@ -143,7 +143,7 @@ mvn test -pl simulation,transport
 **Configuration**:
 ```bash
 mvn test -pl migration,causality
-```
+```bash
 
 #### test-batch-4: Distributed Systems/Network/Delos (8-9 minutes)
 
@@ -181,7 +181,7 @@ mvn test -pl migration,causality
 **Configuration**:
 ```bash
 mvn test -pl consensus,ghost
-```
+```bash
 
 #### test-other-modules: Other Modules (3-4 minutes)
 
@@ -201,7 +201,7 @@ mvn test -pl consensus,ghost
 **Configuration**:
 ```bash
 mvn test -pl grpc,lucien,sentry,render,portal
-```
+```bash
 
 ---
 
@@ -296,7 +296,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "All test batches passed successfully"
-```
+```yaml
 
 ### Key Implementation Features
 
@@ -318,7 +318,7 @@ Maven Central is checked FIRST to avoid GitHub Packages timeout (10-12 minutes):
         <url>https://maven.pkg.github.com/Hellblazer/...</url>
     </repository>
 </repositories>
-```
+```xml
 
 **Impact**: Reduced dependency resolution time from 12-15 minutes to <1 minute
 
@@ -333,7 +333,7 @@ All test batches use same compiled output (target/classes/):
 
 ```yaml
 timeout-minutes: 15  # distributed systems need longer
-```
+```yaml
 
 For tests with known long execution times (e.g., Ethereal consensus with 12 epochs × 33 seconds = 396 seconds).
 
@@ -361,13 +361,13 @@ mvn test -T 4
 
 # Run modules in parallel (1 thread per module)
 mvn test -T 1 -pl module1,module2,module3
-```
+```bash
 
 **Performance on 8-core machine**:
-```
+```text
 Sequential: 20-30 minutes
 Parallel (-T 1C): 5-10 minutes
-```
+```text
 
 ### Recommended Local Configuration
 
@@ -380,7 +380,7 @@ mvn clean test -T 1C
 
 # Skip some slow modules (during development)
 mvn clean test -pl !distributed,!delos,!choam
-```
+```text
 
 ---
 
@@ -397,11 +397,11 @@ mvn clean test -pl !distributed,!delos,!choam
 
 ### Speedup Achieved
 
-```
+```text
 Parallel Speedup = Sequential Time / Parallel Time
                  = 25 min (average) / 10.5 min (average)
                  = 2.38x speedup (58% time savings)
-```
+```text
 
 ### Bottleneck Analysis
 
@@ -420,7 +420,7 @@ Parallel Speedup = Sequential Time / Parallel Time
 
 Distribution follows Longest Processing Time (LPT) algorithm:
 
-```
+```bash
 Job 1 (Von/Transport):  8-9 min  ← Longest
 Job 2 (Distributed):    8-9 min  ← Longest
 Job 3 (Causality):      4-5 min  ← Medium
@@ -429,7 +429,7 @@ Job 5 (Other):          3-4 min  ← Medium
 Job 6 (Fast):           1 min    ← Quickest
                         ────────
 Total: 9-12 min (all run in parallel)
-```
+```bash
 
 ### 2. Dependency-Aware Scheduling
 
@@ -462,7 +462,7 @@ Compilation happens once, results shared across all test jobs:
 **Solution**: Increase timeout:
 ```yaml
 timeout-minutes: 15  # increased from default 10
-```
+```yaml
 
 ### Slow Dependency Resolution
 
@@ -473,7 +473,7 @@ timeout-minutes: 15  # increased from default 10
 **If still slow**:
 ```bash
 mvn clean install -X | grep -i "central\|github"
-```
+```bash
 
 ### Tests Fail in Parallel but Pass Sequentially
 
@@ -486,7 +486,7 @@ mvn test -T 1  # Single thread
 
 # Run just the failing test
 mvn test -Dtest=FailingTestClass
-```
+```bash
 
 ### Out of Memory
 

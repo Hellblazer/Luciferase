@@ -60,7 +60,7 @@ Run locally to verify all tests are now included:
 
 # Verify Batch 2 includes topology and others
 ./mvnw surefire:test -pl simulation -Dtest='**/topology/**/*Test,**/animation/**/*Test,**/entity/**/*Test,**/persistence/**/*Test,**/scheduling/**/*Test,**/tick/**/*Test'
-```
+```text
 
 ## Impact
 
@@ -83,7 +83,7 @@ Run locally to verify all tests are now included:
 
 ## Commit Message
 
-```
+```text
 Fix CI test coverage drift - Add 47 missing simulation tests
 
 Added lifecycle (11), topology (22), and 8 other test packages that were
@@ -94,7 +94,7 @@ now run in CI.
 - Batch 2: +topology +animation +entity +persistence +scheduling +tick (34 tests)
 
 Discovered during documentation cleanup session 2026-02-08.
-```
+```text
 
 ## Related Documentation
 
