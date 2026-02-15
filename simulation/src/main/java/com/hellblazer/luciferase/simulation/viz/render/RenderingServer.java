@@ -285,7 +285,19 @@ public class RenderingServer implements AutoCloseable {
 
         // WebSocket endpoint - Phase 3 streaming
         app.ws("/ws/render", ws -> {
-            ws.onConnect(regionStreamer::onConnect);
+            ws.onConnect(ctx -> {
+                // biom: WebSocket authentication
+                var apiKey = config.security().apiKey();
+                if (apiKey != null) {
+                    var authHeader = ctx.header("Authorization");
+                    if (authHeader == null || !authHeader.equals("Bearer " + apiKey)) {
+                        log.warn("WebSocket auth failed: sessionId={}", ctx.sessionId());
+                        ctx.closeSession(4003, "Unauthorized");
+                        return;  // Do not delegate to regionStreamer
+                    }
+                }
+                regionStreamer.onConnect(ctx);
+            });
             ws.onMessage(msgCtx -> regionStreamer.onMessage(msgCtx, msgCtx.message()));
             ws.onClose(closeCtx -> regionStreamer.onClose(closeCtx, closeCtx.status(), closeCtx.reason()));
             ws.onError(regionStreamer::onError);
