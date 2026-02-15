@@ -16,26 +16,43 @@ Luciferase uses GitHub Actions parallel workflow for fast CI/CD feedback. The pr
 
 ### Workflow Structure
 
-```
-GitHub Actions Workflow (Parallel Execution)
-    │
-    ├─ compile (54 sec)
-    │
-    ├─ test-batch-1 (1 min)       - Fast unit tests
-    ├─ test-batch-2 (8-9 min)     - Von/transport integration
-    ├─ test-batch-3 (4-5 min)     - Causality/migration state machines
-    ├─ test-batch-4 (8-9 min)     - Distributed systems/network/Delos
-    ├─ test-batch-5 (45-60 sec)   - Consensus/ghost
-    └─ test-other-modules (3-4 min)
-            │
-            ├─ grpc
-            ├─ common
-            ├─ lucien
-            ├─ sentry
-            ├─ render
-            └─ portal
-    │
-    └─ aggregate (validates all passed)
+```mermaid
+graph TD
+    A["GitHub Actions Workflow<br/>Parallel Execution"]
+    B["compile<br/>54 sec"]
+    C["test-batch-1<br/>1 min<br/>Fast unit tests"]
+    D["test-batch-2<br/>8-9 min<br/>Von/transport integration"]
+    E["test-batch-3<br/>4-5 min<br/>Causality/migration state machines"]
+    F["test-batch-4<br/>8-9 min<br/>Distributed systems/network/Delos"]
+    G["test-batch-5<br/>45-60 sec<br/>Consensus/ghost"]
+    H["test-other-modules<br/>3-4 min"]
+    H1["grpc"]
+    H2["common"]
+    H3["lucien"]
+    H4["sentry"]
+    H5["render"]
+    H6["portal"]
+    I["aggregate<br/>validates all passed"]
+
+    A --> B
+    B --> C
+    B --> D
+    B --> E
+    B --> F
+    B --> G
+    B --> H
+    H --> H1
+    H --> H2
+    H --> H3
+    H --> H4
+    H --> H5
+    H --> H6
+    C --> I
+    D --> I
+    E --> I
+    F --> I
+    G --> I
+    H --> I
 ```
 
 ### Parallel Execution Timeline

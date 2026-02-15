@@ -12,80 +12,88 @@ This document defines the architecture for the ESVO Octree Inspector, a comprehe
 
 ### Component Hierarchy
 
-```text
-OctreeInspectorApp
-├── JavaFX Application Layer (extends Application)
-│   ├── Stage (primary window)
-│   ├── Scene (main scene)
-│   └── BorderPane (root layout)
-│       ├── Center: SubScene (3D visualization)
-│       ├── Right: ControlPanel (UI controls)
-│       └── Overlay: PerformanceOverlay (metrics)
-│
-├── 3D Scene Graph
-│   ├── worldGroup (root 3D group)
-│   │   ├── axisGroup (coordinate axes)
-│   │   ├── gridGroup (adaptive grid)
-│   │   ├── octreeGroup (octree visualization)
-│   │   ├── rayGroup (ray casting visualization)
-│   │   └── voxelGroup (voxel rendering)
-│   └── Camera System
-│       └── CameraView (portal.CameraView)
-│
-├── Data Pipeline
-│   ├── ProceduralVoxelGenerator → List<Point3i>
-│   ├── OctreeBuilder.buildFromVoxels() → ESVOOctreeData
-│   ├── RayTraversalUtils → EnhancedRay/MultiLevelOctree
-│   └── OctreeRenderer → JavaFX Geometry
-│
-└── Control Systems
-    ├── InteractionController (mouse/keyboard)
-    ├── AnimationController (camera paths)
-    └── RebuildController (dynamic updates)
+```mermaid
+graph TD
+    A["OctreeInspectorApp"] --> B["JavaFX Application Layer"]
+    A --> C["3D Scene Graph"]
+    A --> D["Data Pipeline"]
+    A --> E["Control Systems"]
+
+    B --> B1["Stage<br/>primary window"]
+    B --> B2["Scene<br/>main scene"]
+    B --> B3["BorderPane<br/>root layout"]
+    B3 --> B3a["Center: SubScene<br/>3D visualization"]
+    B3 --> B3b["Right: ControlPanel<br/>UI controls"]
+    B3 --> B3c["Overlay: PerformanceOverlay<br/>metrics"]
+
+    C --> C1["worldGroup<br/>root 3D group"]
+    C1 --> C1a["axisGroup<br/>coordinate axes"]
+    C1 --> C1b["gridGroup<br/>adaptive grid"]
+    C1 --> C1c["octreeGroup<br/>octree visualization"]
+    C1 --> C1d["rayGroup<br/>ray casting visualization"]
+    C1 --> C1e["voxelGroup<br/>voxel rendering"]
+    C --> C2["Camera System"]
+    C2 --> C2a["CameraView<br/>portal.CameraView"]
+
+    D --> D1["ProceduralVoxelGenerator<br/>→ List&lt;Point3i&gt;"]
+    D --> D2["OctreeBuilder.buildFromVoxels()<br/>→ ESVOOctreeData"]
+    D --> D3["RayTraversalUtils<br/>→ EnhancedRay/MultiLevelOctree"]
+    D --> D4["OctreeRenderer<br/>→ JavaFX Geometry"]
+
+    E --> E1["InteractionController<br/>mouse/keyboard"]
+    E --> E2["AnimationController<br/>camera paths"]
+    E --> E3["RebuildController<br/>dynamic updates"]
 ```
 
 ### Module Integration Map
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                    PORTAL MODULE                             │
-│  ┌────────────────────────────────────────────────────┐    │
-│  │         OctreeInspectorApp                          │    │
-│  │  (extends javafx.application.Application)           │    │
-│  └───────────────┬────────────────────────────────────┘    │
-│                  │                                           │
-│  ┌───────────────▼──────────────┐  ┌──────────────────┐   │
-│  │    UI Components              │  │  3D Rendering    │   │
-│  │  - ControlPanel               │  │  - CameraView    │   │
-│  │  - PerformanceOverlay         │  │  - OctreeRenderer│   │
-│  │  - HelpOverlay                │  │  - RayVisualizer │   │
-│  └───────────────┬───────────────┘  └────────┬─────────┘   │
-│                  │                            │              │
-│                  │         ┌──────────────────▼──────┐      │
-│                  │         │  Visualization Utils     │      │
-│                  │         │  - AdaptiveGrid          │      │
-│                  │         │  - ScalingStrategy       │      │
-│                  │         └──────────────────────────┘      │
-└──────────────────┼────────────────────────────────────────┬─┘
-                   │                                        │
-┌──────────────────▼────────────────────────────────────┐  │
-│                RENDER MODULE                           │  │
-│  ┌─────────────────────────────────────────────────┐  │  │
-│  │          ESVO Components                        │  │  │
-│  │  - ESVOCPUBuilder (octree construction)        │  │  │
-│  │  - ESVOOctreeData (data structure)             │  │  │
-│  │  - StackBasedRayTraversal (ray casting)        │  │  │
-│  │  - ESVOPerformanceMonitor (metrics)            │  │  │
-│  │  - ESVONodeGeometry (node bounds)              │  │  │
-│  │  - ESVOTopology (parent/child)                 │  │  │
-│  └─────────────────────────────────────────────────┘  │  │
-└────────────────────────────────────────────────────────┘  │
-                                                             │
-┌────────────────────────────────────────────────────────────▼┐
-│                  COMMON MODULE                               │
-│  - FloatArrayList, OaHashSet (optimized collections)        │
-│  - Geometry utilities                                        │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph PORTAL["PORTAL MODULE"]
+        OCTREE_APP["OctreeInspectorApp<br/>(extends javafx.application.Application)"]
+
+        subgraph UI["UI Components"]
+            CONTROL["ControlPanel"]
+            PERF["PerformanceOverlay"]
+            HELP["HelpOverlay"]
+        end
+
+        subgraph RENDER_UI["3D Rendering"]
+            CAMERA["CameraView"]
+            OCTREE_R["OctreeRenderer"]
+            RAY_V["RayVisualizer"]
+        end
+
+        subgraph VIZ_UTILS["Visualization Utils"]
+            GRID["AdaptiveGrid"]
+            SCALE["ScalingStrategy"]
+        end
+
+        OCTREE_APP --> UI
+        OCTREE_APP --> RENDER_UI
+        UI --> VIZ_UTILS
+        RENDER_UI --> VIZ_UTILS
+    end
+
+    subgraph RENDER["RENDER MODULE"]
+        subgraph ESVO["ESVO Components"]
+            BUILDER["ESVOCPUBuilder<br/>(octree construction)"]
+            DATA["ESVOOctreeData<br/>(data structure)"]
+            TRAVERSAL["StackBasedRayTraversal<br/>(ray casting)"]
+            MONITOR["ESVOPerformanceMonitor<br/>(metrics)"]
+            GEOMETRY["ESVONodeGeometry<br/>(node bounds)"]
+            TOPOLOGY["ESVOTopology<br/>(parent/child)"]
+        end
+    end
+
+    subgraph COMMON["COMMON MODULE"]
+        COLLECTIONS["FloatArrayList, OaHashSet<br/>(optimized collections)"]
+        GEO_UTILS["Geometry utilities"]
+    end
+
+    PORTAL --> RENDER
+    PORTAL --> COMMON
+    RENDER --> COMMON
 ```
 
 ## Component Specifications
@@ -544,134 +552,70 @@ gridGroup.getChildren().add(grid);
 
 ### 1. Initialization Flow
 
-```text
-Application Start
-    ↓
-OctreeInspectorApp.start()
-    ↓
-┌───────────────────────────────────┐
-│ 1. Create JavaFX Scene            │
-│    - Stage, Scene, BorderPane     │
-│    - SubScene for 3D content      │
-└──────────────┬────────────────────┘
-               ↓
-┌───────────────────────────────────┐
-│ 2. Initialize 3D Scene Graph      │
-│    - worldGroup (root)            │
-│    - axisGroup, gridGroup, etc.   │
-│    - Add lighting (AmbientLight)  │
-└──────────────┬────────────────────┘
-               ↓
-┌───────────────────────────────────┐
-│ 3. Setup Camera System            │
-│    - Create CameraView            │
-│    - Enable first-person nav      │
-│    - Bind to window size          │
-└──────────────┬────────────────────┘
-               ↓
-┌───────────────────────────────────┐
-│ 4. Create Control Panel           │
-│    - Build UI controls            │
-│    - Set default values           │
-│    - Wire event handlers          │
-└──────────────┬────────────────────┘
-               ↓
-┌───────────────────────────────────┐
-│ 5. Generate Initial Octree        │
-│    - ProceduralVoxelGenerator     │
-│    - ESVOBridge.buildOctree()     │
-│    - Initial rendering            │
-└──────────────┬────────────────────┘
-               ↓
-┌───────────────────────────────────┐
-│ 6. Start Render Loop              │
-│    - JavaFX AnimationTimer        │
-│    - Update performance overlay   │
-└───────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant OSA as OctreeInspectorApp
+    participant Scene as Scene Setup
+    participant Graph as 3D Graph
+    participant Cam as Camera
+    participant Panel as Control Panel
+    participant Build as Octree Build
+    participant Loop as Render Loop
+
+    App->>OSA: start()
+    OSA->>Scene: Create JavaFX Scene
+    Note over Scene: Stage, Scene, BorderPane<br/>SubScene for 3D content
+    Scene->>Graph: Initialize 3D Scene Graph
+    Note over Graph: worldGroup (root)<br/>axisGroup, gridGroup, etc.<br/>Add lighting (AmbientLight)
+    Graph->>Cam: Setup Camera System
+    Note over Cam: Create CameraView<br/>Enable first-person nav<br/>Bind to window size
+    Cam->>Panel: Create Control Panel
+    Note over Panel: Build UI controls<br/>Set default values<br/>Wire event handlers
+    Panel->>Build: Generate Initial Octree
+    Note over Build: ProceduralVoxelGenerator<br/>ESVOBridge.buildOctree()<br/>Initial rendering
+    Build->>Loop: Start Render Loop
+    Note over Loop: JavaFX AnimationTimer<br/>Update performance overlay
 ```
 
 ### 2. Octree Rebuild Flow
 
-```text
-User Changes Parameter (depth/resolution/shape)
-    ↓
-ControlPanel fires event
-    ↓
-┌────────────────────────────────────┐
-│ 1. Clear Existing Visualization    │
-│    - octreeGroup.getChildren().clear() │
-│    - voxelGroup.getChildren().clear()  │
-└──────────────┬─────────────────────┘
-               ↓
-┌────────────────────────────────────┐
-│ 2. Show Progress Indicator         │
-│    - Disable controls              │
-│    - Show "Building..." message    │
-└──────────────┬─────────────────────┘
-               ↓
-┌────────────────────────────────────┐
-│ 3. Generate New Voxel Data         │
-│    (Background Thread)             │
-│    - ProceduralVoxelGenerator      │
-│    - New shape with new params     │
-└──────────────┬─────────────────────┘
-               ↓
-┌────────────────────────────────────┐
-│ 4. Build ESVO Octree               │
-│    (Background Thread)             │
-│    - ESVOBridge.buildOctree()      │
-│    - Measure build time            │
-└──────────────┬─────────────────────┘
-               ↓
-┌────────────────────────────────────┐
-│ 5. Render New Octree               │
-│    (JavaFX Application Thread)     │
-│    - OctreeRenderer.render()       │
-│    - Add to octreeGroup            │
-└──────────────┬─────────────────────┘
-               ↓
-┌────────────────────────────────────┐
-│ 6. Update UI                       │
-│    - Hide progress indicator       │
-│    - Enable controls               │
-│    - Update statistics             │
-└────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["User Changes Parameter<br/>(depth/resolution/shape)"]
+    B["ControlPanel fires event"]
+    C["1. Clear Existing Visualization<br/>octreeGroup.getChildren.clear<br/>voxelGroup.getChildren.clear"]
+    D["2. Show Progress Indicator<br/>Disable controls<br/>Show Building message"]
+    E["3. Generate New Voxel Data<br/>Background Thread<br/>ProceduralVoxelGenerator<br/>New shape with new params"]
+    F["4. Build ESVO Octree<br/>Background Thread<br/>ESVOBridge.buildOctree<br/>Measure build time"]
+    G["5. Render New Octree<br/>JavaFX Application Thread<br/>OctreeRenderer.render<br/>Add to octreeGroup"]
+    H["6. Update UI<br/>Hide progress indicator<br/>Enable controls<br/>Update statistics"]
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
 ```
 
 ### 3. Ray Casting Flow
 
-```text
-User Clicks on 3D Scene
-    ↓
-Mouse Event → 2D Screen Coordinates
-    ↓
-┌────────────────────────────────────┐
-│ 1. Convert to 3D Ray               │
-│    - Camera position = ray origin  │
-│    - Screen → World transform      │
-│    - Normalize direction           │
-└──────────────┬─────────────────────┘
-               ↓
-┌────────────────────────────────────┐
-│ 2. Cast Ray Through Octree         │
-│    - ESVOBridge.castRay()          │
-│    - StackBasedRayTraversal        │
-│    - Collect visited nodes         │
-└──────────────┬─────────────────────┘
-               ↓
-┌────────────────────────────────────┐
-│ 3. Visualize Ray Traversal         │
-│    - RayVisualizer.visualizeRay()  │
-│    - Create ray line geometry      │
-│    - Highlight visited nodes       │
-└──────────────┬─────────────────────┘
-               ↓
-┌────────────────────────────────────┐
-│ 4. Display Statistics              │
-│    - Hit point                     │
-│    - Traversal path                │
-│    - Performance metrics           │
-└────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["User Clicks on 3D Scene"]
+    B["Mouse Event → 2D Screen Coordinates"]
+    C["1. Convert to 3D Ray<br/>Camera position = ray origin<br/>Screen → World transform<br/>Normalize direction"]
+    D["2. Cast Ray Through Octree<br/>ESVOBridge.castRay<br/>StackBasedRayTraversal<br/>Collect visited nodes"]
+    E["3. Visualize Ray Traversal<br/>RayVisualizer.visualizeRay<br/>Create ray line geometry<br/>Highlight visited nodes"]
+    F["4. Display Statistics<br/>Hit point<br/>Traversal path<br/>Performance metrics"]
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
 ```
 
 ## Event Handling Architecture

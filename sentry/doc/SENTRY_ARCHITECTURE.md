@@ -65,14 +65,20 @@ The Delaunay property is maintained through local topological operations:
 
 #### Flip Algorithm
 
-```text
+```mermaid
+flowchart TD
+    A["1. Insert point<br/>creating initial tetrahedra"]
+    B["2. Check Delaunay property<br/>for each new face"]
+    C{"Non-Delaunay<br/>faces?"}
+    D["3. Flip non-Delaunay faces<br/>recursively"]
+    E["4. Done - all faces satisfy<br/>Delaunay property"]
 
-1. Insert point, creating initial tetrahedra
-2. Check Delaunay property for each new face
-3. Flip non-Delaunay faces recursively
-4. Continue until all faces satisfy Delaunay property
-
-```text
+    A --> B
+    B --> C
+    C -->|Yes| D
+    D --> B
+    C -->|No| E
+```
 
 ### 3. Spatial Publish/Subscribe Framework
 
@@ -95,43 +101,67 @@ Publishers announce their location/influence zones while subscribers monitor reg
 
 Uses a randomized jump-and-walk algorithm:
 
-```text
+```mermaid
+flowchart TD
+    A["1. Start from random/known<br/>tetrahedron"]
+    B["2. Test which face the target<br/>point is outside"]
+    C{"Containing<br/>tetrahedron<br/>found?"}
+    D["3. Move to adjacent tetrahedron<br/>through that face"]
+    E["4. Return containing<br/>tetrahedron"]
 
-1. Start from random/known tetrahedron
-2. Test which face the target point is outside
-3. Move to adjacent tetrahedron through that face
-4. Repeat until containing tetrahedron found
+    A --> B
+    B --> C
+    C -->|No| D
+    D --> B
+    C -->|Yes| E
 
-```text
-
-Expected time: O(n^(1/3)) for uniformly distributed points
+    F["Expected time: O(n^1/3)<br/>for uniformly distributed points"]
+    E --> F
+```
 
 ### Incremental Construction
 
-```text
+```mermaid
+flowchart TD
+    A["1. Create initial Big Tetrahedron<br/>containing universe"]
+    B["2. For each point to insert:"]
+    C["a. Locate containing<br/>tetrahedron"]
+    D["b. Split tetrahedron<br/>1→4 flip"]
+    E["c. Restore Delaunay property<br/>via flips"]
+    F{"All flips<br/>converged?"}
+    G["d. Propagate flips<br/>until convergence"]
+    H["Done - next point"]
 
-1. Create initial "Big Tetrahedron" containing universe
-2. For each point to insert:
-
-   a. Locate containing tetrahedron
-   b. Split tetrahedron (1→4 flip)
-   c. Restore Delaunay property via flips
-   d. Propagate flips until convergence
-
-```text
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F -->|No| G
+    G --> F
+    F -->|Yes| H
+```
 
 ### Vertex Deletion
 
 Uses ear-based algorithm:
 
-```text
+```mermaid
+flowchart TD
+    A["1. Find star set<br/>all tetrahedra incident to vertex"]
+    B["2. Identify ears<br/>convex boundary triangles"]
+    C["3. Remove ears<br/>iteratively"]
+    D{"More than<br/>4 faces?"}
+    E["4. Fill final hole<br/>when only 4 faces remain"]
+    F["Done - vertex deleted"]
 
-1. Find star set (all tetrahedra incident to vertex)
-2. Identify "ears" (convex boundary triangles)
-3. Remove ears iteratively
-4. Fill final hole when only 4 faces remain
-
-```text
+    A --> B
+    B --> C
+    C --> D
+    D -->|Yes| C
+    D -->|No| E
+    E --> F
+```
 
 ## Performance Characteristics
 
