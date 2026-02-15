@@ -22,7 +22,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -54,9 +59,62 @@ class DynamicTunerTest {
     }
 
     @AfterEach
-    void tearDown() {
+    void tearDown() throws InterruptedException {
         if (tuner != null) {
             tuner.shutdown();
+            // Give background threads time to release file handles
+            Thread.sleep(100);
+        }
+
+        // Robust cleanup with retry logic to handle filesystem race conditions
+        cleanupTempDirectory(tempDir);
+    }
+
+    /**
+     * Robust temporary directory cleanup with retry logic.
+     * Handles filesystem race conditions where file handles aren't immediately released.
+     *
+     * @param directory The directory to clean up
+     */
+    private void cleanupTempDirectory(Path directory) {
+        if (directory == null || !Files.exists(directory)) {
+            return;
+        }
+
+        int maxAttempts = 3;
+        long retryDelayMs = 50;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                Files.walkFileTree(directory, new SimpleFileVisitor<Path>() {
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                        Files.delete(file);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                        Files.delete(dir);
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+                return; // Success
+            } catch (IOException e) {
+                if (attempt == maxAttempts) {
+                    // Log warning but don't fail the test - cleanup failures shouldn't break tests
+                    System.err.println("Warning: Failed to clean up temp directory after " + maxAttempts +
+                                     " attempts: " + directory + " - " + e.getMessage());
+                } else {
+                    // Wait before retry to allow file handles to be released
+                    try {
+                        Thread.sleep(retryDelayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
         }
     }
 
