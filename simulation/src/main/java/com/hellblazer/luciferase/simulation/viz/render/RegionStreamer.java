@@ -60,6 +60,9 @@ public class RegionStreamer implements AutoCloseable {
     // --- Clock ---
     private volatile Clock clock = Clock.system();
 
+    // --- ByteBuffer Pool (Luciferase-8db0) ---
+    final ByteBufferPool bufferPool;  // Package-private for benchmark access
+
     /**
      * Create a region streamer.
      *
@@ -83,6 +86,7 @@ public class RegionStreamer implements AutoCloseable {
         this.rateLimiters = new ConcurrentHashMap<>();
         this.streaming = new AtomicBoolean(false);
         this.closed = new AtomicBoolean(false);
+        this.bufferPool = new ByteBufferPool();  // Luciferase-8db0: ByteBuffer pooling
     }
 
     // --- Public WebSocket Lifecycle Methods ---
@@ -582,9 +586,14 @@ public class RegionStreamer implements AutoCloseable {
         try {
             var builtRegion = cachedRegion.builtRegion();
 
-            // Encode to binary WebSocket frame
-            var frame = com.hellblazer.luciferase.simulation.viz.render.protocol.BinaryFrameCodec.encode(
-                builtRegion
+            // Luciferase-8db0: Borrow buffer from pool
+            var data = builtRegion.serializedData();
+            int requiredSize = com.hellblazer.luciferase.simulation.viz.render.protocol.ProtocolConstants.FRAME_HEADER_SIZE + data.length;
+            var frame = bufferPool.borrow(requiredSize);
+
+            // Encode to binary WebSocket frame using pooled buffer
+            com.hellblazer.luciferase.simulation.viz.render.protocol.BinaryFrameCodec.encode(
+                builtRegion, frame
             );
 
             // Luciferase-r2ky: Add to buffer instead of sending immediately
@@ -612,6 +621,7 @@ public class RegionStreamer implements AutoCloseable {
      * Flush buffered messages to client (Luciferase-r2ky).
      * <p>
      * Sends all buffered binary frames and clears buffer.
+     * Luciferase-8db0: Returns ByteBuffers to pool after send.
      * Must be called with session lock held.
      * <p>
      * Package-private for benchmark access.
@@ -629,6 +639,8 @@ public class RegionStreamer implements AutoCloseable {
         try {
             for (var frame : session.messageBuffer) {
                 session.wsContext.sendBinary(frame);
+                // Luciferase-8db0: Return buffer to pool after send
+                bufferPool.returnBuffer(frame);
             }
 
             log.trace("Flushed {} buffered messages to client {} (elapsed: {}ms)",
@@ -636,6 +648,10 @@ public class RegionStreamer implements AutoCloseable {
 
         } catch (Exception e) {
             log.error("Failed to flush buffer for client {}: {}", session.sessionId, e.getMessage());
+            // Return buffers on error path too
+            for (var frame : session.messageBuffer) {
+                bufferPool.returnBuffer(frame);
+            }
         } finally {
             session.messageBuffer.clear();
             session.lastFlushMs.set(now);

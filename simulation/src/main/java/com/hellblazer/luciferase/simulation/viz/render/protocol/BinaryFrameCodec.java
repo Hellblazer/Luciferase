@@ -74,6 +74,49 @@ public final class BinaryFrameCodec {
     }
 
     /**
+     * Encode a BuiltRegion into a pre-allocated ByteBuffer (Luciferase-8db0).
+     * <p>
+     * Uses pooled buffer to reduce GC pressure. Buffer must have sufficient capacity.
+     *
+     * @param region Built region to encode
+     * @param buffer Pre-allocated buffer (must have capacity >= FRAME_HEADER_SIZE + data.length)
+     * @return The same ByteBuffer with encoded frame (position=0, limit=frameSize)
+     * @throws IllegalArgumentException if buffer capacity insufficient
+     */
+    public static ByteBuffer encode(RegionBuilder.BuiltRegion region, ByteBuffer buffer) {
+        var data = region.serializedData();
+        int requiredSize = ProtocolConstants.FRAME_HEADER_SIZE + data.length;
+
+        if (buffer.capacity() < requiredSize) {
+            throw new IllegalArgumentException(
+                String.format("Buffer capacity %d insufficient for frame size %d",
+                    buffer.capacity(), requiredSize));
+        }
+
+        buffer.clear();
+        buffer.order(ByteOrder.LITTLE_ENDIAN);
+
+        // Write header
+        buffer.putInt(0, ProtocolConstants.FRAME_MAGIC);  // bytes 0-3: magic
+        buffer.put(4, formatCode(region.type()));         // byte 4: format
+        buffer.put(5, (byte) region.lodLevel());          // byte 5: lod
+        buffer.put(6, (byte) region.regionId().level());  // byte 6: region level
+        buffer.put(7, (byte) 0);                          // byte 7: reserved
+        buffer.putLong(8, region.regionId().mortonCode()); // bytes 8-15: morton code
+        buffer.putInt(16, (int) region.buildTimeNs());    // bytes 16-19: build version
+        buffer.putInt(20, data.length);                   // bytes 20-23: data size
+
+        // Write payload
+        buffer.position(ProtocolConstants.FRAME_HEADER_SIZE);
+        buffer.put(data);
+
+        // Set limit to actual frame size and reset position
+        buffer.limit(requiredSize);
+        buffer.position(0);
+        return buffer;
+    }
+
+    /**
      * Decode the header of a binary WebSocket frame.
      *
      * @param buffer Buffer containing frame data (position will be preserved)
