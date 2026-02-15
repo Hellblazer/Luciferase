@@ -114,7 +114,7 @@ The SpatialIndexDebugVisualizer shows spatial partitioning:
 
 ```java
 
-SpatialIndexDebugVisualizer<MortonKey, UUID, Entity> indexViz = 
+SpatialIndexDebugVisualizer<MortonKey, UUID, Entity> indexViz =
     new SpatialIndexDebugVisualizer<>(octree);
 
 // Configure level display
@@ -240,7 +240,7 @@ collisionSystem.addListener(new CollisionListener() {
 ```java
 
 // Add custom shape renderer
-visualizer.addShapeRenderer(MyCustomShape.class, 
+visualizer.addShapeRenderer(MyCustomShape.class,
     (shape, material) -> {
         // Create custom wireframe
         Group wireframe = new Group();
@@ -258,7 +258,7 @@ visualizer.addShapeRenderer(MyCustomShape.class,
 
 // Highlight specific collision pairs
 visualizer.setHighlightFilter((shapeA, shapeB) -> {
-    return shapeA.getType() == ShapeType.SPHERE && 
+    return shapeA.getType() == ShapeType.SPHERE &&
            shapeB.getType() == ShapeType.BOX;
 });
 
@@ -284,10 +284,10 @@ visualizer.setColorMapper((collision) -> {
 
 1. **Performance Impact**: Visualization can slow down simulations
    - Solution: Use sampling (visualize every Nth collision)
-   
+
 2. **Visual Clutter**: Too many shapes make debugging difficult
    - Solution: Use filters to show only relevant collisions
-   
+
 3. **Missing Collisions**: Some collisions not visualized
    - Solution: Check update frequency and ensure listener is registered
 

@@ -2,9 +2,9 @@
 
 **Purpose**: Standardized process for collecting, validating, and updating spatial index performance data across the Luciferase codebase.
 
-**Owner**: Development Team  
-**Review Frequency**: Monthly or after significant performance-impacting changes  
-**Last Updated**: 2025-12-08  
+**Owner**: Development Team
+**Review Frequency**: Monthly or after significant performance-impacting changes
+**Last Updated**: 2025-12-08
 **Status**: Current
 
 ## Overview
@@ -20,7 +20,7 @@ This document defines the standardized process for maintaining accurate, consist
 - **After spatial index changes** - Validate impact on all indices
 - **Monthly maintenance** - Keep data current with latest builds
 
-### Optional Triggers  
+### Optional Triggers
 
 - **Before performance presentations** - Ensure accuracy
 - **When performance questions arise** - Provide authoritative answers
@@ -38,9 +38,9 @@ This document defines the standardized process for maintaining accurate, consist
 
    # Verify Java version and system info
    mvn --version  # Shows both Java and Maven versions
-   
+
    # Check available memory
-   java -XX:+PrintFlagsFinal -version | grep MaxHeapSize  
+   java -XX:+PrintFlagsFinal -version | grep MaxHeapSize
 
 ```
 
@@ -83,7 +83,7 @@ mvn clean test -Pperformance
 mvn clean verify -Pperformance-full
 
 # This automatically:
-# 1. Runs all performance benchmarks  
+# 1. Runs all performance benchmarks
 # 2. Extracts performance data to CSV/markdown
 # 3. Updates documentation files
 # 4. Creates summary report
@@ -100,7 +100,7 @@ mvn clean test -Pperformance
 
 # Just extract data from existing test results
 
-mvn compile -Pperformance-extract  
+mvn compile -Pperformance-extract
 
 # Just update documentation from existing data
 
@@ -113,11 +113,11 @@ mvn compile -Pperformance-docs
 The Maven profiles automatically run all performance benchmarks:
 
 - **OctreeVsTetreeBenchmark** - Primary comparison
-- **SpatialIndexStressTest** - Large scale testing  
+- **SpatialIndexStressTest** - Large scale testing
 - **BaselinePerformanceBenchmark** - Optimization analysis
 - **PrismStressTest** - Prism performance validation
 - **PrismVsOctreeComparisonTest** - Cross-index comparison
-- **PrismVsTetreeComparisonTest** - Cross-index comparison  
+- **PrismVsTetreeComparisonTest** - Cross-index comparison
 - **LockFreePerformanceTest** - Concurrent performance
 - **All *PerformanceTest.java files** - Comprehensive coverage
 
@@ -126,20 +126,20 @@ The Maven profiles automatically run all performance benchmarks:
 **Time Required**: 10 minutes
 
 1. **Extract Key Metrics**
-   
+
    From benchmark outputs, extract these standardized metrics:
-   
+
    **Insertion Performance**:
 
 ```
 
    Entity Count | Octree Time | Tetree Time | Prism Time | Units
    100         | X.XXX ms    | X.XXX ms    | X.XXX ms   | milliseconds
-   1,000       | X.XXX ms    | X.XXX ms    | X.XXX ms   | milliseconds  
+   1,000       | X.XXX ms    | X.XXX ms    | X.XXX ms   | milliseconds
    10,000      | X.XXX ms    | X.XXX ms    | X.XXX ms   | milliseconds
 
 ```
-   
+
    **k-NN Search Performance**:
 
 ```
@@ -150,26 +150,26 @@ The Maven profiles automatically run all performance benchmarks:
    10,000      | X.XXX μs    | X.XXX μs    | X.XXX μs   | microseconds
 
 ```
-   
+
    **Memory Usage**:
 
 ```
 
    Entity Count | Octree MB | Tetree MB | Prism MB | Tetree/Octree | Prism/Octree
    100         | X.XX MB   | X.XX MB   | X.XX MB  | XX%           | XX%
-   1,000       | X.XX MB   | X.XX MB   | X.XX MB  | XX%           | XX%  
+   1,000       | X.XX MB   | X.XX MB   | X.XX MB  | XX%           | XX%
    10,000      | X.XX MB   | X.XX MB   | X.XX MB  | XX%           | XX%
 
 ```
 
 2. **Data Validation**
-   
+
    **Sanity Checks**:
    - ✅ All timing values > 0
    - ✅ Memory usage increases with entity count
    - ✅ No unexpected 10x+ performance changes from previous run
    - ✅ Performance ratios are reasonable (< 10x difference between indices)
-   
+
    **Historical Comparison**:
    - Compare with previous month's data
    - Flag significant changes (>25% difference) for investigation
@@ -190,7 +190,7 @@ Update documents in this specific order to maintain consistency:
    **Last Updated**: $(date '+%B %d, %Y')
    **Environment**: $(uname -s) $(uname -m), Java $(java -version 2>&1 | head -n1 | cut -d'"' -f2)
    **Benchmark Version**: OctreeVsTetreeBenchmark v$(date +%Y.%m)
-   
+
    # Replace all performance tables with extracted data
    # Update "Historical Context" section if significant changes occurred
 
@@ -222,7 +222,7 @@ Update documents in this specific order to maintain consistency:
 
    # Find and update all files referencing performance data
    grep -r "faster\|slower\|ms\|μs\|MB" lucien/doc/ | grep -v PERFORMANCE_METRICS_MASTER.md
-   
+
    # Replace hardcoded numbers with references to master document:
    # "See PERFORMANCE_METRICS_MASTER.md for current performance data"
 
@@ -238,7 +238,7 @@ Update documents in this specific order to maintain consistency:
 
    # Ensure no conflicting performance numbers exist
    ./scripts/validate_performance_consistency.sh  # Create this script
-   
+
    # Manual check: Search for hardcoded performance numbers
    grep -r "\d+\.\d+.*ms\|\d+x.*faster" lucien/doc/ --exclude="*PERFORMANCE_METRICS_MASTER.md"
 
@@ -274,7 +274,7 @@ Update documents in this specific order to maintain consistency:
 
    ```bash
 
-   #!/bin/bash  
+   #!/bin/bash
    # scripts/extract_performance_data.sh
    # Parses benchmark outputs
    # Generates CSV/JSON with standardized metrics
@@ -318,13 +318,13 @@ Update documents in this specific order to maintain consistency:
        - cron: '0 0 1 * *'  # First day of each month
 
      workflow_dispatch:  # Manual trigger
-   
+
    jobs:
      performance-update:
        steps:
 
          - name: Run Performance Suite
-         - name: Update Documentation  
+         - name: Update Documentation
          - name: Create Pull Request
 
 ```
@@ -332,7 +332,7 @@ Update documents in this specific order to maintain consistency:
 ### Long-term Automation
 
 1. **Performance Regression Detection** - Automatic alerting for performance changes
-2. **Historical Trend Tracking** - Database of performance metrics over time  
+2. **Historical Trend Tracking** - Database of performance metrics over time
 3. **Release Integration** - Automatic performance validation before releases
 
 ## File Inventory & Responsibilities
@@ -352,7 +352,7 @@ Update documents in this specific order to maintain consistency:
 ### Files to Audit (Check for Hardcoded Numbers)
 
 - All `doc/*.md` files
-- Code comments referencing specific performance numbers  
+- Code comments referencing specific performance numbers
 - Test class comments with performance expectations
 
 ## Success Criteria
@@ -435,11 +435,11 @@ export MAVEN_OPTS="-Xmx8g -XX:MaxMetaspaceSize=512m"
 ### Monthly Review
 
 - Review process effectiveness
-- Update automation scripts if needed  
+- Update automation scripts if needed
 - Check for new performance tests that should be included
 - Validate that all team members can execute the process
 
-### Quarterly Review  
+### Quarterly Review
 
 - Evaluate automation opportunities
 - Review historical trends for insights

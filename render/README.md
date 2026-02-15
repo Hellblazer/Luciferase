@@ -199,7 +199,7 @@ Uses the framework for GPU testing:
 ### Benchmarks
 
 > **Note**: Performance metrics need to be updated with actual measurements from current hardware.
-> 
+>
 > To run benchmarks on your system:
 > ```bash
 > mvn test -pl render -Dtest=ESVOPerformanceBenchmark
@@ -209,7 +209,7 @@ Uses the framework for GPU testing:
 Expected metrics to measure:
 
 - **Ray Throughput**: Grays/sec
-- **Node Throughput**: Nodes/sec  
+- **Node Throughput**: Nodes/sec
 - **Frame Time**: ms @ various resolutions
 - **Memory Usage**: MB for various node counts
 
@@ -220,7 +220,7 @@ Expected metrics to measure:
 3. Adjust stack size based on octree depth
 4. Use beam optimization for coherent rays
 
-## Testing
+## GPU Testing Framework
 
 The render module uses the `gpu-test-framework` module for GPU-related testing:
 
