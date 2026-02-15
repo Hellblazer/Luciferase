@@ -40,3 +40,8 @@ performance-results/summary-*.txt
 /.vscode/settings.json
 portal/logs/
 /.pm-archives
+
+# Archived and planning documentation (causing CI warnings)
+**/doc/plans/
+**/doc/archive/
+**/doc/**/.archive*/
