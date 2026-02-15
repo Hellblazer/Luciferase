@@ -111,7 +111,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 
 ### Performance
 
-- [Performance Tracking](./PERFORMANCE_TRACKING.md)
+- [Performance Metrics](./PERFORMANCE_METRICS_MASTER.md)
 - [Performance Index](./PERFORMANCE_INDEX.md)
 - [Optimization Guide](./SPATIAL_INDEX_PERFORMANCE_GUIDE.md)
 

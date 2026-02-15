@@ -131,7 +131,7 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
 
 - **[BULK_OPERATIONS_API.md](./BULK_OPERATIONS_API.md)**: High-performance batch operations
 - **[SPATIAL_INDEX_PERFORMANCE_GUIDE.md](./SPATIAL_INDEX_PERFORMANCE_GUIDE.md)**: Performance tuning guide
-- **[PERFORMANCE_TRACKING.md](./PERFORMANCE_TRACKING.md)**: Current performance baseline
+- **[PERFORMANCE_METRICS_MASTER.md](./PERFORMANCE_METRICS_MASTER.md)**: Current performance baseline
 
 ### Implementation Guides
 
@@ -183,7 +183,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 
 For detailed performance analysis, see:
 
-- [PERFORMANCE_TRACKING.md](./PERFORMANCE_TRACKING.md) - Current performance baseline
+- [PERFORMANCE_METRICS_MASTER.md](./PERFORMANCE_METRICS_MASTER.md) - Current performance baseline
 - [PERFORMANCE_INDEX.md](./PERFORMANCE_INDEX.md) - Guide to all performance documentation
 
 ## Testing Coverage

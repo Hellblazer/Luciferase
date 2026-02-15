@@ -312,7 +312,7 @@ ghostManager.syncGhosts(Arrays.asList("tree1", "tree2"), GhostType.FACES);
 ### Performance Resources
 
 - **Benchmark Results**: [SPATIAL_INDEX_PERFORMANCE_COMPARISON.md](SPATIAL_INDEX_PERFORMANCE_COMPARISON.md)
-- **Performance Tracking**: [PERFORMANCE_TRACKING.md](PERFORMANCE_TRACKING.md)
+- **Performance Metrics**: [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md)
 - **Optimization Guide**: [LAZY_EVALUATION_USAGE_GUIDE.md](LAZY_EVALUATION_USAGE_GUIDE.md)
 - **DSOC Performance Testing**: [DSOC Performance Testing Guide](DSOC_PERFORMANCE_TESTING_GUIDE.md)
 

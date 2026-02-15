@@ -345,7 +345,6 @@ Update documents in this specific order to maintain consistency:
 
 ### Secondary Files (Update As Needed)
 
-- `PERFORMANCE_TRACKING.md` - Historical trends and methodology
 - `README.md` - High-level performance summary (if present)
 - Release notes - Performance highlights for releases
 - Architecture docs - Performance considerations for design decisions

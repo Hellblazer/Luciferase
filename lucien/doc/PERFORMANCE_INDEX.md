@@ -15,15 +15,6 @@ This index guides you to performance-related documentation for the Luciferase sp
 
 ## Main Performance Documents
 
-### [PERFORMANCE_TRACKING.md](./PERFORMANCE_TRACKING.md)
-
-**Current performance baseline and optimization history**
-
-- Octree vs Tetree vs Prism comparison
-- Optimization timeline
-- Performance guidelines
-- Benchmark instructions
-
 ### [SPATIAL_INDEX_PERFORMANCE_COMPARISON.md](SPATIAL_INDEX_PERFORMANCE_COMPARISON.md)
 
 **Three-way spatial index comparison (Octree vs Tetree vs Prism)**
