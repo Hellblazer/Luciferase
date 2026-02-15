@@ -41,21 +41,37 @@ Luciferase is a comprehensive 3D spatial data structure library providing:
 
 ## Module Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         APPLICATIONS                            │
-├─────────────────────────────────────────────────────────────────┤
-│  portal (JavaFX)  │  render (LWJGL)  │  simulation (PrimeMover) │
-├─────────────────────────────────────────────────────────────────┤
-│                         CORE LIBRARIES                          │
-├─────────────────────────────────────────────────────────────────┤
-│     lucien        │      sentry      │        von              │
-│ (Spatial Indexing)│(Tetrahedralization)│(Voronoi Perception)    │
-├─────────────────────────────────────────────────────────────────┤
-│                      SHARED UTILITIES                           │
-├─────────────────────────────────────────────────────────────────┤
-│  common (Collections) │ grpc (Protobuf) │ dyada-java (Math)    │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph Applications
+        Portal[portal<br/>JavaFX Visualization]
+        Render[render<br/>LWJGL GPU Rendering]
+        Simulation[simulation<br/>PrimeMover Distributed]
+    end
+
+    subgraph "Core Libraries"
+        Lucien[lucien<br/>Spatial Indexing]
+        Sentry[sentry<br/>Tetrahedralization]
+        Von[von<br/>Voronoi Perception]
+    end
+
+    subgraph "Shared Utilities"
+        Common[common<br/>Collections]
+        GRPC[grpc<br/>Protobuf]
+        Dyada[dyada-java<br/>Math]
+    end
+
+    Portal --> Lucien
+    Portal --> Common
+    Render --> Lucien
+    Render --> Common
+    Simulation --> Lucien
+    Simulation --> Von
+    Simulation --> GRPC
+    Von --> Lucien
+    Lucien --> Common
+    Lucien --> Dyada
+    Sentry --> Common
 ```
 
 ### Module Dependencies
