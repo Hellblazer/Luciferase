@@ -27,6 +27,7 @@ target/debug-test.csv
 /dyada-java/.jqwik-database
 /resource/logs
 **/.luciferase/
+lucien/performance-results/**
 
 # Documentation artifacts
 *.md.backup
