@@ -52,6 +52,7 @@ public class RegionStreamer implements AutoCloseable {
     // --- Streaming State (Day 6) ---
     private final AtomicBoolean streaming;
     private volatile Thread streamingThread;
+    private final AtomicBoolean closed;  // Luciferase-gzte: Idempotent close() support
 
     // --- Clock ---
     private volatile Clock clock = Clock.system();
@@ -77,6 +78,7 @@ public class RegionStreamer implements AutoCloseable {
 
         this.sessions = new ConcurrentHashMap<>();
         this.streaming = new AtomicBoolean(false);
+        this.closed = new AtomicBoolean(false);
     }
 
     // --- Public WebSocket Lifecycle Methods ---
@@ -628,9 +630,39 @@ public class RegionStreamer implements AutoCloseable {
     }
 
     @Override
+    /**
+     * Close the streamer and clean up all resources (Luciferase-gzte).
+     * <p>
+     * - Closes all WebSocket sessions with status 1001 (Going Away)
+     * - Clears sessions map
+     * - Idempotent: safe to call multiple times
+     */
     public void close() {
+        // Idempotent check: only run cleanup once
+        if (!closed.compareAndSet(false, true)) {
+            log.debug("close() already called, skipping cleanup");
+            return;
+        }
+
+        log.info("Closing RegionStreamer, cleaning up {} sessions", sessions.size());
+
+        // Stop streaming first
         stop();
+
+        // Close all WebSocket sessions with status 1001 (Going Away)
+        for (var session : sessions.values()) {
+            try {
+                session.wsContext.closeSession(1001, "Server shutdown");
+            } catch (Exception e) {
+                // Handle exceptions gracefully - one session failure shouldn't prevent others from closing
+                log.warn("Failed to close session {}: {}", session.sessionId, e.getMessage());
+            }
+        }
+
+        // Clear sessions map
         sessions.clear();
+
+        log.info("RegionStreamer closed, all resources released");
     }
 
     // --- Inner Classes ---

@@ -424,7 +424,45 @@ class RegionStreamerTest {
     }
 
     /**
-     * Test 19: Concurrent client limit enforcement (Luciferase-1026).
+     * Test 19: Resource cleanup on close() (Luciferase-gzte).
+     * Verify that close() properly closes all WebSocket sessions and is idempotent.
+     */
+    @Test
+    void testClose_closesAllSessions() {
+        // Connect 3 clients
+        var ctx1 = new FakeWsContext("session-1");
+        var ctx2 = new FakeWsContext("session-2");
+        var ctx3 = new FakeWsContext("session-3");
+
+        streamer.onConnectInternal(ctx1);
+        streamer.onConnectInternal(ctx2);
+        streamer.onConnectInternal(ctx3);
+
+        assertEquals(3, streamer.connectedClientCount());
+        assertFalse(ctx1.wasClosed);
+        assertFalse(ctx2.wasClosed);
+        assertFalse(ctx3.wasClosed);
+
+        // Close the streamer
+        streamer.close();
+
+        // All sessions should be closed with status 1001 (Going Away)
+        assertTrue(ctx1.wasClosed, "Session 1 should be closed");
+        assertTrue(ctx2.wasClosed, "Session 2 should be closed");
+        assertTrue(ctx3.wasClosed, "Session 3 should be closed");
+        assertEquals(1001, ctx1.closeCode, "Should use status 1001 (Going Away)");
+        assertEquals(1001, ctx2.closeCode, "Should use status 1001 (Going Away)");
+        assertEquals(1001, ctx3.closeCode, "Should use status 1001 (Going Away)");
+
+        // Sessions map should be cleared
+        assertEquals(0, streamer.connectedClientCount());
+
+        // Second close() should be idempotent (no errors)
+        assertDoesNotThrow(() -> streamer.close());
+    }
+
+    /**
+     * Test 20: Concurrent client limit enforcement (Luciferase-1026).
      * Verify that when maxClientsPerServer concurrent connection attempts occur,
      * exactly maxClientsPerServer succeed and the rest are rejected.
      * This test validates the fix for the race condition in computeIfAbsent.
