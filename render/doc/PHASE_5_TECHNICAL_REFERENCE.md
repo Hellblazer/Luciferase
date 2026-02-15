@@ -406,76 +406,120 @@ graph TD
 
 ### Design Pattern 2: Performance-Aware Decision Making
 
-```text
-┌─────────────────────────────────┐
-│ Profile GPU Performance (P1)    │
-│ → baseline vs optimized         │
-│ → latency, occupancy, cache     │
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────┐
-│ Analyze Ray Coherence           │
-│ → RayCoherenceAnalyzer          │
-│ → 0.0 (independent) - 1.0 (same)│
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────┐
-│ Make Stream C Decision (P2)     │
-│ → SKIP_BEAM (target met)        │
-│ → ENABLE_BEAM (high coherence)  │
-│ → INVESTIGATE (low coherence)   │
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────┐
-│ Apply Decision                  │
-│ → renderer.enableBeamOpt(bool)  │
-└─────────────────────────────────┘
-```text
+```mermaid
+graph TD
+    A["Profile GPU Performance<br/>P1: baseline vs optimized<br/>latency, occupancy, cache"]
+    B["Analyze Ray Coherence<br/>RayCoherenceAnalyzer<br/>0.0 independent to 1.0 same"]
+    C["Make Stream C Decision<br/>P2"]
+    C1["SKIP_BEAM<br/>target met"]
+    C2["ENABLE_BEAM<br/>high coherence"]
+    C3["INVESTIGATE<br/>low coherence"]
+    D["Apply Decision<br/>renderer.enableBeamOpt"]
+
+    A --> B
+    B --> C
+    C --> C1
+    C --> C2
+    C --> C3
+    C1 --> D
+    C2 --> D
+    C3 --> D
+
+    style A fill:#7ED321
+    style B fill:#7ED321
+    style C fill:#F5A623
+    style C1 fill:#F5A623
+    style C2 fill:#F5A623
+    style C3 fill:#F5A623
+    style D fill:#50E3C2
+```
 
 ### Design Pattern 3: Vendor Abstraction
 
-```text
-┌─────────────────────────────────┐
-│ GPUVendor Enum                  │
-│ ├─ NVIDIA                       │
-│ ├─ AMD                          │
-│ ├─ INTEL                        │
-│ └─ APPLE                        │
-└────────────┬────────────────────┘
-             │
-    ┌────────┼────────┐
-    │        │        │
-    ▼        ▼        ▼
-┌─────┐ ┌─────┐ ┌─────┐
-│NVID │ │ AMD │ │ APL │  VendorKernelConfig
-│IA  │ │     │ │ E   │
-│ opt │ │ opt │ │ opt │  - buildFlags()
-│ 700 │ │ GCN │ │Metal│  - getWorkarounds()
-│MAD  │ │ atomic  │fabs│  - getOptimizations()
-└─────┘ └─────┘ └─────┘
-```text
+```mermaid
+graph TD
+    A["GPUVendor Enum"]
+    B["NVIDIA"]
+    C["AMD"]
+    D["INTEL"]
+    E["APPLE"]
+
+    F["VendorKernelConfig"]
+    F1["buildFlags()"]
+    F2["getWorkarounds()"]
+    F3["getOptimizations()"]
+
+    G["NVIDIA<br/>opt 700<br/>MAD enable"]
+    H["AMD<br/>GCN<br/>atomic semantics"]
+    I["APPLE<br/>Metal<br/>fabs workaround"]
+
+    A --> B
+    A --> C
+    A --> D
+    A --> E
+
+    B --> G
+    C --> H
+    D --> D
+    E --> I
+
+    G --> F
+    H --> F
+    I --> F
+
+    F --> F1
+    F --> F2
+    F --> F3
+
+    style A fill:#4A90E2
+    style B fill:#7ED321
+    style C fill:#7ED321
+    style D fill:#7ED321
+    style E fill:#7ED321
+    style F fill:#F5A623
+    style F1 fill:#F5A623
+    style F2 fill:#F5A623
+    style F3 fill:#F5A623
+```
 
 ### Design Pattern 4: Mock vs Real GPU
 
-```text
-GPUPerformanceProfiler
-├─ mockMode=true
-│  └─ generateMockMetrics()
-│     ├─ Random seed 12345 (deterministic)
-│     ├─ Synthetic latency (850µs baseline)
-│     └─ Pre-scaled improvements (0.53x for optimized)
-│     Used: CI/CD, unit tests, development
-│
-└─ mockMode=false
-   └─ measureRealGPUMetrics()
-      ├─ OpenCL kernel execution
-      ├─ GPU hardware timers
-      └─ Actual performance numbers
-      Used: Production, real GPU validation
-```text
+```mermaid
+graph TD
+    A["GPUPerformanceProfiler"]
+    B["mockMode=true"]
+    B1["generateMockMetrics"]
+    B2["Random seed 12345<br/>deterministic"]
+    B3["Synthetic latency<br/>850µs baseline"]
+    B4["Pre-scaled improvements<br/>0.53x optimized"]
+    B5["Usage: CI/CD, unit tests,<br/>development"]
+
+    C["mockMode=false"]
+    C1["measureRealGPUMetrics"]
+    C2["OpenCL kernel execution"]
+    C3["GPU hardware timers"]
+    C4["Actual performance numbers"]
+    C5["Usage: Production, real GPU<br/>validation"]
+
+    A --> B
+    A --> C
+
+    B --> B1
+    B1 --> B2
+    B1 --> B3
+    B1 --> B4
+    B1 --> B5
+
+    C --> C1
+    C1 --> C2
+    C1 --> C3
+    C1 --> C4
+    C1 --> C5
+
+    style A fill:#4A90E2
+    style B fill:#7ED321
+    style C fill:#F5A623
+```
 
 ---
 
