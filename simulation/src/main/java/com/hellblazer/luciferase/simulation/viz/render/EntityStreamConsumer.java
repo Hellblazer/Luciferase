@@ -53,6 +53,7 @@ public class EntityStreamConsumer implements AutoCloseable {
 
     private final List<UpstreamConfig> upstreams;
     private final AdaptiveRegionManager regionManager;
+    private final PerformanceConfig performanceConfig;
     private final ConcurrentHashMap<URI, UpstreamState> connections = new ConcurrentHashMap<>();
     private final ExecutorService virtualThreadPool;
     private final ObjectMapper jsonMapper = new ObjectMapper();
@@ -61,11 +62,11 @@ public class EntityStreamConsumer implements AutoCloseable {
     private volatile Clock clock = Clock.system();
 
     /**
-     * Create consumer with system clock.
+     * Create consumer with system clock and default performance config.
      */
     public EntityStreamConsumer(List<UpstreamConfig> upstreams,
                                 AdaptiveRegionManager regionManager) {
-        this(upstreams, regionManager, Clock.system());
+        this(upstreams, regionManager, PerformanceConfig.defaults(), Clock.system());
     }
 
     /**
@@ -74,8 +75,19 @@ public class EntityStreamConsumer implements AutoCloseable {
     public EntityStreamConsumer(List<UpstreamConfig> upstreams,
                                 AdaptiveRegionManager regionManager,
                                 Clock clock) {
+        this(upstreams, regionManager, PerformanceConfig.testing(), clock);
+    }
+
+    /**
+     * Create consumer with full configuration (primary constructor).
+     */
+    public EntityStreamConsumer(List<UpstreamConfig> upstreams,
+                                AdaptiveRegionManager regionManager,
+                                PerformanceConfig performanceConfig,
+                                Clock clock) {
         this.upstreams = upstreams;
         this.regionManager = regionManager;
+        this.performanceConfig = performanceConfig;
         this.clock = clock;
         this.virtualThreadPool = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -124,7 +136,7 @@ public class EntityStreamConsumer implements AutoCloseable {
                 log.info("Connecting to upstream: {} ({})", upstream.label(), upstream.uri());
 
                 var client = HttpClient.newBuilder()
-                                       .connectTimeout(Duration.ofSeconds(10))
+                                       .connectTimeout(Duration.ofSeconds(performanceConfig.httpConnectTimeoutSec()))
                                        .build();
 
                 var listener = new WebSocket.Listener() {

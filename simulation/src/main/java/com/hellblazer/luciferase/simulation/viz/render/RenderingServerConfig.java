@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * Configuration for the GPU-accelerated rendering server.
  * <p>
- * Uses composition pattern with SecurityConfig, CacheConfig, BuildConfig, and StreamingConfig sub-records.
+ * Uses composition pattern with SecurityConfig, CacheConfig, BuildConfig, StreamingConfig, and PerformanceConfig sub-records.
  * <p>
  * Thread-safe: immutable record.
  *
@@ -25,6 +25,7 @@ import java.util.List;
  * @param build                Build configuration (pool size, queue depth, circuit breaker)
  * @param maxEntitiesPerRegion Limit entities per region to prevent unbounded accumulation
  * @param streaming            Streaming configuration (viewport tracking, LOD thresholds)
+ * @param performance          Performance tuning configuration (timeouts, buffer sizes, cache parameters)
  * @author hal.hildebrand
  */
 public record RenderingServerConfig(
@@ -35,7 +36,8 @@ public record RenderingServerConfig(
     CacheConfig cache,
     BuildConfig build,
     int maxEntitiesPerRegion,
-    StreamingConfig streaming
+    StreamingConfig streaming,
+    PerformanceConfig performance
 ) {
     /**
      * Validate configuration for cross-field consistency.
@@ -69,7 +71,8 @@ public record RenderingServerConfig(
             CacheConfig.defaults(),                    // 256 MB cache
             BuildConfig.defaults(),                    // Default build params
             10_000,                                    // Max 10k entities per region
-            StreamingConfig.defaults()                 // Default streaming config
+            StreamingConfig.defaults(),                // Default streaming config
+            PerformanceConfig.defaults()               // Default performance config
         );
         config.validate();  // Ensure valid
         return config;
@@ -90,7 +93,8 @@ public record RenderingServerConfig(
             CacheConfig.defaults(),      // 256 MB cache
             BuildConfig.defaults(),      // Default build params
             10_000,                      // Max 10k entities per region
-            StreamingConfig.defaults()   // Default streaming config
+            StreamingConfig.defaults(),  // Default streaming config
+            PerformanceConfig.defaults() // Default performance config
         );
     }
 
@@ -106,7 +110,8 @@ public record RenderingServerConfig(
             CacheConfig.testing(),       // 16 MB cache
             BuildConfig.testing(),       // Small build params
             1_000,                       // Lower limit for tests (1k per region)
-            StreamingConfig.testing()    // Test streaming config
+            StreamingConfig.testing(),   // Test streaming config
+            PerformanceConfig.testing()  // Test performance config
         );
     }
 }

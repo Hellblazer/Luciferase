@@ -62,7 +62,8 @@ class RenderingServerConfigTest {
             new CacheConfig(256 * 1024 * 1024L),
             BuildConfig.defaults(),
             10_000,
-            StreamingConfig.testing()
+            StreamingConfig.testing(),
+            PerformanceConfig.testing()
         );
 
         var exception = assertThrows(IllegalArgumentException.class, config::validate);
@@ -80,7 +81,8 @@ class RenderingServerConfigTest {
             new CacheConfig(256 * 1024 * 1024L),
             BuildConfig.defaults(),
             10_000,
-            StreamingConfig.testing()
+            StreamingConfig.testing(),
+            PerformanceConfig.testing()
         );
 
         assertDoesNotThrow(config::validate);
@@ -97,7 +99,8 @@ class RenderingServerConfigTest {
             new CacheConfig(256 * 1024 * 1024L),
             BuildConfig.defaults(),
             10_000,
-            StreamingConfig.testing()
+            StreamingConfig.testing(),
+            PerformanceConfig.testing()
         );
 
         assertDoesNotThrow(config::validate);
@@ -154,7 +157,8 @@ class RenderingServerConfigTest {
             new CacheConfig(256 * 1024 * 1024L),
             buildConfig,
             10_000,
-            StreamingConfig.testing()
+            StreamingConfig.testing(),
+            PerformanceConfig.testing()
         );
 
         assertEquals(500, config.build().maxQueueDepth());
@@ -180,7 +184,8 @@ class RenderingServerConfigTest {
             new CacheConfig(256 * 1024 * 1024L),
             buildConfig,
             10_000,
-            StreamingConfig.testing()
+            StreamingConfig.testing(),
+            PerformanceConfig.testing()
         );
 
         assertEquals(30_000L, config.build().circuitBreakerTimeoutMs());

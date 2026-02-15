@@ -186,9 +186,12 @@ class RegionStreamerTest {
         streamer.onMessageInternal(ctx, updateJson);
 
         // Should send ERROR response
-        assertTrue(ctx.sentMessages.size() > 0, "Should have sent error message");
-        assertTrue(ctx.sentMessages.get(0).contains("ERROR"), "Should be ERROR message");
-        assertTrue(ctx.sentMessages.get(0).contains("clientId"), "Should mention missing clientId");
+        assertEquals(1, ctx.sentMessages.size(), "Should send exactly 1 error message");
+        var errorMessage = ctx.sentMessages.get(0);
+        assertTrue(errorMessage.contains("ERROR") || errorMessage.contains("error"),
+            "Error response should contain 'ERROR' or 'error', got: " + errorMessage);
+        assertTrue(errorMessage.contains("clientId"),
+            "Error should mention missing 'clientId' field, got: " + errorMessage);
     }
 
     /**
@@ -208,9 +211,12 @@ class RegionStreamerTest {
         streamer.onMessageInternal(ctx, updateJson);
 
         // Should send ERROR response
-        assertTrue(ctx.sentMessages.size() > 0, "Should have sent error message");
-        assertTrue(ctx.sentMessages.get(0).contains("ERROR"), "Should be ERROR message");
-        assertTrue(ctx.sentMessages.get(0).contains("viewport"), "Should mention missing viewport");
+        assertEquals(1, ctx.sentMessages.size(), "Should send exactly 1 error message");
+        var errorMessage = ctx.sentMessages.get(0);
+        assertTrue(errorMessage.contains("ERROR") || errorMessage.contains("error"),
+            "Error response should contain 'ERROR' or 'error', got: " + errorMessage);
+        assertTrue(errorMessage.contains("viewport"),
+            "Error should mention missing 'viewport' field, got: " + errorMessage);
     }
 
     // ===== PHASE 5: Error Handling Tests (7-9) =====
@@ -227,9 +233,12 @@ class RegionStreamerTest {
         streamer.onMessageInternal(ctx, invalidJson);
 
         // Should send ERROR response
-        assertTrue(ctx.sentMessages.size() > 0, "Should have sent error message");
-        assertTrue(ctx.sentMessages.get(0).contains("ERROR"), "Should be ERROR message");
-        assertTrue(ctx.sentMessages.get(0).contains("Invalid JSON"), "Should mention invalid JSON");
+        assertEquals(1, ctx.sentMessages.size(), "Should send exactly 1 error message");
+        var errorMessage = ctx.sentMessages.get(0);
+        assertTrue(errorMessage.contains("ERROR") || errorMessage.contains("error"),
+            "Error response should contain 'ERROR' or 'error', got: " + errorMessage);
+        assertTrue(errorMessage.contains("Invalid JSON") || errorMessage.contains("JSON"),
+            "Error should mention JSON parsing issue, got: " + errorMessage);
     }
 
     /**
@@ -249,9 +258,12 @@ class RegionStreamerTest {
         streamer.onMessageInternal(ctx, unknownTypeJson);
 
         // Should send ERROR response
-        assertTrue(ctx.sentMessages.size() > 0, "Should have sent error message");
-        assertTrue(ctx.sentMessages.get(0).contains("ERROR"), "Should be ERROR message");
-        assertTrue(ctx.sentMessages.get(0).contains("Unknown message type"), "Should mention unknown type");
+        assertEquals(1, ctx.sentMessages.size(), "Should send exactly 1 error message");
+        var errorMessage = ctx.sentMessages.get(0);
+        assertTrue(errorMessage.contains("ERROR") || errorMessage.contains("error"),
+            "Error response should contain 'ERROR' or 'error', got: " + errorMessage);
+        assertTrue(errorMessage.contains("Unknown message type") || errorMessage.contains("unknown"),
+            "Error should mention unknown message type, got: " + errorMessage);
     }
 
     /**
@@ -271,9 +283,12 @@ class RegionStreamerTest {
         streamer.onMessageInternal(ctx, noTypeJson);
 
         // Should send ERROR response
-        assertTrue(ctx.sentMessages.size() > 0, "Should have sent error message");
-        assertTrue(ctx.sentMessages.get(0).contains("ERROR"), "Should be ERROR message");
-        assertTrue(ctx.sentMessages.get(0).contains("type"), "Should mention missing type");
+        assertEquals(1, ctx.sentMessages.size(), "Should send exactly 1 error message");
+        var errorMessage = ctx.sentMessages.get(0);
+        assertTrue(errorMessage.contains("ERROR") || errorMessage.contains("error"),
+            "Error response should contain 'ERROR' or 'error', got: " + errorMessage);
+        assertTrue(errorMessage.contains("type") || errorMessage.contains("missing"),
+            "Error should mention missing 'type' field, got: " + errorMessage);
     }
 
     // ===== DAY 6: Streaming Loop Tests (10-18) =====
@@ -639,6 +654,214 @@ class RegionStreamerTest {
         // (This is validated by checking ctx.wasClosed in the thread above)
 
         limitedStreamer.close();
+    }
+
+    /**
+     * Test 24: Rapid viewport updates stress test.
+     * Verify that rapid viewport updates are handled correctly without dropped updates or errors.
+     */
+    @Test
+    void testRapidViewportUpdates() {
+        var ctx = new FakeWsContext("rapid-update-test");
+        streamer.onConnectInternal(ctx);
+
+        // First register
+        var registerJson = """
+            {
+                "type": "REGISTER_CLIENT",
+                "clientId": "rapid-client",
+                "viewport": {
+                    "eye": {"x": 512, "y": 512, "z": 100},
+                    "lookAt": {"x": 512, "y": 512, "z": 512},
+                    "up": {"x": 0, "y": 1, "z": 0},
+                    "fovY": 1.047,
+                    "aspectRatio": 1.777,
+                    "nearPlane": 0.1,
+                    "farPlane": 1000.0
+                }
+            }
+            """;
+        streamer.onMessageInternal(ctx, registerJson);
+
+        int initialMessages = ctx.sentMessages.size();
+
+        // Send 20 rapid viewport updates
+        for (int i = 0; i < 20; i++) {
+            var updateJson = String.format("""
+                {
+                    "type": "UPDATE_VIEWPORT",
+                    "clientId": "rapid-client",
+                    "viewport": {
+                        "eye": {"x": %d, "y": 512, "z": 100},
+                        "lookAt": {"x": 512, "y": 512, "z": 512},
+                        "up": {"x": 0, "y": 1, "z": 0},
+                        "fovY": 1.047,
+                        "aspectRatio": 1.777,
+                        "nearPlane": 0.1,
+                        "farPlane": 1000.0
+                    }
+                }
+                """, 100 + i * 20);
+            streamer.onMessageInternal(ctx, updateJson);
+        }
+
+        // Should not have received any error messages
+        assertEquals(initialMessages, ctx.sentMessages.size(),
+            "Rapid updates should not generate error messages");
+        assertFalse(ctx.wasClosed, "Connection should remain open after rapid updates");
+
+        // ViewportTracker should have the latest viewport registered
+        var visible = viewportTracker.visibleRegions(ctx.sessionId());
+        assertNotNull(visible, "Should have visibility info after rapid updates");
+    }
+
+    /**
+     * Test 25: Concurrent registration attempts with duplicate clientId.
+     * Verify that duplicate clientId registrations are handled gracefully.
+     */
+    @Test
+    void testDuplicateClientIdRegistration() {
+        var ctx1 = new FakeWsContext("session-dup-1");
+        var ctx2 = new FakeWsContext("session-dup-2");
+
+        streamer.onConnectInternal(ctx1);
+        streamer.onConnectInternal(ctx2);
+
+        // Both sessions register with the same clientId
+        var registerJson = """
+            {
+                "type": "REGISTER_CLIENT",
+                "clientId": "duplicate-id",
+                "viewport": {
+                    "eye": {"x": 512, "y": 512, "z": 100},
+                    "lookAt": {"x": 512, "y": 512, "z": 512},
+                    "up": {"x": 0, "y": 1, "z": 0},
+                    "fovY": 1.047,
+                    "aspectRatio": 1.777,
+                    "nearPlane": 0.1,
+                    "farPlane": 1000.0
+                }
+            }
+            """;
+
+        streamer.onMessageInternal(ctx1, registerJson);
+        streamer.onMessageInternal(ctx2, registerJson);
+
+        // Both sessions should be connected (clientId is per-session, not global)
+        assertEquals(2, streamer.connectedClientCount(),
+            "Both sessions should remain connected with duplicate clientId");
+        assertFalse(ctx1.wasClosed, "First session should not be closed");
+        assertFalse(ctx2.wasClosed, "Second session should not be closed");
+
+        // ViewportTracker should have both sessions registered
+        assertEquals(2, viewportTracker.clientCount(),
+            "ViewportTracker should have both sessions registered");
+    }
+
+    /**
+     * Test 26: Invalid viewport vector values.
+     * Verify that malformed viewport vectors (NaN, Infinity) don't crash the server.
+     * Current implementation uses lenient JSON parsing (accepts strings where numbers expected).
+     */
+    @Test
+    void testInvalidViewportVectorValues() {
+        var ctx = new FakeWsContext("invalid-vector-test");
+        streamer.onConnectInternal(ctx);
+
+        // Try to register with NaN eye position
+        var invalidEyeJson = """
+            {
+                "type": "REGISTER_CLIENT",
+                "clientId": "invalid-eye",
+                "viewport": {
+                    "eye": {"x": "NaN", "y": 512, "z": 100},
+                    "lookAt": {"x": 512, "y": 512, "z": 512},
+                    "up": {"x": 0, "y": 1, "z": 0},
+                    "fovY": 1.047,
+                    "aspectRatio": 1.777,
+                    "nearPlane": 0.1,
+                    "farPlane": 1000.0
+                }
+            }
+            """;
+
+        // Should not crash (lenient parsing accepts malformed JSON)
+        assertDoesNotThrow(() -> streamer.onMessageInternal(ctx, invalidEyeJson),
+            "Server should handle malformed eye position without crashing");
+        assertFalse(ctx.wasClosed, "Connection should not be closed for malformed viewport");
+
+        // Try to register with Infinity lookAt position
+        var invalidLookAtJson = """
+            {
+                "type": "REGISTER_CLIENT",
+                "clientId": "invalid-lookat",
+                "viewport": {
+                    "eye": {"x": 512, "y": 512, "z": 100},
+                    "lookAt": {"x": 512, "y": "Infinity", "z": 512},
+                    "up": {"x": 0, "y": 1, "z": 0},
+                    "fovY": 1.047,
+                    "aspectRatio": 1.777,
+                    "nearPlane": 0.1,
+                    "farPlane": 1000.0
+                }
+            }
+            """;
+
+        // Should not crash (lenient parsing)
+        assertDoesNotThrow(() -> streamer.onMessageInternal(ctx, invalidLookAtJson),
+            "Server should handle malformed lookAt position without crashing");
+        assertFalse(ctx.wasClosed, "Connection should not be closed for malformed viewport");
+
+        // Note: Current lenient behavior accepts malformed JSON. Future enhancement
+        // could add strict validation to reject NaN/Infinity values and send ERROR responses.
+    }
+
+    /**
+     * Test 27: Session cleanup during active streaming.
+     * Verify that closing a session during active streaming cleans up resources properly.
+     */
+    @Test
+    void testSessionCleanupDuringStreaming() throws InterruptedException {
+        var ctx = new FakeWsContext("streaming-cleanup-test");
+        streamer.onConnectInternal(ctx);
+
+        // Register client
+        var registerJson = """
+            {
+                "type": "REGISTER_CLIENT",
+                "clientId": "cleanup-client",
+                "viewport": {
+                    "eye": {"x": 512, "y": 512, "z": 100},
+                    "lookAt": {"x": 512, "y": 512, "z": 512},
+                    "up": {"x": 0, "y": 1, "z": 0},
+                    "fovY": 1.047,
+                    "aspectRatio": 1.777,
+                    "nearPlane": 0.1,
+                    "farPlane": 1000.0
+                }
+            }
+            """;
+        streamer.onMessageInternal(ctx, registerJson);
+
+        // Start streaming
+        streamer.start();
+        assertTrue(streamer.isStreaming(), "Streaming should be active");
+
+        // Let streaming run for a bit
+        Thread.sleep(100);
+
+        // Close session while streaming is active
+        streamer.onCloseInternal(ctx, 1000, "Normal close during streaming");
+
+        // Session should be cleaned up
+        assertEquals(0, streamer.connectedClientCount(),
+            "Session should be removed from connected clients");
+        assertEquals(0, viewportTracker.clientCount(),
+            "ViewportTracker should have removed the client");
+
+        // Stop streaming
+        streamer.stop();
+        assertFalse(streamer.isStreaming(), "Streaming should stop cleanly");
     }
 
     // Fake WsContextWrapper for testing

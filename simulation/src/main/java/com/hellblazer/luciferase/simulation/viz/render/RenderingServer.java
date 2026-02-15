@@ -93,7 +93,12 @@ public class RenderingServer implements AutoCloseable {
     public RenderingServer(RenderingServerConfig config) {
         this.config = config;
         this.regionManager = new AdaptiveRegionManager(config);
-        this.entityConsumer = new EntityStreamConsumer(config.upstreams(), regionManager);
+        this.entityConsumer = new EntityStreamConsumer(
+            config.upstreams(),
+            regionManager,
+            config.performance(),
+            Clock.system()
+        );
 
         log.info("RenderingServer created with config: port={}, regionLevel={}, upstreams={}",
                  config.port(), config.regionLevel(), config.upstreams().size());
@@ -131,7 +136,7 @@ public class RenderingServer implements AutoCloseable {
         log.info("Starting RenderingServer");
 
         // Create Phase 2 components
-        var ttl = java.time.Duration.ofMillis(30_000L);  // 30 second TTL (default)
+        var ttl = java.time.Duration.ofMillis(config.performance().regionCacheTtlMs());
         regionBuilder = new RegionBuilder(config.build());
         regionBuilder.setClock(clock);
 
@@ -193,10 +198,10 @@ public class RenderingServer implements AutoCloseable {
             log.info("Rate limiting enabled: {} requests/minute", config.security().rateLimitRequestsPerMinute());
         }
 
-        // rp9u: Initialize endpoint response cache (1s TTL)
+        // rp9u: Initialize endpoint response cache
         endpointCache = Caffeine.newBuilder()
-            .expireAfterWrite(Duration.ofSeconds(1))
-            .maximumSize(10)  // Small cache - only health and metrics endpoints
+            .expireAfterWrite(Duration.ofSeconds(config.performance().endpointCacheExpireSec()))
+            .maximumSize(config.performance().endpointCacheMaxSize())
             .build();
 
         // wwi6: Validate keystore path exists before Jetty starts (for clear error messages)

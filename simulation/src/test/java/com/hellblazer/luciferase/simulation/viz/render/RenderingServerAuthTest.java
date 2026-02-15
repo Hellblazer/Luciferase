@@ -55,7 +55,8 @@ class RenderingServerAuthTest {
             CacheConfig.testing(),                  // Test cache settings
             BuildConfig.testing(),                  // Test build settings
             1_000,                                  // Max entities per region
-            StreamingConfig.testing()               // Test streaming settings
+            StreamingConfig.testing(),              // Test streaming settings
+            PerformanceConfig.testing()             // Test performance settings
         );
 
         server = new RenderingServer(config);
