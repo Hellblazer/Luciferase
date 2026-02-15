@@ -491,7 +491,7 @@ public class RegionStreamer implements AutoCloseable {
             );
 
             // Send binary frame (thread-safe via synchronization)
-            synchronized (session.wsContext) {
+            synchronized (session) {
                 session.wsContext.sendBinary(frame);
             }
 
