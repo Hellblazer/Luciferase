@@ -87,17 +87,23 @@ class BuildIntegrationTest {
         // Add entity and trigger initial build
         regionManager.updateEntity("entity1", 100.0f, 100.0f, 100.0f, "PREY");
         var region = regionManager.regionForPosition(100.0f, 100.0f, 100.0f);
+
+        // Capture build count BEFORE scheduling to avoid race with fast async completion
+        int initialBuilds = builder.getTotalBuilds();
         regionManager.scheduleBuild(region, true);
 
-        // Wait for build to complete and cache to be populated
-        int initialBuilds = builder.getTotalBuilds();
+        // Wait for build to complete
         awaitBuilds(builder, initialBuilds + 1, Duration.ofSeconds(2));
 
         int buildsAfterFirst = builder.getTotalBuilds();
         assertTrue(buildsAfterFirst > initialBuilds, "Should have completed at least one build");
 
-        // Verify cache has the region
+        // Wait for cache to be populated by the async whenComplete callback
         var cacheKey = new RegionCache.CacheKey(region, 0);
+        TestUtils.awaitCondition(
+            () -> cache.get(cacheKey).isPresent(),
+            "region cached after first build",
+            Duration.ofSeconds(2));
         assertTrue(cache.get(cacheKey).isPresent(), "Region should be cached");
 
         // Schedule another build for the same region - should skip due to cache hit
@@ -126,18 +132,28 @@ class BuildIntegrationTest {
         // Add entity and build
         regionManager.updateEntity("entity1", 100.0f, 100.0f, 100.0f, "PREY");
         var region = regionManager.regionForPosition(100.0f, 100.0f, 100.0f);
+        var regionState = regionManager.getRegionState(region);
+
+        // Capture build count BEFORE scheduling to avoid race with fast async completion
+        int initialBuilds = builder.getTotalBuilds();
+        long initialBuildVersion = regionState.buildVersion().get();
         regionManager.scheduleBuild(region, true);
 
-        // Wait for first build to complete
-        int initialBuilds = builder.getTotalBuilds();
+        // Wait for first build to fully complete, including the entire whenComplete callback.
+        // buildVersion increments LAST in the callback (after cache.put and dirty.set),
+        // so waiting for it ensures the full callback has finished.
         awaitBuilds(builder, initialBuilds + 1, Duration.ofSeconds(2));
+        TestUtils.awaitCondition(
+            () -> regionState.buildVersion().get() > initialBuildVersion,
+            "build version incremented after first build",
+            Duration.ofSeconds(2));
 
         var cacheKey = new RegionCache.CacheKey(region, 0);
-        assertTrue(cache.get(cacheKey).isPresent(), "Region should be cached");
+        assertTrue(cache.get(cacheKey).isPresent(), "Region should be cached after first build");
 
         int buildsAfterFirst = builder.getTotalBuilds();
 
-        // Update entity (marks region dirty)
+        // Update entity (marks region dirty and increments modificationCount)
         regionManager.updateEntity("entity1", 105.0f, 105.0f, 105.0f, "PREY");
 
         // Verify region is dirty
@@ -147,7 +163,7 @@ class BuildIntegrationTest {
         // Invalidate cache for dirty region
         cache.invalidate(cacheKey);
 
-        // Schedule rebuild
+        // Schedule rebuild - should see cache miss and submit build
         regionManager.scheduleBuild(region, true);
 
         // Wait for second build to complete

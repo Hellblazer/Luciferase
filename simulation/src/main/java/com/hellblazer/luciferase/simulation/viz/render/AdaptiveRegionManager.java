@@ -142,19 +142,29 @@ public class AdaptiveRegionManager {
         }
 
         var state = regions.get(region);
-        if (state == null || state.entities().isEmpty()) {
+        if (state == null) {
+            log.debug("Region {} state is null, skipping build", region);
+            return;
+        }
+
+        if (state.entities().isEmpty()) {
             log.debug("Region {} has no entities, skipping build", region);
             return;
         }
 
         // Check cache first
         if (cache != null) {
-            var cacheKey = new RegionCache.CacheKey(region, 0);  // LOD 0 for now
+            var cacheKey = new RegionCache.CacheKey(region, 0);
             if (cache.get(cacheKey).isPresent()) {
                 log.debug("Region {} LOD 0 found in cache, skipping build", region);
                 return;
             }
         }
+
+        // Capture modification count before build to detect concurrent entity changes.
+        // If entities are modified while the build is in progress, the build result
+        // is stale and must not be cached or used to clear the dirty flag.
+        long modCountAtBuildStart = state.modificationCount().get();
 
         // Convert entities to positions
         var positions = state.entities().stream()
@@ -180,6 +190,15 @@ public class AdaptiveRegionManager {
                 if (error != null) {
                     log.error("Build failed for region {}: {}", region, error.getMessage());
                 } else {
+                    // Check if region was modified during the build. If so,
+                    // discard the stale result to avoid caching outdated data.
+                    long currentModCount = state.modificationCount().get();
+                    if (currentModCount != modCountAtBuildStart) {
+                        log.debug("Region {} modified during build (modCount {} -> {}), discarding stale result",
+                                region, modCountAtBuildStart, currentModCount);
+                        return;
+                    }
+
                     // Cache the built region
                     if (cache != null) {
                         var cachedRegion = RegionCache.CachedRegion.from(
@@ -191,12 +210,10 @@ public class AdaptiveRegionManager {
                     }
 
                     // Mark region clean
-                    if (state != null) {
-                        state.dirty().set(false);
-                        state.buildVersion().incrementAndGet();
-                        log.debug("Region {} built successfully (version {})",
-                                region, state.buildVersion().get());
-                    }
+                    state.dirty().set(false);
+                    state.buildVersion().incrementAndGet();
+                    log.debug("Region {} built successfully (version {})",
+                            region, state.buildVersion().get());
 
                     // Notify RegionStreamer of build completion (Phase 3)
                     if (regionStreamer != null) {
@@ -302,6 +319,7 @@ public class AdaptiveRegionManager {
             if (oldState != null) {
                 oldState.entities.removeIf(e -> e.id().equals(entityId));
                 oldState.dirty.set(true);
+                oldState.modificationCount.incrementAndGet();
                 oldState.lastModifiedMs = clock.currentTimeMillis();
                 log.debug("Entity {} moved from region {} to {}", entityId, oldRegion, newRegion);
             }
@@ -322,6 +340,7 @@ public class AdaptiveRegionManager {
         newState.entities.removeIf(e -> e.id().equals(entityId));  // Remove old position
         newState.entities.add(position);
         newState.dirty.set(true);
+        newState.modificationCount.incrementAndGet();
         newState.lastModifiedMs = clock.currentTimeMillis();
 
         entityRegionMap.put(entityId, newRegion);
@@ -341,6 +360,7 @@ public class AdaptiveRegionManager {
             if (state != null) {
                 state.entities.removeIf(e -> e.id().equals(entityId));
                 state.dirty.set(true);
+                state.modificationCount.incrementAndGet();
                 state.lastModifiedMs = clock.currentTimeMillis();
                 log.debug("Entity {} removed from region {}", entityId, region);
             }
@@ -479,6 +499,7 @@ public class AdaptiveRegionManager {
         private final CopyOnWriteArrayList<EntityPosition> entities;
         private final AtomicBoolean dirty;
         private final AtomicLong buildVersion;
+        private final AtomicLong modificationCount;
         private volatile long lastModifiedMs;
 
         public RegionState(RegionId id,
@@ -490,6 +511,7 @@ public class AdaptiveRegionManager {
             this.entities = entities;
             this.dirty = dirty;
             this.buildVersion = buildVersion;
+            this.modificationCount = new AtomicLong(0);
             this.lastModifiedMs = lastModifiedMs;
         }
 
@@ -507,6 +529,17 @@ public class AdaptiveRegionManager {
 
         public AtomicLong buildVersion() {
             return buildVersion;
+        }
+
+        /**
+         * Monotonically increasing counter that increments on every entity
+         * modification in this region (add, update, or remove). Used by the
+         * build pipeline to detect stale build results: if the count changed
+         * between build start and completion, the result is discarded to avoid
+         * caching data that does not reflect the current entity state.
+         */
+        public AtomicLong modificationCount() {
+            return modificationCount;
         }
 
         public long lastModifiedMs() {
