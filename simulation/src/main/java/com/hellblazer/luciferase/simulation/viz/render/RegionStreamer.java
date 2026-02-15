@@ -47,7 +47,7 @@ public class RegionStreamer implements AutoCloseable {
     private final StreamingConfig config;
 
     // --- Client Sessions ---
-    private final ConcurrentHashMap<String, ClientSession> sessions;
+    final ConcurrentHashMap<String, ClientSession> sessions;  // Package-private for benchmark access
 
     // --- Rate Limiting (Luciferase-heam) ---
     private final ConcurrentHashMap<String, ClientRateLimiter> rateLimiters;
@@ -207,11 +207,18 @@ public class RegionStreamer implements AutoCloseable {
 
     /**
      * Internal close handler (testable with fake WsContextWrapper).
+     * <p>
+     * Luciferase-r2ky: Flush any pending buffered messages before disconnect.
      */
     void onCloseInternal(WsContextWrapper ctx, int statusCode, String reason) {
         var sessionId = ctx.sessionId();
         var session = sessions.remove(sessionId);
         if (session != null) {
+            // Luciferase-r2ky: Flush buffer before disconnect
+            synchronized (session) {
+                flushBuffer(session);
+            }
+
             session.state = ClientSessionState.DISCONNECTING;
             viewportTracker.removeClient(sessionId);
             log.info("Client disconnected: {} (code={}, reason={})", sessionId, statusCode, reason);
@@ -457,6 +464,10 @@ public class RegionStreamer implements AutoCloseable {
     /**
      * Execute one streaming cycle: compute viewport diffs and send binary frames.
      * <p>
+     * Luciferase-r2ky: Added timeout-based buffer flush (50ms).
+     * <p>
+     * Package-private for benchmark access.
+     * <p>
      * Algorithm:
      * <ol>
      *   <li>For each STREAMING client:</li>
@@ -467,9 +478,12 @@ public class RegionStreamer implements AutoCloseable {
      *   <li>    Encode to binary frame via BinaryFrameCodec</li>
      *   <li>    Send asynchronously</li>
      *   <li>  Unpin removed regions (only if no other clients viewing)</li>
+     *   <li>  Flush buffer if 50ms elapsed since last flush</li>
      * </ol>
      */
-    private void streamingCycle() {
+    void streamingCycle() {
+        var now = clock.currentTimeMillis();
+
         for (var session : sessions.values()) {
             if (session.state != ClientSessionState.STREAMING) {
                 continue;
@@ -477,6 +491,14 @@ public class RegionStreamer implements AutoCloseable {
 
             try {
                 streamToClient(session);
+
+                // Luciferase-r2ky: Flush buffer if 50ms elapsed since last flush
+                synchronized (session) {
+                    var elapsed = now - session.lastFlushMs.get();
+                    if (elapsed >= 50 && !session.messageBuffer.isEmpty()) {
+                        flushBuffer(session);
+                    }
+                }
             } catch (Exception e) {
                 log.error("Error streaming to client {}: {}", session.sessionId, e.getMessage(), e);
                 // Continue to next client - don't crash entire cycle
@@ -545,13 +567,16 @@ public class RegionStreamer implements AutoCloseable {
     /**
      * Send binary frame asynchronously to client.
      * <p>
-     * Increments pendingSends counter, encodes to binary frame, sends via WebSocket.
+     * Luciferase-r2ky: Accumulates messages in buffer, flushes when threshold reached.
+     * Increments pendingSends counter, encodes to binary frame, adds to buffer.
      * Decrements counter on completion.
+     * <p>
+     * Package-private for benchmark access.
      *
      * @param session Client session
      * @param cachedRegion Cached region to send
      */
-    private void sendBinaryFrameAsync(ClientSession session, RegionCache.CachedRegion cachedRegion) {
+    void sendBinaryFrameAsync(ClientSession session, RegionCache.CachedRegion cachedRegion) {
         session.pendingSends.incrementAndGet();
 
         try {
@@ -562,18 +587,58 @@ public class RegionStreamer implements AutoCloseable {
                 builtRegion
             );
 
-            // Send binary frame (thread-safe via synchronization)
+            // Luciferase-r2ky: Add to buffer instead of sending immediately
             synchronized (session) {
+                session.messageBuffer.add(frame);
+
+                // Flush if buffer reaches 10 messages
+                if (session.messageBuffer.size() >= 10) {
+                    flushBuffer(session);
+                }
+            }
+
+            log.trace("Buffered binary frame for region {} LOD {} to client {} ({} bytes, buffer size: {})",
+                builtRegion.regionId(), builtRegion.lodLevel(), session.sessionId, frame.remaining(),
+                session.messageBuffer.size());
+
+        } catch (Exception e) {
+            log.error("Failed to buffer binary frame for client {}: {}", session.sessionId, e.getMessage());
+        } finally {
+            session.pendingSends.decrementAndGet();
+        }
+    }
+
+    /**
+     * Flush buffered messages to client (Luciferase-r2ky).
+     * <p>
+     * Sends all buffered binary frames and clears buffer.
+     * Must be called with session lock held.
+     * <p>
+     * Package-private for benchmark access.
+     *
+     * @param session Client session
+     */
+    void flushBuffer(ClientSession session) {
+        if (session.messageBuffer.isEmpty()) {
+            return;
+        }
+
+        var count = session.messageBuffer.size();
+        var now = clock.currentTimeMillis();
+
+        try {
+            for (var frame : session.messageBuffer) {
                 session.wsContext.sendBinary(frame);
             }
 
-            log.trace("Sent binary frame for region {} LOD {} to client {} ({} bytes)",
-                builtRegion.regionId(), builtRegion.lodLevel(), session.sessionId, frame.remaining());
+            log.trace("Flushed {} buffered messages to client {} (elapsed: {}ms)",
+                count, session.sessionId, now - session.lastFlushMs.get());
 
         } catch (Exception e) {
-            log.error("Failed to send binary frame to client {}: {}", session.sessionId, e.getMessage());
+            log.error("Failed to flush buffer for client {}: {}", session.sessionId, e.getMessage());
         } finally {
-            session.pendingSends.decrementAndGet();
+            session.messageBuffer.clear();
+            session.lastFlushMs.set(now);
         }
     }
 
@@ -705,6 +770,10 @@ public class RegionStreamer implements AutoCloseable {
         final AtomicInteger pendingSends;
         volatile ClientViewport lastViewport;  // Day 6: Track last viewport for diffing
 
+        // Luciferase-r2ky: Message batching optimization
+        final java.util.List<java.nio.ByteBuffer> messageBuffer;
+        final AtomicLong lastFlushMs;
+
         ClientSession(String sessionId, WsContextWrapper wsContext, long currentTimeMs) {
             this.sessionId = sessionId;
             this.wsContext = wsContext;
@@ -713,6 +782,10 @@ public class RegionStreamer implements AutoCloseable {
             this.lastActivityMs = new AtomicLong(currentTimeMs);
             this.pendingSends = new AtomicInteger(0);
             this.lastViewport = null;
+
+            // Luciferase-r2ky: Initialize message buffer
+            this.messageBuffer = new java.util.ArrayList<>(10);
+            this.lastFlushMs = new AtomicLong(currentTimeMs);
         }
     }
 
