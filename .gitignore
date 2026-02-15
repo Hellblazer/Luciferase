@@ -45,3 +45,7 @@ portal/logs/
 **/doc/plans/
 **/doc/archive/
 **/doc/**/.archive*/
+
+# Archived project management and FPF knowledge base
+.pm-archives/
+.quint/
