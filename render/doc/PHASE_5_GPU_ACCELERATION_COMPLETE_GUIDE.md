@@ -59,7 +59,7 @@ renderer.renderScene(dag, camera);
 
 // Retrieve results
 int[] pixels = renderer.getPixelData();
-```
+```text
 
 ### With GPU Performance Measurement
 
@@ -81,7 +81,7 @@ double occupancyGain = optimized.gpuOccupancy() - baseline.gpuOccupancy();
 
 System.out.println("Latency improvement: " + (latencyReduction / baseline.latency() * 100) + "%");
 System.out.println("Occupancy gain: " + occupancyGain);
-```
+```text
 
 ### With Stream C Activation Decision
 
@@ -102,7 +102,7 @@ if (decision.enableBeamOptimization()) {
     // Stream C: Use coherent ray batching for 30-50% traversal reduction
     renderer.enableBeamOptimization(true);
 }
-```
+```text
 
 ### With Auto-Tuning
 
@@ -119,7 +119,7 @@ renderer.applyTuningConfig(config);
 
 // Render with optimized parameters
 renderer.renderScene(dag, camera);
-```
+```text
 
 ---
 
@@ -149,7 +149,7 @@ PerformanceMetrics profileOptimized(DAGOctreeData dag, int rayCount, boolean moc
 // Comparative report
 PerformanceReport compareBaselineVsOptimized(PerformanceMetrics baseline,
                                               PerformanceMetrics optimized);
-```
+```text
 
 #### P2: Stream C Activation Decision
 
@@ -195,13 +195,13 @@ PerformanceReport compareBaselineVsOptimized(PerformanceMetrics baseline,
 | `DAGOpenCLRenderer.buildOptionsForDAGTraversal()` | Generate optimized build options |
 
 **Build Options**:
-```
+```text
 -DDAG_TRAVERSAL=1              # Enable DAG-specific code paths
 -DABSOLUTE_ADDRESSING=1         # Use childPtr directly (no parent offset)
 -DMAX_DEPTH=16                  # Configurable stack depth (Stream A)
 -DWORKGROUP_SIZE=32             # Tuned workgroup size (Stream B)
 -D__CUDA_ARCH__=700             # GPU-specific flags
-```
+```text
 
 ---
 
@@ -209,61 +209,86 @@ PerformanceReport compareBaselineVsOptimized(PerformanceMetrics baseline,
 
 ### Layered Architecture
 
-```
-┌─────────────────────────────────────────────────┐
-│  Rendering Application (User Code)              │
-├─────────────────────────────────────────────────┤
-│  DAGOpenCLRenderer (Phase 3 GPU Pipeline)       │
-├─────────────────────────────────────────────────┤
-│  P1 Performance Measurement  P2 Stream C         │
-│  GPUPerformanceProfiler      StreamCActivation  │
-├─────────────────────────────────────────────────┤
-│  P3 Multi-Vendor Testing     P4 Kernel Recomp   │
-│  GPUVendorDetector           EnhancedOpenCLKernel
-├─────────────────────────────────────────────────┤
-│  Stream A: Stack Depth       Stream B: Tuning   │
-│  (LDS reduction)             (Occupancy)        │
-├─────────────────────────────────────────────────┤
-│  OpenCL Runtime (LWJGL, FFM API)                │
-├─────────────────────────────────────────────────┤
-│  GPU Hardware (NVIDIA/AMD/Intel/Apple)          │
-└─────────────────────────────────────────────────┘
-```
+```mermaid
+graph TD
+    A["Rendering Application<br/>User Code"]
+    B["DAGOpenCLRenderer<br/>Phase 3 GPU Pipeline"]
+    C["P1 Performance Measurement<br/>GPUPerformanceProfiler"]
+    D["P2 Stream C<br/>StreamCActivation"]
+    E["P3 Multi-Vendor Testing<br/>GPUVendorDetector"]
+    F["P4 Kernel Recompilation<br/>EnhancedOpenCLKernel"]
+    G["Stream A: Stack Depth<br/>LDS reduction"]
+    H["Stream B: Tuning<br/>Occupancy"]
+    I["OpenCL Runtime<br/>LWJGL, FFM API"]
+    J["GPU Hardware<br/>NVIDIA/AMD/Intel/Apple"]
+
+    A --> B
+    B --> C
+    B --> D
+    B --> E
+    B --> F
+    C --> G
+    D --> H
+    E --> I
+    F --> I
+    G --> I
+    H --> I
+    I --> J
+
+    style A fill:#1F77E1
+    style B fill:#4A90E2
+    style C fill:#7ED321
+    style D fill:#7ED321
+    style E fill:#F5A623
+    style F fill:#F5A623
+    style G fill:#BD10E0
+    style H fill:#BD10E0
+    style I fill:#FF6B6B
+    style J fill:#C41E3A
+```text
 
 ### Data Flow: Rendering with Phase 5
 
-```
-User Code
-    │
-    ├─→ Load DAG (Phase 2 output)
-    │
-    ├─→ Create DAGOpenCLRenderer
-    │
-    ├─→ [P1] Profile Performance
-    │     Baseline vs Optimized
-    │
-    ├─→ [P2] Check Stream C Decision
-    │     Analyze ray coherence
-    │
-    ├─→ [P3] Detect GPU vendor
-    │     Load vendor-specific config
-    │
-    ├─→ [P4] Recompile kernel
-    │     Apply tuning + build options
-    │
-    ├─→ Upload data to GPU
-    │
-    ├─→ [Stream A] Cache setup
-    │     Shared memory allocation
-    │
-    ├─→ [Stream B] Workgroup tuning
-    │     Auto-tuner selection
-    │
-    ├─→ Execute kernel
-    │     GPU ray traversal
-    │
-    └─→ Retrieve results
-```
+```mermaid
+graph TD
+    A["User Code"]
+    B["Load DAG<br/>Phase 2 output"]
+    C["Create DAGOpenCLRenderer"]
+    D["P1: Profile Performance<br/>Baseline vs Optimized"]
+    E["P2: Check Stream C Decision<br/>Analyze ray coherence"]
+    F["P3: Detect GPU vendor<br/>Load vendor-specific config"]
+    G["P4: Recompile kernel<br/>Apply tuning + build options"]
+    H["Upload data to GPU"]
+    I["Stream A: Cache setup<br/>Shared memory allocation"]
+    J["Stream B: Workgroup tuning<br/>Auto-tuner selection"]
+    K["Execute kernel<br/>GPU ray traversal"]
+    L["Retrieve results"]
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+    H --> I
+    I --> J
+    J --> K
+    K --> L
+
+    style A fill:#1F77E1
+    style B fill:#4A90E2
+    style C fill:#4A90E2
+    style D fill:#7ED321
+    style E fill:#7ED321
+    style F fill:#F5A623
+    style G fill:#F5A623
+    style H fill:#FF6B6B
+    style I fill:#BD10E0
+    style J fill:#BD10E0
+    style K fill:#C41E3A
+    style L fill:#4A90E2
+```text
 
 ### Key Design Decisions
 
@@ -299,7 +324,7 @@ Use when you just need fast rendering without profiling.
 var renderer = new DAGOpenCLRenderer(1024, 768);
 renderer.renderScene(dag, camera);
 int[] pixels = renderer.getPixelData();
-```
+```text
 
 ### Pattern 2: Performance-Aware Rendering
 
@@ -314,7 +339,7 @@ System.out.println("Speedup: " + baseline.latency() / optimized.latency() + "x")
 
 var renderer = new DAGOpenCLRenderer(1024, 768);
 renderer.renderScene(dag, camera);
-```
+```text
 
 ### Pattern 3: Adaptive GPU Acceleration
 
@@ -334,7 +359,7 @@ var decision = StreamCActivationDecision.decide(
 var renderer = new DAGOpenCLRenderer(1024, 768);
 renderer.enableBeamOptimization(decision.enableBeamOptimization());
 renderer.renderScene(dag, camera);
-```
+```text
 
 ### Pattern 4: Multi-Vendor Deployment
 
@@ -354,7 +379,7 @@ var config = switch (vendor) {
 var renderer = new DAGOpenCLRenderer(1024, 768);
 renderer.applyVendorConfig(config);
 renderer.renderScene(dag, camera);
-```
+```text
 
 ### Pattern 5: Auto-Tuned GPU Rendering
 
@@ -370,7 +395,7 @@ var config = autoTuner.selectOptimalConfig();
 var renderer = new DAGOpenCLRenderer(1024, 768);
 renderer.applyTuningConfig(config);
 renderer.renderScene(dag, camera);
-```
+```text
 
 ---
 
@@ -387,7 +412,7 @@ public record PerformanceMetrics(
     int maxTraversalDepth,        // Deepest octree level traversed
     long timestamp                // Measurement timestamp
 ) {}
-```
+```text
 
 ### Profiling Workflow
 
@@ -401,7 +426,7 @@ var baseline = profiler.profileBaseline(dag, rayCount, mockMode=false);
 // latency: 850µs for 100K rays
 // occupancy: 75%
 // cache hit: 0% (Stream A not enabled)
-```
+```text
 
 **2. Optimized Profile (Streams A+B)**
 
@@ -412,7 +437,7 @@ var optimized = profiler.profileOptimized(dag, rayCount, mockMode=false);
 // latency: 450µs for 100K rays (47% improvement)
 // occupancy: 85% (10% gain from Stack A, Stream B tuning)
 // cache hit: 65% (from shared memory cache)
-```
+```text
 
 **3. Performance Report**
 
@@ -424,7 +449,7 @@ var report = profiler.compareBaselineVsOptimized(baseline, optimized);
 // Throughput gain: 1.89x
 // Occupancy improvement: 13.3%
 // Cache hit rate (Stream A): 65.2%
-```
+```text
 
 ### Mock vs Real GPU Profiling
 
@@ -448,14 +473,23 @@ var report = profiler.compareBaselineVsOptimized(baseline, optimized);
 
 **Decision Tree**:
 
-```
-Is latency < 500µs target?
-├─ YES → SKIP_BEAM (no need for optimization)
-└─ NO
-   └─ Is coherence ≥ 0.5?
-      ├─ YES → ENABLE_BEAM (coherent rays benefit from frustum batching)
-      └─ NO → INVESTIGATE_ALTERNATIVES (low coherence, consider other approaches)
-```
+```mermaid
+graph TD
+    A["Is latency < 500µs?"]
+    B["SKIP_BEAM<br/>No optimization needed"]
+    C["Is coherence ≥ 0.5?"]
+    D["ENABLE_BEAM<br/>Coherent rays benefit<br/>from frustum batching"]
+    E["INVESTIGATE_ALTERNATIVES<br/>Low coherence,<br/>consider other approaches"]
+
+    A -->|YES| B
+    A -->|NO| C
+    C -->|YES| D
+    C -->|NO| E
+
+    style B fill:#7ED321
+    style D fill:#7ED321
+    style E fill:#F5A623
+```text
 
 ### RayCoherenceAnalyzer
 
@@ -470,7 +504,7 @@ if (coherence >= 0.5) {
 } else {
     System.out.println("Low coherence: rays are mostly independent");
 }
-```
+```text
 
 ### Stream C: Beam Optimization
 
@@ -487,7 +521,7 @@ for (uint i = rayStart; i < rayEnd; i++) {
 
 // Traverse using beam frustum for early rejection
 // Only process individual rays in leaf nodes
-```
+```text
 
 **Expected Benefits**:
 - 30-50% reduction in nodes visited (when coherence ≥ 0.5)
@@ -506,7 +540,7 @@ GPUVendor vendor = detector.detectVendor();
 
 System.out.println("Detected: " + vendor.getDisplayName());
 // Output: "NVIDIA GeForce RTX 4090"
-```
+```text
 
 ### Vendor-Specific Handling
 
@@ -561,7 +595,7 @@ RUN_GPU_TESTS=true mvn test -Dtest=DAGOpenCLRendererVendorTest
 
 # Tier 1 + Tier 2 + Tier 3 (vendor-specific matrix)
 GPU_VENDOR=NVIDIA RUN_GPU_TESTS=true mvn test -Dtest=DAGOpenCLRendererVendorTest
-```
+```text
 
 ---
 
@@ -573,16 +607,16 @@ The `EnhancedOpenCLKernel` class manages runtime kernel compilation with optimiz
 
 **Standard Build Options**:
 
-```
+```text
 -DDAG_TRAVERSAL=1              # Enable DAG path (vs SVO path)
 -DABSOLUTE_ADDRESSING=1         # Direct child pointer indexing
 -DMAX_DEPTH=16                  # Stack depth (configurable per GPU)
 -DWORKGROUP_SIZE=32             # Threads per workgroup (tuned per GPU)
-```
+```text
 
 **Vendor-Specific Options**:
 
-```
+```yaml
 NVIDIA:
   -D__CUDA_ARCH__=700           # Compute Capability
   -cl-mad-enable                # Faster MAD operations
@@ -597,7 +631,7 @@ Intel:
 Apple:
   -D__METAL__                   # Metal backend
   -cl-denorms-are-zero          # M-series optimization
-```
+```text
 
 ### Runtime Compilation
 
@@ -612,19 +646,19 @@ String options = renderer.buildOptionsForDAGTraversal();
 
 // Kernel recompiled with optimized options
 renderer.applyTuningConfig(tuningConfig);
-```
+```text
 
 ### Caching Strategy
 
 Compiled kernels are cached to avoid recompilation:
 
-```
+```text
 ~/.cache/luciferase/gpu-tuning/
 ├── nvidia_rtx_4090_depth16_size96.cl
 ├── amd_radeon_rx_7900_depth24_size128.cl
 ├── intel_arc_a770_depth20_size64.cl
 └── apple_m2_max_depth16_size32.cl
-```
+```text
 
 ---
 
@@ -637,7 +671,7 @@ Compiled kernels are cached to avoid recompilation:
 ```java
 var renderer = new ESVOOpenCLRenderer(1024, 768);
 renderer.renderScene(svo, camera);
-```
+```text
 
 **After**: GPU-accelerated with Phase 5
 
@@ -654,7 +688,7 @@ renderer.renderScene(dag, camera);
 var profiler = new GPUPerformanceProfiler();
 var metrics = profiler.profileOptimized(dag, 100_000, mockMode=true);
 System.out.println("GPU latency: " + metrics.latencyMicros() + "µs");
-```
+```text
 
 ### Minimal Integration (No Changes to Existing Code)
 
@@ -668,7 +702,7 @@ AbstractOpenCLRenderer<ESVONodeUnified, DAGOctreeData> renderer =
 // Use exactly like ESVO renderer
 renderer.renderScene(dag, camera);
 int[] pixels = renderer.getPixelData();
-```
+```text
 
 ### Testing Phase 5 Code
 
@@ -699,7 +733,7 @@ void testPhase5Integration() {
     var options = renderer.buildOptionsForDAGTraversal();
     assertTrue(options.contains("ABSOLUTE_ADDRESSING=1"));
 }
-```
+```text
 
 ---
 
@@ -878,7 +912,7 @@ int[] pixels = renderer.getPixelData()                // Retrieve results
 
 // Cleanup
 renderer.dispose()                                    // Release GPU memory
-```
+```text
 
 ### GPUPerformanceProfiler
 
@@ -892,7 +926,7 @@ PerformanceMetrics optimized = profiler.profileOptimized(dag, rayCount, mockMode
 
 // Comparison
 PerformanceReport report = profiler.compareBaselineVsOptimized(baseline, optimized)
-```
+```text
 
 ### StreamCActivationDecision
 
@@ -907,7 +941,7 @@ StreamCActivationDecision decision = StreamCActivationDecision.decide(
 // Result
 decision.enableBeamOptimization()   // boolean
 decision.reason()                   // String explanation
-```
+```text
 
 ### GPUVendorDetector
 
@@ -918,7 +952,7 @@ GPUVendor vendor = new GPUVendorDetector().detectVendor()
 // Vendor info
 vendor.getDisplayName()             // "NVIDIA GeForce RTX 4090"
 vendor.getCapabilities()            // GPU capabilities
-```
+```text
 
 ### GPUAutoTuner
 
@@ -932,7 +966,7 @@ Optional<WorkgroupConfig> cached = autoTuner.loadFromCache()
 
 // Caching
 autoTuner.cacheConfiguration(config)
-```
+```text
 
 ---
 

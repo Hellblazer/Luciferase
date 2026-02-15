@@ -46,22 +46,22 @@ The GPU Performance Measurement Framework (P1) provides:
 ### Sample Results
 
 **Baseline (Phase 2 Kernel)**:
-```
+```text
 latency:      850 µs/100K rays = 8.5 µs per ray
 throughput:   11,764 rays/µs
 occupancy:    75%
 cache hits:   0% (no cache)
 depth:        16 (typical for 65K³ resolution)
-```
+```text
 
 **Optimized (Streams A+B)**:
-```
+```text
 latency:      450 µs/100K rays = 4.5 µs per ray  ← 47% faster
 throughput:   22,222 rays/µs                      ← 1.89x
 occupancy:    85%                                 ← 13% gain
 cache hits:   65%                                 ← Stream A benefit
 depth:        16 (same)
-```
+```text
 
 ---
 
@@ -69,25 +69,40 @@ depth:        16 (same)
 
 ### Component Hierarchy
 
-```
-GPUPerformanceProfiler (public API)
-├── generateMockBaselineMetrics()          [Mock mode]
-│   └── Random seed 12345 for determinism
-├── generateMockOptimizedMetrics()         [Mock mode]
-│   └── Pre-scaled improvements from Phase 3 data
-├── measureRealGPUBaseline()               [Real GPU]
-│   ├── Create GPU context
-│   ├── Compile baseline kernel (no cache)
-│   ├── Upload DAG data
-│   ├── Execute kernel with OpenCL timers
-│   └── Return actual measurements
-└── measureRealGPUOptimized()              [Real GPU]
-    ├── Create GPU context with cache
-    ├── Compile optimized kernel (cache + tuning)
-    ├── Upload DAG data
-    ├── Execute kernel with OpenCL timers
-    └── Return actual measurements
-```
+```mermaid
+graph TD
+    A["GPUPerformanceProfiler (public API)"]
+    B["Mock Baseline"]
+    C["Mock Optimized"]
+    D["Real GPU Baseline"]
+    E["Real GPU Optimized"]
+
+    A --> B
+    A --> C
+    A --> D
+    A --> E
+
+    B --> B1["Random seed 12345<br/>for determinism"]
+    C --> C1["Pre-scaled improvements<br/>from Phase 3 data"]
+
+    D --> D1["Create GPU context"]
+    D --> D2["Compile baseline kernel<br/>no cache"]
+    D --> D3["Upload DAG data"]
+    D --> D4["Execute with OpenCL timers"]
+    D --> D5["Return measurements"]
+
+    E --> E1["Create GPU context<br/>with cache"]
+    E --> E2["Compile optimized kernel<br/>cache + tuning"]
+    E --> E3["Upload DAG data"]
+    E --> E4["Execute with OpenCL timers"]
+    E --> E5["Return measurements"]
+
+    style A fill:#4A90E2
+    style B fill:#7ED321
+    style C fill:#7ED321
+    style D fill:#F5A623
+    style E fill:#F5A623
+```text
 
 ### Data Structures
 
@@ -100,11 +115,11 @@ public record PerformanceMetrics(
     int maxTraversalDepth,      // Maximum octree level traversed
     long timestamp              // System.currentTimeMillis() of measurement
 ) {}
-```
+```text
 
 ### Computation Formulas
 
-```
+```text
 latencyMicros = GPU kernel execution time (from OpenCL events)
 
 throughputRaysPerUs = rayCount / latencyMicros
@@ -118,7 +133,7 @@ occupancyGain = optimized.occupancy - baseline.occupancy
 
 cacheHitRate = (cacheHits / cacheAccesses) * 100
   Example: 65,000 hits / 100,000 accesses = 65%
-```
+```text
 
 ---
 
@@ -140,7 +155,7 @@ var metrics = new PerformanceMetrics(
 // Via profiler (normal usage)
 var profiler = new GPUPerformanceProfiler();
 var metrics = profiler.profileOptimized(dag, 100_000, mockMode);
-```
+```text
 
 ### Accessing Metrics
 
@@ -155,7 +170,7 @@ int depth = metrics.maxTraversalDepth();
 // Derived metrics
 double latencyPerRay = metrics.latencyMicros() / 100_000.0;  // µs per ray
 double raysPerMs = metrics.throughputRaysPerUs() * 1000.0;   // rays/ms
-```
+```text
 
 ### Metrics Over Ray Counts
 
@@ -169,7 +184,7 @@ PerformanceMetrics m1m = profiler.profileOptimized(dag, 1_000_000, false);
 
 // Expected: linear scaling with ray count
 assert m1m.latencyMicros() ≈ m100k.latencyMicros() * 10
-```
+```text
 
 ---
 
@@ -184,7 +199,7 @@ var profiler = new GPUPerformanceProfiler();
 // Profiler automatically:
 // - Uses Random seed 12345 for mock determinism
 // - Defaults to mock mode (no GPU required)
-```
+```text
 
 ### Mock Mode Profiling
 
@@ -203,7 +218,7 @@ var optimized = profiler.profileOptimized(dag, 100_000, mockMode=true);
 // Comparison
 System.out.println("Speedup: " + baseline.latencyMicros() / optimized.latencyMicros() + "x");
 // Output: "Speedup: 1.89x"
-```
+```text
 
 ### Real GPU Profiling
 
@@ -226,7 +241,7 @@ try {
     // Fall back to mock mode
     var metrics = profiler.profileOptimized(dag, 100_000, mockMode=true);
 }
-```
+```text
 
 ### Multiple Ray Counts
 
@@ -246,7 +261,7 @@ System.out.println("10M rays:   " + m10m.latencyMicros() + "µs");
 // 100K rays:  450µs
 // 1M rays:    4500µs
 // 10M rays:   45000µs
-```
+```text
 
 ---
 
@@ -297,7 +312,7 @@ System.out.println(report.formatReport());
 //   Throughput:  +89.0% (222 vs 117 rays/µs)
 //   Occupancy:   +13.3% (85% vs 75%)
 // ========================================
-```
+```text
 
 ### Decision-Making Workflow: Measurement → Stream C Gate
 
@@ -342,7 +357,7 @@ if (decision.enableBeamOptimization()) {
 // Making Stream C decision...
 // ✓ Enabling Stream C (beam optimization)
 // (High coherence detected: 72% of rays share upper-level nodes)
-```
+```text
 
 ### Iterative Profiling: Tuning Feedback Loop
 
@@ -388,7 +403,7 @@ for (int depth = 32; depth >= 8; depth -= 4) {
 // Testing MAX_DEPTH=16
 //   Latency: 750µs       ← Stack overflows
 //   Occupancy: 95%
-```
+```text
 
 ---
 
@@ -409,7 +424,7 @@ for (int depth = 32; depth >= 8; depth -= 4) {
 - No GPU required
 
 **Metrics Generation**:
-```
+```yaml
 Baseline (mock):
   latency = 850µs + random(-50, +50)
   occupancy = 75% + random(-2, +2)
@@ -419,7 +434,7 @@ Optimized (mock):
   latency = baseline * 0.53 + random(-30, +30)
   occupancy = baseline + 10% + random(-2, +2)
   cache hits = 60-70% (Stream A benefit)
-```
+```text
 
 ### Real GPU Mode
 
@@ -445,7 +460,7 @@ RUN_GPU_TESTS=true mvn test -Dtest=GPUPerformanceProfilerTest
 
 # Profile with specific GPU
 GPU_VENDOR=NVIDIA RUN_GPU_TESTS=true mvn test
-```
+```text
 
 ### Fallback Pattern
 
@@ -460,7 +475,7 @@ public PerformanceMetrics profileWithFallback(DAGOctreeData dag, int rayCount) {
         return profiler.profileOptimized(dag, rayCount, mockMode=true);
     }
 }
-```
+```text
 
 ---
 
@@ -470,22 +485,22 @@ public PerformanceMetrics profileWithFallback(DAGOctreeData dag, int rayCount) {
 
 **Definition**: Time for GPU kernel to process the ray batch
 
-```
+```text
 latency = GPU kernel execution time (microseconds)
 
 Derived metrics:
   latency per ray = latency / ray count
   rays per millisecond = ray count / (latency / 1000)
   rays per second = ray count / (latency / 1_000_000)
-```
+```text
 
 **Example**:
-```
+```text
 latency: 450µs for 100K rays
 → 4.5µs per ray
 → 222K rays/ms
 → 222M rays/sec
-```
+```text
 
 **Performance Targets**:
 - 100K rays: <5ms (10x GPU speedup goal)
@@ -496,16 +511,16 @@ latency: 450µs for 100K rays
 
 **Definition**: Rays processed per microsecond
 
-```
+```text
 throughput = ray count / latency (rays/µs)
-```
+```text
 
 **Example**:
-```
+```text
 100K rays / 450µs = 222 rays/µs
 vs baseline: 100K rays / 850µs = 117 rays/µs
 → 89% improvement
-```
+```text
 
 **Interpretation**:
 - Higher is better
@@ -516,7 +531,7 @@ vs baseline: 100K rays / 850µs = 117 rays/µs
 
 **Definition**: Percentage of GPU compute units actively executing code
 
-```
+```text
 occupancy (%) = (active workgroups / max workgroups) * 100
 
 Factors affecting occupancy:
@@ -524,40 +539,40 @@ Factors affecting occupancy:
 - Register usage per work item (higher → lower occupancy)
 - Local memory (LDS) usage (higher → lower occupancy)
 - Max work items per compute unit
-```
+```text
 
 **Example**:
-```
+```text
 Baseline: 75% occupancy
 Optimized: 85% occupancy
 → 10 percentage point improvement from Stream A (stack reduction)
 → More GPU compute units can run concurrent work
-```
+```text
 
 **Occupancy Ladder** (NVIDIA):
-```
+```yaml
 Waves per Execution Unit (SIMD):
   1 wave: 25-33% occupancy
   2 waves: 50-66% occupancy
   3 waves: 75-83% occupancy    ← Baseline target
   4 waves: 100% occupancy      ← Optimized target
-```
+```text
 
 ### Understanding Cache Hit Rate
 
 **Definition**: Percentage of node accesses satisfied by shared memory (Stream A)
 
-```
+```text
 cache hit rate (%) = (hits / accesses) * 100
 
 Example:
   hits: 65,000 accesses to cached nodes
   accesses: 100,000 total node accesses
   → 65% cache hit rate
-```
+```text
 
 **Impact**:
-```
+```yaml
 Memory access patterns:
 - Cache hit: ~4 cycles (L1 latency)
 - Cache miss: ~100+ cycles (global memory latency)
@@ -569,13 +584,13 @@ With 65% cache hit rate:
               = 37.6 cycles per access
   vs 100 without cache
   → 2.66x speedup from cache alone
-```
+```text
 
 ### Understanding Traversal Depth
 
 **Definition**: Maximum octree level reached during traversal
 
-```
+```text
 depth = log₈(largest scene subdivision)
 
 Example:
@@ -585,16 +600,16 @@ Example:
 
   But actual traversal rarely goes to max depth
   → 16 levels measured (includes overhead)
-```
+```text
 
 **Typical Values**:
-```
+```text
 1K³:     depth ≈ 4 (for 1000 = 8^2.4)
 4K³:     depth ≈ 5 (for 4096 = 8^3)
 16K³:    depth ≈ 6 (for 16384 = 8^3.7)
 65K³:    depth ≈ 7 (for 65536 = 8^5.3)
 256K³:   depth ≈ 8 (for 262144 = 8^6)
-```
+```text
 
 ---
 
@@ -612,7 +627,7 @@ var optimized = profiler.profileOptimized(dag, 100_000, mockMode=false);
 double speedup = baseline.latencyMicros() / optimized.latencyMicros();
 assert speedup >= 10.0 : "GPU speedup below 10x target";
 System.out.println("✓ GPU speedup validated: " + String.format("%.1f", speedup) + "x");
-```
+```text
 
 ### Use Case 2: Compare Across GPUs
 
@@ -632,7 +647,7 @@ for (String gpu : List.of("NVIDIA_RTX_4090", "AMD_RX_7900", "Intel_Arc_A770")) {
 // Intel_Arc_A770: 500µs    (11% slower)
 //
 // All within acceptable range (<25% variance)
-```
+```text
 
 ### Use Case 3: Determine Stream C Activation
 
@@ -649,7 +664,7 @@ if (metrics.latencyMicros() < 500) {
 } else {
     System.out.println("Low coherence, investigate other optimizations");
 }
-```
+```text
 
 ### Use Case 4: Profile for Production Deployment
 
@@ -673,7 +688,7 @@ results.forEach((scene, metrics) -> {
 
 // Save to file for regression tracking
 savePerformanceBaseline(results);
-```
+```text
 
 ---
 
@@ -685,28 +700,28 @@ From profiler metrics, identify and optimize:
 
 **1. Occupancy Low?** → Apply Stream A
 
-```
+```text
 if (optimized.gpuOccupancy() < 70%) {
     // Enable stack depth reduction (Stream A)
     // Reduce LDS memory per workgroup
     System.out.println("Enable Stream A: stack depth optimization");
 }
-```
+```text
 
 **2. Cache Hit Rate Low?** → Check Stream A
 
-```
+```text
 if (optimized.cacheHitRate() < 50%) {
     // Stream A shared memory cache should be 60%+
     System.out.println("Stream A cache not optimized");
     System.out.println("  Check: CACHE_SIZE (1024 entries)");
     System.out.println("  Check: Hash function distribution");
 }
-```
+```text
 
 **3. Latency Still High?** → Check Stream B
 
-```
+```text
 if (optimized.latencyMicros() > 500) {
     // Try different workgroup sizes
     for (int wgSize : List.of(32, 64, 128, 256)) {
@@ -717,11 +732,11 @@ if (optimized.latencyMicros() > 500) {
     }
     // Choose best
 }
-```
+```text
 
 **4. Still Not Meeting Target?** → Check Stream C
 
-```
+```text
 if (optimized.latencyMicros() > 500 && hasHighCoherence) {
     // Enable beam optimization (Stream C)
     System.out.println("Enable Stream C: beam optimization");
@@ -729,11 +744,11 @@ if (optimized.latencyMicros() > 500 && hasHighCoherence) {
     metrics = profiler.profileOptimized(dag, 100_000, mockMode);
     System.out.println("After Stream C: " + metrics.latencyMicros() + "µs");
 }
-```
+```text
 
 ### Optimization Checklist
 
-```
+```text
 □ Baseline latency measured
 □ Optimized latency measured
 □ Speedup ≥ 10x confirmed
@@ -742,7 +757,7 @@ if (optimized.latencyMicros() > 500 && hasHighCoherence) {
 □ Stream C evaluated and applied if beneficial
 □ Multi-vendor tested (NVIDIA, AMD, Intel, Apple)
 □ Results documented and baselined
-```
+```text
 
 ---
 
@@ -771,7 +786,7 @@ public class GPUPerformanceProfiler {
         PerformanceMetrics optimized
     )
 }
-```
+```text
 
 ### PerformanceMetrics
 
@@ -792,7 +807,7 @@ public record PerformanceMetrics(
     public int maxTraversalDepth() { ... }
     public long timestamp() { ... }
 }
-```
+```text
 
 ### PerformanceReport
 
@@ -803,7 +818,7 @@ public class PerformanceReport {
     public double getOccupancyGain() { ... }         // percentage points
     public String formatReport() { ... }             // human-readable
 }
-```
+```text
 
 ---
 

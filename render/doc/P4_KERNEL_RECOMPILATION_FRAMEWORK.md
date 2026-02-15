@@ -27,7 +27,7 @@ Enhanced OpenCL kernel compilation to support runtime parameter override via bui
 void compile(String source, String entryPoint, String buildOptions)
 void recompile(String source, String entryPoint, String buildOptions)
 long getKernelHandle()  // For AbstractOpenCLRenderer integration
-```
+```text
 
 **Build Options Support**:
 - `-D SYMBOL=value`: Preprocessor defines
@@ -45,7 +45,7 @@ try (var kernel = EnhancedOpenCLKernel.create("rayTracer")) {
     // Later, recompile with different parameters
     kernel.recompile(kernelSource, "rayTraverse", "-D MAX_TRAVERSAL_DEPTH=24");
 }
-```
+```text
 
 ### Phase 2: DAGOpenCLRenderer Integration 🔄
 
@@ -57,30 +57,29 @@ try (var kernel = EnhancedOpenCLKernel.create("rayTracer")) {
 3. Created `recompileKernelWithParameters(WorkgroupConfig)` method
 
 **Recompilation Flow**:
-```java
-public void optimizeForDevice() {
-    // 1. Detect GPU capabilities
-    gpuCapabilities = detectGPUCapabilities();
 
-    // 2. Load or generate tuning config
-    tuningConfig = autoTuner.selectOptimalConfigFromProfiles();
+```mermaid
+graph TD
+    A["DAGOpenCLRenderer.optimizeForDevice()"]
+    B["Detect GPU Capabilities"]
+    C["Load/Generate Tuning Config<br/>from GPUAutoTuner"]
+    D["Build OpenCL Compiler Options<br/>-D MAX_TRAVERSAL_DEPTH<br/>-D WORKGROUP_SIZE"]
+    E["Recompile Kernel<br/>with Enhanced Parameters"]
+    F["Kernel Ready<br/>for GPU Execution"]
 
-    // 3. Recompile kernel with tuned parameters
-    recompileKernelWithParameters(tuningConfig);
-}
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
 
-private void recompileKernelWithParameters(WorkgroupConfig config) {
-    // Build OpenCL compiler options
-    String buildOptions = String.format(
-        "-D MAX_TRAVERSAL_DEPTH=%d -D WORKGROUP_SIZE=%d",
-        config.maxTraversalDepth(),
-        config.workgroupSize()
-    );
-
-    // Recompile with enhanced kernel
-    enhancedKernel.recompile(kernelSource, "rayTraverseDAG", buildOptions);
-}
-```
+    style A fill:#4A90E2
+    style B fill:#7ED321
+    style C fill:#7ED321
+    style D fill:#F5A623
+    style E fill:#BD10E0
+    style F fill:#50E3C2
+```text
 
 **Performance Impact**:
 - MAX_TRAVERSAL_DEPTH 32→16: 75% LDS reduction, higher GPU occupancy
@@ -151,7 +150,7 @@ private void recompileKernelWithParameters(WorkgroupConfig config) {
 ```java
 var safeBuildOptions = (buildOptions != null) ? buildOptions : "";
 var buildStatus = clBuildProgram(program, devices, safeBuildOptions, null, NULL);
-```
+```text
 
 **Rationale**: OpenCL's `clBuildProgram` expects non-null string, even if empty.
 
@@ -160,7 +159,7 @@ var buildStatus = clBuildProgram(program, devices, safeBuildOptions, null, NULL)
 ### GPU Auto-Tuner Integration
 
 **Workflow**:
-```
+```text
 1. DAGOpenCLRenderer.initialize()
 2. DAGOpenCLRenderer.optimizeForDevice()
    ├─ GPUCapabilities detected
@@ -168,7 +167,7 @@ var buildStatus = clBuildProgram(program, devices, safeBuildOptions, null, NULL)
    ├─ WorkgroupConfig generated (depth=16, size=64)
    └─ recompileKernelWithParameters(config)
        └─ EnhancedOpenCLKernel.recompile(..., buildOptions)
-```
+```text
 
 ### GPU Tuning Profiles
 
@@ -179,7 +178,7 @@ WorkgroupConfig optimal = WorkgroupConfig.withParameters(
     16,   // maxTraversalDepth (reduced from 32 for occupancy)
     gpuCapabilities
 );
-```
+```text
 
 ## Performance Expectations
 
@@ -220,25 +219,25 @@ WorkgroupConfig optimal = WorkgroupConfig.withParameters(
 ## File Structure
 
 **Production Code**:
-```
+```text
 render/src/main/java/com/hellblazer/luciferase/
 ├── sparse/gpu/
 │   └── EnhancedOpenCLKernel.java (NEW, 350 lines)
 └── esvo/gpu/
     └── DAGOpenCLRenderer.java (ENHANCED, +60 lines)
-```
+```text
 
 **Test Code**:
-```
+```text
 render/src/test/java/com/hellblazer/luciferase/sparse/gpu/
 └── EnhancedOpenCLKernelTest.java (NEW, 400 lines)
-```
+```text
 
 **Documentation**:
-```
+```text
 render/doc/
 └── P4_KERNEL_RECOMPILATION_FRAMEWORK.md (THIS FILE)
-```
+```text
 
 ## Known Issues and Future Work
 
@@ -312,7 +311,7 @@ renderer.uploadData(dagData);
 renderer.renderFrame(camera, lookAt, fov);
 
 // Result: 10-15% faster rendering due to optimized kernel parameters
-```
+```text
 
 ## References
 

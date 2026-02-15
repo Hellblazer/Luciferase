@@ -28,40 +28,40 @@ P4 (Phase 5 P4) provides runtime kernel compilation with GPU-specific optimizati
 
 #### Standard Options
 
-```
+```text
 -DDAG_TRAVERSAL=1            # Enable DAG path (vs SVO)
 -DABSOLUTE_ADDRESSING=1       # Direct childPtr indexing
 -DMAX_DEPTH=16                # Stack depth (tuned per GPU)
 -DWORKGROUP_SIZE=32           # Threads per workgroup (tuned)
-```
+```text
 
 #### Vendor-Specific Options
 
 **NVIDIA**:
-```
+```text
 -D__CUDA_ARCH__=700           # Volta compute capability
 -cl-mad-enable                # Multiply-Add enable
 -cl-denorms-are-zero          # Denormal handling
-```
+```text
 
 **AMD**:
-```
+```text
 -D__GCN__                     # GCN architecture flag
 -cl-fast-relaxed-math         # Relaxed IEEE 754
 -cl-mad-enable                # MAD optimization
-```
+```text
 
 **Intel**:
-```
+```text
 -cl-fast-relaxed-math         # Precision relaxation
 -cl-denorms-are-zero          # Denormal handling
-```
+```text
 
 **Apple**:
-```
+```text
 -D__METAL__                   # Metal backend
 -cl-fast-relaxed-math         # Relaxed math mode
-```
+```text
 
 ### API
 
@@ -85,7 +85,7 @@ public class EnhancedOpenCLKernel {
     // Get compiled kernel
     public cl_kernel getCompiledKernel()
 }
-```
+```text
 
 ### Usage Pattern
 
@@ -111,13 +111,13 @@ kernel.compile();
 // 5. Use compiled kernel
 cl_kernel clKernel = kernel.getCompiledKernel();
 // Execute with OpenCL API
-```
+```text
 
 ### Caching Strategy
 
 Compiled kernels cached to avoid recompilation:
 
-```
+```text
 ~/.cache/luciferase/gpu-tuning/
 ├── kernels/
 │   ├── nvidia_depth16_size32.bin
@@ -131,7 +131,7 @@ Compiled kernels cached to avoid recompilation:
     ├── amd_radeon_rx_7900.json
     ├── intel_arc_a770.json
     └── apple_m2_max.json
-```
+```text
 
 ### Integration with DAGOpenCLRenderer
 
@@ -169,7 +169,7 @@ public class DAGOpenCLRenderer {
         return options.toString().trim();
     }
 }
-```
+```text
 
 ---
 
@@ -193,7 +193,7 @@ int[] pixelData = renderer.getPixelData();
 
 // Cleanup
 renderer.dispose();
-```
+```text
 
 ### P1: Performance Profiling API
 
@@ -215,7 +215,7 @@ System.out.println(report.formatReport());
 long latency = optimized.latencyMicros();
 float occupancy = optimized.gpuOccupancy();
 float cacheHits = optimized.cacheHitRate();
-```
+```text
 
 ### P2: Stream C Activation API
 
@@ -236,7 +236,7 @@ if (decision.enableBeamOptimization()) {
     System.out.println("✓ " + decision.reason());
     renderer.enableBeamOptimization(true);
 }
-```
+```text
 
 ### P3: Vendor Detection API
 
@@ -253,7 +253,7 @@ GPUVendor.Type vendorType = vendor.type();     // NVIDIA, AMD, INTEL, APPLE
 VendorKernelConfig config = VendorKernelConfig.forVendor(vendor);
 String buildFlags = config.buildFlags();
 String workarounds = config.getWorkarounds();
-```
+```text
 
 ### P4: Kernel Recompilation API
 
@@ -275,7 +275,7 @@ kernel.addVendorOptions(vendor);
 // Compile and retrieve
 kernel.compile();
 cl_kernel compiledKernel = kernel.getCompiledKernel();
-```
+```text
 
 ### Auto-Tuning API
 
@@ -299,7 +299,7 @@ tuner.cacheConfiguration(config);
 log.info("Workgroup size: {}", config.workgroupSize());
 log.info("Max depth: {}", config.maxTraversalDepth());
 log.info("Occupancy: {:.1%}", config.expectedOccupancy());
-```
+```text
 
 ---
 
@@ -307,35 +307,68 @@ log.info("Occupancy: {:.1%}", config.expectedOccupancy());
 
 ### Layered Architecture
 
-```
-Level 5: User Application
-         └─ DAGOpenCLRenderer.renderScene()
+```mermaid
+graph TD
+    L5["Level 5: User Application<br/>DAGOpenCLRenderer.renderScene()"]
+    L4["Level 4: Rendering Pipeline<br/>DAGOpenCLRenderer"]
+    L4a["P1: GPUPerformanceProfiler"]
+    L4b["P2: StreamCActivationDecision"]
+    L4c["P3: GPUVendorDetector"]
+    L4d["P4: EnhancedOpenCLKernel"]
+    L3["Level 3: GPU Optimization<br/>Streams"]
+    L3a["Stream A: Shared memory<br/>cache, stack depth"]
+    L3b["Stream B: Workgroup tuning,<br/>occupancy"]
+    L3c["Stream C: Beam optimization<br/>conditional"]
+    L3d["Stream D: Multi-vendor support"]
+    L2["Level 2: GPU Infrastructure"]
+    L2a["OpenCL Kernels<br/>dag_ray_traversal.cl"]
+    L2b["GPU Memory Management"]
+    L2c["Kernel Compilation"]
+    L1["Level 1: Hardware<br/>NVIDIA/AMD/Intel/Apple GPU<br/>with OpenCL"]
 
-Level 4: Rendering Pipeline
-         └─ DAGOpenCLRenderer
-            ├─ P1: GPUPerformanceProfiler
-            ├─ P2: StreamCActivationDecision
-            ├─ P3: GPUVendorDetector
-            └─ P4: EnhancedOpenCLKernel
+    L5 --> L4
+    L4 --> L4a
+    L4 --> L4b
+    L4 --> L4c
+    L4 --> L4d
+    L4a --> L3
+    L4b --> L3
+    L4c --> L3
+    L4d --> L3
+    L3 --> L3a
+    L3 --> L3b
+    L3 --> L3c
+    L3 --> L3d
+    L3a --> L2
+    L3b --> L2
+    L3c --> L2
+    L3d --> L2
+    L2 --> L2a
+    L2 --> L2b
+    L2 --> L2c
+    L2 --> L1
 
-Level 3: GPU Optimization (Streams)
-         ├─ Stream A: Shared memory cache, stack depth
-         ├─ Stream B: Workgroup tuning, occupancy
-         ├─ Stream C: Beam optimization (conditional)
-         └─ Stream D: Multi-vendor support
-
-Level 2: GPU Infrastructure
-         ├─ OpenCL Kernels (dag_ray_traversal.cl)
-         ├─ GPU Memory Management
-         └─ Kernel Compilation
-
-Level 1: Hardware
-         └─ NVIDIA/AMD/Intel/Apple GPU with OpenCL
+    style L5 fill:#1F77E1
+    style L4 fill:#4A90E2
+    style L4a fill:#7ED321
+    style L4b fill:#7ED321
+    style L4c fill:#F5A623
+    style L4d fill:#F5A623
+    style L3 fill:#BD10E0
+    style L3a fill:#BD10E0
+    style L3b fill:#BD10E0
+    style L3c fill:#BD10E0
+    style L3d fill:#BD10E0
+    style L2 fill:#FF6B6B
+    style L2a fill:#FF6B6B
+    style L2b fill:#FF6B6B
+    style L2c fill:#FF6B6B
+    style L1 fill:#C41E3A
 ```
 
 ### Design Pattern 1: Auto-Tuning Pipeline
 
-```
+```text
 ┌─────────────────────────────────┐
 │ Load/Create Scene (DAG)         │
 └────────────┬────────────────────┘
@@ -370,11 +403,11 @@ Level 1: Hardware
 │ → GPU kernel execution          │
 │ → Retrieve results              │
 └─────────────────────────────────┘
-```
+```text
 
 ### Design Pattern 2: Performance-Aware Decision Making
 
-```
+```text
 ┌─────────────────────────────────┐
 │ Profile GPU Performance (P1)    │
 │ → baseline vs optimized         │
@@ -401,11 +434,11 @@ Level 1: Hardware
 │ Apply Decision                  │
 │ → renderer.enableBeamOpt(bool)  │
 └─────────────────────────────────┘
-```
+```text
 
 ### Design Pattern 3: Vendor Abstraction
 
-```
+```text
 ┌─────────────────────────────────┐
 │ GPUVendor Enum                  │
 │ ├─ NVIDIA                       │
@@ -424,11 +457,11 @@ Level 1: Hardware
 │ 700 │ │ GCN │ │Metal│  - getWorkarounds()
 │MAD  │ │ atomic  │fabs│  - getOptimizations()
 └─────┘ └─────┘ └─────┘
-```
+```text
 
 ### Design Pattern 4: Mock vs Real GPU
 
-```
+```text
 GPUPerformanceProfiler
 ├─ mockMode=true
 │  └─ generateMockMetrics()
@@ -443,7 +476,7 @@ GPUPerformanceProfiler
       ├─ GPU hardware timers
       └─ Actual performance numbers
       Used: Production, real GPU validation
-```
+```text
 
 ---
 
@@ -467,7 +500,7 @@ public void renderDAGScene(DAGOctreeData dag, Camera camera) {
     // Cleanup
     renderer.dispose();
 }
-```
+```text
 
 ### Example 2: Performance Profiling
 
@@ -483,7 +516,7 @@ public void profileGPUAcceleration(DAGOctreeData dag) {
     var report = profiler.compareBaselineVsOptimized(baseline, optimized);
     System.out.println(report.formatReport());
 }
-```
+```text
 
 ### Example 3: Adaptive Rendering
 
@@ -517,7 +550,7 @@ public void adaptiveRender(DAGOctreeData dag, Ray[] rays, Camera camera) {
     displayPixels(pixels);
     renderer.dispose();
 }
-```
+```text
 
 ### Example 4: Multi-GPU Deployment
 
@@ -543,7 +576,7 @@ public void deployMultiGPU(List<DAGOctreeData> scenes) {
 
     renderer.dispose();
 }
-```
+```text
 
 ---
 
@@ -573,7 +606,7 @@ public void deployMultiGPU(List<DAGOctreeData> scenes) {
 **A**: Yes, mock mode provides deterministic testing:
 ```java
 profiler.profileOptimized(dag, 100_000, mockMode=true);
-```
+```text
 All P1-P2 tests pass in mock mode; P3-P4 require GPU.
 
 ---
