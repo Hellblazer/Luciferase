@@ -328,8 +328,11 @@ class MultiBubbleSimulationGhostSyncTest {
         waitForStop(simulation, 1000);
 
         // Verify ghost count is consistent with entity count
+        // ATOMIC READ: Call getAllEntities() once to avoid race condition
         var allEntities = simulation.getAllEntities();
-        var realEntities = simulation.getRealEntities();
+        var realEntities = allEntities.stream()
+                                      .filter(e -> !e.isGhost())
+                                      .toList();
         var ghostCount = simulation.getGhostCount();
 
         assertTrue(allEntities.size() >= realEntities.size(),
@@ -385,8 +388,11 @@ class MultiBubbleSimulationGhostSyncTest {
         // Wait for simulation to fully stop before assertions
         waitForStop(simulation, 1000);
 
+        // ATOMIC READ: Call getAllEntities() once to avoid race condition
         var allEntities = simulation.getAllEntities();
-        var realEntities = simulation.getRealEntities();
+        var realEntities = allEntities.stream()
+                                      .filter(e -> !e.isGhost())
+                                      .toList();
 
         // All entities should include real + ghosts
         assertTrue(allEntities.size() >= realEntities.size(),

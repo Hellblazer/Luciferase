@@ -18,10 +18,7 @@ package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -106,11 +103,33 @@ public class SimulationExecutionEngine implements AutoCloseable {
 
     /**
      * Stop the simulation tick loop.
+     * <p>
+     * Cancels the scheduled tick task and waits for any in-flight tick to complete.
+     * This ensures clean shutdown and prevents race conditions in tests that check
+     * simulation state immediately after stop().
+     * <p>
+     * Timeout: 1 second. If tick doesn't complete within this time, forces cancellation.
      */
     public void stop() {
         if (running.getAndSet(false)) {
             if (tickTask != null) {
+                // Cancel task (mayInterruptIfRunning=false to allow clean completion)
                 tickTask.cancel(false);
+
+                // Wait for in-flight tick to complete (prevents race conditions)
+                try {
+                    tickTask.get(1, TimeUnit.SECONDS);
+                } catch (TimeoutException e) {
+                    // Tick took too long - force cancellation
+                    tickTask.cancel(true);
+                } catch (CancellationException e) {
+                    // Task was already cancelled - expected
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException e) {
+                    // Tick threw exception - already logged by simulation
+                }
+
                 tickTask = null;
             }
         }
