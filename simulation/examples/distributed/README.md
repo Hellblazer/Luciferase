@@ -26,14 +26,13 @@ Distributed examples demonstrate Luciferase's core value proposition: **distribu
 
 ### Architecture
 
-```text
-Node 1 (Bubble A)                    Node 2 (Bubble B)
-┌─────────────────────┐             ┌─────────────────────┐
-│ Bounds: (0-50)³     │◄───gRPC────►│ Bounds: (50-100)³   │
-│ Spawns 50 entities  │             │ Receives entities   │
-│ Port: Dynamic       │             │ Port: Dynamic       │
-└─────────────────────┘             └─────────────────────┘
-```text
+```mermaid
+graph LR
+    A["Node 1 Bubble A<br/>Bounds: 0-50³<br/>Spawns 50 entities<br/>Port: Dynamic"]
+    B["Node 2 Bubble B<br/>Bounds: 50-100³<br/>Receives entities<br/>Port: Dynamic"]
+    
+    A <-->|gRPC| B
+```
 
 **Migration Boundary**: x = 50
 **Network Protocol**: gRPC/Netty
@@ -207,15 +206,18 @@ See `simulation/doc/PERFORMANCE_DISTRIBUTED.md` for complete benchmarks.
 **Status**: 🚧 **Coming Soon**
 
 **Planned Architecture**:
-```text
-        Node 1
-         / \
-        /   \
-    Node 2  Node 3
-        \   /
-         \ /
-        Node 4
-```text
+```mermaid
+graph TD
+    N1["Node 1"]
+    N2["Node 2"]
+    N3["Node 3"]
+    N4["Node 4"]
+    
+    N1 --> N2
+    N1 --> N3
+    N2 --> N4
+    N3 --> N4
+```
 
 **Planned Features**:
 1. **3-5 JVM Processes**

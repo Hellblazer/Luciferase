@@ -12,41 +12,29 @@ The Multi-Client WebSocket Streaming Architecture enables real-time GPU-accelera
 
 ## System Components
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        RenderingServer                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │ Javalin HTTP │  │ WebSocket    │  │ Periodic Backfill    │  │
-│  │ Server       │  │ Endpoint     │  │ Retry Executor       │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────────────────────┘  │
-│         │                 │                                      │
-│         │                 v                                      │
-│  ┌──────v──────────────────────────────────────────────────┐    │
-│  │              RegionStreamer                             │    │
-│  │  - Client session management                            │    │
-│  │  - WebSocket message handling                           │    │
-│  │  - Binary frame streaming                               │    │
-│  │  - Message batching & ByteBuffer pooling                │    │
-│  └──────┬─────────────────────┬──────────────────────┬─────┘    │
-│         │                     │                      │           │
-│         v                     v                      v           │
-│  ┌──────────────┐   ┌──────────────────┐   ┌─────────────────┐ │
-│  │ Viewport     │   │ RegionCache      │   │ AdaptiveRegion  │ │
-│  │ Tracker      │   │ - Pinned/        │   │ Manager         │ │
-│  │ - Frustum    │   │   unpinned tiers │   │ - Region state  │ │
-│  │   culling    │   │ - TTL/LRU        │   │ - Entity        │ │
-│  │ - Viewport   │   │   eviction       │   │   tracking      │ │
-│  │   diffing    │   └──────────────────┘   └─────────────────┘ │
-│  └──────────────┘                                                │
-│         │                                                        │
-│         v                                                        │
-│  ┌──────────────────────────────────────┐                       │
-│  │ RegionBuilder (GPU-accelerated)      │                       │
-│  │ - Build queue with backpressure      │                       │
-│  │ - Circuit breaker for failures       │                       │
-│  │ - Build completion callbacks         │                       │
-│  └──────────────────────────────────────┘                       │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    A["RenderingServer"]
+    A1["Javalin HTTP Server"]
+    A2["WebSocket Endpoint"]
+    A3["Periodic Backfill Retry Executor"]
+
+    B["RegionStreamer<br/>- Client session management<br/>- WebSocket message handling<br/>- Binary frame streaming<br/>- Message batching & ByteBuffer pooling"]
+
+    C["Viewport Tracker<br/>- Frustum culling<br/>- Viewport diffing"]
+    D["RegionCache<br/>- Pinned/unpinned tiers<br/>- TTL/LRU eviction"]
+    E["AdaptiveRegion Manager<br/>- Region state<br/>- Entity tracking"]
+
+    F["RegionBuilder<br/>GPU-accelerated<br/>- Build queue with backpressure<br/>- Circuit breaker for failures<br/>- Build completion callbacks"]
+
+    A --> A1
+    A --> A2
+    A --> A3
+    A --> B
+    B --> C
+    B --> D
+    B --> E
+    C --> F
 ```
 
 ## Component Descriptions
