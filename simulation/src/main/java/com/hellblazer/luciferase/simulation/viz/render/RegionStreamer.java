@@ -49,6 +49,9 @@ public class RegionStreamer implements AutoCloseable {
     // --- Client Sessions ---
     private final ConcurrentHashMap<String, ClientSession> sessions;
 
+    // --- Rate Limiting (Luciferase-heam) ---
+    private final ConcurrentHashMap<String, ClientRateLimiter> rateLimiters;
+
     // --- Streaming State (Day 6) ---
     private final AtomicBoolean streaming;
     private volatile Thread streamingThread;
@@ -77,6 +80,7 @@ public class RegionStreamer implements AutoCloseable {
         this.config = Objects.requireNonNull(config, "config");
 
         this.sessions = new ConcurrentHashMap<>();
+        this.rateLimiters = new ConcurrentHashMap<>();
         this.streaming = new AtomicBoolean(false);
         this.closed = new AtomicBoolean(false);
     }
@@ -148,6 +152,8 @@ public class RegionStreamer implements AutoCloseable {
 
     /**
      * Internal message handler (testable with fake WsContextWrapper).
+     * <p>
+     * Luciferase-heam: Added rate limiting and message size limits to prevent DoS attacks.
      */
     void onMessageInternal(WsContextWrapper ctx, String message) {
         var sessionId = ctx.sessionId();
@@ -155,6 +161,26 @@ public class RegionStreamer implements AutoCloseable {
         if (session == null) {
             log.warn("Received message from unknown session {}", sessionId);
             return;
+        }
+
+        // Luciferase-heam: Check message size limit before processing
+        if (message.length() > config.maxMessageSizeBytes()) {
+            log.warn("Message size limit exceeded for {}: {} bytes (max: {})",
+                sessionId, message.length(), config.maxMessageSizeBytes());
+            ctx.closeSession(4002, "Message size limit exceeded");
+            return;
+        }
+
+        // Luciferase-heam: Check rate limit before processing
+        if (config.rateLimitEnabled()) {
+            var rateLimiter = rateLimiters.computeIfAbsent(sessionId,
+                id -> new ClientRateLimiter(config.maxMessagesPerSecond(), clock));
+
+            if (!rateLimiter.allowMessage()) {
+                log.warn("Rate limit exceeded for {}: {} messages/sec", sessionId, config.maxMessagesPerSecond());
+                sendError(session, "Rate limit exceeded");
+                return;
+            }
         }
 
         session.lastActivityMs.set(clock.currentTimeMillis());

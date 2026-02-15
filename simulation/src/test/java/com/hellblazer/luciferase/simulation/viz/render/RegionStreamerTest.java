@@ -462,7 +462,131 @@ class RegionStreamerTest {
     }
 
     /**
-     * Test 20: Concurrent client limit enforcement (Luciferase-1026).
+     * Test 20: Rate limiting enforcement (Luciferase-heam).
+     * Verify that messages exceeding the rate limit are rejected.
+     */
+    @Test
+    void testRateLimiting_exceedsLimit() {
+        // Create config with rate limiting enabled (5 messages/sec)
+        var rateLimitedConfig = new StreamingConfig(
+            50, 10, 20,
+            new float[]{50f, 150f, 350f}, 3,
+            5_000L, 60,
+            true,  // Rate limiting enabled
+            5,     // 5 messages/sec
+            65536  // 64KB max message size
+        );
+        var rateLimitedStreamer = new RegionStreamer(viewportTracker, null, regionManager, rateLimitedConfig);
+        rateLimitedStreamer.setClock(testClock);
+
+        // Connect a client
+        var ctx = new FakeWsContext("rate-test");
+        rateLimitedStreamer.onConnectInternal(ctx);
+
+        // Send 5 messages - should all succeed
+        for (int i = 0; i < 5; i++) {
+            rateLimitedStreamer.onMessageInternal(ctx, "{\"type\":\"REGISTER_CLIENT\",\"clientId\":\"test\"}");
+        }
+        assertEquals(5, ctx.sentMessages.size(), "First 5 messages should succeed");
+
+        // Send 6th message - should fail (rate limit exceeded)
+        rateLimitedStreamer.onMessageInternal(ctx, "{\"type\":\"REGISTER_CLIENT\",\"clientId\":\"test\"}");
+        assertEquals(6, ctx.sentMessages.size(), "Should receive error message for rate limit");
+        assertTrue(ctx.sentMessages.get(5).contains("ERROR"), "Should receive ERROR type message");
+        assertTrue(ctx.sentMessages.get(5).contains("Rate limit exceeded"), "Error should mention rate limit");
+
+        rateLimitedStreamer.close();
+    }
+
+    /**
+     * Test 21: Message size limit enforcement (Luciferase-heam).
+     * Verify that messages exceeding the size limit are rejected.
+     */
+    @Test
+    void testMessageSizeLimit_exceedsLimit() {
+        // Create config with small message size limit (1KB)
+        var sizeLimitedConfig = new StreamingConfig(
+            50, 10, 20,
+            new float[]{50f, 150f, 350f}, 3,
+            5_000L, 60,
+            false, // Rate limiting disabled
+            100,
+            1024   // 1KB max message size
+        );
+        var sizeLimitedStreamer = new RegionStreamer(viewportTracker, null, regionManager, sizeLimitedConfig);
+        sizeLimitedStreamer.setClock(testClock);
+
+        // Connect a client
+        var ctx = new FakeWsContext("size-test");
+        sizeLimitedStreamer.onConnectInternal(ctx);
+
+        // Send small message - should succeed
+        sizeLimitedStreamer.onMessageInternal(ctx, "{\"type\":\"REGISTER_CLIENT\",\"clientId\":\"test\"}");
+        assertFalse(ctx.wasClosed, "Small message should not close connection");
+
+        // Send large message (2KB) - should be rejected and connection closed
+        var largeMessage = "{\"type\":\"REGISTER_CLIENT\",\"data\":\"" + "x".repeat(2000) + "\"}";
+        sizeLimitedStreamer.onMessageInternal(ctx, largeMessage);
+        assertTrue(ctx.wasClosed, "Large message should close connection");
+        assertEquals(4002, ctx.closeCode, "Should use status 4002 (Message size limit exceeded)");
+
+        sizeLimitedStreamer.close();
+    }
+
+    /**
+     * Test 22: Rate limiting window reset (Luciferase-heam).
+     * Verify that rate limit resets after 1 second.
+     */
+    @Test
+    void testRateLimiting_windowReset() {
+        // Create config with rate limiting enabled (3 messages/sec)
+        var rateLimitedConfig = new StreamingConfig(
+            50, 10, 20,
+            new float[]{50f, 150f, 350f}, 3,
+            5_000L, 60,
+            true,  // Rate limiting enabled
+            3,     // 3 messages/sec
+            65536
+        );
+        var rateLimitedStreamer = new RegionStreamer(viewportTracker, null, regionManager, rateLimitedConfig);
+        rateLimitedStreamer.setClock(testClock);
+
+        // Connect a client
+        var ctx = new FakeWsContext("reset-test");
+        rateLimitedStreamer.onConnectInternal(ctx);
+
+        int messagesBefore = ctx.sentMessages.size();
+
+        // Send 3 messages - should all succeed (trigger rate limit check but don't fail)
+        for (int i = 0; i < 3; i++) {
+            rateLimitedStreamer.onMessageInternal(ctx, "{\"type\":\"UNKNOWN\"}");  // Unknown type → generates error but counts against rate limit
+        }
+        // Each unknown message generates an ERROR response
+        assertEquals(messagesBefore + 3, ctx.sentMessages.size(), "First 3 messages should get responses");
+
+        // Send 4th message - should fail with rate limit error
+        rateLimitedStreamer.onMessageInternal(ctx, "{\"type\":\"UNKNOWN\"}");
+        assertTrue(ctx.sentMessages.get(ctx.sentMessages.size() - 1).contains("Rate limit exceeded"),
+            "4th message should hit rate limit");
+
+        // Advance time by more than 1 second to ensure window reset
+        testClock.advance(1001);
+
+        int messagesBeforeReset = ctx.sentMessages.size();
+
+        // Send another message - should succeed (window reset), will get "Unknown message type" error but not rate limit error
+        rateLimitedStreamer.onMessageInternal(ctx, "{\"type\":\"UNKNOWN\"}");
+        assertEquals(messagesBeforeReset + 1, ctx.sentMessages.size(), "Should get response after window reset");
+        var lastMessage = ctx.sentMessages.get(ctx.sentMessages.size() - 1);
+        assertTrue(lastMessage.contains("Unknown message type") || lastMessage.contains("ERROR"),
+            "Should get ERROR for unknown type, not rate limit");
+        assertFalse(lastMessage.contains("Rate limit exceeded"), "Should not hit rate limit after window reset");
+
+        rateLimitedStreamer.close();
+    }
+
+    /**
+     * Test 23: Concurrent client limit enforcement (Luciferase-1026).
      * Verify that when maxClientsPerServer concurrent connection attempts occur,
      * exactly maxClientsPerServer succeed and the rest are rejected.
      * This test validates the fix for the race condition in computeIfAbsent.

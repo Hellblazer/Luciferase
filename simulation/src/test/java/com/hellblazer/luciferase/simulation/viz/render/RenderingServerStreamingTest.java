@@ -75,7 +75,10 @@ class RenderingServerStreamingTest {
             new float[]{50f, 150f, 350f},   // lodThresholds
             3,                              // maxLodLevel
             5_000L,                         // clientTimeoutMs
-            60                              // maxViewportUpdatesPerSecond
+            60,                             // maxViewportUpdatesPerSecond
+            false,                          // rateLimitEnabled (disable for test simplicity)
+            100,                            // maxMessagesPerSecond
+            65536                           // maxMessageSizeBytes
         );
         var baseConfig = RenderingServerConfig.testing();
         var config = new RenderingServerConfig(

@@ -30,6 +30,9 @@ package com.hellblazer.luciferase.simulation.viz.render;
  * @param maxLodLevel                  Maximum LOD level (0 = highest detail)
  * @param clientTimeoutMs              Disconnect clients inactive for this duration (default 30s)
  * @param maxViewportUpdatesPerSecond  Throttle viewport update frequency (default 30)
+ * @param rateLimitEnabled             Enable rate limiting per client (default true, Luciferase-heam)
+ * @param maxMessagesPerSecond         Maximum messages per second per client (default 100, Luciferase-heam)
+ * @param maxMessageSizeBytes          Maximum message size in bytes (default 65536 = 64KB, Luciferase-heam)
  * @author hal.hildebrand
  */
 public record StreamingConfig(
@@ -39,7 +42,10 @@ public record StreamingConfig(
     float[] lodThresholds,
     int maxLodLevel,
     long clientTimeoutMs,
-    int maxViewportUpdatesPerSecond
+    int maxViewportUpdatesPerSecond,
+    boolean rateLimitEnabled,
+    int maxMessagesPerSecond,
+    int maxMessageSizeBytes
 ) {
     /**
      * Compact constructor with validation and defensive copy.
@@ -59,6 +65,12 @@ public record StreamingConfig(
         }
         if (maxViewportUpdatesPerSecond < 1) {
             throw new IllegalArgumentException("maxViewportUpdatesPerSecond must be >= 1");
+        }
+        if (maxMessagesPerSecond < 1) {
+            throw new IllegalArgumentException("maxMessagesPerSecond must be >= 1");
+        }
+        if (maxMessageSizeBytes < 1024) {
+            throw new IllegalArgumentException("maxMessageSizeBytes must be >= 1024");
         }
 
         // Clone array for defensive copy
@@ -88,7 +100,10 @@ public record StreamingConfig(
             new float[]{100f, 300f, 700f}, // LOD distance thresholds
             3,                            // LOD 0-3
             30_000L,                      // 30s timeout
-            30                            // 30 viewport updates/sec
+            30,                           // 30 viewport updates/sec
+            true,                         // Enable rate limiting
+            100,                          // 100 messages/sec per client
+            65536                         // 64KB max message size
         );
     }
 
@@ -103,7 +118,10 @@ public record StreamingConfig(
             new float[]{50f, 150f, 350f},  // Smaller thresholds for test world
             3,                             // LOD 0-3
             5_000L,                        // 5s timeout
-            60                             // 60 updates/sec
+            60,                            // 60 updates/sec
+            false,                         // Disable rate limiting in tests (easier to test other features)
+            100,                           // 100 messages/sec per client
+            65536                          // 64KB max message size
         );
     }
 }
