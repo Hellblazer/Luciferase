@@ -423,6 +423,62 @@ class RegionStreamerTest {
         // Day 7: Validate frame format and delivery
     }
 
+    /**
+     * Test 19: Concurrent client limit enforcement (Luciferase-1026).
+     * Verify that when maxClientsPerServer concurrent connection attempts occur,
+     * exactly maxClientsPerServer succeed and the rest are rejected.
+     * This test validates the fix for the race condition in computeIfAbsent.
+     */
+    @Test
+    void testConcurrentClientLimitEnforcement() throws InterruptedException {
+        // Set up config with limit=10 (using testing() defaults)
+        var limitedConfig = StreamingConfig.testing();  // maxClientsPerServer = 10
+        var limitedStreamer = new RegionStreamer(viewportTracker, null, regionManager, limitedConfig);
+        limitedStreamer.setClock(testClock);
+
+        // Attempt 100 concurrent connections (10x the limit)
+        int attemptedConnections = 100;
+        var latch = new java.util.concurrent.CountDownLatch(attemptedConnections);
+        var successfulConnections = new java.util.concurrent.atomic.AtomicInteger(0);
+        var rejectedConnections = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        // Spawn 100 threads that all try to connect simultaneously
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(50);
+        for (int i = 0; i < attemptedConnections; i++) {
+            final String sessionId = "session-" + i;
+            executor.submit(() -> {
+                try {
+                    var ctx = new FakeWsContext(sessionId);
+                    limitedStreamer.onConnectInternal(ctx);
+
+                    if (ctx.wasClosed) {
+                        rejectedConnections.incrementAndGet();
+                    } else {
+                        successfulConnections.incrementAndGet();
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        // Wait for all threads to complete
+        boolean completed = latch.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        executor.shutdown();
+        assertTrue(completed, "All connection attempts should complete within 5 seconds");
+
+        // CRITICAL ASSERTION: Exactly 10 connections should succeed
+        assertEquals(10, successfulConnections.get(),
+            "Exactly maxClientsPerServer connections should succeed");
+        assertEquals(90, rejectedConnections.get(),
+            "Remaining connections should be rejected");
+
+        // Verify all rejected connections received proper error code
+        // (This is validated by checking ctx.wasClosed in the thread above)
+
+        limitedStreamer.close();
+    }
+
     // Fake WsContextWrapper for testing
     private static class FakeWsContext implements RegionStreamer.WsContextWrapper {
         final String sessionIdValue;

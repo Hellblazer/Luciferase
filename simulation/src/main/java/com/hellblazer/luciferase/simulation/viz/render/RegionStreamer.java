@@ -118,23 +118,25 @@ public class RegionStreamer implements AutoCloseable {
      */
     void onConnectInternal(WsContextWrapper ctx) {
         var sessionId = ctx.sessionId();
+        ClientSession session;
 
-        // CRITICAL FIX: Atomic client limit enforcement using computeIfAbsent.
-        // Previous check-then-put pattern was racy: two threads could both pass
-        // the size check and both add sessions, exceeding maxClientsPerServer.
-        var session = sessions.computeIfAbsent(sessionId, id -> {
-            // Size check happens INSIDE atomic computeIfAbsent
+        // CRITICAL FIX (Luciferase-1026): Atomic client limit enforcement using synchronized block.
+        // Previous computeIfAbsent pattern was racy: computeIfAbsent only provides
+        // atomicity for a single key, not across all keys. Multiple threads with
+        // different sessionIds could both see size=N-1, both pass the check, and
+        // both add sessions, exceeding maxClientsPerServer=N.
+        //
+        // The synchronized block ensures the size check and session insertion
+        // are atomic across all concurrent connection attempts.
+        synchronized (sessions) {
             if (sessions.size() >= config.maxClientsPerServer()) {
-                return null;  // Signals rejection
+                log.warn("Client limit reached ({}), rejecting connection {}",
+                    config.maxClientsPerServer(), sessionId);
+                ctx.closeSession(4001, "Server full");
+                return;
             }
-            return new ClientSession(id, ctx, clock.currentTimeMillis());
-        });
-
-        if (session == null) {
-            log.warn("Client limit reached ({}), rejecting connection {}",
-                config.maxClientsPerServer(), sessionId);
-            ctx.closeSession(4001, "Server full");
-            return;
+            session = new ClientSession(sessionId, ctx, clock.currentTimeMillis());
+            sessions.put(sessionId, session);
         }
 
         viewportTracker.registerClient(sessionId);
