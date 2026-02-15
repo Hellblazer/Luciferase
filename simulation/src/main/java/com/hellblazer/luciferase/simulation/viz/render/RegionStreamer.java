@@ -261,28 +261,60 @@ public class RegionStreamer implements AutoCloseable {
             throw new IllegalArgumentException("Missing eye, lookAt, or up field");
         }
 
+        // mppj: Null checks for nested coordinate fields
+        var eyeX = eyeNode.get("x");
+        var eyeY = eyeNode.get("y");
+        var eyeZ = eyeNode.get("z");
+        if (eyeX == null || eyeY == null || eyeZ == null) {
+            throw new IllegalArgumentException("Missing eye.x, eye.y, or eye.z field");
+        }
+
         var eye = new Point3f(
-            (float) eyeNode.get("x").asDouble(),
-            (float) eyeNode.get("y").asDouble(),
-            (float) eyeNode.get("z").asDouble()
+            (float) eyeX.asDouble(),
+            (float) eyeY.asDouble(),
+            (float) eyeZ.asDouble()
         );
+
+        var lookAtX = lookAtNode.get("x");
+        var lookAtY = lookAtNode.get("y");
+        var lookAtZ = lookAtNode.get("z");
+        if (lookAtX == null || lookAtY == null || lookAtZ == null) {
+            throw new IllegalArgumentException("Missing lookAt.x, lookAt.y, or lookAt.z field");
+        }
 
         var lookAt = new Point3f(
-            (float) lookAtNode.get("x").asDouble(),
-            (float) lookAtNode.get("y").asDouble(),
-            (float) lookAtNode.get("z").asDouble()
+            (float) lookAtX.asDouble(),
+            (float) lookAtY.asDouble(),
+            (float) lookAtZ.asDouble()
         );
+
+        var upX = upNode.get("x");
+        var upY = upNode.get("y");
+        var upZ = upNode.get("z");
+        if (upX == null || upY == null || upZ == null) {
+            throw new IllegalArgumentException("Missing up.x, up.y, or up.z field");
+        }
 
         var up = new Vector3f(
-            (float) upNode.get("x").asDouble(),
-            (float) upNode.get("y").asDouble(),
-            (float) upNode.get("z").asDouble()
+            (float) upX.asDouble(),
+            (float) upY.asDouble(),
+            (float) upZ.asDouble()
         );
 
-        var fovY = (float) viewportNode.get("fovY").asDouble();
-        var aspectRatio = (float) viewportNode.get("aspectRatio").asDouble();
-        var nearPlane = (float) viewportNode.get("nearPlane").asDouble();
-        var farPlane = (float) viewportNode.get("farPlane").asDouble();
+        // mppj: Null checks for top-level viewport fields
+        var fovYNode = viewportNode.get("fovY");
+        var aspectRatioNode = viewportNode.get("aspectRatio");
+        var nearPlaneNode = viewportNode.get("nearPlane");
+        var farPlaneNode = viewportNode.get("farPlane");
+
+        if (fovYNode == null || aspectRatioNode == null || nearPlaneNode == null || farPlaneNode == null) {
+            throw new IllegalArgumentException("Missing fovY, aspectRatio, nearPlane, or farPlane field");
+        }
+
+        var fovY = (float) fovYNode.asDouble();
+        var aspectRatio = (float) aspectRatioNode.asDouble();
+        var nearPlane = (float) nearPlaneNode.asDouble();
+        var farPlane = (float) farPlaneNode.asDouble();
 
         return new ClientViewport(eye, lookAt, up, fovY, aspectRatio, nearPlane, farPlane);
     }
