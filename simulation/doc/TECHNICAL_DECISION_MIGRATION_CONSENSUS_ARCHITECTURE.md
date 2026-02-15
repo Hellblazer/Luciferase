@@ -351,51 +351,32 @@ var migrationCoordinator = new ConsensusMigrationCoordinator(
 
 ## Architecture Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ Layer 4: CONSENSUS (Distributed Agreement)                      │
-│                                                                  │
-│  ConsensusMigrationCoordinator (NEW)                            │
-│    ├─ Wraps: MigrationCoordinator                               │
-│    ├─ Adds: Consensus validation (ViewCommitteeConsensus)       │
-│    └─ Ensures: Majority approval before COMMIT                  │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓ delegates to
-┌─────────────────────────────────────────────────────────────────┐
-│ Layer 3: DISTRIBUTED (Multi-Bubble Orchestration)               │
-│                                                                  │
-│  MigrationCoordinator                                            │
-│    ├─ Owns: Retry logic (MAX_RETRIES = 3)                       │
-│    ├─ Coordinates: EntityMigrationStateMachine instances         │
-│    └─ Integrates: GhostLayerManager via callbacks               │
-│                                                                  │
-│  GhostLayerManager (integrated)                                  │
-│    ├─ Responds to: Migration lifecycle callbacks                │
-│    ├─ Creates ghosts: During PREPARE phase                      │
-│    └─ Removes ghosts: During COMMIT or ROLLBACK                 │
-│                                                                  │
-│  ProcessCoordinator                                              │
-│    └─ Manages: Process lifecycle (start/stop/crash handling)    │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓ delegates to
-┌─────────────────────────────────────────────────────────────────┐
-│ Layer 2: CROSS-BUBBLE INTEGRATION (Local vs Distributed)        │
-│                                                                  │
-│  CrossBubbleMigrationManager                                     │
-│    ├─ Owns: Zone routing logic (shouldMigrate)                  │
-│    ├─ Enforces: Hysteresis threshold                            │
-│    ├─ Optimizes: Local 2-bubble migrations (direct)             │
-│    └─ Delegates: Distributed migrations to Layer 3              │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓ uses
-┌─────────────────────────────────────────────────────────────────┐
-│ Layer 1: CAUSALITY (State Transitions)                          │
-│                                                                  │
-│  EntityMigrationStateMachine                                     │
-│    ├─ States: IDLE → PREPARE → COMMIT/ROLLBACK                  │
-│    ├─ Provides: Lifecycle callbacks                             │
-│    └─ Guarantees: Atomic state transitions                      │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph L4["Layer 4: CONSENSUS (Distributed Agreement)"]
+        CMC[ConsensusMigrationCoordinator NEW<br/>• Wraps: MigrationCoordinator<br/>• Adds: Consensus validation<br/>• Ensures: Majority approval before COMMIT]
+    end
+
+    subgraph L3["Layer 3: DISTRIBUTED (Multi-Bubble Orchestration)"]
+        MC[MigrationCoordinator<br/>• Owns: Retry logic MAX_RETRIES=3<br/>• Coordinates: EntityMigrationStateMachine instances<br/>• Integrates: GhostLayerManager via callbacks]
+        GLM[GhostLayerManager integrated<br/>• Responds to: Migration lifecycle callbacks<br/>• Creates ghosts: During PREPARE phase<br/>• Removes ghosts: During COMMIT or ROLLBACK]
+        PC[ProcessCoordinator<br/>• Manages: Process lifecycle<br/>• Handles: start/stop/crash]
+    end
+
+    subgraph L2["Layer 2: CROSS-BUBBLE INTEGRATION (Local vs Distributed)"]
+        CBMM[CrossBubbleMigrationManager<br/>• Owns: Zone routing logic shouldMigrate<br/>• Enforces: Hysteresis threshold<br/>• Optimizes: Local 2-bubble migrations direct<br/>• Delegates: Distributed migrations to Layer 3]
+    end
+
+    subgraph L1["Layer 1: CAUSALITY (State Transitions)"]
+        EMSM[EntityMigrationStateMachine<br/>• States: IDLE → PREPARE → COMMIT/ROLLBACK<br/>• Provides: Lifecycle callbacks<br/>• Guarantees: Atomic state transitions]
+    end
+
+    CMC -->|delegates to| MC
+    MC --> GLM
+    MC --> PC
+    CBMM -->|delegates to| MC
+    CBMM -->|uses| EMSM
+    MC -->|coordinates| EMSM
 ```
 
 ## Consequences
