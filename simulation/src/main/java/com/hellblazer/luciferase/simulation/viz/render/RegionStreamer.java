@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -291,8 +292,17 @@ public class RegionStreamer implements AutoCloseable {
      */
     private void sendError(ClientSession session, String message) {
         try {
-            var errorJson = String.format("{\"type\":\"ERROR\",\"message\":\"%s\"}", message);
+            // fr0y: Safe JSON serialization (prevents injection attacks)
+            var errorResponse = Map.of(
+                "type", "ERROR",
+                "message", message
+            );
+            var errorJson = JSON_MAPPER.writeValueAsString(errorResponse);
             sendSafe(session, errorJson);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            // Serialization failure is a critical internal error
+            log.error("Failed to serialize error message, closing connection: {}", e.getMessage());
+            session.wsContext.closeSession(1011, "Internal error");
         } catch (Exception e) {
             log.error("Failed to send error response: {}", e.getMessage());
         }
