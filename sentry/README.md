@@ -30,7 +30,7 @@ This implementation prioritizes topology and relative position tracking over geo
 
 ## Architecture
 
-```text
+```
 com.hellblazer.sentry/
 ├── Grid.java                    # Base Delaunay tetrahedralization (immutable)
 ├── MutableGrid.java             # Mutable grid with tracking and rebuild

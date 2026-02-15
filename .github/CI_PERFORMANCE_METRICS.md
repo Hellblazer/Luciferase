@@ -36,7 +36,7 @@
 **Result**: ✅ PASS
 **Total Runtime**: ~12 minutes
 
-```text
+```
 ✓ compile:             54s
 ✓ test-batch-1:        1m7s   (bubble/behavior/metrics)
 ✓ test-batch-2:        8m42s  (von/transport) ← longest pole
@@ -45,7 +45,7 @@
 ✓ test-batch-5:        48s    (consensus/ghost)
 ✓ test-other-modules:  3m15s  (grpc/common/lucien/sentry/render/portal/dyada-java)
 ✓ build-status:        2s
-```text
+```
 
 **Notes**: First clean run after fixing non-existent module references (von, e2e-test, gpu-test-framework)
 
@@ -57,7 +57,7 @@
 **Result**: ✅ PASS
 **Total Runtime**: ~12 minutes
 
-```text
+```
 ✓ compile:             54s
 ✓ test-batch-1:        46s    (bubble/behavior/metrics)
 ✓ test-batch-2:        8m41s  (von/transport) ← longest pole
@@ -66,7 +66,7 @@
 ✓ test-batch-5:        55s    (consensus/ghost)
 ✓ test-other-modules:  3m29s  (grpc/common/lucien/sentry/render/portal/dyada-java)
 ✓ build-status:        3s
-```text
+```
 
 **Notes**: Consistent performance with Run 1/5
 
@@ -96,7 +96,7 @@
   </repository>
   <!-- GitHub Packages repositories after -->
 </repositories>
-```text
+```
 
 ### Test Batch Distribution
 
@@ -122,7 +122,7 @@ restore-keys: |
   luciferase-maven-${{ github.ref }}-
   luciferase-maven-refs/heads/main-
   luciferase-maven-
-```text
+```
 
 **Cache Hit Rate**: ~100% (test jobs restore from compile job)
 **Cache Contents**:

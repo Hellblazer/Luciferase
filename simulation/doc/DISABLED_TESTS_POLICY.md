@@ -25,7 +25,7 @@ Tests that run locally but are disabled in CI due to environmental variability a
 void testFailureRecovery() {
     // Runs locally for development, skips in CI
 }
-```text
+```
 
 **Use when**:
 - Probabilistic tests (random failure injection, packet loss)

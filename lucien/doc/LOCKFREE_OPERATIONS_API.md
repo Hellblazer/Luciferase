@@ -59,7 +59,7 @@ List<EntityMovement<LongEntityID>> movements = Arrays.asList(
 
 List<Boolean> results = mover.moveEntitiesBatch(movements);
 
-```text
+```
 
 **Four-Phase Atomic Protocol:**
 1. **PREPARE**: Validate movement and reserve target location
@@ -103,7 +103,7 @@ Set<LongEntityID> toRemove = Set.of(id4, id5);
 
 BatchUpdateResult result = node.updateEntitiesBatch(toAdd, toRemove);
 
-```text
+```
 
 **Implementation Details:**
 - Uses `CopyOnWriteArraySet` for entity storage
@@ -141,7 +141,7 @@ VersionedEntityState<LongEntityID, String> updatedState =
 // Version comparison
 boolean isNewer = newState.getVersion() > state.getVersion();
 
-```text
+```
 
 **Versioning Properties:**
 - **Monotonic Versions**: Versions always increase
@@ -186,7 +186,7 @@ for (int i = 0; i < 10000; i++) {
 
 CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-```text
+```
 
 ### Atomic Movement Protocols
 
@@ -216,7 +216,7 @@ public boolean validateAndMove(LongEntityID entityId, Point3f expectedPos,
     return mover.moveEntityIfAt(entityId, expectedPos, newPos, level);
 }
 
-```text
+```
 
 ### Batch Operations
 
@@ -250,7 +250,7 @@ for (int i = 0; i < movements.size(); i++) {
     }
 }
 
-```text
+```
 
 ## Performance Optimization
 
@@ -275,7 +275,7 @@ try {
 // Pre-allocated movement contexts
 ObjectPool<MovementContext> contextPool = new ObjectPool<>(MovementContext::new);
 
-```text
+```
 
 ### Contention Reduction
 
@@ -292,7 +292,7 @@ LockFreeEntityMover<LongEntityID, String> mover = partitionedMovers.get(partitio
 
 boolean success = mover.moveEntity(entityId, oldPos, newPos, level);
 
-```text
+```
 
 ### Adaptive Backoff
 
@@ -320,7 +320,7 @@ public class AdaptiveBackoffMover<ID extends EntityID, Content> {
     }
 }
 
-```text
+```
 
 ## Integration Examples
 
@@ -361,7 +361,7 @@ public class GameEntityUpdater {
     }
 }
 
-```text
+```
 
 ### Distributed System Integration
 
@@ -397,7 +397,7 @@ public class DistributedSpatialNode {
     }
 }
 
-```text
+```
 
 ### Physics Simulation
 
@@ -439,7 +439,7 @@ public class PhysicsSimulation {
     }
 }
 
-```text
+```
 
 ## Monitoring and Diagnostics
 
@@ -462,7 +462,7 @@ MemoryStatistics memStats = spatialIndex.getMemoryStatistics();
 System.out.printf("Memory per entity: %d bytes%n", memStats.getBytesPerEntity());
 System.out.printf("Total memory usage: %.2f MB%n", memStats.getTotalMemoryMB());
 
-```text
+```
 
 ### Conflict Analysis
 
@@ -483,7 +483,7 @@ if (analyzer.getOverallConflictRate() > 0.05f) {
     spatialIndex.increasePartitioning(hotspots);
 }
 
-```text
+```
 
 ## Best Practices
 
@@ -547,6 +547,6 @@ try {
     logger.error("Movement failed", e);
 }
 
-```text
+```
 
 The Lock-Free Operations API provides maximum performance for concurrent spatial operations while maintaining correctness and thread safety through careful atomic protocol design.

@@ -56,7 +56,7 @@ To run these benchmarks, you need to add JMH dependencies to the `lucien/pom.xml
     <scope>test</scope>
 </dependency>
 
-```text
+```
 
 ## Running the Benchmarks
 
@@ -66,7 +66,7 @@ To run these benchmarks, you need to add JMH dependencies to the `lucien/pom.xml
 
 mvn clean test -Dtest=TetreeLevelCacheBenchmark,TetreeParentChainBenchmark,SpatialIndexSetBenchmark
 
-```text
+```
 
 ### Run individual benchmarks:
 
@@ -84,7 +84,7 @@ mvn test -Dtest=TetreeParentChainBenchmark
 
 mvn test -Dtest=SpatialIndexSetBenchmark
 
-```text
+```
 
 ### Run with custom JMH options:
 
@@ -95,7 +95,7 @@ java -cp target/test-classes:target/classes:target/dependency/* \
 
      -f 1 -wi 3 -i 5 -t 1
 
-```text
+```
 
 ## Interpreting Results
 

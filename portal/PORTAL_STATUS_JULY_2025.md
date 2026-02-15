@@ -122,7 +122,7 @@ viz.refresh(); // Updates visualization
 var results = tetree.rangeQuery(bounds);
 viz.highlightQueryResults(results);
 
-```text
+```
 
 ### UI Controls
 

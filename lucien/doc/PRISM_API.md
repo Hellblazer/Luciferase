@@ -56,7 +56,7 @@ The composite space-filling curve combines triangular and linear indices:
 
 long compositeIndex = (lineIndex << triangleBits) | triangleIndex;
 
-```text
+```
 
 This preserves spatial locality while enabling efficient range operations.
 
@@ -75,7 +75,7 @@ float x = 0.3f, y = 0.4f;  // x + y = 0.7 < 1.0 ✓
 // Invalid coordinates
 float x = 0.7f, y = 0.5f;  // x + y = 1.2 > 1.0 ✗
 
-```text
+```
 
 ### World Coordinate Validation
 
@@ -93,7 +93,7 @@ public void validateCoordinates(float x, float y, float worldSize) {
     }
 }
 
-```text
+```
 
 ### Converting to Triangular Region
 
@@ -116,7 +116,7 @@ public Point3f clampToTriangularRegion(Point3f point, float worldSize) {
     return new Point3f(x, y, z);
 }
 
-```text
+```
 
 ## Core Classes
 
@@ -129,7 +129,7 @@ The main spatial index class extending `AbstractSpatialIndex`.
 public class Prism<ID extends EntityID, Content> 
     extends AbstractSpatialIndex<PrismKey, ID, Content>
 
-```text
+```
 
 #### Constructors
 
@@ -141,7 +141,7 @@ public Prism(EntityIDGenerator<ID> idGenerator)
 // Full configuration
 public Prism(EntityIDGenerator<ID> idGenerator, float worldSize, int maxLevel)
 
-```text
+```
 
 #### Key Methods
 
@@ -159,7 +159,7 @@ protected boolean doesRayIntersectNode(PrismKey prismKey, Ray3D ray)
 // Frustum culling support
 protected boolean doesFrustumIntersectNode(PrismKey prismKey, Frustum3D fr
 
-```text
+```
 
 **Example:**
 
@@ -174,7 +174,7 @@ Point3f position = new Point3f(100, 200, 50); // Note: 100+200 < 1000 ✓
 GameObject player = new GameObject("Player");
 LongEntityID playerId = prism.insert(position, (byte) 10, player);
 
-```text
+```
 
 ### 2. PrismKey
 
@@ -184,7 +184,7 @@ Composite spatial key combining Triangle and Line components.
 
 public final class PrismKey implements SpatialKey<PrismKey>
 
-```text
+```
 
 #### Key Fields
 
@@ -193,7 +193,7 @@ public final class PrismKey implements SpatialKey<PrismKey>
 private final Triangle triangle;    // Horizontal (x,y) component
 private final Line line;            // Vertical (z) component
 
-```text
+```
 
 #### Core Methods
 
@@ -216,7 +216,7 @@ public float[] getCentroid()
 public float getVolume()
 public float[] getWorldBounds()
 
-```text
+```
 
 **Example:**
 
@@ -237,7 +237,7 @@ float[] bounds = key.getWorldBounds();    // [minX, minY, minZ, maxX, maxY, maxZ
 PrismKey parent = key.parent();
 PrismKey child0 = key.child(0);           // First child in Morton order
 
-```text
+```
 
 ### 3. Triangle
 
@@ -247,7 +247,7 @@ PrismKey child0 = key.child(0);           // First child in Morton order
 
 public final class Triangle
 
-```text
+```
 
 #### Key Features
 
@@ -279,7 +279,7 @@ public float[] getWorldBounds()
 public Triangle[] neighbors()           // 3 edge neighbors
 public Triangle neighbor(int edge)      // Specific edge neighbor
 
-```text
+```
 
 **Example:**
 
@@ -298,7 +298,7 @@ int type = triangle.getType();
 Triangle[] neighbors = triangle.neighbors();
 Triangle rightNeighbor = triangle.neighbor(0);
 
-```text
+```
 
 ### 4. Line
 
@@ -308,7 +308,7 @@ Triangle rightNeighbor = triangle.neighbor(0);
 
 public final class Line
 
-```text
+```
 
 #### Key Features
 
@@ -339,7 +339,7 @@ public float[] getWorldBounds()
 public Line[] neighbors()           // Up to 2 neighbors
 public Line neighbor(int direction) // -1 (below) or +1 (above)
 
-```text
+```
 
 **Example:**
 
@@ -360,7 +360,7 @@ Line[] neighbors = line.neighbors();
 Line below = line.neighbor(-1);
 Line above = line.neighbor(1);
 
-```text
+```
 
 ### 5. PrismGeometry
 
@@ -370,7 +370,7 @@ Geometric utilities for prism calculations.
 
 public final class PrismGeometry
 
-```text
+```
 
 #### Key Methods
 
@@ -391,7 +391,7 @@ public static boolean contains(PrismKey prismKey, Point3f point)
 // Volume calculation
 public static float computeVolume(PrismKey prismKey)
 
-```text
+```
 
 **Example:**
 
@@ -409,7 +409,7 @@ float volume = PrismGeometry.computeVolume(prism);
 Point3f testPoint = new Point3f(0.31f, 0.41f, 0.51f);
 boolean isInside = PrismGeometry.contains(prism, testPoint);
 
-```text
+```
 
 ## Spatial Index Operations
 
@@ -447,7 +447,7 @@ List<ID> rayIntersection(Ray3D ray, float maxDistance)
 // Frustum culling
 List<ID> frustumIntersection(Frustum3D frustum)
 
-```text
+```
 
 ### Prism-Specific Optimizations
 
@@ -463,7 +463,7 @@ private PrismKey getParentIndex(PrismKey childKey)
 protected PrismKey getChildIndex(PrismKey parentKey, int childIdx)
 protected List<PrismKey> getAllChildren(PrismKey parent
 
-```text
+```
 
 ## Triangular Prism Geometry
 
@@ -489,7 +489,7 @@ vertices[3] = (minX, minY, maxZ)  // Bottom-left (top level)
 vertices[4] = (maxX, minY, maxZ)  // Bottom-right (top level)
 vertices[5] = (minX, maxY, maxZ)  // Top-left (top level)
 
-```text
+```
 
 ### Face Definitions
 
@@ -504,7 +504,7 @@ int FACE_QUAD_0 = 0;  // Vertices 1,2,4,5
 int FACE_QUAD_1 = 1;  // Vertices 0,2,3,5
 int FACE_QUAD_2 = 2;  // Vertices 0,1,3,4
 
-```text
+```
 
 ## Specialized Query Operations
 
@@ -516,7 +516,7 @@ The Prism spatial index provides specialized queries optimized for the triangula
 
 public Set<ID> findInTriangularRegion(Triangle searchTriangle, float minZ, float maxZ)
 
-```text
+```
 
 Finds all entities within a triangular region in the XY plane and a Z range.
 
@@ -536,7 +536,7 @@ for (ID entityId : entities) {
     obj.highlight();
 }
 
-```text
+```
 
 ### 2. Vertical Layer Queries
 
@@ -544,7 +544,7 @@ for (ID entityId : entities) {
 
 public Set<ID> findInVerticalLayer(float minZ, float maxZ)
 
-```text
+```
 
 Efficiently finds all entities within a horizontal layer, leveraging the coarse vertical subdivision.
 
@@ -562,7 +562,7 @@ float minZ = floor * floorHeight;
 float maxZ = (floor + 1) * floorHeight;
 Set<ID> floorEntities = prism.findInVerticalLayer(minZ, maxZ);
 
-```text
+```
 
 ### 3. Triangular Prism Volume Queries
 
@@ -570,7 +570,7 @@ Set<ID> floorEntities = prism.findInVerticalLayer(minZ, maxZ);
 
 public Set<ID> findInTriangularPrism(Triangle searchTriangle, float minZ, float maxZ)
 
-```text
+```
 
 Combines triangular region and vertical layer queries for precise volume searches.
 
@@ -592,7 +592,7 @@ for (ID entityId : entitiesInVolume) {
     obj.applyAreaEffect("healing", 25);
 }
 
-```text
+```
 
 ## Neighbor Finding
 
@@ -608,7 +608,7 @@ public static PrismKey findFaceNeighbor(PrismKey prism, int face)
 // Find all face neighbors
 public static List<PrismKey> findAllFaceNeighbors(PrismKey prism)
 
-```text
+```
 
 **Example:**
 
@@ -624,7 +624,7 @@ PrismKey aboveNeighbor = PrismNeighborFinder.findFaceNeighbor(prism, 4);  // Top
 // Get all face neighbors at once
 List<PrismKey> faceNeighbors = PrismNeighborFinder.findAllFaceNeighbors(prism);
 
-```text
+```
 
 ### Edge and Vertex Neighbors
 
@@ -636,7 +636,7 @@ public static Set<PrismKey> findEdgeNeighbors(PrismKey prism)
 // Find neighbors sharing a vertex
 public static Set<PrismKey> findVertexNeighbors(PrismKey prism)
 
-```text
+```
 
 **Example:**
 
@@ -654,7 +654,7 @@ for (PrismKey neighbor : edgeNeighbors) {
     interpolatedValue += neighborValue * edgeWeight;
 }
 
-```text
+```
 
 ### Cross-Level Neighbors
 
@@ -663,7 +663,7 @@ for (PrismKey neighbor : edgeNeighbors) {
 // Find neighbors at different refinement levels
 public static List<PrismKey> findCrossLevelNeighbors(PrismKey prism, int maxLevelDifference)
 
-```text
+```
 
 **Example:**
 
@@ -681,7 +681,7 @@ for (PrismKey neighbor : crossLevelNeighbors) {
     }
 }
 
-```text
+```
 
 ## Ray Intersection
 
@@ -693,7 +693,7 @@ The `PrismRayIntersector` provides accurate ray-prism intersection algorithms:
 
 public static IntersectionResult intersectRayPrism(Ray3D ray, PrismKey prism)
 
-```text
+```
 
 **IntersectionResult fields:**
 
@@ -721,7 +721,7 @@ if (result.hit) {
     System.out.println("Exit point: " + result.farPoint);
 }
 
-```text
+```
 
 ### Fast AABB Culling
 
@@ -729,7 +729,7 @@ if (result.hit) {
 
 public static boolean intersectRayAABB(Ray3D ray, PrismKey prism)
 
-```text
+```
 
 **Example:**
 
@@ -742,7 +742,7 @@ if (PrismRayIntersector.intersectRayAABB(ray, prism)) {
         PrismRayIntersector.intersectRayPrism(ray, prism);
 }
 
-```text
+```
 
 ### Entry/Exit Point Finding
 
@@ -750,7 +750,7 @@ if (PrismRayIntersector.intersectRayAABB(ray, prism)) {
 
 public static float[] findEntryExitPoints(Ray3D ray, PrismKey prism)
 
-```text
+```
 
 **Example:**
 
@@ -766,7 +766,7 @@ if (entryExit != null) {
     sampleVolume(ray, tEntry, tExit);
 }
 
-```text
+```
 
 ## Collision Detection
 
@@ -778,7 +778,7 @@ The `PrismCollisionDetector` provides comprehensive collision detection using Se
 
 public static CollisionResult testPrismPrismCollision(PrismKey prism1, PrismKey prism2)
 
-```text
+```
 
 **CollisionResult fields:**
 
@@ -807,7 +807,7 @@ if (result.collides) {
     separatePrisms(prism1, prism2, separation);
 }
 
-```text
+```
 
 ### Prism-Sphere Collision
 
@@ -817,7 +817,7 @@ public static CollisionResult testPrismSphereCollision(PrismKey prism,
                                                       Point3f sphereCenter, 
                                                       float sphereRadius)
 
-```text
+```
 
 **Example:**
 
@@ -835,7 +835,7 @@ if (result.collides) {
     handleBuildingCollision(result);
 }
 
-```text
+```
 
 ### Batch Collision Detection
 
@@ -844,7 +844,7 @@ if (result.collides) {
 public static Set<PrismKey> findCollidingPrisms(PrismKey prism, 
                                                Collection<PrismKey> candidates)
 
-```text
+```
 
 **Example:**
 
@@ -862,7 +862,7 @@ for (PrismKey collidingPrism : collisions) {
     handleStaticCollision(movingObject, collidingPrism);
 }
 
-```text
+```
 
 ## Performance Considerations
 
@@ -902,7 +902,7 @@ byte detailLevel = 16;   // Very fine for small details
 Triangle effectArea = Triangle.fromWorldCoordinate(0.3f, 0.4f, 8);
 Set<ID> affectedEntities = prism.findInTriangularRegion(effectArea, minZ, maxZ);
 
-```text
+```
 
 ## Best Practices
 
@@ -929,7 +929,7 @@ public class TriangularCoordinateValidator {
     }
 }
 
-```text
+```
 
 ### 2. Level Selection Strategy
 
@@ -949,7 +949,7 @@ public class PrismLevelStrategy {
     }
 }
 
-```text
+```
 
 ### 3. Efficient Query Patterns
 
@@ -976,7 +976,7 @@ public class AreaEffectSystem {
     }
 }
 
-```text
+```
 
 ### 4. Memory Management
 
@@ -1008,7 +1008,7 @@ public class PrismMemoryMonitor {
     }
 }
 
-```text
+```
 
 ## Complete Examples
 
@@ -1063,7 +1063,7 @@ public class TriangularTerrainSystem {
     }
 }
 
-```text
+```
 
 ### 2. Urban Planning System
 
@@ -1118,7 +1118,7 @@ public class UrbanPlanningSystem {
     }
 }
 
-```text
+```
 
 ### 3. Atmospheric Simulation
 
@@ -1171,7 +1171,7 @@ public class AtmosphericLayerSystem {
     }
 }
 
-```text
+```
 
 ### 4. Resource Distribution System
 
@@ -1223,7 +1223,7 @@ public class ResourceDistributionSystem {
     }
 }
 
-```text
+```
 
 These examples demonstrate the Prism spatial index's strengths in handling anisotropic spatial data with fine horizontal
 precision and coarse vertical granularity, making it ideal for layered environmental systems, urban planning, and

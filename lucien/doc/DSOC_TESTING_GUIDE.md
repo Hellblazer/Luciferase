@@ -37,7 +37,7 @@ mvn test -Dtest=DSOCPerformanceTest
 
 mvn test -Dtest=DSOCBenchmarkRunner
 
-```text
+```
 
 ### Run Integration Tests
 
@@ -51,7 +51,7 @@ mvn test -Dtest=*DSOCIntegrationTest
 
 mvn test -Dtest=*DSOCIntegrationTest -DdsocEnabled=true
 
-```text
+```
 
 ## Test Categories
 
@@ -94,7 +94,7 @@ spatialIndex.enableDSOC(config, 512, 512);
 // Add occluders and test entities
 // Verify culling results
 
-```text
+```
 
 ### Scenario 2: Performance Protection
 
@@ -104,7 +104,7 @@ spatialIndex.enableDSOC(config, 512, 512);
 // Create scenario with poor occlusion
 // Verify DSOC auto-disables
 
-```text
+```
 
 ### Scenario 3: Dynamic Scenes
 
@@ -114,7 +114,7 @@ spatialIndex.enableDSOC(config, 512, 512);
 // Verify TBV updates correctly
 // Check performance metrics
 
-```text
+```
 
 ## Best Practices
 

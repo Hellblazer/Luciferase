@@ -40,7 +40,7 @@ This directory contains runnable examples demonstrating Luciferase's distributed
 java --version    # Should show Java 24 or higher
 mvn --version     # Should show Maven 3.9.1+
 docker --version  # Optional, for production deployment
-```text
+```
 
 ---
 
@@ -51,7 +51,7 @@ docker --version  # Optional, for production deployment
 ```bash
 cd /path/to/Luciferase
 mvn clean install -DskipTests
-```text
+```
 
 **Time**: ~2 minutes (first build), ~30 seconds (subsequent)
 
@@ -59,10 +59,10 @@ mvn clean install -DskipTests
 
 ```bash
 mvn test -Dtest=TwoNodeExampleTest -pl simulation
-```text
+```
 
 **Expected Output**:
-```text
+```
 Starting TwoNodeExample test:
   Node 1: port 12345 (bounds: 0-50)
   Node 2: port 12346 (bounds: 50-100)
@@ -70,7 +70,7 @@ Starting TwoNodeExample test:
 ✓ Entity migration detected
 ✓ Entity accounting consistent
 ✓ TwoNodeExample test PASSED
-```text
+```
 
 **Time**: ~12 seconds
 
@@ -91,7 +91,7 @@ Starting TwoNodeExample test:
 cd simulation
 mvn process-classes exec:java \
   -Dexec.mainClass="com.hellblazer.luciferase.simulation.viz.PredatorPreyGridDemo"
-```text
+```
 
 **What You'll See**:
 - JavaFX window with 3D grid visualization
@@ -118,7 +118,7 @@ mvn process-classes exec:java \
 **Run (Integration Test)**:
 ```bash
 mvn test -Dtest=TwoNodeExampleTest -pl simulation
-```text
+```
 
 **Run (Manual - 2 Terminals)**:
 
@@ -128,7 +128,7 @@ cd simulation
 mvn process-classes exec:java \
   -Dexec.mainClass="com.hellblazer.luciferase.simulation.examples.TwoNodeExample" \
   -Dexec.args="Node1 9000 9001"
-```text
+```
 
 Terminal 2 (Node2):
 ```bash
@@ -136,7 +136,7 @@ cd simulation
 mvn process-classes exec:java \
   -Dexec.mainClass="com.hellblazer.luciferase.simulation.examples.TwoNodeExample" \
   -Dexec.args="Node2 9001 9000"
-```text
+```
 
 **What You'll See**:
 - 2 separate JVM processes start
@@ -199,27 +199,27 @@ mvn clean install -DskipTests
 
 # Check Java version
 java --version  # Must be Java 24+
-```text
+```
 
 ### Port Conflicts
 ```bash
 # TwoNodeExample uses dynamic ports by default
 # If running manually, choose unused ports:
 mvn exec:java -Dexec.args="Node1 9000 9001"  # Change 9000/9001 as needed
-```text
+```
 
 ### PrimeMover Transformation Error
 ```bash
 # Always use process-classes phase, not compile:
 mvn process-classes exec:java ...  # CORRECT
 mvn compile exec:java ...          # WRONG - missing bytecode transformation
-```text
+```
 
 ### gRPC Connection Timeout
 ```bash
 # Ensure both nodes start within 10 seconds of each other
 # Node2 must be running when Node1 tries to connect
-```text
+```
 
 ---
 
@@ -235,7 +235,7 @@ mvn compile exec:java ...          # WRONG - missing bytecode transformation
 
 ## Directory Structure
 
-```text
+```
 examples/
 ├── README.md                    # This file - navigation guide
 ├── DEPLOYMENT_GUIDE.md          # Production deployment instructions
@@ -246,7 +246,7 @@ examples/
 └── docker/                      # Production deployment (coming soon)
     ├── docker-compose.yml
     └── README.md
-```text
+```
 
 **Java Source Code Locations**:
 - Simple: `simulation/src/main/java/.../viz/PredatorPreyGridDemo.java`

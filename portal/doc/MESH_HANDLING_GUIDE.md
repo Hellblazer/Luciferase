@@ -44,7 +44,7 @@ Mesh mesh = MeshLoader.loadStl("model.stl");
 // Create JavaFX MeshView for rendering
 MeshView view = MeshLoader.loadMeshView("model.obj");
 
-```text
+```
 
 ### Creating Meshes Programmatically
 
@@ -62,7 +62,7 @@ Mesh icoMesh = ico.getMesh();
 Icosphere sphere = new Icosphere(1.0, 3); // radius=1.0, subdivisions=3
 Mesh sphereMesh = sphere.getMesh();
 
-```text
+```
 
 ### Working with Faces
 
@@ -85,7 +85,7 @@ for (Face face : mesh.getFaces()) {
     Vector3d normal = face.calculateNormal();
 }
 
-```text
+```
 
 ## Conway Operations
 
@@ -109,7 +109,7 @@ Polyhedron truncated = poly.truncate();
 // Kis - adds pyramids to faces
 Polyhedron kis = poly.kis();
 
-```text
+```
 
 ### Advanced Operations
 
@@ -130,7 +130,7 @@ Polyhedron snub = poly.snub();
 // Reflect - creates mirror image
 Polyhedron reflected = poly.reflect();
 
-```text
+```
 
 ### Chaining Operations
 
@@ -145,7 +145,7 @@ Polyhedron geodesic = new Icosahedron(1.0)
     .subdivide(3)  // Goldberg subdivision
     .normalize(1.0); // Project to sphere
 
-```text
+```
 
 ## Mesh Topology
 
@@ -167,7 +167,7 @@ List<Face> neighbors = faceAdj.getAdjacentFaces(face);
 VertexToAdjacentFace vertexAdj = new VertexToAdjacentFace(mesh);
 List<Face> facesAroundVertex = vertexAdj.getAdjacentFaces(vertexIndex);
 
-```text
+```
 
 ### Ordered Adjacency
 
@@ -183,7 +183,7 @@ OrderedVertexToAdjacentFace orderedFaces =
     new OrderedVertexToAdjacentFace(mesh);
 List<Face> faceRing = orderedFaces.getOrderedFaces(vertexIndex);
 
-```text
+```
 
 ## Mesh Operations
 
@@ -197,7 +197,7 @@ mesh.generateNormals();
 // Access generated normals
 List<Vector3d> normals = mesh.getNormals();
 
-```text
+```
 
 ### Triangulation
 
@@ -210,7 +210,7 @@ TriangleMesh triMesh = mesh.toTriangleMesh();
 Face quad = // ... 4-vertex face
 List<int[]> triangles = quad.toTriangles();
 
-```text
+```
 
 ### Export
 
@@ -220,7 +220,7 @@ List<int[]> triangles = quad.toTriangles();
 String objContent = mesh.toObj();
 Files.write(Paths.get("output.obj"), objContent.getBytes());
 
-```text
+```
 
 ## Performance Tips
 
@@ -251,7 +251,7 @@ public class MyPolyhedron extends Polyhedron {
     }
 }
 
-```text
+```
 
 ### Processing Mesh Geometry
 
@@ -268,7 +268,7 @@ for (Vector3d vertex : mesh.getVertices()) {
     vertex.sub(centroid);
 }
 
-```text
+```
 
 ## Visualization Integration
 
@@ -286,4 +286,4 @@ meshView.setDrawMode(DrawMode.FILL);
 // Add to scene
 group.getChildren().add(meshView);
 
-```text
+```

@@ -66,7 +66,7 @@ ABORT Phase (on failure, 100ms timeout):
 1. RE-ADD entity to source from snapshot
 2. Remove idempotency token (allow retry)
 3. Entity restored to original location
-```text
+```
 
 **Key Insight**: Remove-then-commit prevents duplicates. If COMMIT fails, entity can be restored from snapshot. Traditional add-first approach risks duplicates if remove fails after add succeeds.
 
@@ -86,7 +86,7 @@ ABORT Phase (on failure, 100ms timeout):
 - Auto-recalculates on view changes
 
 **Voting Protocol**:
-```text
+```
 1. Proposer: Submit EntityOwnershipProposal to committee
 2. Committee members: Vote ACCEPT/REJECT based on:
    - Entity not already migrating
@@ -95,7 +95,7 @@ ABORT Phase (on failure, 100ms timeout):
 3. Quorum: (t + 1) votes required where t = Byzantine tolerance
 4. Commit: Execute 2PC migration on quorum
 5. View Change: Pending proposals automatically aborted
-```text
+```
 
 **Byzantine Tolerance**:
 - **t=0**: 2-3 node clusters, quorum=1 (no BFT)
@@ -129,11 +129,11 @@ ABORT Phase (on failure, 100ms timeout):
 ### 2. Add-First 2PC (REJECTED - Jan 8, 2026)
 
 **Approach**:
-```text
+```
 PREPARE: Add entity to destination
 COMMIT: Remove from source
 ABORT: Remove from destination
-```text
+```
 
 **Why Rejected**:
 - **Duplicates risk**: If remove fails after add succeeds, entity exists in both bubbles
@@ -232,7 +232,7 @@ public record RecoveryState(
     long rollbackFailures,              // Total rollback failure count
     int concurrentMigrations            // Concurrent migration attempts
 ) {}
-```text
+```
 
 **Key Features**:
 - Thread-safe snapshot of recovery state (non-atomic but acceptable for admin monitoring)
@@ -240,9 +240,9 @@ public record RecoveryState(
 - Integration with existing `MigrationMetrics` for comprehensive observability
 
 **Enhanced Abort Logging**:
-```text
+```
 ERROR c.h.l.s.d.m.CrossProcessMigration - ABORT/Rollback FAILED for entity {entityId} - CRITICAL: Manual intervention required (txn={txnId}, source={sourceId}, dest={destId}, snapshot=[epoch={epoch}, position={x,y,z}], reason={reason})
-```text
+```
 
 Structured logging provides:
 - Transaction correlation (txnId)
@@ -391,7 +391,7 @@ This architecture transforms "manual intervention required" from an operational 
 // Unit tests: use InMemoryGhostChannel
 var channel = new InMemoryGhostChannel<StringEntityID, Object>();
 channel.onReceive((from, ghosts) -> processGhosts(ghosts));
-```text
+```
 
 **Production**:
 ```java
@@ -399,7 +399,7 @@ channel.onReceive((from, ghosts) -> processGhosts(ghosts));
 var vonBubble = new VonBubble(bubbleId, level, frameMs, transport);
 var channel = new P2PGhostChannel<StringEntityID, Object>(vonBubble);
 channel.onReceive((from, ghosts) -> processGhosts(ghosts));
-```text
+```
 
 ### Related M2 Consolidation
 
@@ -471,12 +471,12 @@ See `simulation/doc/GHOST_LAYER_CONSOLIDATION_ANALYSIS.md` for full consolidatio
 private static final long PHASE_TIMEOUT_MS = 100;   // Per-phase (PREPARE/COMMIT/ABORT)
 private static final long TOTAL_TIMEOUT_MS = 300;   // Total migration
 private static final long LOCK_TIMEOUT_MS = 50;     // Lock acquisition
-```text
+```
 
 ### Idempotency Configuration
 ```java
 private static final long TTL_MINUTES = 5;  // Idempotency token TTL
-```text
+```
 
 ### Consensus Configuration
 ```java
@@ -487,7 +487,7 @@ double epsilon = 0.1;  // Tolerance factor
 
 // Quorum calculation
 int quorum = t + 1;    // where t = Byzantine tolerance
-```text
+```
 
 ### Byzantine Tolerance Levels
 | Cluster Size | t | Quorum | Committee Size |

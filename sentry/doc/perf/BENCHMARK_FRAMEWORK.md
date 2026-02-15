@@ -50,7 +50,7 @@ public class GeometricPredicateBenchmark {
     }
 }
 
-```text
+```
 
 #### Data Structure Benchmarks
 
@@ -94,7 +94,7 @@ public class DataStructureBenchmark {
     }
 }
 
-```text
+```
 
 ### 2. Component Benchmarks
 
@@ -129,7 +129,7 @@ public class FlipBenchmark {
     }
 }
 
-```text
+```
 
 ### 3. End-to-End Benchmarks
 
@@ -162,7 +162,7 @@ public class TetrahedralizationBenchmark {
     }
 }
 
-```text
+```
 
 ## Performance Metrics
 
@@ -204,7 +204,7 @@ public class TetrahedralizationBenchmark {
     </configuration>
 </plugin>
 
-```text
+```
 
 ### 2. Profiling Integration
 
@@ -225,7 +225,7 @@ public class ProfiledBenchmark {
     }
 }
 
-```text
+```
 
 ### 3. Performance Monitoring
 
@@ -253,7 +253,7 @@ public class PerformanceMonitor {
     }
 }
 
-```text
+```
 
 ## Validation Framework
 
@@ -294,7 +294,7 @@ public class CorrectnessValidator {
     }
 }
 
-```text
+```
 
 ### 2. Performance Regression Detection
 
@@ -317,7 +317,7 @@ public class RegressionDetector {
     }
 }
 
-```text
+```
 
 ## Benchmark Execution Pipeline
 
@@ -366,7 +366,7 @@ java -jar jmh-benchmarks.jar \
 
     ".*E2E.*"
 
-```text
+```
 
 ### 2. Result Analysis
 
@@ -395,7 +395,7 @@ public class BenchmarkAnalyzer {
     }
 }
 
-```text
+```
 
 ## Continuous Performance Testing
 
@@ -445,7 +445,7 @@ jobs:
           name: benchmark-results
           path: target/benchmark-results.json
 
-```text
+```
 
 ### 2. Performance Dashboard
 
@@ -467,7 +467,7 @@ public class PerformanceDashboard {
     }
 }
 
-```text
+```
 
 ## Best Practices
 

@@ -52,7 +52,7 @@ var bufferManager = new GPUBufferManager(resourceManager);
 var nodeBuffer = bufferManager.allocateNodeBuffer(nodeCount);
 var rayBuffer = bufferManager.allocateRayBuffer(rayCount);
 
-```text
+```
 
 ### Thread Safety
 
@@ -105,7 +105,7 @@ pipeline.setOctree(octree);
 // Render frame
 pipeline.renderFrame(camera, lights);
 
-```text
+```
 
 ### ESVO Ray Traversal
 
@@ -119,7 +119,7 @@ esvo.setCamera(camera);
 // Execute GPU traversal
 var intersections = esvo.traverse(rays);
 
-```text
+```
 
 ### Debug Visualization
 
@@ -130,7 +130,7 @@ pipeline.setDebugMode(DebugMode.SHOW_OCTREE_STRUCTURE);
 pipeline.setDebugMode(DebugMode.SHOW_RAY_PATHS);
 pipeline.setDebugMode(DebugMode.SHOW_TRAVERSAL_STATS);
 
-```text
+```
 
 ## Testing
 
@@ -147,7 +147,7 @@ mvn test -pl render
 mvn test -pl render -Dtest=ESVOTraversalTest
 mvn test -pl render -Dtest=ContourExtractionTest
 
-```text
+```
 
 ### Performance Tests
 
@@ -161,7 +161,7 @@ mvn test -pl render -Dtest=RenderBenchmark
 
 mvn test -pl render -Dtest=GPUProfileTest -Pgpu-profile
 
-```text
+```
 
 ### Validation Tests
 
@@ -232,7 +232,7 @@ The render module uses the `gpu-test-framework` module for GPU-related testing:
     <scope>test</scope>
 </dependency>
 
-```text
+```
 
 ### Running Tests
 
@@ -250,7 +250,7 @@ mvn test -pl render -Dgpu.profile=true
 
 mvn test -pl render -Dtest=ESVORendererTest
 
-```text
+```
 
 ### Test Categories
 
@@ -289,7 +289,7 @@ RenderConfig.builder()
     .ambientOcclusion(true)      // Screen-space AO
     .build();
 
-```text
+```
 
 ### Shader Configuration
 
@@ -325,7 +325,7 @@ Shaders are loaded from `resources/shaders/`:
 <logger name="com.hellblazer.luciferase.render" level="DEBUG"/>
 <logger name="com.hellblazer.luciferase.render.shader" level="TRACE"/>
 
-```text
+```
 
 ## References
 

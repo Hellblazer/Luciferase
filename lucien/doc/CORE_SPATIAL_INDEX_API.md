@@ -37,7 +37,7 @@ The Core Spatial Index API provides:
 
 ID insert(Point3f position, byte level, Content content)
 
-```text
+```
 
 Inserts content at a position with an automatically generated entity ID.
 
@@ -58,7 +58,7 @@ Point3f position = new Point3f(100, 50, 200);
 GameObject gameObject = new GameObject("Player");
 ID playerId = spatialIndex.insert(position, (byte) 10, gameObject);
 
-```text
+```
 
 ### Insert with Explicit ID
 
@@ -66,7 +66,7 @@ ID playerId = spatialIndex.insert(position, (byte) 10, gameObject);
 
 void insert(ID entityId, Point3f position, byte level, Content content)
 
-```text
+```
 
 Inserts content with a specific entity ID.
 
@@ -83,7 +83,7 @@ UUID uuid = UUID.randomUUID();
 ID uuidId = new UUIDEntityID(uuid);
 spatialIndex.insert(uuidId, position, (byte) 10, gameObject);
 
-```text
+```
 
 ### Insert with Bounds (Spanning)
 
@@ -91,7 +91,7 @@ spatialIndex.insert(uuidId, position, (byte) 10, gameObject);
 
 void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds)
 
-```text
+```
 
 Inserts a bounded entity that may span multiple spatial nodes.
 
@@ -110,7 +110,7 @@ ID buildingId = new LongEntityID(12345L);
 
 spatialIndex.insert(buildingId, buildingCenter, (byte) 8, building, buildingBounds);
 
-```text
+```
 
 ## Entity Retrieval
 
@@ -120,7 +120,7 @@ spatialIndex.insert(buildingId, buildingCenter, (byte) 8, building, buildingBoun
 
 boolean containsEntity(ID entityId)
 
-```text
+```
 
 Checks if an entity exists in the spatial index.
 
@@ -132,7 +132,7 @@ if (spatialIndex.containsEntity(playerId)) {
     // Entity exists
 }
 
-```text
+```
 
 ### Get Single Entity
 
@@ -140,7 +140,7 @@ if (spatialIndex.containsEntity(playerId)) {
 
 Content getEntity(ID entityId)
 
-```text
+```
 
 Retrieves the content associated with an entity ID.
 
@@ -156,7 +156,7 @@ if (player != null) {
     player.update();
 }
 
-```text
+```
 
 ### Get Multiple Entities
 
@@ -164,7 +164,7 @@ if (player != null) {
 
 List<Content> getEntities(List<ID> entityIds)
 
-```text
+```
 
 Efficiently retrieves content for multiple entities.
 
@@ -183,7 +183,7 @@ for (int i = 0; i < teamMembers.size(); i++) {
     }
 }
 
-```text
+```
 
 ### Lookup at Position
 
@@ -191,7 +191,7 @@ for (int i = 0; i < teamMembers.size(); i++) {
 
 List<ID> lookup(Point3f position, byte level)
 
-```text
+```
 
 Finds all entities at a specific position and level.
 
@@ -203,7 +203,7 @@ Finds all entities at a specific position and level.
 Point3f clickPos = screenToWorld(mouseX, mouseY);
 List<ID> entitiesAtClick = spatialIndex.lookup(clickPos, (byte) 10);
 
-```text
+```
 
 ## Entity Updates
 
@@ -213,7 +213,7 @@ List<ID> entitiesAtClick = spatialIndex.lookup(clickPos, (byte) 10);
 
 void updateEntity(ID entityId, Point3f newPosition, byte level)
 
-```text
+```
 
 Moves an entity to a new position efficiently.
 
@@ -225,7 +225,7 @@ Moves an entity to a new position efficiently.
 Point3f newPos = calculatePlayerPosition(deltaTime);
 spatialIndex.updateEntity(playerId, newPos, (byte) 10);
 
-```text
+```
 
 **Note:** This is equivalent to remove + insert but more efficient.
 
@@ -237,7 +237,7 @@ spatialIndex.updateEntity(playerId, newPos, (byte) 10);
 
 boolean removeEntity(ID entityId)
 
-```text
+```
 
 Removes an entity from all spatial nodes.
 
@@ -256,7 +256,7 @@ if (gameObject.isDestroyed()) {
     }
 }
 
-```text
+```
 
 ## Spatial Queries
 
@@ -266,7 +266,7 @@ if (gameObject.isDestroyed()) {
 
 List<ID> entitiesInRegion(Spatial.Cube region)
 
-```text
+```
 
 Finds all entities within an axis-aligned bounding box.
 
@@ -282,7 +282,7 @@ Spatial.Cube room = new Spatial.Cube(
 
 List<ID> entitiesInRoom = spatialIndex.entitiesInRegion(room);
 
-```text
+```
 
 ### Find Bounding Nodes
 
@@ -290,7 +290,7 @@ List<ID> entitiesInRoom = spatialIndex.entitiesInRegion(room);
 
 Stream<SpatialNode<Key, ID>> bounding(Spatial volume)
 
-```text
+```
 
 Finds all nodes that intersect with a volume.
 
@@ -303,7 +303,7 @@ Spatial.Sphere sphere = new Spatial.Sphere(center, radius);
 List<SpatialNode<Key, ID>> intersectingNodes = spatialIndex.bounding(sphere)
     .collect(Collectors.toList());
 
-```text
+```
 
 ### Find Bounded Nodes
 
@@ -311,7 +311,7 @@ List<SpatialNode<Key, ID>> intersectingNodes = spatialIndex.bounding(sphere)
 
 Stream<SpatialNode<Key, ID>> boundedBy(Spatial volume)
 
-```text
+```
 
 Finds nodes completely contained within a volume.
 
@@ -324,7 +324,7 @@ Spatial.Cube region = new Spatial.Cube(min, max);
 spatialIndex.boundedBy(region)
     .forEach(node -> processNode(node));
 
-```text
+```
 
 ### Find Enclosing Node
 
@@ -332,7 +332,7 @@ spatialIndex.boundedBy(region)
 
 SpatialNode<Key, ID> enclosing(Spatial volume)
 
-```text
+```
 
 Finds the smallest node that completely contains a volume.
 
@@ -344,7 +344,7 @@ Finds the smallest node that completely contains a volume.
 EntityBounds objectBounds = getObjectBounds();
 SpatialNode<Key, ID> containingNode = spatialIndex.enclosing(objectBounds);
 
-```text
+```
 
 ### Find Node at Position
 
@@ -352,7 +352,7 @@ SpatialNode<Key, ID> containingNode = spatialIndex.enclosing(objectBounds);
 
 SpatialNode<Key, ID> enclosing(Tuple3i point, byte level)
 
-```text
+```
 
 Finds the node at a specific discrete position and level.
 
@@ -364,7 +364,7 @@ Finds the node at a specific discrete position and level.
 Tuple3i gridPos = worldToGrid(worldPos);
 SpatialNode<Key, ID> node = spatialIndex.enclosing(gridPos, (byte) 10);
 
-```text
+```
 
 ## Node Operations
 
@@ -374,7 +374,7 @@ SpatialNode<Key, ID> node = spatialIndex.enclosing(gridPos, (byte) 10);
 
 boolean hasNode(Key sfcIndex)
 
-```text
+```
 
 Checks if a node exists at a spatial key index.
 
@@ -394,7 +394,7 @@ if (spatialIndex.hasNode(key)) {
     // Node exists at this location
 }
 
-```text
+```
 
 ### Get All Nodes
 
@@ -402,7 +402,7 @@ if (spatialIndex.hasNode(key)) {
 
 Stream<SpatialNode<Key, ID>> nodes()
 
-```text
+```
 
 Streams all nodes in the spatial index.
 
@@ -417,7 +417,7 @@ Map<Key, Integer> entitiesPerNode = spatialIndex.nodes()
         node -> node.entityIds().size()
     ));
 
-```text
+```
 
 ## Entity Properties
 
@@ -427,7 +427,7 @@ Map<Key, Integer> entitiesPerNode = spatialIndex.nodes()
 
 Point3f getEntityPosition(ID entityId)
 
-```text
+```
 
 Gets the current position of an entity.
 
@@ -439,7 +439,7 @@ Point3f playerPos = spatialIndex.getEntityPosition(playerId);
 Point3f enemyPos = spatialIndex.getEntityPosition(enemyId);
 float distance = playerPos.distance(enemyPos);
 
-```text
+```
 
 ### Get All Entities with Positions
 
@@ -447,7 +447,7 @@ float distance = playerPos.distance(enemyPos);
 
 Map<ID, Point3f> getEntitiesWithPositions()
 
-```text
+```
 
 Retrieves all entities and their positions efficiently.
 
@@ -466,7 +466,7 @@ for (Map.Entry<ID, Point3f> entry : allEntities.entrySet()) {
     renderer.drawEntity(content, position);
 }
 
-```text
+```
 
 ## Entity Bounds and Spanning
 
@@ -476,7 +476,7 @@ for (Map.Entry<ID, Point3f> entry : allEntities.entrySet()) {
 
 EntityBounds getEntityBounds(ID entityId)
 
-```text
+```
 
 Retrieves the bounding box of an entity (if set).
 
@@ -494,7 +494,7 @@ if (bounds != null) {
     log.info("Building volume: {}", volume);
 }
 
-```text
+```
 
 ### EntityBounds Class
 
@@ -517,7 +517,7 @@ public class EntityBounds {
     public boolean intersects(EntityBounds other);
 }
 
-```text
+```
 
 **Example Usage:**
 
@@ -539,7 +539,7 @@ if (cubeBounds.intersects(customBounds)) {
     handleOverlap();
 }
 
-```text
+```
 
 ### Get Entity Span Count
 
@@ -547,7 +547,7 @@ if (cubeBounds.intersects(customBounds)) {
 
 int getEntitySpanCount(ID entityId)
 
-```text
+```
 
 Returns the number of nodes an entity spans.
 
@@ -561,7 +561,7 @@ if (spanCount > 10) {
              buildingId, spanCount);
 }
 
-```text
+```
 
 ### Spanning Policies
 
@@ -575,7 +575,7 @@ public enum EntitySpanningPolicy {
     ADAPTIVE     // Automatic based on entity size
 }
 
-```text
+```
 
 **Note**: The spanning policy is configured during spatial index construction.
 
@@ -587,7 +587,7 @@ public enum EntitySpanningPolicy {
 
 void setCollisionShape(ID entityId, CollisionShape shape)
 
-```text
+```
 
 Sets a custom collision shape for accurate collision detection.
 
@@ -607,7 +607,7 @@ spatialIndex.setCollisionShape(crateId, crateShape);
 MeshShape terrainShape = new MeshShape(terrainMesh);
 spatialIndex.setCollisionShape(terrainId, terrainShape);
 
-```text
+```
 
 ### Get Collision Shape
 
@@ -615,7 +615,7 @@ spatialIndex.setCollisionShape(terrainId, terrainShape);
 
 CollisionShape getCollisionShape(ID entityId)
 
-```text
+```
 
 Retrieves the collision shape for an entity.
 
@@ -632,7 +632,7 @@ if (shape instanceof SphereShape) {
     // Default to AABB collision using bounds
 }
 
-```text
+```
 
 ## Statistics and Monitoring
 
@@ -642,7 +642,7 @@ if (shape instanceof SphereShape) {
 
 int entityCount()
 
-```text
+```
 
 Gets the total number of unique entities.
 
@@ -653,7 +653,7 @@ Gets the total number of unique entities.
 int totalEntities = spatialIndex.entityCount();
 System.out.println("Total entities: " + totalEntities);
 
-```text
+```
 
 ### Get Node Count
 
@@ -661,7 +661,7 @@ System.out.println("Total entities: " + totalEntities);
 
 int nodeCount()
 
-```text
+```
 
 Gets the total number of spatial nodes.
 
@@ -672,7 +672,7 @@ Gets the total number of spatial nodes.
 int nodes = spatialIndex.nodeCount();
 double avgEntitiesPerNode = (double) entityCount() / nodeCount();
 
-```text
+```
 
 ### Get Comprehensive Stats
 
@@ -680,7 +680,7 @@ double avgEntitiesPerNode = (double) entityCount() / nodeCount();
 
 EntityStats getStats()
 
-```text
+```
 
 Gets detailed statistics about the spatial index.
 
@@ -697,7 +697,7 @@ System.out.println("Max depth: " + stats.maxDepth());
 System.out.println("Avg entities/node: " + stats.averageEntitiesPerNode());
 System.out.println("Spanning factor: " + stats.entitySpanningFactor());
 
-```text
+```
 
 ## Advanced Topics
 
@@ -728,7 +728,7 @@ public class CustomEntityID implements EntityID {
     }
 }
 
-```text
+```
 
 ### Entity ID Generation
 
@@ -749,7 +749,7 @@ public class SequentialLongIDGenerator implements EntityIDGenerator<LongEntityID
     }
 }
 
-```text
+```
 
 ## Complete Examples
 
@@ -777,7 +777,7 @@ if (enemy.isDefeated()) {
     spatialIndex.removeEntity(enemyId);
 }
 
-```text
+```
 
 ### Spatial Region Query Example
 
@@ -799,7 +799,7 @@ for (ID entityId : entitiesInRegion) {
     processEntity(entityId, content, position);
 }
 
-```text
+```
 
 ### Dynamic Entity System Example
 
@@ -824,7 +824,7 @@ public class DynamicEntitySystem {
     }
 }
 
-```text
+```
 
 ### Large Entity Management Example
 
@@ -855,7 +855,7 @@ public class LargeEntityManager {
     }
 }
 
-```text
+```
 
 ## Best Practices
 

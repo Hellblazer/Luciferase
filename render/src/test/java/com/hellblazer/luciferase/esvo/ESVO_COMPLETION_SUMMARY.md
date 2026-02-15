@@ -48,7 +48,7 @@ The ESVO (Efficient Sparse Voxel Octrees) implementation has been successfully c
 private int childDescriptor;    // [valid(1)|childptr(14)|far(1)|childmask(8)|leafmask(8)]
 private int contourDescriptor;  // [contour_ptr(24)|contour_mask(8)]
 
-```text
+```
 
 **Key Features**:
 - Exact 8-byte CUDA int2 compliance
@@ -69,7 +69,7 @@ public int getChildOffset(int childIdx) {
     return Integer.bitCount(bitsBeforeChild);
 }
 
-```text
+```
 
 #### Coordinate Space (CoordinateSpace.java)
 
@@ -116,7 +116,7 @@ return (contourDescriptor >> CONTOUR_PTR_SHIFT) & 0xFFFFFF;
 // After (correct - unsigned)
 return (contourDescriptor >>> CONTOUR_PTR_SHIFT) & 0xFFFFFF;
 
-```text
+```
 
 ### 2. Serialization Buffer Position (ESVOSerializer.java:writeNodes)
 
@@ -129,7 +129,7 @@ return (contourDescriptor >>> CONTOUR_PTR_SHIFT) & 0xFFFFFF;
 ESVONodeUnified node = new ESVONodeUnified(childDescriptor, contourDescriptor);
 octree.setNode(i, node);
 
-```text
+```
 
 ### 3. Child Pointer 14-Bit Limit (StackBasedRayTraversal.java:174)
 
@@ -145,7 +145,7 @@ return parentIndex * 8 + 1;
 var baseOffset = Math.min(parentIndex + 1, 16383);
 return Math.min(baseOffset, 16383);
 
-```text
+```
 
 ### 4. Compressed Deserialization NPE (ESVODeserializer.java:deserializeCompressed)
 

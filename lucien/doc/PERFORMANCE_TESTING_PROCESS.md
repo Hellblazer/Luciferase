@@ -42,7 +42,7 @@ This document defines the standardized process for maintaining accurate, consist
    # Check available memory
    java -XX:+PrintFlagsFinal -version | grep MaxHeapSize  
 
-```text
+```
 
 2. **Clean Build** (Automatic)
 
@@ -51,7 +51,7 @@ This document defines the standardized process for maintaining accurate, consist
    # The performance profile handles clean build automatically
    # No manual steps required
 
-```text
+```
 
 ### Phase 2: Core Performance Data Collection
 
@@ -72,7 +72,7 @@ mvn clean test -Pperformance
 # Results saved to: performance-results/
 # Surefire reports: target/surefire-reports/
 
-```text
+```
 
 **Option B: Full Workflow** (Complete Process)
 
@@ -88,7 +88,7 @@ mvn clean verify -Pperformance-full
 # 3. Updates documentation files
 # 4. Creates summary report
 
-```text
+```
 
 **Option C: Individual Components** (For Debugging)
 
@@ -106,7 +106,7 @@ mvn compile -Pperformance-extract
 
 mvn compile -Pperformance-docs
 
-```text
+```
 
 ### Supported Performance Tests (Automatically Included)
 
@@ -131,36 +131,36 @@ The Maven profiles automatically run all performance benchmarks:
    
    **Insertion Performance**:
 
-```text
+```
 
    Entity Count | Octree Time | Tetree Time | Prism Time | Units
    100         | X.XXX ms    | X.XXX ms    | X.XXX ms   | milliseconds
    1,000       | X.XXX ms    | X.XXX ms    | X.XXX ms   | milliseconds  
    10,000      | X.XXX ms    | X.XXX ms    | X.XXX ms   | milliseconds
 
-```text
+```
    
    **k-NN Search Performance**:
 
-```text
+```
 
    Entity Count | k=10 Octree | k=10 Tetree | k=10 Prism | Units
    100         | X.XXX μs    | X.XXX μs    | X.XXX μs   | microseconds
    1,000       | X.XXX μs    | X.XXX μs    | X.XXX μs   | microseconds
    10,000      | X.XXX μs    | X.XXX μs    | X.XXX μs   | microseconds
 
-```text
+```
    
    **Memory Usage**:
 
-```text
+```
 
    Entity Count | Octree MB | Tetree MB | Prism MB | Tetree/Octree | Prism/Octree
    100         | X.XX MB   | X.XX MB   | X.XX MB  | XX%           | XX%
    1,000       | X.XX MB   | X.XX MB   | X.XX MB  | XX%           | XX%  
    10,000      | X.XX MB   | X.XX MB   | X.XX MB  | XX%           | XX%
 
-```text
+```
 
 2. **Data Validation**
    
@@ -194,7 +194,7 @@ Update documents in this specific order to maintain consistency:
    # Replace all performance tables with extracted data
    # Update "Historical Context" section if significant changes occurred
 
-```text
+```
 
 2. **SPATIAL_INDEX_PERFORMANCE_COMPARISON.md**
 
@@ -204,7 +204,7 @@ Update documents in this specific order to maintain consistency:
    # Ensure all numbers match PERFORMANCE_METRICS_MASTER.md exactly
    # Update "Key Insights" section with current performance characteristics
 
-```text
+```
 
 3. **PERFORMANCE_INDEX.md**
 
@@ -214,7 +214,7 @@ Update documents in this specific order to maintain consistency:
    # Verify all document links are current
    # Update "Last Validation" timestamp
 
-```text
+```
 
 4. **Update Cross-References**
 
@@ -226,7 +226,7 @@ Update documents in this specific order to maintain consistency:
    # Replace hardcoded numbers with references to master document:
    # "See PERFORMANCE_METRICS_MASTER.md for current performance data"
 
-```text
+```
 
 ### Phase 5: Quality Assurance
 
@@ -242,7 +242,7 @@ Update documents in this specific order to maintain consistency:
    # Manual check: Search for hardcoded performance numbers
    grep -r "\d+\.\d+.*ms\|\d+x.*faster" lucien/doc/ --exclude="*PERFORMANCE_METRICS_MASTER.md"
 
-```text
+```
 
 2. **Documentation Review**
 
@@ -252,7 +252,7 @@ Update documents in this specific order to maintain consistency:
    # Check that all performance claims reference the master document
    # Ensure README.md and high-level docs have current performance summaries
 
-```text
+```
 
 ## Automation Opportunities
 
@@ -268,7 +268,7 @@ Update documents in this specific order to maintain consistency:
    # Captures output to timestamped files
    # Validates basic sanity checks
 
-```text
+```
 
 2. **Data Extraction Script**
 
@@ -280,7 +280,7 @@ Update documents in this specific order to maintain consistency:
    # Generates CSV/JSON with standardized metrics
    # Compares with historical data
 
-```text
+```
 
 ### Medium-term Automation
 
@@ -304,7 +304,7 @@ Update documents in this specific order to maintain consistency:
      </executions>
    </plugin>
 
-```text
+```
 
 2. **GitHub Actions Integration**
 
@@ -327,7 +327,7 @@ Update documents in this specific order to maintain consistency:
          - name: Update Documentation  
          - name: Create Pull Request
 
-```text
+```
 
 ### Long-term Automation
 
@@ -383,7 +383,7 @@ Update documents in this specific order to maintain consistency:
 export RUN_SPATIAL_INDEX_PERF_TESTS=true
 unset CI  # If incorrectly detected as CI environment
 
-```text
+```
 
 **"Wildly different results between runs"**
 
@@ -394,7 +394,7 @@ unset CI  # If incorrectly detected as CI environment
 # Run tests multiple times and average results
 # Check for thermal throttling on laptops
 
-```text
+```
 
 **"Out of memory errors during large tests"**
 
@@ -404,7 +404,7 @@ unset CI  # If incorrectly detected as CI environment
 
 export MAVEN_OPTS="-Xmx8g -XX:MaxMetaspaceSize=512m"
 
-```text
+```
 
 **"Tests take too long"**
 
@@ -415,7 +415,7 @@ export MAVEN_OPTS="-Xmx8g -XX:MaxMetaspaceSize=512m"
 # Run subsets: mvn test -Dtest="*Performance*" -Dtest.include="Basic*"
 # Note: Full performance suite is configured with 30-minute timeout (1800 seconds)
 
-```text
+```
 
 ### Emergency Procedures
 

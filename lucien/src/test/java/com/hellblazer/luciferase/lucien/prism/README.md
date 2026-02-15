@@ -34,7 +34,7 @@ These tests measure performance and can be flaky due to system conditions:
 
 mvn test -Dtest="*Line*Test,*Triangle*Test,*PrismKey*Test,*PrismGeometry*Test" -DexcludedGroups=performance
 
-```text
+```
 
 ### Run Only Performance Tests
 
@@ -42,7 +42,7 @@ mvn test -Dtest="*Line*Test,*Triangle*Test,*PrismKey*Test,*PrismGeometry*Test" -
 
 mvn test -Dtest=PrismPerformanceTest
 
-```text
+```
 
 ### Run All Tests (Including Performance)
 
@@ -50,7 +50,7 @@ mvn test -Dtest=PrismPerformanceTest
 
 mvn test -Dtest="com.hellblazer.luciferase.lucien.prism.*Test"
 
-```text
+```
 
 ### Exclude Performance Tests from CI
 
@@ -58,7 +58,7 @@ mvn test -Dtest="com.hellblazer.luciferase.lucien.prism.*Test"
 
 mvn test -DexcludedGroups=performance
 
-```text
+```
 
 ## Performance Expectations
 

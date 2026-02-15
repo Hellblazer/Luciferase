@@ -53,25 +53,25 @@ graph TD
     F --> I
     G --> I
     H --> I
-```text
+```
 
 ### Parallel Execution Timeline
 
 **Sequential (Before)**:
-```text
+```
 compile: 54s
 test-all: 20-30min (sequential)
 ────────────────────────────────
 Total: 21-31min
-```text
+```
 
 **Parallel (Current)**:
-```text
+```
 compile: 54s
 tests: 8-9min (all in parallel)
 ────────────────────────────────
 Total: 9-12min (55% faster)
-```text
+```
 
 ---
 
@@ -364,10 +364,10 @@ mvn test -T 1 -pl module1,module2,module3
 ```bash
 
 **Performance on 8-core machine**:
-```text
+```
 Sequential: 20-30 minutes
 Parallel (-T 1C): 5-10 minutes
-```text
+```
 
 ### Recommended Local Configuration
 
@@ -380,7 +380,7 @@ mvn clean test -T 1C
 
 # Skip some slow modules (during development)
 mvn clean test -pl !distributed,!delos,!choam
-```text
+```
 
 ---
 
@@ -397,11 +397,11 @@ mvn clean test -pl !distributed,!delos,!choam
 
 ### Speedup Achieved
 
-```text
+```
 Parallel Speedup = Sequential Time / Parallel Time
                  = 25 min (average) / 10.5 min (average)
                  = 2.38x speedup (58% time savings)
-```text
+```
 
 ### Bottleneck Analysis
 

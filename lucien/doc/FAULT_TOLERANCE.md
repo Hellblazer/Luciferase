@@ -20,7 +20,7 @@ The Luciferase Fault Tolerance Framework provides production-grade fault detecti
 
 ### Architecture Diagram
 
-```text
+```
 ┌─────────────────┐
 │  FaultHandler   │  Detection & Status Transitions
 │  (Monitoring)   │  HEALTHY → SUSPECTED → FAILED
@@ -61,7 +61,7 @@ The Luciferase Fault Tolerance Framework provides production-grade fault detecti
 
 **Status Transition Logic**:
 
-```text
+```
 HEALTHY
   ↓ (2 consecutive barrier timeouts)
 SUSPECTED
@@ -129,7 +129,7 @@ var status = handler.checkHealth(partitionId);
 
 **Recovery Phases**:
 
-```text
+```
 IDLE
   ↓
 DETECTING (identify failures, < 100ms)
@@ -755,7 +755,7 @@ var data = monitor.exportDashboardData();
 ```
 
 **Summary Format**:
-```text
+```
 Health: HEALTHY | Partitions: 5/5 healthy | Recovery: 100.0% success | Latency: detect=1ms, recover=150ms
 ```
 

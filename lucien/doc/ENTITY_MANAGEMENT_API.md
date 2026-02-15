@@ -33,7 +33,7 @@ entityManager.updateEntity(playerId, newPosition, (byte) 10);
 // Remove entity
 entityManager.removeEntity(playerId);
 
-```text
+```
 
 **Key Methods:**
 - `insertEntity(Point3f, byte, Content)` - Insert point entity
@@ -65,7 +65,7 @@ String data = entity.getContent();
 EntityBounds entityBounds = entity.getBounds();
 boolean hasCustomBounds = entity.hasCustomBounds();
 
-```text
+```
 
 ### EntityBounds
 
@@ -94,7 +94,7 @@ float height = bounds.getHeight(); // max.y - min.y
 float depth = bounds.getDepth();   // max.z - min.z
 float volume = bounds.getVolume(); // width * height * depth
 
-```text
+```
 
 **Common Bound Patterns:**
 
@@ -112,7 +112,7 @@ EntityBounds boxBounds = EntityBounds.box(10.0f, 5.0f, 2.0f); // custom dimensio
 // Sphere entity (approximated as cube)
 EntityBounds sphereBounds = EntityBounds.sphere(3.0f); // radius 3.0
 
-```text
+```
 
 ## Entity Identification
 
@@ -129,7 +129,7 @@ public interface EntityID extends Comparable<EntityID> {
 LongEntityID longId = new LongEntityID(12345L);
 UUIDEntityID uuidId = new UUIDEntityID(UUID.randomUUID());
 
-```text
+```
 
 ### LongEntityID
 
@@ -147,7 +147,7 @@ int comparison = id1.compareTo(id2);
 String stringRep = id1.asString(); // "42"
 long value = id1.getValue();
 
-```text
+```
 
 ### UUIDEntityID
 
@@ -164,7 +164,7 @@ UUIDEntityID id3 = UUIDEntityID.fromString("123e4567-e89b-12d3-a456-426614174000
 UUID uuid = id1.getUUID();
 String stringRep = id1.asString();
 
-```text
+```
 
 ## ID Generation
 
@@ -180,7 +180,7 @@ public interface EntityIDGenerator<ID extends EntityID> {
     long getCount();     // Get generation count
 }
 
-```text
+```
 
 ### SequentialLongIDGenerator
 
@@ -204,7 +204,7 @@ generator.reset(); // Start over from 1
 SequentialLongIDGenerator custom = new SequentialLongIDGenerator(1000L);
 LongEntityID id = custom.generateID(); // ID: 1001
 
-```text
+```
 
 **Thread Safety:**
 
@@ -222,7 +222,7 @@ for (int i = 0; i < 1000; i++) {
 
 // All IDs will be unique across threads
 
-```text
+```
 
 ### UUIDGenerator
 
@@ -240,7 +240,7 @@ UUIDEntityID id2 = generator.generateID();
 // UUIDs are globally unique
 assert !id1.equals(id2);
 
-```text
+```
 
 ## Entity Operations
 
@@ -264,7 +264,7 @@ Point3f pos = data.getPosition();
 String content = data.getContent();
 long timestamp = data.getTimestamp();
 
-```text
+```
 
 ### EntityDistance<ID, Content>
 
@@ -285,7 +285,7 @@ for (EntityDistance<LongEntityID, String> result : nearest) {
     System.out.printf("Entity %s at distance %.2f%n", id, distance);
 }
 
-```text
+```
 
 ## Entity Spanning Policies
 
@@ -308,7 +308,7 @@ spatialIndex.setEntitySpanningPolicy(EntitySpanningPolicy.SPAN_CELLS);
 EntityBounds largeBounds = new EntityBounds(-100, -100, -100, 100, 100, 100);
 entityManager.insertEntity(centerPosition, (byte) 5, largeBuilding, largeBounds);
 
-```text
+```
 
 **Policy Behaviors:**
 - **SINGLE_CELL**: Entity stored in one cell based on center position
@@ -347,7 +347,7 @@ entityManager.updateEntity(playerId, new Point3f(10, 0, 10), (byte) 10);
 // Remove entity
 entityManager.removeEntity(buildingId);
 
-```text
+```
 
 ### Forest Integration
 
@@ -370,7 +370,7 @@ forestEM.updateEntityPosition(id1, new Point3f(600, 0, 600)); // May migrate tre
 List<LongEntityID> nearbyAcrossTrees = forestEM.findKNearestNeighbors(
     new Point3f(400, 0, 400), 10);
 
-```text
+```
 
 ### Batch Operations
 
@@ -389,7 +389,7 @@ List<LongEntityID> ids = entityManager.insertBatch(positions, entities, (byte) 1
 // Finalize bulk loading
 spatialIndex.finalizeBulkLoading();
 
-```text
+```
 
 ### Custom Entity Types
 
@@ -413,7 +413,7 @@ GameEntity dragon = new GameEntity("Ancient Dragon", EntityType.NPC);
 UUIDEntityID dragonId = gameEntityManager.insertEntity(
     dragonPosition, (byte) 5, dragon, largeBounds);
 
-```text
+```
 
 ## Performance Considerations
 
@@ -431,7 +431,7 @@ UUIDGenerator secureGen = new UUIDGenerator();
 // - Sequential: High performance, single system
 // - UUID: Distributed systems, global uniqueness
 
-```text
+```
 
 ### Memory Efficiency
 
@@ -445,7 +445,7 @@ entity.hasCustomBounds();              // Avoid bounds overhead for point entiti
 // Bulk operations reduce per-entity overhead
 entityManager.insertBatch(positions, contents, level);
 
-```text
+```
 
 ### Thread Safety
 
@@ -461,7 +461,7 @@ executor.submit(() -> entityManager.insertEntity(pos1, level, content1));
 executor.submit(() -> entityManager.insertEntity(pos2, level, content2));
 executor.submit(() -> entityManager.updateEntity(id, newPos, level));
 
-```text
+```
 
 ## Best Practices
 
@@ -509,4 +509,4 @@ if (entity.isPresent()) {
     // Process entity
 }
 
-```text
+```

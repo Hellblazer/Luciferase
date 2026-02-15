@@ -32,7 +32,7 @@ List<ID> nearbyEntities = spatialIndex.findEntitiesIncludingGhosts(position, rad
 // Get neighbor information including ghosts
 List<NeighborInfo<Key>> neighbors = spatialIndex.findNeighborsIncludingGhosts(key);
 
-```text
+```
 
 ### Distributed Ghost Communication
 
@@ -68,7 +68,7 @@ sync.thenAccept(response -> {
     System.out.println("Synchronized " + response.getTotalElements() + " ghosts");
 });
 
-```text
+```
 
 ## API Reference
 
@@ -83,7 +83,7 @@ public enum GhostType {
     VERTICES    // All neighbors (face, edge, vertex)
 }
 
-```text
+```
 
 ### Spatial Index Ghost Methods
 
@@ -104,7 +104,7 @@ public interface SpatialIndex<Key, ID, Content> {
     List<NeighborInfo<Key>> findNeighborsIncludingGhosts(Key spatialKey);
 }
 
-```text
+```
 
 ### ElementGhostManager
 
@@ -132,7 +132,7 @@ boolean isBoundary = ghostManager.isBoundaryElement(key);
 // Get all boundary elements
 Set<Key> boundaryElements = ghostManager.getBoundaryElements();
 
-```text
+```
 
 ### Ghost Algorithms
 
@@ -146,7 +146,7 @@ public enum GhostAlgorithm {
     CUSTOM        // User-provided algorithm
 }
 
-```text
+```
 
 ### Neighbor Detection
 
@@ -164,7 +164,7 @@ List<MortonKey> allNeighbors = octreeDetector.findNeighbors(key, GhostType.VERTI
 Set<Direction> boundaryDirs = octreeDetector.getBoundaryDirections(key);
 boolean atBoundary = octreeDetector.isBoundaryElement(key);
 
-```text
+```
 
 ### Ghost Communication
 
@@ -207,7 +207,7 @@ updateStream.onNext(GhostUpdate.newBuilder()
     .setInsert(ghostElement)
     .build());
 
-```text
+```
 
 ### Content Serialization
 
@@ -232,7 +232,7 @@ public class GameObjectSerializer implements ContentSerializer<GameObject> {
 // Register serializer
 registry.register(GameObject.class, new GameObjectSerializer());
 
-```text
+```
 
 ## Usage Patterns
 
@@ -250,7 +250,7 @@ octree.createGhostLayer();
 // Use ghost-aware queries
 List<LongEntityID> nearby = octree.findEntitiesIncludingGhosts(position, 100.0f);
 
-```text
+```
 
 ### Pattern 2: Distributed Forest with Ghosts
 
@@ -275,7 +275,7 @@ DistributedGhostManager<MortonKey, LongEntityID, Content> distManager =
 
 distManager.synchronizeAllTrees();
 
-```text
+```
 
 ### Pattern 3: Custom Ghost Algorithm
 
@@ -309,7 +309,7 @@ ElementGhostManager<Key, ID, Content> manager = new ElementGhostManager<>(
     customAlgorithm
 );
 
-```text
+```
 
 ## Performance Considerations
 
@@ -347,7 +347,7 @@ Based on benchmarks, the ghost layer achieves:
    // Bulk synchronization
    ghostCommunicationManager.bulkSync(treeIds, GhostType.FACES);
 
-```text
+```
 
 4. **Virtual Thread Tuning**:
 
@@ -357,7 +357,7 @@ Based on benchmarks, the ghost layer achieves:
    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
    ghostManager.setExecutor(executor);
 
-```text
+```
 
 ## Error Handling
 
@@ -385,7 +385,7 @@ try {
     }
 }
 
-```text
+```
 
 ## Best Practices
 

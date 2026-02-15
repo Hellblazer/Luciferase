@@ -24,7 +24,7 @@ Node contact = CollisionShapeRenderer.createContactPoint(
     contactPoint, contactNormal, Color.YELLOW
 );
 
-```text
+```
 
 ### 2. **CollisionVisualizer**
 
@@ -49,7 +49,7 @@ scene.getChildren().add(visualizer.getRootGroup());
 // Update each frame
 visualizer.update();
 
-```text
+```
 
 ### 3. **CollisionProfiler**
 
@@ -71,7 +71,7 @@ profiler.recordCollisionPair("Sphere", "Box", true);
 String report = profiler.generateReport();
 System.out.println(report);
 
-```text
+```
 
 ### 4. **CollisionEventRecorder**
 
@@ -93,7 +93,7 @@ recorder.isRecordingProperty().set(false);
 recorder.startReplay();
 recorder.stepReplay(); // Step through recorded events
 
-```text
+```
 
 ### 5. **SpatialIndexDebugVisualizer**
 
@@ -114,7 +114,7 @@ spatialVisualizer.showNodesProperty().set(true);
 spatialVisualizer.minLevelProperty().set(0);
 spatialVisualizer.maxLevelProperty().set(10);
 
-```text
+```
 
 ### 6. **CollisionDebugViewer**
 
@@ -128,7 +128,7 @@ public class MyCollisionDemo extends CollisionDebugViewer {
     }
 }
 
-```text
+```
 
 ## Features
 
@@ -228,7 +228,7 @@ public class CollisionDebugExample extends Abstract3DApp {
     }
 }
 
-```text
+```
 
 ## Configuration
 
@@ -277,7 +277,7 @@ mvn test -pl portal
 
 mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.collision.CollisionDebugViewer"
 
-```text
+```
 
 ## Dependencies
 

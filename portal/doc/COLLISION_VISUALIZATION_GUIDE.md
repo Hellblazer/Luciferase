@@ -24,7 +24,7 @@ visualizer.showVelocityVectors.set(true);
 // Add to scene
 scene.getChildren().add(visualizer.getVisualization());
 
-```text
+```
 
 ### CollisionDebugViewer
 
@@ -41,7 +41,7 @@ public class MyCollisionTest extends CollisionDebugViewer {
     }
 }
 
-```text
+```
 
 ## Supported Shape Types
 
@@ -71,7 +71,7 @@ visualizer.setShapeColor(Color.GREEN);
 visualizer.setShapeOpacity(0.7);
 visualizer.setWireframeLineWidth(2.0);
 
-```text
+```
 
 ### Contact Points
 
@@ -84,7 +84,7 @@ visualizer.showContacts.set(true);
 visualizer.setContactColor(Color.RED);
 visualizer.setNormalLength(0.5); // Length of normal arrows
 
-```text
+```
 
 ### Penetration Vectors
 
@@ -95,7 +95,7 @@ Shows penetration depth and direction for overlapping shapes:
 visualizer.showPenetrationVectors.set(true);
 visualizer.setPenetrationColor(Color.YELLOW);
 
-```text
+```
 
 ### Velocity Vectors
 
@@ -106,7 +106,7 @@ Displays velocity and force vectors for moving objects:
 visualizer.showVelocityVectors.set(true);
 visualizer.setVelocityScale(0.1); // Scale factor for vector length
 
-```text
+```
 
 ## Spatial Index Visualization
 
@@ -126,7 +126,7 @@ indexViz.setNodeOpacity(0.3);
 indexViz.showHotspots.set(true);
 indexViz.setHotspotThreshold(10); // Min collisions for hotspot
 
-```text
+```
 
 ## Performance Monitoring
 
@@ -147,7 +147,7 @@ profiler.endOperation("broadPhase");
 String report = profiler.generateReport();
 System.out.println(report);
 
-```text
+```
 
 ### Performance Visualization
 
@@ -163,7 +163,7 @@ perfViz.showMemoryUsage.set(true);
 // Add to overlay
 overlayGroup.getChildren().add(perfViz.getOverlay());
 
-```text
+```
 
 ## Debug Recording
 
@@ -186,7 +186,7 @@ recorder.saveSession("debug_session.json");
 recorder.loadSession("debug_session.json");
 recorder.startReplay();
 
-```text
+```
 
 ## Interactive Controls
 
@@ -233,7 +233,7 @@ collisionSystem.addListener(new CollisionListener() {
     }
 });
 
-```text
+```
 
 ### Custom Shape Rendering
 
@@ -250,7 +250,7 @@ visualizer.addShapeRenderer(MyCustomShape.class,
     }
 );
 
-```text
+```
 
 ### Debugging Specific Collisions
 
@@ -268,7 +268,7 @@ visualizer.setColorMapper((collision) -> {
     return Color.hsb(120 - Math.min(frequency, 120), 1, 1);
 });
 
-```text
+```
 
 ## Performance Tips
 

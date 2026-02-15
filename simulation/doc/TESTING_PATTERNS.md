@@ -55,7 +55,7 @@ The Clock interface enables deterministic control of time in tests. This is a **
     var result2 = service.doWork();
     assertEquals(500, result2.elapsedSince(result1));
 }
-```text
+```
 
 **Key Capabilities**:
 - `setTime(long)` - Set absolute milliseconds
@@ -85,7 +85,7 @@ The @DisabledIfEnvironmentVariable pattern is a **general pattern used project-w
 void testProbabilisticBehavior() {
     // Runs locally for development, skips in CI
 }
-```text
+```
 
 **When to apply**:
 - Probabilistic tests (random failure injection, packet loss)
@@ -105,7 +105,7 @@ void testFailureRecovery() {
     var result = service.executeWithRetry();
     assertTrue(result.isSuccess());
 }
-```text
+```
 
 **TwoNodeDistributedMigrationTest** (timing + distribution):
 ```java
@@ -116,7 +116,7 @@ void testTwoNodeMigration() {
     // Network simulation with timing dependencies
     // Race conditions between nodes
 }
-```text
+```
 
 For complete guidance (decision criteria, diagnostic procedure, best practices), see **TEST_FRAMEWORK_GUIDE.md § Flaky Test Handling**.
 
@@ -150,7 +150,7 @@ void testReliableNetworkBehavior() {
     var received = fakeNetwork.receive();
     assertEquals(message, received);
 }
-```text
+```
 
 ### Pattern: Network Failure Simulation (Local Development Only)
 
@@ -171,7 +171,7 @@ void testNetworkFailureRecovery() {
     var result = service.sendWithRetry(message, maxRetries = 5);
     assertTrue(result.isSuccess());
 }
-```text
+```
 
 ### Pattern: Network Latency Testing
 
@@ -196,7 +196,7 @@ void testLatencyHandling() {
     testClock.advance(50);  // Total 100ms
     assertNotNull(fakeNetwork.receive());  // Now delivered
 }
-```text
+```
 
 ---
 
@@ -225,7 +225,7 @@ void testMigrationTimeout() {
     // Verify timeout detection
     assertTrue(migration.checkTimeout(tx));
 }
-```text
+```
 
 ### Pattern: Idempotency Testing
 
@@ -244,7 +244,7 @@ void testIdempotentMigration() {
     assertTrue(result1.isSuccess());
     assertTrue(result2.isIdempotent());
 }
-```text
+```
 
 ### Pattern: Rollback Testing
 
@@ -264,7 +264,7 @@ void testMigrationRollback() {
     assertTrue(source.contains(entityId));  // Entity restored
     assertFalse(destination.contains(entityId));  // Not in destination
 }
-```text
+```
 
 ---
 
@@ -296,7 +296,7 @@ void testGhostStateLifecycle() {
     // Verify ghost duration
     assertEquals(50L, ghostManager.getGhostDuration(entityId));
 }
-```text
+```
 
 ### Pattern: Ghost Boundary Synchronization
 
@@ -317,7 +317,7 @@ void testGhostBoundarySynchronization() {
     // Verify ghost state activated
     assertTrue(ghostManager.isGhost(entityId));
 }
-```text
+```
 
 ---
 
@@ -347,7 +347,7 @@ CI=true mvn test -pl simulation
 
 # Force run specific skipped test
 CI=false mvn test -Dtest=FlakyTest -pl simulation
-```text
+```
 
 ### Simulation-Specific CI Stability Tips
 
@@ -396,7 +396,7 @@ void testConcurrentOperations() throws InterruptedException {
     // RACE CONDITION: May read stale values!
     assertEquals(10, sharedObject.getCount());
 }
-```text
+```
 
 **Correct Pattern**:
 ```java
@@ -424,7 +424,7 @@ void testConcurrentOperations() throws InterruptedException {
     // Now safe to check assertions
     assertEquals(10, sharedObject.getCount());
 }
-```text
+```
 
 **Why This Works**:
 1. `latch.await()` ensures threads have finished executing
@@ -465,7 +465,7 @@ void testEventualConsistency() throws InterruptedException {
     // Verify reached expected state
     assertEquals(10, sharedObject.getCount());
 }
-```text
+```
 
 **When to Use**:
 - Testing eventually consistent systems
@@ -505,7 +505,7 @@ void testNoDeadlocks() throws InterruptedException {
                "Operations should complete without deadlock");
     executor.shutdown();
 }
-```text
+```
 
 ### Pattern: Verify Thread Safety Invariants
 
@@ -540,7 +540,7 @@ void testThreadSafetyInvariants() throws InterruptedException {
         assertTrue(count <= 100, "Count should not exceed max");
     }
 }
-```text
+```
 
 ### Common Pitfalls
 
@@ -549,7 +549,7 @@ void testThreadSafetyInvariants() throws InterruptedException {
 // WRONG: Assumes updates visible immediately
 latch.await(...);
 assertEquals(expected, actual);  // May fail
-```text
+```
 
 **Pitfall 2: Using Thread.sleep() Before Latch**
 ```java
@@ -557,7 +557,7 @@ assertEquals(expected, actual);  // May fail
 Thread.sleep(100);
 latch.await(...);  // Threads may still be running!
 assertEquals(expected, actual);
-```text
+```
 
 **Pitfall 3: Not Shutting Down Executor**
 ```java
@@ -565,7 +565,7 @@ assertEquals(expected, actual);
 latch.await(...);
 // No executor.shutdown() - threads still active!
 assertEquals(expected, actual);  // Interference from running threads
-```text
+```
 
 ### Real-World Example: EntityMigrationStateMachine
 
@@ -602,7 +602,7 @@ void testConcurrentInitializeAndTransition() throws InterruptedException {
     assertEquals(3, fsm.getEntityCount());
     assertEquals(2, fsm.getEntitiesInMigration());
 }
-```text
+```
 
 **History**: This test failed intermittently in CI (66% failure rate) before adding the 50ms stabilization wait. After fix: 100% pass rate (verified 10/10 local runs).
 

@@ -31,7 +31,7 @@ public class Plane3D {
     public boolean isPointOnPositiveSide(Point3f point);
 }
 
-```text
+```
 
 ### PlaneIntersection
 
@@ -45,7 +45,7 @@ public class PlaneIntersection {
     public static PlaneRelation classifyAABB(Plane3D plane, Point3f min, Point3f max);
 }
 
-```text
+```
 
 ## Current Usage
 
@@ -78,7 +78,7 @@ List<ID> nearPlane = spatialIndex.entitiesInRegion(searchRegion);
 Ray3D ray = new Ray3D(planePoint, planeNormal);
 List<RayIntersection<ID, Content>> hits = spatialIndex.rayIntersectAll(ray);
 
-```text
+```
 
 ## Implementation Status
 

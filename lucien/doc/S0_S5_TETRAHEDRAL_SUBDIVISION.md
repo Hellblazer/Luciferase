@@ -8,7 +8,7 @@ geometric containment.
 
 ## Cube Vertex Numbering
 
-```text
+```
 
       6 -------- 7
      /|         /|
@@ -26,7 +26,7 @@ V1 = (h, 0, 0)    V5 = (h, 0, h)
 V2 = (0, h, 0)    V6 = (0, h, h)
 V3 = (h, h, 0)    V7 = (h, h, h)
 
-```text
+```
 
 ## The 6 Tetrahedra
 
@@ -69,7 +69,7 @@ private static byte classifyPointInCube(float x, float y, float z) {
     }
 }
 
-```text
+```
 
 ### Classification Rules
 

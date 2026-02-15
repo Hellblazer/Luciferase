@@ -35,7 +35,7 @@ bd update <issue-id> --status done
 
 bd sync
 
-```text
+```
 
 ### Working with Issues
 
@@ -84,7 +84,7 @@ bd init
 
 bd create "Try out Beads"
 
-```text
+```
 
 ## Learn More
 

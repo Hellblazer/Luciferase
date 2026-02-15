@@ -38,7 +38,7 @@ public interface TreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, C
     int getMaxDepth();
 }
 
-```text
+```
 
 ### TraversalStrategy
 
@@ -68,7 +68,7 @@ Internal context tracking traversal state:
 
 void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy)
 
-```text
+```
 
 Traverses the entire spatial tree using the specified strategy.
 
@@ -97,7 +97,7 @@ spatialIndex.traverse(new TreeVisitor<Key, LongEntityID, String>() {
     }
 },TraversalStrategy.DEPTH_FIRST);
 
-```text
+```
 
 ### 2. Subtree Traversal
 
@@ -105,7 +105,7 @@ spatialIndex.traverse(new TreeVisitor<Key, LongEntityID, String>() {
 
 void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex)
 
-```text
+```
 
 Traverses a subtree starting from a specific node.
 
@@ -119,7 +119,7 @@ spatialIndex.
 
 traverseFrom(visitor, TraversalStrategy.BREADTH_FIRST, nodeIndex);
 
-```text
+```
 
 ### 3. Region Traversal
 
@@ -127,7 +127,7 @@ traverseFrom(visitor, TraversalStrategy.BREADTH_FIRST, nodeIndex);
 
 void traverseRegion(TreeVisitor<ID, Content> visitor, Spatial region, TraversalStrategy strategy)
 
-```text
+```
 
 Traverses only nodes that intersect with the specified region.
 
@@ -140,7 +140,7 @@ spatialIndex.
 
 traverseRegion(visitor, region, TraversalStrategy.DEPTH_FIRST);
 
-```text
+```
 
 ## Visitor Patterns
 
@@ -185,7 +185,7 @@ public class StatisticsVisitor implements TreeVisitor<ID, Content> {
     }
 }
 
-```text
+```
 
 ### Tree Serializer
 
@@ -247,7 +247,7 @@ public class TreeSerializer implements TreeVisitor<ID, Content> {
     }
 }
 
-```text
+```
 
 ### Tree Validator
 
@@ -291,7 +291,7 @@ public class TreeValidator implements TreeVisitor<ID, Content> {
     }
 }
 
-```text
+```
 
 ## Advanced Usage
 
@@ -317,7 +317,7 @@ public class ConditionalVisitor implements TreeVisitor<ID, Content> {
     }
 }
 
-```text
+```
 
 ### Performance Analysis
 
@@ -361,7 +361,7 @@ public class PerformanceAnalyzer implements TreeVisitor<ID, Content> {
     }
 }
 
-```text
+```
 
 ### Parallel Traversal
 
@@ -392,7 +392,7 @@ public class ParallelVisitor implements TreeVisitor<ID, Content> {
     }
 }
 
-```text
+```
 
 ## Best Practices
 
@@ -452,4 +452,4 @@ public class SpatialDebugger {
     }
 }
 
-```text
+```

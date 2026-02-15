@@ -62,7 +62,7 @@ BulkOperationConfig config = BulkOperationConfig.highPerformance()
 
 spatialIndex.configureBulkOperations(config);
 
-```text
+```
 
 #### Configuration Parameters
 
@@ -90,7 +90,7 @@ int estimatedNodes = NodeEstimator.estimateNodeCount(
 
 spatialIndex.preAllocateNodes(100000, NodeEstimator.SpatialDistribution.uniform());
 
-```text
+```
 
 #### Memory Usage Patterns
 
@@ -114,7 +114,7 @@ if (pool.getHitRate() < 0.8) {
     pool.preallocate(5000, NodeType::new);
 }
 
-```text
+```
 
 ### 3. Parallel Processing
 
@@ -131,7 +131,7 @@ ParallelBulkOperations.ParallelConfig parallelConfig =
 ParallelBulkOperations<ID, Content, NodeType> parallelOps = 
     new ParallelBulkOperations<>(spatialIndex, bulkProcessor, parallelConfig);
 
-```text
+```
 
 #### Scaling Guidelines
 
@@ -156,7 +156,7 @@ SubdivisionStrategy strategy = OctreeSubdivisionStrategy.forLargeEntities()
 
 spatialIndex.setSubdivisionStrategy(strategy);
 
-```text
+```
 
 ## Octree-Specific Optimizations
 
@@ -176,7 +176,7 @@ octree.precomputeRegion(minBound, maxBound);
 // Use spatial hints
 List<ID> results = octree.entitiesInRegion(min, max, SpatialHint.MOSTLY_CONTAINED);
 
-```text
+```
 
 ## Tetree-Specific Optimizations
 
@@ -207,7 +207,7 @@ System.out.println(metrics.getSummary());
 // - Average neighbor query time (< 1 μs is good)
 // - Tree balance factor (close to 1.0 is ideal)
 
-```text
+```
 
 ### Tetree-Specific Best Practices
 
@@ -233,7 +233,7 @@ PrismConfig config = new PrismConfig()
 
 Prism prism = new Prism(bounds, config);
 
-```text
+```
 
 ### Optimization Strategies
 
@@ -264,7 +264,7 @@ KNearestNeighborConfig knnConfig = new KNearestNeighborConfig()
     .withRadiusMultiplier(1.5f)
     .withMaxIterations(10);
 
-```text
+```
 
 ### Performance by Query Type
 
@@ -316,7 +316,7 @@ public void benchmarkSpatialIndex() {
         numOperations * 1_000_000_000.0 / elapsed);
 }
 
-```text
+```
 
 ## JVM Tuning
 
@@ -334,7 +334,7 @@ java -Xmx8g -Xms8g \
 
      YourApplication
 
-```text
+```
 
 ## Configuration Templates
 
@@ -349,7 +349,7 @@ BulkOperationConfig config = BulkOperationConfig.highPerformance()
     .withEnableParallel(true)
     .withStackBasedBuilder(true);
 
-```text
+```
 
 ### Memory-Efficient Configuration
 
@@ -360,7 +360,7 @@ BulkOperationConfig config = BulkOperationConfig.memoryEfficient()
     .withNodePoolSize(5000)
     .withAdaptivePreAllocation(true);
 
-```text
+```
 
 ### Balanced Configuration
 
@@ -371,7 +371,7 @@ BulkOperationConfig config = BulkOperationConfig.balanced()
     .withDeferSubdivision(true)
     .withPreSortByMorton(true);
 
-```text
+```
 
 ## Troubleshooting Performance Issues
 

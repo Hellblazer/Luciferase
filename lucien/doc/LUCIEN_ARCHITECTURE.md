@@ -20,7 +20,7 @@ and full ghost layer implementation with gRPC communication.
 
 ## Package Structure
 
-```text
+```
 
 com.hellblazer.luciferase.lucien/
 ├── Root package (30 classes + 2 images)
@@ -132,7 +132,7 @@ com.hellblazer.luciferase.lucien/
 
 ### Core Inheritance Structure
 
-```text
+```
 
 SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interface)
     └── AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
@@ -146,7 +146,7 @@ SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interfa
 
 As of July 10, 2025, the node storage hierarchy has been simplified:
 
-```text
+```
 
 SpatialNodeStorage<ID> (interface)
     └── SpatialNodeImpl<ID> (unified implementation used by both Octree and Tetree)
@@ -819,7 +819,7 @@ The TetreeKey system provides efficient spatial key encoding for tetrahedral sub
 
 Level 21 uses innovative split encoding to achieve full 21-level support:
 
-```text
+```
 
 Level 21 Encoding (6 bits total):
 

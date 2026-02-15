@@ -27,7 +27,7 @@ Enhanced OpenCL kernel compilation to support runtime parameter override via bui
 void compile(String source, String entryPoint, String buildOptions)
 void recompile(String source, String entryPoint, String buildOptions)
 long getKernelHandle()  // For AbstractOpenCLRenderer integration
-```text
+```
 
 **Build Options Support**:
 - `-D SYMBOL=value`: Preprocessor defines
@@ -45,7 +45,7 @@ try (var kernel = EnhancedOpenCLKernel.create("rayTracer")) {
     // Later, recompile with different parameters
     kernel.recompile(kernelSource, "rayTraverse", "-D MAX_TRAVERSAL_DEPTH=24");
 }
-```text
+```
 
 ### Phase 2: DAGOpenCLRenderer Integration 🔄
 
@@ -79,7 +79,7 @@ graph TD
     style D fill:#F5A623
     style E fill:#BD10E0
     style F fill:#50E3C2
-```text
+```
 
 **Performance Impact**:
 - MAX_TRAVERSAL_DEPTH 32→16: 75% LDS reduction, higher GPU occupancy
@@ -150,7 +150,7 @@ graph TD
 ```java
 var safeBuildOptions = (buildOptions != null) ? buildOptions : "";
 var buildStatus = clBuildProgram(program, devices, safeBuildOptions, null, NULL);
-```text
+```
 
 **Rationale**: OpenCL's `clBuildProgram` expects non-null string, even if empty.
 
@@ -159,7 +159,7 @@ var buildStatus = clBuildProgram(program, devices, safeBuildOptions, null, NULL)
 ### GPU Auto-Tuner Integration
 
 **Workflow**:
-```text
+```
 1. DAGOpenCLRenderer.initialize()
 2. DAGOpenCLRenderer.optimizeForDevice()
    ├─ GPUCapabilities detected
@@ -167,7 +167,7 @@ var buildStatus = clBuildProgram(program, devices, safeBuildOptions, null, NULL)
    ├─ WorkgroupConfig generated (depth=16, size=64)
    └─ recompileKernelWithParameters(config)
        └─ EnhancedOpenCLKernel.recompile(..., buildOptions)
-```text
+```
 
 ### GPU Tuning Profiles
 
@@ -178,7 +178,7 @@ WorkgroupConfig optimal = WorkgroupConfig.withParameters(
     16,   // maxTraversalDepth (reduced from 32 for occupancy)
     gpuCapabilities
 );
-```text
+```
 
 ## Performance Expectations
 
@@ -219,25 +219,25 @@ WorkgroupConfig optimal = WorkgroupConfig.withParameters(
 ## File Structure
 
 **Production Code**:
-```text
+```
 render/src/main/java/com/hellblazer/luciferase/
 ├── sparse/gpu/
 │   └── EnhancedOpenCLKernel.java (NEW, 350 lines)
 └── esvo/gpu/
     └── DAGOpenCLRenderer.java (ENHANCED, +60 lines)
-```text
+```
 
 **Test Code**:
-```text
+```
 render/src/test/java/com/hellblazer/luciferase/sparse/gpu/
 └── EnhancedOpenCLKernelTest.java (NEW, 400 lines)
-```text
+```
 
 **Documentation**:
-```text
+```
 render/doc/
 └── P4_KERNEL_RECOMPILATION_FRAMEWORK.md (THIS FILE)
-```text
+```
 
 ## Known Issues and Future Work
 
@@ -311,7 +311,7 @@ renderer.uploadData(dagData);
 renderer.renderFrame(camera, lookAt, fov);
 
 // Result: 10-15% faster rendering due to optimized kernel parameters
-```text
+```
 
 ## References
 

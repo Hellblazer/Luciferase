@@ -31,7 +31,7 @@ List<LongEntityID> results = forest.findKNearestNeighbors(position, 10);
 forest.insertEntity(entityId, position, content);
 forest.removeEntity(entityId);
 
-```text
+```
 
 **Key Methods:**
 - `addTree(AbstractSpatialIndex, TreeMetadata)` - Add a tree with metadata
@@ -61,7 +61,7 @@ GridForest<MortonKey, LongEntityID, String> gridForest =
 GridForest<TetreeKey, LongEntityID, String> tetGrid = 
     GridForest.createTetreeGrid(origin, size, 2, 2, 2);
 
-```text
+```
 
 **Factory Methods:**
 - `createOctreeGrid(Point3f origin, Vector3f size, int x, int y, int z)` - Uniform octree grid
@@ -86,7 +86,7 @@ adaptiveForest.enableBackgroundAdaptation(30000); // Check every 30 seconds
 // The forest automatically handles subdivision and merging
 adaptiveForest.insertEntity(entityId, position, content);
 
-```text
+```
 
 **Key Features:**
 - **Automatic Subdivision**: Creates new trees when density exceeds thresholds
@@ -116,7 +116,7 @@ List<LongEntityID> currentLOD = hierForest.findKNearestNeighbors(
 List<LongEntityID> allLevels = hierForest.findKNearestNeighbors(
     position, 10, QueryMode.ALL_LEVELS);
 
-```text
+```
 
 **Query Modes:**
 - `CURRENT_LOD` - Query only current level based on viewer distance
@@ -146,7 +146,7 @@ entityManager.removeEntity(entityId);
 // Query entities across all trees
 List<LongEntityID> nearby = entityManager.findKNearestNeighbors(position, 5);
 
-```text
+```
 
 **Assignment Strategies:**
 - `ROUND_ROBIN` - Distribute evenly across trees
@@ -165,7 +165,7 @@ AdaptiveForestEntityManager<LongEntityID, String> adaptiveEM =
 // Automatically tracks entity density for adaptation decisions
 adaptiveEM.insertEntity(position, content); // Triggers adaptation if needed
 
-```text
+```
 
 ## Dynamic Management
 
@@ -186,7 +186,7 @@ manager.splitTree(treeId, SplitStrategy.OCTANT);
 manager.mergeTrees(Arrays.asList(treeId1, treeId2));
 manager.rebalanceForest();
 
-```text
+```
 
 **Features:**
 - **Automatic Splitting**: Split overloaded trees
@@ -214,7 +214,7 @@ balancer.rebalance();
 // Get load metrics
 LoadMetrics metrics = balancer.getLoadMetrics(treeId);
 
-```text
+```
 
 ## Connectivity and Ghost Zones
 
@@ -236,7 +236,7 @@ boolean adjacent = connectivity.areAdjacent(treeId1, treeId2);
 // Get shared boundary information
 BoundaryInfo boundary = connectivity.getSharedBoundary(treeId1, treeId2);
 
-```text
+```
 
 ### GhostZoneManager
 
@@ -255,7 +255,7 @@ ghostManager.updateGhostZones(); // Sync all ghost zones
 List<LongEntityID> withGhosts = ghostManager.queryWithGhostZones(
     treeId, position, radius);
 
-```text
+```
 
 ## Configuration
 
@@ -275,7 +275,7 @@ ForestConfig config = new ForestConfig()
 
 Forest<MortonKey, LongEntityID, String> forest = new Forest<>(config);
 
-```text
+```
 
 ## Performance Considerations
 
@@ -296,7 +296,7 @@ List<CompletableFuture<Void>> futures = IntStream.range(0, 1000)
 
 CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-```text
+```
 
 ### Memory Efficiency
 
@@ -319,7 +319,7 @@ forest.setParallelism(Runtime.getRuntime().availableProcessors());
 // Queries automatically use parallel streams for multi-tree operations
 List<LongEntityID> results = forest.findKNearestNeighbors(position, 10);
 
-```text
+```
 
 ## Best Practices
 
@@ -363,7 +363,7 @@ try {
     // Handle general forest errors
 }
 
-```text
+```
 
 ## Integration with Single Trees
 
@@ -377,6 +377,6 @@ AbstractSpatialIndex<MortonKey, LongEntityID, String> tree = forest.getTree(tree
 // Use tree directly when needed
 tree.insert(entityId, position, level, content);
 
-```text
+```
 
 This provides flexibility to use forest-wide operations or direct tree access as needed.

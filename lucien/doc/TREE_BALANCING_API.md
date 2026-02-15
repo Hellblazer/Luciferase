@@ -42,7 +42,7 @@ public interface TreeBalancingStrategy<ID extends EntityID> {
     )
 }
 
-```text
+```
 
 ### TreeBalancer
 
@@ -76,7 +76,7 @@ public interface TreeBalancer<ID extends EntityID> {
 
 }
 
-```text
+```
 
 ## API Methods
 
@@ -88,7 +88,7 @@ void setAutoBalancingEnabled(boolean enabled)
 
 boolean isAutoBalancingEnabled()
 
-```text
+```
 
 Enables automatic rebalancing after insert/remove operations.
 
@@ -105,7 +105,7 @@ spatialIndex.
 insert(position, level, content);
 // Automatic rebalancing may occur here
 
-```text
+```
 
 ### 2. Manual Rebalancing
 
@@ -113,7 +113,7 @@ insert(position, level, content);
 
 TreeBalancer.RebalancingResult rebalanceTree()
 
-```text
+```
 
 Manually triggers a full tree rebalancing operation.
 
@@ -140,7 +140,7 @@ System.out.
 
 println("  Time taken: "+result.timeTaken() +"ms");
 
-```text
+```
 
 ### 3. Set Balancing Strategy
 
@@ -148,7 +148,7 @@ println("  Time taken: "+result.timeTaken() +"ms");
 
 void setBalancingStrategy(TreeBalancingStrategy<ID> strategy)
 
-```text
+```
 
 Configures the balancing strategy used by the tree.
 
@@ -164,7 +164,7 @@ spatialIndex.
 
 setBalancingStrategy(new ConservativeBalancingStrategy<>());
 
-```text
+```
 
 ### 4. Get Balancing Statistics
 
@@ -172,7 +172,7 @@ setBalancingStrategy(new ConservativeBalancingStrategy<>());
 
 TreeBalancingStrategy.TreeBalancingStats getBalancingStats()
 
-```text
+```
 
 Retrieves current tree balance statistics.
 
@@ -193,7 +193,7 @@ println("Tree is imbalanced, manual rebalancing recommended");
 rebalanceTree();
 }
 
-```text
+```
 
 ## Built-in Strategies
 
@@ -229,7 +229,7 @@ public class DefaultBalancingStrategy<ID extends EntityID> implements TreeBalanc
     }
 }
 
-```text
+```
 
 ### AggressiveBalancingStrategy
 
@@ -258,7 +258,7 @@ public class AggressiveBalancingStrategy<ID extends EntityID> extends DefaultBal
     }
 }
 
-```text
+```
 
 ### ConservativeBalancingStrategy
 
@@ -287,7 +287,7 @@ public class ConservativeBalancingStrategy<ID extends EntityID> extends DefaultB
     }
 }
 
-```text
+```
 
 ## Custom Strategies
 
@@ -320,7 +320,7 @@ public class LevelAwareStrategy<ID extends EntityID> implements TreeBalancingStr
     }
 }
 
-```text
+```
 
 ### Time-Based Strategy
 
@@ -359,7 +359,7 @@ public class TimeBasedStrategy<ID extends EntityID> implements TreeBalancingStra
     }
 }
 
-```text
+```
 
 ## Balancing Operations
 
@@ -423,7 +423,7 @@ public class BalancingMetrics {
     }
 }
 
-```text
+```
 
 ### Batch Operations
 
@@ -450,7 +450,7 @@ public class BatchBalancing {
     }
 }
 
-```text
+```
 
 ## Best Practices
 
@@ -524,4 +524,4 @@ public class AdaptiveBalancingSystem {
     }
 }
 
-```text
+```

@@ -23,7 +23,7 @@ The k-NN API allows you to:
 
 List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance)
 
-```text
+```
 
 Finds the k nearest entities to a query point within a maximum distance.
 
@@ -56,7 +56,7 @@ ID closestEnemy = nearestEnemies.get(0);
 attack(closestEnemy);
 }
 
-```text
+```
 
 ### Extended k-NN Search (Implementation Pattern)
 
@@ -79,7 +79,7 @@ public List<EntityDistance<ID>> kNearestNeighborsWithDistance(Point3f queryPoint
     return results;
 }
 
-```text
+```
 
 ## Use Cases
 
@@ -105,7 +105,7 @@ public List<InteractableObject> findInteractables(Point3f playerPos) {
     return interactables;
 }
 
-```text
+```
 
 ### 2. AI Target Selection
 
@@ -132,7 +132,7 @@ public ID selectTarget(Point3f aiPosition, TargetFilter filter) {
     return null; // No valid target found
 }
 
-```text
+```
 
 ### 3. Spatial Clustering
 
@@ -149,7 +149,7 @@ public List<ID> findClusterMembers(Point3f seedPoint, float clusterRadius) {
     return filterByDensity(members, seedPoint, clusterRadius);
 }
 
-```text
+```
 
 ### 4. Collision Avoidance
 
@@ -185,7 +185,7 @@ public Vector3f calculateAvoidanceVector(ID entityId, float avoidanceRadius) {
     return avoidance;
 }
 
-```text
+```
 
 ### 5. Spatial Sound System
 
@@ -213,7 +213,7 @@ public List<SoundSource> getNearestSounds(Point3f listenerPos) {
     return sounds;
 }
 
-```text
+```
 
 ## Performance Optimization
 
@@ -252,7 +252,7 @@ public List<ID> adaptiveKNN(Point3f queryPoint, float targetRadius) {
     return spatialIndex.kNearestNeighbors(queryPoint, k, searchRadius);
 }
 
-```text
+```
 
 ### 2. Cached k-NN Queries
 
@@ -290,7 +290,7 @@ public class CachedKNNQuery {
     }
 }
 
-```text
+```
 
 ### 3. Progressive k-NN Search
 
@@ -334,7 +334,7 @@ public class ProgressiveKNNSearch {
     }
 }
 
-```text
+```
 
 ## Algorithm Details
 
@@ -410,7 +410,7 @@ public class ProximitySystem {
     // Similar methods for allies, interactables, hazards...
 }
 
-```text
+```
 
 ## Performance Characteristics
 

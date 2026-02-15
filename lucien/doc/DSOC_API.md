@@ -39,7 +39,7 @@ DSOCConfiguration config = new DSOCConfiguration()
     .withEnableHierarchicalOcclusion(true)
     .withZPyramidLevels(6);
 
-```text
+```
 
 #### Key Configuration Options
 
@@ -67,7 +67,7 @@ if (octree.isDSOCEnabled()) {
     // DSOC operations available
 }
 
-```text
+```
 
 ### 3. Camera Updates
 
@@ -81,7 +81,7 @@ Point3f cameraPosition = new Point3f(x, y, z);
 
 octree.updateCamera(viewMatrix, projectionMatrix, cameraPosition);
 
-```text
+```
 
 ### 4. Frame Management
 
@@ -95,7 +95,7 @@ long currentFrame = octree.nextFrame();
 // Get current frame
 long frame = octree.getCurrentFrame();
 
-```text
+```
 
 ### 5. Frustum Culling with DSOC
 
@@ -113,7 +113,7 @@ Frustum3D frustum = Frustum3D.createPerspective(
 List<FrustumIntersection<ID, Content>> visible = 
     octree.frustumCullVisible(frustum, cameraPosition);
 
-```text
+```
 
 ### 6. Entity Visibility Management
 
@@ -124,7 +124,7 @@ Force immediate visibility updates for specific entities:
 // Force entity to be checked on next frame
 octree.forceEntityUpdate(entityId);
 
-```text
+```
 
 ### 7. Statistics and Monitoring
 
@@ -149,7 +149,7 @@ Map<String, Object> stats = octree.getDSOCStatistics();
 // Reset statistics
 octree.resetDSOCStatistics();
 
-```text
+```
 
 ## TBV Strategies
 
@@ -167,7 +167,7 @@ TBVStrategy strategy = new AdaptiveTBVStrategy(
     expansionFactor: 1.2f
 );
 
-```text
+```
 
 ### 2. FixedDurationTBVStrategy
 
@@ -177,7 +177,7 @@ Uses fixed duration for all TBVs:
 
 TBVStrategy strategy = new FixedDurationTBVStrategy(60); // 60 frames
 
-```text
+```
 
 ### 3. VelocityBasedTBVStrategy
 
@@ -191,7 +191,7 @@ TBVStrategy strategy = new VelocityBasedTBVStrategy(
     maxDuration: 200
 );
 
-```text
+```
 
 ## Complete Example
 
@@ -262,7 +262,7 @@ public class DSOCExample {
     }
 }
 
-```text
+```
 
 ## Performance Considerations
 
@@ -303,4 +303,4 @@ octree.updateCamera(view, proj, pos);
 octree.nextFrame();
 octree.getDSOCStatistics();
 
-```text
+```

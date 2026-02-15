@@ -206,7 +206,7 @@ find . -name "*.md" -type f -mtime +90 -not -path "*/node_modules/*" -not -path 
 
 find . -name "*.md" -type f -exec markdown-link-check {} \;
 
-```text
+```
 
 ### Run Full Documentation Validation
 
@@ -224,7 +224,7 @@ grep -r "TODO\|FIXME" --include="*.md" .
 
 grep -r "\.java" --include="*.md" . | grep -o "[A-Z][a-zA-Z]*\.java" | sort -u
 
-```text
+```
 
 ---
 
@@ -340,7 +340,7 @@ public class Example {
     }
 }
 
-```text
+```
 
 ## Configuration
 
@@ -355,7 +355,7 @@ public class Example {
 - [Link to API docs]
 - [Link to architecture docs]
 
-```text
+```
 
 ### API Change Migration Guide Template
 
@@ -380,7 +380,7 @@ public class Example {
 // Old code
 oldApi.doSomething(param);
 
-```text
+```
 
 ### After (New API)
 
@@ -389,7 +389,7 @@ oldApi.doSomething(param);
 // New code
 newApi.doSomething(param1, param2);
 
-```text
+```
 
 ## Rationale
 
@@ -400,7 +400,7 @@ newApi.doSomething(param1, param2);
 - **Deprecated**: [Date if applicable]
 - **Removed**: [Date if applicable]
 
-```text
+```
 
 ---
 

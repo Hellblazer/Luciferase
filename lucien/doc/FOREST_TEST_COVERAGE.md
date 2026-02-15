@@ -57,7 +57,7 @@ Tests use Java generics and parameterized test features:
 <Key extends SpatialKey<Key>> void testBasicForestOperations(
     SpatialIndexProvider<Key, LongEntityID, String> provider)
 
-```text
+```
 
 This approach validates the Forest framework's type-safe generic architecture across all spatial index implementations.
 

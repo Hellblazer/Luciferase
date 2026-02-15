@@ -9,7 +9,7 @@ The Sentry module implements a 3D Delaunay tetrahedralization data structure opt
 
 ## Module Structure
 
-```text
+```
 
 sentry/
 ├── src/main/java/com/hellblazer/sentry/
@@ -17,7 +17,7 @@ sentry/
 │   └── (core classes)     # Base Delaunay tetrahedralization
 └── doc/                   # Documentation
 
-```text
+```
 
 ## Core Architecture
 
@@ -78,7 +78,7 @@ flowchart TD
     C -->|Yes| D
     D --> B
     C -->|No| E
-```text
+```
 
 ### 3. Spatial Publish/Subscribe Framework
 
@@ -117,7 +117,7 @@ flowchart TD
 
     F["Expected time: O(n^1/3)<br/>for uniformly distributed points"]
     E --> F
-```text
+```
 
 ### Incremental Construction
 
@@ -140,7 +140,7 @@ flowchart TD
     F -->|No| G
     G --> F
     F -->|Yes| H
-```text
+```
 
 ### Vertex Deletion
 
@@ -161,7 +161,7 @@ flowchart TD
     D -->|Yes| C
     D -->|No| E
     E --> F
-```text
+```
 
 ## Performance Characteristics
 
@@ -207,7 +207,7 @@ MutableGrid grid = new MutableGrid();
 Vertex v = grid.add(new Point3f(x, y, z));
 grid.delete(v);
 
-```text
+```
 
 ### Spatial Awareness
 
@@ -221,7 +221,7 @@ SphericalSubscription subscriber = new SphericalSubscription();
 subscriber.setLocation(new Point3f(5, 5, 5));
 subscriber.setRadius(5.0f);
 
-```text
+```
 
 ## Integration with Luciferase
 

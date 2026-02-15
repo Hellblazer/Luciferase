@@ -35,7 +35,7 @@ boolean atBoundary = detector.isBoundaryElement(key);
 // Get boundary directions
 Set<Direction> boundaryDirs = detector.getBoundaryDirections(key);
 
-```text
+```
 
 ## API Reference
 
@@ -92,7 +92,7 @@ public interface NeighborDetector<Key extends SpatialKey<Key>> {
     Set<Direction> getBoundaryDirections(Key key);
 }
 
-```text
+```
 
 ### Direction Enumeration
 
@@ -124,7 +124,7 @@ public enum Direction {
     public Point3f getOffset();
 }
 
-```text
+```
 
 ### NeighborInfo Record
 
@@ -137,7 +137,7 @@ public record NeighborInfo<Key extends SpatialKey<Key>>(
     Direction direction // Direction from source to neighbor
 ) {}
 
-```text
+```
 
 ## Implementation Details
 
@@ -182,7 +182,7 @@ public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
     }
 }
 
-```text
+```
 
 ### Tetree Neighbor Detector
 
@@ -223,7 +223,7 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey> {
     public Tet keyToTet(TetreeKey key);
 }
 
-```text
+```
 
 ## Usage Patterns
 
@@ -245,7 +245,7 @@ for (MortonKey neighbor : faceNeighbors) {
     }
 }
 
-```text
+```
 
 ### Pattern 2: Boundary Detection
 
@@ -263,7 +263,7 @@ for (MortonKey key : octree.getSpatialKeys()) {
     }
 }
 
-```text
+```
 
 ### Pattern 3: Ghost Creation
 
@@ -276,7 +276,7 @@ ElementGhostManager<MortonKey, ID, Content> ghostManager =
 // Detector is used internally to find ghost candidates
 ghostManager.createGhostLayer();
 
-```text
+```
 
 ### Pattern 4: Collision Optimization
 
@@ -299,7 +299,7 @@ public List<CollisionPair> findPotentialCollisions(Key element) {
     return pairs;
 }
 
-```text
+```
 
 ## Performance Characteristics
 
@@ -336,7 +336,7 @@ List<MortonKey> filteredNeighbors = detector.findNeighbors(key, GhostType.FACES)
     })
     .collect(Collectors.toList());
 
-```text
+```
 
 ### Neighbor Caching
 
@@ -355,7 +355,7 @@ public class CachedNeighborDetector<Key> implements NeighborDetector<Key> {
     }
 }
 
-```text
+```
 
 ### Multi-Level Neighbors
 
@@ -383,7 +383,7 @@ public List<Key> findMultiLevelNeighbors(Key key, GhostType type) {
     return neighbors;
 }
 
-```text
+```
 
 ## Implementation Notes
 
@@ -415,7 +415,7 @@ try {
     log.error("Spatial index error: {}", e.getMessage());
 }
 
-```text
+```
 
 ## Best Practices
 

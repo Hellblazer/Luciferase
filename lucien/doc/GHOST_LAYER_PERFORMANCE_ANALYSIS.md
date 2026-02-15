@@ -41,7 +41,7 @@ public enum GhostType {
     VERTICES    // All neighbors (face, edge, vertex)
 }
 
-```text
+```
 
 **Performance Impact by Type:**
 
@@ -61,7 +61,7 @@ public enum GhostAlgorithm {
     CUSTOM        // User-provided algorithm
 }
 
-```text
+```
 
 **Performance Characteristics:**
 
@@ -412,7 +412,7 @@ var manager = new ElementGhostManager<>(
     GhostAlgorithm.MINIMAL  // Lowest overhead
 );
 
-```text
+```
 
 **Expected Performance**: < 10ms p99 latency, < 10 MB/s bandwidth
 
@@ -429,7 +429,7 @@ var manager = new ElementGhostManager<>(
     GhostAlgorithm.AGGRESSIVE  // Maximum coverage
 );
 
-```text
+```
 
 **Expected Performance**: > 100 MB/s throughput, tolerates higher latency
 
@@ -446,7 +446,7 @@ var manager = new ElementGhostManager<>(
     GhostAlgorithm.CONSERVATIVE  // Recommended default
 );
 
-```text
+```
 
 **Expected Performance**: 15-25ms p99 latency, 50-80 MB/s throughput
 
@@ -460,7 +460,7 @@ For optimal network performance:
 
    ghostManager.setChannelPoolSize(8);  // 8 channels per endpoint
 
-```text
+```
 
 2. **Enable Compression**: For large payloads over WAN
 
@@ -468,7 +468,7 @@ For optimal network performance:
 
    ghostManager.setCompressionEnabled(true);
 
-```text
+```
 
 3. **Tune Virtual Thread Pool**: Match to expected concurrency
 
@@ -478,7 +478,7 @@ For optimal network performance:
        Executors.newVirtualThreadPerTaskExecutor()
    );
 
-```text
+```
 
 4. **Batch Ghost Requests**: Reduce round-trip overhead
 
@@ -486,7 +486,7 @@ For optimal network performance:
 
    ghostManager.batchRequestGhosts(targetRanks, treeIds, GhostType.FACES);
 
-```text
+```
 
 ### Memory Optimization
 
@@ -499,7 +499,7 @@ For memory-constrained environments:
 
    ghostManager.cleanupStaleGhosts(maxAgeMs);
 
-```text
+```
 
 3. **Selective Ghost Types**: Use FACES instead of VERTICES (saves ~60% memory)
 
@@ -520,7 +520,7 @@ mvn test -Dtest=GhostPerformanceBenchmark
 
 mvn test -Dtest=GhostPerformanceBenchmark#benchmarkGhostCreationOverhead
 
-```text
+```
 
 ### Performance Baselines
 
@@ -547,7 +547,7 @@ void setUp() {
                 CIEnvironmentCheck.getSkipMessage());
 }
 
-```text
+```
 
 **Rationale**: Performance benchmarks require stable, dedicated hardware. CI environments have variable performance characteristics unsuitable for regression detection.
 

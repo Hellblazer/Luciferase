@@ -33,7 +33,7 @@ static Clock fixed(long fixedTime) {
         }
     };
 }
-```text
+```
 
 ### The Problem
 
@@ -43,7 +43,7 @@ Production code uses `nanoTime()` for elapsed time measurements:
 long start = clock.nanoTime();
 doWork();
 long elapsed = clock.nanoTime() - start;  // Always 0 with Clock.fixed()
-```text
+```
 
 When a fixed clock is injected, elapsed time calculations always return 0, breaking functionality that depends on measuring time intervals.
 
@@ -123,7 +123,7 @@ static Clock fixed(long fixedTime) {
         }
     };
 }
-```text
+```
 
 ### Updated Clock Interface Javadoc
 
@@ -149,7 +149,7 @@ Add to `nanoTime()` method documentation:
 default long nanoTime() {
     return System.nanoTime();
 }
-```text
+```
 
 ### Test for New Behavior
 
@@ -170,7 +170,7 @@ void testFixedClockNanoTimeThrowsException() {
     assertTrue(exception.getMessage().contains("elapsed time"),
         "Exception should explain the limitation");
 }
-```text
+```
 
 ---
 

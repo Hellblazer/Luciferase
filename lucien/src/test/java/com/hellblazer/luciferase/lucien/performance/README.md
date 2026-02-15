@@ -60,7 +60,7 @@ Performance tests are disabled by default to avoid running during regular test c
 export RUN_SPATIAL_INDEX_PERF_TESTS=true
 mvn test -pl lucien
 
-```text
+```
 
 ### Run Specific Performance Tests
 
@@ -74,7 +74,7 @@ mvn test -pl lucien -Dtest=OctreeCreationPerformanceTest
 
 mvn test -pl lucien -Dtest=*QueryPerformanceTest
 
-```text
+```
 
 ## Test Configuration
 
@@ -136,7 +136,7 @@ extends AbstractSpatialIndexPerformanceTest<ID, Content> {
     }
 }
 
-```text
+```
 
 ## Interpreting Results
 

@@ -63,7 +63,7 @@
 
 ### Locate Algorithm
 
-```text
+```
 
 locate(point, startTet):
   current = startTet
@@ -77,7 +77,7 @@ locate(point, startTet):
         continue loop
     return current  // point is inside current
 
-```text
+```
 
 ### Flip Operations
 

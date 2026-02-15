@@ -40,7 +40,7 @@ for (int i = l - 1; i >= 0; i--) {
     }
 }
 
-```text
+```
 
 **Performance Impact (Before July 11 Optimizations):**
 
@@ -123,7 +123,7 @@ record SFCRange(TetreeKey<?> start, TetreeKey<?> end) {
     }
 }
 
-```text
+```
 
 ## Design Trade-offs
 

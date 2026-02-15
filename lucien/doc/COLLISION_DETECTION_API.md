@@ -46,7 +46,7 @@ Available shape types:
 
 List<CollisionPair<ID, Content>> findAllCollisions()
 
-```text
+```
 
 Detects all collisions between entities in the spatial index. Results are sorted by penetration depth (deepest first).
 
@@ -68,7 +68,7 @@ entity2Id() +
 penetrationDepth());
 }
 
-```text
+```
 
 ### 2. Find Collisions for Specific Entity
 
@@ -76,7 +76,7 @@ penetrationDepth());
 
 List<CollisionPair<ID, Content>> findCollisions(ID entityId)
 
-```text
+```
 
 Finds all entities colliding with a specific entity. More efficient than checking all pairs.
 
@@ -87,7 +87,7 @@ Finds all entities colliding with a specific entity. More efficient than checkin
 LongEntityID playerId = new LongEntityID(42);
 List<CollisionPair<LongEntityID, String>> playerCollisions = spatialIndex.findCollisions(playerId);
 
-```text
+```
 
 ### 3. Check Specific Pair
 
@@ -95,7 +95,7 @@ List<CollisionPair<LongEntityID, String>> playerCollisions = spatialIndex.findCo
 
 Optional<CollisionPair<ID, Content>> checkCollision(ID entityId1, ID entityId2)
 
-```text
+```
 
 Checks if two specific entities are colliding. Returns detailed collision information if they are.
 
@@ -111,7 +111,7 @@ isPresent()){
 handleCollision(collision.get());
 }
 
-```text
+```
 
 ### 4. Find Collisions in Region
 
@@ -119,7 +119,7 @@ handleCollision(collision.get());
 
 List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region)
 
-```text
+```
 
 Finds all collisions occurring within a specific spatial region.
 
@@ -130,7 +130,7 @@ Finds all collisions occurring within a specific spatial region.
 Spatial.Cube region = new Spatial.Cube(0, 0, 0, 100); // 100x100x100 cube at origin
 List<CollisionPair<LongEntityID, String>> regionalCollisions = spatialIndex.findCollisionsInRegion(region);
 
-```text
+```
 
 ### 5. Set Custom Collision Shape
 
@@ -140,7 +140,7 @@ void setCollisionShape(ID entityId, CollisionShape shape)
 
 CollisionShape getCollisionShape(ID entityId)
 
-```text
+```
 
 Associates a custom collision shape with an entity for precise narrow-phase detection.
 
@@ -154,7 +154,7 @@ spatialIndex.
 
 setCollisionShape(entityId, sphere);
 
-```text
+```
 
 ## Collision Detection Phases
 
@@ -188,7 +188,7 @@ if (pos1.distance(pos2) <= 0.1f) {
     // Collision detected
 }
 
-```text
+```
 
 ### 2. AABB-AABB Collisions
 
@@ -200,7 +200,7 @@ if (bounds1.intersects(bounds2)) {
     // Calculate penetration depth and contact info
 }
 
-```text
+```
 
 ### 3. Point-AABB Collisions
 
@@ -212,7 +212,7 @@ if (bounds.contains(point) || bounds.distanceTo(point) <= 0.1f) {
     // Collision detected
 }
 
-```text
+```
 
 ### 4. Custom Shape Collisions
 
@@ -238,7 +238,7 @@ public class CollisionDetector {
     }
 }
 
-```text
+```
 
 Each shape simply delegates to the CollisionDetector:
 
@@ -251,7 +251,7 @@ public class SphereShape extends CollisionShape {
     }
 }
 
-```text
+```
 
 ### 5. Mesh Collisions
 
@@ -276,7 +276,7 @@ meshData.addTriangle(v1, v2, v3);
 MeshShape mesh = new MeshShape(position, meshData);
 spatialIndex.setCollisionShape(entityId, mesh);
 
-```text
+```
 
 The mesh collision system features:
 
@@ -325,7 +325,7 @@ public void handleCollisions() {
     }
 }
 
-```text
+```
 
 ### Continuous Collision Detection
 
@@ -349,7 +349,7 @@ public void moveWithCollisionDetection(ID entityId, Vector3f velocity, float del
     }
 }
 
-```text
+```
 
 ### Trigger Volumes
 
@@ -378,7 +378,7 @@ public class TriggerSystem {
     }
 }
 
-```text
+```
 
 ## Best Practices
 
@@ -410,7 +410,7 @@ public List<CollisionPair<ID, Content>> findFilteredCollisions(CollisionFilter f
         .collect(Collectors.toList());
 }
 
-```text
+```
 
 ### Collision Layers
 
@@ -429,7 +429,7 @@ public class LayeredCollisionSystem {
     }
 }
 
-```text
+```
 
 ## Integration Example
 
@@ -468,4 +468,4 @@ public class PhysicsEngine {
     }
 }
 
-```text
+```

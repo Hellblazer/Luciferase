@@ -105,7 +105,7 @@ public class DegeneracyHandler {
     }
 }
 
-```text
+```
 
 ### 2. Voronoi Region Computation
 
@@ -144,7 +144,7 @@ public VoronoiRegion voronoiRegion(Vertex v) {
     return new VoronoiRegion(v, voronoiVertices, faces);
 }
 
-```text
+```
 
 ### 3. Performance Optimizations
 

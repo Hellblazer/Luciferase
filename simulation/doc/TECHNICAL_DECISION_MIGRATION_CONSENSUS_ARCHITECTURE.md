@@ -60,7 +60,7 @@ private boolean shouldMigrate(EnhancedBubble.EntityRecord entity,
         return x < (boundaryX - hysteresisDistance);   // Zone check
     }
 }
-```text
+```
 
 **MigrationCoordinator** (inferred from class inventory):
 ```java
@@ -68,7 +68,7 @@ private boolean shouldMigrate(EnhancedBubble.EntityRecord entity,
 private UUID getZoneForEntity(String entityId, Point3f position) {
     // Zone determination logic
 }
-```text
+```
 
 **Problem**: Two classes independently determine which bubble/zone owns an entity, risking inconsistent routing decisions.
 
@@ -81,14 +81,14 @@ Both managers implement independent retry logic:
 // Implicit retry via migration cooldown
 private final ConcurrentHashMap<String, Long> migrationCooldowns;
 private final int cooldownTicks;  // Prevents immediate retry after failure
-```text
+```
 
 **MigrationCoordinator**:
 ```java
 // Explicit retry queue (inferred from pattern)
 private static final int MAX_RETRIES = 3;
 private final Map<String, Integer> retryAttempts;
-```text
+```
 
 **Problem**: No single source of truth for retry policy. An entity could be in cooldown in one manager while being retried by another.
 
@@ -123,7 +123,7 @@ public class GhostLayerManager {
         // Not tied to migration commit/rollback
     }
 }
-```text
+```
 
 **Problem**: Ghost entities are not integrated into the migration lifecycle. A migration could fail, but the ghost remains until TTL expiration rather than being immediately cleaned up.
 
@@ -134,7 +134,7 @@ EntityMigrationStateMachine:
   PREPARE → Create ghost in target
   COMMIT  → Remove ghost (entity now real)
   ROLLBACK → Remove ghost (migration failed)
-```text
+```
 
 #### Issue 5: Consensus Demo Only
 
@@ -179,7 +179,7 @@ public interface MigrationLifecycleCallbacks {
     void onRollbackStart(String entityId);
     void onRollbackComplete(String entityId);
 }
-```text
+```
 
 **Integration**: Provides callback hooks for upper layers to implement routing, consensus, and ghost management.
 
@@ -208,7 +208,7 @@ public interface MigrationRouter {
      */
     boolean shouldMigrate(String entityId, Point3f position, UUID currentBubble);
 }
-```text
+```
 
 **Delegation Rule**:
 ```java
@@ -224,7 +224,7 @@ public MigrationIntent checkMigration(String entityId, Point3f position) {
         return migrationCoordinator.initiateMigration(entityId, targetBubble);
     }
 }
-```text
+```
 
 ### Layer 3: DISTRIBUTED COORDINATION (Multi-Bubble Orchestration)
 
@@ -256,7 +256,7 @@ public interface DistributedMigrationCoordinator {
      */
     MigrationState getMigrationState(String entityId);
 }
-```text
+```
 
 **Integration with Ghost Layer**:
 ```java
@@ -278,7 +278,7 @@ public void onRollbackComplete(String entityId) {
     // Callback: EntityMigrationStateMachine entered ROLLBACK state
     ghostLayerManager.removeGhost(entityId);  // Clean up failed migration
 }
-```text
+```
 
 **Ghost Layer Manager** (integrated):
 ```java
@@ -299,7 +299,7 @@ public class GhostLayerManager {
         // Cleanup orphaned ghosts from crashes/network failures
     }
 }
-```text
+```
 
 ### Layer 4: CONSENSUS (Distributed Agreement)
 
@@ -336,7 +336,7 @@ public class ConsensusMigrationCoordinator implements DistributedMigrationCoordi
         return delegate.commitInternal(intent);
     }
 }
-```text
+```
 
 **Production Path**:
 ```java
@@ -345,7 +345,7 @@ var migrationCoordinator = new ConsensusMigrationCoordinator(
     new MigrationCoordinator(...),
     new ViewCommitteeConsensus(...)
 );
-```text
+```
 
 **Integration**: Wraps `MigrationCoordinator`, adding consensus validation between PREPARE and COMMIT phases.
 
@@ -377,7 +377,7 @@ graph TD
     CBMM -->|delegates to| MC
     CBMM -->|uses| EMSM
     MC -->|coordinates| EMSM
-```text
+```
 
 ## Consequences
 

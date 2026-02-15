@@ -19,11 +19,11 @@ The gRPC module provides Protocol Buffer message definitions and gRPC services f
 
 ## Architecture
 
-```text
+```
 grpc/
 └── src/main/proto/lucien/
     └── ghost.proto              # Ghost layer Protocol Buffer definitions
-```text
+```
 
 ## Protocol Buffer Definitions
 

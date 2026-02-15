@@ -15,7 +15,7 @@
 # Kernel syntax validation, build option checks
 mvn test -Dtest=DAGOpenCLRendererVendorTest
 # Output: 4 tests pass, 30 skipped (GPU-conditional)
-```text
+```
 
 ### Tier 2: Local GPU Testing
 
@@ -23,7 +23,7 @@ mvn test -Dtest=DAGOpenCLRendererVendorTest
 # With GPU hardware available
 RUN_GPU_TESTS=true mvn test -Dtest=DAGOpenCLRendererVendorTest
 # Output: 19 tests pass (4 Tier 1 + 15 Tier 2)
-```text
+```
 
 ### Tier 3: Vendor-Specific Matrix
 
@@ -31,7 +31,7 @@ RUN_GPU_TESTS=true mvn test -Dtest=DAGOpenCLRendererVendorTest
 # Full vendor matrix (nightly)
 GPU_VENDOR=NVIDIA RUN_GPU_TESTS=true mvn test -Dtest=DAGOpenCLRendererVendorTest
 # Tests all NVIDIA-specific code paths
-```text
+```
 
 ---
 
@@ -50,7 +50,7 @@ GPU_VENDOR=NVIDIA RUN_GPU_TESTS=true mvn test -Dtest=DAGOpenCLRendererVendorTest
 
 ### Three-Tier Structure
 
-```text
+```
 ┌──────────────────────────────────────────────────┐
 │ Tier 3: Nightly Vendor-Specific Tests (15 tests)│
 │ - NVIDIA-specific optimizations                 │
@@ -81,7 +81,7 @@ GPU_VENDOR=NVIDIA RUN_GPU_TESTS=true mvn test -Dtest=DAGOpenCLRendererVendorTest
 │ Requires: Nothing (no GPU)                      │
 │ Duration: ~30 seconds                           │
 └──────────────────────────────────────────────────┘
-```text
+```
 
 ---
 
@@ -125,7 +125,7 @@ void testConfigurationLoading() {
         assertTrue(config.buildFlags().length() > 0);
     }
 }
-```text
+```
 
 ### Running Tier 1
 
@@ -133,7 +133,7 @@ void testConfigurationLoading() {
 mvn test -Dtest=DAGOpenCLRendererVendorTest
 # ✅ 4 tests pass
 # ⏭️ 30 tests skipped (GPU-conditional)
-```text
+```
 
 ---
 
@@ -143,7 +143,7 @@ mvn test -Dtest=DAGOpenCLRendererVendorTest
 
 ```bash
 RUN_GPU_TESTS=true mvn test -Dtest=DAGOpenCLRendererVendorTest
-```text
+```
 
 **Test Categories**:
 
@@ -154,7 +154,7 @@ RUN_GPU_TESTS=true mvn test -Dtest=DAGOpenCLRendererVendorTest
 @Test void testAMDRayTraversal() { ... }
 @Test void testIntelRayTraversal() { ... }
 @Test void testAppleRayTraversal() { ... }
-```text
+```
 
 #### Vendor-Specific Optimization Tests (7 tests)
 ```java
@@ -162,7 +162,7 @@ RUN_GPU_TESTS=true mvn test -Dtest=DAGOpenCLRendererVendorTest
 @Test void testAMDAtomicSemantics() { ... }
 @Test void testIntelPrecisionRelaxation() { ... }
 @Test void testAppleFabsWorkaround() { ... }
-```text
+```
 
 ---
 
@@ -182,7 +182,7 @@ GPU_VENDOR=INTEL RUN_GPU_TESTS=true mvn test
 
 # Apple vendor matrix
 GPU_VENDOR=APPLE RUN_GPU_TESTS=true mvn test
-```text
+```
 
 ### Vendor-Specific Details
 
@@ -207,7 +207,7 @@ Tests:
   - testNVIDIAOccupancy: 4+ warps per SM (max occupancy)
   - testNVIDIAMemCoalescing: Aligned memory access
   - testNVIDIACUDAABICompat: CUDA ABI compatibility
-```text
+```
 
 #### AMD
 
@@ -230,7 +230,7 @@ Tests:
   - testAMDAtomics: Atomic operation correctness
   - testAMDSharedMemory: LDS usage and conflicts
   - testAMDWaveOccupancy: Wave occupancy calculation
-```text
+```
 
 #### Intel
 
@@ -253,7 +253,7 @@ Tests:
   - testIntelPrecision: Relaxed math correctness
   - testIntelSubgroup: Sub-group operations
   - testIntelMemoryBandwidth: Memory throughput
-```text
+```
 
 #### Apple
 
@@ -276,7 +276,7 @@ Tests:
   - testAppleFabs: Fabs() replacement validation
   - testAppleMacOSCompat: macOS-specific issues
   - testAppleMemoryAlignment: Unified memory alignment
-```text
+```
 
 ---
 
@@ -307,7 +307,7 @@ public class GPUVendorDetector {
         return GPUVendor.UNKNOWN;
     }
 }
-```text
+```
 
 ### Usage
 
@@ -321,7 +321,7 @@ System.out.println("Detected: " + vendor.getDisplayName());
 // Configure renderer for vendor
 var config = VendorKernelConfig.forVendor(vendor);
 renderer.applyVendorConfig(config);
-```text
+```
 
 ---
 
@@ -347,7 +347,7 @@ float fabs_replacement(float x) { return select(x, -x, x < 0.0f); }
 #else
 float fabs_replacement(float x) { return fabs(x); }
 #endif
-```text
+```
 
 ### AMD Atomic Semantics
 
@@ -360,18 +360,18 @@ atomic_inc(&counter);
 
 // After (explicitly ordered):
 atomic_fetch_add_explicit(&counter, 1, memory_order_acq_rel, memory_scope_device);
-```text
+```
 
 ### Intel Precision
 
 **Issue**: Intel GPUs may require relaxed math mode for performance
 
 **Workaround**:
-```text
+```
 Build option: -cl-fast-relaxed-math
 Side effect: Floating point operations lose strict IEEE 754 semantics
 Impact: Acceptable for ray traversal (spatial rounding errors negligible)
-```text
+```
 
 ---
 
@@ -405,11 +405,11 @@ System.out.println(report.formatReport());
 //
 // Consistency: 93.3% (all within ±15%)
 // Status: ✅ PASS
-```text
+```
 
 ### Consistency Thresholds
 
-```text
+```
 Target: ≥90% consistency (latency variance ≤15%)
 
 Acceptable:
@@ -422,7 +422,7 @@ Flag for investigation:
   - Variance >15% on specific GPU
   - 1+ vendor failing tests
   - Inconsistent cache hit rates
-```text
+```
 
 ---
 
@@ -476,7 +476,7 @@ jobs:
     runs-on: [ubuntu-latest, gpu-intel]
     if: contains(github.labels.*.name, 'requires-gpu')
     # Similar to NVIDIA, with GPU_VENDOR=INTEL
-```text
+```
 
 ---
 
@@ -504,7 +504,7 @@ Tier 3 (Nightly):
 □ Consistency report 90%+ agreement
 □ No vendor-specific regressions
 □ Performance within targets
-```text
+```
 
 ---
 

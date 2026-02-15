@@ -92,7 +92,7 @@ Run all tests:
 
 mvn test -pl sentry
 
-```text
+```
 
 Run specific test class:
 
@@ -102,7 +102,7 @@ mvn test -Dtest=MutableGridTest -pl sentry
 mvn test -Dtest=DelaunayValidationTest -pl sentry
 mvn test -Dtest=FlipAlgorithmValidationTest -pl sentry
 
-```text
+```
 
 Run specific test method:
 
@@ -110,4 +110,4 @@ Run specific test method:
 
 mvn test -Dtest=MutableGridTest#testDelaunayPropertySmallSet -pl sentry
 
-```text
+```

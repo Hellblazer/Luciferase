@@ -30,7 +30,7 @@ Ray3D unboundedRay = new Ray3D(origin, direction);
 // Create a ray from two points
 Ray3D pointToPoint = Ray3D.fromPoints(start, end);
 
-```text
+```
 
 ### RayIntersection
 
@@ -51,7 +51,7 @@ The `RayIntersection` record contains detailed information about a ray-entity in
 
 List<RayIntersection<ID, Content>> rayIntersectAll(Ray3D ray)
 
-```text
+```
 
 Finds all entities that intersect with the given ray, sorted by distance from the ray origin.
 
@@ -71,7 +71,7 @@ println("Hit entity "+hit.entityId() +" at distance "+hit.
 distance());
 }
 
-```text
+```
 
 ### 2. Find First Intersection
 
@@ -79,7 +79,7 @@ distance());
 
 Optional<RayIntersection<ID, Content>> rayIntersectFirst(Ray3D ray)
 
-```text
+```
 
 Finds the closest entity that intersects with the ray. This method is optimized for early termination.
 
@@ -97,7 +97,7 @@ RayIntersection<LongEntityID, String> hit = firstHit.get();
 println("First hit at distance: "+hit.distance());
 }
 
-```text
+```
 
 ### 3. Find Intersections Within Distance
 
@@ -105,7 +105,7 @@ println("First hit at distance: "+hit.distance());
 
 List<RayIntersection<ID, Content>> rayIntersectWithin(Ray3D ray, float maxDistance)
 
-```text
+```
 
 Finds all entities that intersect with the ray within a specified maximum distance.
 
@@ -116,7 +116,7 @@ Finds all entities that intersect with the ray within a specified maximum distan
 // Find all intersections within 100 units
 List<RayIntersection<LongEntityID, String>> nearHits = spatialIndex.rayIntersectWithin(ray, 100.0f);
 
-```text
+```
 
 ## Intersection Types
 
@@ -164,7 +164,7 @@ public boolean hasLineOfSight(Point3f from, Point3f to, ID excludeEntity) {
     return hit.isEmpty() || hit.get().entityId().equals(excludeEntity);
 }
 
-```text
+```
 
 ### Projectile Simulation
 
@@ -181,7 +181,7 @@ public void simulateProjectile(Point3f origin, Vector3f velocity, float maxRange
     }
 }
 
-```text
+```
 
 ### Area Scanning
 
@@ -203,7 +203,7 @@ public List<ID> scanCone(Point3f apex, Vector3f direction, float angle, float ra
     return entitiesInCone.stream().distinct().collect(Collectors.toList());
 }
 
-```text
+```
 
 ## Best Practices
 
@@ -256,4 +256,4 @@ public class VisibilitySystem {
     }
 }
 
-```text
+```

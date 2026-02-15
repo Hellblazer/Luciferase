@@ -62,7 +62,7 @@ TEST(TBVCreation, BoundsValidation) {
     }
 }
 
-```text
+```
 
 #### TBV Expiration Tests
 
@@ -86,7 +86,7 @@ TEST(TBVExpiration, NeverExpireTBV) {
     ASSERT_FALSE(tbv.is_expired(INT_MAX));
 }
 
-```text
+```
 
 ### 2. Spatial Structure Update Tests
 
@@ -133,7 +133,7 @@ TEST(OctreeLCA, MovementEfficiency) {
     ASSERT_GT(GetNodeDepth(lca_small), GetNodeDepth(lca_large));
 }
 
-```text
+```
 
 #### Update Operation Tests
 
@@ -162,7 +162,7 @@ TEST(SpatialUpdate, ObjectMovement) {
     ASSERT_FALSE(NodeContainsObject(initial_node, obj));
 }
 
-```text
+```
 
 ### 3. Visibility State Management Tests
 
@@ -215,7 +215,7 @@ TEST(VisibilityState, ConcurrentStateAccess) {
     ASSERT_EQ(visibility_count + hidden_count, 10000);
 }
 
-```text
+```
 
 ## Integration Testing
 
@@ -261,7 +261,7 @@ TEST(DSOCIntegration, BasicRenderLoop) {
     }
 }
 
-```text
+```
 
 ### 2. TBV Integration Tests
 
@@ -299,7 +299,7 @@ TEST(TBVIntegration, HiddenObjectTracking) {
     ASSERT_TRUE(dsoc.was_spatially_updated(obj.id));
 }
 
-```text
+```
 
 ## Black Box Testing
 
@@ -359,7 +359,7 @@ TEST(BlackBox, TemporalConsistency) {
     }
 }
 
-```text
+```
 
 ### 2. Behavioral Tests
 
@@ -394,7 +394,7 @@ TEST(BlackBox, MultiObjectBehavior) {
     ASSERT_EQ(visible.size(), 1);
 }
 
-```text
+```
 
 ## White Box Testing
 
@@ -456,7 +456,7 @@ TEST(WhiteBox, TBVMerging) {
     ASSERT_GT(tbv_count, 0);   // But not all merged
 }
 
-```text
+```
 
 ### 2. Data Structure Validation
 
@@ -508,7 +508,7 @@ TEST(WhiteBox, SpatialStructureIntegrity) {
     ASSERT_TRUE(valid);
 }
 
-```text
+```
 
 ## Edge Case Testing
 
@@ -570,7 +570,7 @@ TEST(EdgeCases, OscillatingObject) {
     }
 }
 
-```text
+```
 
 ### 2. Boundary Condition Tests
 
@@ -621,7 +621,7 @@ TEST(EdgeCases, MassiveObjectCount) {
     ASSERT_LT(duration, 1000);  // Less than 1 second
 }
 
-```text
+```
 
 ### 3. Numerical Precision Tests
 
@@ -647,7 +647,7 @@ TEST(EdgeCases, FloatingPointPrecision) {
     ASSERT_NO_THROW(dsoc.render_frame({obj}, Camera()));
 }
 
-```text
+```
 
 ## Performance Testing
 
@@ -687,7 +687,7 @@ struct BenchmarkScene {
     }
 };
 
-```text
+```
 
 ### 2. Performance Test Suite
 
@@ -753,7 +753,7 @@ TEST(Performance, FrameRateAnalysis) {
     ASSERT_GE(frames_rendered, 10);  // At least 10 FPS
 }
 
-```text
+```
 
 ### 3. Comparative Performance Tests
 
@@ -802,7 +802,7 @@ TEST(Performance, LCAUpdateEfficiency) {
     }
 }
 
-```text
+```
 
 ### 4. Memory Performance Tests
 
@@ -840,7 +840,7 @@ TEST(Performance, MemoryUsage) {
     ASSERT_GT(after_clear, baseline + (before_clear - baseline) * 0.5);
 }
 
-```text
+```
 
 ## Stress Testing
 
@@ -908,7 +908,7 @@ TEST(StressTest, WorstCaseScenario) {
     ASSERT_LT(duration, std::chrono::seconds(10));
 }
 
-```text
+```
 
 ## Regression Testing
 
@@ -955,7 +955,7 @@ TEST_F(DSOCRegressionTest, PaperTestScene2) {
     ASSERT_NEAR(speedup, 2.7, 0.2);  // Paper reports 2.7x speedup
 }
 
-```text
+```
 
 ## Validation Test Utilities
 
@@ -1002,6 +1002,6 @@ public:
     }
 };
 
-```text
+```
 
 This comprehensive testing guide covers all aspects of validating a DSOC implementation, from unit tests through performance benchmarks, ensuring both correctness and efficiency.

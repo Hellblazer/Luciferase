@@ -28,7 +28,7 @@ public class MyApp extends MagicMirror {
     }
 }
 
-```text
+```
 
 Key features:
 
@@ -63,7 +63,7 @@ public class MyTreeView extends SpatialIndexView<MortonKey, UUID, Entity> {
     }
 }
 
-```text
+```
 
 ## Camera System
 
@@ -96,7 +96,7 @@ scene.setOnKeyPressed(event -> {
     }
 });
 
-```text
+```
 
 ### Camera Boom
 
@@ -117,7 +117,7 @@ Timeline timeline = new Timeline(
 timeline.setCycleCount(Timeline.INDEFINITE);
 timeline.play();
 
-```text
+```
 
 ## Transform System
 
@@ -135,7 +135,7 @@ group.addTxfm(new Scale(2, 2, 2));
 // Apply transforms in order
 group.getChildren().add(myNode);
 
-```text
+```
 
 ### Transform Utilities
 
@@ -152,7 +152,7 @@ AutoScalingGroup autoScale = new AutoScalingGroup();
 autoScale.setTargetSize(100);
 autoScale.getChildren().add(variableSizeContent);
 
-```text
+```
 
 ## Grid Systems
 
@@ -168,7 +168,7 @@ grid.showGrid(true);
 grid.showAxes(true);
 scene.getChildren().add(grid);
 
-```text
+```
 
 ### Tetrahedral Grid
 
@@ -183,7 +183,7 @@ tetGrid.showEdges(true);
 tetGrid.showFaces(false);
 scene.getChildren().add(tetGrid);
 
-```text
+```
 
 ## Visualization Properties
 
@@ -210,7 +210,7 @@ view.showNodes.bind(showNodesCheck.selectedProperty());
 Slider opacitySlider = new Slider(0, 1, 0.3);
 view.nodeOpacity.bind(opacitySlider.valueProperty());
 
-```text
+```
 
 ### Level-Based Coloring
 
@@ -225,7 +225,7 @@ view.setLevelColorMapper(level -> {
     return Color.hsb(hue, 1.0, 1.0);
 });
 
-```text
+```
 
 ## Scene Organization
 
@@ -252,7 +252,7 @@ sceneRoot.getChildren().addAll(
     backgroundGroup, nodeGroup, entityGroup, overlayGroup
 );
 
-```text
+```
 
 ### Lighting
 
@@ -272,7 +272,7 @@ point.setTranslateY(50);
 
 scene.getChildren().addAll(ambient, sun, point);
 
-```text
+```
 
 ## Interactive Features
 
@@ -297,7 +297,7 @@ view.getSelectedEntities().addListener(
     }
 );
 
-```text
+```
 
 ### Highlighting
 
@@ -312,7 +312,7 @@ view.setOnEntityHovered((id, entity, entered) -> {
     }
 });
 
-```text
+```
 
 ## Performance Optimization
 
@@ -328,7 +328,7 @@ view.maxLevel.set(10);
 view.setCullDistance(1000);
 view.setFarClip(2000);
 
-```text
+```
 
 ### Lazy Updates
 
@@ -345,7 +345,7 @@ try {
     view.endUpdate(); // Single render update
 }
 
-```text
+```
 
 ### Level of Detail
 
@@ -362,7 +362,7 @@ cameraDistanceProperty.addListener((obs, old, dist) -> {
     }
 });
 
-```text
+```
 
 ## Common Patterns
 
@@ -385,7 +385,7 @@ overlay.getChildren().addAll(info, showGrid, zoom);
 SubScene subScene = view.getSubScene();
 StackPane stack = new StackPane(subScene, overlay);
 
-```text
+```
 
 ### Animation
 
@@ -409,7 +409,7 @@ pan.setToY(50);
 pan.setToZ(200);
 pan.play();
 
-```text
+```
 
 ## Best Practices
 

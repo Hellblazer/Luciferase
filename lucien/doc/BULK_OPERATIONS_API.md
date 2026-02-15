@@ -28,7 +28,7 @@ List<ID> insertBatch(
     List<Content> contents, 
     byte level)
 
-```text
+```
 
 Insert multiple entities in a single operation.
 
@@ -72,7 +72,7 @@ add("Entity "+i);
 // Bulk insert
 List<ID> entityIds = spatialIndex.insertBatch(positions, contents, (byte) 10);
 
-```text
+```
 
 ### Batch Insertion with Spanning
 
@@ -80,7 +80,7 @@ List<ID> entityIds = spatialIndex.insertBatch(positions, contents, (byte) 10);
 
 List<ID> insertBatchWithSpanning(List<EntityBounds> bounds, List<Content> contents, byte level)
 
-```text
+```
 
 Insert entities with bounds that may span multiple spatial nodes.
 
@@ -110,7 +110,7 @@ add(mesh.getData());
 // Insert with automatic spanning
 List<ID> meshIds = spatialIndex.insertBatchWithSpanning(bounds, contents, (byte) 8);
 
-```text
+```
 
 ### Parallel Batch Operations
 
@@ -119,7 +119,7 @@ List<ID> meshIds = spatialIndex.insertBatchWithSpanning(bounds, contents, (byte)
 ParallelOperationResult<ID> insertBatchParallel(List<Point3f> positions, List<Content> contents, byte level)
 throws InterruptedException
 
-```text
+```
 
 Use multiple threads for very large datasets (100K+ entities).
 
@@ -140,7 +140,7 @@ System.out.
 
 println("Throughput: "+result.getThroughput() +" entities/sec");
 
-```text
+```
 
 ## Configuration
 
@@ -150,7 +150,7 @@ println("Throughput: "+result.getThroughput() +" entities/sec");
 
 void configureBulkOperations(BulkOperationConfig config)
 
-```text
+```
 
 Configure bulk operation behavior for optimal performance.
 
@@ -172,7 +172,7 @@ spatialIndex.
 
 configureBulkOperations(config);
 
-```text
+```
 
 ### Bulk Loading Mode
 
@@ -182,7 +182,7 @@ void enableBulkLoading()
 
 void finalizeBulkLoading()
 
-```text
+```
 
 Enable special mode for maximum insertion performance.
 
@@ -206,7 +206,7 @@ spatialIndex.
 
 finalizeBulkLoading();
 
-```text
+```
 
 ## Configuration Presets
 
@@ -217,7 +217,7 @@ finalizeBulkLoading();
 // Maximum speed for large datasets
 BulkOperationConfig config = BulkOperationConfig.highPerformance();
 
-```text
+```
 
 Optimizes for:
 
@@ -233,7 +233,7 @@ Optimizes for:
 // Minimize memory usage
 BulkOperationConfig config = BulkOperationConfig.memoryEfficient();
 
-```text
+```
 
 Optimizes for:
 
@@ -248,7 +248,7 @@ Optimizes for:
 // Good general-purpose settings
 BulkOperationConfig config = BulkOperationConfig.balanced();
 
-```text
+```
 
 Balanced trade-off between speed and memory.
 
@@ -264,7 +264,7 @@ config.withDynamicLevelSelection(true);
 // The system analyzes data distribution and selects level
 byte optimalLevel = LevelSelector.selectOptimalLevel(positions, maxEntitiesPerNode);
 
-```text
+```
 
 ### 2. Pre-allocation
 
@@ -273,7 +273,7 @@ byte optimalLevel = LevelSelector.selectOptimalLevel(positions, maxEntitiesPerNo
 // Pre-allocate memory for known data size
 spatialIndex.preAllocateNodes(expectedEntityCount, NodeEstimator.SpatialDistribution.UNIFORM);
 
-```text
+```
 
 ### 3. Morton Code Sorting
 
@@ -284,7 +284,7 @@ config.withPreSortByMorton(true);
 
 // Sorted insertions create more balanced trees
 
-```text
+```
 
 ### 4. Deferred Subdivision
 
@@ -295,7 +295,7 @@ config.withDeferredSubdivision(true);
 
 // Subdivisions happen during finalizeBulkLoading()
 
-```text
+```
 
 ## Use Cases
 
@@ -322,7 +322,7 @@ public void loadPointCloud(PointCloudFile file) {
     spatialIndex.finalizeBulkLoading();
 }
 
-```text
+```
 
 ### 2. Mesh Scene Loading
 
@@ -351,7 +351,7 @@ public void loadScene(SceneFile scene) {
     List<ID> meshIds = spatialIndex.insertBatchWithSpanning(allBounds, allMeshes, (byte) 8);
 }
 
-```text
+```
 
 ### 3. Streaming Data
 
@@ -384,7 +384,7 @@ public void processStreamingData(DataStream stream) {
     }
 }
 
-```text
+```
 
 ### 4. Large Dataset Import
 
@@ -411,7 +411,7 @@ public void importLargeDataset(String[] files) {
     spatialIndex.finalizeBulkLoading();
 }
 
-```text
+```
 
 ## Performance Benchmarks
 
@@ -462,7 +462,7 @@ log.
 error("Out of memory - reduce batch size");
 }
 
-```text
+```
 
 ## Memory Considerations
 
@@ -479,7 +479,7 @@ if (estimatedMemory > Runtime.getRuntime().maxMemory() * 0.8) {
     // Use smaller batches or enable streaming mode
 }
 
-```text
+```
 
 ## Conclusion
 

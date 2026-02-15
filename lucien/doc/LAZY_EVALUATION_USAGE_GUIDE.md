@@ -28,7 +28,7 @@ while (iterator.hasNext()) {
     }
 }
 
-```text
+```
 
 ### 2. SFCRange with Lazy Methods
 
@@ -56,7 +56,7 @@ if (range.isSingle()) {
 // Estimate size without enumeration
 long estimatedSize = range.estimateSize();
 
-```text
+```
 
 ### 3. RangeHandle for Deferred Computation
 
@@ -82,7 +82,7 @@ var allKeys = handles.stream()
     .distinct()
     .toList();
 
-```text
+```
 
 ### 4. RangeQueryVisitor for Tree Traversal
 
@@ -104,7 +104,7 @@ tetree.nodes().forEach(node -> {
 var matchingNodes = visitor.getResults();
 System.out.println(visitor.getStatistics());
 
-```text
+```
 
 ## Usage Patterns
 
@@ -125,7 +125,7 @@ Tet.spatialRangeQueryKeys(bounds, level)
     .stream()
     .forEach(this::processKey);
 
-```text
+```
 
 ### Pattern 2: Early Termination
 
@@ -139,7 +139,7 @@ var firstHundred = tetree.boundedBy(bounds)
     .limit(100)
     .toList();
 
-```text
+```
 
 ### Pattern 3: Memory-Conscious Processing
 
@@ -164,7 +164,7 @@ if (!batch.isEmpty()) {
     processBatch(batch);
 }
 
-```text
+```
 
 ### Pattern 4: Combining Multiple Ranges
 
@@ -186,7 +186,7 @@ handles.stream()
     .distinct()  // Remove duplicates across regions
     .forEach(this::processKey);
 
-```text
+```
 
 ## Performance Considerations
 
@@ -248,7 +248,7 @@ var results = Tet.spatialRangeQueryKeys(
     })
     .toList();
 
-```text
+```
 
 ### Example 2: Progressive Loading
 
@@ -277,7 +277,7 @@ public class ProgressiveLoader {
     }
 }
 
-```text
+```
 
 ### Example 3: Memory-Aware Range Processing
 
@@ -305,7 +305,7 @@ public void processLargeRange(VolumeBounds bounds, byte level) {
     }
 }
 
-```text
+```
 
 ## Conclusion
 

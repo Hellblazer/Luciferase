@@ -24,7 +24,7 @@ Bey refinement is NOT about subdividing a tetrahedron at cube positions. It's a 
 
 Given a parent tetrahedron with vertices V0, V1, V2, V3:
 
-```text
+```
 
 6 Edge Midpoints:
 
@@ -47,7 +47,7 @@ Octahedral tetrahedra (from split octahedron):
 
 - T4-T7: Various combinations of edge midpoints
 
-```text
+```
 
 ## Implementation Details
 
@@ -87,7 +87,7 @@ public class Tet {
     }
 }
 
-```text
+```
 
 ### Subdivision Tables
 
@@ -150,7 +150,7 @@ public static Tet[] subdivide(Tet parent) {
     return children;
 }
 
-```text
+```
 
 ## Efficient Single-Child Computation
 
@@ -203,7 +203,7 @@ public static Tet getMortonChild(Tet parent, int mortonIndex) {
     return getBeyChild(parent, beyIndex);
 }
 
-```text
+```
 
 ### Performance Characteristics
 
@@ -260,7 +260,7 @@ Created `subdivisionCoordinates()` method that provides Bey-compatible vertices 
 // Get all 8 children (for visualization, bulk operations)
 Tet[] children = parent.geometricSubdivide();
 
-```text
+```
 
 ### Efficient Single Child Access
 
@@ -275,7 +275,7 @@ Tet child = BeySubdivision.getMortonChild(parent, mortonIndex);
 // Direct Bey order access
 Tet child = BeySubdivision.getBeyChild(parent, beyIndex);
 
-```text
+```
 
 ### When to Use Each Method
 

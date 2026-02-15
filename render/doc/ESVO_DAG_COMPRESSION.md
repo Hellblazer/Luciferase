@@ -51,7 +51,7 @@ ESVO Sparse Voxel DAG compression converts traditional Sparse Voxel Octrees (SVO
 
 ### Core Components
 
-```text
+```
 com.hellblazer.luciferase.esvo.dag
 ├── DAGBuilder              - Fluent builder for DAG construction
 ├── DAGOctreeData           - Result interface for compressed DAGs
@@ -69,7 +69,7 @@ com.hellblazer.luciferase.esvo.dag.metrics
 ├── CacheMetricsCollector   - Thread-safe cache tracking
 ├── MetricsExporter         - Export interface
 └── FileMetricsExporter     - CSV/JSON file export
-```text
+```
 
 ### Build Algorithm
 
@@ -104,17 +104,17 @@ com.hellblazer.luciferase.esvo.dag.metrics
 ### Addressing Mode
 
 **SVO (Relative Addressing)**:
-```text
+```
 Parent: [childMask=0xFF, childPtr=5, far=false]
 Children: located at parent_index + childPtr
-```text
+```
 
 **DAG (Absolute Addressing)**:
-```text
+```
 Parent: [childMask=0xFF, childPtr=42, far=false]
 Children: indices stored in childPointers[42..49]
 Actual nodes: nodes[childPointers[42]], nodes[childPointers[43]], ...
-```text
+```
 
 **Benefits**:
 - Shared subtrees can be referenced from multiple parents
@@ -164,7 +164,7 @@ import com.hellblazer.luciferase.esvo.dag.DAGBuilder;
 // Build DAG with defaults
 var dag = DAGBuilder.from(myOctree).build();
 System.out.printf("Compression: %.2fx%n", dag.getCompressionRatio());
-```text
+```
 
 ### Advanced Configuration
 
@@ -175,7 +175,7 @@ var dag = DAGBuilder.from(myOctree)
     .withProgressCallback(progress -> updateUI(progress))
     .withValidation(true)
     .build();
-```text
+```
 
 ### Metrics Collection
 
@@ -185,7 +185,7 @@ collector.recordCompression(source, result);
 
 var summary = collector.getSummary();
 System.out.printf("Average build time: %.2fms%n", summary.averageTimeMs());
-```text
+```
 
 ### File Export
 
@@ -196,7 +196,7 @@ try (var exporter = new FileMetricsExporter(
 
     exporter.exportCompression(metrics);
 }
-```text
+```
 
 ## Testing
 
@@ -212,7 +212,7 @@ try (var exporter = new FileMetricsExporter(
 ```java
 [INFO] Tests run: 210, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
-```text
+```
 
 **Coverage**: 95%+ on core DAG classes, 90%+ on metrics classes
 

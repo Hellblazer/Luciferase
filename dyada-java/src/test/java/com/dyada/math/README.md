@@ -83,7 +83,7 @@ void additionIsAssociative(@ForAll Coordinate a, @ForAll Coordinate b, @ForAll C
 
 // ... 15+ more similar tests
 
-```text
+```
 
 ### After Consolidation
 
@@ -104,7 +104,7 @@ void allVectorOperationsFollowMathematicalLaws(
     // ... other consolidated property tests
 }
 
-```text
+```
 
 ## Benefits
 

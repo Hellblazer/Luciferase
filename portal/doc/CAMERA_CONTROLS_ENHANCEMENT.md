@@ -38,7 +38,7 @@ Enhanced the CameraView class with comprehensive panning capabilities and improv
 // Set custom navigation speeds
 cameraView.setNavigationSpeeds(panSpeed, rotateSpeed, zoomSpeed);
 
-```text
+```
 
 ### 5. New Public Methods
 
@@ -79,7 +79,7 @@ cameraView.setPanning(true);
 // Start the view timer
 cameraView.startViewing();
 
-```text
+```
 
 ## Benefits
 

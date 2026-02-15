@@ -105,7 +105,7 @@ if (collision.collides) {
     ImpulseResolver.resolveCollision(bodyA, bodyB, collision);
 }
 
-```text
+```
 
 ## Performance Characteristics
 
@@ -135,7 +135,7 @@ if (collision.collides) {
     ImpulseResolver.resolveCollision(bodyA, bodyB, collision);
 }
 
-```text
+```
 
 ## Future Enhancements
 

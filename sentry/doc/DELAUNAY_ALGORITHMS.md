@@ -19,11 +19,11 @@ A tetrahedralization is Delaunay if no vertex lies inside the circumsphere of an
 
 Vertices are ordered (a, b, c, d) such that:
 
-```text
+```
 
 orient3d(a, b, c, d) > 0
 
-```text
+```
 
 This ensures consistent positive orientation for all geometric predicates.
 
@@ -45,7 +45,7 @@ double orient3d(Point3f a, Point3f b, Point3f c, Point3f d) {
     );
 }
 
-```text
+```
 
 - Result > 0: D is above plane ABC
 - Result < 0: D is below plane ABC
@@ -66,7 +66,7 @@ double insphere(Point3f a, Point3f b, Point3f c, Point3f d, Point3f e) {
     );
 }
 
-```text
+```
 
 - Result > 0: E is inside circumsphere
 - Result < 0: E is outside circumsphere
@@ -98,7 +98,7 @@ Tetrahedron locate(Point3f target, Tetrahedron start) {
     }
 }
 
-```text
+```
 
 **Optimizations:**
 - Start from last query result (temporal locality)
@@ -131,11 +131,11 @@ void insert(Point3f p) {
     propagateDelaunay(newTetrahedra);
 }
 
-```text
+```
 
 #### 1→4 Flip (Point Inside)
 
-```text
+```
 
     Before:           After:
        d                 d
@@ -150,11 +150,11 @@ void insert(Point3f p) {
 
 Creates 4 new tetrahedra: (a,b,c,p), (a,b,p,d), (a,p,c,d), (p,b,c,d)
 
-```text
+```
 
 #### 2→3 Flip (Convex Edge)
 
-```text
+```
 
     Before:                After:
        a                     a
@@ -167,7 +167,7 @@ Creates 4 new tetrahedra: (a,b,c,p), (a,b,p,d), (a,p,c,d), (p,b,c,d)
 
 Transforms 2 tetrahedra sharing face abe into 3 tetrahedra
 
-```text
+```
 
 ### 4. Delaunay Property Restoration
 
@@ -198,7 +198,7 @@ void propagateDelaunay(List<Tetrahedron> modified) {
     }
 }
 
-```text
+```
 
 ### 5. Vertex Deletion
 
@@ -224,7 +224,7 @@ void delete(Vertex v) {
     fillFinalHole(boundary);
 }
 
-```text
+```
 
 #### Ear Identification
 
@@ -255,7 +255,7 @@ void moveVertex(Vertex v, Point3f newLocation) {
     }
 }
 
-```text
+```
 
 ## Special Cases and Degeneracies
 
@@ -313,7 +313,7 @@ Tetrahedron stochasticWalk(Point3f target) {
     return current;
 }
 
-```text
+```
 
 ### 2. History DAG
 
@@ -360,7 +360,7 @@ VoronoiCell computeVoronoiCell(Vertex v) {
     return cell;
 }
 
-```text
+```
 
 ## Robustness Considerations
 

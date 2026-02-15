@@ -8,7 +8,7 @@
 
 ### Performance Results (Validated July 24, 2025)
 
-```text
+```
 
 Test Configuration: 1000 entities, 0.1 occlusion ratio
 ========================================================
@@ -16,7 +16,7 @@ WITHOUT DSOC: 0.20 ms/frame
 WITH DSOC:    0.10 ms/frame
 RESULT:       2.0x speedup
 
-```text
+```
 
 ### Before vs After Comparison
 
@@ -66,7 +66,7 @@ DSOCConfiguration config = DSOCConfiguration.defaultConfig()
 
 spatialIndex.enableDSOC(config, 512, 512);
 
-```text
+```
 
 ### Performance Monitoring:
 
@@ -82,7 +82,7 @@ if (autoDisabled) {
     logger.warn("DSOC auto-disabled - check scene configuration");
 }
 
-```text
+```
 
 ## Optimization Features Implemented
 

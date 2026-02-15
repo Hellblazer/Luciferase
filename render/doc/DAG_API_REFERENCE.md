@@ -16,7 +16,7 @@ Fluent builder for creating DAG-compressed octrees from SVO sources.
 
 ```java
 public static DAGBuilder from(ESVOOctreeData source)
-```text
+```
 
 Create a new builder from source octree.
 
@@ -30,13 +30,13 @@ Create a new builder from source octree.
 **Example**:
 ```java
 var builder = DAGBuilder.from(myOctree);
-```text
+```
 
 #### Configuration Methods
 
 ```java
 public DAGBuilder withHashAlgorithm(HashAlgorithm algorithm)
-```text
+```
 
 Set hash algorithm for deduplication (default: SHA256).
 
@@ -49,7 +49,7 @@ Set hash algorithm for deduplication (default: SHA256).
 
 ```java
 public DAGBuilder withCompressionStrategy(CompressionStrategy strategy)
-```text
+```
 
 Set compression strategy (default: BALANCED).
 
@@ -62,7 +62,7 @@ Set compression strategy (default: BALANCED).
 
 ```java
 public DAGBuilder withProgressCallback(Consumer<BuildProgress> callback)
-```text
+```
 
 Set optional progress callback for UI updates.
 
@@ -75,7 +75,7 @@ Set optional progress callback for UI updates.
 
 ```java
 public DAGBuilder withValidation(boolean validate)
-```text
+```
 
 Enable or disable structural validation (default: enabled).
 
@@ -88,7 +88,7 @@ Enable or disable structural validation (default: enabled).
 
 ```java
 public DAGOctreeData build()
-```text
+```
 
 Execute compression and build DAG.
 
@@ -104,7 +104,7 @@ var dag = DAGBuilder.from(svo)
     .withHashAlgorithm(HashAlgorithm.XXHASH64)
     .withValidation(true)
     .build();
-```text
+```
 
 ### DAGOctreeData
 
@@ -116,7 +116,7 @@ Result interface for compressed DAG octrees.
 
 ```java
 ESVONodeUnified[] nodes()
-```text
+```
 
 Get the compacted node array (absolute addressing).
 
@@ -126,7 +126,7 @@ Get the compacted node array (absolute addressing).
 
 ```java
 DAGMetadata getMetadata()
-```text
+```
 
 Get compression metadata and statistics.
 
@@ -136,7 +136,7 @@ Get compression metadata and statistics.
 
 ```java
 float getCompressionRatio()
-```text
+```
 
 Get compression ratio (sourceNodes / compressedNodes).
 
@@ -146,7 +146,7 @@ Get compression ratio (sourceNodes / compressedNodes).
 
 ```java
 int resolveChildIndex(int parentIdx, ESVONodeUnified node, int octant)
-```text
+```
 
 Resolve child node index using DAG's child pointer indirection.
 
@@ -176,13 +176,13 @@ Duration buildTime()        // Time to build DAG
 HashAlgorithm hashAlgorithm() // Hash algorithm used
 CompressionStrategy strategy() // Compression strategy used
 long sourceHash()           // Source data hash (for validation)
-```text
+```
 
 #### Methods
 
 ```java
 float compressionRatio()
-```text
+```
 
 Calculate compression ratio: `sourceNodeCount / uniqueNodeCount`.
 
@@ -192,7 +192,7 @@ Calculate compression ratio: `sourceNodeCount / uniqueNodeCount`.
 
 ```java
 long memorySavedBytes()
-```text
+```
 
 Estimate memory saved: `(sourceNodeCount - uniqueNodeCount) * 8`.
 
@@ -216,7 +216,7 @@ public CompressionMetrics(
     int uniqueLeafNodes,
     Duration buildTime
 )
-```text
+```
 
 #### Methods
 
@@ -227,7 +227,7 @@ long memorySavedBytes()      // (source - compressed) * 8
 float memorySavedPercent()   // (source - compressed) / source * 100
 String strategy()            // "HASH_BASED"
 long timestamp_value()       // Metrics creation timestamp
-```text
+```
 
 ### CompressionMetricsCollector
 
@@ -239,7 +239,7 @@ Thread-safe collector for compression metrics.
 
 ```java
 void recordCompression(SparseVoxelData source, DAGOctreeData result)
-```text
+```
 
 Record a compression operation (thread-safe).
 
@@ -253,7 +253,7 @@ Record a compression operation (thread-safe).
 
 ```java
 CompressionSummary getSummary()
-```text
+```
 
 Get aggregated statistics for all recorded compressions.
 
@@ -263,7 +263,7 @@ Get aggregated statistics for all recorded compressions.
 
 ```java
 List<CompressionMetrics> getAllMetrics()
-```text
+```
 
 Get immutable snapshot of all recorded metrics.
 
@@ -273,7 +273,7 @@ Get immutable snapshot of all recorded metrics.
 
 ```java
 void reset()
-```text
+```
 
 Clear all recorded metrics (thread-safe).
 
@@ -291,13 +291,13 @@ public CacheMetrics(
     long missCount,
     long evictionCount
 )
-```text
+```
 
 #### Methods
 
 ```java
 float hitRate()  // hitCount / (hitCount + missCount)
-```text
+```
 
 ### CacheMetricsCollector
 
@@ -313,7 +313,7 @@ void recordMiss()      // Increment miss count (thread-safe)
 void recordEviction()  // Increment eviction count (thread-safe)
 CacheMetrics getMetrics()  // Get current snapshot (thread-safe)
 void reset()           // Reset all counters (thread-safe)
-```text
+```
 
 ### FileMetricsExporter
 
@@ -325,7 +325,7 @@ File-based metrics exporter (CSV/JSON formats).
 
 ```java
 public FileMetricsExporter(Path outputPath, Format format)
-```text
+```
 
 **Parameters**:
 - `outputPath`: Output file path
@@ -337,14 +337,14 @@ public FileMetricsExporter(Path outputPath, Format format)
 void exportCompression(CompressionMetrics metrics)
 void exportCache(CacheMetrics metrics)
 void close()  // Finalizes JSON array, closes resources
-```text
+```
 
 **Usage Pattern**:
 ```java
 try (var exporter = new FileMetricsExporter(path, Format.CSV)) {
     exporter.exportCompression(metrics);
 }  // Auto-closes
-```text
+```
 
 ## Enumerations
 
@@ -355,7 +355,7 @@ public enum HashAlgorithm {
     SHA256,    // Cryptographically secure, moderate speed
     XXHASH64   // Very fast, non-cryptographic
 }
-```text
+```
 
 ### CompressionStrategy
 
@@ -365,7 +365,7 @@ public enum CompressionStrategy {
     BALANCED,      // Default balance
     AGGRESSIVE     // Favor memory savings
 }
-```text
+```
 
 Note: Currently all strategies use the same algorithm. This is a future optimization point.
 
@@ -379,7 +379,7 @@ public enum BuildPhase {
     VALIDATION,     // Optional validation (90-100%)
     COMPLETE        // Build complete (100%)
 }
-```text
+```
 
 ## Exception Hierarchy
 
@@ -413,7 +413,7 @@ Thrown when metric export fails (I/O errors, format errors).
 
 ## Type Hierarchy
 
-```text
+```
 com.hellblazer.luciferase.esvo.dag
 ├── DAGBuilder (fluent builder)
 ├── DAGOctreeData (interface)
@@ -435,7 +435,7 @@ com.hellblazer.luciferase.esvo.dag.metrics
 ├── MetricsExporter (interface)
 │   └── FileMetricsExporter
 └── MetricsExportException
-```text
+```
 
 ## Thread Safety Summary
 

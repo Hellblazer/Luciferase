@@ -43,7 +43,7 @@ public static byte tetLevelFromIndex(long index) {
     return (byte) ((highBit / 3) + 1);
 }
 
-```text
+```
 
 ### 2. Child Generation Algorithm (Bey's Refinement)
 
@@ -71,7 +71,7 @@ public Tet child(int childIndex) {
     return new Tet(childX, childY, childZ, childLevel, childType);
 }
 
-```text
+```
 
 ### 3. Connectivity Tables
 
@@ -97,7 +97,7 @@ private void validatePositiveCoordinates(Point3f point) {
     }
 }
 
-```text
+```
 
 ### 5. Tetrahedral vs Cubic Geometry
 
@@ -115,7 +115,7 @@ Point3f centroid = new Point3f(
     (v0.z + v1.z + v2.z + v3.z) / 4.0f
 );
 
-```text
+```
 
 ## Common Pitfalls and Solutions
 
@@ -205,7 +205,7 @@ println("  Centroid: "+tet.centroid());
 List<Tet> children = tet.children();
 boolean valid = TetreeValidator.isValidSubdivisionFamily(children, tet);
 
-```text
+```
 
 ## Maintenance Notes
 

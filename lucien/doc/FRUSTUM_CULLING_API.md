@@ -22,7 +22,7 @@ Frustum culling allows you to:
 
 List<ID> frustumCullVisible(Frustum3D frustum)
 
-```text
+```
 
 Finds all entities that are potentially visible within the frustum. This performs frustum culling by testing spatial nodes against the frustum planes.
 
@@ -63,7 +63,7 @@ for (int i = 0; i < visibleEntities.size(); i++) {
     }
 }
 
-```text
+```
 
 ## Creating Frustums
 
@@ -85,7 +85,7 @@ Frustum3D frustum = new Frustum3D(
     topPlane, bottomPlane
 );
 
-```text
+```
 
 ## Use Cases
 
@@ -110,7 +110,7 @@ public void render(Camera camera) {
     }
 }
 
-```text
+```
 
 ### 2. Shadow Map Generation
 
@@ -133,7 +133,7 @@ public void generateShadowMap(Light light) {
     }
 }
 
-```text
+```
 
 ### 3. LOD System Integration
 
@@ -166,7 +166,7 @@ public void renderWithLOD(Camera camera) {
     }
 }
 
-```text
+```
 
 ## Performance Considerations
 
@@ -238,4 +238,4 @@ public class RenderingSystem {
     }
 }
 
-```text
+```

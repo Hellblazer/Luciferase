@@ -43,7 +43,7 @@ DyAda Java is a sophisticated computational geometry library that implements ada
 
 ### Package Structure
 
-```text
+```
 
 com.dyada
 ├── core/                           # Fundamental data structures
@@ -91,7 +91,7 @@ com.dyada
 └── exceptions/                   # Custom exception hierarchy
     └── TransformationException.java # Transformation errors
 
-```text
+```
 
 ### Design Patterns
 
@@ -139,7 +139,7 @@ public Coordinate transform(Coordinate input, TransformationType type) {
     };
 }
 
-```text
+```
 
 ## Quick Start
 
@@ -164,7 +164,7 @@ var bounds = new Bounds(
 // - tolerance: 0.1 (refinement threshold)
 var mesh = new AdaptiveMesh(bounds, 4, 8, 0.1);
 
-```text
+```
 
 ### Entity Management
 
@@ -186,7 +186,7 @@ var stats = mesh.getStatistics();
 System.out.printf("Active cells: %d, Entities: %d, Max level: %d%n",
     stats.activeCells(), stats.entityCount(), stats.maxLevel());
 
-```text
+```
 
 ### Adaptive Refinement
 
@@ -211,7 +211,7 @@ var result = mesh.refineAdaptively(errorStrategy, criteria);
 System.out.printf("Refined %d cells, created %d new cells%n", 
     result.cellsRefined(), result.newActiveCells());
 
-```text
+```
 
 ### Spatial Queries
 
@@ -231,7 +231,7 @@ var entitiesInRadius = mesh.queryRadius(center, 2.0);
 // Nearest neighbor queries
 var nearestNeighbors = mesh.queryNearestNeighbors(center, 3);
 
-```text
+```
 
 ### Coordinate Transformations
 
@@ -268,7 +268,7 @@ var affine = AffineTransformation.builder()
     .build();
 var affineResult = affine.transform(point);
 
-```text
+```
 
 ### Spatial Discretization
 
@@ -303,7 +303,7 @@ queryEngine.insert("item2", new Coordinate(new double[]{75.0, 60.0}));
 var nearestItems = queryEngine.kNearestNeighbors(location, 5);
 var itemsInRange = queryEngine.rangeQuery(queryBounds);
 
-```text
+```
 
 ### Morton Order Operations
 
@@ -332,7 +332,7 @@ long optimizedCode = optimizer.encode(coord, 10); // 10-bit precision
 // Decode Morton code back to coordinates
 var decoded = optimizer.decode(optimizedCode, 2, 10); // 2D, 10-bit
 
-```text
+```
 
 ### BitArray Operations
 
@@ -360,7 +360,7 @@ bitArray1.stream().forEach(bit -> {
     // Process each bit
 });
 
-```text
+```
 
 ## Advanced Usage
 
@@ -410,7 +410,7 @@ public class GradientBasedStrategy implements AdaptiveRefinementStrategy {
     }
 }
 
-```text
+```
 
 ### Custom Coordinate Transformations
 
@@ -449,7 +449,7 @@ var polar = new PolarTransformation();
 var cartesian = polar.transform(new Coordinate(new double[]{5.0, Math.PI/4}));
 // Result: [3.536, 3.536] (approximately)
 
-```text
+```
 
 ### Performance Optimization
 
@@ -483,7 +483,7 @@ cache.configure()
 // Cache expensive coordinate transformations
 var cachedTransform = cache.memoize(expensiveTransformation);
 
-```text
+```
 
 ### Multi-Scale Indexing
 
@@ -511,7 +511,7 @@ var index1 = multiIndex.getIndex(1);
 var updated = multiIndex.updateLevel(0, (byte) 3);
 var modified = multiIndex.updateIndex(2, 45);
 
-```text
+```
 
 ## Performance Benchmarks
 
@@ -581,7 +581,7 @@ var modified = multiIndex.updateIndex(2, 45);
     </dependency>
 </dependencies>
 
-```text
+```
 
 ## Build Commands
 
@@ -617,7 +617,7 @@ mvn clean package
 
 mvn install
 
-```text
+```
 
 ## Integration Examples
 
@@ -678,7 +678,7 @@ public class DyAdaProperties {
     }
 }
 
-```text
+```
 
 ### Application Configuration
 
@@ -697,7 +697,7 @@ dyada:
     enabled: true
     thread-count: 8
 
-```text
+```
 
 ### JavaFX Visualization
 
@@ -766,7 +766,7 @@ public class MeshVisualization extends Application {
     }
 }
 
-```text
+```
 
 ## Testing Strategy
 
@@ -836,7 +836,7 @@ mvn test -Dtest.verbose=true
 
 mvn test -Dargline="--enable-preview -Xmx4g"
 
-```text
+```
 
 ## Contributing
 
@@ -877,7 +877,7 @@ git commit -m "Add: your feature description"
 
 git push origin feature/your-feature-name
 
-```text
+```
 
 ### Code Quality Standards
 
