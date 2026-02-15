@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.Weigher;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +55,7 @@ public class RegionCache implements AutoCloseable {
     private final long maxMemoryBytes;
     private final Duration ttl;
     private volatile boolean closed;
+    private volatile Clock clock = Clock.system(); // For deterministic testing
 
     // P3: Update timestamp only on 1% of accesses (reduces allocation by ~99%)
     private static final int ACCESS_SAMPLING_RATE = 100;
@@ -95,6 +97,19 @@ public class RegionCache implements AutoCloseable {
     }
 
     /**
+     * Set clock for deterministic testing.
+     * <p>
+     * Note: Caffeine's expireAfterAccess() uses system time internally and cannot be overridden.
+     * This clock only affects lastAccessedMs tracking for pinned regions. For fully deterministic
+     * cache expiration tests, consider using short TTL values and Thread.sleep() instead.
+     *
+     * @param clock Clock instance
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    /**
      * Get cached region by key.
      *
      * <p>Checks pinned cache first (O(1)), then Caffeine unpinned cache (O(1) amortized).
@@ -120,7 +135,7 @@ public class RegionCache implements AutoCloseable {
             long accessNumber = pinnedAccessCount.incrementAndGet();
             if (accessNumber % ACCESS_SAMPLING_RATE == 0) {
                 var updated = pinnedCache.computeIfPresent(key, (k, region) ->
-                    region.withAccess(System.currentTimeMillis())
+                    region.withAccess(clock.currentTimeMillis())
                 );
                 return Optional.ofNullable(updated);
             }

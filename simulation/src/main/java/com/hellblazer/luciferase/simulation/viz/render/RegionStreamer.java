@@ -225,6 +225,9 @@ public class RegionStreamer implements AutoCloseable {
                 flushBuffer(session);
             }
 
+            // Cleanup rate limiter to prevent memory leak on abnormal disconnect
+            rateLimiters.remove(sessionId);
+
             session.state = ClientSessionState.DISCONNECTING;
             viewportTracker.removeClient(sessionId);
             log.info("Client disconnected: {} (code={}, reason={})", sessionId, statusCode, reason);

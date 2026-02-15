@@ -88,8 +88,9 @@ public class RenderingServer implements AutoCloseable {
     // bfgm: Scheduled executor for periodic dirty region backfill retry
     private ScheduledExecutorService backfillRetryExecutor;
 
-    // vyik: Auth attempt rate limiters per session (prevents brute force attacks)
-    private final ConcurrentHashMap<String, AuthAttemptRateLimiter> authLimiters = new ConcurrentHashMap<>();
+    // vyik: Auth attempt rate limiters per client host (prevents brute force attacks)
+    // Caffeine cache with 1-hour expiration prevents memory leak from unbounded client hosts
+    private Cache<String, AuthAttemptRateLimiter> authLimiters;
 
     /**
      * Create rendering server with configuration.
@@ -120,13 +121,15 @@ public class RenderingServer implements AutoCloseable {
         if (regionBuilder != null) {
             regionBuilder.setClock(clock);
         }
+        if (regionCache != null) {
+            regionCache.setClock(clock);
+        }
         if (viewportTracker != null) {
             viewportTracker.setClock(clock);
         }
         if (regionStreamer != null) {
             regionStreamer.setClock(clock);
         }
-        // RegionCache doesn't need clock (uses system time for TTL)
     }
 
     /**
@@ -208,6 +211,12 @@ public class RenderingServer implements AutoCloseable {
         endpointCache = Caffeine.newBuilder()
             .expireAfterWrite(Duration.ofSeconds(config.performance().endpointCacheExpireSec()))
             .maximumSize(config.performance().endpointCacheMaxSize())
+            .build();
+
+        // vyik: Initialize auth attempt rate limiter cache (1-hour expiration, 10k max)
+        authLimiters = Caffeine.newBuilder()
+            .expireAfterAccess(Duration.ofHours(1))
+            .maximumSize(10_000)
             .build();
 
         // wwi6: Validate keystore path exists before Jetty starts (for clear error messages)
@@ -305,7 +314,7 @@ public class RenderingServer implements AutoCloseable {
                     var clientHost = ctx.host();
 
                     // vyik: Check if client is blocked due to too many failed auth attempts
-                    var authLimiter = authLimiters.computeIfAbsent(clientHost,
+                    var authLimiter = authLimiters.get(clientHost,
                         id -> new AuthAttemptRateLimiter(clock));
 
                     if (authLimiter.isBlocked()) {
