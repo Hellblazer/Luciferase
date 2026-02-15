@@ -289,19 +289,19 @@ Fix it as part of your PR:
 ## Common Mistakes to Avoid
 
 ❌ **Don't**: Update code without updating examples  
-✅ **Do**: Find all examples and update them to match new behavior
+- ✅ **Do**: Find all examples and update them to match new behavior
 
 ❌ **Don't**: Add features without documenting them  
-✅ **Do**: Create documentation before marking feature complete
+- ✅ **Do**: Create documentation before marking feature complete
 
 ❌ **Don't**: Copy-paste outdated performance claims  
-✅ **Do**: Run benchmarks and update PERFORMANCE_METRICS_MASTER.md
+- ✅ **Do**: Run benchmarks and update PERFORMANCE_METRICS_MASTER.md
 
 ❌ **Don't**: Break links when moving files  
-✅ **Do**: Search for all references and update them
+- ✅ **Do**: Search for all references and update them
 
 ❌ **Don't**: Leave documentation headers with old dates  
-✅ **Do**: Update "Last Updated" date in all changed docs
+- ✅ **Do**: Update "Last Updated" date in all changed docs
 
 ---
 

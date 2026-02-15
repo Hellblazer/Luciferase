@@ -26,14 +26,14 @@ Distributed examples demonstrate Luciferase's core value proposition: **distribu
 
 ### Architecture
 
-```
+```text
 Node 1 (Bubble A)                    Node 2 (Bubble B)
 ┌─────────────────────┐             ┌─────────────────────┐
 │ Bounds: (0-50)³     │◄───gRPC────►│ Bounds: (50-100)³   │
 │ Spawns 50 entities  │             │ Receives entities   │
 │ Port: Dynamic       │             │ Port: Dynamic       │
 └─────────────────────┘             └─────────────────────┘
-```
+```text
 
 **Migration Boundary**: x = 50
 **Network Protocol**: gRPC/Netty
@@ -44,10 +44,10 @@ Node 1 (Bubble A)                    Node 2 (Bubble B)
 **Option 1: Integration Test** (Easiest)
 ```bash
 mvn test -Dtest=TwoNodeExampleTest -pl simulation
-```
+```text
 
 **Expected Output**:
-```
+```text
 Starting TwoNodeExample test:
   Node 1: port 12345 (bounds: 0-50)
   Node 2: port 12346 (bounds: 50-100)
@@ -60,7 +60,7 @@ Entity distribution:
   Total:  50 (expected: 50)
 ✓ Entity accounting consistent
 ✓ TwoNodeExample test PASSED
-```
+```text
 
 **Time**: ~12 seconds
 
@@ -72,7 +72,7 @@ cd simulation
 mvn process-classes exec:java \
   -Dexec.mainClass="com.hellblazer.luciferase.simulation.examples.TwoNodeExample" \
   -Dexec.args="Node1 9000 9001"
-```
+```text
 
 Terminal 2 (Node2):
 ```bash
@@ -80,14 +80,14 @@ cd simulation
 mvn process-classes exec:java \
   -Dexec.mainClass="com.hellblazer.luciferase.simulation.examples.TwoNodeExample" \
   -Dexec.args="Node2 9001 9000"
-```
+```text
 
 **Arguments**: `<nodeName> <myPort> <peerPort>`
 
 ### What You'll See
 
 **Console Output** (Node1):
-```
+```text
 Node1 starting on port 9000...
 ✓ gRPC server started
 ✓ Bubble created (bounds: 0-50)
@@ -100,10 +100,10 @@ Tick 30: 45 entities in Node1 (5 migrated to Node2)
 ...
 Tick 100: 26 entities in Node1 (24 migrated to Node2)
 Simulation complete
-```
+```text
 
 **Console Output** (Node2):
-```
+```text
 Node2 starting on port 9001...
 ✓ gRPC server started
 ✓ Bubble created (bounds: 50-100)
@@ -114,7 +114,7 @@ Tick 30: 5 entities received from Node1
 ...
 Tick 100: 24 entities in Node2
 Simulation complete
-```
+```text
 
 ### What This Demonstrates
 
@@ -161,7 +161,7 @@ var channel = NettyChannelBuilder.forAddress("localhost", peerPort)
     .build();
 
 var networkChannel = new GrpcBubbleNetworkChannel(channel);
-```
+```text
 
 **Entity Migration**:
 ```java
@@ -181,7 +181,7 @@ if (entity.position.x > 50.0f && currentBubbleId == node1) {
     // Remove from local bubble (2PC commit)
     bubble.removeEntity(entityId);
 }
-```
+```text
 
 ### Performance
 
@@ -207,7 +207,7 @@ See `simulation/doc/PERFORMANCE_DISTRIBUTED.md` for complete benchmarks.
 **Status**: 🚧 **Coming Soon**
 
 **Planned Architecture**:
-```
+```text
         Node 1
          / \
         /   \
@@ -215,7 +215,7 @@ See `simulation/doc/PERFORMANCE_DISTRIBUTED.md` for complete benchmarks.
         \   /
          \ /
         Node 4
-```
+```text
 
 **Planned Features**:
 1. **3-5 JVM Processes**
@@ -263,7 +263,7 @@ public static void main(String[] args) {
     // Wait for completion
     bubble.awaitTermination();
 }
-```
+```text
 
 **Run Example** (5 nodes):
 ```bash
@@ -281,7 +281,7 @@ mvn exec:java -Dexec.args="4 9004 localhost:9001,localhost:9002"
 
 # Terminal 5: Node 5
 mvn exec:java -Dexec.args="5 9005 localhost:9001,localhost:9003"
-```
+```text
 
 ### Timeline
 
@@ -304,7 +304,7 @@ mvn exec:java -Dexec.args="5 9005 localhost:9001,localhost:9003"
 # Use different ports:
 mvn exec:java -Dexec.args="Node1 9100 9101"
 mvn exec:java -Dexec.args="Node2 9101 9100"
-```
+```text
 
 ### Connection Timeout
 ```bash
@@ -313,21 +313,21 @@ mvn exec:java -Dexec.args="Node2 9101 9100"
 
 # Check if port is listening:
 lsof -i :9000
-```
+```text
 
 ### PrimeMover Transformation Error
 ```bash
 # Always use process-classes phase:
 mvn process-classes exec:java ...  # CORRECT
 mvn compile exec:java ...          # WRONG
-```
+```text
 
 ### Entity Duplication
 ```bash
 # Check logs for migration errors
 # Verify 2PC commit completed
 # Check EntityAccountant validation
-```
+```text
 
 ---
 

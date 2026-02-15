@@ -16,15 +16,15 @@ A GPU-accelerated ESVO/ESVT voxel rendering server that streams region data to m
 
 ## Key Features
 
-✅ **Multi-client WebSocket streaming** (up to 1000 concurrent clients)
-✅ **GPU-accelerated ESVO building** (RegionBuilder)
-✅ **Two-tier caching** (pinned/unpinned with TTL/LRU eviction)
-✅ **Frustum culling** (ViewportTracker)
-✅ **Message batching** (Luciferase-r2ky: 10 messages or 50ms timeout)
-✅ **ByteBuffer pooling** (Luciferase-8db0: reduces GC pressure)
-✅ **Triple-layer rate limiting** (global, per-client, auth attempts)
-✅ **TLS/HTTPS support** with API key authentication
-✅ **Comprehensive DoS protection** (message size limits, client limits, backpressure)
+- ✅ **Multi-client WebSocket streaming** (up to 1000 concurrent clients)
+- ✅ **GPU-accelerated ESVO building** (RegionBuilder)
+- ✅ **Two-tier caching** (pinned/unpinned with TTL/LRU eviction)
+- ✅ **Frustum culling** (ViewportTracker)
+- ✅ **Message batching** (Luciferase-r2ky: 10 messages or 50ms timeout)
+- ✅ **ByteBuffer pooling** (Luciferase-8db0: reduces GC pressure)
+- ✅ **Triple-layer rate limiting** (global, per-client, auth attempts)
+- ✅ **TLS/HTTPS support** with API key authentication
+- ✅ **Comprehensive DoS protection** (message size limits, client limits, backpressure)
 
 ## Quick Start
 
@@ -85,15 +85,18 @@ See [API.md](API.md) for complete client implementation.
 
 ## Architecture at a Glance
 
-```
-RenderingServer (Main coordinator)
-  ├── RegionStreamer (WebSocket session management)
-  │   ├── ViewportTracker (Frustum culling)
-  │   ├── RegionCache (Two-tier caching)
-  │   └── ByteBufferPool (Memory optimization)
-  ├── AdaptiveRegionManager (Region state tracking)
-  │   └── RegionBuilder (GPU-accelerated ESVO)
-  └── EntityStreamConsumer (Upstream gRPC)
+```mermaid
+graph TB
+    RS[RenderingServer<br/>Main coordinator]
+    RS --> RegionStreamer[RegionStreamer<br/>WebSocket session management]
+    RS --> ARM[AdaptiveRegionManager<br/>Region state tracking]
+    RS --> ESC[EntityStreamConsumer<br/>Upstream gRPC]
+
+    RegionStreamer --> VT[ViewportTracker<br/>Frustum culling]
+    RegionStreamer --> RC[RegionCache<br/>Two-tier caching]
+    RegionStreamer --> BBP[ByteBufferPool<br/>Memory optimization]
+
+    ARM --> RB[RegionBuilder<br/>GPU-accelerated ESVO]
 ```
 
 **Data Flow:**
@@ -214,23 +217,23 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed remediation guidance.
 
 ## File Locations
 
-```
-simulation/src/main/java/.../viz/render/
-  ├── RenderingServer.java          (Main server)
-  ├── RegionStreamer.java            (WebSocket handler)
-  ├── RenderingServerConfig.java     (Configuration)
-  ├── ViewportTracker.java           (Frustum culling)
-  ├── RegionCache.java               (Two-tier cache)
-  ├── RegionBuilder.java             (GPU builds)
-  ├── AdaptiveRegionManager.java     (Region state)
-  └── EntityStreamConsumer.java      (Upstream gRPC)
+**Main Source:**
+- `simulation/src/main/java/.../viz/render/`
+  - `RenderingServer.java` - Main server
+  - `RegionStreamer.java` - WebSocket handler
+  - `RenderingServerConfig.java` - Configuration
+  - `ViewportTracker.java` - Frustum culling
+  - `RegionCache.java` - Two-tier cache
+  - `RegionBuilder.java` - GPU builds
+  - `AdaptiveRegionManager.java` - Region state
+  - `EntityStreamConsumer.java` - Upstream gRPC
 
-simulation/src/test/java/.../viz/render/
-  ├── RegionStreamerTest.java
-  ├── RenderingServerIntegrationTest.java
-  ├── RenderingServerStreamingTest.java
-  └── BuildIntegrationTest.java
-```
+**Test Source:**
+- `simulation/src/test/java/.../viz/render/`
+  - `RegionStreamerTest.java`
+  - `RenderingServerIntegrationTest.java`
+  - `RenderingServerStreamingTest.java`
+  - `BuildIntegrationTest.java`
 
 ## Bead Traceability
 

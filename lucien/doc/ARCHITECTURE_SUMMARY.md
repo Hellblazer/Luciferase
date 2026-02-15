@@ -54,7 +54,7 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
       ├── SFCArrayIndex<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
       ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
       └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
-```
+```text
 
 ### Spatial Subdivision Strategies
 
@@ -78,31 +78,31 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
 
 ### Core Features (January 2025)
 
-✅ **Core Spatial Indexing**: Insert, remove, update, lookup operations  
-✅ **Spatial Queries**: Bounded/bounding queries, k-NN search, range queries  
-✅ **Entity Management**: Multi-entity support with spanning capabilities  
-✅ **Thread Safety**: Concurrent access with read-write locks
+- ✅ **Core Spatial Indexing**: Insert, remove, update, lookup operations  
+- ✅ **Spatial Queries**: Bounded/bounding queries, k-NN search, range queries  
+- ✅ **Entity Management**: Multi-entity support with spanning capabilities  
+- ✅ **Thread Safety**: Concurrent access with read-write locks
 
 ### Enhanced Features (Completed)
 
-✅ **Ray Intersection**: Complete ray traversal implementation (see [RAY_INTERSECTION_API.md](./RAY_INTERSECTION_API.md))  
-✅ **Collision Detection**: Broad/narrow phase collision detection (see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))  
-✅ **Tree Traversal**: Visitor pattern support (see [TREE_TRAVERSAL_API.md](./TREE_TRAVERSAL_API.md))  
-✅ **Tree Balancing**: Dynamic balancing strategies (see [TREE_BALANCING_API.md](./TREE_BALANCING_API.md))  
-✅ **Plane Intersection**: Arbitrary 3D plane queries (see [PLANE_INTERSECTION_API.md](./PLANE_INTERSECTION_API.md))  
-✅ **Frustum Culling**: View frustum visibility determination (see [FRUSTUM_CULLING_API.md](./FRUSTUM_CULLING_API.md))  
-✅ **Bulk Operations**: High-performance batch operations (see [BULK_OPERATIONS_API.md](./BULK_OPERATIONS_API.md))  
-✅ **Ghost Layer**: Distributed spatial index support (see [GHOST_API.md](./GHOST_API.md))  
-✅ **Neighbor Detection**: Topological neighbor finding for ghost creation
+- ✅ **Ray Intersection**: Complete ray traversal implementation (see [RAY_INTERSECTION_API.md](./RAY_INTERSECTION_API.md))  
+- ✅ **Collision Detection**: Broad/narrow phase collision detection (see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))  
+- ✅ **Tree Traversal**: Visitor pattern support (see [TREE_TRAVERSAL_API.md](./TREE_TRAVERSAL_API.md))  
+- ✅ **Tree Balancing**: Dynamic balancing strategies (see [TREE_BALANCING_API.md](./TREE_BALANCING_API.md))  
+- ✅ **Plane Intersection**: Arbitrary 3D plane queries (see [PLANE_INTERSECTION_API.md](./PLANE_INTERSECTION_API.md))  
+- ✅ **Frustum Culling**: View frustum visibility determination (see [FRUSTUM_CULLING_API.md](./FRUSTUM_CULLING_API.md))  
+- ✅ **Bulk Operations**: High-performance batch operations (see [BULK_OPERATIONS_API.md](./BULK_OPERATIONS_API.md))  
+- ✅ **Ghost Layer**: Distributed spatial index support (see [GHOST_API.md](./GHOST_API.md))  
+- ✅ **Neighbor Detection**: Topological neighbor finding for ghost creation
 
 ### Performance Optimizations
 
-✅ **O(1) Operations**: SpatialIndexSet replaces TreeSet  
-✅ **TetreeLevelCache**: Eliminates O(log n) level calculations  
-✅ **Dynamic Level Selection**: Automatic optimization for data distribution  
-✅ **Bulk Loading Mode**: 5-10x performance for large datasets
-✅ **SpatialKey Architecture**: Type-safe keys with MortonKey, TetreeKey (21-level support), and PrismKey  
-✅ **TetreeKey Encoding**: Dual implementation with CompactTetreeKey (levels 0-10) and ExtendedTetreeKey (levels 0-21) using innovative level 21 bit packing
+- ✅ **O(1) Operations**: SpatialIndexSet replaces TreeSet  
+- ✅ **TetreeLevelCache**: Eliminates O(log n) level calculations  
+- ✅ **Dynamic Level Selection**: Automatic optimization for data distribution  
+- ✅ **Bulk Loading Mode**: 5-10x performance for large datasets
+- ✅ **SpatialKey Architecture**: Type-safe keys with MortonKey, TetreeKey (21-level support), and PrismKey  
+- ✅ **TetreeKey Encoding**: Dual implementation with CompactTetreeKey (levels 0-10) and ExtendedTetreeKey (levels 0-21) using innovative level 21 bit packing
 
 ## Documentation Structure
 

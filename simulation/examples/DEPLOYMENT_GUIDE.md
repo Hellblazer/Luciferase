@@ -10,14 +10,14 @@ TwoNodeExample demonstrates distributed volumetric animation with 2 separate JVM
 
 ### Architecture
 
-```
+```text
 Node 1 (Bubble A)                    Node 2 (Bubble B)
 ┌─────────────────────┐             ┌─────────────────────┐
 │ Bounds: (0-50)³     │◄───gRPC────►│ Bounds: (50-100)³   │
 │ Spawns 50 entities  │             │ Receives entities   │
 │ Port: Dynamic       │             │ Port: Dynamic       │
 └─────────────────────┘             └─────────────────────┘
-```
+```text
 
 **Migration Boundary**: x = 50
 **Network Protocol**: gRPC/Netty
@@ -32,7 +32,7 @@ Node 1 (Bubble A)                    Node 2 (Bubble B)
 ```bash
 cd /path/to/Luciferase
 mvn clean install -DskipTests
-```
+```text
 
 **Time**: ~2 minutes (first build), ~30 seconds (subsequent)
 
@@ -40,10 +40,10 @@ mvn clean install -DskipTests
 
 ```bash
 mvn test -Dtest=TwoNodeExampleTest -pl simulation
-```
+```text
 
 **Expected Output**:
-```
+```text
 Starting TwoNodeExample test:
   Node 1: port 12345 (bounds: 0-50)
   Node 2: port 12346 (bounds: 50-100)
@@ -56,7 +56,7 @@ Entity distribution:
   Total:  50 (expected: 50)
 ✓ Entity accounting consistent
 ✓ TwoNodeExample test PASSED
-```
+```text
 
 **Time**: ~12 seconds
 
@@ -68,7 +68,7 @@ cd simulation
 mvn process-classes exec:java \
   -Dexec.mainClass="com.hellblazer.luciferase.simulation.examples.TwoNodeExample" \
   -Dexec.args="Node1 9000 9001"
-```
+```text
 
 **Terminal 2 (Node2)**:
 ```bash
@@ -76,7 +76,7 @@ cd simulation
 mvn process-classes exec:java \
   -Dexec.mainClass="com.hellblazer.luciferase.simulation.examples.TwoNodeExample" \
   -Dexec.args="Node2 9001 9000"
-```
+```text
 
 **Note**: `process-classes` phase is required for PrimeMover bytecode transformation.
 
@@ -139,7 +139,7 @@ Over time, entities distribute across both nodes:
 
 ```bash
 TwoNodeExample <nodeName> <serverPort> <peerPort>
-```
+```text
 
 | Argument | Description | Example |
 |----------|-------------|---------|
@@ -208,7 +208,7 @@ lsof -i :9000
 # Use different ports
 TwoNodeExample Node1 9010 9011
 TwoNodeExample Node2 9011 9010
-```
+```text
 
 ---
 
@@ -239,7 +239,7 @@ mvn process-classes exec:java ...
 
 # Or use test which handles this automatically
 mvn test -Dtest=TwoNodeExampleTest
-```
+```text
 
 ---
 
@@ -257,7 +257,7 @@ mvn exec:java -Dexec.mainClass=... -Dexec.args="..." \
   -Dexec.cleanupDaemonThreads=false \
   -Dexec.executable=java \
   -Dexec.args="-Xmx2G ..."
-```
+```text
 
 ---
 
@@ -328,7 +328,7 @@ mvn process-classes exec:java -pl simulation \
 # [Node2] ENTITY_ARRIVED
 # [Node2] ENTITY_COUNT: 1  (increases over time)
 # [Node1] ENTITY_COUNT: 49  (decreases as entities migrate)
-```
+```text
 
 ---
 
@@ -416,7 +416,7 @@ For issues or questions:
 var channel = NettyChannelBuilder.forAddress(host, port)
     .usePlaintext()  // INSECURE
     .build();
-```
+```text
 
 **Use TLS-secured channels**:
 ```java
@@ -432,7 +432,7 @@ var sslContext = GrpcSslContexts.forClient()
 var channel = NettyChannelBuilder.forAddress(host, port)
     .sslContext(sslContext)
     .build();
-```
+```text
 
 **Server-side TLS**:
 ```java
@@ -450,7 +450,7 @@ var server = NettyServerBuilder.forPort(port)
     .addService(new BubbleServiceImpl(bubble))
     .build()
     .start();
-```
+```text
 
 ### Authentication & Authorization
 
@@ -484,7 +484,7 @@ var server = NettyServerBuilder.forPort(port)
     .intercept(new MigrationAuthInterceptor())
     .addService(new BubbleServiceImpl(bubble))
     .build();
-```
+```text
 
 ### Network Isolation
 
@@ -497,7 +497,7 @@ iptables -A INPUT -p tcp --dport 9000 -j DROP
 # Rate limiting to prevent DoS
 iptables -A INPUT -p tcp --dport 9000 -m conntrack --ctstate NEW \
          -m limit --limit 10/sec --limit-burst 20 -j ACCEPT
-```
+```text
 
 **Private Network Deployment**:
 - Deploy nodes in private subnets (VPC)
@@ -514,7 +514,7 @@ export GRPC_SERVER_KEY=/etc/luciferase/certs/server-key.pem
 export GRPC_CA_CERT=/etc/luciferase/certs/ca-cert.pem
 
 # Or use Kubernetes secrets, HashiCorp Vault, AWS Secrets Manager
-```
+```text
 
 **Key Rotation**:
 - Automate certificate rotation (Let's Encrypt, cert-manager)
@@ -580,7 +580,7 @@ Histogram.build()
     .buckets(0.001, 0.005, 0.010, 0.025, 0.050, 0.100)
     .help("Simulation tick latency")
     .register();
-```
+```text
 
 **Health Check Endpoint**:
 ```java
@@ -597,7 +597,7 @@ public class HealthCheckResource {
         return Response.status(503).build();
     }
 }
-```
+```text
 
 **Distributed Tracing**:
 ```java
@@ -614,7 +614,7 @@ try (var scope = span.makeCurrent()) {
 } finally {
     span.end();
 }
-```
+```text
 
 ### Persistence & Recovery
 
@@ -639,7 +639,7 @@ public class CheckpointManager {
         );
     }
 }
-```
+```text
 
 **Crash Recovery**:
 ```java
@@ -660,7 +660,7 @@ public static Bubble restoreFromCheckpoint(Path checkpointPath) {
 
     return bubble;
 }
-```
+```text
 
 ### Performance Tuning
 
@@ -675,7 +675,7 @@ java -Xms4g -Xmx4g \
      -XX:+AlwaysPreTouch \
      -XX:+DisableExplicitGC \
      -jar simulation.jar
-```
+```text
 
 **Netty Tuning**:
 ```java
@@ -686,7 +686,7 @@ var channel = NettyChannelBuilder.forAddress(host, port)
     .keepAliveTimeout(10, TimeUnit.SECONDS)
     .executor(Executors.newFixedThreadPool(8))  // Dedicated thread pool
     .build();
-```
+```text
 
 **Entity Capacity Planning**:
 | Entities | Memory | CPU Cores | P99 Latency |
@@ -789,7 +789,7 @@ networks:
 volumes:
   prometheus-data:
   grafana-data:
-```
+```text
 
 **2. Build Docker Image**:
 ```bash
@@ -816,7 +816,7 @@ EOF
 
 # Build image
 docker build -t luciferase:latest .
-```
+```text
 
 **3. Generate TLS Certificates**:
 ```bash
@@ -850,7 +850,7 @@ done
 
 # Set permissions
 chmod 600 certs/*-key.pem
-```
+```text
 
 **4. Launch Cluster**:
 ```bash
@@ -868,7 +868,7 @@ open http://localhost:9090
 
 # View dashboards (Grafana)
 open http://localhost:3000
-```
+```text
 
 **5. Shutdown**:
 ```bash
@@ -877,7 +877,7 @@ docker-compose down
 
 # Remove volumes (cleanup)
 docker-compose down -v
-```
+```text
 
 ### Kubernetes Deployment
 
@@ -943,7 +943,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-```
+```text
 
 **Service for Peer Discovery**:
 ```yaml
@@ -960,7 +960,7 @@ spec:
     name: grpc
   - port: 8080
     name: health
-```
+```text
 
 **Deploy**:
 ```bash
@@ -982,7 +982,7 @@ kubectl logs luciferase-1
 
 # Scale cluster
 kubectl scale statefulset luciferase --replicas=5
-```
+```text
 
 ---
 

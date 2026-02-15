@@ -32,7 +32,7 @@ The refactoring from Raft to Fireflies demonstrates sophisticated understanding 
 public SequencedSet<? extends Member> selectCommittee(Digest viewDiadem) {
     return context.bftSubset(viewDiadem);
 }
-```
+```text
 
 **Why This is Excellent**:
 1. **Deterministic**: Same view ID produces identical committee on all nodes
@@ -73,7 +73,7 @@ public CompletableFuture<Boolean> requestConsensus(MigrationProposal proposal) {
         return approved;
     });
 }
-```
+```text
 
 **Why This is Excellent**:
 1. **Double-Commit Prevention**: View ID check prevents entity duplication across view boundaries
@@ -104,7 +104,7 @@ public CompletableFuture<Boolean> requestConsensus(MigrationProposal proposal) {
 **Fireflies Layer** (`FirefliesMembershipView.java`, lines 57-58):
 ```java
 view.register(listenerKey, this::handleDelosViewChange);
-```
+```text
 - Single registration point for view changes
 - Converts Delos `ViewChange` to application `MembershipView.ViewChange`
 - No migration logic in membership layer
@@ -114,7 +114,7 @@ view.register(listenerKey, this::handleDelosViewChange);
 boolean sendEntityDeparture(UUID targetNodeId, EntityDepartureEvent event);
 boolean sendViewSynchronyAck(UUID sourceNodeId, ViewSynchronyAck event);
 boolean sendEntityRollback(UUID targetNodeId, EntityRollbackEvent event);
-```
+```text
 - Point-to-point migration message delivery
 - No membership management in migration layer
 
@@ -146,7 +146,7 @@ public int routeTo(TetreeKey<?> key) {
     var absHash = hash == Long.MIN_VALUE ? 0 : Math.abs(hash);
     return (int) (absHash % contextSize);
 }
-```
+```text
 
 **Integration with Fireflies**:
 - Uses `DynamicContext<Member>` from Delos
@@ -175,7 +175,7 @@ public int routeTo(TetreeKey<?> key) {
 public FirefliesViewMonitor(MembershipView<?> membershipView) {
     this(membershipView, 30);  // 30 ticks = 300ms at 100Hz (production)
 }
-```
+```text
 
 **Configuration Analysis**:
 
@@ -348,18 +348,18 @@ For large clusters (n>1000), consider dynamic threshold: `threshold = max(30, 10
 
 ### Distributed Systems Best Practices
 
-✅ **Idempotency**: View ID verification prevents double-commit
-✅ **Fail-Safe**: Abort on view change rather than risk corruption
-✅ **Determinism**: Committee selection is deterministic given view ID
-✅ **Eventual Consistency**: Membership (gossip) vs Strong Consistency (migration)
-✅ **Graceful Degradation**: View instability blocks migration, doesn't crash
+- ✅ **Idempotency**: View ID verification prevents double-commit
+- ✅ **Fail-Safe**: Abort on view change rather than risk corruption
+- ✅ **Determinism**: Committee selection is deterministic given view ID
+- ✅ **Eventual Consistency**: Membership (gossip) vs Strong Consistency (migration)
+- ✅ **Graceful Degradation**: View instability blocks migration, doesn't crash
 
 ### Code Quality Indicators
 
-✅ **Documentation**: Clear comments explaining view ID verification, BFT quorum
-✅ **Testability**: `FakeNetworkChannel` for unit testing without Fireflies
-✅ **Configuration**: Tunable stability thresholds for production vs testing
-✅ **Error Handling**: Proper null checks, IllegalStateException for invalid state
+- ✅ **Documentation**: Clear comments explaining view ID verification, BFT quorum
+- ✅ **Testability**: `FakeNetworkChannel` for unit testing without Fireflies
+- ✅ **Configuration**: Tunable stability thresholds for production vs testing
+- ✅ **Error Handling**: Proper null checks, IllegalStateException for invalid state
 
 **Verdict**: **This is production-grade distributed systems architecture.**
 
