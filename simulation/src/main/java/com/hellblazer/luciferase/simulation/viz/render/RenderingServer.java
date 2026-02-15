@@ -392,6 +392,33 @@ public class RenderingServer implements AutoCloseable {
 
     /**
      * Get the region manager.
+     * <p>
+     * <b>Visibility: Public</b>
+     * <p>
+     * <b>Rationale:</b> This getter is public to support integration testing and monitoring.
+     * The RegionManager is a core component that maintains region state and coordinates
+     * entity updates. Tests need access to verify region lifecycle (creation, updates,
+     * cleanup) and entity tracking across different scenarios.
+     * <p>
+     * <b>Usage Guidelines:</b>
+     * <ul>
+     *   <li><b>Testing:</b> Integration tests use this to verify region state transitions,
+     *       entity distribution, and cleanup behavior (see BuildIntegrationTest,
+     *       RenderingServerTest, RenderingServerStreamingTest)</li>
+     *   <li><b>Monitoring:</b> External monitoring tools can query region statistics
+     *       without direct access to internal state</li>
+     *   <li><b>NOT for production code:</b> Production code within the same module should
+     *       use direct field access or proper dependency injection instead</li>
+     * </ul>
+     * <p>
+     * <b>Constraints:</b>
+     * <ul>
+     *   <li>RegionManager reference is immutable - created in constructor, never changes</li>
+     *   <li>Thread-safe - RegionManager uses internal synchronization for state access</li>
+     *   <li>Always non-null - initialized eagerly in constructor</li>
+     * </ul>
+     *
+     * @return The AdaptiveRegionManager instance (never null)
      */
     public AdaptiveRegionManager getRegionManager() {
         return regionManager;
@@ -399,6 +426,32 @@ public class RenderingServer implements AutoCloseable {
 
     /**
      * Get the entity stream consumer.
+     * <p>
+     * <b>Visibility: Public</b>
+     * <p>
+     * <b>Rationale:</b> Public visibility enables testing of upstream entity consumption
+     * and connection management. The EntityStreamConsumer handles gRPC connections to
+     * simulation servers and feeds entity updates to the region manager.
+     * <p>
+     * <b>Usage Guidelines:</b>
+     * <ul>
+     *   <li><b>Testing:</b> Tests verify upstream connection lifecycle, entity stream
+     *       processing, and error handling</li>
+     *   <li><b>Monitoring:</b> External monitoring can check upstream connection health
+     *       and consumption statistics</li>
+     *   <li><b>NOT for production integration:</b> Production code should not directly
+     *       manipulate the entity consumer - use RenderingServerConfig.upstreams() instead</li>
+     * </ul>
+     * <p>
+     * <b>Constraints:</b>
+     * <ul>
+     *   <li>EntityConsumer reference is immutable - created in constructor</li>
+     *   <li>Thread-safe - EntityConsumer uses internal synchronization</li>
+     *   <li>Always non-null - initialized eagerly in constructor</li>
+     *   <li>Lifecycle coupled to RenderingServer - start() and stop() control consumption</li>
+     * </ul>
+     *
+     * @return The EntityStreamConsumer instance (never null)
      */
     public EntityStreamConsumer getEntityConsumer() {
         return entityConsumer;
@@ -406,8 +459,33 @@ public class RenderingServer implements AutoCloseable {
 
     /**
      * Get the region builder (Phase 2).
+     * <p>
+     * <b>Visibility: Public</b>
+     * <p>
+     * <b>Rationale:</b> Public visibility supports testing of GPU-accelerated ESVO build
+     * operations, build queue management, and performance metrics collection. The RegionBuilder
+     * is a lazy-initialized component (null before start()) that manages the expensive GPU
+     * operations for region construction.
+     * <p>
+     * <b>Usage Guidelines:</b>
+     * <ul>
+     *   <li><b>Testing:</b> Integration tests verify build queue behavior, build completion
+     *       callbacks, performance metrics, and GPU resource management (see BuildIntegrationTest)</li>
+     *   <li><b>Monitoring:</b> External tools can query build statistics (total builds,
+     *       failures, average build time, queue depth) via this getter</li>
+     *   <li><b>NOT for direct build triggering:</b> Tests should not call RegionBuilder methods
+     *       directly - use RegionManager.markDirty() to trigger builds through proper channels</li>
+     * </ul>
+     * <p>
+     * <b>Constraints:</b>
+     * <ul>
+     *   <li><b>Lifecycle-dependent:</b> Returns null before start() called - always check for null</li>
+     *   <li><b>Cleared on stop():</b> Set to null when server stops - reference becomes invalid</li>
+     *   <li>Thread-safe - RegionBuilder uses internal synchronization for build operations</li>
+     *   <li>GPU operations require proper OpenCL context - test environment must support GPU access</li>
+     * </ul>
      *
-     * @return RegionBuilder instance, or null if not started
+     * @return RegionBuilder instance, or null if server not started or already stopped
      */
     public RegionBuilder getRegionBuilder() {
         return regionBuilder;
@@ -415,8 +493,33 @@ public class RenderingServer implements AutoCloseable {
 
     /**
      * Get the region cache (Phase 2).
+     * <p>
+     * <b>Visibility: Public</b>
+     * <p>
+     * <b>Rationale:</b> Public visibility enables testing of cache behavior (pinning,
+     * eviction, memory pressure) and monitoring of cache statistics. The RegionCache
+     * implements a two-tier caching strategy with pinned regions (in-memory) and
+     * unpinned regions (Caffeine-managed with TTL/LRU eviction).
+     * <p>
+     * <b>Usage Guidelines:</b>
+     * <ul>
+     *   <li><b>Testing:</b> Integration tests verify cache lifecycle, pinning behavior,
+     *       eviction under memory pressure, and cache statistics accuracy (see BuildIntegrationTest)</li>
+     *   <li><b>Monitoring:</b> External monitoring tools can query cache health: hit rate,
+     *       eviction count, memory usage, pinned/unpinned counts</li>
+     *   <li><b>NOT for direct cache manipulation:</b> Tests should not call put()/get()
+     *       directly - use RegionManager operations that trigger caching through proper workflow</li>
+     * </ul>
+     * <p>
+     * <b>Constraints:</b>
+     * <ul>
+     *   <li><b>Lifecycle-dependent:</b> Returns null before start() called - always check for null</li>
+     *   <li><b>Cleared on stop():</b> Set to null when server stops - reference becomes invalid</li>
+     *   <li>Thread-safe - RegionCache uses ConcurrentHashMap and Caffeine for concurrency</li>
+     *   <li>Memory-bounded - Automatically evicts unpinned regions when approaching maxCacheMemoryBytes</li>
+     * </ul>
      *
-     * @return RegionCache instance, or null if not started
+     * @return RegionCache instance, or null if server not started or already stopped
      */
     public RegionCache getRegionCache() {
         return regionCache;
@@ -424,8 +527,33 @@ public class RenderingServer implements AutoCloseable {
 
     /**
      * Get the viewport tracker (Phase 3).
+     * <p>
+     * <b>Visibility: Public</b>
+     * <p>
+     * <b>Rationale:</b> Public visibility supports testing of client viewport tracking,
+     * frustum culling, and visible region calculation. The ViewportTracker maintains
+     * per-client viewport state and determines which regions should be streamed based
+     * on client camera position and frustum.
+     * <p>
+     * <b>Usage Guidelines:</b>
+     * <ul>
+     *   <li><b>Testing:</b> Tests verify viewport registration, viewport updates from
+     *       WebSocket messages, frustum culling accuracy, and client lifecycle management</li>
+     *   <li><b>Monitoring:</b> External monitoring can query active client count and
+     *       per-client viewport state</li>
+     *   <li><b>NOT for direct viewport manipulation:</b> Viewport updates should only
+     *       come through WebSocket protocol messages, not direct method calls</li>
+     * </ul>
+     * <p>
+     * <b>Constraints:</b>
+     * <ul>
+     *   <li><b>Lifecycle-dependent:</b> Returns null before start() called - always check for null</li>
+     *   <li><b>Cleared on stop():</b> Set to null when server stops - reference becomes invalid</li>
+     *   <li>Thread-safe - ViewportTracker uses ConcurrentHashMap for client state</li>
+     *   <li>Client state is ephemeral - cleared when WebSocket connection closes</li>
+     * </ul>
      *
-     * @return ViewportTracker instance, or null if not started
+     * @return ViewportTracker instance, or null if server not started or already stopped
      */
     public ViewportTracker getViewportTracker() {
         return viewportTracker;
@@ -433,8 +561,35 @@ public class RenderingServer implements AutoCloseable {
 
     /**
      * Get the region streamer (Phase 3).
+     * <p>
+     * <b>Visibility: Public</b>
+     * <p>
+     * <b>Rationale:</b> Public visibility enables testing of WebSocket streaming behavior,
+     * client session management, and region delivery verification. The RegionStreamer
+     * coordinates region streaming to browser clients based on viewport visibility and
+     * region cache availability.
+     * <p>
+     * <b>Usage Guidelines:</b>
+     * <ul>
+     *   <li><b>Testing:</b> Integration tests verify WebSocket protocol compliance, region
+     *       streaming triggers (viewport updates, build completions), message serialization,
+     *       and client session lifecycle (see RenderingServerStreamingTest)</li>
+     *   <li><b>Monitoring:</b> External monitoring can query active WebSocket connections,
+     *       streaming statistics, and per-client delivery metrics</li>
+     *   <li><b>NOT for direct streaming control:</b> Region streaming should be triggered
+     *       by proper events (viewport updates, build completions), not direct method calls</li>
+     * </ul>
+     * <p>
+     * <b>Constraints:</b>
+     * <ul>
+     *   <li><b>Lifecycle-dependent:</b> Returns null before start() called - always check for null</li>
+     *   <li><b>Cleared on stop():</b> Set to null when server stops - reference becomes invalid</li>
+     *   <li>Thread-safe - RegionStreamer uses internal synchronization and executor for streaming</li>
+     *   <li>WebSocket lifecycle coupled to Javalin server - stop() disconnects all clients</li>
+     *   <li>Requires RegionCache and ViewportTracker - streaming fails if dependencies unavailable</li>
+     * </ul>
      *
-     * @return RegionStreamer instance, or null if not started
+     * @return RegionStreamer instance, or null if server not started or already stopped
      */
     public RegionStreamer getRegionStreamer() {
         return regionStreamer;
