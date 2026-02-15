@@ -24,10 +24,13 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -84,6 +87,9 @@ public class RenderingServer implements AutoCloseable {
 
     // bfgm: Scheduled executor for periodic dirty region backfill retry
     private ScheduledExecutorService backfillRetryExecutor;
+
+    // vyik: Auth attempt rate limiters per session (prevents brute force attacks)
+    private final ConcurrentHashMap<String, AuthAttemptRateLimiter> authLimiters = new ConcurrentHashMap<>();
 
     /**
      * Create rendering server with configuration.
@@ -291,15 +297,49 @@ public class RenderingServer implements AutoCloseable {
         // WebSocket endpoint - Phase 3 streaming
         app.ws("/ws/render", ws -> {
             ws.onConnect(ctx -> {
-                // biom: WebSocket authentication
+                // biom: WebSocket authentication (8gdp: constant-time comparison, vyik: brute force protection)
                 var apiKey = config.security().apiKey();
                 if (apiKey != null) {
+                    var sessionId = ctx.sessionId();
+                    // vyik: Track auth attempts by client host (IP-based rate limiting)
+                    var clientHost = ctx.host();
+
+                    // vyik: Check if client is blocked due to too many failed auth attempts
+                    var authLimiter = authLimiters.computeIfAbsent(clientHost,
+                        id -> new AuthAttemptRateLimiter(clock));
+
+                    if (authLimiter.isBlocked()) {
+                        log.warn("WebSocket auth failed - rate limit exceeded: sessionId={}", sessionId);
+                        ctx.closeSession(4003, "Too many failed authentication attempts");
+                        return;  // Do not delegate to regionStreamer
+                    }
+
                     var authHeader = ctx.header("Authorization");
-                    if (authHeader == null || !authHeader.equals("Bearer " + apiKey)) {
-                        log.warn("WebSocket auth failed: sessionId={}", ctx.sessionId());
+                    if (authHeader == null) {
+                        authLimiter.recordFailedAttempt();
+                        log.warn("WebSocket auth failed - missing header: sessionId={}", sessionId);
                         ctx.closeSession(4003, "Unauthorized");
                         return;  // Do not delegate to regionStreamer
                     }
+
+                    // Constant-time comparison to prevent timing attacks
+                    var expectedAuth = "Bearer " + apiKey;
+                    byte[] providedBytes = authHeader.getBytes(StandardCharsets.UTF_8);
+                    byte[] expectedBytes = expectedAuth.getBytes(StandardCharsets.UTF_8);
+
+                    if (!MessageDigest.isEqual(providedBytes, expectedBytes)) {
+                        if (!authLimiter.recordFailedAttempt()) {
+                            log.warn("WebSocket auth failed - rate limit exceeded after failed attempt: sessionId={}", sessionId);
+                            ctx.closeSession(4003, "Too many failed authentication attempts");
+                        } else {
+                            log.warn("WebSocket auth failed - invalid credentials: sessionId={}", sessionId);
+                            ctx.closeSession(4003, "Unauthorized");
+                        }
+                        return;  // Do not delegate to regionStreamer
+                    }
+
+                    // vyik: Record successful auth (resets rate limiter)
+                    authLimiter.recordSuccess();
                 }
                 regionStreamer.onConnect(ctx);
             });

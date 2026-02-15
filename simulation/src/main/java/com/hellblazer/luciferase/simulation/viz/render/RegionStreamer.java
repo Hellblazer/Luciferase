@@ -168,9 +168,11 @@ public class RegionStreamer implements AutoCloseable {
         }
 
         // Luciferase-heam: Check message size limit before processing
-        if (message.length() > config.maxMessageSizeBytes()) {
+        // Luciferase-us4t: Count actual bytes, not characters (multi-byte UTF-8 fix)
+        var messageSizeBytes = message.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (messageSizeBytes > config.maxMessageSizeBytes()) {
             log.warn("Message size limit exceeded for {}: {} bytes (max: {})",
-                sessionId, message.length(), config.maxMessageSizeBytes());
+                sessionId, messageSizeBytes, config.maxMessageSizeBytes());
             ctx.closeSession(4002, "Message size limit exceeded");
             return;
         }

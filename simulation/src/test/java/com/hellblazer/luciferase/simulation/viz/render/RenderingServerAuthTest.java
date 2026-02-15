@@ -288,6 +288,227 @@ class RenderingServerAuthTest {
     }
 
     @Test
+    void testTimingAttackResistance_ConstantTimeComparison() throws Exception {
+        // This test validates fix for Luciferase-8gdp: Timing attack vulnerability
+        //
+        // Before fix: String.equals() was timing-dependent (early exit on first mismatch)
+        // After fix: MessageDigest.isEqual() is constant-time
+        //
+        // Test approach:
+        // 1. Measure auth time for correct key (100 attempts)
+        // 2. Measure auth time for wrong key with matching prefix (100 attempts)
+        // 3. Verify timing variance is minimal (no significant timing leak)
+        //
+        // Note: This is a statistical test - absolute times vary with CPU, but the
+        // relative variance should be minimal for constant-time comparison.
+
+        int samples = 100;
+        var correctKeyTimes = new long[samples];
+        var wrongKeyTimes = new long[samples];
+
+        // Measure correct key authentication times
+        for (int i = 0; i < samples; i++) {
+            final int index = i;  // Final variable for lambda capture
+            var closeLatch = new CountDownLatch(1);
+            var startTime = System.nanoTime();
+
+            var client = HttpClient.newHttpClient();
+            var ws = client.newWebSocketBuilder()
+                .header("Authorization", "Bearer " + API_KEY)
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws/render"), new WebSocket.Listener() {
+                    @Override
+                    public void onOpen(WebSocket webSocket) {
+                        correctKeyTimes[index] = System.nanoTime() - startTime;
+                        closeLatch.countDown();
+                        WebSocket.Listener.super.onOpen(webSocket);
+                    }
+                })
+                .get(5, TimeUnit.SECONDS);
+
+            closeLatch.await(2, TimeUnit.SECONDS);
+            ws.sendClose(1000, "Normal close").get(1, TimeUnit.SECONDS);
+        }
+
+        // Measure wrong key authentication times (with matching prefix to maximize timing leak potential)
+        var wrongKeyWithPrefix = API_KEY.substring(0, Math.min(10, API_KEY.length())) + "WRONG";
+        for (int i = 0; i < samples; i++) {
+            final int index = i;  // Final variable for lambda capture
+            var closeLatch = new CountDownLatch(1);
+            var startTime = System.nanoTime();
+
+            var client = HttpClient.newHttpClient();
+            var ws = client.newWebSocketBuilder()
+                .header("Authorization", "Bearer " + wrongKeyWithPrefix)
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws/render"), new WebSocket.Listener() {
+                    @Override
+                    public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+                        wrongKeyTimes[index] = System.nanoTime() - startTime;
+                        closeLatch.countDown();
+                        return null;
+                    }
+                })
+                .get(5, TimeUnit.SECONDS);
+
+            closeLatch.await(2, TimeUnit.SECONDS);
+        }
+
+        // Compute timing statistics
+        var correctAvg = average(correctKeyTimes);
+        var correctStdDev = standardDeviation(correctKeyTimes, correctAvg);
+        var wrongAvg = average(wrongKeyTimes);
+        var wrongStdDev = standardDeviation(wrongKeyTimes, wrongAvg);
+
+        // The key metric: timing difference should be within noise threshold
+        // For constant-time comparison, difference should be < 2 standard deviations
+        var timingDifference = Math.abs(correctAvg - wrongAvg);
+        var noiseThreshold = 2.0 * Math.max(correctStdDev, wrongStdDev);
+
+        System.out.printf("Timing attack resistance test:%n");
+        System.out.printf("  Correct key avg: %.2f μs (σ=%.2f)%n", correctAvg / 1000.0, correctStdDev / 1000.0);
+        System.out.printf("  Wrong key avg:   %.2f μs (σ=%.2f)%n", wrongAvg / 1000.0, wrongStdDev / 1000.0);
+        System.out.printf("  Timing diff:     %.2f μs%n", timingDifference / 1000.0);
+        System.out.printf("  Noise threshold: %.2f μs%n", noiseThreshold / 1000.0);
+
+        assertTrue(timingDifference < noiseThreshold,
+            String.format("Timing leak detected: diff=%.2fμs exceeds threshold=%.2fμs",
+                timingDifference / 1000.0, noiseThreshold / 1000.0));
+    }
+
+    private static double average(long[] values) {
+        long sum = 0;
+        for (long v : values) {
+            sum += v;
+        }
+        return (double) sum / values.length;
+    }
+
+    private static double standardDeviation(long[] values, double mean) {
+        double sumSquaredDiffs = 0;
+        for (long v : values) {
+            double diff = v - mean;
+            sumSquaredDiffs += diff * diff;
+        }
+        return Math.sqrt(sumSquaredDiffs / values.length);
+    }
+
+    @Test
+    void testAuthBruteForceProtection_blockAfter10Attempts() throws Exception {
+        // This test validates fix for Luciferase-vyik: Auth brute force protection
+        //
+        // Expected behavior:
+        // 1. First 10 failed auth attempts → rejected with 4003 "Unauthorized"
+        // 2. 11th attempt onward → rejected with 4003 "Too many failed authentication attempts"
+        // 3. Client is blocked for 1 minute window
+        //
+        // This prevents brute force API key guessing attacks
+
+        int attempts = 15;
+        var rejectedCount = new AtomicInteger(0);
+        var blockedCount = new AtomicInteger(0);
+        var unauthorizedCount = new AtomicInteger(0);
+
+        for (int i = 0; i < attempts; i++) {
+            var closeLatch = new CountDownLatch(1);
+            var closeReason = new ArrayList<String>();
+
+            var client = HttpClient.newHttpClient();
+            // All attempts use wrong API key
+            var ws = client.newWebSocketBuilder()
+                .header("Authorization", "Bearer wrong-key-" + i)
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws/render"), new WebSocket.Listener() {
+                    @Override
+                    public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+                        closeReason.add(reason);
+                        if (statusCode == 4003) {
+                            rejectedCount.incrementAndGet();
+                            if (reason.contains("Too many failed")) {
+                                blockedCount.incrementAndGet();
+                            } else if (reason.contains("Unauthorized")) {
+                                unauthorizedCount.incrementAndGet();
+                            }
+                        }
+                        closeLatch.countDown();
+                        return null;
+                    }
+                })
+                .get(5, TimeUnit.SECONDS);
+
+            closeLatch.await(2, TimeUnit.SECONDS);
+        }
+
+        // Then: First 10 attempts rejected as "Unauthorized", attempts 11-15 blocked
+        assertEquals(attempts, rejectedCount.get(), "All attempts should be rejected");
+        assertEquals(10, unauthorizedCount.get(), "First 10 attempts should be 'Unauthorized'");
+        assertEquals(5, blockedCount.get(), "Attempts 11-15 should be blocked due to rate limit");
+    }
+
+    @Test
+    void testAuthBruteForceProtection_successfulAuthResets() throws Exception {
+        // Validate that successful auth resets the rate limiter
+
+        // First, make 5 failed attempts
+        for (int i = 0; i < 5; i++) {
+            var closeLatch = new CountDownLatch(1);
+            var client = HttpClient.newHttpClient();
+            var ws = client.newWebSocketBuilder()
+                .header("Authorization", "Bearer wrong-key")
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws/render"), new WebSocket.Listener() {
+                    @Override
+                    public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+                        closeLatch.countDown();
+                        return null;
+                    }
+                })
+                .get(5, TimeUnit.SECONDS);
+            closeLatch.await(2, TimeUnit.SECONDS);
+        }
+
+        // Then, make a successful auth
+        var connectLatch = new CountDownLatch(1);
+        var client = HttpClient.newHttpClient();
+        var ws = client.newWebSocketBuilder()
+            .header("Authorization", "Bearer " + API_KEY)
+            .buildAsync(URI.create("ws://localhost:" + port + "/ws/render"), new WebSocket.Listener() {
+                @Override
+                public void onOpen(WebSocket webSocket) {
+                    connectLatch.countDown();
+                    WebSocket.Listener.super.onOpen(webSocket);
+                }
+            })
+            .get(5, TimeUnit.SECONDS);
+
+        // Should succeed (rate limiter reset)
+        assertTrue(connectLatch.await(2, TimeUnit.SECONDS), "Successful auth should be accepted");
+        ws.sendClose(1000, "Normal close").get(2, TimeUnit.SECONDS);
+
+        // Now make 10 more failed attempts - should all be rejected as "Unauthorized" (not blocked)
+        var unauthorizedCount = new AtomicInteger(0);
+        for (int i = 0; i < 10; i++) {
+            var closeLatch = new CountDownLatch(1);
+            var closeReason = new ArrayList<String>();
+            var client2 = HttpClient.newHttpClient();
+            var ws2 = client2.newWebSocketBuilder()
+                .header("Authorization", "Bearer wrong-key")
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws/render"), new WebSocket.Listener() {
+                    @Override
+                    public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+                        closeReason.add(reason);
+                        if (reason.contains("Unauthorized") && !reason.contains("Too many")) {
+                            unauthorizedCount.incrementAndGet();
+                        }
+                        closeLatch.countDown();
+                        return null;
+                    }
+                })
+                .get(5, TimeUnit.SECONDS);
+            closeLatch.await(2, TimeUnit.SECONDS);
+        }
+
+        // All 10 should be "Unauthorized" (not blocked) because rate limiter was reset
+        assertEquals(10, unauthorizedCount.get(), "After successful auth, rate limiter should be reset");
+    }
+
+    @Test
     void testPermissiveConfig_NoAuthRequired() throws Exception {
         // Given: Server with permissive config (no API key)
         if (server != null) {

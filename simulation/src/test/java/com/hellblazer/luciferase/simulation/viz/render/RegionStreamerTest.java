@@ -549,6 +549,63 @@ class RegionStreamerTest {
     }
 
     /**
+     * Test 21b: Unicode message size validation (Luciferase-us4t).
+     * Verify that multi-byte UTF-8 characters are correctly counted by byte size, not character count.
+     *
+     * Before fix: message.length() counted characters, allowing 100 Chinese characters (≈300 bytes) to bypass 1KB limit
+     * After fix: message.getBytes().length counts actual bytes, correctly enforces size limit
+     */
+    @Test
+    void testMessageSizeLimit_unicodeByteCountCorrect() {
+        // Create config with 1KB message size limit
+        var sizeLimitedConfig = new StreamingConfig(
+            50, 10, 20,
+            new float[]{50f, 150f, 350f}, 3,
+            5_000L, 60,
+            false, // Rate limiting disabled
+            100,
+            1024   // 1KB max message size
+        );
+        var sizeLimitedStreamer = new RegionStreamer(viewportTracker, null, regionManager, sizeLimitedConfig);
+        sizeLimitedStreamer.setClock(testClock);
+
+        // Connect a client
+        var ctx = new FakeWsContext("unicode-size-test");
+        sizeLimitedStreamer.onConnectInternal(ctx);
+
+        // Test 1: Chinese characters (3 bytes each in UTF-8)
+        // 400 Chinese characters × 3 bytes = 1200 bytes > 1024 byte limit
+        // Old bug: 400 characters < 1024 limit, would incorrectly pass
+        // New fix: 1200 bytes > 1024 limit, correctly rejected
+        var chineseMessage = "{\"type\":\"REGISTER_CLIENT\",\"data\":\"" + "你".repeat(400) + "\"}";
+        sizeLimitedStreamer.onMessageInternal(ctx, chineseMessage);
+        assertTrue(ctx.wasClosed, "Chinese message (1200 bytes) should be rejected");
+        assertEquals(4002, ctx.closeCode, "Should use status 4002 (Message size limit exceeded)");
+
+        // Test 2: Emoji characters (4 bytes each in UTF-8)
+        ctx = new FakeWsContext("unicode-emoji-test");
+        sizeLimitedStreamer.onConnectInternal(ctx);
+
+        // 300 emoji × 4 bytes = 1200 bytes > 1024 byte limit
+        // Old bug: 300 characters < 1024 limit, would incorrectly pass
+        // New fix: 1200 bytes > 1024 limit, correctly rejected
+        var emojiMessage = "{\"type\":\"REGISTER_CLIENT\",\"data\":\"" + "😀".repeat(300) + "\"}";
+        sizeLimitedStreamer.onMessageInternal(ctx, emojiMessage);
+        assertTrue(ctx.wasClosed, "Emoji message (1200 bytes) should be rejected");
+        assertEquals(4002, ctx.closeCode, "Should use status 4002 (Message size limit exceeded)");
+
+        // Test 3: ASCII message under limit should still work
+        ctx = new FakeWsContext("ascii-ok-test");
+        sizeLimitedStreamer.onConnectInternal(ctx);
+
+        var asciiMessage = "{\"type\":\"REGISTER_CLIENT\",\"data\":\"" + "x".repeat(900) + "\"}";
+        sizeLimitedStreamer.onMessageInternal(ctx, asciiMessage);
+        assertFalse(ctx.wasClosed, "ASCII message (900 bytes) should be accepted");
+
+        sizeLimitedStreamer.close();
+    }
+
+    /**
      * Test 22: Rate limiting window reset (Luciferase-heam).
      * Verify that rate limit resets after 1 second.
      */
