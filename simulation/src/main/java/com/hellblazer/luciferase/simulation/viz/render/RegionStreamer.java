@@ -537,18 +537,21 @@ public class RegionStreamer implements AutoCloseable {
                 continue;
             }
 
-            // TODO Day 7 integration: Build region on-demand via RegionBuilder
-            // For now, check if region is already cached
             if (regionCache != null) {
-                var cacheKey = new RegionCache.CacheKey(visibleRegion.regionId(), visibleRegion.lodLevel());
+                // A.2 (Luciferase-ct58): Normalize to LOD 0. The build pipeline always
+                // produces LOD 0 entries. Streaming delivers the same data regardless
+                // of client LOD — the LOD level in VisibleRegion only informs which
+                // regions are worth building, not which cache bucket to look up.
+                var cacheKey = new RegionCache.CacheKey(visibleRegion.regionId(), 0);
                 var cached = regionCache.get(cacheKey);
 
                 if (cached.isPresent()) {
                     sendBinaryFrameAsync(session, cached.get());
                 } else {
-                    // Region not cached - would trigger RegionBuilder in Day 7
-                    log.trace("Region {} LOD {} not cached, would trigger build in Day 7",
-                        visibleRegion.regionId(), visibleRegion.lodLevel());
+                    // A.1 (Luciferase-06qb): Cache miss — trigger an on-demand build.
+                    // Previously this only logged a trace message, so regions were never
+                    // built unless the 10s backfill cycle happened to run first.
+                    regionManager.scheduleBuild(visibleRegion.regionId(), true);
                 }
             }
         }
@@ -560,7 +563,8 @@ public class RegionStreamer implements AutoCloseable {
             }
 
             if (regionCache != null) {
-                var cacheKey = new RegionCache.CacheKey(visibleRegion.regionId(), visibleRegion.lodLevel());
+                // A.2: same LOD-0 normalization as the added-regions path above
+                var cacheKey = new RegionCache.CacheKey(visibleRegion.regionId(), 0);
                 var cached = regionCache.get(cacheKey);
 
                 if (cached.isPresent()) {
@@ -718,10 +722,13 @@ public class RegionStreamer implements AutoCloseable {
                 continue;
             }
 
-            // Check if this client is viewing this region
+            // Check if this client is viewing this region.
+            // A.2 (Luciferase-ct58): Do NOT filter by lodLevel. The build pipeline only
+            // produces LOD 0 entries. A client viewing this region at LOD 3 still needs
+            // the LOD 0 frame — matching only on regionId is correct.
             var visible = viewportTracker.visibleRegions(session.sessionId);
             var needsRegion = visible.stream()
-                .anyMatch(vr -> vr.regionId().equals(regionId) && vr.lodLevel() == builtRegion.lodLevel());
+                .anyMatch(vr -> vr.regionId().equals(regionId));
 
             if (needsRegion && session.pendingSends.get() < config.maxPendingSendsPerClient()) {
                 // Send immediately without waiting for next streaming cycle
