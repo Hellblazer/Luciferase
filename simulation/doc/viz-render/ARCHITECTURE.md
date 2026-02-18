@@ -21,20 +21,27 @@ graph TD
 
     B["RegionStreamer<br/>- Client session management<br/>- WebSocket message handling<br/>- Binary frame streaming<br/>- Message batching & ByteBuffer pooling"]
 
-    C["Viewport Tracker<br/>- Frustum culling<br/>- Viewport diffing"]
+    C["ViewportTracker<br/>- Frustum culling<br/>- Viewport diffing"]
     D["RegionCache<br/>- Pinned/unpinned tiers<br/>- TTL/LRU eviction"]
-    E["AdaptiveRegion Manager<br/>- Region state<br/>- Entity tracking"]
+    E["AdaptiveRegionManager<br/>- Region state<br/>- Entity tracking"]
 
     F["RegionBuilder<br/>GPU-accelerated<br/>- Build queue with backpressure<br/>- Circuit breaker for failures<br/>- Build completion callbacks"]
+
+    G["EntityStreamConsumer<br/>- WebSocket client to upstreams<br/>- Reconnection with circuit breaker<br/>- Entity position parsing"]
+
+    H["ByteBufferPool<br/>- ConcurrentLinkedQueue buckets<br/>- Lock-free concurrent access<br/>- GC pressure reduction"]
 
     A --> A1
     A --> A2
     A --> A3
     A --> B
+    A --> G
     B --> C
     B --> D
+    B --> H
     B --> E
     C --> F
+    G --> E
 ```
 
 ## Component Descriptions
@@ -171,6 +178,56 @@ graph TD
 **Thread Safety:** ConcurrentHashMap for region states
 
 **File:** `simulation/src/main/java/.../viz/render/AdaptiveRegionManager.java`
+
+### EntityStreamConsumer
+
+**Role:** WebSocket client consuming entity position streams from upstream simulation servers
+
+**Responsibilities:**
+- Connect as WebSocket client to each configured upstream (java.net.http.HttpClient)
+- Parse JSON entity position updates: `{"entities":[{"id":"e1","x":1.0,"y":2.0,"z":3.0,"type":"PREY"}]}`
+- Forward entity updates to AdaptiveRegionManager
+- Reconnection with exponential backoff on failures
+- Circuit breaker to prevent unbounded reconnection (CRITICAL FIX C2)
+- Multi-upstream entity ID namespacing (prefix with upstream label)
+
+**Key Features:**
+- **Virtual threads:** One virtual thread per upstream connection (zero-cost for blocking I/O)
+- **Exponential backoff:** `2^attempt * 1000ms`, capped at 60s
+- **Circuit breaker (C2):** After 10 failed attempts, enters 5-minute cooldown
+- **Entity ID namespacing (M4):** `upstreamLabel:entityId` prevents collisions across upstreams
+- **Health reporting:** `getUpstreamHealth(URI)` exposes connected/reconnectAttempts/circuitBreakerOpen
+
+**Circuit Breaker State Machine:**
+```
+CONNECTING → connected (reset attempts)
+           → failed → BACKOFF (exponential)
+                    → MAX_ATTEMPTS (10) → CIRCUIT_OPEN (5 min timeout)
+                                        → retry after timeout
+```
+
+**Thread Safety:** ConcurrentHashMap for upstream states, AtomicBoolean/AtomicInteger for state fields
+
+**File:** `simulation/src/main/java/.../viz/render/EntityStreamConsumer.java`
+
+### ByteBufferPool
+
+**Role:** Thread-safe pool of reusable ByteBuffers to reduce GC pressure during binary frame encoding
+
+**Responsibilities:**
+- Maintain size-bucketed pools (1KB, 4KB, 16KB, 64KB)
+- Borrow and return ByteBuffers for binary frame encoding
+- Track pool statistics (borrow count, return count, size)
+
+**Key Features:**
+- **ConcurrentLinkedQueue per bucket:** Lock-free concurrent borrow/return
+- **AtomicInteger counters:** Thread-safe size tracking and statistics
+- **Size matching:** Returns appropriately-sized buffer for requested capacity
+- Already correct as of code review (no changes needed)
+
+**Thread Safety:** ConcurrentLinkedQueue (lock-free), AtomicInteger for counters
+
+**File:** `simulation/src/main/java/.../viz/render/ByteBufferPool.java`
 
 ## Data Flow
 
@@ -609,27 +666,29 @@ scrape_configs:
 
 ## Known Issues and Roadmap
 
-### Important Improvements (from Code Review)
+### Important Improvements (from Code Review) — All Resolved ✅
 
-1. **ByteBufferPool Thread-Safety** (Priority: High)
-   - Verify pool uses thread-safe structure or synchronization
-   - Add concurrent access tests
+All 5 code review improvements have been addressed. See `CODE_REVIEW_IMPROVEMENTS.md` for full implementation details.
 
-2. **Clock Injection for RegionCache** (Priority: Medium)
-   - Enable deterministic cache expiration tests
-   - Improves test reliability
+1. **ByteBufferPool Thread-Safety** ✅ Already correct
+   - `ConcurrentLinkedQueue<ByteBuffer>` per size bucket — lock-free, no changes needed
+   - Verified by code review
 
-3. **Auth Limiter Map Cleanup** (Priority: Medium)
-   - Replace ConcurrentHashMap with Caffeine cache
-   - Prevents slow memory leak in long-running servers
+2. **Clock Injection for RegionCache** ✅ Implemented
+   - `RegionCache.setClock(Clock)` added; `System.currentTimeMillis()` replaced with `clock.currentTimeMillis()`
+   - `RenderingServer.setClock()` propagates to RegionCache
+   - **Limitation:** Caffeine's `expireAfterAccess(ttl)` uses system time internally; TTL tests still require `Thread.sleep()`
 
-4. **Rate Limiter Map Cleanup** (Priority: Low)
-   - Explicitly remove entries in onCloseInternal
-   - Handles abnormal disconnect cases
+3. **Auth Limiter Map Cleanup** ✅ Implemented
+   - `authLimiters` changed from `ConcurrentHashMap` to Caffeine cache
+   - 1-hour idle expiration, 10k entry hard cap — prevents unbounded memory growth
 
-5. **Endpoint Cache Invalidation** (Priority: Low)
-   - Invalidate cache on component shutdown
-   - Prevents stale monitoring data
+4. **Rate Limiter Map Cleanup** ✅ Implemented
+   - `rateLimiters.remove(sessionId)` added in `RegionStreamer.onCloseInternal()`
+   - Handles abnormal disconnect (network failure, crash) correctly
+
+5. **Endpoint Cache Invalidation** ✅ Already correct
+   - `endpointCache.invalidateAll()` was already present in `RenderingServer.stop()`, no changes needed
 
 ### Future Enhancements
 
@@ -656,7 +715,7 @@ scrape_configs:
 
 ## References
 
-- **Code Review Report:** `simulation/doc/viz-render/CODE_REVIEW.md`
+- **Code Review Improvements:** `simulation/doc/viz-render/CODE_REVIEW_IMPROVEMENTS.md`
 - **API Documentation:** `simulation/doc/viz-render/API.md`
 - **Security Architecture:** `simulation/doc/viz-render/SECURITY.md`
 - **Performance Design:** `simulation/doc/viz-render/PERFORMANCE.md`
@@ -698,7 +757,7 @@ All optimizations and fixes reference their originating beads:
 
 ---
 
-**Document Version:** 1.0.0
-**Last Updated:** 2026-02-15
+**Document Version:** 1.1.0
+**Last Updated:** 2026-02-18
 **Maintained By:** Architecture Team
 **Review Cycle:** Quarterly
