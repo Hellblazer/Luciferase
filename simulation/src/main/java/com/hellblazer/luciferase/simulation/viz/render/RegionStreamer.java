@@ -40,6 +40,13 @@ public class RegionStreamer implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(RegionStreamer.class);
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
+    /**
+     * The LOD level always produced by the build pipeline (A.2 invariant).
+     * All cache lookups must normalize to this level. If the pipeline is ever
+     * extended to produce LOD-specific entries, update all usages of this constant.
+     */
+    static final int PIPELINE_CANONICAL_LOD = 0;
+
     // --- Dependencies ---
     private final ViewportTracker viewportTracker;
     private final RegionCache regionCache;
@@ -51,6 +58,11 @@ public class RegionStreamer implements AutoCloseable {
 
     // --- Rate Limiting (Luciferase-heam) ---
     private final ConcurrentHashMap<String, ClientRateLimiter> rateLimiters;
+
+    // --- Build Deduplication (Luciferase-bm5e) ---
+    // Prevents multiple clients from submitting duplicate build requests for the
+    // same uncached region in the same streaming cycle. Cleared in onRegionBuilt().
+    private final ConcurrentHashMap<RegionId, Boolean> pendingBuilds;
 
     // --- Streaming State (Day 6) ---
     private final AtomicBoolean streaming;
@@ -84,6 +96,7 @@ public class RegionStreamer implements AutoCloseable {
 
         this.sessions = new ConcurrentHashMap<>();
         this.rateLimiters = new ConcurrentHashMap<>();
+        this.pendingBuilds = new ConcurrentHashMap<>();
         this.streaming = new AtomicBoolean(false);
         this.closed = new AtomicBoolean(false);
         this.bufferPool = new ByteBufferPool();  // Luciferase-8db0: ByteBuffer pooling
@@ -538,11 +551,11 @@ public class RegionStreamer implements AutoCloseable {
             }
 
             if (regionCache != null) {
-                // A.2 (Luciferase-ct58): Normalize to LOD 0. The build pipeline always
-                // produces LOD 0 entries. Streaming delivers the same data regardless
-                // of client LOD — the LOD level in VisibleRegion only informs which
-                // regions are worth building, not which cache bucket to look up.
-                var cacheKey = new RegionCache.CacheKey(visibleRegion.regionId(), 0);
+                // A.2 (Luciferase-ct58): Normalize to PIPELINE_CANONICAL_LOD. The build
+                // pipeline always produces LOD 0 entries. Streaming delivers the same data
+                // regardless of client LOD — the LOD level in VisibleRegion only informs
+                // which regions are worth building, not which cache bucket to look up.
+                var cacheKey = new RegionCache.CacheKey(visibleRegion.regionId(), PIPELINE_CANONICAL_LOD);
                 var cached = regionCache.get(cacheKey);
 
                 if (cached.isPresent()) {
@@ -551,7 +564,11 @@ public class RegionStreamer implements AutoCloseable {
                     // A.1 (Luciferase-06qb): Cache miss — trigger an on-demand build.
                     // Previously this only logged a trace message, so regions were never
                     // built unless the 10s backfill cycle happened to run first.
-                    regionManager.scheduleBuild(visibleRegion.regionId(), true);
+                    // Luciferase-bm5e: Deduplicate across clients — only submit one build
+                    // request even if N clients all see the same uncached region simultaneously.
+                    if (pendingBuilds.putIfAbsent(visibleRegion.regionId(), Boolean.TRUE) == null) {
+                        regionManager.scheduleBuild(visibleRegion.regionId(), true);
+                    }
                 }
             }
         }
@@ -563,8 +580,11 @@ public class RegionStreamer implements AutoCloseable {
             }
 
             if (regionCache != null) {
-                // A.2: same LOD-0 normalization as the added-regions path above
-                var cacheKey = new RegionCache.CacheKey(visibleRegion.regionId(), 0);
+                // A.2: same PIPELINE_CANONICAL_LOD normalization as the added-regions path above.
+                // S-3: No scheduleBuild() on cache miss here because lodChanged() only contains
+                // regions that were previously visible via added() — a build is already pending
+                // or the region is cached. ViewportTracker guarantees lodChanged() ⊆ prev-visible.
+                var cacheKey = new RegionCache.CacheKey(visibleRegion.regionId(), PIPELINE_CANONICAL_LOD);
                 var cached = regionCache.get(cacheKey);
 
                 if (cached.isPresent()) {
@@ -684,12 +704,10 @@ public class RegionStreamer implements AutoCloseable {
 
         for (var regionId : removed) {
             if (!allVisible.contains(regionId)) {
-                // No clients need this region - safe to unpin
-                // Try all LOD levels (we don't know which LOD was pinned)
-                for (int lod = 0; lod <= config.maxLodLevel(); lod++) {
-                    var cacheKey = new RegionCache.CacheKey(regionId, lod);
-                    regionCache.unpin(cacheKey);
-                }
+                // No clients need this region - safe to unpin.
+                // A.2 invariant: only LOD 0 entries are ever stored in the cache,
+                // so only one unpin call is needed.
+                regionCache.unpin(new RegionCache.CacheKey(regionId, PIPELINE_CANONICAL_LOD));
                 log.debug("Unpinned region {} - no longer visible to any client", regionId);
             }
         }
@@ -714,6 +732,9 @@ public class RegionStreamer implements AutoCloseable {
      * @param builtRegion  The built region data
      */
     public void onRegionBuilt(RegionId regionId, RegionBuilder.BuiltRegion builtRegion) {
+        // Luciferase-bm5e: Clear pending flag so future cache misses (e.g. after eviction)
+        // can trigger a new build.
+        pendingBuilds.remove(regionId);
         log.debug("Region {} built, notifying streaming clients", regionId);
 
         // Find all clients that need this region and send it immediately
@@ -748,7 +769,6 @@ public class RegionStreamer implements AutoCloseable {
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    @Override
     /**
      * Close the streamer and clean up all resources (Luciferase-gzte).
      * <p>
@@ -756,6 +776,7 @@ public class RegionStreamer implements AutoCloseable {
      * - Clears sessions map
      * - Idempotent: safe to call multiple times
      */
+    @Override
     public void close() {
         // Idempotent check: only run cleanup once
         if (!closed.compareAndSet(false, true)) {
