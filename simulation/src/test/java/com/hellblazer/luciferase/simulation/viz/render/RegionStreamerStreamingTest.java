@@ -273,6 +273,61 @@ class RegionStreamerStreamingTest {
             "Got calls for: " + trackingManager.scheduleBuilds);
     }
 
+    // ===== I-1 TEST: Build storm deduplication across multiple clients =====
+
+    /**
+     * I-1 (Luciferase-bm5e): When multiple clients simultaneously see the same
+     * uncached region, {@code scheduleBuild()} must be called exactly once, not
+     * once per client.
+     * <p>
+     * Setup:
+     * - 3 clients, all positioned near the same region (LOD 0)
+     * - Cache is empty
+     * <p>
+     * Bug: Each client's {@code diff.added()} triggers a separate
+     * {@code scheduleBuild()} call in the same streaming cycle, flooding the
+     * build queue with duplicate requests for the same region.
+     * <p>
+     * Fix: {@code pendingBuilds} ConcurrentHashMap in RegionStreamer deduplicates
+     * across clients. Cleared in {@code onRegionBuilt()} when the build completes.
+     */
+    @Test
+    void testMultipleClients_sameUncachedRegion_scheduleBuildCalledOnce() {
+        var trackingManager = new TrackingRegionManager(serverConfig);
+        trackingManager.setClock(testClock);
+        trackingManager.updateEntity("entity-1", 32f, 32f, 32f, "PREY");
+        var regionId = trackingManager.regionForPosition(32f, 32f, 32f);
+
+        // Cache stays empty throughout
+        var viewportTracker = new ViewportTracker(trackingManager, streamingConfig);
+        viewportTracker.setClock(testClock);
+
+        var streamer = new RegionStreamer(viewportTracker, regionCache, trackingManager, streamingConfig);
+        streamer.setClock(testClock);
+
+        // Connect 3 clients, all positioned near the same region (LOD 0)
+        var contexts = new ArrayList<FakeWsContext>();
+        for (int i = 1; i <= 3; i++) {
+            var ctx = new FakeWsContext("dedup-session-" + i);
+            contexts.add(ctx);
+            streamer.onConnectInternal(ctx);
+            streamer.onMessageInternal(ctx, buildRegisterJson(128f, 128f, 90f, 128f, 128f, 128f));
+            assertFalse(ctx.wasClosed, "Client " + i + " should connect successfully");
+        }
+
+        // Run one streaming cycle — all 3 clients see the same uncached region
+        streamer.streamingCycle();
+
+        // scheduleBuild should be called EXACTLY ONCE (deduplicated across clients)
+        // Bug: without guard, each client's diff.added() triggers a separate scheduleBuild() call
+        assertEquals(1, trackingManager.scheduleBuilds.size(),
+            "scheduleBuild should be called once per uncached region regardless of client count. " +
+            "Bug: each client independently calls scheduleBuild() on cache miss. " +
+            "Got " + trackingManager.scheduleBuilds.size() + " calls: " + trackingManager.scheduleBuilds);
+        assertTrue(trackingManager.scheduleBuilds.contains(regionId),
+            "scheduleBuild should be called for region " + regionId);
+    }
+
     // ===== A.2 TEST: onRegionBuilt push path delivers to far clients =====
 
     /**
