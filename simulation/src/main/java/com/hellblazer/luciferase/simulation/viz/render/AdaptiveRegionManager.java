@@ -77,14 +77,14 @@ public class AdaptiveRegionManager {
      */
     public AdaptiveRegionManager(RenderingServerConfig config) {
         this.regionLevel = config.regionLevel();
-        this.worldMin = 0.0f;
-        this.worldMax = 1024.0f;  // Default world size
+        this.worldMin = config.worldMin();
+        this.worldMax = config.worldMax();
         this.regionsPerAxis = 1 << regionLevel;  // 2^level
         this.regionSize = (worldMax - worldMin) / regionsPerAxis;
         this.maxEntitiesPerRegion = config.maxEntitiesPerRegion();
 
-        log.info("AdaptiveRegionManager initialized: level={}, regionsPerAxis={}, regionSize={}, maxEntitiesPerRegion={}",
-                 regionLevel, regionsPerAxis, regionSize, maxEntitiesPerRegion);
+        log.info("AdaptiveRegionManager initialized: level={}, regionsPerAxis={}, regionSize={}, worldMin={}, worldMax={}, maxEntitiesPerRegion={}",
+                 regionLevel, regionsPerAxis, regionSize, worldMin, worldMax, maxEntitiesPerRegion);
     }
 
     /**

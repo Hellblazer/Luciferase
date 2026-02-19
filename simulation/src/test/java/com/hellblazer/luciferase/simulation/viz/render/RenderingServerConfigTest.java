@@ -63,7 +63,9 @@ class RenderingServerConfigTest {
             BuildConfig.defaults(),
             10_000,
             StreamingConfig.testing(),
-            PerformanceConfig.testing()
+            PerformanceConfig.testing(),
+            0.0f,
+            1024.0f
         );
 
         var exception = assertThrows(IllegalArgumentException.class, config::validate);
@@ -82,7 +84,9 @@ class RenderingServerConfigTest {
             BuildConfig.defaults(),
             10_000,
             StreamingConfig.testing(),
-            PerformanceConfig.testing()
+            PerformanceConfig.testing(),
+            0.0f,
+            1024.0f
         );
 
         assertDoesNotThrow(config::validate);
@@ -100,7 +104,9 @@ class RenderingServerConfigTest {
             BuildConfig.defaults(),
             10_000,
             StreamingConfig.testing(),
-            PerformanceConfig.testing()
+            PerformanceConfig.testing(),
+            0.0f,
+            1024.0f
         );
 
         assertDoesNotThrow(config::validate);
@@ -158,7 +164,9 @@ class RenderingServerConfigTest {
             buildConfig,
             10_000,
             StreamingConfig.testing(),
-            PerformanceConfig.testing()
+            PerformanceConfig.testing(),
+            0.0f,
+            1024.0f
         );
 
         assertEquals(500, config.build().maxQueueDepth());
@@ -185,7 +193,9 @@ class RenderingServerConfigTest {
             buildConfig,
             10_000,
             StreamingConfig.testing(),
-            PerformanceConfig.testing()
+            PerformanceConfig.testing(),
+            0.0f,
+            1024.0f
         );
 
         assertEquals(30_000L, config.build().circuitBreakerTimeoutMs());
@@ -226,6 +236,39 @@ class RenderingServerConfigTest {
     void testCacheConfigTesting() {
         var cacheConfig = CacheConfig.testing();
         assertEquals(16 * 1024 * 1024L, cacheConfig.maxCacheMemoryBytes());
+    }
+
+    @Test
+    void testWorldBoundsDefaults() {
+        // Verify factory methods set default world bounds
+        var defaults = RenderingServerConfig.testing();
+        assertEquals(0.0f, defaults.worldMin());
+        assertEquals(1024.0f, defaults.worldMax());
+
+        var secure = RenderingServerConfig.secureDefaults("key");
+        assertEquals(0.0f, secure.worldMin());
+        assertEquals(1024.0f, secure.worldMax());
+    }
+
+    @Test
+    void testCustomWorldBounds() {
+        // Verify non-default world bounds are preserved
+        var config = new RenderingServerConfig(
+            0,
+            List.of(),
+            4,
+            SecurityConfig.permissive(),
+            new CacheConfig(256 * 1024 * 1024L),
+            BuildConfig.defaults(),
+            10_000,
+            StreamingConfig.testing(),
+            PerformanceConfig.testing(),
+            -500.0f,
+            500.0f
+        );
+
+        assertEquals(-500.0f, config.worldMin());
+        assertEquals(500.0f, config.worldMax());
     }
 
     @Test

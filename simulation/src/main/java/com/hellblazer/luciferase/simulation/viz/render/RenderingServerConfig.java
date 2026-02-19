@@ -26,6 +26,8 @@ import java.util.List;
  * @param maxEntitiesPerRegion Limit entities per region to prevent unbounded accumulation
  * @param streaming            Streaming configuration (viewport tracking, LOD thresholds)
  * @param performance          Performance tuning configuration (timeouts, buffer sizes, cache parameters)
+ * @param worldMin             Minimum world coordinate on each axis (default 0.0)
+ * @param worldMax             Maximum world coordinate on each axis (default 1024.0)
  * @author hal.hildebrand
  */
 public record RenderingServerConfig(
@@ -37,7 +39,9 @@ public record RenderingServerConfig(
     BuildConfig build,
     int maxEntitiesPerRegion,
     StreamingConfig streaming,
-    PerformanceConfig performance
+    PerformanceConfig performance,
+    float worldMin,
+    float worldMax
 ) {
     /**
      * Validate configuration for cross-field consistency.
@@ -72,7 +76,9 @@ public record RenderingServerConfig(
             BuildConfig.defaults(),                    // Default build params
             10_000,                                    // Max 10k entities per region
             StreamingConfig.defaults(),                // Default streaming config
-            PerformanceConfig.defaults()               // Default performance config
+            PerformanceConfig.defaults(),              // Default performance config
+            0.0f,                                      // worldMin: origin
+            1024.0f                                    // worldMax: default world size
         );
         config.validate();  // Ensure valid
         return config;
@@ -94,7 +100,9 @@ public record RenderingServerConfig(
             BuildConfig.defaults(),      // Default build params
             10_000,                      // Max 10k entities per region
             StreamingConfig.defaults(),  // Default streaming config
-            PerformanceConfig.defaults() // Default performance config
+            PerformanceConfig.defaults(), // Default performance config
+            0.0f,                        // worldMin: origin
+            1024.0f                      // worldMax: default world size
         );
     }
 
@@ -111,7 +119,9 @@ public record RenderingServerConfig(
             BuildConfig.testing(),       // Small build params
             1_000,                       // Lower limit for tests (1k per region)
             StreamingConfig.testing(),   // Test streaming config
-            PerformanceConfig.testing()  // Test performance config
+            PerformanceConfig.testing(), // Test performance config
+            0.0f,                        // worldMin: origin
+            1024.0f                      // worldMax: default world size
         );
     }
 }

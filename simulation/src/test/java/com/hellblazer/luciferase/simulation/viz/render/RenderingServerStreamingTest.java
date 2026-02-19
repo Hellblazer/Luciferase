@@ -90,7 +90,9 @@ class RenderingServerStreamingTest {
             baseConfig.build(),
             baseConfig.maxEntitiesPerRegion(),
             streamingConfig,  // Custom streaming config
-            PerformanceConfig.testing()
+            PerformanceConfig.testing(),
+            baseConfig.worldMin(),
+            baseConfig.worldMax()
         );
 
         server = new RenderingServer(config);

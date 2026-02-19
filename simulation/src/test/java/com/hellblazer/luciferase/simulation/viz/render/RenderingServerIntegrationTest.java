@@ -79,7 +79,9 @@ class RenderingServerIntegrationTest {
             BuildConfig.testing(),
             1_000,
             StreamingConfig.testing(),
-            PerformanceConfig.testing()
+            PerformanceConfig.testing(),
+            0.0f,
+            1024.0f
         );
         renderingServer = new RenderingServer(config);
         renderingServer.start();
@@ -194,7 +196,9 @@ class RenderingServerIntegrationTest {
             BuildConfig.testing(),
             1_000,
             StreamingConfig.testing(),
-            PerformanceConfig.testing()
+            PerformanceConfig.testing(),
+            0.0f,
+            1024.0f
         );
         renderingServer = new RenderingServer(config);
         renderingServer.start();
@@ -311,7 +315,9 @@ class RenderingServerConfigExtensions {
             config.build(),
             config.maxEntitiesPerRegion(),
             config.streaming(),
-            config.performance()
+            config.performance(),
+            config.worldMin(),
+            config.worldMax()
         );
     }
 }
