@@ -764,37 +764,53 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
      * Get Morton code range for spatial bounds, including boundary codes
      */
     private NavigableSet<MortonKey> getMortonCodeRange(VolumeBounds bounds) {
-        var minMorton = calculateMortonCode(new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), maxDepth);
-        var maxMorton = calculateMortonCode(new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()), maxDepth);
-
-        // Ensure min <= max to avoid IllegalArgumentException
-        if (minMorton.compareTo(maxMorton) > 0) {
-            var temp = minMorton;
-            minMorton = maxMorton;
-            maxMorton = temp;
+        // With level-aware compareTo, subSet() bounds must be at the same level as stored keys.
+        // Collect the set of distinct levels present in the index and issue one subSet query
+        // per level, then union the results.
+        var storageLevels = new java.util.LinkedHashSet<Byte>();
+        for (var key : spatialIndex.keySet()) {
+            storageLevels.add(key.getLevel());
         }
 
-        // Use sorted Morton codes for efficient range query
-        NavigableSet<MortonKey> candidateCodes;
-        if (minMorton == maxMorton) {
-            // Special case: single point or very small bounds
-            candidateCodes = new TreeSet<>();
-            if (spatialIndex.containsKey(minMorton)) {
-                candidateCodes.add(minMorton);
+        if (storageLevels.isEmpty()) {
+            return new TreeSet<>();
+        }
+
+        var extendedCodes = new TreeSet<MortonKey>();
+
+        for (byte level : storageLevels) {
+            var minMorton = calculateMortonCode(new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), level);
+            var maxMorton = calculateMortonCode(new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()), level);
+
+            // Ensure min <= max
+            if (minMorton.compareTo(maxMorton) > 0) {
+                var temp = minMorton;
+                minMorton = maxMorton;
+                maxMorton = temp;
             }
-        } else {
-            candidateCodes = spatialIndex.navigableKeySet().subSet(minMorton, true, maxMorton, true);
-        }
 
-        // Also check codes just outside the range as Morton curve can be non-contiguous
-        var extendedCodes = new TreeSet<>(candidateCodes);
-        var lower = spatialIndex.lowerKey(minMorton);
-        if (lower != null) {
-            extendedCodes.add(lower);
-        }
-        var higher = spatialIndex.higherKey(maxMorton);
-        if (higher != null) {
-            extendedCodes.add(higher);
+            NavigableSet<MortonKey> candidateCodes;
+            if (minMorton.getMortonCode() == maxMorton.getMortonCode()) {
+                // Special case: single point or very small bounds at this level
+                candidateCodes = new TreeSet<>();
+                if (spatialIndex.containsKey(minMorton)) {
+                    candidateCodes.add(minMorton);
+                }
+            } else {
+                candidateCodes = spatialIndex.navigableKeySet().subSet(minMorton, true, maxMorton, true);
+            }
+
+            extendedCodes.addAll(candidateCodes);
+
+            // Also check codes just outside the range as Morton curve can be non-contiguous
+            var lower = spatialIndex.lowerKey(minMorton);
+            if (lower != null && lower.getLevel() == level) {
+                extendedCodes.add(lower);
+            }
+            var higher = spatialIndex.higherKey(maxMorton);
+            if (higher != null && higher.getLevel() == level) {
+                extendedCodes.add(higher);
+            }
         }
 
         return extendedCodes;

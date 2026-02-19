@@ -151,7 +151,6 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
 
         // Get or create parent node
         var parentNode = octree.getSpatialIndex().computeIfAbsent(parentIndex, k -> {
-            octree.getSortedSpatialIndices().add(parentIndex);
             return new SpatialNodeImpl<>(maxEntitiesPerNode);
         });
 
@@ -309,7 +308,6 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
 
             if (!childEntities.isEmpty()) {
                 var childNode = octree.getSpatialIndex().computeIfAbsent(childIndex, k -> {
-                    octree.getSortedSpatialIndices().add(childIndex);
                     return new SpatialNodeImpl<>(maxEntitiesPerNode);
                 });
 

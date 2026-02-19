@@ -33,6 +33,7 @@ message SpatialKey {
 // Morton key for Octree
 message MortonKey {
     uint64 morton_code = 1;
+    uint32 level = 2;
 }
 
 // Tetree key

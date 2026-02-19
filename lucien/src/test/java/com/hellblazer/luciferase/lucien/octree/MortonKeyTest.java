@@ -354,6 +354,31 @@ class MortonKeyTest {
     }
     
     @Test
+    void equalsRequiresMatchingLevel() {
+        var k0 = new MortonKey(0L, (byte) 0);
+        var k5 = new MortonKey(0L, (byte) 5);
+        assertNotEquals(k0, k5, "keys at different levels must not be equal");
+        assertNotEquals(k0.hashCode(), k5.hashCode(),
+            "keys at different levels should have different hashCodes");
+    }
+
+    @Test
+    void equalsSameLevelAndCode() {
+        var a = new MortonKey(12345L, (byte) 7);
+        var b = new MortonKey(12345L, (byte) 7);
+        assertEquals(a, b);
+        assertEquals(a.hashCode(), b.hashCode());
+    }
+
+    @Test
+    void compareToConsistentWithEquals() {
+        var a = new MortonKey(0L, (byte) 0);
+        var b = new MortonKey(0L, (byte) 5);
+        assertNotEquals(0, a.compareTo(b),
+            "compareTo must be non-zero when equals is false");
+    }
+
+    @Test
     void testSFCRange_RecordValidation() {
         Point3f center = new Point3f(1000.0f, 1000.0f, 1000.0f);
         float radius = 100.0f;

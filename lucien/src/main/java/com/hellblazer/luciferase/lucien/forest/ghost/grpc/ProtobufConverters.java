@@ -59,6 +59,7 @@ public final class ProtobufConverters {
         if (key instanceof MortonKey mortonKey) {
             builder.setMorton(com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey.newBuilder()
                 .setMortonCode(mortonKey.getMortonCode())
+                .setLevel(mortonKey.getLevel())
                 .build());
         } else if (key instanceof TetreeKey<?> tetreeKey) {
             builder.setTetree(com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey.newBuilder()
@@ -84,7 +85,7 @@ public final class ProtobufConverters {
             com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey proto) {
         
         return switch (proto.getKeyTypeCase()) {
-            case MORTON -> new MortonKey(proto.getMorton().getMortonCode());
+            case MORTON -> new MortonKey(proto.getMorton().getMortonCode(), (byte) proto.getMorton().getLevel());
             case TETREE -> {
                 var tetree = proto.getTetree();
                 yield createTetreeKey(tetree.getLow(), tetree.getHigh(), tetree.getLevel());

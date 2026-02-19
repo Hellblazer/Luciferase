@@ -4350,7 +4350,13 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * SFC range-based k-NN search for MortonKey (Octree)
+     * SFC range-based k-NN search for MortonKey (Octree).
+     *
+     * <p>Because {@link com.hellblazer.luciferase.lucien.octree.MortonKey#compareTo} now orders keys
+     * first by level then by Morton code, a {@code subMap} call whose bounds are at level L will only
+     * return keys that are also stored at level L.  Entities can be inserted at different levels, so
+     * we collect the set of distinct storage levels present in the index and issue one {@code subMap}
+     * query per unique level, using bounds computed at that same level.</p>
      */
     @SuppressWarnings("unchecked")
     private void performKNNSFCRangePruningMorton(Point3f queryPoint, int k, float maxDistance,
@@ -4362,32 +4368,41 @@ implements SpatialIndex<Key, ID, Content> {
             return;
         }
 
-        // Estimate SFC range covering the search sphere
-        var sfcRange = com.hellblazer.luciferase.lucien.octree.MortonKey.estimateSFCRange(queryPoint, maxDistance);
+        // Collect the distinct levels at which keys are stored so we can issue a correctly-levelled
+        // subMap query for each one.  In the common single-level case this is a single pass.
+        var storageLevels = new java.util.LinkedHashSet<Byte>();
+        for (var key : spatialIndex.keySet()) {
+            storageLevels.add(((com.hellblazer.luciferase.lucien.octree.MortonKey) key).getLevel());
+        }
 
-        // Use subMap to iterate only over keys in the SFC range (this is the optimization!)
-        var rangeMap = spatialIndex.subMap((Key) sfcRange.lower(), (Key) sfcRange.upper());
+        for (byte storageLevel : storageLevels) {
+            // Compute SFC range bounds at the same level as the stored keys so that
+            // subMap() returns the correct entries with level-aware compareTo.
+            var sfcRange = com.hellblazer.luciferase.lucien.octree.MortonKey.estimateSFCRange(
+                queryPoint, maxDistance, storageLevel);
 
-        // Process entities in nodes within the SFC range
-        for (var entry : rangeMap.entrySet()) {
-            var node = entry.getValue();
-            if (node == null) {
-                continue;
-            }
+            var rangeMap = spatialIndex.subMap((Key) sfcRange.lower(), (Key) sfcRange.upper());
 
-            for (var entityId : node.getEntityIds()) {
-                if (!addedToCandidates.contains(entityId)) {
-                    var entityPos = getCachedEntityPosition(entityId);
-                    if (entityPos != null) {
-                        var distance = queryPoint.distance(entityPos);
-                        if (distance <= maxDistance) {
-                            candidates.add(new EntityDistance<>(entityId, distance));
-                            addedToCandidates.add(entityId);
+            for (var entry : rangeMap.entrySet()) {
+                var node = entry.getValue();
+                if (node == null) {
+                    continue;
+                }
 
-                            // Maintain max heap of size k
-                            if (candidates.size() > k) {
-                                var removed = candidates.poll();
-                                addedToCandidates.remove(removed.entityId());
+                for (var entityId : node.getEntityIds()) {
+                    if (!addedToCandidates.contains(entityId)) {
+                        var entityPos = getCachedEntityPosition(entityId);
+                        if (entityPos != null) {
+                            var distance = queryPoint.distance(entityPos);
+                            if (distance <= maxDistance) {
+                                candidates.add(new EntityDistance<>(entityId, distance));
+                                addedToCandidates.add(entityId);
+
+                                // Maintain max heap of size k
+                                if (candidates.size() > k) {
+                                    var removed = candidates.poll();
+                                    addedToCandidates.remove(removed.entityId());
+                                }
                             }
                         }
                     }

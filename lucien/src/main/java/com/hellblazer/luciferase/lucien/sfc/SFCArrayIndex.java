@@ -539,33 +539,50 @@ public class SFCArrayIndex<ID extends EntityID, Content> extends AbstractSpatial
     }
 
     private NavigableSet<MortonKey> getMortonCodeRange(VolumeBounds bounds) {
-        var minMorton = calculateMortonCode(new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), maxDepth);
-        var maxMorton = calculateMortonCode(new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()), maxDepth);
-
-        if (minMorton.compareTo(maxMorton) > 0) {
-            var temp = minMorton;
-            minMorton = maxMorton;
-            maxMorton = temp;
+        // With level-aware compareTo, subSet() bounds must be at the same level as stored keys.
+        // Collect the set of distinct levels present in the index and issue one subSet query
+        // per level, then union the results.
+        var storageLevels = new java.util.LinkedHashSet<Byte>();
+        for (var key : spatialIndex.keySet()) {
+            storageLevels.add(key.getLevel());
         }
 
-        NavigableSet<MortonKey> candidateCodes;
-        if (minMorton == maxMorton) {
-            candidateCodes = new TreeSet<>();
-            if (spatialIndex.containsKey(minMorton)) {
-                candidateCodes.add(minMorton);
+        if (storageLevels.isEmpty()) {
+            return new TreeSet<>();
+        }
+
+        var extendedCodes = new TreeSet<MortonKey>();
+
+        for (byte level : storageLevels) {
+            var minMorton = calculateMortonCode(new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), level);
+            var maxMorton = calculateMortonCode(new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()), level);
+
+            if (minMorton.compareTo(maxMorton) > 0) {
+                var temp = minMorton;
+                minMorton = maxMorton;
+                maxMorton = temp;
             }
-        } else {
-            candidateCodes = spatialIndex.navigableKeySet().subSet(minMorton, true, maxMorton, true);
-        }
 
-        var extendedCodes = new TreeSet<>(candidateCodes);
-        var lower = spatialIndex.lowerKey(minMorton);
-        if (lower != null) {
-            extendedCodes.add(lower);
-        }
-        var higher = spatialIndex.higherKey(maxMorton);
-        if (higher != null) {
-            extendedCodes.add(higher);
+            NavigableSet<MortonKey> candidateCodes;
+            if (minMorton.getMortonCode() == maxMorton.getMortonCode()) {
+                candidateCodes = new TreeSet<>();
+                if (spatialIndex.containsKey(minMorton)) {
+                    candidateCodes.add(minMorton);
+                }
+            } else {
+                candidateCodes = spatialIndex.navigableKeySet().subSet(minMorton, true, maxMorton, true);
+            }
+
+            extendedCodes.addAll(candidateCodes);
+
+            var lower = spatialIndex.lowerKey(minMorton);
+            if (lower != null && lower.getLevel() == level) {
+                extendedCodes.add(lower);
+            }
+            var higher = spatialIndex.higherKey(maxMorton);
+            if (higher != null && higher.getLevel() == level) {
+                extendedCodes.add(higher);
+            }
         }
 
         return extendedCodes;

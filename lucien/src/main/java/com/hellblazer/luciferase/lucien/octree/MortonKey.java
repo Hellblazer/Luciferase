@@ -140,19 +140,16 @@ public final class MortonKey implements SpatialKey<MortonKey> {
     @Override
     public int compareTo(MortonKey other) {
         Objects.requireNonNull(other, "Cannot compare to null MortonKey");
-        // Natural ordering of Morton codes preserves spatial locality
-        return Long.compare(this.mortonCode, other.mortonCode);
+        int levelCmp = Byte.compare(this.level, other.level);
+        if (levelCmp != 0) return levelCmp;
+        return Long.compareUnsigned(this.mortonCode, other.mortonCode);
     }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (!(o instanceof final MortonKey mortonKey)) {
-            return false;
-        }
-        return mortonCode == mortonKey.mortonCode;
+        if (this == o) return true;
+        if (!(o instanceof MortonKey mk)) return false;
+        return mortonCode == mk.mortonCode && level == mk.level;
     }
 
     @Override
@@ -171,7 +168,7 @@ public final class MortonKey implements SpatialKey<MortonKey> {
 
     @Override
     public int hashCode() {
-        return Long.hashCode(mortonCode);
+        return Objects.hash(mortonCode, level);
     }
 
     @Override
@@ -409,6 +406,7 @@ public final class MortonKey implements SpatialKey<MortonKey> {
     public com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey toProto() {
         return com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey.newBuilder()
             .setMortonCode(mortonCode)
+            .setLevel(level)
             .build();
     }
 
@@ -416,7 +414,7 @@ public final class MortonKey implements SpatialKey<MortonKey> {
      * Create a MortonKey from its protobuf representation.
      */
     public static MortonKey fromProto(com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey proto) {
-        return new MortonKey(proto.getMortonCode());
+        return new MortonKey(proto.getMortonCode(), (byte) proto.getLevel());
     }
     
     // ===== SFC Range Estimation for k-NN Optimization =====
@@ -476,26 +474,48 @@ public final class MortonKey implements SpatialKey<MortonKey> {
         if (radius <= 0) {
             throw new IllegalArgumentException("Search radius must be positive, got: " + radius);
         }
-        
+
         // Validate center coordinates are non-negative
         if (center.x < 0 || center.y < 0 || center.z < 0) {
             throw new IllegalArgumentException(
                 "Negative center coordinates not supported: " + center
             );
         }
-        
+
         // Step 1: Estimate appropriate depth for this radius
         byte level = estimateSFCDepth(radius);
-        float cellSize = Constants.lengthAtLevel(level);
-        
-        // Step 2: Compute AABB around sphere
-        // Expand by cell size to ensure complete coverage (conservative)
+        return estimateSFCRange(center, radius, level);
+    }
+
+    /**
+     * Estimate the SFC range at a specific level. Unlike the two-argument version, this does not
+     * compute the level from the radius — the caller supplies the level explicitly. This is
+     * necessary when the SFC range must be at the same level as the keys already stored in a
+     * {@code ConcurrentSkipListMap}, because the level-aware {@code compareTo} order means that
+     * bounds at level L only match stored keys that are also at level L.
+     *
+     * @param center       the center point of the search sphere (non-negative coordinates)
+     * @param radius       the search radius (positive)
+     * @param storageLevel the level at which stored keys reside; bounds will be created at this level
+     * @return SFCRange covering the spherical region at {@code storageLevel}
+     * @throws IllegalArgumentException if radius is non-positive or center has negative coordinates
+     */
+    public static SFCRange estimateSFCRange(Point3f center, float radius, byte storageLevel) {
+        if (radius <= 0) {
+            throw new IllegalArgumentException("Search radius must be positive, got: " + radius);
+        }
+        if (center.x < 0 || center.y < 0 || center.z < 0) {
+            throw new IllegalArgumentException(
+                "Negative center coordinates not supported: " + center
+            );
+        }
+
+        float cellSize = Constants.lengthAtLevel(storageLevel);
+
+        // Compute AABB around sphere, expanded by one cell to ensure complete coverage
         float expansion = cellSize;
-        
-        // Clamp coordinates to valid Morton range [0, MAX_COORD]
-        // MAX_COORD = 2^21 - 1 = 2,097,151
         float maxCoord = Constants.MAX_COORD;
-        
+
         Point3f min = new Point3f(
             Math.max(0, center.x - radius - expansion),
             Math.max(0, center.y - radius - expansion),
@@ -506,32 +526,21 @@ public final class MortonKey implements SpatialKey<MortonKey> {
             Math.min(maxCoord, center.y + radius + expansion),
             Math.min(maxCoord, center.z + radius + expansion)
         );
-        
-        // Step 3: Convert AABB corners to Morton keys
-        long minMortonCode = Constants.calculateMortonIndex(min, level);
-        long maxMortonCode = Constants.calculateMortonIndex(max, level);
-        
-        // Ensure proper ordering (min <= max)
+
+        long minMortonCode = Constants.calculateMortonIndex(min, storageLevel);
+        long maxMortonCode = Constants.calculateMortonIndex(max, storageLevel);
+
         if (minMortonCode > maxMortonCode) {
             long tmp = minMortonCode;
             minMortonCode = maxMortonCode;
             maxMortonCode = tmp;
         }
-        
-        // Step 4: Create inclusive range
-        // For subMap(), we need [lower, upper) so increment upper bound
-        var lowerBound = new MortonKey(minMortonCode, level);
-        
-        // Increment upper bound for exclusive upper range in subMap()
-        // Handle overflow by using max possible Morton code at this level
-        long upperMortonCode;
-        if (maxMortonCode == Long.MAX_VALUE) {
-            upperMortonCode = Long.MAX_VALUE;
-        } else {
-            upperMortonCode = maxMortonCode + 1;
-        }
-        var upperBound = new MortonKey(upperMortonCode, level);
-        
+
+        var lowerBound = new MortonKey(minMortonCode, storageLevel);
+
+        long upperMortonCode = (maxMortonCode == Long.MAX_VALUE) ? Long.MAX_VALUE : maxMortonCode + 1;
+        var upperBound = new MortonKey(upperMortonCode, storageLevel);
+
         return new SFCRange(lowerBound, upperBound);
     }
 }
