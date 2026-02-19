@@ -346,7 +346,8 @@ class RegionStreamerPoolingBenchmark {
                 new byte[1024],  // 1KB dummy serialized data
                 false,  // not compressed
                 1000L,  // buildTimeNs
-                System.currentTimeMillis()  // timestamp
+                System.currentTimeMillis(),  // timestamp
+                (long) i  // buildVersion
             );
 
             regions.add(RegionCache.CachedRegion.from(builtRegion, 0L));

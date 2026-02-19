@@ -45,7 +45,7 @@ class BinaryFrameCodecTest {
         assertEquals(0, header.lod(), "LOD level mismatch");
         assertEquals(region.regionId().level(), header.level(), "Region level mismatch");
         assertEquals(region.regionId().mortonCode(), header.mortonCode(), "Morton code mismatch");
-        assertEquals((int) region.buildTimeNs(), header.buildVersion(), "Build version mismatch");
+        assertEquals((int) region.buildVersion(), header.buildVersion(), "Build version mismatch");
         assertEquals(100, header.dataSize(), "Data size mismatch");
     }
 
@@ -71,7 +71,7 @@ class BinaryFrameCodecTest {
         assertEquals(0, header.lod(), "LOD level mismatch");
         assertEquals(region.regionId().level(), header.level(), "Region level mismatch");
         assertEquals(region.regionId().mortonCode(), header.mortonCode(), "Morton code mismatch");
-        assertEquals((int) region.buildTimeNs(), header.buildVersion(), "Build version mismatch");
+        assertEquals((int) region.buildVersion(), header.buildVersion(), "Build version mismatch");
         assertEquals(100, header.dataSize(), "Data size mismatch");
     }
 
@@ -105,7 +105,8 @@ class BinaryFrameCodecTest {
             originalData,
             false,
             500_000L,
-            2_000_000L
+            2_000_000L,
+            1L
         );
 
         // Encode and extract payload
@@ -170,7 +171,8 @@ class BinaryFrameCodecTest {
             new byte[10],
             false,
             123456L,
-            3_000_000L
+            3_000_000L,
+            1L
         );
 
         var buffer = BinaryFrameCodec.encode(region);
@@ -185,6 +187,44 @@ class BinaryFrameCodecTest {
         assertEquals((byte) 0x03, buffer.get(13), "Morton byte 5 should be 0x03 (LE)");
         assertEquals((byte) 0x02, buffer.get(14), "Morton byte 6 should be 0x02 (LE)");
         assertEquals((byte) 0x01, buffer.get(15), "Morton byte 7 should be 0x01 (LE)");
+    }
+
+    /**
+     * Test 8: buildVersion header field must encode the monotonic version counter,
+     * not the build duration (buildTimeNs).
+     * <p>
+     * Bug: BinaryFrameCodec.encode() writes {@code (int) region.buildTimeNs()} into
+     * the buildVersion header field. buildTimeNs is nanoseconds elapsed during the
+     * build (a duration), not a version counter. Casting to int truncates it and
+     * produces nonsensical version values.
+     * <p>
+     * Fix: BinaryFrameCodec.encode() must write {@code (int) region.buildVersion()},
+     * which is the monotonically incrementing counter from RegionState.buildVersion().
+     */
+    @Test
+    void testBuildVersion_isVersionCounter_notBuildTimeNs() {
+        long distinctBuildVersion = 42L;
+        long distinctBuildTimeNs  = 999_999_999L;  // Clearly different from 42
+
+        var region = new RegionBuilder.BuiltRegion(
+            new RegionId(12345L, 4),
+            0,
+            RegionBuilder.BuildType.ESVO,
+            new byte[10],
+            false,
+            distinctBuildTimeNs,   // buildTimeNs — must NOT appear in the header
+            1_000_000L,
+            distinctBuildVersion   // buildVersion — must appear in the header
+        );
+
+        var buffer = BinaryFrameCodec.encode(region);
+        var header = BinaryFrameCodec.decodeHeader(buffer);
+
+        assertNotNull(header);
+        assertEquals((int) distinctBuildVersion, header.buildVersion(),
+            "buildVersion header field must encode the version counter, not buildTimeNs. " +
+            "Bug: encode() writes (int) region.buildTimeNs() = " + (int) distinctBuildTimeNs +
+            " instead of (int) region.buildVersion() = " + (int) distinctBuildVersion);
     }
 
     /**
@@ -205,7 +245,8 @@ class BinaryFrameCodecTest {
             data,
             true,
             System.nanoTime(),
-            1_000_000L
+            1_000_000L,
+            1L
         );
     }
 }

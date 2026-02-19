@@ -80,8 +80,8 @@ class RegionCacheTest {
 
     @Test
     void testLRUEviction_caffeineEvictsOldestUnpinned() throws InterruptedException {
-        // Create small cache (4KB max) - need larger to account for 72-byte overhead per region
-        // 4 regions × 1072 bytes = 4288 bytes total, exceeds 4000 limit
+        // Create small cache (4KB max) - need larger to account for 80-byte overhead per region
+        // 4 regions × 1080 bytes = 4320 bytes total, exceeds 4000 limit
         var smallCache = new RegionCache(4000, Duration.ofMinutes(5));
 
         try {
@@ -173,9 +173,9 @@ class RegionCacheTest {
             smallCache.put(key1, RegionCache.CachedRegion.from(region1, now));
             smallCache.pin(key1);
 
-            // Verify pinned memory tracking (1000 bytes data + 72 bytes overhead = 1072)
-            assertEquals(1072, smallCache.getPinnedMemoryBytes(),
-                    "Pinned memory should be 1072 bytes (1000 data + 72 overhead)");
+            // Verify pinned memory tracking (1000 bytes data + 72 bytes overhead = 1080)
+            assertEquals(1080, smallCache.getPinnedMemoryBytes(),
+                    "Pinned memory should be 1080 bytes (1000 data + 80 overhead)");
 
             // Add more regions to exceed unpinned limit
             var region2 = createTestRegion(new RegionId(2L, 0), 1000);
@@ -241,8 +241,8 @@ class RegionCacheTest {
         // Pin - moves to pinned cache
         boolean pinned = cache.pin(key);
         assertTrue(pinned, "Pin should succeed");
-        assertEquals(1072, cache.getPinnedMemoryBytes(),
-                "Pinned memory should be 1072 bytes (1000 data + 72 overhead)");
+        assertEquals(1080, cache.getPinnedMemoryBytes(),
+                "Pinned memory should be 1080 bytes (1000 data + 80 overhead)");
 
         var stats = cache.getStats();
         assertEquals(1, stats.pinnedCount(), "Should have 1 pinned region");
@@ -280,9 +280,9 @@ class RegionCacheTest {
         // Critical: getTotalMemoryBytes() must be accurate IMMEDIATELY after pin()
         // Without cleanUp() in pin(), weightedSize remains stale until next maintenance
         long totalAfter = cache.getTotalMemoryBytes();
-        assertEquals(1072, cache.getPinnedMemoryBytes(), "Pinned memory should be exact");
+        assertEquals(1080, cache.getPinnedMemoryBytes(), "Pinned memory should be exact");
         assertEquals(0, cache.getUnpinnedMemoryBytes(), "Unpinned memory should be 0");
-        assertEquals(1072, totalAfter, "Total memory should match pinned (no stale weightedSize)");
+        assertEquals(1080, totalAfter, "Total memory should match pinned (no stale weightedSize)");
     }
 
     @Test
@@ -297,7 +297,7 @@ class RegionCacheTest {
         cache.pin(key);
 
         // Verify in pinned cache
-        assertEquals(1072, cache.getPinnedMemoryBytes());
+        assertEquals(1080, cache.getPinnedMemoryBytes());
         var stats = cache.getStats();
         assertEquals(1, stats.pinnedCount());
         assertEquals(0, stats.unpinnedCount());
@@ -681,8 +681,8 @@ class RegionCacheTest {
         pinLatch.await(2, java.util.concurrent.TimeUnit.SECONDS);
 
         // C3 Fix verification: Memory counted exactly once despite concurrent pins
-        assertEquals(1072, cache.getPinnedMemoryBytes(),
-                "Pinned memory should be counted exactly once (1000 data + 72 overhead)");
+        assertEquals(1080, cache.getPinnedMemoryBytes(),
+                "Pinned memory should be counted exactly once (1000 data + 80 overhead)");
 
         // All threads should report success (already-pinned is also success)
         assertTrue(pinResults.values().stream().allMatch(result -> result),
@@ -935,7 +935,8 @@ class RegionCacheTest {
                 data,
                 false, // compressed
                 1_000_000L, // buildTimeNs
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                1L  // buildVersion
         );
     }
 }

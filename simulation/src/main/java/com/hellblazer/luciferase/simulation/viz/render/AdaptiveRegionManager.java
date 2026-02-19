@@ -199,25 +199,30 @@ public class AdaptiveRegionManager {
                         return;
                     }
 
-                    // Cache the built region
+                    // Mark region clean and stamp the monotonic build version
+                    state.dirty().set(false);
+                    var version = state.buildVersion().incrementAndGet();
+                    log.debug("Region {} built successfully (version {})", region, version);
+
+                    // Stamp the version onto the built region (buildVersion was 0L placeholder)
+                    var versionedRegion = new RegionBuilder.BuiltRegion(
+                        builtRegion.regionId(), builtRegion.lodLevel(), builtRegion.type(),
+                        builtRegion.serializedData(), builtRegion.compressed(),
+                        builtRegion.buildTimeNs(), builtRegion.timestamp(), version);
+
+                    // Cache the versioned built region
                     if (cache != null) {
                         var cachedRegion = RegionCache.CachedRegion.from(
-                            builtRegion,
+                            versionedRegion,
                             clock.currentTimeMillis()
                         );
                         var cacheKey = new RegionCache.CacheKey(region, 0);
                         cache.put(cacheKey, cachedRegion);
                     }
 
-                    // Mark region clean
-                    state.dirty().set(false);
-                    state.buildVersion().incrementAndGet();
-                    log.debug("Region {} built successfully (version {})",
-                            region, state.buildVersion().get());
-
                     // Notify RegionStreamer of build completion (Phase 3)
                     if (regionStreamer != null) {
-                        regionStreamer.onRegionBuilt(region, builtRegion);
+                        regionStreamer.onRegionBuilt(region, versionedRegion);
                     }
                 }
             });

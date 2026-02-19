@@ -61,7 +61,7 @@ public final class BinaryFrameCodec {
         buffer.put(6, (byte) region.regionId().level());  // byte 6: region level
         buffer.put(7, (byte) 0);                          // byte 7: reserved
         buffer.putLong(8, region.regionId().mortonCode()); // bytes 8-15: morton code
-        buffer.putInt(16, (int) region.buildTimeNs());    // bytes 16-19: build version
+        buffer.putInt(16, (int) region.buildVersion());   // bytes 16-19: build version
         buffer.putInt(20, data.length);                   // bytes 20-23: data size
 
         // Write payload
@@ -103,7 +103,7 @@ public final class BinaryFrameCodec {
         buffer.put(6, (byte) region.regionId().level());  // byte 6: region level
         buffer.put(7, (byte) 0);                          // byte 7: reserved
         buffer.putLong(8, region.regionId().mortonCode()); // bytes 8-15: morton code
-        buffer.putInt(16, (int) region.buildTimeNs());    // bytes 16-19: build version
+        buffer.putInt(16, (int) region.buildVersion());   // bytes 16-19: build version
         buffer.putInt(20, data.length);                   // bytes 20-23: data size
 
         // Write payload

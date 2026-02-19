@@ -327,7 +327,8 @@ public class RegionBuilder implements AutoCloseable {
                     data,
                     compressed,
                     buildTimeNs,
-                    clock.currentTimeMillis()
+                    clock.currentTimeMillis(),
+                    0L  // buildVersion: set by AdaptiveRegionManager after state.buildVersion().incrementAndGet()
             );
 
         } catch (Exception e) {
@@ -493,7 +494,8 @@ public class RegionBuilder implements AutoCloseable {
             byte[] serializedData,
             boolean compressed,
             long buildTimeNs,
-            long timestamp
+            long timestamp,
+            long buildVersion
     ) {
         /**
          * Estimate memory size of this built region.
@@ -501,8 +503,8 @@ public class RegionBuilder implements AutoCloseable {
          * @return Estimated size in bytes (serialized data + overhead)
          */
         public long estimatedSizeBytes() {
-            // Serialized data + 72 bytes overhead for record fields
-            return serializedData.length + 72L;
+            // Serialized data + 80 bytes overhead for record fields
+            return serializedData.length + 80L;
         }
     }
 

@@ -160,7 +160,7 @@ class RegionStreamerStreamingTest {
         var builtRegion = new RegionBuilder.BuiltRegion(
             regionId, 0, RegionBuilder.BuildType.ESVO,
             new byte[]{0x01, 0x02, 0x03, 0x04},  // dummy ESVO payload
-            false, 1_000_000L, 1000L
+            false, 1_000_000L, 1000L, 1L
         );
         var cachedRegion = RegionCache.CachedRegion.from(builtRegion, 1000L);
         regionCache.put(new RegionCache.CacheKey(regionId, 0), cachedRegion);
@@ -390,7 +390,7 @@ class RegionStreamerStreamingTest {
         var builtRegion = new RegionBuilder.BuiltRegion(
             regionId, 0, RegionBuilder.BuildType.ESVO,
             new byte[]{0x01, 0x02, 0x03, 0x04},
-            false, 1_000_000L, 1000L
+            false, 1_000_000L, 1000L, 1L
         );
         var cachedRegion = RegionCache.CachedRegion.from(builtRegion, 1000L);
         regionCache.put(new RegionCache.CacheKey(regionId, 0), cachedRegion);
