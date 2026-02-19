@@ -188,6 +188,15 @@ class RegionStreamerStreamingTest {
         // --- Run one streaming cycle ---
         streamer.streamingCycle();
 
+        // Verify the client was at LOD > 0 during this cycle, confirming A.2 fix is exercised.
+        // NOTE: visibleRegions() must be called AFTER streamingCycle() — it updates lastVisible
+        // state and calling it before would consume the diff, causing diff.added() to be empty.
+        var visible = viewportTracker.visibleRegions("far-session");
+        assertFalse(visible.isEmpty(), "Region should be visible to far client");
+        assertTrue(visible.stream().anyMatch(vr -> vr.lodLevel() > 0),
+            "Far client should be assigned LOD > 0 to exercise the A.2 normalization fix. " +
+            "Check StreamingConfig.testing() thresholds vs eye distance.");
+
         // Flush any batched messages (streaming cycle may buffer them)
         // Since messageBatchSize=5 in testing and we have 1 frame, we need
         // to manually flush via a second cycle at 50ms+ to trigger timeout flush
@@ -262,5 +271,88 @@ class RegionStreamerStreamingTest {
         assertTrue(trackingManager.scheduleBuilds.contains(regionId),
             "scheduleBuild should be called for region " + regionId + " on cache miss. " +
             "Got calls for: " + trackingManager.scheduleBuilds);
+    }
+
+    // ===== A.2 TEST: onRegionBuilt push path delivers to far clients =====
+
+    /**
+     * A.2 (Luciferase-ct58): The {@code onRegionBuilt()} push path must deliver
+     * frames to far clients (LOD 3) when a build completes.
+     * <p>
+     * This test exercises the third part of the A.2 fix: removing the
+     * {@code vr.lodLevel() == builtRegion.lodLevel()} filter in {@code onRegionBuilt()}.
+     * <p>
+     * Setup:
+     * - Far client (LOD 3) is connected, cache is empty
+     * - streamingCycle() runs: cache miss, scheduleBuild() called
+     * - Build completes: cache populated with LOD 0, onRegionBuilt() called
+     * <p>
+     * Bug (before fix): {@code onRegionBuilt()} checked
+     * {@code vr.lodLevel() == builtRegion.lodLevel()}, so far clients (LOD 3)
+     * never matched LOD 0 builds and never received pushed frames.
+     * <p>
+     * Fix: Match on regionId only — any client viewing the region gets the frame.
+     */
+    @Test
+    void testOnRegionBuilt_farClient_receivesPushedFrame() {
+        // --- Setup tracking region manager ---
+        var trackingManager = new TrackingRegionManager(serverConfig);
+        trackingManager.setClock(testClock);
+        trackingManager.updateEntity("entity-1", 32f, 32f, 32f, "PREY");
+        var regionId = trackingManager.regionForPosition(32f, 32f, 32f);
+
+        // --- Cache is empty initially ---
+
+        // --- Build streaming infrastructure ---
+        var viewportTracker = new ViewportTracker(trackingManager, streamingConfig);
+        viewportTracker.setClock(testClock);
+
+        var streamer = new RegionStreamer(viewportTracker, regionCache, trackingManager, streamingConfig);
+        streamer.setClock(testClock);
+
+        // --- Connect a FAR client (distance > 350 → LOD 3) ---
+        var ctx = new FakeWsContext("far-push-session");
+        streamer.onConnectInternal(ctx);
+        streamer.onMessageInternal(ctx, buildRegisterJson(
+            128f, 128f, -1200f,  // eye: FAR from region center
+            128f, 128f, 128f     // lookAt: region center
+        ));
+        assertFalse(ctx.wasClosed);
+
+        // --- First cycle: cache miss → scheduleBuild called ---
+        streamer.streamingCycle();
+        assertFalse(trackingManager.scheduleBuilds.isEmpty(),
+            "First streaming cycle should trigger scheduleBuild on cache miss");
+
+        // Verify client was at LOD > 0 during this cycle — safe to call after streamingCycle()
+        // since lastVisible is already updated and calling it again doesn't affect the next diff.
+        var visible = viewportTracker.visibleRegions("far-push-session");
+        assertFalse(visible.isEmpty(), "Region should be visible to far client");
+        assertTrue(visible.stream().anyMatch(vr -> vr.lodLevel() > 0),
+            "Far client should be assigned LOD > 0 to exercise the A.2 onRegionBuilt fix path.");
+
+        // --- Simulate build completion: populate cache then fire callback ---
+        var builtRegion = new RegionBuilder.BuiltRegion(
+            regionId, 0, RegionBuilder.BuildType.ESVO,
+            new byte[]{0x01, 0x02, 0x03, 0x04},
+            false, 1_000_000L, 1000L
+        );
+        var cachedRegion = RegionCache.CachedRegion.from(builtRegion, 1000L);
+        regionCache.put(new RegionCache.CacheKey(regionId, 0), cachedRegion);
+
+        // This is the push path: RegionBuilder callback fires onRegionBuilt
+        streamer.onRegionBuilt(regionId, builtRegion);
+
+        // --- Flush the batch (1 frame < batchSize=5, needs timeout flush) ---
+        testClock.advance(60L);  // Advance past 50ms batchFlushTimeoutMs
+        streamer.streamingCycle();
+
+        // --- Assert: far client received frame via push path ---
+        // BUG (before fix): onRegionBuilt filtered by vr.lodLevel() == builtRegion.lodLevel()
+        //   → LOD 3 client never matched LOD 0 build → no frame pushed
+        // FIX (after fix): filter by regionId only → LOD 3 client gets the LOD 0 frame
+        assertFalse(ctx.sentBinaryFrames.isEmpty(),
+            "Far client (LOD 3) should receive binary frame via onRegionBuilt() push path. " +
+            "Bug: onRegionBuilt() filtered vr.lodLevel() == builtRegion.lodLevel() (3 != 0).");
     }
 }
