@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESVO Voxel Viewer - Luciferase</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .panel {
+            position: fixed;
+            background: rgba(30, 30, 50, 0.92);
+            border-radius: 12px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #info-panel {
+            top: 20px;
+            left: 20px;
+            min-width: 220px;
+        }
+
+        #controls-panel {
+            bottom: 20px;
+            left: 20px;
+        }
+
+        #lod-legend {
+            top: 20px;
+            right: 20px;
+            min-width: 170px;
+        }
+
+        .panel h2, .panel h3 {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #60a5fa;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .stat-label {
+            color: #a0a0a0;
+        }
+
+        .stat-value {
+            color: #34d399;
+            font-weight: 500;
+        }
+
+        #status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+            background: #ef4444;
+        }
+
+        #status-dot.connected {
+            background: #34d399;
+        }
+
+        #status-dot.reconnecting {
+            background: #f59e0b;
+            animation: pulse 1s infinite;
+        }
+
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-right: 8px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        .lod-swatch {
+            display: flex;
+            align-items: center;
+            margin-bottom: 7px;
+            font-size: 12px;
+            color: #c0c0c0;
+        }
+
+        .lod-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<!-- Status / stats panel -->
+<div id="info-panel" class="panel">
+    <h2>ESVO Voxel Viewer</h2>
+    <div class="stat-row">
+        <span class="stat-label">Status</span>
+        <span class="stat-value">
+            <span id="status-dot"></span><span id="status-text">Connecting…</span>
+        </span>
+    </div>
+    <div class="stat-row">
+        <span class="stat-label">Regions</span>
+        <span class="stat-value" id="stat-regions">0</span>
+    </div>
+    <div class="stat-row">
+        <span class="stat-label">Voxels</span>
+        <span class="stat-value" id="stat-voxels">0</span>
+    </div>
+    <div class="stat-row">
+        <span class="stat-label">Frames</span>
+        <span class="stat-value" id="stat-frames">0</span>
+    </div>
+    <div class="stat-row">
+        <span class="stat-label">Render FPS</span>
+        <span class="stat-value" id="stat-fps">0</span>
+    </div>
+    <div class="stat-row">
+        <span class="stat-label">Server</span>
+        <span class="stat-value" id="stat-server"
+              style="font-size: 11px; word-break: break-all;">—</span>
+    </div>
+</div>
+
+<!-- Camera / grid controls -->
+<div id="controls-panel" class="panel">
+    <h3>Controls</h3>
+    <button id="btn-reset-camera">Reset Camera</button>
+    <button id="btn-toggle-grid">Hide Grid</button>
+</div>
+
+<!-- LOD color legend -->
+<div id="lod-legend" class="panel">
+    <h3>LOD Levels</h3>
+    <div class="lod-swatch">
+        <div class="lod-color" style="background:#00ff88"></div>
+        <span>LOD 0 — max detail</span>
+    </div>
+    <div class="lod-swatch">
+        <div class="lod-color" style="background:#00ccff"></div>
+        <span>LOD 1</span>
+    </div>
+    <div class="lod-swatch">
+        <div class="lod-color" style="background:#ffcc00"></div>
+        <span>LOD 2</span>
+    </div>
+    <div class="lod-swatch">
+        <div class="lod-color" style="background:#ff6600"></div>
+        <span>LOD 3</span>
+    </div>
+    <div class="lod-swatch">
+        <div class="lod-color" style="background:#ff2200"></div>
+        <span>LOD 4+ — min detail</span>
+    </div>
+</div>
+
+<!-- Three.js via import map (same CDN version as entity-viz.html) -->
+<script type="importmap">
+{
+    "imports": {
+        "three":          "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/":  "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import { RenderClient }  from './render-client.js';
+import { decodeFrame }   from './frame-parser.js';
+import { SceneManager }  from './scene-manager.js';
+import { VoxelRenderer } from './voxel-renderer.js';
+
+// ── Configuration (overridable via URL parameters) ──────────────────────────
+// Example: voxel-viewer.html?server=ws://myhost:7090&worldSize=2048
+const params      = new URLSearchParams(window.location.search);
+const serverUrl   = params.get('server')    || 'ws://localhost:7090/ws/render';
+const apiKey      = params.get('apiKey')    || null;
+const worldSize   = Number(params.get('worldSize') || 1024);
+const regionLevel = Number(params.get('regionLevel') || 4);
+const clientId    = `browser-${Math.random().toString(36).slice(2, 10)}`;
+
+document.getElementById('stat-server').textContent = serverUrl;
+
+// ── Scene Manager ────────────────────────────────────────────────────────────
+const sceneManager = new SceneManager({
+    worldMin: [0, 0, 0],
+    worldMax: [worldSize, worldSize, worldSize],
+    regionLevel,
+    maxViewportUpdatesPerSecond: 30
+});
+
+// ── Voxel Renderer ───────────────────────────────────────────────────────────
+const voxelRenderer = new VoxelRenderer(
+    document.getElementById('canvas-container'),
+    { maxRenderDepth: 10 }
+);
+voxelRenderer.attach(sceneManager);
+voxelRenderer.start();
+
+// ── WebSocket Client ─────────────────────────────────────────────────────────
+const client = new RenderClient(serverUrl, {
+    apiKey,
+    maxReconnectAttempts: 10,
+    maxUpdatesPerSecond: 30
+});
+
+// Forward viewport changes (camera movement) to the server
+sceneManager.on('viewportChange', (viewport) => {
+    client.sendUpdateViewport(viewport);
+});
+
+// ── Frame Handling ───────────────────────────────────────────────────────────
+let frameCount = 0;
+
+client.on('binaryFrame', async (buffer) => {
+    let decoded;
+    try {
+        decoded = await decodeFrame(buffer);
+    } catch (err) {
+        console.error('VoxelViewer: failed to decode frame:', err);
+        return;
+    }
+    if (!decoded) return;
+
+    frameCount++;
+    document.getElementById('stat-frames').textContent = frameCount;
+
+    sceneManager.addRegion(decoded.header, decoded.region, decoded.payload);
+});
+
+// ── Connection Status ────────────────────────────────────────────────────────
+const statusDot  = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+
+client.on('statusChange', ({ connected, reconnecting, attempt }) => {
+    statusDot.className = connected    ? 'connected'
+                        : reconnecting ? 'reconnecting'
+                        : '';
+
+    if (connected) {
+        statusText.textContent = 'Connected';
+
+        // Build initial viewport and register with the server
+        const aspect = window.innerWidth / window.innerHeight;
+        const viewport = sceneManager.getViewport(
+            Math.PI / 3,   // 60° fovY in radians
+            aspect,
+            0.1,
+            100_000
+        );
+        voxelRenderer.syncCamera(viewport.eye, viewport.lookAt, viewport.up);
+        client.sendRegisterClient(clientId, viewport);
+
+    } else if (reconnecting) {
+        statusText.textContent = `Reconnecting… (${attempt})`;
+    } else {
+        statusText.textContent = 'Disconnected';
+    }
+});
+
+client.on('serverMessage', (msg) => {
+    if (msg.type === 'ERROR') {
+        console.error('VoxelViewer: server error:', msg.code, msg.message);
+    }
+});
+
+// ── Stats Update ─────────────────────────────────────────────────────────────
+let fpsFrames   = 0;
+let fpsLastTime = performance.now();
+
+function updateStats() {
+    fpsFrames++;
+    const now = performance.now();
+    if (now - fpsLastTime >= 1000) {
+        document.getElementById('stat-fps').textContent = fpsFrames;
+        fpsFrames   = 0;
+        fpsLastTime = now;
+
+        const { regionCount, voxelCount } = voxelRenderer.getStats();
+        document.getElementById('stat-regions').textContent = regionCount;
+        document.getElementById('stat-voxels').textContent  = voxelCount.toLocaleString();
+    }
+    requestAnimationFrame(updateStats);
+}
+requestAnimationFrame(updateStats);
+
+// ── Buttons ──────────────────────────────────────────────────────────────────
+document.getElementById('btn-reset-camera').addEventListener('click', () => {
+    const aspect = window.innerWidth / window.innerHeight;
+    const vp = sceneManager.getViewport(Math.PI / 3, aspect, 0.1, 100_000);
+    voxelRenderer.syncCamera(vp.eye, vp.lookAt, vp.up);
+});
+
+let gridVisible = true;
+const btnGrid = document.getElementById('btn-toggle-grid');
+btnGrid.addEventListener('click', () => {
+    gridVisible = !gridVisible;
+    voxelRenderer.setGridVisible(gridVisible);
+    btnGrid.textContent = gridVisible ? 'Hide Grid' : 'Show Grid';
+});
+
+// ── Connect ───────────────────────────────────────────────────────────────────
+client.connect().catch(() => {
+    statusText.textContent = 'Connection failed';
+    statusDot.className = '';
+});
+</script>
+
+</body>
+</html>
