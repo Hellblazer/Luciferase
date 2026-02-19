@@ -24,6 +24,7 @@ public sealed interface ServerMessage permits
     ServerMessage.SnapshotRequired,
     ServerMessage.Error {
 
+    /** Server acknowledgement of Hello; sessionId identifies this client connection. */
     record HelloAck(String sessionId) implements ServerMessage {}
 
     /**
@@ -35,6 +36,9 @@ public sealed interface ServerMessage permits
         long snapshotToken,
         List<RegionEntry> regions
     ) implements ServerMessage {
+        public SnapshotManifest {
+            regions = List.copyOf(regions);
+        }
         /** Version captured at manifest-compilation time (not live). */
         public record RegionEntry(SpatialKey<?> key, long snapshotVersion, long dataSize) {}
     }

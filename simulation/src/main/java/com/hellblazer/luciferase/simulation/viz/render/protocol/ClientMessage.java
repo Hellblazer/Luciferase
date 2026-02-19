@@ -41,11 +41,16 @@ public sealed interface ClientMessage permits
      * @param knownVersions  map of keyString → version from snapshot
      */
     record Subscribe(long snapshotToken, Map<String, Long> knownVersions)
-        implements ClientMessage {}
+        implements ClientMessage {
+        public Subscribe {
+            knownVersions = Map.copyOf(knownVersions);
+        }
+    }
 
     /** Camera moved — server updates visible set. Throttled by client to ≤100ms. */
     record ViewportUpdate(Frustum3D frustum, Point3f cameraPos, int level)
         implements ClientMessage {}
 
+    /** End subscription and stop receiving push updates. */
     record Unsubscribe() implements ClientMessage {}
 }
