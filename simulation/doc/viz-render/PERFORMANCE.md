@@ -38,14 +38,13 @@ frame1 → buffer
 
 ### Configuration
 
-| Parameter | Default (Prod) | Default (Test) | Description |
-|-----------|----------------|----------------|-------------|
-| `messageBatchSize` | 10 | 5 | Messages per batch |
-| `batchFlushTimeoutMs` | 50 | 20 | Max wait before flush |
+Batching parameters are hardcoded in `RegionStreamer`:
+- **Threshold flush**: 10 messages buffered
+- **Timeout flush**: 50ms since last flush (polled in streaming cycle)
 
 ### Future Enhancement
 
-- Make batch size and timeout configurable per client
+- Make batch size and timeout configurable (expose in `StreamingConfig` or `PerformanceConfig`)
 - Track average batch size and flush trigger distribution (threshold vs. timeout) for tuning
 
 ## Optimization 2: ByteBuffer Pooling (Bead: Luciferase-8db0)
@@ -178,7 +177,7 @@ Backpressure does not close the connection — the client will catch up in subse
 |-----------|---------|-------------|
 | Javalin server | Jetty pool (200) | HTTP/WS I/O |
 | RegionStreamer | 1 background | Streaming cycle |
-| RegionBuilder | `buildPoolSize` (4) | GPU builds |
+| RegionBuilder | `buildPoolSize` (4) | Region builds |
 | EntityStreamConsumer | 1 virtual per upstream | Upstream WebSocket I/O |
 | Backfill retry | 1 daemon | Dirty region retries |
 
@@ -187,42 +186,40 @@ Backpressure does not close the connection — the client will catch up in subse
 ### For Low Latency (Interactive Camera)
 
 ```java
-var streaming = StreamingConfig.defaults()
-    .withStreamingIntervalMs(50)    // 50ms cycle instead of 100ms
-    .withMaxPendingSendsPerClient(50); // Tighter backpressure
-var performance = PerformanceConfig.defaults()
-    .withBatchFlushTimeoutMs(20);   // More frequent flushes
+// Faster streaming cycle and tighter backpressure
+var streaming = new StreamingConfig(
+    50, 50, 50,                           // 50ms cycle, 50 clients, 50 pending
+    new float[]{100f, 300f, 700f}, 3,
+    30_000L, 30, true, 100, 65536);
 ```
 
 ### For High Throughput (Many Static Clients)
 
 ```java
-var performance = PerformanceConfig.defaults()
-    .withMessageBatchSize(20)        // Larger batches
-    .withBatchFlushTimeoutMs(100);   // Longer flush window
-var cache = CacheConfig.defaults()
-    .withRegionCacheTtlMs(300_000)   // 5-minute TTL
-    .withMaxCacheMemoryBytes(1L << 30); // 1 GB cache
+// Longer region cache TTL, larger memory
+var performance = new PerformanceConfig(
+    300_000L,   // 5-minute region cache TTL
+    1L, 10, 10L, 8192);
+var cache = new CacheConfig(1L << 30);  // 1 GB cache
 ```
 
-### For GPU-Constrained Environments
+### For Build-Constrained Environments
 
 ```java
-var build = BuildConfig.defaults()
-    .withBuildPoolSize(2)            // Fewer concurrent GPU builds
-    .withMaxQueueDepth(20);          // Tighter queue
+// Fewer concurrent builds, tighter queue
+var build = new BuildConfig(2, 8, 64, 20, 60_000L, 3);
 ```
 
 ## Key Metrics
 
 | Metric | Location | Healthy Range | Action if Outside |
 |--------|----------|---------------|-------------------|
-| `builder.queueDepth` | `/api/metrics` | < 10 | Reduce `regionLevel` or add GPU |
-| `builder.avgBuildTimeMs` | `/api/metrics` | < 100ms | Check GPU utilization |
+| `builder.queueDepth` | `/api/metrics` | < 10 | Reduce `regionLevel` or increase `buildPoolSize` |
+| `builder.avgBuildTimeMs` | `/api/metrics` | < 100ms | Reduce `gridResolution` or `maxBuildDepth` |
 | `cache.caffeineHitRate` | `/api/metrics` | > 0.8 | Increase TTL or cache size |
 | `cache.memoryPressure` | `/api/metrics` | < 0.9 | Increase `maxCacheMemoryBytes` |
 | `rateLimiter.rejectionCount` | `/api/metrics` | 0 (or low) | Investigate attack or misconfigured client |
-| `builder.failedBuilds` | `/api/metrics` | 0 | Check GPU driver, circuit breaker |
+| `builder.failedBuilds` | `/api/metrics` | 0 | Check circuit breaker state, reduce `gridResolution` |
 
 ## Known Limitations
 

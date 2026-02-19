@@ -112,109 +112,131 @@ SecurityConfig.permissive()               // No auth (dev/test only)
 
 ```java
 public record CacheConfig(
-    long maxCacheMemoryBytes,  // Total cache memory limit
-    long regionCacheTtlMs      // Unpinned region TTL
+    long maxCacheMemoryBytes   // Total cache memory limit
 )
 ```
 
 **Factory methods:**
 
 ```java
-CacheConfig.defaults()   // 256 MB, 60s TTL
-CacheConfig.testing()    // 16 MB, 5s TTL
+CacheConfig.defaults()   // 256 MB
+CacheConfig.testing()    // 16 MB
 ```
 
 | Parameter | Production | Test |
 |-----------|-----------|------|
 | `maxCacheMemoryBytes` | 256 MB | 16 MB |
-| `regionCacheTtlMs` | 60000 ms | 5000 ms |
 
 **Tuning guidance:**
-- Increase TTL if `caffeineHitRate` is low and scenes don't change frequently
 - Increase memory if `memoryPressure` is high and you have available RAM
+- Emergency eviction triggers at 90% of limit, targets 75%
+- Region cache TTL is in `PerformanceConfig.regionCacheTtlMs`
 
 ## BuildConfig
 
 ```java
 public record BuildConfig(
-    int buildPoolSize,       // RegionBuilder thread pool (= concurrent GPU builds)
-    int maxQueueDepth,       // Build queue depth before backpressure
-    int circuitBreakerThreshold, // Consecutive failures before circuit opens
-    long circuitBreakerTimeoutMs // Circuit open duration
+    int buildPoolSize,                  // RegionBuilder thread pool (concurrent builds)
+    int maxBuildDepth,                  // Maximum octree/tetree depth within a region
+    int gridResolution,                 // Voxel grid resolution per region (e.g., 64 for 64³)
+    int maxQueueDepth,                  // Build queue depth before backpressure
+    long circuitBreakerTimeoutMs,       // Circuit open duration
+    int circuitBreakerFailureThreshold  // Consecutive failures before circuit opens
 )
 ```
 
 **Factory methods:**
 
 ```java
-BuildConfig.defaults()   // 4 threads, queue 50, circuit: 5 failures / 60s
-BuildConfig.testing()    // 2 threads, queue 10, circuit: 3 failures / 5s
+BuildConfig.defaults()   // 1 thread, depth 8, 64³ grid, queue 100, circuit: 3 failures / 60s
+BuildConfig.testing()    // 1 thread, depth 4, 16³ grid, queue 50,  circuit: 3 failures / 10s
 ```
 
 | Parameter | Production | Test |
 |-----------|-----------|------|
-| `buildPoolSize` | 4 | 2 |
-| `maxQueueDepth` | 50 | 10 |
-| `circuitBreakerThreshold` | 5 | 3 |
-| `circuitBreakerTimeoutMs` | 60000 ms | 5000 ms |
+| `buildPoolSize` | 1 | 1 |
+| `maxBuildDepth` | 8 | 4 |
+| `gridResolution` | 64 | 16 |
+| `maxQueueDepth` | 100 | 50 |
+| `circuitBreakerFailureThreshold` | 3 | 3 |
+| `circuitBreakerTimeoutMs` | 60000 ms | 10000 ms |
 
 **Tuning guidance:**
-- Increase `buildPoolSize` if GPU has headroom and `builder.queueDepth` is high
+- Increase `buildPoolSize` if `builder.queueDepth` is high and CPU has headroom
 - Decrease `maxQueueDepth` to apply tighter backpressure to clients
+- Decrease `maxBuildDepth` or `gridResolution` if builds are too slow
 
 ## StreamingConfig
 
 ```java
 public record StreamingConfig(
-    long streamingIntervalMs,       // Streaming cycle frequency
+    long streamingIntervalMs,       // Streaming cycle frequency (ms, min 16)
+    int maxClientsPerServer,        // Maximum concurrent WebSocket clients
     int maxPendingSendsPerClient,   // Backpressure threshold per client
-    float nearLodThreshold,         // Distance for highest LOD
-    float farLodThreshold           // Distance for lowest LOD
+    float[] lodThresholds,          // Distance thresholds in world units (ascending)
+    int maxLodLevel,                // Maximum LOD level (must equal lodThresholds.length)
+    long clientTimeoutMs,           // Disconnect inactive clients after this duration
+    int maxViewportUpdatesPerSecond,// Throttle viewport update frequency
+    boolean rateLimitEnabled,       // Enable per-client rate limiting
+    int maxMessagesPerSecond,       // Max WebSocket messages per second per client
+    int maxMessageSizeBytes         // Max JSON message size in bytes (DoS protection)
 )
 ```
 
 **Factory methods:**
 
 ```java
-StreamingConfig.defaults()   // 100ms interval, 100 pending
-StreamingConfig.testing()    // 100ms interval, 10 pending
+StreamingConfig.defaults()   // 100ms, 50 clients, 50 pending, LOD [100,300,700], 30s timeout
+StreamingConfig.testing()    // 50ms,  10 clients, 20 pending, LOD [50,150,350],  5s timeout
 ```
 
 | Parameter | Production | Test |
 |-----------|-----------|------|
-| `streamingIntervalMs` | 100 ms | 100 ms |
-| `maxPendingSendsPerClient` | 100 | 10 |
-| `nearLodThreshold` | (distance units) | (smaller) |
-| `farLodThreshold` | (distance units) | (smaller) |
+| `streamingIntervalMs` | 100 ms | 50 ms |
+| `maxClientsPerServer` | 50 | 10 |
+| `maxPendingSendsPerClient` | 50 | 20 |
+| `lodThresholds` | [100, 300, 700] | [50, 150, 350] |
+| `maxLodLevel` | 3 | 3 |
+| `clientTimeoutMs` | 30000 ms | 5000 ms |
+| `maxViewportUpdatesPerSecond` | 30 | 60 |
+| `rateLimitEnabled` | `true` | `false` |
+| `maxMessagesPerSecond` | 100 | 100 |
+| `maxMessageSizeBytes` | 65536 (64KB) | 65536 (64KB) |
+
+**Note:** `lodThresholds` are in world coordinates and scale-dependent. Default thresholds
+assume a [0, 1024] world. Recalibrate proportionally if world scale changes.
+`maxLodLevel` must equal `lodThresholds.length` (validated at construction).
 
 ## PerformanceConfig
 
 ```java
 public record PerformanceConfig(
-    int messageBatchSize,        // Max frames before forced flush
-    long batchFlushTimeoutMs,    // Max time before timeout flush
-    int maxMessageSizeBytes,     // Max JSON message size (DoS protection)
-    int maxClientsPerServer,     // Max concurrent WebSocket clients
-    long endpointCacheExpireSec, // REST endpoint cache TTL
-    int httpConnectTimeoutSec    // EntityStreamConsumer connect timeout
+    long regionCacheTtlMs,         // TTL for unpinned regions in RegionCache (ms)
+    long endpointCacheExpireSec,   // REST endpoint cache TTL (seconds)
+    int endpointCacheMaxSize,      // Maximum number of cached endpoint responses
+    long httpConnectTimeoutSec,    // EntityStreamConsumer connect timeout (seconds)
+    int decompressionBufferSize    // Buffer size for GZIP decompression (bytes)
 )
 ```
 
 **Factory methods:**
 
 ```java
-PerformanceConfig.defaults()   // Prod: 10 batch, 50ms timeout, 64KB msgs, 1000 clients
-PerformanceConfig.testing()    // Test: 5 batch, 20ms timeout, 4KB msgs, 10 clients
+PerformanceConfig.defaults()   // 30s region TTL, 1s endpoint cache, 8KB decomp buffer
+PerformanceConfig.testing()    // 5s region TTL,  1s endpoint cache, 4KB decomp buffer
 ```
 
 | Parameter | Production | Test | Description |
 |-----------|-----------|------|-------------|
-| `messageBatchSize` | 10 | 5 | Max frames per batch |
-| `batchFlushTimeoutMs` | 50 ms | 20 ms | Timeout flush interval |
-| `maxMessageSizeBytes` | 65536 | 4096 | Max JSON message (UTF-8 bytes) |
-| `maxClientsPerServer` | 1000 | 10 | Concurrent WebSocket clients |
-| `endpointCacheExpireSec` | 1 s | 1 s | REST endpoint cache TTL |
-| `httpConnectTimeoutSec` | 10 s | 5 s | Upstream connect timeout |
+| `regionCacheTtlMs` | 30000 ms | 5000 ms | Unpinned region TTL in cache |
+| `endpointCacheExpireSec` | 1 s | 1 s | REST endpoint response cache TTL |
+| `endpointCacheMaxSize` | 10 | 5 | Max cached endpoint responses |
+| `httpConnectTimeoutSec` | 10 s | 5 s | Upstream WebSocket connect timeout |
+| `decompressionBufferSize` | 8192 (8KB) | 4096 (4KB) | GZIP decompression buffer |
+
+**Tuning guidance:**
+- Increase `regionCacheTtlMs` if `caffeineHitRate` is low and scenes change infrequently
+- Increase `decompressionBufferSize` if handling large ESVO payloads (> 64KB before compression)
 
 ## UpstreamConfig
 
@@ -241,6 +263,8 @@ Entity IDs from `bubble-1` are namespaced as `bubble-1:entityId`, preventing col
 
 ## Complete Configuration Example (Production)
 
+All sub-records are immutable. Customize by supplying values directly to constructors:
+
 ```java
 var upstreams = List.of(
     new UpstreamConfig(URI.create("wss://sim1.internal:8080/entities"), "bubble-1"),
@@ -250,18 +274,17 @@ var upstreams = List.of(
 var config = new RenderingServerConfig(
     7090,
     upstreams,
-    4,                                  // 16^3 regions
-    SecurityConfig.secure("secret-api-key", true)
-        .withKeystorePath("/etc/rendering/keystore.jks")
-        .withKeystorePassword("keystore-password")
-        .withKeyManagerPassword("key-password"),
-    CacheConfig.defaults()
-        .withMaxCacheMemoryBytes(512L * 1024 * 1024),  // 512 MB
-    BuildConfig.defaults()
-        .withBuildPoolSize(8),          // 8 concurrent GPU builds
-    10_000,                             // Max entities per region
-    StreamingConfig.defaults()
-        .withStreamingIntervalMs(50),   // 50ms for interactive clients
+    4,                                           // 16^3 = 4096 regions
+    new SecurityConfig("secret-api-key", true,
+        "/etc/rendering/keystore.jks",
+        "keystore-password", "key-password",
+        1000, 100, 3, 60, true),
+    new CacheConfig(512L * 1024 * 1024),         // 512 MB cache
+    new BuildConfig(4, 8, 64, 100, 60_000L, 3), // 4 threads, depth 8, 64^3
+    10_000,                                      // Max entities per region
+    new StreamingConfig(50, 50, 50,              // 50ms interval, 50 clients
+        new float[]{100f, 300f, 700f}, 3,
+        30_000L, 30, true, 100, 65536),
     PerformanceConfig.defaults()
 );
 config.validate();
@@ -282,15 +305,19 @@ var config = RenderingServerConfig.testing();
 ### Staging
 
 ```java
-// Authentication but permissive limits
+// Authentication but permissive limits; TLS terminated at load balancer
+var stagingStreaming = new StreamingConfig(
+    100, 100, 20,                     // 100ms, 100 clients, 20 pending
+    new float[]{50f, 150f, 350f}, 3,
+    5_000L, 60, false, 100, 65536);
 var config = new RenderingServerConfig(
-    7090, upstreams, 3,  // Fewer regions for faster builds
-    SecurityConfig.secure("staging-key", false),  // TLS terminated at load balancer
-    CacheConfig.testing().withMaxCacheMemoryBytes(64L << 20),  // 64 MB
-    BuildConfig.testing().withBuildPoolSize(2),
+    7090, upstreams, 3,               // Fewer regions for faster builds
+    SecurityConfig.secure("staging-key", false),
+    new CacheConfig(64L << 20),       // 64 MB
+    BuildConfig.testing(),
     1_000,
-    StreamingConfig.testing().withMaxPendingSendsPerClient(20),
-    PerformanceConfig.testing().withMaxClientsPerServer(100)
+    stagingStreaming,
+    PerformanceConfig.testing()
 );
 ```
 

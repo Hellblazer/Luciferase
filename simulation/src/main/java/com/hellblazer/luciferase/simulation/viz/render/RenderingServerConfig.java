@@ -11,7 +11,7 @@ package com.hellblazer.luciferase.simulation.viz.render;
 import java.util.List;
 
 /**
- * Configuration for the GPU-accelerated rendering server.
+ * Configuration for the rendering server.
  * <p>
  * Uses composition pattern with SecurityConfig, CacheConfig, BuildConfig, StreamingConfig, and PerformanceConfig sub-records.
  * <p>

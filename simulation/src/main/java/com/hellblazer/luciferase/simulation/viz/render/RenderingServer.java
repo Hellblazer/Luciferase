@@ -38,10 +38,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
- * GPU-accelerated ESVO/ESVT rendering server.
+ * ESVO/ESVT rendering server.
  * <p>
  * Consumes entity streams from simulation servers, builds compact voxel
- * structures, and streams them to browser clients per-region.
+ * structures (CPU-based), and streams them to browser clients per-region.
  * <p>
  * Port 7090 by default. Use port 0 for dynamic assignment in tests.
  * <p>
@@ -516,15 +516,15 @@ public class RenderingServer implements AutoCloseable {
      * <p>
      * <b>Visibility: Public</b>
      * <p>
-     * <b>Rationale:</b> Public visibility supports testing of GPU-accelerated ESVO build
+     * <b>Rationale:</b> Public visibility supports testing of CPU-based ESVO build
      * operations, build queue management, and performance metrics collection. The RegionBuilder
-     * is a lazy-initialized component (null before start()) that manages the expensive GPU
+     * is a lazy-initialized component (null before start()) that manages the
      * operations for region construction.
      * <p>
      * <b>Usage Guidelines:</b>
      * <ul>
      *   <li><b>Testing:</b> Integration tests verify build queue behavior, build completion
-     *       callbacks, performance metrics, and GPU resource management (see BuildIntegrationTest)</li>
+     *       callbacks, and performance metrics (see BuildIntegrationTest)</li>
      *   <li><b>Monitoring:</b> External tools can query build statistics (total builds,
      *       failures, average build time, queue depth) via this getter</li>
      *   <li><b>NOT for direct build triggering:</b> Tests should not call RegionBuilder methods
@@ -536,7 +536,7 @@ public class RenderingServer implements AutoCloseable {
      *   <li><b>Lifecycle-dependent:</b> Returns null before start() called - always check for null</li>
      *   <li><b>Cleared on stop():</b> Set to null when server stops - reference becomes invalid</li>
      *   <li>Thread-safe - RegionBuilder uses internal synchronization for build operations</li>
-     *   <li>GPU operations require proper OpenCL context - test environment must support GPU access</li>
+     *   <li>Builds run on CPU - no OpenCL context required</li>
      * </ul>
      *
      * @return RegionBuilder instance, or null if server not started or already stopped

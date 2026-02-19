@@ -1,8 +1,8 @@
 # Multi-Client WebSocket Streaming Documentation
 
 **Version:** 1.0.0
-**Last Updated:** 2026-02-15
-**Status:** Production-Ready (Grade: 9.2/10)
+**Last Updated:** 2026-02-18
+**Status:** Production-Ready
 
 ## Quick Links
 
@@ -12,12 +12,12 @@
 
 ## What is This?
 
-A GPU-accelerated ESVO/ESVT voxel rendering server that streams region data to multiple concurrent browser clients over WebSocket connections. Built with comprehensive security, performance optimizations, and robust concurrency handling.
+An ESVO/ESVT voxel rendering server that streams region data to multiple concurrent browser clients over WebSocket connections. Built with comprehensive security, performance optimizations, and robust concurrency handling.
 
 ## Key Features
 
 - ✅ **Multi-client WebSocket streaming** (up to 1000 concurrent clients)
-- ✅ **GPU-accelerated ESVO building** (RegionBuilder)
+- ✅ **CPU-based ESVO building** (RegionBuilder)
 - ✅ **Two-tier caching** (pinned/unpinned with TTL/LRU eviction)
 - ✅ **Frustum culling** (ViewportTracker)
 - ✅ **Message batching** (Luciferase-r2ky: 10 messages or 50ms timeout)
@@ -61,7 +61,7 @@ ws.onopen = () => {
       eye: { x: 10.0, y: 5.0, z: 20.0 },
       lookAt: { x: 0.0, y: 0.0, z: 0.0 },
       up: { x: 0.0, y: 1.0, z: 0.0 },
-      fovY: 60.0,
+      fovY: Math.PI / 3,  // 60 degrees in radians
       aspectRatio: 1.777777,
       nearPlane: 0.1,
       farPlane: 1000.0
@@ -96,7 +96,7 @@ graph TB
     RegionStreamer --> RC[RegionCache<br/>Two-tier caching]
     RegionStreamer --> BBP[ByteBufferPool<br/>Memory optimization]
 
-    ARM --> RB[RegionBuilder<br/>GPU-accelerated ESVO]
+    ARM --> RB[RegionBuilder<br/>ESVO/ESVT builds]
 ```
 
 **Data Flow:**
@@ -104,7 +104,7 @@ graph TB
 2. Client sends REGISTER_CLIENT with viewport
 3. ViewportTracker computes visible regions (frustum culling)
 4. RegionStreamer checks RegionCache for built regions
-5. If not cached, RegionBuilder builds asynchronously (GPU)
+5. If not cached, RegionBuilder builds asynchronously (CPU-based)
 6. Binary frames streamed to client (batched, pooled buffers)
 7. Client updates viewport → viewport diff → incremental updates
 
@@ -116,10 +116,10 @@ graph TB
 |-----------|-----------|------|-------------|
 | `port` | 7090 | 0 (dynamic) | Server listen port |
 | `regionLevel` | 4 (16³) | 2 (4³) | Octree depth |
-| `maxClientsPerServer` | 1000 | 10 | Concurrent clients |
-| `maxMessageSizeBytes` | 64KB | 4KB | JSON message limit |
-| `streamingIntervalMs` | 100 | 100 | Streaming frequency |
-| `regionCacheTtlMs` | 60s | 5s | Cache expiration |
+| `maxClientsPerServer` | 50 | 10 | Concurrent clients (`StreamingConfig`) |
+| `maxMessageSizeBytes` | 64KB | 64KB | JSON message limit (`StreamingConfig`) |
+| `streamingIntervalMs` | 100 | 50 | Streaming frequency |
+| `regionCacheTtlMs` | 30s | 5s | Cache expiration (`PerformanceConfig`) |
 
 ### Factory Methods
 
@@ -191,15 +191,7 @@ scrape_configs:
 
 ## Known Issues
 
-**Important Improvements (from Code Review):**
-
-1. **ByteBufferPool Thread-Safety** (High) - Verify pool uses thread-safe structure
-2. **Clock Injection for RegionCache** (Medium) - Enable deterministic cache tests
-3. **Auth Limiter Map Cleanup** (Medium) - Prevent slow memory leak
-4. **Rate Limiter Map Cleanup** (Low) - Handle abnormal disconnects
-5. **Endpoint Cache Invalidation** (Low) - Clear cache on shutdown
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed remediation guidance.
+All code review improvements from initial implementation have been resolved. See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
 
 ## Testing
 
@@ -224,7 +216,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed remediation guidance.
   - `RenderingServerConfig.java` - Configuration
   - `ViewportTracker.java` - Frustum culling
   - `RegionCache.java` - Two-tier cache
-  - `RegionBuilder.java` - GPU builds
+  - `RegionBuilder.java` - ESVO/ESVT builds
   - `AdaptiveRegionManager.java` - Region state
   - `EntityStreamConsumer.java` - Upstream gRPC
 
@@ -264,11 +256,10 @@ All features and fixes reference originating beads:
 
 - **Architecture Questions:** See [ARCHITECTURE.md](ARCHITECTURE.md)
 - **API Integration:** See [API.md](API.md)
-- **Code Review:** See agent output (9.2/10 grade)
+- **Code Review:** See `CODE_REVIEW_IMPROVEMENTS.md`
 
 ---
 
-**Quality Grade:** EXCELLENT (9.2/10)
-**Status:** Production-ready with minor improvements recommended
+**Status:** Production-ready
 **Maintained By:** Rendering Team
 **Review Cycle:** Quarterly

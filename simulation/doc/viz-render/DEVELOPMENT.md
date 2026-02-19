@@ -19,7 +19,7 @@ simulation/
       RenderingServerConfig.java    # Configuration record
       ViewportTracker.java          # Frustum culling
       RegionCache.java              # Two-tier cache
-      RegionBuilder.java            # GPU-accelerated ESVO builds
+      RegionBuilder.java            # CPU-based ESVO builds
       AdaptiveRegionManager.java    # Region state + entity tracking
       EntityStreamConsumer.java     # Upstream WebSocket client
       ByteBufferPool.java           # GC-reducing buffer pool
@@ -207,7 +207,7 @@ var wsClient = new WebSocket("ws://localhost:" + port + "/ws/render");
 
 ### Pattern 5: Build Integration Testing
 
-`BuildIntegrationTest` uses a mock `RegionBuilder` to verify callback wiring without GPU:
+`BuildIntegrationTest` uses a mock `RegionBuilder` to verify callback wiring without a real build:
 
 ```java
 class MockRegionBuilder extends RegionBuilder {

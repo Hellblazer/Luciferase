@@ -6,9 +6,7 @@
 
 ## Overview
 
-The Multi-Client WebSocket Streaming Architecture enables real-time GPU-accelerated voxel rendering for multiple concurrent browser clients. The system streams ESVO/ESVT region data over WebSocket connections with comprehensive security, performance optimizations, and robust concurrency handling.
-
-**Overall Quality Grade:** EXCELLENT (9.2/10)
+The Multi-Client WebSocket Streaming Architecture enables real-time voxel rendering for multiple concurrent browser clients. The system streams ESVO/ESVT region data over WebSocket connections with comprehensive security, performance optimizations, and robust concurrency handling.
 
 ## System Components
 
@@ -25,7 +23,7 @@ graph TD
     D["RegionCache<br/>- Pinned/unpinned tiers<br/>- TTL/LRU eviction"]
     E["AdaptiveRegionManager<br/>- Region state<br/>- Entity tracking"]
 
-    F["RegionBuilder<br/>GPU-accelerated<br/>- Build queue with backpressure<br/>- Circuit breaker for failures<br/>- Build completion callbacks"]
+    F["RegionBuilder<br/>CPU-based<br/>- Build queue with backpressure<br/>- Circuit breaker for failures<br/>- Build completion callbacks"]
 
     G["EntityStreamConsumer<br/>- WebSocket client to upstreams<br/>- Reconnection with circuit breaker<br/>- Entity position parsing"]
 
@@ -140,11 +138,11 @@ graph TD
 
 ### RegionBuilder
 
-**Role:** GPU-accelerated ESVO region construction
+**Role:** CPU-based ESVO region construction
 
 **Responsibilities:**
 - Build queue management with backpressure
-- GPU-accelerated ESVO/ESVT structure building
+- CPU-based ESVO/ESVT structure building
 - Build completion callbacks to RegionStreamer
 - Circuit breaker for repeated failures
 - Build performance metrics
@@ -633,7 +631,7 @@ scrape_configs:
 ### Scaling
 
 **Vertical Scaling:**
-- Increase `buildPoolSize` for more concurrent builds (GPU bottleneck)
+- Increase `buildPoolSize` for more concurrent builds
 - Increase `maxCacheMemoryBytes` for larger working set
 - Increase `maxClientsPerServer` for more concurrent clients
 
@@ -650,7 +648,7 @@ scrape_configs:
 - EntityStreamConsumer (upstream gRPC)
 
 **Phase 2 (Months 4-6):**
-- RegionBuilder (GPU-accelerated ESVO)
+- RegionBuilder (CPU-based ESVO)
 - RegionCache (two-tier caching)
 - Build queue and circuit breaker
 
