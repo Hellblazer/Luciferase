@@ -57,6 +57,12 @@ class MortonKeyTest {
 
         // Null handling
         assertThrows(NullPointerException.class, () -> key1.compareTo(null));
+
+        // After the fix, level is the primary sort key
+        var level0Key = new MortonKey(999L, (byte) 0);
+        var level1Key = new MortonKey(0L, (byte) 1);
+        assertTrue(level0Key.compareTo(level1Key) < 0,
+            "level 0 key must sort before level 1 key regardless of morton code");
     }
 
     @Test

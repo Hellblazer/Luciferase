@@ -767,7 +767,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         // With level-aware compareTo, subSet() bounds must be at the same level as stored keys.
         // Collect the set of distinct levels present in the index and issue one subSet query
         // per level, then union the results.
-        var storageLevels = new java.util.LinkedHashSet<Byte>();
+        var storageLevels = new LinkedHashSet<Byte>();
         for (var key : spatialIndex.keySet()) {
             storageLevels.add(key.getLevel());
         }

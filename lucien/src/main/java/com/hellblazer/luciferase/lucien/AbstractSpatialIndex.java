@@ -4370,7 +4370,7 @@ implements SpatialIndex<Key, ID, Content> {
 
         // Collect the distinct levels at which keys are stored so we can issue a correctly-levelled
         // subMap query for each one.  In the common single-level case this is a single pass.
-        var storageLevels = new java.util.LinkedHashSet<Byte>();
+        var storageLevels = new LinkedHashSet<Byte>();
         for (var key : spatialIndex.keySet()) {
             storageLevels.add(((com.hellblazer.luciferase.lucien.octree.MortonKey) key).getLevel());
         }
