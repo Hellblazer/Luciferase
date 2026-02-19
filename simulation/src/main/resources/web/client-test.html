@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Client Integration Tests - Luciferase</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 24px;
+        }
+
+        h1 {
+            font-size: 18px;
+            color: #58a6ff;
+            margin-bottom: 4px;
+        }
+
+        .subtitle {
+            font-size: 12px;
+            color: #6e7681;
+            margin-bottom: 24px;
+        }
+
+        .section {
+            margin-bottom: 28px;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #79c0ff;
+            margin-bottom: 10px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #21262d;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        th {
+            text-align: left;
+            padding: 6px 10px;
+            color: #8b949e;
+            font-weight: 600;
+            border-bottom: 1px solid #21262d;
+        }
+
+        td {
+            padding: 5px 10px;
+            border-bottom: 1px solid #161b22;
+        }
+
+        .pass  { color: #3fb950; }
+        .fail  { color: #f85149; }
+        .skip  { color: #e3b341; }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .badge.pass  { background: #1f4423; color: #3fb950; }
+        .badge.fail  { background: #3d1a1a; color: #f85149; }
+
+        .error-detail {
+            font-size: 11px;
+            color: #f85149;
+            font-family: monospace;
+        }
+
+        #summary {
+            margin-top: 24px;
+            padding: 14px 18px;
+            background: #161b22;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+        }
+
+        #summary .label { color: #8b949e; font-size: 12px; }
+        #summary .count { font-size: 22px; font-weight: 700; }
+
+        #perf-output {
+            font-family: monospace;
+            font-size: 12px;
+            color: #79c0ff;
+            padding: 10px 0;
+        }
+
+        .running { color: #e3b341; }
+    </style>
+</head>
+<body>
+
+<h1>Browser Client Integration Tests</h1>
+<p class="subtitle">Validates frame-parser.js · scene-manager.js · render-client.js against Java-generated protocol ground truth</p>
+
+<div id="sections"></div>
+<div id="perf-output">Running performance benchmarks…</div>
+<div id="summary"><span class="label">Loading…</span></div>
+
+<!-- Import map matching voxel-viewer.html -->
+<script type="importmap">
+{
+    "imports": {
+        "three":         "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import { parseFrameHeader, decodeMorton3D, parseEsvoPayload, parseEsvtPayload,
+         decodeFrame, FRAME_MAGIC, FORMAT_ESVO, FORMAT_ESVT, FRAME_HEADER_SIZE }
+    from './frame-parser.js';
+import { SceneManager } from './scene-manager.js';
+import { RenderClient }  from './render-client.js';
+
+// ── Test harness ─────────────────────────────────────────────────────────────
+
+const allResults = [];  // flat list of { section, name, pass, error }
+
+function makeSection(title) {
+    const results = [];
+    allResults.push({ title, results });
+    return {
+        run(name, fn) {
+            try {
+                fn();
+                results.push({ name, pass: true });
+            } catch (e) {
+                results.push({ name, pass: false, error: e.message || String(e) });
+            }
+        },
+        async runAsync(name, fn) {
+            try {
+                await fn();
+                results.push({ name, pass: true });
+            } catch (e) {
+                results.push({ name, pass: false, error: e.message || String(e) });
+            }
+        }
+    };
+}
+
+function assert(cond, msg) {
+    if (!cond) throw new Error(msg ?? 'assertion failed');
+}
+
+function assertEq(actual, expected, msg) {
+    if (actual !== expected) {
+        throw new Error(`${msg ?? ''}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    }
+}
+
+// ── Ground-truth binary vectors (from BrowserClientProtocolTest.java) ────────
+// Complete 53-byte ESVO frame:
+//   mortonCode=7, level=4, lod=2, buildVersion=42, dataSize=29
+//   ESVO payload: 1 node, childDescriptor=0x800000FF (valid+leafMask=0xFF), contour=0
+const ESVO_FRAME_BYTES = new Uint8Array([
+    // Header (24 bytes)
+    0x52, 0x56, 0x53, 0x45,              // magic 0x45535652 (LE)
+    0x01,                                 // format = FORMAT_ESVO
+    0x02,                                 // lod = 2
+    0x04,                                 // level = 4
+    0x00,                                 // reserved
+    0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mortonCode = 7
+    0x2A, 0x00, 0x00, 0x00,              // buildVersion = 42
+    0x1D, 0x00, 0x00, 0x00,              // dataSize = 29
+    // ESVO payload (29 bytes)
+    0x01,                                 // ESVO version
+    0x01, 0x00, 0x00, 0x00,              // nodeCount = 1
+    0x01, 0x00, 0x00, 0x00,              // maxDepth = 1
+    0x08, 0x00, 0x00, 0x00,              // leafCount = 8
+    0x00, 0x00, 0x00, 0x00,              // internalCount = 0
+    0x00, 0x00, 0x00, 0x00,              // farPtrCount = 0
+    0xFF, 0x00, 0x00, 0x80,              // childDescriptor = 0x800000FF (valid+leafMask=0xFF)
+    0x00, 0x00, 0x00, 0x00               // contourDescriptor = 0
+]);
+
+// Complete 65-byte ESVT frame:
+//   mortonCode=7, level=4, lod=0, buildVersion=1, dataSize=41
+//   ESVT payload: 1 node, rootType=0, gridResolution=16
+const ESVT_FRAME_BYTES = new Uint8Array([
+    // Header (24 bytes)
+    0x52, 0x56, 0x53, 0x45,              // magic
+    0x02,                                 // format = FORMAT_ESVT
+    0x00,                                 // lod = 0
+    0x04,                                 // level = 4
+    0x00,                                 // reserved
+    0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mortonCode = 7
+    0x01, 0x00, 0x00, 0x00,              // buildVersion = 1
+    0x29, 0x00, 0x00, 0x00,              // dataSize = 41 (0x29)
+    // ESVT payload (41 bytes)
+    0x01,                                 // ESVT version
+    0x01, 0x00, 0x00, 0x00,              // nodeCount = 1
+    0x00, 0x00, 0x00, 0x00,              // rootType = 0
+    0x04, 0x00, 0x00, 0x00,              // maxDepth = 4
+    0x01, 0x00, 0x00, 0x00,              // leafCount = 1
+    0x00, 0x00, 0x00, 0x00,              // internalCount = 0
+    0x10, 0x00, 0x00, 0x00,              // gridResolution = 16
+    0x00, 0x00, 0x00, 0x00,              // contourCount = 0
+    0x00, 0x00, 0x00, 0x00,              // farPtrCount = 0
+    0xFF, 0x00, 0x00, 0x80,              // childDescriptor = 0x800000FF
+    0x00, 0x00, 0x00, 0x00               // contourDescriptor = 0
+]);
+
+// 3-node ESVO frame for child-index arithmetic tests:
+//   Root: childMask=0x03, leafMask=0x00, childPtr=1, valid=1  → 0x80020300
+//   Node 1 & 2: leafMask=0xFF, valid=1  → 0x800000FF
+const ESVO_3NODE_FRAME_BYTES = new Uint8Array([
+    // Header
+    0x52, 0x56, 0x53, 0x45,
+    0x01, 0x00, 0x04, 0x00,
+    0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00,
+    0x33, 0x00, 0x00, 0x00,              // dataSize = 51 (0x33)
+    // ESVO payload (51 bytes = 21 header + 3*8 nodes)
+    0x01,                                 // ESVO version
+    0x03, 0x00, 0x00, 0x00,              // nodeCount = 3
+    0x02, 0x00, 0x00, 0x00,              // maxDepth = 2
+    0x10, 0x00, 0x00, 0x00,              // leafCount = 16
+    0x01, 0x00, 0x00, 0x00,              // internalCount = 1
+    0x00, 0x00, 0x00, 0x00,              // farPtrCount = 0
+    // Node 0 (root): childDescriptor = 0x80020300
+    0x00, 0x03, 0x02, 0x80,              // 0x80020300 LE
+    0x00, 0x00, 0x00, 0x00,
+    // Node 1 (leaf child): childDescriptor = 0x800000FF
+    0xFF, 0x00, 0x00, 0x80,
+    0x00, 0x00, 0x00, 0x00,
+    // Node 2 (leaf child): childDescriptor = 0x800000FF
+    0xFF, 0x00, 0x00, 0x80,
+    0x00, 0x00, 0x00, 0x00
+]);
+
+// ── Section 1: parseFrameHeader ───────────────────────────────────────────────
+
+{
+    const s = makeSection('parseFrameHeader (frame-parser.js)');
+
+    s.run('magic constant = 0x45535652', () => {
+        assertEq(FRAME_MAGIC, 0x45535652, 'FRAME_MAGIC');
+    });
+
+    s.run('FORMAT_ESVO = 0x01, FORMAT_ESVT = 0x02', () => {
+        assertEq(FORMAT_ESVO, 0x01, 'FORMAT_ESVO');
+        assertEq(FORMAT_ESVT, 0x02, 'FORMAT_ESVT');
+    });
+
+    s.run('FRAME_HEADER_SIZE = 24', () => {
+        assertEq(FRAME_HEADER_SIZE, 24, 'FRAME_HEADER_SIZE');
+    });
+
+    s.run('parses ESVO frame header correctly', () => {
+        const h = parseFrameHeader(ESVO_FRAME_BYTES.buffer);
+        assert(h !== null, 'header should not be null');
+        assertEq(h.magic,        FRAME_MAGIC,  'magic');
+        assertEq(h.format,       FORMAT_ESVO,  'format');
+        assertEq(h.lod,          2,            'lod');
+        assertEq(h.level,        4,            'level');
+        assertEq(h.mortonCode,   7n,           'mortonCode');
+        assertEq(h.buildVersion, 42,           'buildVersion');
+        assertEq(h.dataSize,     29,           'dataSize');
+    });
+
+    s.run('parses ESVT frame header correctly', () => {
+        const h = parseFrameHeader(ESVT_FRAME_BYTES.buffer);
+        assert(h !== null, 'header should not be null');
+        assertEq(h.format,       FORMAT_ESVT, 'format = ESVT');
+        assertEq(h.lod,          0,           'lod = 0');
+        assertEq(h.dataSize,     41,          'dataSize = 41');
+        assertEq(h.buildVersion, 1,           'buildVersion = 1');
+    });
+
+    s.run('returns null for invalid magic', () => {
+        const bad = new Uint8Array(ESVO_FRAME_BYTES);
+        bad[0] = 0xFF;  // corrupt first magic byte
+        const h = parseFrameHeader(bad.buffer);
+        assert(h === null, 'should return null for bad magic');
+    });
+
+    s.run('returns null for truncated buffer (< 24 bytes)', () => {
+        const short = new Uint8Array(20);
+        const h = parseFrameHeader(short.buffer);
+        assert(h === null, 'should return null for truncated frame');
+    });
+
+    s.run('mortonCode 0x0102030405060708 round-trips as BigInt', () => {
+        // Build a minimal frame with a known large mortonCode
+        const buf = new ArrayBuffer(24);
+        const v = new DataView(buf);
+        v.setUint32(0,  0x45535652, true);  // magic
+        v.setUint8(4,  0x01);               // format
+        v.setUint8(5,  0x00);               // lod
+        v.setUint8(6,  0x05);               // level
+        v.setUint8(7,  0x00);               // reserved
+        // mortonCode 0x0102030405060708:
+        //   lo = 0x05060708, hi = 0x01020304
+        v.setUint32(8,  0x05060708, true);
+        v.setUint32(12, 0x01020304, true);
+        v.setUint32(16, 99, true);          // buildVersion
+        v.setUint32(20, 0, true);           // dataSize
+        const h = parseFrameHeader(buf);
+        assert(h !== null, 'header must parse');
+        assertEq(h.mortonCode, 0x0102030405060708n, 'mortonCode BigInt round-trip');
+    });
+}
+
+// ── Section 2: decodeMorton3D ────────────────────────────────────────────────
+
+{
+    const s = makeSection('decodeMorton3D (frame-parser.js)');
+
+    s.run('mortonCode 0n → (0,0,0)', () => {
+        const { rx, ry, rz } = decodeMorton3D(0n);
+        assertEq(rx, 0, 'rx'); assertEq(ry, 0, 'ry'); assertEq(rz, 0, 'rz');
+    });
+
+    s.run('mortonCode 1n → (1,0,0) - X axis only', () => {
+        // bit0 = rx
+        const { rx, ry, rz } = decodeMorton3D(1n);
+        assertEq(rx, 1, 'rx'); assertEq(ry, 0, 'ry'); assertEq(rz, 0, 'rz');
+    });
+
+    s.run('mortonCode 2n → (0,1,0) - Y axis only', () => {
+        // bit1 = ry
+        const { rx, ry, rz } = decodeMorton3D(2n);
+        assertEq(rx, 0, 'rx'); assertEq(ry, 1, 'ry'); assertEq(rz, 0, 'rz');
+    });
+
+    s.run('mortonCode 4n → (0,0,1) - Z axis only', () => {
+        // bit2 = rz
+        const { rx, ry, rz } = decodeMorton3D(4n);
+        assertEq(rx, 0, 'rx'); assertEq(ry, 0, 'ry'); assertEq(rz, 1, 'rz');
+    });
+
+    s.run('mortonCode 7n → (1,1,1) - ground-truth vector from Java test', () => {
+        const { rx, ry, rz } = decodeMorton3D(7n);
+        assertEq(rx, 1, 'rx'); assertEq(ry, 1, 'ry'); assertEq(rz, 1, 'rz');
+    });
+
+    s.run('mortonCode 9n → (1,0,1) bits: 1001 = x-z at level 1', () => {
+        // 9 = 0b1001: bit0=1(rx=1), bit1=0(ry=0), bit2=0(rz=0), bit3=1(rx|=2)
+        // Actually: 9 = 0b001 001 → x-z bit-interleave:
+        // bit0=1→rx, bit1=0→ry, bit2=0→rz, bit3=1→rx
+        // rx = bit0 + bit3<<1 = 1 + 2 = 3? Let me recalc:
+        // 9 = 0b01001
+        // i=0: rx|=bit0 of (9>>0) = 9&1 = 1, ry|=bit0 of (9>>1) = 4&1=0, rz|=bit0 of (9>>2) = 2&1=0
+        // i=1: rx|=bit0 of (9>>3) = 1&1=1 <<1, ry|=bit0 of (9>>4) = 0<<1, rz|=bit0 of (9>>5) = 0<<1
+        // rx = 1 + 2 = 3, ry = 0, rz = 0
+        const { rx, ry, rz } = decodeMorton3D(9n);
+        assertEq(rx, 3, 'rx=3');
+        assertEq(ry, 0, 'ry=0');
+        assertEq(rz, 0, 'rz=0');
+    });
+
+    s.run('mortonCode from ESVO header == 7n', () => {
+        const h = parseFrameHeader(ESVO_FRAME_BYTES.buffer);
+        assertEq(h.mortonCode, 7n, 'header mortonCode = 7n');
+        const { rx, ry, rz } = decodeMorton3D(h.mortonCode);
+        assertEq(rx, 1, 'rx=1'); assertEq(ry, 1, 'ry=1'); assertEq(rz, 1, 'rz=1');
+    });
+}
+
+// ── Section 3: parseEsvoPayload ───────────────────────────────────────────────
+
+{
+    const s = makeSection('parseEsvoPayload (frame-parser.js)');
+
+    // Extract payload bytes from ESVO_FRAME_BYTES
+    const esvoPayloadBytes = new Uint8Array(ESVO_FRAME_BYTES.buffer, 24, 29);
+
+    s.run('version = 1', () => {
+        const p = parseEsvoPayload(esvoPayloadBytes);
+        assertEq(p.version, 1, 'version');
+    });
+
+    s.run('nodeCount = 1', () => {
+        const p = parseEsvoPayload(esvoPayloadBytes);
+        assertEq(p.nodeCount, 1, 'nodeCount');
+    });
+
+    s.run('maxDepth = 1, leafCount = 8, internalCount = 0, farPtrCount = 0', () => {
+        const p = parseEsvoPayload(esvoPayloadBytes);
+        assertEq(p.maxDepth,      1, 'maxDepth');
+        assertEq(p.leafCount,     8, 'leafCount');
+        assertEq(p.internalCount, 0, 'internalCount');
+        assertEq(p.farPtrCount,   0, 'farPtrCount');
+    });
+
+    s.run('nodes array length = nodeCount', () => {
+        const p = parseEsvoPayload(esvoPayloadBytes);
+        assertEq(p.nodes.length, 1, 'nodes.length');
+    });
+
+    s.run('node[0] childDescriptor: valid=1, childPtr=0, far=0, childMask=0, leafMask=0xFF', () => {
+        const p = parseEsvoPayload(esvoPayloadBytes);
+        const cd = p.nodes[0].childDescriptor;
+        assertEq(cd.valid,     1,    'valid=1');
+        assertEq(cd.childPtr,  0,    'childPtr=0');
+        assertEq(cd.far,       0,    'far=0');
+        assertEq(cd.childMask, 0,    'childMask=0');
+        assertEq(cd.leafMask,  0xFF, 'leafMask=0xFF');
+    });
+
+    s.run('node[0] contourDescriptor: contourPtr=0, contourMask=0', () => {
+        const p = parseEsvoPayload(esvoPayloadBytes);
+        const ct = p.nodes[0].contourDescriptor;
+        assertEq(ct.contourPtr,  0, 'contourPtr=0');
+        assertEq(ct.contourMask, 0, 'contourMask=0');
+    });
+
+    s.run('farPointers is Uint32Array of length 0', () => {
+        const p = parseEsvoPayload(esvoPayloadBytes);
+        assert(p.farPointers instanceof Uint32Array, 'farPointers is Uint32Array');
+        assertEq(p.farPointers.length, 0, 'farPointers.length = 0');
+    });
+
+    // Test 3-node tree child index extraction
+    const esvo3Payload = new Uint8Array(ESVO_3NODE_FRAME_BYTES.buffer, 24);
+    s.run('3-node tree: root childMask=0x03, childPtr=1', () => {
+        const p = parseEsvoPayload(esvo3Payload);
+        assertEq(p.nodeCount, 3, 'nodeCount=3');
+        const cd = p.nodes[0].childDescriptor;
+        assertEq(cd.childMask, 0x03, 'root childMask=0x03');
+        assertEq(cd.childPtr,  1,    'root childPtr=1');
+        assertEq(cd.leafMask,  0,    'root leafMask=0');
+    });
+
+    s.run('3-node tree: child nodes have leafMask=0xFF', () => {
+        const p = parseEsvoPayload(esvo3Payload);
+        assertEq(p.nodes[1].childDescriptor.leafMask, 0xFF, 'node[1] leafMask=0xFF');
+        assertEq(p.nodes[2].childDescriptor.leafMask, 0xFF, 'node[2] leafMask=0xFF');
+    });
+}
+
+// ── Section 4: parseEsvtPayload ───────────────────────────────────────────────
+
+{
+    const s = makeSection('parseEsvtPayload (frame-parser.js)');
+
+    const esvtPayloadBytes = new Uint8Array(ESVT_FRAME_BYTES.buffer, 24, 41);
+
+    s.run('version = 1', () => {
+        const p = parseEsvtPayload(esvtPayloadBytes);
+        assertEq(p.version, 1, 'version');
+    });
+
+    s.run('nodeCount = 1, rootType = 0, maxDepth = 4', () => {
+        const p = parseEsvtPayload(esvtPayloadBytes);
+        assertEq(p.nodeCount, 1, 'nodeCount');
+        assertEq(p.rootType,  0, 'rootType');
+        assertEq(p.maxDepth,  4, 'maxDepth');
+    });
+
+    s.run('leafCount = 1, internalCount = 0, gridResolution = 16', () => {
+        const p = parseEsvtPayload(esvtPayloadBytes);
+        assertEq(p.leafCount,      1,  'leafCount');
+        assertEq(p.internalCount,  0,  'internalCount');
+        assertEq(p.gridResolution, 16, 'gridResolution');
+    });
+
+    s.run('contourCount = 0, farPtrCount = 0', () => {
+        const p = parseEsvtPayload(esvtPayloadBytes);
+        assertEq(p.contourCount, 0, 'contourCount');
+        assertEq(p.farPtrCount,  0, 'farPtrCount');
+    });
+
+    s.run('node[0] childDescriptor: valid=1, leafMask=0xFF', () => {
+        const p = parseEsvtPayload(esvtPayloadBytes);
+        const cd = p.nodes[0].childDescriptor;
+        assertEq(cd.valid,    1,    'valid=1');
+        assertEq(cd.leafMask, 0xFF, 'leafMask=0xFF');
+    });
+
+    s.run('contours is Uint32Array of length 0', () => {
+        const p = parseEsvtPayload(esvtPayloadBytes);
+        assert(p.contours instanceof Uint32Array, 'contours is Uint32Array');
+        assertEq(p.contours.length, 0, 'contours.length = 0');
+    });
+}
+
+// ── Section 5: decodeFrame (async, uncompressed) ──────────────────────────────
+
+{
+    const s = makeSection('decodeFrame - uncompressed (frame-parser.js)');
+
+    await s.runAsync('decodes ESVO frame: header + region + payload', async () => {
+        const result = await decodeFrame(ESVO_FRAME_BYTES.buffer);
+        assert(result !== null, 'result should not be null');
+        assertEq(result.header.format,       FORMAT_ESVO, 'header.format');
+        assertEq(result.header.mortonCode,   7n,          'header.mortonCode');
+        assertEq(result.header.buildVersion, 42,          'header.buildVersion');
+        assertEq(result.region.rx,           1,           'region.rx');
+        assertEq(result.region.ry,           1,           'region.ry');
+        assertEq(result.region.rz,           1,           'region.rz');
+        assertEq(result.payload.nodeCount,   1,           'payload.nodeCount');
+        assertEq(result.payload.leafCount,   8,           'payload.leafCount');
+    });
+
+    await s.runAsync('decodes ESVT frame: header + region + payload', async () => {
+        const result = await decodeFrame(ESVT_FRAME_BYTES.buffer);
+        assert(result !== null, 'result should not be null');
+        assertEq(result.header.format,          FORMAT_ESVT, 'header.format');
+        assertEq(result.payload.nodeCount,       1,           'payload.nodeCount');
+        assertEq(result.payload.gridResolution,  16,          'payload.gridResolution');
+    });
+
+    await s.runAsync('returns null for invalid magic', async () => {
+        const bad = new Uint8Array(ESVO_FRAME_BYTES);
+        bad[0] = 0xAA;
+        const result = await decodeFrame(bad.buffer);
+        assert(result === null, 'should return null for bad magic');
+    });
+}
+
+// ── Section 6: decodeFrame - GZIP compressed ─────────────────────────────────
+
+{
+    const s = makeSection('decodeFrame - GZIP compressed (frame-parser.js)');
+
+    // Build a frame with a GZIP-compressed ESVO payload
+    // We'll compress the 29-byte payload at runtime using CompressionStream
+    await s.runAsync('decompresses GZIP payload transparently', async () => {
+        // Extract the uncompressed 29-byte payload
+        const rawPayload = new Uint8Array(ESVO_FRAME_BYTES.buffer, 24, 29);
+
+        // Compress it using CompressionStream
+        const compressed = await gzipEncode(rawPayload);
+        assert(compressed[0] === 0x1F && compressed[1] === 0x8B, 'compressed must start with GZIP magic');
+
+        // Build a new frame with the compressed payload
+        const framedBuf = new ArrayBuffer(24 + compressed.length);
+        const view = new DataView(framedBuf);
+        // Copy header from original but update dataSize
+        const origView = new DataView(ESVO_FRAME_BYTES.buffer);
+        for (let i = 0; i < 24; i++) view.setUint8(i, origView.getUint8(i));
+        view.setUint32(20, compressed.length, true);  // update dataSize
+        const destBytes = new Uint8Array(framedBuf, 24);
+        destBytes.set(compressed);
+
+        const result = await decodeFrame(framedBuf);
+        assert(result !== null, 'result should not be null after decompression');
+        assertEq(result.header.format,       FORMAT_ESVO, 'format preserved');
+        assertEq(result.header.mortonCode,   7n,          'mortonCode preserved');
+        assertEq(result.payload.nodeCount,   1,           'nodeCount after decompression');
+        assertEq(result.payload.leafCount,   8,           'leafCount after decompression');
+    });
+}
+
+// ── Section 7: SceneManager ───────────────────────────────────────────────────
+
+{
+    const s = makeSection('SceneManager (scene-manager.js)');
+
+    s.run('addRegion stores region with correct key', () => {
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [1024,1024,1024],
+            regionLevel: 4, maxViewportUpdatesPerSecond: 30
+        });
+        const header  = { mortonCode: 7n, lod: 2, level: 4, buildVersion: 1, format: 0x01 };
+        const region  = { rx: 1, ry: 1, rz: 1 };
+        const payload = { nodeCount: 1 };
+        scene.addRegion(header, region, payload);
+        const regions = scene.getRegions();
+        assertEq(regions.size, 1, 'regions.size = 1');
+        assert(regions.has('7_2'), 'key = "7_2"');
+    });
+
+    s.run('addRegion fires regionAdded event', () => {
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [1024,1024,1024], regionLevel: 4
+        });
+        let fired = false;
+        scene.on('regionAdded', () => { fired = true; });
+        scene.addRegion({ mortonCode: 1n, lod: 0, level: 4, buildVersion: 1, format: 1 },
+                        { rx: 1, ry: 0, rz: 0 }, {});
+        assert(fired, 'regionAdded event must fire');
+    });
+
+    s.run('staleness check: lower buildVersion is ignored', () => {
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [1024,1024,1024], regionLevel: 4
+        });
+        const h1 = { mortonCode: 7n, lod: 0, level: 4, buildVersion: 10, format: 1 };
+        scene.addRegion(h1, { rx:1, ry:1, rz:1 }, { nodeCount: 10 });
+
+        const h2 = { mortonCode: 7n, lod: 0, level: 4, buildVersion: 5, format: 1 };
+        scene.addRegion(h2, { rx:1, ry:1, rz:1 }, { nodeCount: 5 });  // stale
+
+        const entry = scene.getRegions().get('7_0');
+        assertEq(entry.buildVersion, 10, 'buildVersion must stay at 10 (stale update ignored)');
+        assertEq(entry.payload.nodeCount, 10, 'payload must not be replaced by stale');
+    });
+
+    s.run('equal buildVersion replaces existing region', () => {
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [1024,1024,1024], regionLevel: 4
+        });
+        scene.addRegion({ mortonCode: 7n, lod: 0, level: 4, buildVersion: 5, format: 1 },
+                        { rx:1, ry:1, rz:1 }, { nodeCount: 5 });
+        scene.addRegion({ mortonCode: 7n, lod: 0, level: 4, buildVersion: 5, format: 1 },
+                        { rx:1, ry:1, rz:1 }, { nodeCount: 99 });
+        assertEq(scene.getRegions().get('7_0').payload.nodeCount, 99, 'equal buildVersion replaces');
+    });
+
+    s.run('removeRegion fires regionRemoved and removes from map', () => {
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [1024,1024,1024], regionLevel: 4
+        });
+        let removed = false;
+        scene.on('regionRemoved', () => { removed = true; });
+        scene.addRegion({ mortonCode: 7n, lod: 0, level: 4, buildVersion: 1, format: 1 },
+                        { rx:1, ry:1, rz:1 }, {});
+        scene.removeRegion(7n, 0);
+        assert(removed, 'regionRemoved must fire');
+        assertEq(scene.getRegions().size, 0, 'regions must be empty after remove');
+    });
+
+    s.run('getRegionBounds: worldMin=[0,0,0] worldMax=[1024,1024,1024] level=4 → size=64', () => {
+        // regionSize = (1024 - 0) / 2^4 = 64 per axis
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [1024,1024,1024], regionLevel: 4
+        });
+        const b = scene.getRegionBounds(1, 1, 1);  // rx=ry=rz=1
+        assertEq(b.min[0],    64,  'min.x = 64');
+        assertEq(b.min[1],    64,  'min.y = 64');
+        assertEq(b.min[2],    64,  'min.z = 64');
+        assertEq(b.max[0],    128, 'max.x = 128');
+        assertEq(b.max[1],    128, 'max.y = 128');
+        assertEq(b.max[2],    128, 'max.z = 128');
+        assertEq(b.center[0], 96,  'center.x = 96');
+        assertEq(b.size[0],   64,  'size.x = 64');
+    });
+
+    s.run('getRegionBounds: origin region (0,0,0) bounds at world origin', () => {
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [512,512,512], regionLevel: 3
+        });
+        // regionSize = 512 / 8 = 64
+        const b = scene.getRegionBounds(0, 0, 0);
+        assertEq(b.min[0], 0,   'min.x = 0');
+        assertEq(b.max[0], 64,  'max.x = 64');
+    });
+
+    s.run('setCamera fires throttled viewportChange event', () => {
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [1024,1024,1024], regionLevel: 4,
+            maxViewportUpdatesPerSecond: 1  // 1 Hz - but first call always fires
+        });
+        let count = 0;
+        scene.on('viewportChange', () => count++);
+        scene.setCamera({x:1,y:2,z:3}, {x:0,y:0,z:0}, {x:0,y:1,z:0});
+        assert(count > 0, 'first setCamera must fire viewportChange');
+    });
+
+    s.run('getViewport returns complete viewport object', () => {
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [1024,1024,1024], regionLevel: 4
+        });
+        const vp = scene.getViewport(Math.PI / 3, 1.5, 0.1, 100000);
+        assertEq(typeof vp.eye,         'object', 'eye is object');
+        assertEq(typeof vp.lookAt,      'object', 'lookAt is object');
+        assertEq(typeof vp.up,          'object', 'up is object');
+        assertEq(vp.fovY,               Math.PI / 3, 'fovY stored');
+        assertEq(vp.aspectRatio,        1.5,  'aspectRatio stored');
+        assertEq(vp.nearPlane,          0.1,  'nearPlane stored');
+        assertEq(vp.farPlane,           100000, 'farPlane stored');
+    });
+
+    s.run('clearRegions empties the map', () => {
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [1024,1024,1024], regionLevel: 4
+        });
+        scene.addRegion({ mortonCode: 1n, lod: 0, level: 4, buildVersion: 1, format: 1 },
+                        { rx:1, ry:0, rz:0 }, {});
+        scene.clearRegions();
+        assertEq(scene.getRegions().size, 0, 'size = 0 after clearRegions');
+    });
+}
+
+// ── Section 8: RenderClient event emitter and message API ────────────────────
+
+{
+    const s = makeSection('RenderClient - event emitter & messages (render-client.js)');
+
+    s.run('on/off event emitter works', () => {
+        const client = new RenderClient('ws://localhost:9999/ws/render');
+        let calls = 0;
+        const handler = () => calls++;
+        client.on('serverMessage', handler);
+        client._emit('serverMessage', { type: 'TEST' });
+        assertEq(calls, 1, 'handler called once');
+        client.off('serverMessage', handler);
+        client._emit('serverMessage', { type: 'TEST' });
+        assertEq(calls, 1, 'handler not called after off()');
+    });
+
+    s.run('multiple listeners for same event all fire', () => {
+        const client = new RenderClient('ws://localhost:9999/ws/render');
+        let a = 0, b = 0;
+        client.on('binaryFrame', () => a++);
+        client.on('binaryFrame', () => b++);
+        client._emit('binaryFrame', new ArrayBuffer(4));
+        assertEq(a, 1, 'listener a fired');
+        assertEq(b, 1, 'listener b fired');
+    });
+
+    s.run('sendRegisterClient formats JSON correctly', () => {
+        const client = new RenderClient('ws://localhost:9999/ws/render');
+        let sent = null;
+        client._ws = { readyState: 1, send: (data) => { sent = data; } };
+        const vp = { eye:{x:1,y:2,z:3}, lookAt:{x:0,y:0,z:0}, up:{x:0,y:1,z:0},
+                     fovY: Math.PI/3, aspectRatio: 1.5, nearPlane: 0.1, farPlane: 100000 };
+        client.sendRegisterClient('test-client', vp);
+        assert(sent !== null, 'message must be sent');
+        const msg = JSON.parse(sent);
+        assertEq(msg.type,     'REGISTER_CLIENT', 'type');
+        assertEq(msg.clientId, 'test-client',     'clientId');
+        assert(msg.viewport !== undefined,         'viewport present');
+        assertEq(msg.viewport.fovY, Math.PI/3,    'viewport.fovY');
+    });
+
+    s.run('sendUpdateViewport formats JSON correctly', () => {
+        const client = new RenderClient('ws://localhost:9999/ws/render');
+        let sent = null;
+        client._ws = { readyState: 1, send: (data) => { sent = data; } };
+        const vp = { eye:{x:5,y:5,z:5}, lookAt:{x:0,y:0,z:0}, up:{x:0,y:1,z:0},
+                     fovY: 1.0, aspectRatio: 1.777, nearPlane: 0.1, farPlane: 50000 };
+        client.sendUpdateViewport(vp);
+        const msg = JSON.parse(sent);
+        assertEq(msg.type, 'UPDATE_VIEWPORT', 'type');
+        assertEq(msg.viewport.eye.x, 5, 'viewport.eye.x');
+    });
+
+    s.run('sendUpdateViewport throttles to maxUpdatesPerSecond', () => {
+        const client = new RenderClient('ws://localhost:9999/ws/render',
+                                        { maxUpdatesPerSecond: 1 });
+        let count = 0;
+        client._ws = { readyState: 1, send: () => count++ };
+        const vp = { eye:{x:0,y:0,z:0}, lookAt:{x:0,y:0,z:0}, up:{x:0,y:1,z:0},
+                     fovY: 1.0, aspectRatio: 1.0, nearPlane: 0.1, farPlane: 1000 };
+        client.sendUpdateViewport(vp);  // first: sent
+        client.sendUpdateViewport(vp);  // second: throttled
+        client.sendUpdateViewport(vp);  // third: throttled
+        assertEq(count, 1, 'only first viewport update sent (throttled)');
+    });
+
+    s.run('sendRegisterClient returns false when socket not open', () => {
+        const client = new RenderClient('ws://localhost:9999/ws/render');
+        // _ws is null → not open
+        const result = client.sendRegisterClient('x', {});
+        assert(result === false, 'should return false when not connected');
+    });
+
+    s.run('disconnect sets _intentionalClose = true', () => {
+        const client = new RenderClient('ws://localhost:9999/ws/render');
+        client._ws = { readyState: 1, close: () => {} };
+        client.disconnect();
+        assert(client._intentionalClose === true, '_intentionalClose = true after disconnect');
+        assert(client._ws === null, '_ws = null after disconnect');
+    });
+
+    s.run('apiKey is appended to URL when provided', () => {
+        const client = new RenderClient('ws://localhost:9090/ws/render',
+                                        { apiKey: 'secret123' });
+        const url = client._buildUrl();
+        assert(url.includes('apiKey=secret123'), 'URL contains apiKey');
+    });
+
+    s.run('apiKey is not appended when null', () => {
+        const client = new RenderClient('ws://localhost:9090/ws/render');
+        const url = client._buildUrl();
+        assert(!url.includes('apiKey'), 'URL must not contain apiKey when null');
+    });
+}
+
+// ── Section 9: Performance benchmark ─────────────────────────────────────────
+
+const BENCH_ITERATIONS = 500;
+const perfEl = document.getElementById('perf-output');
+
+async function runBenchmarks() {
+    const results = [];
+
+    // Benchmark 1: parseFrameHeader (sync)
+    {
+        const buf = ESVO_FRAME_BYTES.buffer;
+        const t0 = performance.now();
+        for (let i = 0; i < BENCH_ITERATIONS; i++) parseFrameHeader(buf);
+        const elapsed = performance.now() - t0;
+        results.push({ name: `parseFrameHeader (${BENCH_ITERATIONS}×)`,
+                       ms: elapsed.toFixed(2),
+                       rate: Math.round(BENCH_ITERATIONS / elapsed * 1000) + ' op/s' });
+    }
+
+    // Benchmark 2: parseEsvoPayload (sync)
+    {
+        const payload = new Uint8Array(ESVO_FRAME_BYTES.buffer, 24, 29);
+        const t0 = performance.now();
+        for (let i = 0; i < BENCH_ITERATIONS; i++) parseEsvoPayload(payload);
+        const elapsed = performance.now() - t0;
+        results.push({ name: `parseEsvoPayload (${BENCH_ITERATIONS}×)`,
+                       ms: elapsed.toFixed(2),
+                       rate: Math.round(BENCH_ITERATIONS / elapsed * 1000) + ' op/s' });
+    }
+
+    // Benchmark 3: decodeFrame (async, uncompressed)
+    {
+        const buf = ESVO_FRAME_BYTES.buffer;
+        const t0 = performance.now();
+        for (let i = 0; i < BENCH_ITERATIONS; i++) await decodeFrame(buf);
+        const elapsed = performance.now() - t0;
+        results.push({ name: `decodeFrame uncompressed (${BENCH_ITERATIONS}×)`,
+                       ms: elapsed.toFixed(2),
+                       rate: Math.round(BENCH_ITERATIONS / elapsed * 1000) + ' op/s' });
+    }
+
+    // Benchmark 4: decodeMorton3D (sync)
+    {
+        const t0 = performance.now();
+        for (let i = 0; i < BENCH_ITERATIONS * 10; i++) decodeMorton3D(BigInt(i));
+        const elapsed = performance.now() - t0;
+        results.push({ name: `decodeMorton3D (${BENCH_ITERATIONS * 10}×)`,
+                       ms: elapsed.toFixed(2),
+                       rate: Math.round(BENCH_ITERATIONS * 10 / elapsed * 1000) + ' op/s' });
+    }
+
+    // Benchmark 5: SceneManager.addRegion
+    {
+        const scene = new SceneManager({
+            worldMin: [0,0,0], worldMax: [1024,1024,1024], regionLevel: 4
+        });
+        const header  = { mortonCode: 0n, lod: 0, level: 4, buildVersion: 0, format: 1 };
+        const region  = { rx:0, ry:0, rz:0 };
+        const payload = { nodeCount: 1 };
+        const t0 = performance.now();
+        for (let i = 0; i < BENCH_ITERATIONS; i++) {
+            header.mortonCode   = BigInt(i * 3 + 1);
+            header.buildVersion = i;
+            scene.addRegion(header, region, payload);
+        }
+        const elapsed = performance.now() - t0;
+        results.push({ name: `SceneManager.addRegion (${BENCH_ITERATIONS}×)`,
+                       ms: elapsed.toFixed(2),
+                       rate: Math.round(BENCH_ITERATIONS / elapsed * 1000) + ' op/s' });
+    }
+
+    // Render results
+    let html = '<strong>Performance Benchmarks</strong><br><br>';
+    html += '<table><tr><th>Benchmark</th><th>Total (ms)</th><th>Throughput</th></tr>';
+    for (const r of results) {
+        html += `<tr><td>${r.name}</td><td class="pass">${r.ms} ms</td><td class="pass">${r.rate}</td></tr>`;
+    }
+    html += '</table>';
+    perfEl.innerHTML = html;
+}
+
+// ── Render results ────────────────────────────────────────────────────────────
+
+function renderResults() {
+    const container = document.getElementById('sections');
+    let totalPass = 0, totalFail = 0;
+
+    for (const { title, results } of allResults) {
+        const pass = results.filter(r => r.pass).length;
+        const fail = results.filter(r => !r.pass).length;
+        totalPass += pass;
+        totalFail += fail;
+
+        let html = `<div class="section">
+            <div class="section-title">${title} — ${pass}/${results.length} passed</div>
+            <table>
+                <tr><th>Test</th><th>Result</th><th>Detail</th></tr>`;
+
+        for (const r of results) {
+            const cls   = r.pass ? 'pass' : 'fail';
+            const badge = `<span class="badge ${cls}">${r.pass ? 'PASS' : 'FAIL'}</span>`;
+            const detail = r.error
+                ? `<span class="error-detail">${escHtml(r.error)}</span>` : '';
+            html += `<tr>
+                <td class="${cls}">${escHtml(r.name)}</td>
+                <td>${badge}</td>
+                <td>${detail}</td>
+            </tr>`;
+        }
+
+        html += '</table></div>';
+        container.insertAdjacentHTML('beforeend', html);
+    }
+
+    const allPass = totalFail === 0;
+    document.getElementById('summary').innerHTML = `
+        <span class="label">Overall: </span>
+        <span class="count ${allPass ? 'pass' : 'fail'}">${totalPass} passed</span>
+        <span class="label">&nbsp;/&nbsp;</span>
+        <span class="count fail">${totalFail} failed</span>
+        <span class="label">&nbsp; (${totalPass + totalFail} total)</span>
+    `;
+}
+
+function escHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// ── GZIP helper ───────────────────────────────────────────────────────────────
+
+async function gzipEncode(data) {
+    const stream = new CompressionStream('gzip');
+    const writer = stream.writable.getWriter();
+    const reader = stream.readable.getReader();
+    writer.write(data);
+    writer.close();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
+    return result;
+}
+
+// ── Run all tests and benchmarks ──────────────────────────────────────────────
+
+renderResults();
+await runBenchmarks();
+</script>
+
+</body>
+</html>
