@@ -17,12 +17,22 @@
 package com.hellblazer.luciferase.simulation.viz.render;
 
 import com.hellblazer.luciferase.simulation.viz.render.protocol.ServerMessage;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import javax.vecmath.Point3f;
 import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 class StreamingCycleTest {
+
+    private RegionBuilder builder;
+
+    @AfterEach
+    void closeBuilder() {
+        if (builder != null) {
+            builder.close();
+        }
+    }
 
     @Test
     void dirtyKeyDeliveredToSubscriber() throws Exception {
@@ -32,7 +42,7 @@ class StreamingCycleTest {
         var client = transport.clientView();
         var tracker = new DirtyTracker();
         var cache = new StreamingCache();
-        var builder = new RegionBuilder(1, 10, 8, 64);
+        builder = new RegionBuilder(1, 10, 8, 64);
         var buildQueue = new BuildQueue(facade, tracker, builder,
             (k, v, d) -> cache.put(k, v, d));
         var subscriptions = new SubscriptionManager();

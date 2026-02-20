@@ -117,6 +117,8 @@ public final class StreamingSession {
         subscriptions.unsubscribe(sessionId);
     }
 
+    // TODO: return real size estimate using BuiltRegion.estimatedSizeBytes() once
+    //       the cache warms; RegionEntry.dataSize is a pre-allocation hint, not a contract.
     private static long estimateSize(SpatialKey<?> key) { return 0L; }
 
     private static RegionBuilder.BuildType regionType(SpatialKey<?> key) {

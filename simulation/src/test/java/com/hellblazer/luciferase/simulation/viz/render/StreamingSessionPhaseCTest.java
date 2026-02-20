@@ -17,12 +17,23 @@
 package com.hellblazer.luciferase.simulation.viz.render;
 
 import com.hellblazer.luciferase.simulation.viz.render.protocol.*;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import javax.vecmath.Point3f;
 import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 class StreamingSessionPhaseCTest {
+
+    // W7: track builder for cleanup to prevent daemon thread pool leak across tests
+    private RegionBuilder currentBuilder;
+
+    @AfterEach
+    void closeBuilder() {
+        if (currentBuilder != null) {
+            currentBuilder.close();
+        }
+    }
 
     @Test
     void helloAckSentOnHello() throws InterruptedException {
@@ -55,20 +66,38 @@ class StreamingSessionPhaseCTest {
         assertFalse(m.regions().isEmpty(), "manifest must contain occupied regions");
     }
 
+    @Test
+    void emptyWorldSnapshotManifestHasNoRegions() throws InterruptedException {
+        // W5: verify SnapshotRequest against empty world produces empty regions list
+        var fixture = makeFixture(); // empty world (no entities)
+        fixture.client.sendToServer(new ClientMessage.Hello("1.0"));
+        fixture.session.processNext(200, TimeUnit.MILLISECONDS);
+        fixture.client.nextServerMessage(200, TimeUnit.MILLISECONDS); // discard HelloAck
+
+        fixture.client.sendToServer(new ClientMessage.SnapshotRequest("req-empty", 4));
+        fixture.session.processNext(200, TimeUnit.MILLISECONDS);
+
+        var manifest = fixture.client.nextServerMessage(500, TimeUnit.MILLISECONDS);
+        assertInstanceOf(ServerMessage.SnapshotManifest.class, manifest);
+        var m = (ServerMessage.SnapshotManifest) manifest;
+        assertEquals("req-empty", m.requestId());
+        assertTrue(m.regions().isEmpty(), "empty world must produce empty manifest");
+    }
+
     // --- helpers ---
     record Fixture(StreamingSession session, InProcessTransport.ClientView client) {}
 
-    static Fixture makeFixture() {
+    Fixture makeFixture() {
         var facade = WorldFixture.octree(4, 8).build();
         return makeFixtureWithWorld(facade);
     }
 
-    static Fixture makeFixtureWithWorld(SpatialIndexFacade facade) {
+    Fixture makeFixtureWithWorld(SpatialIndexFacade facade) {
         var transport = new InProcessTransport();
         var tracker = new DirtyTracker();
         var cache = new StreamingCache();
-        var builder = new RegionBuilder(1, 10, 8, 64);
-        var buildQueue = new BuildQueue(facade, tracker, builder,
+        currentBuilder = new RegionBuilder(1, 10, 8, 64);
+        var buildQueue = new BuildQueue(facade, tracker, currentBuilder,
             (k, v, d) -> cache.put(k, v, d));
         var subscriptions = new SubscriptionManager();
         var session = new StreamingSession(

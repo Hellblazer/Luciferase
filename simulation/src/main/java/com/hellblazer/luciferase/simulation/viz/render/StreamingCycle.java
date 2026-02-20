@@ -64,8 +64,10 @@ public final class StreamingCycle {
         for (int i = 0; i < n; i++) {
             if (System.nanoTime() - start > deadlineNanos) break;
             var idx = (start_idx + i) % n;
-            cursor.set(idx);
             processClient(sessionIds.get(idx), start, deadlineNanos);
+            // Advance cursor past the processed index so the next tick starts
+            // at the following client — prevents double-service when deadline fires.
+            cursor.set((idx + 1) % n);
         }
     }
 
