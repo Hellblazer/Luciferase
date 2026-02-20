@@ -4,7 +4,13 @@ import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.core.OctreeBuilder;
 import com.hellblazer.luciferase.esvt.builder.ESVTBuilder;
 import com.hellblazer.luciferase.esvt.core.ESVTData;
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.geometry.Point3i;
+import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.SpatialKey;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -445,6 +451,102 @@ public class RegionBuilder implements AutoCloseable {
                 Thread.currentThread().interrupt();
             }
             log.info("RegionBuilder closed");
+        }
+    }
+
+    // ===== New-architecture SpatialKey<?> API =====
+
+    /**
+     * New-architecture build request keyed on SpatialKey<?>.
+     */
+    public record KeyedBuildRequest(
+            SpatialKey<?> key,
+            Priority priority,
+            long timestamp
+    ) implements Comparable<KeyedBuildRequest> {
+        public enum Priority { VISIBLE, RECENTLY_VISIBLE, BACKFILL }
+
+        @Override
+        public int compareTo(KeyedBuildRequest other) {
+            int pc = priority.compareTo(other.priority);
+            if (pc != 0) return pc;
+            return Long.compare(timestamp, other.timestamp);
+        }
+    }
+
+    /**
+     * Result of a KeyedBuildRequest.
+     */
+    public record BuiltKeyedRegion(
+            SpatialKey<?> key,
+            BuildType type,
+            byte[] serializedData,
+            long buildVersion
+    ) {}
+
+    /**
+     * Build a region for a SpatialKey<?>, fetching positions from the facade at call time.
+     * This is the new-architecture entry point. Positions are fetched HERE (not at queue time)
+     * to avoid TOCTOU: the build uses the world state as of when the build actually executes.
+     */
+    public CompletableFuture<BuiltKeyedRegion> buildKeyed(
+            SpatialKey<?> key, SpatialIndexFacade facade, long buildVersion) {
+        var future = new CompletableFuture<BuiltKeyedRegion>();
+        buildPool.submit(() -> {
+            try {
+                var positions = facade.positionsAt(key);
+                var type = key instanceof TetreeKey ? BuildType.ESVT : BuildType.ESVO;
+                var data = doBuildFromPositions(key, positions, type);
+                future.complete(new BuiltKeyedRegion(key, type, data, buildVersion));
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+        });
+        return future;
+    }
+
+    /**
+     * Derive cell bounds from a SpatialKey<?> for use in voxel conversion.
+     */
+    private static RegionBounds boundsFromKey(SpatialKey<?> key) {
+        if (key instanceof MortonKey mk) {
+            int[] coords = MortonCurve.decode(mk.getMortonCode());
+            float size = Constants.lengthAtLevel(mk.getLevel());
+            return new RegionBounds(coords[0], coords[1], coords[2],
+                                    coords[0] + size, coords[1] + size, coords[2] + size);
+        } else if (key instanceof TetreeKey<?> tk) {
+            var verts = Tet.tetrahedron(tk).coordinates();
+            float minX = verts[0].x, maxX = verts[0].x;
+            float minY = verts[0].y, maxY = verts[0].y;
+            float minZ = verts[0].z, maxZ = verts[0].z;
+            for (var v : verts) {
+                if (v.x < minX) minX = v.x;
+                if (v.x > maxX) maxX = v.x;
+                if (v.y < minY) minY = v.y;
+                if (v.y > maxY) maxY = v.y;
+                if (v.z < minZ) minZ = v.z;
+                if (v.z > maxZ) maxZ = v.z;
+            }
+            // Avoid zero-size bounds (degenerate tet): add epsilon
+            if (maxX == minX) maxX = minX + 1;
+            if (maxY == minY) maxY = minY + 1;
+            if (maxZ == minZ) maxZ = minZ + 1;
+            return new RegionBounds(minX, minY, minZ, maxX, maxY, maxZ);
+        } else {
+            throw new IllegalArgumentException("Unknown key type: " + key.getClass());
+        }
+    }
+
+    /**
+     * Build serialized voxel data from positions within a SpatialKey<?> cell.
+     */
+    private byte[] doBuildFromPositions(SpatialKey<?> key, List<Point3f> positions, BuildType type) throws IOException {
+        RegionBounds bounds = boundsFromKey(key);
+        var voxels = positionsToVoxels(positions, bounds);
+        if (type == BuildType.ESVO) {
+            return buildAndSerializeESVO(voxels);
+        } else {
+            return buildAndSerializeESVT(voxels);
         }
     }
 

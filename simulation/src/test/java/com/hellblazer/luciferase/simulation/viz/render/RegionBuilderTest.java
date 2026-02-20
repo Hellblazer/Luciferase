@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -580,5 +581,20 @@ class RegionBuilderTest {
             assertNotNull(builder);
             // Construction should succeed despite warning
         }
+    }
+
+    @Test
+    void buildKeyedProducesDataForOccupiedCell() throws Exception {
+        var builder = new RegionBuilder(2, 10, 8, 64);
+        var facade = new OctreeSpatialIndexFacade(4, 8);
+        facade.put(1L, new Point3f(100, 100, 100));
+        var keys = facade.keysContaining(new Point3f(100, 100, 100), 4, 4);
+        var key = keys.iterator().next();
+        var result = builder.buildKeyed(key, facade, 1L).get(5, TimeUnit.SECONDS);
+        assertNotNull(result);
+        assertNotNull(result.serializedData());
+        assertTrue(result.serializedData().length > 0);
+        assertEquals(key, result.key());
+        builder.close();
     }
 }
