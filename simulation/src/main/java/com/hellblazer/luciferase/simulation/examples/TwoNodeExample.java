@@ -198,8 +198,9 @@ public class TwoNodeExample {
             log.info("[{}] Received EntityDepartureEvent: entity={}", nodeName, event.getEntityId());
             System.out.println("[" + nodeName + "] ENTITY_ARRIVED");
 
-            // Extract entity ID (convert UUID back to string format)
-            var entityIdStr = "entity-" + Math.abs(event.getEntityId().hashCode() % 1000);
+            // Use UUID string directly to avoid hash collision (birthday paradox: 50 entities
+            // in a mod-1000 space gives ~70% collision probability, causing entity loss).
+            var entityIdStr = event.getEntityId().toString();
 
             // Generate new position in receiving node's bounds
             // Node2 bounds: (50-100, 0-50, 0-50), Node1 bounds: (0-50, 0-50, 0-50)
