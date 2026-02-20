@@ -294,6 +294,13 @@ class VolumeAnimatorGhostTest {
             bubble.addEntity(entityId, position, "content");
         }
 
+        // JIT warmup: run both code paths before measurement to avoid including
+        // JIT compilation time in the baseline or ghost-loop measurements.
+        for (int i = 0; i < 200; i++) {
+            animator.tick();
+            bubble.tickGhosts(controller.getSimulationTime() + i * 10L);
+        }
+
         // Measure baseline tick time (includes tickGhosts with 0 ghosts for fair comparison)
         long baselineStart = System.nanoTime();
         for (int i = 0; i < 1000; i++) {
@@ -317,6 +324,12 @@ class VolumeAnimatorGhostTest {
             );
 
             bubble.getGhostStateManager().updateGhost(remoteBubbleId, event);
+        }
+
+        // JIT warmup for ghost code path before ghost measurement.
+        for (int i = 0; i < 200; i++) {
+            animator.tick();
+            bubble.tickGhosts(controller.getSimulationTime() + i * 10L);
         }
 
         // Measure with 100 ghosts (same operations as baseline, different ghost count)

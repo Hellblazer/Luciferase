@@ -223,6 +223,9 @@ public class RealTimeController {
      * Protected to allow subclasses (e.g., BucketSynchronizedController) to override for synchronization.
      */
     protected void tickLoop() {
+        // Deadline-based scheduling: advance deadline by tickPeriodNs each tick so that
+        // work time is automatically subtracted from the next sleep, preventing clock drift.
+        long nextDeadline = System.nanoTime() + tickPeriodNs;
         while (running.get()) {
             var currentSimTime = simulationTime.incrementAndGet();
             var currentLamportClock = clockGenerator.tick();
@@ -234,12 +237,16 @@ public class RealTimeController {
                 log.debug("Tick: bubble={}, simTime={}, lamportClock={}", bubbleId, currentSimTime, currentLamportClock);
             }
 
-            // Sleep for tick period
-            try {
-                TimeUnit.NANOSECONDS.sleep(tickPeriodNs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
+            // Sleep only the remaining time until the next deadline; skip sleep if overrun.
+            long sleepNs = nextDeadline - System.nanoTime();
+            nextDeadline += tickPeriodNs;
+            if (sleepNs > 0) {
+                try {
+                    TimeUnit.NANOSECONDS.sleep(sleepNs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
         }
         log.debug("Tick loop exited: bubble={}, finalTime={}", bubbleId, simulationTime.get());
