@@ -23,9 +23,12 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Thread-safe cache of built region data, keyed on SpatialKey<?>.
  *
- * Each entry holds a version stamp (the scene version at which the region was last built) and
+ * <p>Each entry holds a version stamp (the scene version at which the region was last built) and
  * the serialized region bytes. Callers compare the cached version against the current scene
  * version to decide whether to re-build.
+ *
+ * <p>This cache has no eviction policy and is appropriate only for bounded, short-lived build
+ * pipelines where the key set is finite and managed externally.
  *
  * @author hal.hildebrand
  */
@@ -33,8 +36,16 @@ public final class StreamingCache {
 
     /**
      * A single cached region: the scene version when it was built, and the serialized bytes.
+     * Defensive copies are made on write ({@link StreamingCache#put}) and read ({@link #data()})
+     * to prevent external mutation of cached state.
      */
-    public record CacheEntry(long version, byte[] data) {}
+    public record CacheEntry(long version, byte[] data) {
+        /** Returns a defensive copy of the serialized data. */
+        @Override
+        public byte[] data() {
+            return data.clone();
+        }
+    }
 
     private final ConcurrentHashMap<SpatialKey<?>, CacheEntry> entries = new ConcurrentHashMap<>();
 
@@ -53,7 +64,7 @@ public final class StreamingCache {
      * @param data    serialized region bytes
      */
     public void put(SpatialKey<?> key, long version, byte[] data) {
-        entries.put(key, new CacheEntry(version, data));
+        entries.put(key, new CacheEntry(version, data.clone()));
     }
 
     /**

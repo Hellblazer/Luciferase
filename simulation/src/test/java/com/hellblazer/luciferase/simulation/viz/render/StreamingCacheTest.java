@@ -51,4 +51,14 @@ class StreamingCacheTest {
         cache.put(key, 3L, new byte[]{});
         assertEquals(3L, cache.cacheVersion(key));
     }
+
+    @Test
+    void removeEvictsEntry() {
+        var cache = new StreamingCache();
+        var key = new MortonKey(3L, (byte) 5);
+        cache.put(key, 7L, new byte[]{9});
+        cache.remove(key);
+        assertNull(cache.get(key));
+        assertEquals(0L, cache.cacheVersion(key));
+    }
 }
