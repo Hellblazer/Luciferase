@@ -54,7 +54,7 @@ const DEFAULT_BACKGROUND_COLOR = 0x1a1a2e;
  * Three.js InstancedMesh.  Unknown or empty regions fall back to a wireframe
  * bounding box.
  */
-export class VoxelRenderer {
+export class VoxelRenderer extends EventTarget {
 
     /**
      * Create a VoxelRenderer and initialise the Three.js scene.
@@ -67,6 +67,7 @@ export class VoxelRenderer {
      * @param {number} [options.voxelOpacity=0.9]  - Voxel material opacity (0–1)
      */
     constructor(container, options = {}) {
+        super();
         this._container = container;
         this._maxRenderDepth  = options.maxRenderDepth  ?? DEFAULT_MAX_RENDER_DEPTH;
         this._backgroundColor = options.backgroundColor ?? DEFAULT_BACKGROUND_COLOR;
@@ -90,6 +91,14 @@ export class VoxelRenderer {
         /** @type {number|null} */
         this._animFrameId = null;
         this._running = false;
+
+        // Camera-change event throttling (ms timestamp of last dispatch)
+        this._lastCameraEvent = 0;
+
+        // LOD level computation bounds and scene centre
+        this.minLevel = options.minLevel ?? 0;
+        this.maxLevel = options.maxLevel ?? 10;
+        this.sceneCenter = new THREE.Vector3(512, 512, 512);
 
         /** @type {object|null} bound SceneManager */
         this._sceneManager = null;
@@ -236,6 +245,47 @@ export class VoxelRenderer {
         this._controls.update();
     }
 
+    /**
+     * Return the current camera position as a plain object.
+     *
+     * @returns {{ x: number, y: number, z: number }}
+     */
+    getCameraPosition() {
+        const p = this._camera.position;
+        return { x: p.x, y: p.y, z: p.z };
+    }
+
+    /**
+     * Extract the six frustum planes from the current camera/projection matrices.
+     * Returns a plain array of 6 plane objects { normal: {x,y,z}, constant: number }.
+     *
+     * @returns {Array<{ normal: { x: number, y: number, z: number }, constant: number }>}
+     */
+    getCurrentFrustum() {
+        const frustum = new THREE.Frustum();
+        frustum.setFromProjectionMatrix(
+            new THREE.Matrix4().multiplyMatrices(
+                this._camera.projectionMatrix,
+                this._camera.matrixWorldInverse
+            )
+        );
+        return frustum.planes.map(p => ({
+            normal: { x: p.normal.x, y: p.normal.y, z: p.normal.z },
+            constant: p.constant
+        }));
+    }
+
+    /**
+     * Compute the appropriate LOD level based on camera distance to the scene centre.
+     * Level = clamp(floor(log2(distance)), minLevel, maxLevel).
+     *
+     * @returns {number}
+     */
+    computeLODLevel() {
+        const dist = this._camera.position.distanceTo(this.sceneCenter);
+        return Math.max(this.minLevel, Math.min(this.maxLevel, Math.floor(Math.log2(dist))));
+    }
+
     // ============================================================================
     // Scene Helpers
     // ============================================================================
@@ -280,6 +330,17 @@ export class VoxelRenderer {
         this._animFrameId = requestAnimationFrame(() => this._animate());
         this._controls.update();
         this._renderer.render(this._scene, this._camera);
+
+        // Dispatch throttled cameraChange event (100ms minimum interval)
+        const now = performance.now();
+        if (now - this._lastCameraEvent > 100) {
+            this._lastCameraEvent = now;
+            this.dispatchEvent(Object.assign(new Event('cameraChange'), {
+                frustum: this.getCurrentFrustum(),
+                cameraPos: this.getCameraPosition(),
+                level: this.computeLODLevel()
+            }));
+        }
     }
 
     // ============================================================================

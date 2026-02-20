@@ -32,6 +32,8 @@
  *   const vp = scene.getViewport(fovY, aspectRatio, nearPlane, farPlane);
  */
 
+import { ProtocolClient } from './protocol-client.js';
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -91,6 +93,10 @@ export class SceneManager {
         // Region storage: Map<string, RegionEntry>
         /** @type {Map<string, RegionEntry>} */
         this._regions = new Map();
+
+        // Known versions for push-update deduplication: Map<string, BigInt>
+        /** @type {Map<string, BigInt>} */
+        this.knownVersions = new Map();
 
         // Event listeners: Map<string, Set<Function>>
         /** @type {Map<string, Set<Function>>} */
@@ -319,6 +325,39 @@ export class SceneManager {
         const entry = this._regions.get(key);
         if (entry !== undefined) {
             this._regions.delete(key);
+            this._emit('regionRemoved', entry);
+        }
+    }
+
+    /**
+     * Handle a REGION_UPDATE push message from ProtocolClient.
+     * Applies a version guard: stale updates (version <= knownVersion) are dropped.
+     *
+     * @param {{ t: string, l: number, i: string }} key - Structured region key
+     * @param {BigInt} version - Version from server
+     * @param {object} data - Decoded region data (header, region, payload)
+     */
+    onRegionUpdate(key, version, data) {
+        const ks = ProtocolClient.keyString(key);
+        if (BigInt(version) <= (this.knownVersions?.get(ks) ?? 0n)) return;
+        this.knownVersions.set(ks, BigInt(version));
+        if (data) {
+            this.addRegion(data.header, data.region, data.payload);
+        }
+    }
+
+    /**
+     * Remove a region identified by a structured key object (from ProtocolClient events).
+     * Fires 'regionRemoved'.
+     *
+     * @param {{ t: string, l: number, i: string }} key - Structured region key
+     */
+    remove(key) {
+        const ks = ProtocolClient.keyString(key);
+        const entry = this._regions.get(ks);
+        if (entry !== undefined) {
+            this._regions.delete(ks);
+            this.knownVersions.delete(ks);
             this._emit('regionRemoved', entry);
         }
     }
