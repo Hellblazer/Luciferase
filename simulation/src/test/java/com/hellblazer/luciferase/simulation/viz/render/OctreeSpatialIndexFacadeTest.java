@@ -49,4 +49,23 @@ class OctreeSpatialIndexFacadeTest {
         assertFalse(occupied.isEmpty());
         occupied.forEach(k -> assertEquals(4, k.getLevel()));
     }
+
+    @Test
+    void moveUpdatesCell() {
+        var oldPos = new Point3f(100, 100, 100);
+        var newPos = new Point3f(500000, 500000, 500000);
+        facade.put(4L, oldPos);
+        facade.move(4L, newPos);
+        var oldKeys = facade.keysContaining(oldPos, 4, 4);
+        oldKeys.forEach(k -> assertFalse(facade.positionsAt(k).stream()
+            .anyMatch(p -> p.epsilonEquals(oldPos, 0.1f)),
+            "entity should no longer be in old cell after move"));
+    }
+
+    @Test
+    void removeDecrementsCount() {
+        facade.put(5L, new Point3f(200, 200, 200));
+        facade.remove(5L);
+        assertEquals(0, facade.entityCount());
+    }
 }

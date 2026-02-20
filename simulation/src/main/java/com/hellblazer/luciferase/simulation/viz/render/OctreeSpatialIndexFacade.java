@@ -47,20 +47,17 @@ public final class OctreeSpatialIndexFacade implements SpatialIndexFacade {
 
     @Override
     public void move(long entityId, Point3f newPosition) {
-        var oldPos = entityPositions.get(entityId);
-        if (oldPos == null) return;
-        keysContaining(oldPos, minLevel, maxDirtyLevel)
-            .forEach(k -> {
-                var s = cellOccupants.get(k);
-                if (s != null) {
-                    s.remove(entityId);
-                    if (s.isEmpty()) cellOccupants.remove(k, s);
-                }
-            });
-        entityPositions.put(entityId, new Point3f(newPosition));
-        keysContaining(newPosition, minLevel, maxDirtyLevel)
-            .forEach(k -> cellOccupants.computeIfAbsent(k, x -> new CopyOnWriteArraySet<>())
-                                       .add(entityId));
+        entityPositions.compute(entityId, (id, oldPos) -> {
+            if (oldPos == null) return null;
+            keysContaining(oldPos, minLevel, maxDirtyLevel)
+                .forEach(k -> { var s = cellOccupants.get(k);
+                    if (s != null) { s.remove(id); if (s.isEmpty()) cellOccupants.remove(k, s); }});
+            var newPos = new Point3f(newPosition);
+            keysContaining(newPos, minLevel, maxDirtyLevel)
+                .forEach(k -> cellOccupants.computeIfAbsent(k, x -> new CopyOnWriteArraySet<>())
+                                           .add(id));
+            return newPos;
+        });
     }
 
     @Override
@@ -108,6 +105,8 @@ public final class OctreeSpatialIndexFacade implements SpatialIndexFacade {
         var result = new HashSet<SpatialKey<?>>();
         for (var key : cellOccupants.keySet()) {
             if (key.getLevel() != level) continue;
+            var s = cellOccupants.get(key);
+            if (s == null || s.isEmpty()) continue;
             if (frustumIntersects(key, frustum)) result.add(key);
         }
         return Collections.unmodifiableSet(result);
@@ -117,7 +116,9 @@ public final class OctreeSpatialIndexFacade implements SpatialIndexFacade {
     public Set<SpatialKey<?>> allOccupiedKeys(int level) {
         var result = new HashSet<SpatialKey<?>>();
         for (var key : cellOccupants.keySet()) {
-            if (key.getLevel() == level && !cellOccupants.get(key).isEmpty()) result.add(key);
+            if (key.getLevel() != level) continue;
+            var s = cellOccupants.get(key);
+            if (s != null && !s.isEmpty()) result.add(key);
         }
         return Collections.unmodifiableSet(result);
     }

@@ -47,20 +47,24 @@ public final class TetreeSpatialIndexFacade implements SpatialIndexFacade {
 
     @Override
     public void move(long entityId, Point3f newPosition) {
-        var oldPos = entityPositions.get(entityId);
-        if (oldPos == null) return;
-        keysContaining(oldPos, minLevel, maxDirtyLevel)
-            .forEach(k -> {
-                var occupants = cellOccupants.get(k);
-                if (occupants != null) {
-                    occupants.remove(entityId);
-                    if (occupants.isEmpty()) cellOccupants.remove(k, occupants);
-                }
-            });
-        entityPositions.put(entityId, new Point3f(newPosition));
-        keysContaining(newPosition, minLevel, maxDirtyLevel)
-            .forEach(k -> cellOccupants.computeIfAbsent(k, x -> new CopyOnWriteArraySet<>())
-                                       .add(entityId));
+        entityPositions.compute(entityId, (id, oldPos) -> {
+            if (oldPos == null) return null; // entity was removed concurrently
+            // Remove from old cells
+            keysContaining(oldPos, minLevel, maxDirtyLevel)
+                .forEach(k -> {
+                    var occupants = cellOccupants.get(k);
+                    if (occupants != null) {
+                        occupants.remove(id);
+                        if (occupants.isEmpty()) cellOccupants.remove(k, occupants);
+                    }
+                });
+            // Add to new cells
+            var newPos = new Point3f(newPosition);
+            keysContaining(newPos, minLevel, maxDirtyLevel)
+                .forEach(k -> cellOccupants.computeIfAbsent(k, x -> new CopyOnWriteArraySet<>())
+                                           .add(id));
+            return newPos;
+        });
     }
 
     @Override
@@ -83,7 +87,7 @@ public final class TetreeSpatialIndexFacade implements SpatialIndexFacade {
         int cap = Math.min(maxLvl, 10);
         for (int L = minLvl; L <= cap; L++) {
             var tet = Tet.locatePointBeyRefinementFromRoot(point.x, point.y, point.z, (byte) L);
-            result.add(tet.tmIndex());
+            if (tet != null) result.add(tet.tmIndex());
         }
         return Collections.unmodifiableSet(result);
     }
@@ -105,6 +109,8 @@ public final class TetreeSpatialIndexFacade implements SpatialIndexFacade {
         var result = new HashSet<SpatialKey<?>>();
         for (var key : cellOccupants.keySet()) {
             if (key.getLevel() != level) continue;
+            var s = cellOccupants.get(key);
+            if (s == null || s.isEmpty()) continue;
             if (frustumIntersects(key, frustum)) result.add(key);
         }
         return Collections.unmodifiableSet(result);
@@ -114,7 +120,9 @@ public final class TetreeSpatialIndexFacade implements SpatialIndexFacade {
     public Set<SpatialKey<?>> allOccupiedKeys(int level) {
         var result = new HashSet<SpatialKey<?>>();
         for (var key : cellOccupants.keySet()) {
-            if (key.getLevel() == level && !cellOccupants.get(key).isEmpty()) result.add(key);
+            if (key.getLevel() != level) continue;
+            var s = cellOccupants.get(key);
+            if (s != null && !s.isEmpty()) result.add(key);
         }
         return Collections.unmodifiableSet(result);
     }
