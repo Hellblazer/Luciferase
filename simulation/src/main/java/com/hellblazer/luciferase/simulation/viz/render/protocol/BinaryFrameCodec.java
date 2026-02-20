@@ -58,7 +58,7 @@ public final class BinaryFrameCodec {
         // Write header
         buffer.putInt(0, ProtocolConstants.FRAME_MAGIC);  // bytes 0-3: magic
         buffer.put(4, formatCode(region.type()));         // byte 4: format
-        buffer.put(5, (byte) region.lodLevel());          // byte 5: lod
+        buffer.put(5, ProtocolConstants.KEY_TYPE_MORTON);  // byte 5: keyType (RegionId is always Morton)
         buffer.put(6, (byte) region.regionId().level());  // byte 6: region level
         buffer.put(7, (byte) 0);                          // byte 7: reserved
         buffer.putLong(8, region.regionId().mortonCode()); // bytes 8-15: morton code
@@ -100,7 +100,7 @@ public final class BinaryFrameCodec {
         // Write header
         buffer.putInt(0, ProtocolConstants.FRAME_MAGIC);  // bytes 0-3: magic
         buffer.put(4, formatCode(region.type()));         // byte 4: format
-        buffer.put(5, (byte) region.lodLevel());          // byte 5: lod
+        buffer.put(5, ProtocolConstants.KEY_TYPE_MORTON);  // byte 5: keyType (RegionId is always Morton)
         buffer.put(6, (byte) region.regionId().level());  // byte 6: region level
         buffer.put(7, (byte) 0);                          // byte 7: reserved
         buffer.putLong(8, region.regionId().mortonCode()); // bytes 8-15: morton code

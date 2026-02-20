@@ -42,7 +42,7 @@ class BinaryFrameCodecTest {
         assertNotNull(header, "Header should be decoded successfully");
         assertEquals(ProtocolConstants.FRAME_MAGIC, header.magic(), "Magic number mismatch");
         assertEquals(ProtocolConstants.FORMAT_ESVO, header.format(), "Format should be ESVO");
-        assertEquals(0, header.keyType(), "Key type mismatch");
+        assertEquals(ProtocolConstants.KEY_TYPE_MORTON, header.keyType(), "Key type should be KEY_TYPE_MORTON (RegionId is Morton-based)");
         assertEquals(region.regionId().level(), header.level(), "Region level mismatch");
         assertEquals(region.regionId().mortonCode(), header.key(), "Key mismatch");
         assertEquals((int) region.buildVersion(), header.buildVersion(), "Build version mismatch");
@@ -68,7 +68,7 @@ class BinaryFrameCodecTest {
         assertNotNull(header, "Header should be decoded successfully");
         assertEquals(ProtocolConstants.FRAME_MAGIC, header.magic(), "Magic number mismatch");
         assertEquals(ProtocolConstants.FORMAT_ESVT, header.format(), "Format should be ESVT");
-        assertEquals(0, header.keyType(), "Key type mismatch");
+        assertEquals(ProtocolConstants.KEY_TYPE_MORTON, header.keyType(), "Key type should be KEY_TYPE_MORTON (RegionId is Morton-based)");
         assertEquals(region.regionId().level(), header.level(), "Region level mismatch");
         assertEquals(region.regionId().mortonCode(), header.key(), "Key mismatch");
         assertEquals((int) region.buildVersion(), header.buildVersion(), "Build version mismatch");
@@ -245,6 +245,45 @@ class BinaryFrameCodecTest {
         assertEquals(12345L, header.key(), "Key should match morton code");
         assertEquals(7, header.buildVersion(), "Build version should be 7");
         assertEquals(4, header.dataSize(), "Data size should be 4");
+    }
+
+    /**
+     * Test 10: encodeWithKey using CompactTetreeKey round-trips through decodeHeader.
+     * Verifies that KEY_TYPE_TET, level, and key (getLowBits) are correctly encoded.
+     * Also verifies ExtendedTetreeKey is rejected.
+     */
+    @Test
+    void encodeWithCompactTetreeKeyRoundTrips() {
+        var key = new com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey((byte) 5, 0xABCDEF1234567890L);
+        byte[] data = {9, 8, 7};
+        var buf = BinaryFrameCodec.encodeWithKey(key, RegionBuilder.BuildType.ESVT, 3L, data);
+        var header = BinaryFrameCodec.decodeHeader(buf);
+
+        assertNotNull(header, "Header should be decoded successfully");
+        assertEquals(ProtocolConstants.KEY_TYPE_TET, header.keyType(), "keyType should be KEY_TYPE_TET");
+        assertEquals(5, header.level(), "Level should be 5");
+        assertEquals(key.getLowBits(), header.key(), "Key should match CompactTetreeKey low bits");
+        assertEquals(3, header.buildVersion(), "Build version should be 3");
+        assertEquals(3, header.dataSize(), "Data size should be 3");
+    }
+
+    /**
+     * Test 11: encodeWithKey using ExtendedTetreeKey must throw IllegalArgumentException.
+     * ExtendedTetreeKey (levels 11-21) is not representable in the 64-bit wire key field.
+     */
+    @Test
+    void encodeWithExtendedTetreeKeyThrows() {
+        // ExtendedTetreeKey.create() returns an ExtendedTetreeKey for level > 10
+        var key = com.hellblazer.luciferase.lucien.tetree.TetreeKey.create((byte) 15, 0L, 0L);
+        // Only proceed if we actually got an ExtendedTetreeKey
+        if (key instanceof com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey) {
+            // Shouldn't happen at level 15, but skip if it does
+            return;
+        }
+        byte[] data = {1};
+        assertThrows(IllegalArgumentException.class,
+            () -> BinaryFrameCodec.encodeWithKey(key, RegionBuilder.BuildType.ESVT, 1L, data),
+            "ExtendedTetreeKey must throw at wire level");
     }
 
     /**
