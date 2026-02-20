@@ -27,18 +27,19 @@ import java.util.concurrent.TimeUnit;
  *
  * @author hal.hildebrand
  */
-public final class StreamingPipelineFixture {
+public final class StreamingPipelineFixture implements AutoCloseable {
 
     public final SpatialIndexFacade world;
     public final DirtyTracker dirtyTracker;
     public final StreamingCache cache;
     public final BuildQueue buildQueue;
+    private final RegionBuilder builder;
 
     public StreamingPipelineFixture(SpatialIndexFacade world) {
         this.world = world;
         this.dirtyTracker = new DirtyTracker();
         this.cache = new StreamingCache();
-        var builder = new RegionBuilder(2, 20, 8, 64);
+        this.builder = new RegionBuilder(2, 20, 8, 64);
         this.buildQueue = new BuildQueue(world, dirtyTracker, builder,
                                          (key, version, data) -> cache.put(key, version, data));
     }
@@ -54,7 +55,13 @@ public final class StreamingPipelineFixture {
         try {
             buildQueue.awaitBuilds().get(10, TimeUnit.SECONDS);
         } catch (Exception e) {
-            throw new RuntimeException("Build timed out", e);
+            throw new RuntimeException("awaitBuilds failed: " + e.getClass().getSimpleName(), e);
         }
+    }
+
+    /** Shut down the RegionBuilder thread pool. Call from @AfterEach or try-with-resources. */
+    @Override
+    public void close() {
+        builder.close();
     }
 }

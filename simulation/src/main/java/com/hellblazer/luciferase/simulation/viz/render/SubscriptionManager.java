@@ -40,9 +40,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class SubscriptionManager {
 
     /**
-     * Immutable snapshot of a client's subscription state.
-     * The knownVersions map is mutable (ConcurrentHashMap) to allow version tracking
-     * without replacing the record on each push.
+     * Per-client subscription state. The {@code knownVersions} map is intentionally
+     * mutable (ConcurrentHashMap) to allow in-place version tracking without
+     * replacing the record on each push. All other fields are effectively immutable.
      */
     public record ClientState(
         String sessionId,
@@ -95,6 +95,7 @@ public final class SubscriptionManager {
         if (old == null) {
             return;
         }
+        // knownVersions is shared by reference — concurrent push() writes are preserved.
         clients.put(sessionId, new ClientState(
             old.sessionId(), old.transport(), old.knownVersions(), frustum, level));
     }
@@ -102,6 +103,8 @@ public final class SubscriptionManager {
     /**
      * Push a RegionUpdate control message to a specific client.
      * Records the new version in knownVersions after successful send.
+     * If the transport throws, the version is not recorded and the client will
+     * re-receive the region on the next streaming cycle (idempotent delivery).
      *
      * @param sessionId the target session
      * @param key       the spatial key that was updated
@@ -137,6 +140,7 @@ public final class SubscriptionManager {
      * @param version the new content version
      */
     public void broadcast(SpatialKey<?> key, long version) {
+        // Weakly consistent: clients that unsubscribe mid-broadcast are silently skipped.
         clients.keySet().forEach(id -> push(id, key, version));
     }
 

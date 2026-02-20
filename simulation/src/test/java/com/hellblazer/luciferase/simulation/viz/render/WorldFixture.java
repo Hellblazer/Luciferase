@@ -42,6 +42,7 @@ public final class WorldFixture {
 
     /** Insert n entities at random positions using the given seed. */
     public WorldFixture withRandomEntities(int count, long seed) {
+        if (count <= 0) throw new IllegalArgumentException("count must be > 0, got: " + count);
         var rng = new Random(seed);
         int max = 1 << 21;  // MAX_EXTENT
         for (int i = 0; i < count; i++) {
