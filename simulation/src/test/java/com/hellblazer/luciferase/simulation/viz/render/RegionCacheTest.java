@@ -582,11 +582,14 @@ class RegionCacheTest {
         // C1 Fix: Put should succeed without overflow exception (weigher clamps internally)
         cache.put(key, hugeRegion);
 
-        // Verify cached successfully despite huge size
-        assertTrue(cache.get(key).isPresent(), "Huge region should be cached");
+        // Use a single get() to avoid TOCTOU race with Caffeine's async eviction:
+        // the 3GB entry exceeds this test cache's capacity and Caffeine may evict it
+        // asynchronously between two separate get() calls.
+        var cached = cache.get(key);
+        assertTrue(cached.isPresent(), "Huge region should be cached");
 
         // Verify sizeBytes preserved correctly (not clamped in CachedRegion)
-        assertEquals(3_000_000_000L, cache.get(key).get().sizeBytes(),
+        assertEquals(3_000_000_000L, cached.get().sizeBytes(),
                 "CachedRegion should preserve full size even when weigher clamps to Integer.MAX_VALUE");
     }
 

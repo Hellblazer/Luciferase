@@ -492,6 +492,16 @@ public class LifecycleCoordinator {
                                                                }
                                                            });
                                        } catch (Exception e) {
+                                           // TOCTOU race: filter() checked CREATED but by the time start() is
+                                           // called here, registerAndStart() on another thread has advanced
+                                           // the state to STARTING or RUNNING. Treat as "already being started"
+                                           // rather than a fatal failure so the layer continues normally.
+                                           var stateNow = component.getState();
+                                           if (stateNow == LifecycleState.STARTING || stateNow == LifecycleState.RUNNING) {
+                                               log.debug("Component {} already in state {} (concurrent registerAndStart), skipping",
+                                                         name, stateNow);
+                                               return CompletableFuture.completedFuture(null);
+                                           }
                                            log.error("Exception starting component {}", name, e);
                                            states.put(name, LifecycleState.FAILED);
                                            return CompletableFuture.<Void>failedFuture(e);
