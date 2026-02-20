@@ -25,14 +25,25 @@ class InProcessTransportTest {
         var clientSide = session.clientView();
 
         // Client sends, server receives
-        clientSide.sendToServer(new ClientMessage.Hello("1.0"));
+        var hello = new ClientMessage.Hello("1.0");
+        clientSide.sendToServer(hello);
         var received = serverSide.nextClientMessage(100, TimeUnit.MILLISECONDS);
-        assertInstanceOf(ClientMessage.Hello.class, received);
+        assertSame(hello, received, "in-process transport delivers the exact same object reference");
 
         // Server sends, client receives
-        serverSide.send(new ServerMessage.HelloAck("sess-42"));
+        var ack = new ServerMessage.HelloAck("sess-42");
+        serverSide.send(ack);
         var sent = clientSide.nextServerMessage(100, TimeUnit.MILLISECONDS);
-        assertInstanceOf(ServerMessage.HelloAck.class, sent);
+        assertSame(ack, sent, "in-process transport delivers the exact same object reference");
+    }
+
+    @Test
+    void returnsNullOnTimeout() throws InterruptedException {
+        var session = new InProcessTransport();
+        var server = session.serverTransport();
+        // No message sent — expect null after short timeout
+        var result = server.nextClientMessage(10, TimeUnit.MILLISECONDS);
+        assertNull(result, "nextClientMessage must return null when queue is empty after timeout");
     }
 
     @Test

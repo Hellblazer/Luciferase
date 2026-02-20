@@ -27,7 +27,11 @@ public final class InProcessTransport {
     private final BlockingQueue<ServerMessage> toClient      = new LinkedBlockingQueue<>();
     private final BlockingQueue<byte[]>        binaryToClient = new LinkedBlockingQueue<>();
 
-    /** The handle the server-side code (session handler) holds. */
+    /**
+     * The handle the server-side code (session handler) holds.
+     * <p>Each call returns a new object sharing the same queues; calling twice
+     * creates two competing consumers on {@code fromClient}.
+     */
     public Transport serverTransport() {
         return new Transport() {
             @Override
@@ -47,6 +51,7 @@ public final class InProcessTransport {
 
             @Override
             public void close() {
+                // No-op: in-process queues are GC'd when all references drop.
             }
         };
     }
