@@ -458,6 +458,10 @@ public class RegionBuilder implements AutoCloseable {
 
     /**
      * New-architecture build request keyed on SpatialKey<?>.
+     * <p>
+     * Note: {@link Priority} and {@link #compareTo} are scaffolded for the BuildQueue priority queue
+     * (Task 6.1). Currently {@link #buildKeyed} submits directly to {@code buildPool}; priority
+     * ordering will be wired in Task 6.1.
      */
     public record KeyedBuildRequest(
             SpatialKey<?> key,
@@ -488,9 +492,15 @@ public class RegionBuilder implements AutoCloseable {
      * Build a region for a SpatialKey<?>, fetching positions from the facade at call time.
      * This is the new-architecture entry point. Positions are fetched HERE (not at queue time)
      * to avoid TOCTOU: the build uses the world state as of when the build actually executes.
+     *
+     * @throws IllegalStateException if the builder has been closed
+     * @throws java.util.concurrent.ExecutionException wrapping IOException if serialization fails
      */
     public CompletableFuture<BuiltKeyedRegion> buildKeyed(
             SpatialKey<?> key, SpatialIndexFacade facade, long buildVersion) {
+        if (closed) {
+            throw new IllegalStateException("RegionBuilder is closed");
+        }
         var future = new CompletableFuture<BuiltKeyedRegion>();
         buildPool.submit(() -> {
             try {
@@ -509,39 +519,41 @@ public class RegionBuilder implements AutoCloseable {
      * Derive cell bounds from a SpatialKey<?> for use in voxel conversion.
      */
     private static RegionBounds boundsFromKey(SpatialKey<?> key) {
-        if (key instanceof MortonKey mk) {
-            int[] coords = MortonCurve.decode(mk.getMortonCode());
-            float size = Constants.lengthAtLevel(mk.getLevel());
-            return new RegionBounds(coords[0], coords[1], coords[2],
-                                    coords[0] + size, coords[1] + size, coords[2] + size);
-        } else if (key instanceof TetreeKey<?> tk) {
-            var verts = Tet.tetrahedron(tk).coordinates();
-            float minX = verts[0].x, maxX = verts[0].x;
-            float minY = verts[0].y, maxY = verts[0].y;
-            float minZ = verts[0].z, maxZ = verts[0].z;
-            for (var v : verts) {
-                if (v.x < minX) minX = v.x;
-                if (v.x > maxX) maxX = v.x;
-                if (v.y < minY) minY = v.y;
-                if (v.y > maxY) maxY = v.y;
-                if (v.z < minZ) minZ = v.z;
-                if (v.z > maxZ) maxZ = v.z;
+        return switch (key) {
+            case MortonKey mk -> {
+                var coords = MortonCurve.decode(mk.getMortonCode());
+                var size = (float) Constants.lengthAtLevel(mk.getLevel());
+                yield new RegionBounds(coords[0], coords[1], coords[2],
+                                       coords[0] + size, coords[1] + size, coords[2] + size);
             }
-            // Avoid zero-size bounds (degenerate tet): add epsilon
-            if (maxX == minX) maxX = minX + 1;
-            if (maxY == minY) maxY = minY + 1;
-            if (maxZ == minZ) maxZ = minZ + 1;
-            return new RegionBounds(minX, minY, minZ, maxX, maxY, maxZ);
-        } else {
-            throw new IllegalArgumentException("Unknown key type: " + key.getClass());
-        }
+            case TetreeKey<?> tk -> {
+                var verts = Tet.tetrahedron(tk).coordinates();
+                float minX = verts[0].x, maxX = verts[0].x;
+                float minY = verts[0].y, maxY = verts[0].y;
+                float minZ = verts[0].z, maxZ = verts[0].z;
+                for (var v : verts) {
+                    if (v.x < minX) minX = v.x;
+                    if (v.x > maxX) maxX = v.x;
+                    if (v.y < minY) minY = v.y;
+                    if (v.y > maxY) maxY = v.y;
+                    if (v.z < minZ) minZ = v.z;
+                    if (v.z > maxZ) maxZ = v.z;
+                }
+                // Avoid zero-size bounds (degenerate tet): add epsilon
+                if (maxX == minX) maxX = minX + 1;
+                if (maxY == minY) maxY = minY + 1;
+                if (maxZ == minZ) maxZ = minZ + 1;
+                yield new RegionBounds(minX, minY, minZ, maxX, maxY, maxZ);
+            }
+            default -> throw new IllegalArgumentException("Unknown key type: " + key.getClass());
+        };
     }
 
     /**
      * Build serialized voxel data from positions within a SpatialKey<?> cell.
      */
     private byte[] doBuildFromPositions(SpatialKey<?> key, List<Point3f> positions, BuildType type) throws IOException {
-        RegionBounds bounds = boundsFromKey(key);
+        var bounds = boundsFromKey(key);
         var voxels = positionsToVoxels(positions, bounds);
         if (type == BuildType.ESVO) {
             return buildAndSerializeESVO(voxels);

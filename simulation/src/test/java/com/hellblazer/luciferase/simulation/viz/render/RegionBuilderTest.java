@@ -585,16 +585,16 @@ class RegionBuilderTest {
 
     @Test
     void buildKeyedProducesDataForOccupiedCell() throws Exception {
-        var builder = new RegionBuilder(2, 10, 8, 64);
         var facade = new OctreeSpatialIndexFacade(4, 8);
         facade.put(1L, new Point3f(100, 100, 100));
         var keys = facade.keysContaining(new Point3f(100, 100, 100), 4, 4);
         var key = keys.iterator().next();
-        var result = builder.buildKeyed(key, facade, 1L).get(5, TimeUnit.SECONDS);
-        assertNotNull(result);
-        assertNotNull(result.serializedData());
-        assertTrue(result.serializedData().length > 0);
-        assertEquals(key, result.key());
-        builder.close();
+        try (var builder = new RegionBuilder(2, 10, 8, 64)) {
+            var result = builder.buildKeyed(key, facade, 1L).get(5, TimeUnit.SECONDS);
+            assertNotNull(result);
+            assertNotNull(result.serializedData());
+            assertTrue(result.serializedData().length > 0);
+            assertEquals(key, result.key());
+        }
     }
 }
