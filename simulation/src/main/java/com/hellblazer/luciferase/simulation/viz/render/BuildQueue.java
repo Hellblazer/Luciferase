@@ -17,6 +17,8 @@
 package com.hellblazer.luciferase.simulation.viz.render;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,6 +40,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author hal.hildebrand
  */
 public final class BuildQueue {
+
+    private static final Logger log = LoggerFactory.getLogger(BuildQueue.class);
 
     @FunctionalInterface
     public interface BuildCompleteCallback {
@@ -73,6 +77,7 @@ public final class BuildQueue {
      * @param priority the priority for scheduling this build
      */
     public void submit(SpatialKey<?> key, RegionBuilder.KeyedBuildRequest.Priority priority) {
+        // TODO: wire priority into build executor ordering (Task 6.1 follow-up)
         inFlight.computeIfAbsent(key, k -> {
             var expectedVersion = dirtyTracker.version(k);
             return builder.buildKeyed(k, facade, expectedVersion)
@@ -82,6 +87,8 @@ public final class BuildQueue {
                               // will always find the result already in pending.
                               if (result != null) {
                                   pending.put(k, result);
+                              } else if (err != null) {
+                                  log.warn("Build failed for key {}: {}", k, err.getMessage());
                               }
                               inFlight.remove(k);
                           })
@@ -104,7 +111,11 @@ public final class BuildQueue {
      *         results have been delivered or discarded
      */
     public CompletableFuture<Void> awaitBuilds() {
-        var futures = inFlight.values().toArray(new CompletableFuture[0]);
+        // Shield each future so that a single build failure cannot poison allOf
+        // and prevent deliverPending() from running for the other successful builds.
+        var futures = inFlight.values().stream()
+            .map(f -> f.exceptionally(e -> null))
+            .toArray(CompletableFuture[]::new);
         return CompletableFuture.allOf(futures).thenRun(this::deliverPending);
     }
 
