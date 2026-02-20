@@ -8,6 +8,7 @@
  */
 package com.hellblazer.luciferase.simulation.viz.render.protocol;
 
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.simulation.viz.render.RegionBuilder;
 
 import java.nio.ByteBuffer;
@@ -22,10 +23,10 @@ import java.nio.ByteOrder;
  * -------|------|----------------|----------------------------------
  *   0    |  4   | magic          | 0x45535652 ("ESVR" little-endian)
  *   4    |  1   | format         | 0x01=ESVO, 0x02=ESVT
- *   5    |  1   | lod            | LOD level (0-15)
- *   6    |  1   | level          | Region octree level (0-21)
+ *   5    |  1   | keyType        | 0x01=MortonKey, 0x02=TetreeKey
+ *   6    |  1   | level          | Region octree/tetree level (0-21)
  *   7    |  1   | reserved       | Reserved (0x00)
- *   8    |  8   | mortonCode     | Morton-encoded region coordinates
+ *   8    |  8   | key            | Spatial key (Morton code or TetreeKey low bits)
  *  16    |  4   | buildVersion   | Build timestamp/version
  *  20    |  4   | dataSize       | Payload size in bytes
  *  24    |  N   | payload        | ESVO/ESVT binary data
@@ -141,14 +142,14 @@ public final class BinaryFrameCodec {
 
             // Read header fields
             var format = buffer.get(originalPos + 4);
-            var lod = buffer.get(originalPos + 5);
+            var keyType = buffer.get(originalPos + 5);
             var level = buffer.get(originalPos + 6);
             // byte 7 is reserved, skip
-            var mortonCode = buffer.getLong(originalPos + 8);
+            var key = buffer.getLong(originalPos + 8);
             var buildVersion = buffer.getInt(originalPos + 16);
             var dataSize = buffer.getInt(originalPos + 20);
 
-            return new FrameHeader(magic, format, lod, level, mortonCode, buildVersion, dataSize);
+            return new FrameHeader(magic, format, keyType, level, key, buildVersion, dataSize);
         } finally {
             // Restore original position (don't mutate input buffer)
             buffer.position(originalPos);
@@ -175,6 +176,68 @@ public final class BinaryFrameCodec {
     }
 
     /**
+     * Encode a frame using a SpatialKey directly.
+     * <p>
+     * MortonKey  uses {@code getMortonCode()} as the key long value.
+     * TetreeKey  uses {@code getLowBits()} as the key long value (CompactTetreeKey wire representation).
+     *
+     * @param key          the spatial key to encode
+     * @param type         the build type (ESVO or ESVT)
+     * @param buildVersion the build version counter
+     * @param data         the payload bytes
+     * @return ByteBuffer containing encoded frame (position=0, limit=frameSize)
+     */
+    public static ByteBuffer encodeWithKey(SpatialKey<?> key, RegionBuilder.BuildType type,
+                                           long buildVersion, byte[] data) {
+        var buffer = ByteBuffer.allocate(ProtocolConstants.FRAME_HEADER_SIZE + data.length);
+        buffer.order(ByteOrder.LITTLE_ENDIAN);
+        writeKeyHeader(buffer, key, type, buildVersion, data.length);
+        buffer.position(ProtocolConstants.FRAME_HEADER_SIZE);
+        buffer.put(data);
+        buffer.position(0);
+        return buffer;
+    }
+
+    /**
+     * Write header fields derived from a SpatialKey into the buffer using absolute-position puts.
+     */
+    private static void writeKeyHeader(ByteBuffer buf, SpatialKey<?> key,
+                                       RegionBuilder.BuildType type, long buildVersion, int dataSize) {
+        buf.putInt(0, ProtocolConstants.FRAME_MAGIC);
+        buf.put(4, formatCode(type));
+        buf.put(5, keyTypeByte(key));
+        buf.put(6, key.getLevel());
+        buf.put(7, (byte) 0);
+        buf.putLong(8, keyLong(key));
+        buf.putInt(16, (int) buildVersion);
+        buf.putInt(20, dataSize);
+    }
+
+    /**
+     * Map a SpatialKey to its wire key_type byte.
+     */
+    private static byte keyTypeByte(SpatialKey<?> key) {
+        return switch (key) {
+            case com.hellblazer.luciferase.lucien.octree.MortonKey mk ->
+                ProtocolConstants.KEY_TYPE_MORTON;
+            case com.hellblazer.luciferase.lucien.tetree.TetreeKey<?> tk ->
+                ProtocolConstants.KEY_TYPE_TET;
+            default -> throw new IllegalArgumentException("Unknown key type: " + key.getClass());
+        };
+    }
+
+    /**
+     * Extract the 64-bit wire representation of a SpatialKey.
+     */
+    private static long keyLong(SpatialKey<?> key) {
+        return switch (key) {
+            case com.hellblazer.luciferase.lucien.octree.MortonKey mk -> mk.getMortonCode();
+            case com.hellblazer.luciferase.lucien.tetree.TetreeKey<?> tk -> tk.getLowBits();
+            default -> throw new IllegalArgumentException("Unknown key type: " + key.getClass());
+        };
+    }
+
+    /**
      * Convert BuildType to format code.
      */
     private static byte formatCode(RegionBuilder.BuildType type) {
@@ -186,20 +249,20 @@ public final class BinaryFrameCodec {
     /**
      * Decoded binary frame header.
      *
-     * @param magic Magic number (0x45535652)
-     * @param format Format code (0x01=ESVO, 0x02=ESVT)
-     * @param lod LOD level (0-15)
-     * @param level Region octree level (0-21)
-     * @param mortonCode Morton-encoded region coordinates
-     * @param buildVersion Build timestamp/version
-     * @param dataSize Payload size in bytes
+     * @param magic        Magic number (0x45535652)
+     * @param format       Format code (0x01=ESVO, 0x02=ESVT)
+     * @param keyType      Key type byte (0x01=MortonKey, 0x02=TetreeKey)
+     * @param level        Region octree/tetree level (0-21)
+     * @param key          Spatial key value (Morton code or TetreeKey low bits)
+     * @param buildVersion Build version counter
+     * @param dataSize     Payload size in bytes
      */
     public record FrameHeader(
         int magic,
         byte format,
-        byte lod,
+        byte keyType,
         byte level,
-        long mortonCode,
+        long key,
         int buildVersion,
         int dataSize
     ) {}

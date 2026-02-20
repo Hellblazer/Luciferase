@@ -147,7 +147,7 @@ class BrowserClientProtocolTest {
         // Round-trip
         var header = BinaryFrameCodec.decodeHeader(buf);
         assertNotNull(header);
-        assertEquals(0x0102030405060708L, header.mortonCode(), "mortonCode round-trip");
+        assertEquals(0x0102030405060708L, header.key(), "key round-trip");
     }
 
     /**
@@ -170,7 +170,7 @@ class BrowserClientProtocolTest {
 
         var header = BinaryFrameCodec.decodeHeader(buf);
         assertNotNull(header);
-        assertEquals(7L, header.mortonCode(), "mortonCode = 7");
+        assertEquals(7L, header.key(), "key = 7");
         // JS: decodeMorton3D(7n) → { rx:1, ry:1, rz:1 }
     }
 

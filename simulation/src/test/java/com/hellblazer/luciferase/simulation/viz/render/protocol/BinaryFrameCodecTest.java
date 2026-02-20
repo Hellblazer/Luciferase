@@ -42,9 +42,9 @@ class BinaryFrameCodecTest {
         assertNotNull(header, "Header should be decoded successfully");
         assertEquals(ProtocolConstants.FRAME_MAGIC, header.magic(), "Magic number mismatch");
         assertEquals(ProtocolConstants.FORMAT_ESVO, header.format(), "Format should be ESVO");
-        assertEquals(0, header.lod(), "LOD level mismatch");
+        assertEquals(0, header.keyType(), "Key type mismatch");
         assertEquals(region.regionId().level(), header.level(), "Region level mismatch");
-        assertEquals(region.regionId().mortonCode(), header.mortonCode(), "Morton code mismatch");
+        assertEquals(region.regionId().mortonCode(), header.key(), "Key mismatch");
         assertEquals((int) region.buildVersion(), header.buildVersion(), "Build version mismatch");
         assertEquals(100, header.dataSize(), "Data size mismatch");
     }
@@ -68,9 +68,9 @@ class BinaryFrameCodecTest {
         assertNotNull(header, "Header should be decoded successfully");
         assertEquals(ProtocolConstants.FRAME_MAGIC, header.magic(), "Magic number mismatch");
         assertEquals(ProtocolConstants.FORMAT_ESVT, header.format(), "Format should be ESVT");
-        assertEquals(0, header.lod(), "LOD level mismatch");
+        assertEquals(0, header.keyType(), "Key type mismatch");
         assertEquals(region.regionId().level(), header.level(), "Region level mismatch");
-        assertEquals(region.regionId().mortonCode(), header.mortonCode(), "Morton code mismatch");
+        assertEquals(region.regionId().mortonCode(), header.key(), "Key mismatch");
         assertEquals((int) region.buildVersion(), header.buildVersion(), "Build version mismatch");
         assertEquals(100, header.dataSize(), "Data size mismatch");
     }
@@ -225,6 +225,26 @@ class BinaryFrameCodecTest {
             "buildVersion header field must encode the version counter, not buildTimeNs. " +
             "Bug: encode() writes (int) region.buildTimeNs() = " + (int) distinctBuildTimeNs +
             " instead of (int) region.buildVersion() = " + (int) distinctBuildVersion);
+    }
+
+    /**
+     * Test 9: encodeWithKey using MortonKey round-trips through decodeHeader.
+     * Verifies that keyType, level, key long, buildVersion, and dataSize are
+     * correctly encoded when using a SpatialKey directly.
+     */
+    @Test
+    void encodeWithMortonKeyRoundTrips() {
+        var key = new com.hellblazer.luciferase.lucien.octree.MortonKey(12345L, (byte) 8);
+        byte[] data = {1, 2, 3, 4};
+        var buf = BinaryFrameCodec.encodeWithKey(key, RegionBuilder.BuildType.ESVO, 7L, data);
+        var header = BinaryFrameCodec.decodeHeader(buf);
+
+        assertNotNull(header, "Header should be decoded successfully");
+        assertEquals(ProtocolConstants.KEY_TYPE_MORTON, header.keyType(), "keyType should be KEY_TYPE_MORTON");
+        assertEquals(8, header.level(), "Level should be 8");
+        assertEquals(12345L, header.key(), "Key should match morton code");
+        assertEquals(7, header.buildVersion(), "Build version should be 7");
+        assertEquals(4, header.dataSize(), "Data size should be 4");
     }
 
     /**

@@ -168,8 +168,8 @@ class RenderingServerE2ETest {
             "Format must be FORMAT_ESVO (0x01)");
         // The build pipeline always produces LOD 0 data (PIPELINE_CANONICAL_LOD = 0).
         // Distance-based LOD is only for prioritization, not the frame LOD field.
-        assertEquals(0, header.lod(),
-            "LOD must be 0: build pipeline always produces LOD 0 (PIPELINE_CANONICAL_LOD)");
+        assertEquals(0, header.keyType(),
+            "keyType must be 0: build pipeline always produces LOD 0 (PIPELINE_CANONICAL_LOD)");
         assertTrue(header.level() >= 0 && header.level() <= 21,
             "Region level must be in [0, 21], got " + header.level());
         assertTrue(header.dataSize() > 0,

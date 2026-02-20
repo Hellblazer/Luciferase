@@ -31,6 +31,12 @@ public final class ProtocolConstants {
     /** Protocol version */
     public static final int PROTOCOL_VERSION = 1;
 
+    // key_type byte values (byte 5 of binary frame header)
+    /** Key type byte for MortonKey (Octree) */
+    public static final byte KEY_TYPE_MORTON = 0x01;
+    /** Key type byte for TetreeKey (Tetree, CompactTetreeKey at wire level) */
+    public static final byte KEY_TYPE_TET    = 0x02;
+
     private ProtocolConstants() {
         // Prevent instantiation
     }
