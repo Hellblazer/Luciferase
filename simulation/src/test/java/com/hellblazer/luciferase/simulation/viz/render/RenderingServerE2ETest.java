@@ -166,10 +166,9 @@ class RenderingServerE2ETest {
             "Frame magic must be 0x45535652 (\"ESVR\")");
         assertEquals(ProtocolConstants.FORMAT_ESVO, header.format(),
             "Format must be FORMAT_ESVO (0x01)");
-        // The build pipeline always produces LOD 0 data (PIPELINE_CANONICAL_LOD = 0).
-        // Distance-based LOD is only for prioritization, not the frame LOD field.
-        assertEquals(0, header.keyType(),
-            "keyType must be 0: build pipeline always produces LOD 0 (PIPELINE_CANONICAL_LOD)");
+        // keyType=KEY_TYPE_MORTON (0x01) for all octree-based builds.
+        assertEquals(ProtocolConstants.KEY_TYPE_MORTON, header.keyType(),
+            "keyType must be KEY_TYPE_MORTON (0x01): build pipeline uses MortonKey spatial indexing");
         assertTrue(header.level() >= 0 && header.level() <= 21,
             "Region level must be in [0, 21], got " + header.level());
         assertTrue(header.dataSize() > 0,

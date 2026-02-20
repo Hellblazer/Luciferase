@@ -53,7 +53,7 @@ class BrowserClientProtocolTest {
      * <pre>
      * offset  0- 3  magic       0x45535652  → bytes [0x52, 0x56, 0x53, 0x45]
      * offset  4     format      0x01 (ESVO)
-     * offset  5     lod         0x02
+     * offset  5     keyType     0x01 (KEY_TYPE_MORTON)
      * offset  6     level       0x04
      * offset  7     reserved    0x00
      * offset  8-15  mortonCode  7           → bytes [0x07, 0x00, …, 0x00]
@@ -74,10 +74,10 @@ class BrowserClientProtocolTest {
         assertEquals((byte) 0x53, buf.get(2),  "magic byte 2");
         assertEquals((byte) 0x45, buf.get(3),  "magic byte 3");
 
-        // format, lod, level, reserved
-        assertEquals((byte) 0x01, buf.get(4),  "format = FORMAT_ESVO");
-        assertEquals((byte) 0x02, buf.get(5),  "lod = 2");
-        assertEquals((byte) 0x04, buf.get(6),  "level = 4");
+        // format, keyType, level, reserved
+        assertEquals((byte) 0x01,                    buf.get(4), "format = FORMAT_ESVO");
+        assertEquals(ProtocolConstants.KEY_TYPE_MORTON, buf.get(5), "keyType = KEY_TYPE_MORTON");
+        assertEquals((byte) 0x04,                    buf.get(6), "level = 4");
         assertEquals((byte) 0x00, buf.get(7),  "reserved = 0x00");
 
         // mortonCode 7 → LE bytes at offset 8-15
@@ -366,7 +366,7 @@ class BrowserClientProtocolTest {
      * <pre>
      * [0-3]   52 56 53 45  magic (ESVR LE)
      * [4]     01           FORMAT_ESVO
-     * [5]     02           lod=2
+     * [5]     01           keyType=KEY_TYPE_MORTON
      * [6]     04           level=4
      * [7]     00           reserved
      * [8-15]  07 00 00 00 00 00 00 00  mortonCode=7
@@ -396,8 +396,8 @@ class BrowserClientProtocolTest {
 
         // Header spot checks
         assertEquals(ProtocolConstants.FRAME_MAGIC,      buf.getInt(0),  "magic");
-        assertEquals(ProtocolConstants.FORMAT_ESVO,      buf.get(4),     "format = ESVO");
-        assertEquals((byte) 2,                           buf.get(5),     "lod = 2");
+        assertEquals(ProtocolConstants.FORMAT_ESVO,        buf.get(4), "format = ESVO");
+        assertEquals(ProtocolConstants.KEY_TYPE_MORTON,   buf.get(5), "keyType = KEY_TYPE_MORTON");
         assertEquals((byte) 4,                           buf.get(6),     "level = 4");
         assertEquals(KNOWN_BUILD_VERSION,                buf.getInt(16), "buildVersion = 42");
         assertEquals(29,                                 buf.getInt(20), "dataSize = 29");
