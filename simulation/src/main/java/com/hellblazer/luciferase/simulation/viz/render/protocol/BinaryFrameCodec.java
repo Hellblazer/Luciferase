@@ -232,8 +232,9 @@ public final class BinaryFrameCodec {
     private static long keyLong(SpatialKey<?> key) {
         return switch (key) {
             case com.hellblazer.luciferase.lucien.octree.MortonKey mk -> mk.getMortonCode();
-            case com.hellblazer.luciferase.lucien.tetree.TetreeKey<?> tk -> tk.getLowBits();
-            default -> throw new IllegalArgumentException("Unknown key type: " + key.getClass());
+            case com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey tk -> tk.getLowBits();
+            default -> throw new IllegalArgumentException(
+                "ExtendedTetreeKey not supported at wire level (use level 0-10 only): " + key.getClass());
         };
     }
 
