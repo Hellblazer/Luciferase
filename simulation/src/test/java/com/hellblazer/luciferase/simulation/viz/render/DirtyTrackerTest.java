@@ -20,6 +20,9 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class DirtyTrackerTest {
@@ -58,5 +61,35 @@ class DirtyTrackerTest {
         tracker.bumpAll(java.util.Set.of(k1, k2));
         assertEquals(1L, tracker.version(k1));
         assertEquals(1L, tracker.version(k2));
+    }
+
+    @Test
+    void concurrentBumpsProduceMonotonicVersionsWithNoLostUpdates() throws InterruptedException {
+        var tracker = new DirtyTracker();
+        var key = new MortonKey(99L, (byte) 5);
+        int threads = 8;
+        int bumpsPerThread = 100;
+        var latch = new CountDownLatch(1);
+        var pool = Executors.newFixedThreadPool(threads);
+
+        for (int i = 0; i < threads; i++) {
+            pool.submit(() -> {
+                try {
+                    latch.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                for (int j = 0; j < bumpsPerThread; j++) {
+                    tracker.bump(key);
+                }
+            });
+        }
+
+        latch.countDown();
+        pool.shutdown();
+        pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertEquals((long) threads * bumpsPerThread, tracker.version(key),
+            "All concurrent bumps must be reflected in the final version (no lost updates)");
     }
 }

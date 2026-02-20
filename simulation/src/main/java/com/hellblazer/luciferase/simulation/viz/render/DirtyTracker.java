@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.viz.render;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 
 import java.util.Collection;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -67,6 +68,7 @@ public final class DirtyTracker {
      * @param keys the collection of spatial keys to bump
      */
     public void bumpAll(Collection<SpatialKey<?>> keys) {
+        Objects.requireNonNull(keys, "keys must not be null");
         keys.forEach(this::bump);
     }
 
