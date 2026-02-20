@@ -120,6 +120,17 @@ public final class BuildQueue {
     }
 
     /**
+     * Returns true if a build for this key is currently in-flight.
+     * Used by StreamingCycle to avoid redundant re-submissions.
+     *
+     * @param key the spatial key to check
+     * @return true if a build is running for this key
+     */
+    public boolean isInFlight(SpatialKey<?> key) {
+        return inFlight.containsKey(key);
+    }
+
+    /**
      * Process all pending build results: deliver fresh ones, discard stale ones.
      * A result is stale if the DirtyTracker version for its key no longer matches
      * the version that was current when the build was dispatched.
