@@ -2,6 +2,7 @@ package com.hellblazer.luciferase.esvo.gpu.beam;
 
 import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
 import javax.vecmath.Point3f;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -310,37 +311,47 @@ public class BeamTreeBuilder {
 
     /**
      * Phase 2: Analyze coherence and compute shared nodes.
+     * Uses iterative BFS to avoid stack overflow on deep trees with large ray counts.
      */
-    private void analyzeCoherence(BeamNode node) {
-        if (node == null) {
+    private void analyzeCoherence(BeamNode root) {
+        if (root == null) {
             return;
         }
 
-        // Compute shared nodes for this beam
-        var rayIndices = node.getRayIndices();
-        if (rayIndices.length > 0) {
-            // Compute coherence based on ray similarity
-            var coherenceScore = computeCoherence(rayIndices);
-            var sharedNodeCount = Math.max(1, (int) (rayIndices.length * coherenceScore));
+        var queue = new ArrayDeque<BeamNode>();
+        queue.add(root);
 
-            var metadata = new CoherenceMetadata(
-                    coherenceScore,
-                    sharedNodeCount,
-                    rayIndices.length,
-                    coherenceScore
-            );
-            node.setCoherence(metadata);
+        while (!queue.isEmpty()) {
+            var node = queue.poll();
 
-            for (int i = 0; i < Math.min(sharedNodeCount, rayIndices.length); i++) {
-                node.addSharedNode(i);
+            // Compute shared nodes for this beam
+            var rayIndices = node.getRayIndices();
+            if (rayIndices.length > 0) {
+                var coherenceScore = computeCoherence(rayIndices);
+                // Cap sharedNodeCount to maxBatchSize to prevent OOM on large ray sets
+                var sharedNodeCount = Math.min(
+                        Math.max(1, (int) (rayIndices.length * coherenceScore)),
+                        maxBatchSize);
+
+                var metadata = new CoherenceMetadata(
+                        coherenceScore,
+                        sharedNodeCount,
+                        rayIndices.length,
+                        coherenceScore
+                );
+                node.setCoherence(metadata);
+
+                for (int i = 0; i < sharedNodeCount; i++) {
+                    node.addSharedNode(i);
+                }
             }
-        }
 
-        // Recurse to children
-        var children = node.getChildren();
-        if (children != null) {
-            for (var child : children) {
-                analyzeCoherence(child);
+            // Enqueue children for BFS traversal
+            var children = node.getChildren();
+            if (children != null) {
+                for (var child : children) {
+                    queue.add(child);
+                }
             }
         }
     }
