@@ -190,7 +190,8 @@ class FailureRecoveryTest {
         int attempts = 0;
         boolean success = false;
 
-        while (attempts < 5 && !success) {
+        // 10 attempts at 40% loss: P(all fail) = 0.4^10 ≈ 0.01% (was 5 attempts = 1%)
+        while (attempts < 10 && !success) {
             attempts++;
             migratorA.initiateOptimisticMigration(entityId, nodeB);
             migratorA.queueDeferredUpdate(entityId,

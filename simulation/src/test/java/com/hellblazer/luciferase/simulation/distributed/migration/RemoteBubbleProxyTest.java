@@ -31,6 +31,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -63,87 +65,61 @@ class RemoteBubbleProxyTest {
 
     @Test
     void testQueryPosition() throws Exception {
-        // Setup: Create two bubbles with socket transport
-        var port1 = findAvailablePort();
-        var port2 = findAvailablePort();
-        var addr1 = ProcessAddress.localhost("bubble1", port1);
-        var addr2 = ProcessAddress.localhost("bubble2", port2);
-
-        // Create bubble UUIDs first
+        // Setup: Use port 0 (OS-assigned) to avoid TOCTOU race
         var bubble1Id = UUID.randomUUID();
         var bubble2Id = UUID.randomUUID();
 
-        // Create transports with bubble UUIDs so getLocalId() returns correct ID
-        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, addr1);
-        var transport2 = TestTransportFactory.createTestTransport(bubble2Id, addr2);
+        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, ProcessAddress.localhost("bubble1", 0));
+        var transport2 = TestTransportFactory.createTestTransport(bubble2Id, ProcessAddress.localhost("bubble2", 0));
         transports.add(transport1);
         transports.add(transport2);
 
-        transport1.listenOn(addr1);
-        transport2.listenOn(addr2);
+        transport1.listenOn(ProcessAddress.localhost("bubble1", 0));
+        transport2.listenOn(ProcessAddress.localhost("bubble2", 0));
+        var addr1 = transport1.getBoundAddress();
+        var addr2 = transport2.getBoundAddress();
         Thread.sleep(100);  // Let servers start
 
-        // Connect transports bidirectionally
         transport1.connectTo(addr2);
         transport2.connectTo(addr1);
         Thread.sleep(100);  // Let connections establish
 
-        // Create bubbles with matching UUIDs (spatialLevel=10, targetFrameMs=16ms for 60fps)
         var bubble1 = new Bubble(bubble1Id, (byte) 10, 16, transport1);
         var bubble2 = new Bubble(bubble2Id, (byte) 10, 16, transport2);
         bubbles.add(bubble1);
         bubbles.add(bubble2);
 
-        // Register members in BOTH transports so they can route to each other
         transport1.registerMember(bubble1.id(), addr1);
         transport1.registerMember(bubble2.id(), addr2);
         transport2.registerMember(bubble1.id(), addr1);
         transport2.registerMember(bubble2.id(), addr2);
-        Thread.sleep(100);  // Ensure registration visible across threads
+        Thread.sleep(100);
 
-        // Test: Query bubble2's position from bubble1
         var proxy = new RemoteBubbleProxy(bubble2.id(), transport1, 5000);
-
         var position = proxy.getPosition();
-
         assertNotNull(position, "Position should not be null");
-        // Note: We can't verify exact coordinates until we understand bubble2's centroid,
-        // but we can verify the query/response mechanism works by checking it's not timing out
-    }
-
-    private static int findAvailablePort() {
-        try (var serverSocket = new java.net.ServerSocket(0)) {
-            return serverSocket.getLocalPort();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to find available port", e);
-        }
     }
 
     @Test
     void testQueryNeighbors() throws Exception {
-        // Setup: Create three bubbles, bubble2 has bubble3 as neighbor
-        var port1 = findAvailablePort();
-        var port2 = findAvailablePort();
-        var port3 = findAvailablePort();
-        var addr1 = ProcessAddress.localhost("bubble1", port1);
-        var addr2 = ProcessAddress.localhost("bubble2", port2);
-        var addr3 = ProcessAddress.localhost("bubble3", port3);
-
-        // Create bubble UUIDs first
+        // Setup: Use port 0 (OS-assigned) to avoid TOCTOU race
         var bubble1Id = UUID.randomUUID();
         var bubble2Id = UUID.randomUUID();
         var bubble3Id = UUID.randomUUID();
 
-        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, addr1);
-        var transport2 = TestTransportFactory.createTestTransport(bubble2Id, addr2);
-        var transport3 = TestTransportFactory.createTestTransport(bubble3Id, addr3);
+        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, ProcessAddress.localhost("bubble1", 0));
+        var transport2 = TestTransportFactory.createTestTransport(bubble2Id, ProcessAddress.localhost("bubble2", 0));
+        var transport3 = TestTransportFactory.createTestTransport(bubble3Id, ProcessAddress.localhost("bubble3", 0));
         transports.add(transport1);
         transports.add(transport2);
         transports.add(transport3);
 
-        transport1.listenOn(addr1);
-        transport2.listenOn(addr2);
-        transport3.listenOn(addr3);
+        transport1.listenOn(ProcessAddress.localhost("bubble1", 0));
+        transport2.listenOn(ProcessAddress.localhost("bubble2", 0));
+        transport3.listenOn(ProcessAddress.localhost("bubble3", 0));
+        var addr1 = transport1.getBoundAddress();
+        var addr2 = transport2.getBoundAddress();
+        var addr3 = transport3.getBoundAddress();
         Thread.sleep(100);  // Let servers start
 
         transport1.connectTo(addr2);
@@ -164,12 +140,9 @@ class RemoteBubbleProxyTest {
         transport2.registerMember(bubble3.id(), addr3);
         transport3.registerMember(bubble2.id(), addr2);
 
-        // Make bubble3 a neighbor of bubble2
         bubble2.addNeighbor(bubble3.id());
 
-        // Test: Query bubble2's neighbors from bubble1
         var proxy = new RemoteBubbleProxy(bubble2.id(), transport1, 5000);
-
         var neighbors = proxy.getNeighbors();
 
         assertNotNull(neighbors);
@@ -179,24 +152,17 @@ class RemoteBubbleProxyTest {
 
     @Test
     void testQueryTimeout() throws Exception {
-        // Setup: Create a transport but don't register any members (query will fail immediately)
-        var port1 = findAvailablePort();
-        var addr1 = ProcessAddress.localhost("bubble1", port1);
+        // Setup: Use port 0 (OS-assigned) to avoid TOCTOU race
         var bubble1Id = UUID.randomUUID();
-
-        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, addr1);
+        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, ProcessAddress.localhost("bubble1", 0));
         transports.add(transport1);
-        transport1.listenOn(addr1);
+        transport1.listenOn(ProcessAddress.localhost("bubble1", 0));
 
         var fakeRemoteId = UUID.randomUUID();
 
-        // Test: Query to unregistered remote returns default value (not an exception)
-        var proxy = new RemoteBubbleProxy(fakeRemoteId, transport1, 500);  // 500ms timeout
-
-        // getPosition() is designed to never throw - it returns default value when query fails
+        var proxy = new RemoteBubbleProxy(fakeRemoteId, transport1, 500);
         var position = proxy.getPosition();
         assertNotNull(position, "Should return default value when query fails");
-        // Default value for Point3D is (0, 0, 0)
         assertEquals(0.0, position.getX(), 0.001, "Should return default X when no connection");
         assertEquals(0.0, position.getY(), 0.001, "Should return default Y when no connection");
         assertEquals(0.0, position.getZ(), 0.001, "Should return default Z when no connection");
@@ -204,23 +170,19 @@ class RemoteBubbleProxyTest {
 
     @Test
     void testStaleCacheFallback() throws Exception {
-        // Setup: Create two bubbles, query once, then disconnect
-        var port1 = findAvailablePort();
-        var port2 = findAvailablePort();
-        var addr1 = ProcessAddress.localhost("bubble1", port1);
-        var addr2 = ProcessAddress.localhost("bubble2", port2);
-
-        // Create bubble UUIDs first
+        // Setup: Use port 0 (OS-assigned) to avoid TOCTOU race
         var bubble1Id = UUID.randomUUID();
         var bubble2Id = UUID.randomUUID();
 
-        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, addr1);
-        var transport2 = TestTransportFactory.createTestTransport(bubble2Id, addr2);
+        var transport1 = TestTransportFactory.createTestTransport(bubble1Id, ProcessAddress.localhost("bubble1", 0));
+        var transport2 = TestTransportFactory.createTestTransport(bubble2Id, ProcessAddress.localhost("bubble2", 0));
         transports.add(transport1);
         transports.add(transport2);
 
-        transport1.listenOn(addr1);
-        transport2.listenOn(addr2);
+        transport1.listenOn(ProcessAddress.localhost("bubble1", 0));
+        transport2.listenOn(ProcessAddress.localhost("bubble2", 0));
+        var addr1 = transport1.getBoundAddress();
+        var addr2 = transport2.getBoundAddress();
         Thread.sleep(100);  // Let servers start
 
         transport1.connectTo(addr2);
@@ -234,18 +196,15 @@ class RemoteBubbleProxyTest {
 
         transport1.registerMember(bubble2.id(), addr2);
         transport2.registerMember(bubble1.id(), addr1);
-        Thread.sleep(50);  // Ensure registration visible
+        Thread.sleep(50);
 
-        // First query succeeds and populates cache
-        var proxy = new RemoteBubbleProxy(bubble2.id(), transport1, 500, 10000);  // 10s cache TTL
+        var proxy = new RemoteBubbleProxy(bubble2.id(), transport1, 500, 10000);
         var position1 = proxy.getPosition();
         assertNotNull(position1, "First query should succeed");
-        var expectedX = position1.getX();  // Remember the actual value for comparison
+        var expectedX = position1.getX();
 
-        // Disconnect transport2 (queries will fail)
         transport2.closeAll();
 
-        // Second query should fail, but fallback to stale cache
         var position2 = proxy.getPosition();
         assertNotNull(position2, "Should fallback to stale cache");
         assertEquals(expectedX, position2.getX(), 0.001, "Should return same cached value");
