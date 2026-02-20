@@ -94,11 +94,8 @@ public class SocketServer {
      * @throws IOException if bind fails
      */
     public void start() throws IOException {
-        this.serverSocket = new ServerSocket(
-            bindAddress.port(),
-            50, // backlog
-            InetAddress.getByName(bindAddress.hostname())
-        );
+        var addr = InetAddress.getByName(bindAddress.hostname());
+        this.serverSocket = new ServerSocket(bindAddress.port(), 50, addr);
         this.running = true;
 
         log.info("SocketServer started on {}", bindAddress.toUrl());
@@ -217,5 +214,15 @@ public class SocketServer {
      */
     public boolean isRunning() {
         return running;
+    }
+
+    /**
+     * Get the actual bound port. When the server was started with port 0,
+     * returns the OS-assigned ephemeral port. Returns 0 if not yet started.
+     *
+     * @return Actual bound port, or 0 if not started
+     */
+    public int getPort() {
+        return serverSocket != null ? serverSocket.getLocalPort() : 0;
     }
 }

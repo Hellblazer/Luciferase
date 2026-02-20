@@ -22,7 +22,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -44,6 +43,10 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>Edge cases (double listenOn, concurrent operations)</li>
  * </ul>
  *
+ * <p>Port allocation: All tests use port 0 (OS-assigned) via listenOn(), then read the
+ * actual bound port from getBoundAddress(). This eliminates the find-then-bind TOCTOU
+ * race where a port is discovered free but grabbed by another process before we bind.
+ *
  * @author hal.hildebrand
  */
 class SocketConnectionManagerTest {
@@ -63,26 +66,16 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testListenOnLoopback() throws IOException {
-        var port1 = findAvailablePort();
-        var mgr1 = new SocketConnectionManager(
-            ProcessAddress.localhost("p1", port1),
-            msg -> {}
-        );
+        // IPv4 loopback (127.0.0.1) with OS-assigned port
+        var mgr1 = new SocketConnectionManager(ProcessAddress.localhost("p1", 0), msg -> {});
         managers.add(mgr1);
-
-        // IPv4 loopback
-        assertDoesNotThrow(() -> mgr1.listenOn(ProcessAddress.localhost("p1", port1)),
+        assertDoesNotThrow(() -> mgr1.listenOn(ProcessAddress.localhost("p1", 0)),
                           "Should accept 127.0.0.1");
 
-        var port2 = findAvailablePort();
-        var mgr2 = new SocketConnectionManager(
-            new ProcessAddress("p2", "localhost", port2),
-            msg -> {}
-        );
+        // DNS name "localhost" with OS-assigned port
+        var mgr2 = new SocketConnectionManager(new ProcessAddress("p2", "localhost", 0), msg -> {});
         managers.add(mgr2);
-
-        // DNS name "localhost"
-        assertDoesNotThrow(() -> mgr2.listenOn(new ProcessAddress("p2", "localhost", port2)),
+        assertDoesNotThrow(() -> mgr2.listenOn(new ProcessAddress("p2", "localhost", 0)),
                           "Should accept 'localhost'");
     }
 
@@ -91,10 +84,7 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testListenOnRejectsNonLoopback() {
-        var mgr = new SocketConnectionManager(
-            new ProcessAddress("p1", "0.0.0.0", 9999),
-            msg -> {}
-        );
+        var mgr = new SocketConnectionManager(new ProcessAddress("p1", "0.0.0.0", 9999), msg -> {});
         managers.add(mgr);
 
         var ex = assertThrows(IllegalArgumentException.class,
@@ -110,24 +100,17 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testConnectToLoopback() throws IOException {
-        // Start a server to connect to
-        var serverPort = findAvailablePort();
-        var server = new SocketConnectionManager(
-            ProcessAddress.localhost("server", serverPort),
-            msg -> {}
-        );
+        // Start a server on OS-assigned port; get actual address from getBoundAddress()
+        var server = new SocketConnectionManager(ProcessAddress.localhost("server", 0), msg -> {});
         managers.add(server);
-        server.listenOn(ProcessAddress.localhost("server", serverPort));
+        server.listenOn(ProcessAddress.localhost("server", 0));
+        var serverAddr = server.getBoundAddress();
 
-        // Create client and connect
-        var clientPort = findAvailablePort();
-        var client = new SocketConnectionManager(
-            ProcessAddress.localhost("client", clientPort),
-            msg -> {}
-        );
+        // Create client and connect using the actual server address
+        var client = new SocketConnectionManager(ProcessAddress.localhost("client", 0), msg -> {});
         managers.add(client);
 
-        assertDoesNotThrow(() -> client.connectTo(ProcessAddress.localhost("server", serverPort)),
+        assertDoesNotThrow(() -> client.connectTo(serverAddr),
                           "Should accept 127.0.0.1 for connectTo");
     }
 
@@ -136,10 +119,7 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testConnectToRejectsNonLoopback() {
-        var mgr = new SocketConnectionManager(
-            ProcessAddress.localhost("p1", findAvailablePort()),
-            msg -> {}
-        );
+        var mgr = new SocketConnectionManager(ProcessAddress.localhost("p1", 0), msg -> {});
         managers.add(mgr);
 
         var ex = assertThrows(IllegalArgumentException.class,
@@ -155,31 +135,22 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testGetConnectedProcesses() throws IOException {
-        // Start server
-        var serverPort = findAvailablePort();
-        var server = new SocketConnectionManager(
-            ProcessAddress.localhost("server", serverPort),
-            msg -> {}
-        );
+        // Start server on OS-assigned port
+        var server = new SocketConnectionManager(ProcessAddress.localhost("server", 0), msg -> {});
         managers.add(server);
-        server.listenOn(ProcessAddress.localhost("server", serverPort));
+        server.listenOn(ProcessAddress.localhost("server", 0));
+        var serverAddr = server.getBoundAddress();
 
         // Create client
-        var clientPort = findAvailablePort();
-        var client = new SocketConnectionManager(
-            ProcessAddress.localhost("client", clientPort),
-            msg -> {}
-        );
+        var client = new SocketConnectionManager(ProcessAddress.localhost("client", 0), msg -> {});
         managers.add(client);
 
         // Before connection
-        assertEquals(0, client.getConnectedProcesses().size(),
-                    "Should have no connections initially");
+        assertEquals(0, client.getConnectedProcesses().size(), "Should have no connections initially");
 
-        // After connection
-        client.connectTo(ProcessAddress.localhost("server", serverPort));
+        // After connection to actual server address
+        client.connectTo(serverAddr);
 
-        // Give connection time to establish
         try {
             Thread.sleep(50);
         } catch (InterruptedException e) {
@@ -196,44 +167,30 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testCloseAll() throws IOException {
-        // Start server
-        var serverPort = findAvailablePort();
-        var server = new SocketConnectionManager(
-            ProcessAddress.localhost("server", serverPort),
-            msg -> {}
-        );
+        // Start server on OS-assigned port
+        var server = new SocketConnectionManager(ProcessAddress.localhost("server", 0), msg -> {});
         managers.add(server);
-        server.listenOn(ProcessAddress.localhost("server", serverPort));
+        server.listenOn(ProcessAddress.localhost("server", 0));
+        var serverAddr = server.getBoundAddress();
 
-        // Create and connect client
-        var clientPort = findAvailablePort();
-        var client = new SocketConnectionManager(
-            ProcessAddress.localhost("client", clientPort),
-            msg -> {}
-        );
+        // Create and connect client using actual server address
+        var client = new SocketConnectionManager(ProcessAddress.localhost("client", 0), msg -> {});
         managers.add(client);
-        client.connectTo(ProcessAddress.localhost("server", serverPort));
+        client.connectTo(serverAddr);
 
         // Close all
         client.closeAll();
 
-        // Verify disconnected
-        assertEquals(0, client.getConnectedProcesses().size(),
-                    "Should have no connections after closeAll");
+        assertEquals(0, client.getConnectedProcesses().size(), "Should have no connections after closeAll");
         assertFalse(client.isRunning(), "Should not be running after closeAll");
     }
 
     /**
      * Test isRunning() returns false on construction (BUG FIX).
-     * <p>
-     * Current SocketTransport.connected = true on line 84 is a bug.
      */
     @Test
     void testIsRunningFalseOnConstruction() {
-        var mgr = new SocketConnectionManager(
-            ProcessAddress.localhost("p1", findAvailablePort()),
-            msg -> {}
-        );
+        var mgr = new SocketConnectionManager(ProcessAddress.localhost("p1", 0), msg -> {});
         managers.add(mgr);
 
         assertFalse(mgr.isRunning(),
@@ -245,18 +202,12 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testIsRunningTrueAfterListenOn() throws IOException {
-        var port = findAvailablePort();
-        var mgr = new SocketConnectionManager(
-            ProcessAddress.localhost("p1", port),
-            msg -> {}
-        );
+        var mgr = new SocketConnectionManager(ProcessAddress.localhost("p1", 0), msg -> {});
         managers.add(mgr);
 
-        // Before listenOn
         assertFalse(mgr.isRunning(), "Should be false before listenOn");
 
-        // After listenOn
-        mgr.listenOn(ProcessAddress.localhost("p1", port));
+        mgr.listenOn(ProcessAddress.localhost("p1", 0));
         assertTrue(mgr.isRunning(), "Should be true after listenOn");
     }
 
@@ -265,28 +216,19 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testIsRunningTrueAfterConnectTo() throws IOException {
-        // Start server
-        var serverPort = findAvailablePort();
-        var server = new SocketConnectionManager(
-            ProcessAddress.localhost("server", serverPort),
-            msg -> {}
-        );
+        // Start server on OS-assigned port
+        var server = new SocketConnectionManager(ProcessAddress.localhost("server", 0), msg -> {});
         managers.add(server);
-        server.listenOn(ProcessAddress.localhost("server", serverPort));
+        server.listenOn(ProcessAddress.localhost("server", 0));
+        var serverAddr = server.getBoundAddress();
 
         // Create client
-        var clientPort = findAvailablePort();
-        var client = new SocketConnectionManager(
-            ProcessAddress.localhost("client", clientPort),
-            msg -> {}
-        );
+        var client = new SocketConnectionManager(ProcessAddress.localhost("client", 0), msg -> {});
         managers.add(client);
 
-        // Before connectTo
         assertFalse(client.isRunning(), "Should be false before connectTo");
 
-        // After connectTo
-        client.connectTo(ProcessAddress.localhost("server", serverPort));
+        client.connectTo(serverAddr);
         assertTrue(client.isRunning(), "Should be true after connectTo");
     }
 
@@ -298,26 +240,22 @@ class SocketConnectionManagerTest {
         var received = new AtomicReference<TransportVonMessage>();
         var latch = new CountDownLatch(1);
 
-        // Start server
-        var serverPort = findAvailablePort();
+        // Start server on OS-assigned port
         var server = new SocketConnectionManager(
-            ProcessAddress.localhost("server", serverPort),
+            ProcessAddress.localhost("server", 0),
             msg -> {
                 received.set(msg);
                 latch.countDown();
             }
         );
         managers.add(server);
-        server.listenOn(ProcessAddress.localhost("server", serverPort));
+        server.listenOn(ProcessAddress.localhost("server", 0));
+        var serverAddr = server.getBoundAddress();
 
-        // Create client
-        var clientPort = findAvailablePort();
-        var client = new SocketConnectionManager(
-            ProcessAddress.localhost("client", clientPort),
-            msg -> {}
-        );
+        // Create client and connect to actual server address
+        var client = new SocketConnectionManager(ProcessAddress.localhost("client", 0), msg -> {});
         managers.add(client);
-        client.connectTo(ProcessAddress.localhost("server", serverPort));
+        client.connectTo(serverAddr);
 
         // Send message
         var testMsg = new TransportVonMessage(
@@ -327,7 +265,6 @@ class SocketConnectionManagerTest {
 
         client.sendToProcess("server", testMsg);
 
-        // Verify received
         assertTrue(latch.await(2, TimeUnit.SECONDS), "Should receive message within timeout");
         assertNotNull(received.get(), "Should receive message");
         assertEquals("JOIN_REQUEST", received.get().type(), "Message type should match");
@@ -335,20 +272,23 @@ class SocketConnectionManagerTest {
 
     /**
      * EDGE CASE: Double listenOn with same address (idempotent).
+     * <p>
+     * After listenOn(port-0), currentBindAddress holds the actual OS-assigned port.
+     * The idempotent check compares against currentBindAddress, so the second call
+     * must use getBoundAddress() (not the original port-0 address).
      */
     @Test
     void testDoubleListenOnSameAddress() throws IOException {
-        var port = findAvailablePort();
-        var addr = ProcessAddress.localhost("p1", port);
-        var mgr = new SocketConnectionManager(addr, msg -> {});
+        var mgr = new SocketConnectionManager(ProcessAddress.localhost("p1", 0), msg -> {});
         managers.add(mgr);
 
-        // First listenOn
-        mgr.listenOn(addr);
+        // First listenOn: OS assigns an ephemeral port
+        mgr.listenOn(ProcessAddress.localhost("p1", 0));
         assertTrue(mgr.isRunning(), "Should be running after first listenOn");
 
-        // Second listenOn with same address (should be idempotent, no error)
-        assertDoesNotThrow(() -> mgr.listenOn(addr),
+        // Second listenOn with the ACTUAL bound address (idempotent, no error)
+        var actualAddr = mgr.getBoundAddress();
+        assertDoesNotThrow(() -> mgr.listenOn(actualAddr),
                           "Double listenOn with same address should be idempotent");
         assertTrue(mgr.isRunning(), "Should still be running");
     }
@@ -358,19 +298,15 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testDoubleListenOnDifferentAddress() throws IOException {
-        var port1 = findAvailablePort();
-        var addr1 = ProcessAddress.localhost("p1", port1);
-        var mgr = new SocketConnectionManager(addr1, msg -> {});
+        var mgr = new SocketConnectionManager(ProcessAddress.localhost("p1", 0), msg -> {});
         managers.add(mgr);
 
-        // First listenOn
-        mgr.listenOn(addr1);
+        // First listenOn on OS-assigned port
+        mgr.listenOn(ProcessAddress.localhost("p1", 0));
 
-        // Second listenOn with different address
-        var port2 = findAvailablePort();
-        var addr2 = ProcessAddress.localhost("p1", port2);
+        // Second listenOn with a different process ID (different address)
         var ex = assertThrows(IllegalStateException.class,
-                             () -> mgr.listenOn(addr2),
+                             () -> mgr.listenOn(ProcessAddress.localhost("p2", 0)),
                              "Should throw IllegalStateException for different address");
 
         assertTrue(ex.getMessage().contains("already listening") || ex.getMessage().contains("different address"),
@@ -382,32 +318,24 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testDuplicateConnectTo() throws IOException {
-        // Start server
-        var serverPort = findAvailablePort();
-        var server = new SocketConnectionManager(
-            ProcessAddress.localhost("server", serverPort),
-            msg -> {}
-        );
+        // Start server on OS-assigned port
+        var server = new SocketConnectionManager(ProcessAddress.localhost("server", 0), msg -> {});
         managers.add(server);
-        server.listenOn(ProcessAddress.localhost("server", serverPort));
+        server.listenOn(ProcessAddress.localhost("server", 0));
+        var serverAddr = server.getBoundAddress();
 
         // Create client
-        var clientPort = findAvailablePort();
-        var client = new SocketConnectionManager(
-            ProcessAddress.localhost("client", clientPort),
-            msg -> {}
-        );
+        var client = new SocketConnectionManager(ProcessAddress.localhost("client", 0), msg -> {});
         managers.add(client);
 
-        // First connectTo
-        client.connectTo(ProcessAddress.localhost("server", serverPort));
+        // First connectTo using actual server address
+        client.connectTo(serverAddr);
         var firstConnections = client.getConnectedProcesses().size();
 
         // Second connectTo to same server (should be idempotent)
-        assertDoesNotThrow(() -> client.connectTo(ProcessAddress.localhost("server", serverPort)),
+        assertDoesNotThrow(() -> client.connectTo(serverAddr),
                           "Duplicate connectTo should be idempotent");
 
-        // Should still have same number of connections (not duplicated)
         assertEquals(firstConnections, client.getConnectedProcesses().size(),
                     "Should not create duplicate connection");
     }
@@ -417,31 +345,20 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testCloseAllDuringActiveConnections() throws IOException {
-        // Start server
-        var serverPort = findAvailablePort();
-        var server = new SocketConnectionManager(
-            ProcessAddress.localhost("server", serverPort),
-            msg -> {}
-        );
+        // Start server on OS-assigned port
+        var server = new SocketConnectionManager(ProcessAddress.localhost("server", 0), msg -> {});
         managers.add(server);
-        server.listenOn(ProcessAddress.localhost("server", serverPort));
+        server.listenOn(ProcessAddress.localhost("server", 0));
+        var serverAddr = server.getBoundAddress();
 
         // Create and connect client
-        var clientPort = findAvailablePort();
-        var client = new SocketConnectionManager(
-            ProcessAddress.localhost("client", clientPort),
-            msg -> {}
-        );
+        var client = new SocketConnectionManager(ProcessAddress.localhost("client", 0), msg -> {});
         managers.add(client);
-        client.connectTo(ProcessAddress.localhost("server", serverPort));
+        client.connectTo(serverAddr);
 
-        // Close all during active connection
-        assertDoesNotThrow(() -> client.closeAll(),
-                          "closeAll() should handle active connections gracefully");
+        assertDoesNotThrow(() -> client.closeAll(), "closeAll() should handle active connections gracefully");
 
-        // Verify clean shutdown
-        assertEquals(0, client.getConnectedProcesses().size(),
-                    "Should have no connections after closeAll");
+        assertEquals(0, client.getConnectedProcesses().size(), "Should have no connections after closeAll");
         assertFalse(client.isRunning(), "Should not be running after closeAll");
     }
 
@@ -450,25 +367,17 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testGetConnectedProcessesConcurrent() throws Exception {
-        // Start server
-        var serverPort = findAvailablePort();
-        var server = new SocketConnectionManager(
-            ProcessAddress.localhost("server", serverPort),
-            msg -> {}
-        );
+        // Start server on OS-assigned port
+        var server = new SocketConnectionManager(ProcessAddress.localhost("server", 0), msg -> {});
         managers.add(server);
-        server.listenOn(ProcessAddress.localhost("server", serverPort));
+        server.listenOn(ProcessAddress.localhost("server", 0));
+        var serverAddr = server.getBoundAddress();
 
-        // Create client
-        var clientPort = findAvailablePort();
-        var client = new SocketConnectionManager(
-            ProcessAddress.localhost("client", clientPort),
-            msg -> {}
-        );
+        // Create client and connect to actual server address
+        var client = new SocketConnectionManager(ProcessAddress.localhost("client", 0), msg -> {});
         managers.add(client);
-        client.connectTo(ProcessAddress.localhost("server", serverPort));
+        client.connectTo(serverAddr);
 
-        // Thread 1: Repeatedly read connected processes
         var errors = new AtomicInteger(0);
         var latch = new CountDownLatch(2);
 
@@ -476,8 +385,7 @@ class SocketConnectionManagerTest {
             for (int i = 0; i < 100; i++) {
                 try {
                     var processes = client.getConnectedProcesses();
-                    // Modify snapshot (should not affect client)
-                    processes.clear();
+                    processes.clear();  // Modify snapshot (should not affect client)
                 } catch (Exception e) {
                     errors.incrementAndGet();
                 }
@@ -485,7 +393,6 @@ class SocketConnectionManagerTest {
             latch.countDown();
         });
 
-        // Thread 2: Also read connected processes
         var readThread2 = new Thread(() -> {
             for (int i = 0; i < 100; i++) {
                 try {
@@ -504,7 +411,6 @@ class SocketConnectionManagerTest {
         assertTrue(latch.await(5, TimeUnit.SECONDS), "Threads should complete");
         assertEquals(0, errors.get(), "Should have no errors from concurrent access");
 
-        // Original client should still have connections
         assertEquals(1, client.getConnectedProcesses().size(),
                     "Client should still have 1 connection after concurrent reads");
     }
@@ -514,10 +420,7 @@ class SocketConnectionManagerTest {
      */
     @Test
     void testSendToProcessNotConnected() {
-        var mgr = new SocketConnectionManager(
-            ProcessAddress.localhost("p1", findAvailablePort()),
-            msg -> {}
-        );
+        var mgr = new SocketConnectionManager(ProcessAddress.localhost("p1", 0), msg -> {});
         managers.add(mgr);
 
         var testMsg = new TransportVonMessage(
@@ -532,16 +435,5 @@ class SocketConnectionManagerTest {
         var msg = ex.getMessage().toLowerCase();
         assertTrue(msg.contains("not connected") || msg.contains("not found"),
                   "Error should mention not connected: " + ex.getMessage());
-    }
-
-    /**
-     * Find an available port for testing.
-     */
-    private int findAvailablePort() {
-        try (var socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to find available port", e);
-        }
     }
 }

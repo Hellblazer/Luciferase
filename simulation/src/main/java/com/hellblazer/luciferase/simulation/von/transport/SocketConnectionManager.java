@@ -113,10 +113,14 @@ public class SocketConnectionManager implements ConnectionManager {
         }
 
         this.server = new SocketServer(bind, incomingMessageHandler);
-        this.currentBindAddress = bind;
         this.server.start();
+        // Resolve actual port (when bind.port()==0, OS assigns an ephemeral port)
+        var actualPort = this.server.getPort();
+        this.currentBindAddress = actualPort != bind.port()
+            ? new ProcessAddress(bind.processId(), bind.hostname(), actualPort)
+            : bind;
         running = true;  // BUG FIX: set true after server starts
-        log.info("Listening on {}", bind.toUrl());
+        log.info("Listening on {}", currentBindAddress.toUrl());
     }
 
     @Override
@@ -157,6 +161,16 @@ public class SocketConnectionManager implements ConnectionManager {
     @Override
     public boolean isRunning() {
         return running;
+    }
+
+    /**
+     * Get the actual bound address after listenOn(). When listenOn() was called
+     * with port 0, this returns the OS-assigned ephemeral port address.
+     *
+     * @return Actual bound ProcessAddress, or null if not yet listening
+     */
+    public ProcessAddress getBoundAddress() {
+        return currentBindAddress;
     }
 
     /**

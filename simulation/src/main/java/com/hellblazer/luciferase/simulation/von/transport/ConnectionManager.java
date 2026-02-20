@@ -116,6 +116,14 @@ public interface ConnectionManager extends AutoCloseable {
     boolean isRunning();
 
     /**
+     * Get the actual bound address after listenOn(). When listenOn() was called
+     * with port 0, this returns the ProcessAddress with the OS-assigned port.
+     *
+     * @return Actual bound ProcessAddress, or null if not yet listening
+     */
+    ProcessAddress getBoundAddress();
+
+    /**
      * Close all connections and stop server.
      * <p>
      * Delegates to closeAll() for consistent behavior.

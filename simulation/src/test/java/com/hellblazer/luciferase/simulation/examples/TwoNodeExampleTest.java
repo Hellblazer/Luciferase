@@ -244,27 +244,43 @@ public class TwoNodeExampleTest {
      * Checks that total entity count matches initial spawn count
      * and no entities are duplicated or lost.
      */
-    private boolean verifyEntityAccountingConsistent(Process node1, Process node2) throws IOException {
-        // Parse entity counts from log files
-        var node1Count = parseEntityCount(0);
-        var node2Count = parseEntityCount(1);
-
-        if (node1Count < 0 || node2Count < 0) {
-            System.err.println("ERROR: Failed to parse entity counts from logs");
-            return false;
-        }
-
-        var totalCount = node1Count + node2Count;
+    private boolean verifyEntityAccountingConsistent(Process node1, Process node2) throws IOException, InterruptedException {
+        // ENTITY_COUNT is logged every 500ms independently by each node.
+        // A migration happening between the two log events causes a momentary
+        // inconsistency (sum 49 or 51). Retry a few times to catch a quiescent window.
         var expectedCount = 50; // Node1 spawns 50 entities
 
-        System.out.println("Entity distribution:");
-        System.out.println("  Node 1: " + node1Count + " entities");
-        System.out.println("  Node 2: " + node2Count + " entities");
-        System.out.println("  Total:  " + totalCount + " (expected: " + expectedCount + ")");
+        for (int attempt = 0; attempt < 6; attempt++) {
+            var node1Count = parseEntityCount(0);
+            var node2Count = parseEntityCount(1);
 
-        // Allow small timing window where entity might be in flight
-        // Total should match expected count (no duplication or loss)
-        return totalCount == expectedCount;
+            if (node1Count < 0 || node2Count < 0) {
+                System.err.println("Attempt " + attempt + ": Failed to parse entity counts");
+                Thread.sleep(200);
+                continue;
+            }
+
+            var totalCount = node1Count + node2Count;
+
+            System.out.println("Entity distribution (attempt " + attempt + "):");
+            System.out.println("  Node 1: " + node1Count + " entities");
+            System.out.println("  Node 2: " + node2Count + " entities");
+            System.out.println("  Total:  " + totalCount + " (expected: " + expectedCount + ")");
+
+            if (totalCount == expectedCount) {
+                return true;
+            }
+
+            // Brief pause lets any in-flight entity complete its migration
+            Thread.sleep(200);
+        }
+
+        // Final attempt: log the mismatch clearly
+        var node1Count = parseEntityCount(0);
+        var node2Count = parseEntityCount(1);
+        System.err.println("FINAL: Node1=" + node1Count + " Node2=" + node2Count +
+                          " Total=" + (node1Count + node2Count) + " Expected=" + expectedCount);
+        return (node1Count + node2Count) == expectedCount;
     }
 
     /**
