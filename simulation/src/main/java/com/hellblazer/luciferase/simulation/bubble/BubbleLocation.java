@@ -44,7 +44,7 @@ import java.util.Objects;
  * @author hal.hildebrand
  */
 public record BubbleLocation(
-    TetreeKey<? extends TetreeKey> key,
+    TetreeKey<? extends TetreeKey<?>> key,
     BubbleBounds bounds
 ) {
 

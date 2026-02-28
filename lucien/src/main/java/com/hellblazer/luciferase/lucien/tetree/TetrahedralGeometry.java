@@ -111,7 +111,7 @@ public class TetrahedralGeometry {
      * @return Array of intersection results
      */
     public static RayTetrahedronIntersection[] batchRayIntersectsTetrahedron(Ray3D[] rays,
-                                                                             TetreeKey<? extends TetreeKey> tetKey) {
+                                                                             TetreeKey<? extends TetreeKey<?>> tetKey) {
         // Get vertices once
         Tet tet = Tet.tetrahedron(tetKey);
         Point3i[] coords = tet.coordinates();
@@ -133,7 +133,7 @@ public class TetrahedralGeometry {
         return results;
     }
 
-    private static void cacheVertices(TetreeKey<? extends TetreeKey> tetKey, Point3f v0, Point3f v1, Point3f v2,
+    private static void cacheVertices(TetreeKey<? extends TetreeKey<?>> tetKey, Point3f v0, Point3f v1, Point3f v2,
                                       Point3f v3) {
         // Use the low bits for cache indexing
         int cacheIndex = (int) (tetKey.getLowBits() % CACHE_SIZE);
@@ -313,7 +313,7 @@ public class TetrahedralGeometry {
         return true; // Tetrahedron intersects or is inside frustum
     }
 
-    private static Point3f[] getCachedVertices(TetreeKey<? extends TetreeKey> tetKey) {
+    private static Point3f[] getCachedVertices(TetreeKey<? extends TetreeKey<?>> tetKey) {
         // Use the low bits for cache indexing
         int cacheIndex = (int) (tetKey.getLowBits() % CACHE_SIZE);
         synchronized (cacheLocks[cacheIndex]) {
@@ -340,7 +340,7 @@ public class TetrahedralGeometry {
      * @param tetKey The tetrahedron key
      * @return Array containing [centerX, centerY, centerZ, radius]
      */
-    public static float[] getTetrahedronBoundingSphere(TetreeKey<? extends TetreeKey> tetKey) {
+    public static float[] getTetrahedronBoundingSphere(TetreeKey<? extends TetreeKey<?>> tetKey) {
         Tet tet = Tet.tetrahedron(tetKey);
         Point3i[] coords = tet.coordinates();
 
@@ -520,7 +520,7 @@ public class TetrahedralGeometry {
      * @return intersection result with detailed information
      */
     public static RayTetrahedronIntersection rayIntersectsTetrahedron(Ray3D ray,
-                                                                      TetreeKey<? extends TetreeKey> tetIndex) {
+                                                                      TetreeKey<? extends TetreeKey<?>> tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         var vertices = tet.coordinates();
 
@@ -602,7 +602,7 @@ public class TetrahedralGeometry {
      * @return Intersection result with detailed information
      */
     public static RayTetrahedronIntersection rayIntersectsTetrahedronCached(Ray3D ray,
-                                                                            TetreeKey<? extends TetreeKey> tetKey) {
+                                                                            TetreeKey<? extends TetreeKey<?>> tetKey) {
         // Get cached vertices if available
         Point3f[] vertices = getCachedVertices(tetKey);
         if (vertices == null) {
@@ -622,7 +622,7 @@ public class TetrahedralGeometry {
      * @param tetIndex The tetrahedron index
      * @return true if ray intersects tetrahedron, false otherwise
      */
-    public static boolean rayIntersectsTetrahedronFast(Ray3D ray, TetreeKey<? extends TetreeKey> tetIndex) {
+    public static boolean rayIntersectsTetrahedronFast(Ray3D ray, TetreeKey<? extends TetreeKey<?>> tetIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
         Point3i[] coords = tet.coordinates();
 
@@ -1023,8 +1023,8 @@ public class TetrahedralGeometry {
      * @param tetIndex2 second tetrahedral SFC index
      * @return type of intersection between the tetrahedra
      */
-    public static IntersectionResult tetrahedronIntersection(TetreeKey<? extends TetreeKey> tetIndex1,
-                                                             TetreeKey<? extends TetreeKey> tetIndex2) {
+    public static IntersectionResult tetrahedronIntersection(TetreeKey<? extends TetreeKey<?>> tetIndex1,
+                                                             TetreeKey<? extends TetreeKey<?>> tetIndex2) {
         if (tetIndex1 == tetIndex2) {
             return IntersectionResult.IDENTICAL;
         }

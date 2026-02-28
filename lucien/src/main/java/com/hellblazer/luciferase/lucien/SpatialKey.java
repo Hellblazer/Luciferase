@@ -85,7 +85,11 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
         if (this instanceof com.hellblazer.luciferase.lucien.octree.MortonKey mortonKey) {
             builder.setMorton(mortonKey.toProto());
         } else if (this instanceof com.hellblazer.luciferase.lucien.tetree.TetreeKey<?> tetreeKey) {
-            builder.setTetree(tetreeKey.toProto());
+            builder.setTetree(TetreeKey.newBuilder()
+                .setLevel(tetreeKey.getLevel())
+                .setLow(tetreeKey.getLowBits())
+                .setHigh(tetreeKey.getHighBits())
+                .build());
         } else {
             throw new UnsupportedOperationException("Unknown SpatialKey type: " + this.getClass().getName());
         }
@@ -99,7 +103,10 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
     static SpatialKey<?> fromProtoSpatialKey(com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey proto) {
         return switch (proto.getKeyTypeCase()) {
             case MORTON -> com.hellblazer.luciferase.lucien.octree.MortonKey.fromProto(proto.getMorton());
-            case TETREE -> com.hellblazer.luciferase.lucien.tetree.TetreeKey.fromProto(proto.getTetree());
+            case TETREE -> {
+                var t = proto.getTetree();
+                yield com.hellblazer.luciferase.lucien.tetree.TetreeKey.create((byte) t.getLevel(), t.getLow(), t.getHigh());
+            }
             case KEYTYPE_NOT_SET -> throw new IllegalArgumentException("SpatialKey protobuf has no key type set");
         };
     }

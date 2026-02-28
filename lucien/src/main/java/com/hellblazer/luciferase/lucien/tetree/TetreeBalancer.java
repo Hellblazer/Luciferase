@@ -30,16 +30,16 @@ import java.util.*;
  * @param <ID> The type of EntityID used
  * @author hal.hildebrand
  */
-public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeKey<? extends TetreeKey>, ID> {
+public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeKey<? extends TetreeKey<?>>, ID> {
     
     private final Tetree<ID, ?> tetree;
-    private final EntityManager<TetreeKey<? extends TetreeKey>, ID, ?> entityManager;
+    private final EntityManager<TetreeKey<? extends TetreeKey<?>>, ID, ?> entityManager;
     private final byte maxDepth;
     private final int maxEntitiesPerNode;
     private TreeBalancingStrategy<ID> balancingStrategy;
     private boolean autoBalancingEnabled = false;
     
-    public TetreeBalancer(Tetree<ID, ?> tetree, EntityManager<TetreeKey<? extends TetreeKey>, ID, ?> entityManager, 
+    public TetreeBalancer(Tetree<ID, ?> tetree, EntityManager<TetreeKey<? extends TetreeKey<?>>, ID, ?> entityManager, 
                           byte maxDepth, int maxEntitiesPerNode) {
         this.tetree = tetree;
         this.entityManager = entityManager;
@@ -49,7 +49,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
     }
 
     @Override
-    public TreeBalancer.BalancingAction checkNodeBalance(TetreeKey<? extends TetreeKey> nodeIndex) {
+    public TreeBalancer.BalancingAction checkNodeBalance(TetreeKey<? extends TetreeKey<?>> nodeIndex) {
         var node = tetree.getSpatialIndex().get(nodeIndex);
         if (node == null) {
             return TreeBalancer.BalancingAction.NONE;
@@ -124,15 +124,15 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
     }
 
     @Override
-    public boolean mergeNodes(Set<TetreeKey<? extends TetreeKey>> tetIndices,
-                              TetreeKey<? extends TetreeKey> parentIndex) {
+    public boolean mergeNodes(Set<TetreeKey<? extends TetreeKey<?>>> tetIndices,
+                              TetreeKey<? extends TetreeKey<?>> parentIndex) {
         if (tetIndices.isEmpty()) {
             return false;
         }
 
         // Collect all entities from nodes to be merged
         Set<ID> allEntities = new HashSet<>();
-        for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
+        for (TetreeKey<? extends TetreeKey<?>> tetIndex : tetIndices) {
             SpatialNodeImpl<ID> node = tetree.getSpatialIndex().get(tetIndex);
             if (node != null && !node.isEmpty()) {
                 allEntities.addAll(node.getEntityIds());
@@ -141,7 +141,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
 
         if (allEntities.isEmpty()) {
             // Just remove empty nodes
-            for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
+            for (TetreeKey<? extends TetreeKey<?>> tetIndex : tetIndices) {
                 tetree.getSpatialIndex().remove(tetIndex);
                 tetree.getSortedSpatialIndices().remove(tetIndex);
             }
@@ -161,7 +161,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
         }
 
         // Remove child nodes
-        for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
+        for (TetreeKey<? extends TetreeKey<?>> tetIndex : tetIndices) {
             tetree.getSpatialIndex().remove(tetIndex);
             tetree.getSortedSpatialIndices().remove(tetIndex);
             for (ID entityId : allEntities) {
@@ -174,7 +174,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
     }
 
     @Override
-    public int rebalanceSubtree(TetreeKey<? extends TetreeKey> rootNodeIndex) {
+    public int rebalanceSubtree(TetreeKey<? extends TetreeKey<?>> rootNodeIndex) {
         // Not implemented for tetree - could recursively balance subtree
         return 0;
     }
@@ -196,7 +196,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
     }
 
     @Override
-    public List<TetreeKey<? extends TetreeKey>> splitNode(TetreeKey<? extends TetreeKey> tetIndex, byte nodeLevel) {
+    public List<TetreeKey<? extends TetreeKey<?>>> splitNode(TetreeKey<? extends TetreeKey<?>> tetIndex, byte nodeLevel) {
         if (nodeLevel >= maxDepth) {
             return Collections.emptyList();
         }
@@ -213,8 +213,8 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
         Tet parentTet = Tet.tetrahedron(tetIndex);
 
         // Create child nodes
-        List<TetreeKey<? extends TetreeKey>> createdChildren = new ArrayList<>();
-        Map<TetreeKey<? extends TetreeKey>, Set<ID>> childEntityMap = new HashMap<>();
+        List<TetreeKey<? extends TetreeKey<?>>> createdChildren = new ArrayList<>();
+        Map<TetreeKey<? extends TetreeKey<?>>, Set<ID>> childEntityMap = new HashMap<>();
 
         // Distribute entities to children based on their positions
         for (ID entityId : entities) {
@@ -228,7 +228,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
                 try {
                     Tet child = parentTet.child(i);
                     if (child.contains(pos)) {
-                        TetreeKey<? extends TetreeKey> childIndex = child.tmIndex();
+                        TetreeKey<? extends TetreeKey<?>> childIndex = child.tmIndex();
                         childEntityMap.computeIfAbsent(childIndex, k -> new HashSet<>()).add(entityId);
                         break; // Entity placed in correct child
                     }
@@ -245,8 +245,8 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
         }
 
         // Create child nodes and add entities
-        for (Map.Entry<TetreeKey<? extends TetreeKey>, Set<ID>> entry : childEntityMap.entrySet()) {
-            TetreeKey<? extends TetreeKey> childIndex = entry.getKey();
+        for (Map.Entry<TetreeKey<? extends TetreeKey<?>>, Set<ID>> entry : childEntityMap.entrySet()) {
+            TetreeKey<? extends TetreeKey<?>> childIndex = entry.getKey();
             Set<ID> childEntities = entry.getValue();
 
             if (!childEntities.isEmpty()) {
@@ -268,7 +268,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
         node.clearEntities();
 
         // Mark parent node as having children
-        for (TetreeKey<? extends TetreeKey> childTetIndex : createdChildren) {
+        for (TetreeKey<? extends TetreeKey<?>> childTetIndex : createdChildren) {
             for (int i = 0; i < 8; i++) {
                 try {
                     Tet expectedChild = parentTet.child(i);
@@ -289,7 +289,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
         return createdChildren;
     }
 
-    protected Set<TetreeKey<? extends TetreeKey>> findSiblings(TetreeKey<? extends TetreeKey> tetIndex) {
+    protected Set<TetreeKey<? extends TetreeKey<?>>> findSiblings(TetreeKey<? extends TetreeKey<?>> tetIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
         if (tet.l() == 0) {
             return Collections.emptySet(); // Root has no siblings
@@ -297,10 +297,10 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
 
         // Use the t8code-compliant TetreeFamily algorithm for finding siblings
         Tet[] siblings = TetreeFamily.getSiblings(tet);
-        Set<TetreeKey<? extends TetreeKey>> result = new HashSet<>();
+        Set<TetreeKey<? extends TetreeKey<?>>> result = new HashSet<>();
 
         for (Tet sibling : siblings) {
-            TetreeKey<? extends TetreeKey> siblingIndex = sibling.tmIndex();
+            TetreeKey<? extends TetreeKey<?>> siblingIndex = sibling.tmIndex();
             // Add if it's not the current node and exists in the spatial index
             if (siblingIndex != tetIndex && tetree.getSpatialIndex().containsKey(siblingIndex)) {
                 result.add(siblingIndex);
@@ -310,7 +310,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
         return result;
     }
 
-    private List<Integer> getSiblingEntityCounts(TetreeKey<? extends TetreeKey> nodeIndex) {
+    private List<Integer> getSiblingEntityCounts(TetreeKey<? extends TetreeKey<?>> nodeIndex) {
         var siblings = findSiblings(nodeIndex);
         var counts = new ArrayList<Integer>();
         

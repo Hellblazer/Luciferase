@@ -85,7 +85,7 @@ public class TetreeNeighborFinder {
      * @param edgeIndex The edge index (0-5)
      * @return List of neighbor tetrahedron indices sharing the specified edge
      */
-    public List<TetreeKey<?>> findEdgeNeighbors(TetreeKey<? extends TetreeKey> tetIndex, int edgeIndex) {
+    public List<TetreeKey<?>> findEdgeNeighbors(TetreeKey<? extends TetreeKey<?>> tetIndex, int edgeIndex) {
         if (edgeIndex < 0 || edgeIndex > 5) {
             throw new IllegalArgumentException("Edge index must be between 0 and 5, got: " + edgeIndex);
         }
@@ -271,7 +271,7 @@ public class TetreeNeighborFinder {
      * @param vertexIndex The vertex index (0-3)
      * @return List of neighbor tetrahedron indices sharing the specified vertex
      */
-    public List<TetreeKey<?>> findVertexNeighbors(TetreeKey<? extends TetreeKey> tetIndex, int vertexIndex) {
+    public List<TetreeKey<?>> findVertexNeighbors(TetreeKey<? extends TetreeKey<?>> tetIndex, int vertexIndex) {
         if (vertexIndex < 0 || vertexIndex > 3) {
             throw new IllegalArgumentException("Vertex index must be between 0 and 3, got: " + vertexIndex);
         }

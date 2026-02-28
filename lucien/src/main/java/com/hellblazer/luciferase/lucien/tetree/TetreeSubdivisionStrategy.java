@@ -37,7 +37,7 @@ import java.util.Set;
  * @author hal.hildebrand
  */
 public class TetreeSubdivisionStrategy<ID extends EntityID, Content>
-extends SubdivisionStrategy<TetreeKey<? extends TetreeKey>, ID, Content> {
+extends SubdivisionStrategy<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
 
     private static final int TETREE_CHILDREN = 8;
 
@@ -69,9 +69,9 @@ extends SubdivisionStrategy<TetreeKey<? extends TetreeKey>, ID, Content> {
     }
 
     @Override
-    public Set<TetreeKey<?>> calculateTargetNodes(TetreeKey<? extends TetreeKey> parentIndex, byte parentLevel,
+    public Set<TetreeKey<?>> calculateTargetNodes(TetreeKey<? extends TetreeKey<?>> parentIndex, byte parentLevel,
                                                   EntityBounds entityBounds,
-                                                  AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> spatialIndex) {
+                                                  AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> spatialIndex) {
         Set<TetreeKey<?>> targetNodes = new HashSet<>();
 
         if (entityBounds == null) {
@@ -100,7 +100,7 @@ extends SubdivisionStrategy<TetreeKey<? extends TetreeKey>, ID, Content> {
     }
 
     @Override
-    public SubdivisionResult determineStrategy(SubdivisionContext<TetreeKey<? extends TetreeKey>, ID> context) {
+    public SubdivisionResult determineStrategy(SubdivisionContext<TetreeKey<? extends TetreeKey<?>>, ID> context) {
         // Check if we're at maximum depth
         if (context.isAtMaxDepth()) {
             return SubdivisionResult.insertInParent("At maximum depth");
@@ -162,7 +162,7 @@ extends SubdivisionStrategy<TetreeKey<? extends TetreeKey>, ID, Content> {
     }
 
     @Override
-    protected double estimateEntitySizeFactor(SubdivisionContext<TetreeKey<? extends TetreeKey>, ID> context) {
+    protected double estimateEntitySizeFactor(SubdivisionContext<TetreeKey<? extends TetreeKey<?>>, ID> context) {
         if (context.newEntityBounds == null) {
             return 0.5; // Default for point entities
         }
@@ -187,8 +187,8 @@ extends SubdivisionStrategy<TetreeKey<? extends TetreeKey>, ID, Content> {
      *
      * @return Tet index of the target child, or null if entity spans multiple children
      */
-    private TetreeKey<? extends TetreeKey> calculateSingleTargetChild(
-    SubdivisionContext<TetreeKey<? extends TetreeKey>, ID> context) {
+    private TetreeKey<? extends TetreeKey<?>> calculateSingleTargetChild(
+    SubdivisionContext<TetreeKey<? extends TetreeKey<?>>, ID> context) {
         if (context.newEntityBounds == null) {
             return null;
         }

@@ -120,22 +120,6 @@ public class TetreeLevelCacheKeyCollisionTest {
         byte level1 = 5;
         byte type1 = 1;
 
-        int x2 = 100;
-        int y2 = 200;
-        int z2 = 0x00000000;  // z = 0
-        byte level2 = 5;
-        byte type2 = 1;
-
-        // Calculate keys using the buggy formula
-        long buggyKey1 = ((long) x1 << 32) | ((long) y1 << 16) | ((long) z1) | ((long) level1 << 8) | type1;
-        long buggyKey2 = ((long) x2 << 32) | ((long) y2 << 16) | ((long) z2) | ((long) level2 << 8) | type2;
-
-        // With z1 = 0x00000501, the key calculation is:
-        // key1 = (100L << 32) | (200L << 16) | 0x00000501 | (5L << 8) | 1
-        //      = 0x64000000_00000000 | 0x00000000_00C80000 | 0x00000000_00000501 | 0x00000000_00000500 | 0x00000000_00000001
-        //      = 0x64000000_00C80501 | 0x00000000_00000500 | 0x00000000_00000001
-        //      = 0x64000000_00C80501 (the OR with 0x500 and 0x1 doesn't change because those bits are already set)
-
         // Let's show a clearer collision
         z1 = 0x00000501;  // This will collide with level=5, type=1
         long actualKey1 = ((long) x1 << 32) | ((long) y1 << 16) | ((long) z1) | ((long) level1 << 8) | type1;

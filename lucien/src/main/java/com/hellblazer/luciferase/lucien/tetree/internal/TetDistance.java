@@ -25,15 +25,15 @@ import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
  * @author hal.hildebrand
  */
 public class TetDistance implements Comparable<TetDistance> {
-    private final TetreeKey<? extends TetreeKey> tetIndex;
+    private final TetreeKey<? extends TetreeKey<?>> tetIndex;
     private final float distance;
 
-    public TetDistance(TetreeKey<? extends TetreeKey> tetIndex, float distance) {
+    public TetDistance(TetreeKey<? extends TetreeKey<?>> tetIndex, float distance) {
         this.tetIndex = tetIndex;
         this.distance = distance;
     }
 
-    public TetreeKey<? extends TetreeKey> getTetIndex() {
+    public TetreeKey<? extends TetreeKey<?>> getTetIndex() {
         return tetIndex;
     }
 

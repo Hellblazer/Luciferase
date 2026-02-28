@@ -45,9 +45,6 @@ public class HierarchicalZBuffer {
     private float[] viewMatrix = new float[16];
     private float[] projectionMatrix = new float[16];
     private float[] viewProjectionMatrix = new float[16];
-    private float nearPlane = 0.1f;
-    private float farPlane = 1000.0f;
-    
     /**
      * Creates a hierarchical Z-buffer with specified dimensions
      * 
@@ -105,9 +102,6 @@ public class HierarchicalZBuffer {
         try {
             System.arraycopy(viewMatrix, 0, this.viewMatrix, 0, 16);
             System.arraycopy(projectionMatrix, 0, this.projectionMatrix, 0, 16);
-            this.nearPlane = nearPlane;
-            this.farPlane = farPlane;
-            
             // Compute view-projection matrix
             multiplyMatrices(projectionMatrix, viewMatrix, viewProjectionMatrix);
         } finally {

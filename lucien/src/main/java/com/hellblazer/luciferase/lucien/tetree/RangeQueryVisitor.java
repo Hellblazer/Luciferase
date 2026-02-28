@@ -43,13 +43,13 @@ import java.util.function.BiPredicate;
  * @author hal.hildebrand
  */
 public class RangeQueryVisitor<ID extends EntityID, Content> 
-    extends AbstractTreeVisitor<TetreeKey<? extends TetreeKey>, ID, Content> {
+    extends AbstractTreeVisitor<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
     
     private VolumeBounds queryBounds;
     private final boolean includeIntersecting;
-    private final List<SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID>> results;
-    private final Set<TetreeKey<? extends TetreeKey>> visitedNodes;
-    private final BiPredicate<TetreeKey<? extends TetreeKey>, VolumeBounds> boundsPredicate;
+    private final List<SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey<?>>, ID>> results;
+    private final Set<TetreeKey<? extends TetreeKey<?>>> visitedNodes;
+    private final BiPredicate<TetreeKey<? extends TetreeKey<?>>, VolumeBounds> boundsPredicate;
     
     // Statistics
     private int nodesVisited = 0;
@@ -78,8 +78,8 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
     }
     
     @Override
-    public boolean visitNode(SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID> node, 
-                           int level, TetreeKey<? extends TetreeKey> parentIndex) {
+    public boolean visitNode(SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey<?>>, ID> node, 
+                           int level, TetreeKey<? extends TetreeKey<?>> parentIndex) {
         nodesVisited++;
         var nodeKey = node.sfcIndex();
         
@@ -108,7 +108,7 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
     
     @Override
     public void visitEntity(ID entityId, Content content, 
-                          TetreeKey<? extends TetreeKey> nodeIndex, int level) {
+                          TetreeKey<? extends TetreeKey<?>> nodeIndex, int level) {
         // Entities are handled at the node level in this visitor
         // Override if you need per-entity processing
     }
@@ -118,7 +118,7 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
      * 
      * @return List of matching spatial nodes
      */
-    public List<SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID>> getResults() {
+    public List<SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey<?>>, ID>> getResults() {
         return new ArrayList<>(results);
     }
     
@@ -158,8 +158,8 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
      * @param startNode The starting node for expansion
      */
     public void expandFromSeed(Tetree<ID, Content> tetree, 
-                              SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID> startNode) {
-        var toProcess = new ArrayList<SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID>>();
+                              SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey<?>>, ID> startNode) {
+        var toProcess = new ArrayList<SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey<?>>, ID>>();
         toProcess.add(startNode);
         
         while (!toProcess.isEmpty()) {
@@ -187,7 +187,7 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
      * Check if a node could possibly contain results based on its level and bounds.
      * This enables early termination of subtree traversal.
      */
-    private boolean couldContainResults(TetreeKey<? extends TetreeKey> nodeKey, int level) {
+    private boolean couldContainResults(TetreeKey<? extends TetreeKey<?>> nodeKey, int level) {
         // For coarse pruning, we can use the AABB of the tetrahedron's containing cube
         // This is conservative but safe - we won't miss any actual intersections
         var tet = Tet.tetrahedron(nodeKey);
@@ -210,7 +210,7 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
     /**
      * Check if a node intersects the query bounds.
      */
-    private boolean nodeIntersectsBounds(TetreeKey<? extends TetreeKey> nodeKey, VolumeBounds bounds) {
+    private boolean nodeIntersectsBounds(TetreeKey<? extends TetreeKey<?>> nodeKey, VolumeBounds bounds) {
         var tet = Tet.tetrahedron(nodeKey);
         
         // Get the actual tetrahedron vertices
@@ -232,7 +232,7 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
     /**
      * Check if a node is completely contained within the query bounds.
      */
-    private boolean nodeContainedInBounds(TetreeKey<? extends TetreeKey> nodeKey, VolumeBounds bounds) {
+    private boolean nodeContainedInBounds(TetreeKey<? extends TetreeKey<?>> nodeKey, VolumeBounds bounds) {
         var tet = Tet.tetrahedron(nodeKey);
         
         // Get the actual tetrahedron vertices

@@ -1,8 +1,6 @@
 package com.dyada.core;
 
 import com.dyada.TestBase;
-import com.dyada.core.coordinates.LevelIndex;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;

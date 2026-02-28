@@ -529,7 +529,7 @@ public class Tet {
         return new Tet(coordinates[0], coordinates[1], coordinates[2], level, type);
     }
 
-    public static Tet tetrahedron(TetreeKey<? extends TetreeKey> key) {
+    public static Tet tetrahedron(TetreeKey<? extends TetreeKey<?>> key) {
         return tetrahedron(key.getLowBits(), key.getHighBits(), key.getLevel());
     }
 
@@ -1263,7 +1263,7 @@ public class Tet {
      * @param volume - the volume to enclose
      * @return - index in the SFC of the minimum Tet enclosing the volume
      */
-    public TetreeKey<? extends TetreeKey> enclosing(Spatial volume) {
+    public TetreeKey<? extends TetreeKey<?>> enclosing(Spatial volume) {
         // Extract bounding box of the volume
         var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
@@ -1286,7 +1286,7 @@ public class Tet {
      * @param level - refinement level for enclosure
      * @return the simplex at the provided
      */
-    public TetreeKey<? extends TetreeKey> enclosing(Tuple3f point, byte level) {
+    public TetreeKey<? extends TetreeKey<?>> enclosing(Tuple3f point, byte level) {
         var tet = locatePointBeyRefinementFromRoot(point.x, point.y, point.z, level);
         return tet.tmIndex();
     }
@@ -1363,7 +1363,7 @@ public class Tet {
      * @param level the target level (must be >= this.l)
      * @return SFC index of first descendant
      */
-    public TetreeKey<? extends TetreeKey> firstDescendant(byte level) {
+    public TetreeKey<? extends TetreeKey<?>> firstDescendant(byte level) {
         if (level < this.l) {
             throw new IllegalArgumentException("Target level must be >= current level");
         }
@@ -1471,7 +1471,7 @@ public class Tet {
      * @param level the target level (must be >= this.l)
      * @return SFC index of last descendant
      */
-    public TetreeKey<? extends TetreeKey> lastDescendant(byte level) {
+    public TetreeKey<? extends TetreeKey<?>> lastDescendant(byte level) {
         if (level < this.l) {
             throw new IllegalArgumentException("Target level must be >= current level");
         }
@@ -1644,7 +1644,7 @@ public class Tet {
      * The TM-index interleaves coordinate bits with tetrahedral type information, creating a space-filling curve index
      * that includes both spatial position and the complete ancestor type hierarchy for global uniqueness.
      */
-    public TetreeKey<? extends TetreeKey> tmIndex() {
+    public TetreeKey<? extends TetreeKey<?>> tmIndex() {
         // PERFORMANCE: Check cache first
         var cached = TetreeLevelCache.getCachedTetreeKey(x, y, z, l, type);
         if (cached != null) {
@@ -1702,7 +1702,7 @@ public class Tet {
         }
 
         // Use compact key for levels <= 10 for better performance
-        TetreeKey<? extends TetreeKey> result;
+        TetreeKey<? extends TetreeKey<?>> result;
         if (l <= 10) {
             result = new CompactTetreeKey(l, lowBits);
         } else {
@@ -2452,7 +2452,7 @@ public class Tet {
          *
          * @return An iterator that generates keys on demand
          */
-        Iterator<TetreeKey<? extends TetreeKey>> iterator() {
+        Iterator<TetreeKey<? extends TetreeKey<?>>> iterator() {
             var startTet = Tet.tetrahedron(start);
             var endTet = Tet.tetrahedron(end);
             return new LazyRangeIterator(startTet, endTet);
@@ -2499,7 +2499,7 @@ public class Tet {
          *
          * @return A stream that generates keys on demand
          */
-        Stream<TetreeKey<? extends TetreeKey>> stream() {
+        Stream<TetreeKey<? extends TetreeKey<?>>> stream() {
             return LazySFCRangeStream.stream(this);
         }
     }

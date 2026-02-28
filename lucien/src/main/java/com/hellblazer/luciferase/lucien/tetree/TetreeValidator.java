@@ -406,7 +406,7 @@ public final class TetreeValidator {
      * @param nodeIndices the node indices to validate
      * @return validation result with any errors found
      */
-    public static ValidationResult validateTreeStructure(Collection<TetreeKey<? extends TetreeKey>> nodeIndices) {
+    public static ValidationResult validateTreeStructure(Collection<TetreeKey<? extends TetreeKey<?>>> nodeIndices) {
         if (!validationEnabled) {
             return ValidationResult.valid();
         }

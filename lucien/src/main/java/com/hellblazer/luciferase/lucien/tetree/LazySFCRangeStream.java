@@ -38,7 +38,7 @@ public class LazySFCRangeStream {
      * @param range The SFC range to stream
      * @return A lazy stream of TetreeKeys
      */
-    public static Stream<TetreeKey<? extends TetreeKey>> stream(Tet.SFCRange range) {
+    public static Stream<TetreeKey<? extends TetreeKey<?>>> stream(Tet.SFCRange range) {
         // Convert TetreeKey range boundaries to Tet objects for iteration
         var startTet = Tet.tetrahedron(range.start());
         var endTet = Tet.tetrahedron(range.end());
@@ -56,14 +56,14 @@ public class LazySFCRangeStream {
      * @param ranges The SFC ranges to stream
      * @return A lazy stream of TetreeKeys from all ranges
      */
-    public static Stream<TetreeKey<? extends TetreeKey>> streamMultiple(Stream<Tet.SFCRange> ranges) {
+    public static Stream<TetreeKey<? extends TetreeKey<?>>> streamMultiple(Stream<Tet.SFCRange> ranges) {
         return ranges.flatMap(LazySFCRangeStream::stream);
     }
     
     /**
      * Spliterator implementation for efficient stream operations on TetreeKey ranges.
      */
-    private static class TetreeRangeSpliterator implements Spliterator<TetreeKey<? extends TetreeKey>> {
+    private static class TetreeRangeSpliterator implements Spliterator<TetreeKey<? extends TetreeKey<?>>> {
         
         private final LazyRangeIterator iterator;
         private final long estimatedSize;
@@ -74,7 +74,7 @@ public class LazySFCRangeStream {
         }
         
         @Override
-        public boolean tryAdvance(Consumer<? super TetreeKey<? extends TetreeKey>> action) {
+        public boolean tryAdvance(Consumer<? super TetreeKey<? extends TetreeKey<?>>> action) {
             if (iterator.hasNext()) {
                 action.accept(iterator.next());
                 return true;
@@ -83,7 +83,7 @@ public class LazySFCRangeStream {
         }
         
         @Override
-        public Spliterator<TetreeKey<? extends TetreeKey>> trySplit() {
+        public Spliterator<TetreeKey<? extends TetreeKey<?>>> trySplit() {
             // For now, don't support splitting - could be enhanced later
             // to split ranges for better parallel performance
             return null;
@@ -103,7 +103,7 @@ public class LazySFCRangeStream {
     /**
      * Enhanced spliterator that supports splitting for parallel operations.
      */
-    public static class ParallelTetreeRangeSpliterator implements Spliterator<TetreeKey<? extends TetreeKey>> {
+    public static class ParallelTetreeRangeSpliterator implements Spliterator<TetreeKey<? extends TetreeKey<?>>> {
         
         private Tet currentStart;
         private final Tet end;
@@ -118,7 +118,7 @@ public class LazySFCRangeStream {
         }
         
         @Override
-        public boolean tryAdvance(Consumer<? super TetreeKey<? extends TetreeKey>> action) {
+        public boolean tryAdvance(Consumer<? super TetreeKey<? extends TetreeKey<?>>> action) {
             if (currentStart != null && shouldContinue()) {
                 action.accept(currentStart.tmIndex());
                 currentStart = nextTet(currentStart);
@@ -129,7 +129,7 @@ public class LazySFCRangeStream {
         }
         
         @Override
-        public Spliterator<TetreeKey<? extends TetreeKey>> trySplit() {
+        public Spliterator<TetreeKey<? extends TetreeKey<?>>> trySplit() {
             if (remainingEstimate <= 1) {
                 return null;
             }

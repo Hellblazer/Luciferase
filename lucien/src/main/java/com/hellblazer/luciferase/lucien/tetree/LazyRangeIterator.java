@@ -28,7 +28,7 @@ import java.util.Objects;
  *
  * @author hal.hildebrand
  */
-public class LazyRangeIterator implements Iterator<TetreeKey<? extends TetreeKey>> {
+public class LazyRangeIterator implements Iterator<TetreeKey<? extends TetreeKey<?>>> {
     
     private final Tet startTet;
     private final Tet endTet;
@@ -68,12 +68,12 @@ public class LazyRangeIterator implements Iterator<TetreeKey<? extends TetreeKey
     }
     
     @Override
-    public TetreeKey<? extends TetreeKey> next() {
+    public TetreeKey<? extends TetreeKey<?>> next() {
         if (!hasNext) {
             throw new NoSuchElementException("No more elements in range");
         }
         
-        TetreeKey<? extends TetreeKey> result = currentTet.tmIndex();
+        TetreeKey<? extends TetreeKey<?>> result = currentTet.tmIndex();
         
         // Check if we've reached the end
         if (currentTet.equals(endTet)) {
