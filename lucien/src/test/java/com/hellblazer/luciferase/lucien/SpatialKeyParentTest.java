@@ -85,16 +85,16 @@ public class SpatialKeyParentTest {
 
         // Test level transitions around the 10-level boundary
         // Level 9 -> 8 (entirely in low bits)
-        TetreeKey<? extends TetreeKey> level9 = new CompactTetreeKey((byte) 9, 0x123456789ABCDEFL);
-        TetreeKey<? extends TetreeKey> parent9to8 = level9.parent();
+        TetreeKey<? extends TetreeKey<?>> level9 = new CompactTetreeKey((byte) 9, 0x123456789ABCDEFL);
+        TetreeKey<? extends TetreeKey<?>> parent9to8 = level9.parent();
         assertNotNull(parent9to8);
         assertEquals(8, parent9to8.getLevel());
         assertEquals(0x123456789ABCDEFL >>> 6, parent9to8.getLowBits());
         assertEquals(0L, parent9to8.getHighBits());
 
         // Level 10 -> 9 (only low bits are used for levels <= 10)
-        TetreeKey<? extends TetreeKey> level10 = new CompactTetreeKey((byte) 10, 0xFFFFFFFFFFFFFFFFL);
-        TetreeKey<? extends TetreeKey> parent10to9 = level10.parent();
+        TetreeKey<? extends TetreeKey<?>> level10 = new CompactTetreeKey((byte) 10, 0xFFFFFFFFFFFFFFFFL);
+        TetreeKey<? extends TetreeKey<?>> parent10to9 = level10.parent();
         assertNotNull(parent10to9);
         assertEquals(9, parent10to9.getLevel());
         // Just shift the low bits
@@ -103,9 +103,9 @@ public class SpatialKeyParentTest {
 
         // Level 11 -> 10 (transition from using highBits to not using them)
         // lowBits contains levels 0-9, highBits contains level 10 and up
-        TetreeKey<? extends TetreeKey> level11 = new ExtendedTetreeKey((byte) 11, 0xAAAAAAAAAAAAAAAAL,
+        TetreeKey<? extends TetreeKey<?>> level11 = new ExtendedTetreeKey((byte) 11, 0xAAAAAAAAAAAAAAAAL,
                                                                        0xBBL); // highBits has 6 bits for level 10
-        TetreeKey<? extends TetreeKey> parent11to10 = level11.parent();
+        TetreeKey<? extends TetreeKey<?>> parent11to10 = level11.parent();
         assertNotNull(parent11to10);
         assertEquals(10, parent11to10.getLevel());
         // Low bits stay the same (contains levels 0-9)
@@ -117,7 +117,7 @@ public class SpatialKeyParentTest {
     @Test
     void testTetreeKeyParent() {
         // Test root has no parent
-        TetreeKey<? extends TetreeKey> root = TetreeKey.getRoot();
+        TetreeKey<? extends TetreeKey<?>> root = TetreeKey.getRoot();
         assertNull(root.parent(), "Root should have no parent");
 
         // Test with a specific tetrahedron at level 3
@@ -126,17 +126,17 @@ public class SpatialKeyParentTest {
         var level3Key = tet.tmIndex();
 
         // Get parent
-        TetreeKey<? extends TetreeKey> parent = level3Key.parent();
+        TetreeKey<? extends TetreeKey<?>> parent = level3Key.parent();
         assertNotNull(parent, "Level 3 key should have a parent");
         assertEquals(2, parent.getLevel(), "Parent should be at level 2");
 
         // Get grandparent
-        TetreeKey<? extends TetreeKey> grandparent = parent.parent();
+        TetreeKey<? extends TetreeKey<?>> grandparent = parent.parent();
         assertNotNull(grandparent, "Level 2 key should have a parent");
         assertEquals(1, grandparent.getLevel(), "Grandparent should be at level 1");
 
         // Get great-grandparent (should be root)
-        TetreeKey<? extends TetreeKey> greatGrandparent = grandparent.parent();
+        TetreeKey<? extends TetreeKey<?>> greatGrandparent = grandparent.parent();
         assertNotNull(greatGrandparent, "Level 1 key should have a parent");
         assertEquals(0, greatGrandparent.getLevel(), "Great-grandparent should be root at level 0");
 

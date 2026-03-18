@@ -29,9 +29,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
- * TDD tests for FaultTolerantDistributedForest decorator pattern (P4.1.2).
+ * TDD tests for SimpleFaultTolerantForest decorator pattern (P4.1.2).
  *
- * <p>Validates that FaultTolerantDistributedForest properly wraps DistributedForestImpl using
+ * <p>Validates that SimpleFaultTolerantForest properly wraps DistributedForestImpl using
  * the decorator pattern and correctly delegates all interface methods.
  *
  * <p><b>Test Strategy</b>:
@@ -55,7 +55,7 @@ public class P412DecoratorPatternTest {
     private ParallelBalancer.PartitionRegistry mockRegistry;
 
     private ParallelBalancer.DistributedForest delegate;
-    private FaultTolerantDistributedForest decorator;
+    private SimpleFaultTolerantForest decorator;
 
     @BeforeEach
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -72,7 +72,7 @@ public class P412DecoratorPatternTest {
         );
 
         // Create decorator wrapping delegate
-        decorator = new FaultTolerantDistributedForest(delegate);
+        decorator = new SimpleFaultTolerantForest(delegate);
     }
 
     /**
@@ -120,7 +120,7 @@ public class P412DecoratorPatternTest {
         var balancer = (DefaultParallelBalancer<?, ?, ?>) new DefaultParallelBalancer<>(config);
 
         // When: Create decorator using factory method with proper casting
-        var result = FaultTolerantDistributedForest.wrap(
+        var result = SimpleFaultTolerantForest.wrap(
             (ParallelBalancer.DistributedForest<?, ?, ?>) delegate,
             (DefaultParallelBalancer<?, ?, ?>) balancer
         );

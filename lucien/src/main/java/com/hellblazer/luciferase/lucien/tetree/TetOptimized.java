@@ -59,7 +59,7 @@ public class TetOptimized {
         }
 
         // Create result
-        TetreeKey<? extends TetreeKey> result;
+        TetreeKey<? extends TetreeKey<?>> result;
         if (tet.l() <= 10) {
             result = new CompactTetreeKey(tet.l(), lowBits);
         } else {
@@ -149,7 +149,7 @@ public class TetOptimized {
         }
 
         // Create result
-        TetreeKey<? extends TetreeKey> result;
+        TetreeKey<? extends TetreeKey<?>> result;
         if (tet.l() <= 10) {
             result = new CompactTetreeKey(tet.l(), lowBits);
         } else {
@@ -226,7 +226,7 @@ public class TetOptimized {
         }
 
         // Create and cache result
-        TetreeKey<? extends TetreeKey> result;
+        TetreeKey<? extends TetreeKey<?>> result;
         if (tet.l() <= 10) {
             result = new CompactTetreeKey(tet.l(), lowBits);
         } else {

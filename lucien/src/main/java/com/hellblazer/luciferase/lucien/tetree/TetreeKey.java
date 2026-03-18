@@ -54,7 +54,7 @@ import java.util.Objects;
  * @param <K> The concrete key type
  * @author hal.hildebrand
  */
-public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<TetreeKey<? extends TetreeKey>> {
+public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<TetreeKey<? extends TetreeKey<?>>> {
 
     // Bit layout constants
     protected static final int  BITS_PER_LEVEL       = 6;
@@ -94,7 +94,7 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
      * @param highBits the high 64 bits (ignored for levels <= 10)
      * @return CompactTetreeKey for levels <= 10, ExtendedTetreeKey for levels > 10
      */
-    public static TetreeKey<? extends TetreeKey> create(byte level, long lowBits, long highBits) {
+    public static TetreeKey<? extends TetreeKey<?>> create(byte level, long lowBits, long highBits) {
         if (level <= MAX_COMPACT_LEVEL) {
             return new CompactTetreeKey(level, lowBits);
         } else {
@@ -103,7 +103,7 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
     }
 
 
-    public static TetreeKey<? extends TetreeKey> getRoot() {
+    public static TetreeKey<? extends TetreeKey<?>> getRoot() {
         return ROOT;
     }
 
@@ -410,27 +410,6 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         return new long[]{lowBits, highBits};
     }
 
-
-    /**
-     * Convert this TetreeKey to protobuf representation for serialization.
-     */
-    public com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey toProto() {
-        return com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey.newBuilder()
-            .setLevel(level)
-            .setLow(getLowBits())
-            .setHigh(getHighBits())
-            .build();
-    }
-
-    /**
-     * Create TetreeKey from protobuf representation.
-     */
-    public static TetreeKey<?> fromProto(com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey proto) {
-        if (proto.getLevel() == 0) {
-            return getRoot();
-        }
-        return create((byte) proto.getLevel(), proto.getLow(), proto.getHigh());
-    }
 
     // ===== SFC Range Estimation for k-NN Optimization =====
     

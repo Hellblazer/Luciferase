@@ -19,16 +19,16 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test MultiBubbleSimulation - N-bubble coordinator.
+ * Test GridMultiBubbleSimulation - N-bubble coordinator.
  *
  * @author hal.hildebrand
  */
-class MultiBubbleSimulationTest {
+class GridMultiBubbleSimulationTest {
 
     @Test
     void testCreate2x2Simulation() {
         var config = GridConfiguration.DEFAULT_2X2;
-        var sim = new MultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
 
         assertNotNull(sim);
         assertEquals(config, sim.getGridConfiguration());
@@ -42,7 +42,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testCreate3x3Simulation() {
         var config = GridConfiguration.DEFAULT_3X3;
-        var sim = new MultiBubbleSimulation(config, 200, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 200, WorldBounds.DEFAULT);
 
         assertNotNull(sim);
         assertEquals(config, sim.getGridConfiguration());
@@ -53,7 +53,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testCreate1x1Simulation() {
         var config = GridConfiguration.square(1, 100f);
-        var sim = new MultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
 
         assertNotNull(sim);
         assertEquals(1, sim.getGridConfiguration().bubbleCount());
@@ -64,7 +64,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testCreate4x4Simulation() {
         var config = GridConfiguration.square(4, 100f);
-        var sim = new MultiBubbleSimulation(config, 300, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 300, WorldBounds.DEFAULT);
 
         assertEquals(16, sim.getGridConfiguration().bubbleCount());
 
@@ -74,7 +74,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testInitialEntityDistribution() {
         var config = GridConfiguration.DEFAULT_2X2;
-        var sim = new MultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
 
         // Entities should be distributed across bubbles
         int totalEntities = sim.getAllEntities().size();
@@ -86,7 +86,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testGetAllEntitiesEmpty() {
         var config = GridConfiguration.square(2, 100f);
-        var sim = new MultiBubbleSimulation(config, 0, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 0, WorldBounds.DEFAULT);
 
         var entities = sim.getAllEntities();
         assertTrue(entities.isEmpty());
@@ -97,7 +97,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testGetBubbleAtCoordinate() {
         var config = GridConfiguration.DEFAULT_2X2;
-        var sim = new MultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
 
         var bubble00 = sim.getBubble(new BubbleCoordinate(0, 0));
         assertNotNull(bubble00);
@@ -113,7 +113,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testStartStop() {
         var config = GridConfiguration.square(2, 100f);
-        var sim = new MultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
 
         assertFalse(sim.isRunning());
 
@@ -129,7 +129,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testTickProgression() throws InterruptedException {
         var config = GridConfiguration.square(2, 100f);
-        var sim = new MultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
 
         sim.start();
         Thread.sleep(100); // Let a few ticks happen
@@ -143,7 +143,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testDoubleStart() {
         var config = GridConfiguration.square(2, 100f);
-        var sim = new MultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
 
         sim.start();
         assertTrue(sim.isRunning());
@@ -159,7 +159,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testDoubleStop() {
         var config = GridConfiguration.square(2, 100f);
-        var sim = new MultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
 
         sim.start();
         sim.stop();
@@ -175,7 +175,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testCloseWhileRunning() {
         var config = GridConfiguration.square(2, 100f);
-        var sim = new MultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
 
         sim.start();
         assertTrue(sim.isRunning());
@@ -187,7 +187,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testGetMetrics() {
         var config = GridConfiguration.square(2, 100f);
-        var sim = new MultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
 
         var metrics = sim.getMetrics();
         assertNotNull(metrics);
@@ -199,7 +199,7 @@ class MultiBubbleSimulationTest {
     void testCustomBehavior() {
         var config = GridConfiguration.square(2, 100f);
         var behavior = new FlockingBehavior();
-        var sim = new MultiBubbleSimulation(config, 50, WorldBounds.DEFAULT, behavior);
+        var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT, behavior);
 
         assertNotNull(sim);
 
@@ -209,7 +209,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testRunFor100Ticks() throws InterruptedException {
         var config = GridConfiguration.square(2, 100f);
-        var sim = new MultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
 
         sim.start();
 
@@ -226,7 +226,7 @@ class MultiBubbleSimulationTest {
     @Test
     void testEntityCountStability() throws InterruptedException {
         var config = GridConfiguration.square(2, 100f);
-        var sim = new MultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
+        var sim = new GridMultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
 
         int initialCount = sim.getRealEntities().size();  // Count only real entities (no ghosts)
         assertEquals(100, initialCount);

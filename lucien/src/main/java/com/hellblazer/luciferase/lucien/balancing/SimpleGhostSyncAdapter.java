@@ -48,9 +48,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author hal.hildebrand
  */
-public class GhostSyncFaultAdapter {
+public class SimpleGhostSyncAdapter {
 
-    private static final Logger log = LoggerFactory.getLogger(GhostSyncFaultAdapter.class);
+    private static final Logger log = LoggerFactory.getLogger(SimpleGhostSyncAdapter.class);
 
     private final FaultHandler faultHandler;
     private final Map<Integer, UUID> rankToPartition;
@@ -61,11 +61,11 @@ public class GhostSyncFaultAdapter {
      * @param faultHandler the fault handler to route sync failures to
      * @throws NullPointerException if faultHandler is null
      */
-    public GhostSyncFaultAdapter(FaultHandler faultHandler) {
+    public SimpleGhostSyncAdapter(FaultHandler faultHandler) {
         this.faultHandler = Objects.requireNonNull(faultHandler, "faultHandler cannot be null");
         this.rankToPartition = new ConcurrentHashMap<>();
 
-        log.debug("Created GhostSyncFaultAdapter");
+        log.debug("Created SimpleGhostSyncAdapter");
     }
 
     /**
@@ -77,7 +77,7 @@ public class GhostSyncFaultAdapter {
     public void registerWithGhostManager(DistributedGhostManager<?, ?, ?> ghostManager) {
         Objects.requireNonNull(ghostManager, "ghostManager cannot be null");
         ghostManager.registerSyncCallback(this);
-        log.info("Registered GhostSyncFaultAdapter with ghost manager");
+        log.info("Registered SimpleGhostSyncAdapter with ghost manager");
     }
 
     /**

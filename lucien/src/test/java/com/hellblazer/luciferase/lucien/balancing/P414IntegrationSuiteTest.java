@@ -60,7 +60,7 @@ public class P414IntegrationSuiteTest {
     private FaultConfiguration faultConfig;
     private SimpleFaultHandler faultHandler;
     private DefaultParallelBalancer<?, ?, ?> balancer;
-    private GhostSyncFaultAdapter ghostSyncAdapter;
+    private SimpleGhostSyncAdapter ghostSyncAdapter;
     private ExecutorService executor;
 
     @BeforeEach
@@ -71,7 +71,7 @@ public class P414IntegrationSuiteTest {
         faultHandler.start();
 
         balancer = new DefaultParallelBalancer<>(balanceConfig);
-        ghostSyncAdapter = new GhostSyncFaultAdapter(faultHandler);
+        ghostSyncAdapter = new SimpleGhostSyncAdapter(faultHandler);
         executor = Executors.newFixedThreadPool(5);
     }
 

@@ -1,12 +1,9 @@
 package com.hellblazer.luciferase.esvo.gpu.beam;
 
 import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
-import javax.vecmath.Point3f;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Multi-phase builder for BeamTree construction.
@@ -24,7 +21,6 @@ public class BeamTreeBuilder {
     private int maxBatchSize = 64;
     private int maxRaysPerBeam = 64;
     private SubdivisionStrategy strategy = SubdivisionStrategy.OCTREE;
-    private boolean preAnalyzeCoherence = false;
     private static final int MAX_TREE_DEPTH = 16;  // Prevent stack overflow
 
     private BeamTreeBuilder() {
@@ -83,7 +79,6 @@ public class BeamTreeBuilder {
      * Enable pre-computation of coherence before building tree.
      */
     public BeamTreeBuilder withPreAnalysis(boolean enable) {
-        this.preAnalyzeCoherence = enable;
         return this;
     }
 

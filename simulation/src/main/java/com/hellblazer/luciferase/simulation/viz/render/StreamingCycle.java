@@ -17,8 +17,8 @@
 package com.hellblazer.luciferase.simulation.viz.render;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.viz.render.protocol.BinaryFrameCodec;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -41,20 +41,28 @@ public final class StreamingCycle {
     private final StreamingCache cache;
     private final BuildQueue buildQueue;
     private final SubscriptionManager subscriptions;
+    private final Clock clock;
     private final AtomicInteger cursor = new AtomicInteger(0);
 
     public StreamingCycle(SpatialIndexFacade facade, DirtyTracker dirtyTracker,
                           StreamingCache cache, BuildQueue buildQueue,
                           SubscriptionManager subscriptions) {
+        this(facade, dirtyTracker, cache, buildQueue, subscriptions, Clock.system());
+    }
+
+    public StreamingCycle(SpatialIndexFacade facade, DirtyTracker dirtyTracker,
+                          StreamingCache cache, BuildQueue buildQueue,
+                          SubscriptionManager subscriptions, Clock clock) {
         this.facade        = facade;
         this.dirtyTracker  = dirtyTracker;
         this.cache         = cache;
         this.buildQueue    = buildQueue;
         this.subscriptions = subscriptions;
+        this.clock         = clock;
     }
 
     public void tick(long deadlineNanos) {
-        var start = System.nanoTime();
+        var start = clock.nanoTime();
         var sessionIds = subscriptions.orderedSessionIds();
         if (sessionIds.isEmpty()) return;
 
@@ -62,7 +70,7 @@ public final class StreamingCycle {
         var start_idx = cursor.get() % n;
 
         for (int i = 0; i < n; i++) {
-            if (System.nanoTime() - start > deadlineNanos) break;
+            if (clock.nanoTime() - start > deadlineNanos) break;
             var idx = (start_idx + i) % n;
             processClient(sessionIds.get(idx), start, deadlineNanos);
             // Advance cursor past the processed index so the next tick starts
@@ -77,7 +85,7 @@ public final class StreamingCycle {
 
         var visible = facade.keysVisible(state.frustum(), state.level());
         for (var key : visible) {
-            if (System.nanoTime() - cycleStart > deadlineNanos) break;
+            if (clock.nanoTime() - cycleStart > deadlineNanos) break;
             var knownVersion = subscriptions.knownVersion(sessionId, key);
             var currentVersion = dirtyTracker.version(key);
             if (currentVersion <= knownVersion) continue;

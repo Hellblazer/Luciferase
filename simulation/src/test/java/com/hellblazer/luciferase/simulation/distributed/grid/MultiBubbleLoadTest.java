@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Comprehensive load and stress tests for MultiBubbleSimulation (Phase 5E).
+ * Comprehensive load and stress tests for GridMultiBubbleSimulation (Phase 5E).
  * <p>
  * Tests:
  * - 3x3 grid (9 bubbles) with 500+ entities for 1000+ ticks
@@ -42,7 +42,7 @@ class MultiBubbleLoadTest {
 
     private static final Logger log = LoggerFactory.getLogger(MultiBubbleLoadTest.class);
 
-    private MultiBubbleSimulation simulation;
+    private GridMultiBubbleSimulation simulation;
     private final MemoryMXBean memoryMxBean = ManagementFactory.getMemoryMXBean();
 
     @AfterEach
@@ -128,7 +128,7 @@ class MultiBubbleLoadTest {
         log.info("Test 1: Basic 3x3 Grid Load");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 450, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 450, WorldBounds.DEFAULT);
 
         int initialCount = simulation.getRealEntities().size();
         assertEquals(450, initialCount, "Initial entity count");
@@ -158,7 +158,7 @@ class MultiBubbleLoadTest {
         log.info("Test 2: Heavy Load - 500+ Entities");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
 
         int initialCount = simulation.getRealEntities().size();
         assertEquals(500, initialCount);
@@ -204,7 +204,7 @@ class MultiBubbleLoadTest {
 
         var config = GridConfiguration.DEFAULT_3X3;
         var behavior = new FlockingBehavior();
-        simulation = new MultiBubbleSimulation(config, 300, WorldBounds.DEFAULT, behavior);
+        simulation = new GridMultiBubbleSimulation(config, 300, WorldBounds.DEFAULT, behavior);
 
         int initialCount = simulation.getRealEntities().size();
 
@@ -234,7 +234,7 @@ class MultiBubbleLoadTest {
         log.info("Test 4: Memory Stability - 2000+ Ticks");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
 
         forceGC();
         long initialHeapMB = getHeapUsageMB();
@@ -281,7 +281,7 @@ class MultiBubbleLoadTest {
         log.info("Test 5: Ghost Sync Overhead");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
 
         simulation.start();
         waitForTicks(500, 20000);
@@ -317,7 +317,7 @@ class MultiBubbleLoadTest {
 
         // Test 1: 2x2 grid (4 bubbles) with 200 entities
         var config4 = GridConfiguration.DEFAULT_2X2;
-        simulation = new MultiBubbleSimulation(config4, 200, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config4, 200, WorldBounds.DEFAULT);
 
         simulation.start();
         waitForTicks(500, 20000);
@@ -330,7 +330,7 @@ class MultiBubbleLoadTest {
 
         // Test 2: 3x3 grid (9 bubbles) with 450 entities
         var config9 = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config9, 450, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config9, 450, WorldBounds.DEFAULT);
 
         simulation.start();
         waitForTicks(500, 25000);
@@ -363,7 +363,7 @@ class MultiBubbleLoadTest {
         log.info("Test 7: All Directions Migration");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 450, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 450, WorldBounds.DEFAULT);
 
         simulation.start();
         waitForTicks(1000, 35000);
@@ -396,7 +396,7 @@ class MultiBubbleLoadTest {
         log.info("Test 8: Latency Distribution");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
 
         simulation.start();
         waitForTicks(1000, 35000);
@@ -452,7 +452,7 @@ class MultiBubbleLoadTest {
         log.info("Test 9: Boundary Condition - 1x1 Grid");
 
         var config = GridConfiguration.square(1, 100f);
-        simulation = new MultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
 
         assertEquals(1, config.bubbleCount());
 
@@ -478,7 +478,7 @@ class MultiBubbleLoadTest {
         log.info("Test 10: Boundary Condition - 4x1 Linear Grid");
 
         var config = GridConfiguration.of(1, 4, 100f, 100f);
-        simulation = new MultiBubbleSimulation(config, 200, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 200, WorldBounds.DEFAULT);
 
         assertEquals(4, config.bubbleCount());
 
@@ -512,7 +512,7 @@ class MultiBubbleLoadTest {
 
         var config = GridConfiguration.DEFAULT_3X3;
         var behavior = new FlockingBehavior();  // High velocity behavior
-        simulation = new MultiBubbleSimulation(config, 400, WorldBounds.DEFAULT, behavior);
+        simulation = new GridMultiBubbleSimulation(config, 400, WorldBounds.DEFAULT, behavior);
 
         int initialCount = simulation.getRealEntities().size();
 
@@ -538,7 +538,7 @@ class MultiBubbleLoadTest {
         log.info("Test 12: Large Grid - 5x5 (25 bubbles)");
 
         var config = GridConfiguration.square(5, 100f);
-        simulation = new MultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
 
         assertEquals(25, config.bubbleCount());
 
@@ -566,7 +566,7 @@ class MultiBubbleLoadTest {
         log.info("Test 13: Mixed Behavior Test");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 300, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 300, WorldBounds.DEFAULT);
 
         int initialCount = simulation.getRealEntities().size();
 
@@ -588,11 +588,11 @@ class MultiBubbleLoadTest {
         log.info("Test 14: Entity Retention Under Load");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
 
         int initialCount = simulation.getRealEntities().size();
         var initialIds = simulation.getRealEntities().stream()
-            .map(MultiBubbleSimulation.EntitySnapshot::id)
+            .map(GridMultiBubbleSimulation.EntitySnapshot::id)
             .collect(java.util.stream.Collectors.toSet());
 
         simulation.start();
@@ -600,7 +600,7 @@ class MultiBubbleLoadTest {
         simulation.stop();
 
         var finalIds = simulation.getRealEntities().stream()
-            .map(MultiBubbleSimulation.EntitySnapshot::id)
+            .map(GridMultiBubbleSimulation.EntitySnapshot::id)
             .collect(java.util.stream.Collectors.toSet());
 
         // Verify exact entity retention (same IDs)
@@ -616,7 +616,7 @@ class MultiBubbleLoadTest {
         log.info("Test 15: Cooldown Prevents Oscillation");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 300, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 300, WorldBounds.DEFAULT);
 
         simulation.start();
         waitForTicks(1000, 35000);

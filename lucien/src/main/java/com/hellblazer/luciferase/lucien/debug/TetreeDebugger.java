@@ -32,7 +32,7 @@ import java.util.*;
  * Provides tetrahedral-specific visualization and analysis capabilities.
  */
 public class TetreeDebugger<ID extends EntityID, Content> 
-    extends SpatialIndexDebugger<TetreeKey<? extends TetreeKey>, ID, Content> {
+    extends SpatialIndexDebugger<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
 
     private final Tetree<ID, Content> tetree;
 
@@ -286,7 +286,7 @@ public class TetreeDebugger<ID extends EntityID, Content>
 
     // Private helper methods
 
-    private byte extractLevel(TetreeKey<? extends TetreeKey> key) {
+    private byte extractLevel(TetreeKey<? extends TetreeKey<?>> key) {
         try {
             // Use reflection to get level from key
             var method = key.getClass().getMethod("getLevel");
@@ -296,7 +296,7 @@ public class TetreeDebugger<ID extends EntityID, Content>
         }
     }
 
-    private int getTetType(TetreeKey<? extends TetreeKey> key) {
+    private int getTetType(TetreeKey<? extends TetreeKey<?>> key) {
         try {
             var tet = getTetFromKey(key);
             return tet.type();
@@ -305,7 +305,7 @@ public class TetreeDebugger<ID extends EntityID, Content>
         }
     }
 
-    private Tet getTetFromKey(TetreeKey<? extends TetreeKey> key) {
+    private Tet getTetFromKey(TetreeKey<? extends TetreeKey<?>> key) {
         try {
             // Access the underlying Tet from the TetreeKey
             var method = key.getClass().getMethod("getTet");

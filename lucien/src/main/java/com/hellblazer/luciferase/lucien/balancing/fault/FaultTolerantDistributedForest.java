@@ -31,7 +31,7 @@ import java.util.function.Consumer;
  *
  * <p><b>Lightweight Alternative</b>: For simpler use cases requiring only pause/resume
  * coordination without full fault tolerance, see the lightweight decorator in
- * {@link com.hellblazer.luciferase.lucien.balancing.FaultTolerantDistributedForest}.
+ * {@link com.hellblazer.luciferase.lucien.balancing.SimpleFaultTolerantForest}.
  *
  * <h2>Thread Safety</h2>
  * <ul>
@@ -43,7 +43,7 @@ import java.util.function.Consumer;
  * @param <Key> the spatial key type
  * @param <ID> the entity ID type
  * @param <Content> the content type
- * @see com.hellblazer.luciferase.lucien.balancing.FaultTolerantDistributedForest
+ * @see com.hellblazer.luciferase.lucien.balancing.SimpleFaultTolerantForest
  * @see SimpleFaultHandler
  * @see RecoveryCoordinatorLock
  * @see InFlightOperationTracker

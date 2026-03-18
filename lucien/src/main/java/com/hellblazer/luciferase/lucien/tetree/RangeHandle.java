@@ -88,7 +88,7 @@ public class RangeHandle {
      * @param predicate The test predicate
      * @return true if any tetrahedron matches
      */
-    public boolean anyMatch(Predicate<TetreeKey<? extends TetreeKey>> predicate) {
+    public boolean anyMatch(Predicate<TetreeKey<? extends TetreeKey<?>>> predicate) {
         return stream().anyMatch(predicate);
     }
     
@@ -107,7 +107,7 @@ public class RangeHandle {
      *
      * @return The first key, or null if range is empty
      */
-    public TetreeKey<? extends TetreeKey> first() {
+    public TetreeKey<? extends TetreeKey<?>> first() {
         return stream().findFirst().orElse(null);
     }
     
@@ -116,7 +116,7 @@ public class RangeHandle {
      *
      * @return A lazy stream of TetreeKeys
      */
-    public Stream<TetreeKey<? extends TetreeKey>> stream() {
+    public Stream<TetreeKey<? extends TetreeKey<?>>> stream() {
         // Create a simple bounding box volume for the query
         var volume = new BoundingBox(bounds);
         
@@ -134,12 +134,12 @@ public class RangeHandle {
     /**
      * Stream tetrahedra that intersect the bounds.
      */
-    private Stream<TetreeKey<? extends TetreeKey>> streamIntersecting() {
+    private Stream<TetreeKey<? extends TetreeKey<?>>> streamIntersecting() {
         // Simple implementation: check all tetrahedra at the target level
         // In practice, this would use spatial indexing for efficiency
         int cellSize = (1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level));
         
-        List<TetreeKey<? extends TetreeKey>> results = new ArrayList<>();
+        List<TetreeKey<? extends TetreeKey<?>>> results = new ArrayList<>();
         
         // Iterate through grid cells that could intersect
         for (int x = (int)(bounds.minX() / cellSize) * cellSize; 
@@ -218,7 +218,7 @@ public class RangeHandle {
      *
      * @return A lazy iterator
      */
-    public Iterator<TetreeKey<? extends TetreeKey>> iterator() {
+    public Iterator<TetreeKey<? extends TetreeKey<?>>> iterator() {
         return stream().iterator();
     }
     

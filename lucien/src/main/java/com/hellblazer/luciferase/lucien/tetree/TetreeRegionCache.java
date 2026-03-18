@@ -34,7 +34,7 @@ public class TetreeRegionCache {
     private static final AtomicInteger totalRegionsPrecomputed    = new AtomicInteger(0);
     private static final AtomicInteger totalTetrahedraPrecomputed = new AtomicInteger(0);
 
-    private final ConcurrentHashMap<Long, TetreeKey<? extends TetreeKey>> regionCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, TetreeKey<? extends TetreeKey<?>>> regionCache = new ConcurrentHashMap<>();
 
     /**
      * Get global statistics for monitoring.
@@ -81,7 +81,7 @@ public class TetreeRegionCache {
      * @param type  tetrahedron type
      * @return the cached ExtendedTetreeKey or null if not in cache
      */
-    public TetreeKey<? extends TetreeKey> getCachedKey(int x, int y, int z, byte level, byte type) {
+    public TetreeKey<? extends TetreeKey<?>> getCachedKey(int x, int y, int z, byte level, byte type) {
         var cacheKey = packCacheKey(x, y, z, level, type);
         return regionCache.get(cacheKey);
     }
@@ -133,7 +133,7 @@ public class TetreeRegionCache {
                     for (byte type = 0; type < 6; type++) {
                         var tet = new Tet(x, y, z, level, type);
 
-                        // This will compute and cache the TetreeKey<? extends TetreeKey>
+                        // This will compute and cache the TetreeKey<? extends TetreeKey<?>>
                         var key = tet.tmIndex();
 
                         // Also store in our local cache for quick lookup

@@ -170,7 +170,7 @@ public class TetreeView extends Group {
      */
     @SuppressWarnings("rawtypes")
     private static class TetreeVisualizationVisitor<ID extends EntityID, Content> 
-            extends AbstractTreeVisitor<TetreeKey<? extends TetreeKey>, ID, Content> {
+            extends AbstractTreeVisitor<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
         
         private final TetreeView view;
         
@@ -179,16 +179,16 @@ public class TetreeView extends Group {
         }
         
         @Override
-        public boolean visitNode(SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID> node, 
-                               int level, TetreeKey<? extends TetreeKey> parentIndex) {
+        public boolean visitNode(SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey<?>>, ID> node, 
+                               int level, TetreeKey<? extends TetreeKey<?>> parentIndex) {
             // In post-order, just continue traversal - we'll process in leaveNode
             return true;
         }
         
         @Override
-        public void leaveNode(SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID> node, 
+        public void leaveNode(SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey<?>>, ID> node, 
                             int level, int childCount) {
-            TetreeKey<? extends TetreeKey> key = node.sfcIndex();
+            TetreeKey<? extends TetreeKey<?>> key = node.sfcIndex();
             boolean isOccupied = !node.entityIds().isEmpty();
             
             if (isOccupied) {

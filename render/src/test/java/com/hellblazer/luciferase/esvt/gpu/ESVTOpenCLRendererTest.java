@@ -141,7 +141,7 @@ class ESVTOpenCLRendererTest {
                 byte r = output.get();
                 byte g = output.get();
                 byte b = output.get();
-                byte a = output.get();
+                output.get(); // alpha channel (unused)
 
                 // Background is (20, 20, 30, 255)
                 if (r != 20 || g != 20 || b != 30) {

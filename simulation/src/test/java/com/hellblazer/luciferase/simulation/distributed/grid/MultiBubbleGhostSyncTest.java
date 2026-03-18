@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration tests for Phase 5C - Ghost Sync Integration.
  * <p>
  * Tests ghost layer synchronization using existing GhostBoundarySync infrastructure
- * integrated into MultiBubbleSimulation via GridGhostSyncAdapter.
+ * integrated into GridMultiBubbleSimulation via GridGhostSyncAdapter.
  *
  * @author hal.hildebrand
  */
@@ -30,7 +30,7 @@ class MultiBubbleGhostSyncTest {
 
     private static final Logger log = LoggerFactory.getLogger(MultiBubbleGhostSyncTest.class);
 
-    private MultiBubbleSimulation simulation;
+    private GridMultiBubbleSimulation simulation;
 
     @AfterEach
     void cleanup() {
@@ -46,7 +46,7 @@ class MultiBubbleGhostSyncTest {
         var worldBounds = new WorldBounds(0f, 400f);
 
         // Single entity near boundary (x=95, which is 5 units from x=100 boundary)
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         // Add entity near right edge of (0,0) cell
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
@@ -75,7 +75,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         // Add entity near boundary between (0,0) and (0,1)
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
@@ -107,7 +107,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         // Add entity near corner (95, 95) - should ghost to 3 neighbors
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
@@ -141,7 +141,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_3X3;
         var worldBounds = new WorldBounds(0f, 600f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         // Add entity near edge of middle-left cell (1,0)
         var bubble = simulation.getBubble(new BubbleCoordinate(1, 0));
@@ -173,7 +173,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_3X3;
         var worldBounds = new WorldBounds(0f, 600f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         // Add entity in center of interior cell (1,1)
         var bubble = simulation.getBubble(new BubbleCoordinate(1, 1));
@@ -199,7 +199,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
         bubble.addEntity("temp-entity", new Point3f(95f, 50f, 50f), null);
@@ -243,7 +243,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
 
@@ -276,7 +276,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         // Add entity at exact corner (100, 100) - diagonal to (1,1)
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
@@ -305,7 +305,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_3X3;
         var worldBounds = new WorldBounds(0f, 600f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         // Add entities near boundaries in all 9 cells
         for (int row = 0; row < 3; row++) {
@@ -349,7 +349,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         // Initially no ghosts
         assertEquals(0, simulation.getGhostCount(), "Initially no ghosts");
@@ -376,7 +376,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         // Add entity far from all boundaries (center of cell)
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
@@ -401,7 +401,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
         bubble.addEntity("health-test", new Point3f(95f, 50f, 50f), null);
@@ -429,7 +429,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
         bubble.addEntity("tracker-test", new Point3f(95f, 50f, 50f), null);
@@ -455,7 +455,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
         bubble.addEntity("long-run-entity", new Point3f(95f, 50f, 50f), null);
@@ -488,7 +488,7 @@ class MultiBubbleGhostSyncTest {
         var config = GridConfiguration.DEFAULT_2X2;
         var worldBounds = new WorldBounds(0f, 400f);
 
-        simulation = new MultiBubbleSimulation(config, 0, worldBounds);
+        simulation = new GridMultiBubbleSimulation(config, 0, worldBounds);
 
         var bubble = simulation.getBubble(new BubbleCoordinate(0, 0));
 

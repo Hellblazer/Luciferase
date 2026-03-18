@@ -29,10 +29,10 @@ public class LazyTetreeKey extends ExtendedTetreeKey {
 
     private final    Tet                            tet;
     private final    int                            lazyHashCode;
-    private volatile TetreeKey<? extends TetreeKey> resolved;
+    private volatile TetreeKey<? extends TetreeKey<?>> resolved;
 
     /**
-     * Create a lazy TetreeKey<? extends TetreeKey> from a Tet.
+     * Create a lazy TetreeKey<? extends TetreeKey<?>> from a Tet.
      *
      * @param tet the tetrahedron to lazily compute the key for
      */
@@ -68,7 +68,7 @@ public class LazyTetreeKey extends ExtendedTetreeKey {
             return resolved.compareTo(lazy.resolved);
         }
 
-        // Comparison with regular TetreeKey<? extends TetreeKey> requires resolution
+        // Comparison with regular TetreeKey<? extends TetreeKey<?>> requires resolution
         ensureResolved();
         return resolved.compareTo(other);
     }
@@ -82,8 +82,8 @@ public class LazyTetreeKey extends ExtendedTetreeKey {
         if (obj instanceof LazyTetreeKey other) {
             // Both lazy - compare Tet directly without resolution
             return tet.equals(other.tet);
-        } else if (obj instanceof TetreeKey<? extends TetreeKey>) {
-            // Must resolve to compare with regular TetreeKey<? extends TetreeKey>
+        } else if (obj instanceof TetreeKey<? extends TetreeKey<?>>) {
+            // Must resolve to compare with regular TetreeKey<? extends TetreeKey<?>>
             ensureResolved();
             return resolved.equals(obj);
         }

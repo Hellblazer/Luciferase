@@ -154,7 +154,7 @@ public class CompactTetreeKey extends TetreeKey<CompactTetreeKey> {
     }
 
     @Override
-    public TetreeKey<? extends TetreeKey> parent() {
+    public TetreeKey<? extends TetreeKey<?>> parent() {
         if (level == 0) {
             return null; // Root has no parent
         }

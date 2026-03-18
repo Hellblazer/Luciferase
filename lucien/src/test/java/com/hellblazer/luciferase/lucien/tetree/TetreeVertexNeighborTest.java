@@ -265,7 +265,7 @@ public class TetreeVertexNeighborTest {
         var vertex0Neighbors = tetree.findVertexNeighbors(tetKey, 0);
 
         // Vertex neighbors should include all edge neighbors for edges connected to that vertex
-        Set<TetreeKey<? extends TetreeKey>> expectedFromEdges = new HashSet<>();
+        Set<TetreeKey<? extends TetreeKey<?>>> expectedFromEdges = new HashSet<>();
         expectedFromEdges.addAll(edge0Neighbors);
         expectedFromEdges.addAll(edge1Neighbors);
         expectedFromEdges.addAll(edge2Neighbors);

@@ -1,5 +1,8 @@
 {
-  "database": "beads.db",
-  "jsonl_export": "issues.jsonl",
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "Luciferase",
+  "project_id": "3d4aff4c-da2e-45cf-87cc-8b32324c8f95",
   "last_bd_version": "0.26.0"
 }

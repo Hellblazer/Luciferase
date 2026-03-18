@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.simulation.viz.render;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import com.hellblazer.luciferase.simulation.viz.render.protocol.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -116,8 +117,9 @@ class StreamingE2ETest {
         }
         buildQueue.awaitBuilds().get(5, TimeUnit.SECONDS);
 
-        // Run streaming cycle — cache is now warm at new version, RegionUpdate must fire
-        var cycle = new StreamingCycle(facade, dirtyTracker, cache, buildQueue, subscriptions);
+        // Run streaming cycle with frozen clock so deadline never expires under CI load
+        var frozenClock = new TestClock(1_000_000_000L);
+        var cycle = new StreamingCycle(facade, dirtyTracker, cache, buildQueue, subscriptions, frozenClock);
         subscriptions.updateViewport("e2e-sess", TestFrustums.fullScene(), 4);
         cycle.tick(200_000_000L);
 
