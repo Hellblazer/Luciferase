@@ -364,10 +364,10 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
      * Register a sync callback for fault detection during ghost synchronization.
      *
      * <p>The callback will be invoked on sync success/failure events to enable
-     * fault detection and recovery coordination. Use {@link com.hellblazer.luciferase.lucien.balancing.GhostSyncFaultAdapter}
+     * fault detection and recovery coordination. Use {@link com.hellblazer.luciferase.lucien.balancing.SimpleGhostSyncAdapter}
      * to adapt sync events to fault handler notifications.
      *
-     * @param callback the sync callback to register (typically GhostSyncFaultAdapter)
+     * @param callback the sync callback to register (typically SimpleGhostSyncAdapter)
      */
     public void registerSyncCallback(Object callback) {
         this.syncCallback = callback;

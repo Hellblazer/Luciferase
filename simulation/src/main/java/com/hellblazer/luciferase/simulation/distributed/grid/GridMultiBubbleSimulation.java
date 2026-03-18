@@ -41,9 +41,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * @author hal.hildebrand
  */
-public class MultiBubbleSimulation implements AutoCloseable {
+public class GridMultiBubbleSimulation implements AutoCloseable {
 
-    private static final Logger log = LoggerFactory.getLogger(MultiBubbleSimulation.class);
+    private static final Logger log = LoggerFactory.getLogger(GridMultiBubbleSimulation.class);
 
     /**
      * Default tick interval: 60fps (16.67ms).
@@ -75,7 +75,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @param entityCount Number of entities (spatially distributed)
      * @param worldBounds World boundary configuration
      */
-    public MultiBubbleSimulation(GridConfiguration gridConfig, int entityCount, WorldBounds worldBounds) {
+    public GridMultiBubbleSimulation(GridConfiguration gridConfig, int entityCount, WorldBounds worldBounds) {
         this(gridConfig, entityCount, worldBounds, new FlockingBehavior());
     }
 
@@ -87,7 +87,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @param worldBounds World boundary configuration
      * @param behavior    Entity behavior for all bubbles
      */
-    public MultiBubbleSimulation(
+    public GridMultiBubbleSimulation(
         GridConfiguration gridConfig,
         int entityCount,
         WorldBounds worldBounds,
@@ -110,12 +110,12 @@ public class MultiBubbleSimulation implements AutoCloseable {
         populateEntities(entityCount);
 
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            var t = new Thread(r, "MultiBubbleSimulation-" + gridConfig.rows() + "x" + gridConfig.columns());
+            var t = new Thread(r, "GridMultiBubbleSimulation-" + gridConfig.rows() + "x" + gridConfig.columns());
             t.setDaemon(true);
             return t;
         });
 
-        log.info("MultiBubbleSimulation created: {} bubbles ({}x{}), {} entities",
+        log.info("GridMultiBubbleSimulation created: {} bubbles ({}x{}), {} entities",
                  gridConfig.bubbleCount(), gridConfig.rows(), gridConfig.columns(), entityCount);
     }
 
@@ -142,7 +142,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
                 TimeUnit.MILLISECONDS
             );
 
-            log.info("MultiBubbleSimulation started: {} bubbles", gridConfig.bubbleCount());
+            log.info("GridMultiBubbleSimulation started: {} bubbles", gridConfig.bubbleCount());
         }
     }
 
@@ -155,7 +155,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
                 tickTask.cancel(false);
                 tickTask = null;
             }
-            log.info("MultiBubbleSimulation stopped after {} ticks. {}", tickCount.get(), metrics);
+            log.info("GridMultiBubbleSimulation stopped after {} ticks. {}", tickCount.get(), metrics);
         }
     }
 
@@ -175,7 +175,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
             log.warn("Interrupted while waiting for scheduler termination");
         }
 
-        log.debug("MultiBubbleSimulation closed");
+        log.debug("GridMultiBubbleSimulation closed");
     }
 
     /**

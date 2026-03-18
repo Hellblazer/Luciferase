@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Performance benchmarking for MultiBubbleSimulation (Phase 5E).
+ * Performance benchmarking for GridMultiBubbleSimulation (Phase 5E).
  * <p>
  * Measures:
  * - Tick latency distribution (mean, max, p50, p95, p99, p99.9)
@@ -46,7 +46,7 @@ class PerformanceBenchmark {
 
     private static final Logger log = LoggerFactory.getLogger(PerformanceBenchmark.class);
 
-    private MultiBubbleSimulation simulation;
+    private GridMultiBubbleSimulation simulation;
     private final MemoryMXBean memoryMxBean = ManagementFactory.getMemoryMXBean();
 
     @AfterEach
@@ -131,7 +131,7 @@ class PerformanceBenchmark {
         log.info("Benchmark 1: Tick Latency Distribution");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
 
         simulation.start();
         waitForTicks(100, 10000);  // Warmup
@@ -196,7 +196,7 @@ class PerformanceBenchmark {
         log.info("Benchmark 2: Ghost Sync Overhead");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
 
         simulation.start();
         waitForTicks(500, 20000);
@@ -234,7 +234,7 @@ class PerformanceBenchmark {
         log.info("Benchmark 3: Migration Latency");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 400, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 400, WorldBounds.DEFAULT);
 
         simulation.start();
         waitForTicks(1000, 35000);
@@ -275,7 +275,7 @@ class PerformanceBenchmark {
         var config = GridConfiguration.DEFAULT_3X3;
 
         for (int entityCount : entityCounts) {
-            simulation = new MultiBubbleSimulation(config, entityCount, WorldBounds.DEFAULT);
+            simulation = new GridMultiBubbleSimulation(config, entityCount, WorldBounds.DEFAULT);
 
             simulation.start();
             waitForTicks(100, 10000);  // Warmup
@@ -303,7 +303,7 @@ class PerformanceBenchmark {
         log.info("Benchmark 5: Memory Usage Analysis");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
 
         forceGC();
         long initialHeapMB = getHeapUsageMB();
@@ -350,7 +350,7 @@ class PerformanceBenchmark {
             int entities = entityCounts[i];
 
             var config = GridConfiguration.square(size, 100f);
-            simulation = new MultiBubbleSimulation(config, entities, WorldBounds.DEFAULT);
+            simulation = new GridMultiBubbleSimulation(config, entities, WorldBounds.DEFAULT);
 
             simulation.start();
             waitForTicks(500, 25000);
@@ -376,7 +376,7 @@ class PerformanceBenchmark {
         log.info("Benchmark 7: Comprehensive Performance Report");
 
         var config = GridConfiguration.DEFAULT_3X3;
-        simulation = new MultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
+        simulation = new GridMultiBubbleSimulation(config, 500, WorldBounds.DEFAULT);
 
         forceGC();
         long initialHeapMB = getHeapUsageMB();

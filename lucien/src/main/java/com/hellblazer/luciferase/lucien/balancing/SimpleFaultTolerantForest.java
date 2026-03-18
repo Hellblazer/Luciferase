@@ -57,10 +57,10 @@ import java.util.Objects;
  * @see com.hellblazer.luciferase.lucien.balancing.fault.FaultTolerantDistributedForest
  * @author hal.hildebrand
  */
-public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+public class SimpleFaultTolerantForest<Key extends SpatialKey<Key>, ID extends EntityID, Content>
     implements ParallelBalancer.DistributedForest<Key, ID, Content> {
 
-    private static final Logger log = LoggerFactory.getLogger(FaultTolerantDistributedForest.class);
+    private static final Logger log = LoggerFactory.getLogger(SimpleFaultTolerantForest.class);
 
     private final ParallelBalancer.DistributedForest<Key, ID, Content> delegate;
     private final InFlightOperationTracker operationTracker;
@@ -74,7 +74,7 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
      * @param delegate the distributed forest to wrap
      * @throws NullPointerException if delegate is null
      */
-    public FaultTolerantDistributedForest(ParallelBalancer.DistributedForest<Key, ID, Content> delegate) {
+    public SimpleFaultTolerantForest(ParallelBalancer.DistributedForest<Key, ID, Content> delegate) {
         this(delegate, new InFlightOperationTracker());
     }
 
@@ -88,12 +88,12 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
      * @param operationTracker the operation tracker for fault tolerance coordination
      * @throws NullPointerException if any parameter is null
      */
-    public FaultTolerantDistributedForest(ParallelBalancer.DistributedForest<Key, ID, Content> delegate,
-                                         InFlightOperationTracker operationTracker) {
+    public SimpleFaultTolerantForest(ParallelBalancer.DistributedForest<Key, ID, Content> delegate,
+                                     InFlightOperationTracker operationTracker) {
         this.delegate = Objects.requireNonNull(delegate, "delegate cannot be null");
         this.operationTracker = Objects.requireNonNull(operationTracker, "operationTracker cannot be null");
 
-        log.debug("Created FaultTolerantDistributedForest wrapping delegate");
+        log.debug("Created SimpleFaultTolerantForest wrapping delegate");
     }
 
     /**
@@ -112,7 +112,7 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
      */
     @SuppressWarnings("unchecked")
     public static <Key extends SpatialKey<Key>, ID extends EntityID, Content>
-    FaultTolerantDistributedForest<Key, ID, Content> wrap(
+    SimpleFaultTolerantForest<Key, ID, Content> wrap(
         ParallelBalancer.DistributedForest<Key, ID, Content> delegate,
         DefaultParallelBalancer<?, ?, ?> balancer) {
 
@@ -122,7 +122,7 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
         var tracker = balancer.getOperationTracker();
         log.debug("Wrapping forest with fault tolerance, sharing balancer's operation tracker");
 
-        return new FaultTolerantDistributedForest<>(delegate, tracker);
+        return new SimpleFaultTolerantForest<>(delegate, tracker);
     }
 
     /**

@@ -18,39 +18,55 @@
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
 /**
- * Interface for pluggable time source in distributed systems.
+ * Pluggable clock interface for testing with deterministic time control.
  * <p>
  * Allows injection of custom clocks for deterministic testing while
  * supporting production use with system clock. Located in common module
  * to avoid cyclic dependencies between lucien and simulation.
  * <p>
+ * Implementations:
+ * <ul>
+ * <li>{@link #system()} - delegates to System.currentTimeMillis()</li>
+ * <li>{@link #fixed(long)} - returns a fixed timestamp (does not support nanoTime())</li>
+ * </ul>
+ * <p>
  * Thread-safe: Implementations should be thread-safe for concurrent access.
+ *
+ * @author hal.hildebrand
  */
 public interface Clock {
 
     /**
-     * Get current time in milliseconds.
+     * Returns the current time in milliseconds.
      *
-     * @return current time in milliseconds
+     * @return current time in milliseconds since epoch
      */
     long currentTimeMillis();
 
     /**
-     * Get current time in nanoseconds.
+     * Returns the current high-resolution time in nanoseconds.
      * <p>
-     * Default implementation uses System.nanoTime().
-     * Can be overridden for deterministic testing.
+     * This is used for measuring elapsed time intervals (relative time), not absolute timestamps.
+     * The returned value is relative to an arbitrary origin and is NOT comparable across
+     * JVM instances or to {@link #currentTimeMillis()}.
+     * <p>
+     * <b>Note</b>: {@link #fixed(long)} does not support this method and will throw
+     * {@link UnsupportedOperationException}. Use a mutable test clock for tests requiring
+     * elapsed time measurements.
+     * <p>
+     * Default implementation delegates to {@link System#nanoTime()}.
      *
-     * @return current time in nanoseconds
+     * @return current high-resolution time in nanoseconds
+     * @throws UnsupportedOperationException if called on {@link #fixed(long)} clock
      */
     default long nanoTime() {
         return System.nanoTime();
     }
 
     /**
-     * Create clock using system time source.
+     * Returns a clock that delegates to the system clock.
      *
-     * @return clock backed by System.currentTimeMillis()
+     * @return system clock implementation
      */
     static Clock system() {
         return new Clock() {
@@ -67,10 +83,15 @@ public interface Clock {
     }
 
     /**
-     * Create clock with fixed time value.
+     * Returns a clock that always returns the given fixed time.
+     * <p>
+     * <b>Important</b>: {@link #nanoTime()} throws {@link UnsupportedOperationException}
+     * because fixed clocks cannot support elapsed time measurements. Use a mutable test
+     * clock for tests requiring time advancement.
      *
-     * @param fixedTime fixed time in milliseconds
-     * @return clock always returning the same time
+     * @param fixedTime the fixed timestamp in milliseconds
+     * @return fixed clock implementation
+     * @throws UnsupportedOperationException if {@link #nanoTime()} is called
      */
     static Clock fixed(long fixedTime) {
         return new Clock() {
@@ -81,7 +102,11 @@ public interface Clock {
 
             @Override
             public long nanoTime() {
-                return fixedTime * 1_000_000;
+                throw new UnsupportedOperationException(
+                    "Clock.fixed() does not support elapsed time measurements via nanoTime(). " +
+                    "Fixed clocks return constant values, making elapsed time always 0. " +
+                    "Use TestClock for tests requiring time advancement."
+                );
             }
         };
     }

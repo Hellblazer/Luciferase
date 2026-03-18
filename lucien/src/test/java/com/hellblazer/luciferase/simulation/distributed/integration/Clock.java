@@ -19,10 +19,16 @@ package com.hellblazer.luciferase.simulation.distributed.integration;
 /**
  * Minimal clock interface for lucien module testing.
  * <p>
- * This is a duck-typed implementation that provides the same interface as
- * simulation module's Clock, but avoids circular dependency.
+ * This is a duck-typed copy that provides the same interface as the canonical
+ * Clock in the common module, but avoids a circular lucien -&gt; simulation
+ * dependency. The two interfaces are structurally identical and assignment-compatible
+ * within the same package name.
+ * <p>
+ * <b>Canonical definition</b>: {@code com.hellblazer.luciferase.simulation.distributed.integration.Clock}
+ * in the {@code common} module. Sync this copy whenever the canonical changes.
  *
  * @author hal.hildebrand
+ * @see com.hellblazer.luciferase.simulation.distributed.integration.Clock
  */
 public interface Clock {
 
@@ -65,9 +71,13 @@ public interface Clock {
 
     /**
      * Returns a clock that always returns the given fixed time.
+     * <p>
+     * <b>Important</b>: {@link #nanoTime()} throws {@link UnsupportedOperationException}
+     * because fixed clocks cannot support elapsed time measurements.
      *
      * @param fixedTime the fixed timestamp in milliseconds
      * @return fixed clock implementation
+     * @throws UnsupportedOperationException if {@link #nanoTime()} is called
      */
     static Clock fixed(long fixedTime) {
         return new Clock() {
@@ -78,7 +88,10 @@ public interface Clock {
 
             @Override
             public long nanoTime() {
-                return fixedTime * 1_000_000;
+                throw new UnsupportedOperationException(
+                    "Clock.fixed() does not support elapsed time measurements via nanoTime(). "
+                    + "Fixed clocks return constant values, making elapsed time always 0. "
+                    + "Use TestClock for tests requiring time advancement.");
             }
         };
     }

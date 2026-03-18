@@ -37,12 +37,12 @@ import static org.mockito.Mockito.verify;
 /**
  * TDD tests for GhostSync fault detection wiring (P4.1.3).
  *
- * <p>Validates that GhostSyncFaultAdapter properly integrates ghost sync operations with
+ * <p>Validates that SimpleGhostSyncAdapter properly integrates ghost sync operations with
  * fault detection, routing sync failures to SimpleFaultHandler and maintaining rank ↔ UUID mappings.
  *
  * <p><b>Test Strategy</b>:
  * <ol>
- *   <li>GhostSyncFaultAdapter registers as callback in DistributedGhostManager</li>
+ *   <li>SimpleGhostSyncAdapter registers as callback in DistributedGhostManager</li>
  *   <li>On sync success: adapter marks partition healthy in fault handler</li>
  *   <li>On sync failure: adapter reports fault to handler for state transition</li>
  *   <li>Rank ↔ UUID mappings populated and used for partition identification</li>
@@ -56,7 +56,7 @@ public class P413GhostSyncFaultWiringTest {
     private DistributedGhostManager<?, ?, ?> mockGhostManager;
 
     private SimpleFaultHandler faultHandler;
-    private GhostSyncFaultAdapter adapter;
+    private SimpleGhostSyncAdapter adapter;
 
     @BeforeEach
     void setUp() {
@@ -68,11 +68,11 @@ public class P413GhostSyncFaultWiringTest {
         faultHandler.start();
 
         // Create adapter
-        adapter = new GhostSyncFaultAdapter(faultHandler);
+        adapter = new SimpleGhostSyncAdapter(faultHandler);
     }
 
     /**
-     * Test 1: GhostSyncFaultAdapter registers callback in ghost manager.
+     * Test 1: SimpleGhostSyncAdapter registers callback in ghost manager.
      *
      * <p>Verifies that adapter can be registered as a callback for ghost sync events.
      */

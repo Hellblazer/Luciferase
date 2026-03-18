@@ -79,12 +79,10 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 | **render** | ESVO implementation with LWJGL rendering, FFM integration |
 | **sentry** | Delaunay tetrahedralization for kinetic point tracking |
 | **portal** | JavaFX 3D visualization and mesh handling |
-| **von** | Distributed spatial perception framework |
 | **simulation** | Distributed simulation with deterministic testing support (Clock interface) |
-| **gpu-test-framework** | GPU testing infrastructure and benchmarking |
-| **resource** | Shared resources, shaders, and configuration files |
 | **dyada-java** | Mathematical utilities and data structures |
-| **e2e-test** | End-to-end integration testing |
+
+> **Note**: `von` is a package inside the simulation module (not a separate module). `gpu-test-framework` and `resource` are external dependencies from `com.hellblazer.gpu-support`. `e2e-test` does not exist in this repository.
 
 ### Lucien Module - Spatial Indexing
 
