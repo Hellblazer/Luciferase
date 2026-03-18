@@ -50,3 +50,7 @@ portal/logs/
 # Archived project management and FPF knowledge base
 .pm-archives/
 .quint/
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
