@@ -48,7 +48,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -59,7 +59,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache Maven packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2/repository
           key: luciferase-maven-gpu-${{ hashFiles('**/pom.xml') }}
@@ -131,7 +131,7 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: tier1-test-results
           path: render/target/surefire-reports/
@@ -157,7 +157,7 @@ jobs:
   #     GPU_VENDOR: NVIDIA
   #
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v5
   #     - uses: graalvm/setup-graalvm@v1
   #       with:
   #         java-version: '25'
@@ -168,7 +168,7 @@ jobs:
   #           -Dtest="DAGOpenCLRendererVendorTest#testNvidiaRTX4090Execution,DAGOpenCLRendererVendorTest#testNvidiaRTX3060Execution" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload NVIDIA Results
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v5
   #       with:
   #         name: tier2-nvidia-results
   #         path: render/target/surefire-reports/
@@ -183,7 +183,7 @@ jobs:
   #     GPU_VENDOR: AMD
   #
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v5
   #     - uses: graalvm/setup-graalvm@v1
   #       with:
   #         java-version: '25'
@@ -194,7 +194,7 @@ jobs:
   #           -Dtest="DAGOpenCLRendererVendorTest#testAmdRX6900XTExecution,DAGOpenCLRendererVendorTest#testAmdRX6700XTExecution" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload AMD Results
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v5
   #       with:
   #         name: tier2-amd-results
   #         path: render/target/surefire-reports/
@@ -209,7 +209,7 @@ jobs:
   #     GPU_VENDOR: Intel
   #
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v5
   #     - uses: graalvm/setup-graalvm@v1
   #       with:
   #         java-version: '25'
@@ -220,7 +220,7 @@ jobs:
   #           -Dtest="DAGOpenCLRendererVendorTest#testIntelArcA770Execution,DAGOpenCLRendererVendorTest#testIntelArcA380Execution" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload Intel Results
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v5
   #       with:
   #         name: tier2-intel-results
   #         path: render/target/surefire-reports/
@@ -235,7 +235,7 @@ jobs:
   #     GPU_VENDOR: Apple
   #
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v5
   #     - uses: graalvm/setup-graalvm@v1
   #       with:
   #         java-version: '25'
@@ -246,7 +246,7 @@ jobs:
   #           -Dtest="DAGOpenCLRendererVendorTest#testAppleM2MaxExecution,DAGOpenCLRendererVendorTest#testAppleM3MaxExecution" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload Apple Results
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v5
   #       with:
   #         name: tier2-apple-results
   #         path: render/target/surefire-reports/
@@ -268,7 +268,7 @@ jobs:
   #     RUN_GPU_TESTS: true
   #
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v5
   #     - uses: graalvm/setup-graalvm@v1
   #       with:
   #         java-version: '25'
@@ -279,7 +279,7 @@ jobs:
   #           -Dtest="NvidiaGPUTest,DAGOpenCLRendererVendorTest" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload NVIDIA Full Results
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v5
   #       with:
   #         name: tier3-nvidia-full-results
   #         path: render/target/surefire-reports/
@@ -294,7 +294,7 @@ jobs:
   #     RUN_GPU_TESTS: true
   #
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v5
   #     - uses: graalvm/setup-graalvm@v1
   #       with:
   #         java-version: '25'
@@ -305,7 +305,7 @@ jobs:
   #           -Dtest="AmdGPUTest,DAGOpenCLRendererVendorTest" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload AMD Full Results
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v5
   #       with:
   #         name: tier3-amd-full-results
   #         path: render/target/surefire-reports/
@@ -320,7 +320,7 @@ jobs:
   #     RUN_GPU_TESTS: true
   #
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v5
   #     - uses: graalvm/setup-graalvm@v1
   #       with:
   #         java-version: '25'
@@ -331,7 +331,7 @@ jobs:
   #           -Dtest="IntelGPUTest,DAGOpenCLRendererVendorTest" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload Intel Full Results
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v5
   #       with:
   #         name: tier3-intel-full-results
   #         path: render/target/surefire-reports/
@@ -346,7 +346,7 @@ jobs:
   #     RUN_GPU_TESTS: true
   #
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v5
   #     - uses: graalvm/setup-graalvm@v1
   #       with:
   #         java-version: '25'
@@ -357,7 +357,7 @@ jobs:
   #           -Dtest="AppleGPUTest,DAGOpenCLRendererVendorTest" \
   #           -Dsurefire.rerunFailingTestsCount=0
   #     - name: Upload Apple Full Results
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v5
   #       with:
   #         name: tier3-apple-full-results
   #         path: render/target/surefire-reports/
@@ -374,10 +374,10 @@ jobs:
   #   if: always() && (github.event.inputs.run_gpu_tests == 'true' || github.event_name == 'schedule')
   #
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v5
   #
   #     - name: Download All Vendor Results
-  #       uses: actions/download-artifact@v4
+  #       uses: actions/download-artifact@v5
   #       with:
   #         pattern: tier2-*-results
   #         path: vendor-results/
@@ -394,7 +394,7 @@ jobs:
   #         echo "Target: >90% consistency across all vendors"
   #
   #     - name: Upload Consistency Report
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v5
   #       with:
   #         name: multi-vendor-consistency-report
   #         path: consistency-report.md
