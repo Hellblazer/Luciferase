@@ -6,6 +6,7 @@ import com.hellblazer.luciferase.lucien.balancing.ParallelBalancer;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
 import com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager;
+import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,6 +86,9 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
     // Metrics
     private final FaultTolerantForestStats.StatsAccumulator statsAccumulator;
 
+    // Deterministic time source
+    private final Clock clock;
+
     // Executor for async recovery
     private final ExecutorService recoveryExecutor;
 
@@ -112,6 +116,36 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
         FaultConfiguration configuration,
         InFlightOperationTracker operationTracker
     ) {
+        this(delegate, faultHandler, recoveryLock, balancer, ghostManager,
+             topology, localPartitionId, configuration, operationTracker, Clock.system());
+    }
+
+    /**
+     * Create a fault-tolerant distributed forest decorator with injected clock.
+     *
+     * @param delegate the underlying distributed forest
+     * @param faultHandler fault detection handler
+     * @param recoveryLock recovery coordination lock
+     * @param balancer the parallel balancer (for pause coordination)
+     * @param ghostManager the ghost manager (for pause coordination)
+     * @param topology partition topology mapping
+     * @param localPartitionId the local partition UUID
+     * @param configuration fault tolerance configuration
+     * @param operationTracker shared tracker for synchronous pause
+     * @param clock time source for deterministic testing
+     */
+    public FaultTolerantDistributedForest(
+        ParallelBalancer.DistributedForest<Key, ID, Content> delegate,
+        SimpleFaultHandler faultHandler,
+        RecoveryCoordinatorLock recoveryLock,
+        DefaultParallelBalancer<Key, ID, Content> balancer,
+        DistributedGhostManager<Key, ID, Content> ghostManager,
+        PartitionTopology topology,
+        UUID localPartitionId,
+        FaultConfiguration configuration,
+        InFlightOperationTracker operationTracker,
+        Clock clock
+    ) {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
         this.faultHandler = Objects.requireNonNull(faultHandler, "faultHandler");
         this.recoveryLock = Objects.requireNonNull(recoveryLock, "recoveryLock");
@@ -121,6 +155,7 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
         this.localPartitionId = Objects.requireNonNull(localPartitionId, "localPartitionId");
         this.configuration = Objects.requireNonNull(configuration, "configuration");
         this.operationTracker = Objects.requireNonNull(operationTracker, "operationTracker");
+        this.clock = Objects.requireNonNull(clock, "clock");
 
         this.statsAccumulator = new FaultTolerantForestStats.StatsAccumulator();
         this.recoveryExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -201,7 +236,7 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
         log.info("Triggering recovery for partition {}", failedPartitionId);
 
         return CompletableFuture.supplyAsync(() -> {
-            var startTime = System.currentTimeMillis();
+            var startTime = clock.currentTimeMillis();
             boolean success = false;
 
             try {
@@ -238,7 +273,7 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
                     exitRecoveryMode();
                     recoveryLock.releaseRecoveryLock(failedPartitionId);
 
-                    var duration = System.currentTimeMillis() - startTime;
+                    var duration = clock.currentTimeMillis() - startTime;
                     statsAccumulator.recordRecoveryAttempt(duration, success);
 
                     log.info("Recovery for partition {} {} in {}ms",
