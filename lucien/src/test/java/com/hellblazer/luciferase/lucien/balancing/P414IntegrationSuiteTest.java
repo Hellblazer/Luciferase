@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.balancing;
 import com.hellblazer.luciferase.lucien.balancing.fault.FaultConfiguration;
 import com.hellblazer.luciferase.lucien.balancing.fault.FaultHandler;
 import com.hellblazer.luciferase.lucien.balancing.fault.SimpleFaultHandler;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -73,6 +74,12 @@ public class P414IntegrationSuiteTest {
         balancer = new DefaultParallelBalancer<>(balanceConfig);
         ghostSyncAdapter = new SimpleGhostSyncAdapter(faultHandler);
         executor = Executors.newFixedThreadPool(5);
+    }
+
+    @AfterEach
+    void tearDown() {
+        faultHandler.stop();
+        executor.shutdownNow();
     }
 
     /**

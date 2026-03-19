@@ -19,7 +19,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install glslang validator
         run: |
@@ -79,7 +79,7 @@ jobs:
       LIBGL_ALWAYS_SOFTWARE: 1
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: graalvm/setup-graalvm@v1
         with:
@@ -117,7 +117,7 @@ jobs:
           glxinfo | grep -i "compute" || echo "Compute shader info not found"
 
       - name: Cache Maven packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}

@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.lucien.balancing.fault.FaultHandler;
 import com.hellblazer.luciferase.lucien.balancing.fault.SimpleFaultHandler;
 import com.hellblazer.luciferase.lucien.balancing.fault.FaultConfiguration;
 import com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -69,6 +70,11 @@ public class P413GhostSyncFaultWiringTest {
 
         // Create adapter
         adapter = new SimpleGhostSyncAdapter(faultHandler);
+    }
+
+    @AfterEach
+    void tearDown() {
+        faultHandler.stop();
     }
 
     /**

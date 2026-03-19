@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.lucien.balancing;
 
 import com.hellblazer.luciferase.lucien.balancing.fault.FaultHandler;
+import com.hellblazer.luciferase.lucien.balancing.fault.GhostSyncCallback;
 import com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +49,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author hal.hildebrand
  */
-public class SimpleGhostSyncAdapter {
+public class SimpleGhostSyncAdapter implements GhostSyncCallback {
 
     private static final Logger log = LoggerFactory.getLogger(SimpleGhostSyncAdapter.class);
 

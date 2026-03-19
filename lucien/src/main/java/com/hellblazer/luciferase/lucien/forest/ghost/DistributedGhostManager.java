@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
+import com.hellblazer.luciferase.lucien.balancing.fault.GhostSyncCallback;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostCommunicationManager;
 import com.hellblazer.luciferase.lucien.forest.ghost.grpc.SimpleServiceDiscovery;
@@ -72,7 +73,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
     private volatile long syncIntervalMs = 30000; // 30 seconds default
 
     // Fault detection callback for sync operations
-    private volatile Object syncCallback = null;
+    private volatile GhostSyncCallback syncCallback = null;
     
     /**
      * Create a distributed ghost manager.
@@ -369,7 +370,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
      *
      * @param callback the sync callback to register (typically SimpleGhostSyncAdapter)
      */
-    public void registerSyncCallback(Object callback) {
+    public void registerSyncCallback(GhostSyncCallback callback) {
         this.syncCallback = callback;
         if (callback != null) {
             log.debug("Registered sync callback for rank {}", currentRank);
@@ -381,7 +382,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
      *
      * @return the sync callback, or null if not registered
      */
-    public Object getSyncCallback() {
+    public GhostSyncCallback getSyncCallback() {
         return syncCallback;
     }
 
