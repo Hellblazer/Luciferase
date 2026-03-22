@@ -51,19 +51,26 @@ public final class TetreeConnectivity {
      *
      * Based on t8code's t8_dtet_type_to_child_type table. [parent_type][child_index] -> child_type
      */
+    /**
+     * Child types for each parent type using the S0-S5 Kuhn coordinate convention
+     * (consistent with Tet.coordinates() and Tet.contains12DOP()).
+     * Corner children (0-3) always match parent type. Interior children (4-7) are
+     * derived from Bey midpoints under the S0-S5 vertex geometry.
+     * Matches BeySubdivision.CHILD_TYPES exactly.
+     */
     public static final byte[][] PARENT_TYPE_TO_CHILD_TYPE = {
-    // Parent type 0 - matches t8code t8_dtet_type_of_child[0]
-    { 0, 0, 0, 0, 4, 5, 2, 1 },
-    // Parent type 1 - matches t8code t8_dtet_type_of_child[1]
-    { 1, 1, 1, 1, 3, 2, 5, 0 },
-    // Parent type 2 - matches t8code t8_dtet_type_of_child[2]
-    { 2, 2, 2, 2, 0, 1, 4, 3 },
-    // Parent type 3 - matches t8code t8_dtet_type_of_child[3]
-    { 3, 3, 3, 3, 5, 4, 1, 2 },
-    // Parent type 4 - matches t8code t8_dtet_type_of_child[4]
-    { 4, 4, 4, 4, 2, 3, 0, 5 },
-    // Parent type 5 - matches t8code t8_dtet_type_of_child[5]
-    { 5, 5, 5, 5, 1, 0, 3, 4 } };
+    // Parent type 0 — S0-S5 Kuhn convention
+    { 0, 0, 0, 0, 5, 1, 2, 4 },
+    // Parent type 1
+    { 1, 1, 1, 1, 4, 0, 3, 5 },
+    // Parent type 2
+    { 2, 2, 2, 2, 0, 4, 5, 3 },
+    // Parent type 3
+    { 3, 3, 3, 3, 1, 5, 4, 2 },
+    // Parent type 4
+    { 4, 4, 4, 4, 3, 2, 1, 0 },
+    // Parent type 5
+    { 5, 5, 5, 5, 2, 3, 0, 1 } };
 
     /**
      * Face corner indices for each tetrahedron type. Given a tetrahedron type (0-5) and face index (0-3), returns the
