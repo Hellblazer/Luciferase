@@ -311,24 +311,26 @@ public class Tet implements Spatial.aabt {
         float uy = relY / cellSize;
         float uz = relZ / cellSize;
 
-        // Determine tetrahedron type based on position
+        // Determine tetrahedron type based on coordinate ordering — must match
+        // the geometric convention used by contains12DOP() and coordinates().
+        // See: S0-S5 Kuhn simplex orderings in contains12DOP().
         byte type;
-        if (ux <= uy) {
-            if (uy <= uz) {
-                type = 3; // x <= y <= z
-            } else if (ux <= uz) {
-                type = 2; // x <= z < y
+        if (ux >= uy) {
+            if (uy >= uz) {
+                type = 0; // S0: x >= y >= z
+            } else if (ux >= uz) {
+                type = 4; // S4: x >= z >= y
             } else {
-                type = 4; // z < x <= y
+                type = 2; // S2: z >= x >= y
             }
         } else {
-            // ux > uy
-            if (ux <= uz) {
-                type = 5; // y < x <= z
-            } else if (uy <= uz) {
-                type = 0; // y <= z < x
+            // uy > ux
+            if (ux >= uz) {
+                type = 1; // S1: y >= x >= z
+            } else if (uy >= uz) {
+                type = 5; // S5: y >= z >= x
             } else {
-                type = 1; // z < y < x
+                type = 3; // S3: z >= y >= x
             }
         }
 
