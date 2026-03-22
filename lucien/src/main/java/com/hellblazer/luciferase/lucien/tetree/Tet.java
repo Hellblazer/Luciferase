@@ -837,49 +837,51 @@ public class Tet implements Spatial.aabt {
 
     /**
      * Hierarchical AABT traversal: like the AABB path but filters individual tet types per cell
-     * using {@link Tet#intersectsBound(Spatial.aabt)} (SAT) instead of emitting all 6 per cell.
+     * using {@link Tet#intersects12DOPStatic} (SAT) instead of emitting all 6 per cell.
+     * <p>
+     * Allocation profile: 0 Tet allocations for rejected cells; 1 Tet allocation per passing type
+     * (required for tmIndex). The 12-DOP rejection is done allocation-free via the static helper.
      */
     Stream<TetreeKey<?>> aabtSpatialRangeQueryKeys(Spatial.aabt queryBound) {
         var bounds = queryBound.toVolumeBounds();
-        int length = Constants.lengthAtLevel(this.l);
+        final int length = Constants.lengthAtLevel(this.l);
+        final float qMinX = bounds.minX(), qMinY = bounds.minY(), qMinZ = bounds.minZ();
+        final float qMaxX = bounds.maxX(), qMaxY = bounds.maxY(), qMaxZ = bounds.maxZ();
 
-        int minX = (int) Math.floor(bounds.minX() / length);
-        int maxX = (int) Math.ceil(bounds.maxX() / length);
-        int minY = (int) Math.floor(bounds.minY() / length);
-        int maxY = (int) Math.ceil(bounds.maxY() / length);
-        int minZ = (int) Math.floor(bounds.minZ() / length);
-        int maxZ = (int) Math.ceil(bounds.maxZ() / length);
+        // Compute grid cell range covering the query AABB
+        int gridMinX = (int) Math.floor(qMinX / length);
+        int gridMaxX = (int) Math.ceil(qMaxX / length);
+        int gridMinY = (int) Math.floor(qMinY / length);
+        int gridMaxY = (int) Math.ceil(qMaxY / length);
+        int gridMinZ = (int) Math.floor(qMinZ / length);
+        int gridMaxZ = (int) Math.ceil(qMaxZ / length);
 
-        return IntStream.rangeClosed(minX, maxX).boxed().flatMap(xi -> IntStream.rangeClosed(minY, maxY)
-                                                                                .boxed()
-                                                                                .flatMap(yi -> IntStream.rangeClosed(
-                                                                                minZ, maxZ).boxed().flatMap(zi -> {
-                                                                                    int cx = xi * length;
-                                                                                    int cy = yi * length;
-                                                                                    int cz = zi * length;
-                                                                                    // Quick AABB cell reject
-                                                                                    if (cx + length < bounds.minX()
-                                                                                    || cx > bounds.maxX()
-                                                                                    || cy + length < bounds.minY()
-                                                                                    || cy > bounds.maxY()
-                                                                                    || cz + length < bounds.minZ()
-                                                                                    || cz > bounds.maxZ()) {
-                                                                                        return Stream.empty();
-                                                                                    }
-                                                                                    // SAT per-tet filter
-                                                                                    return IntStream.range(0, 6)
-                                                                                                   .filter(t -> {
-                                                                                                       var tet = new Tet(
-                                                                                                       cx, cy, cz,
-                                                                                                       this.l,
-                                                                                                       (byte) t);
-                                                                                                       return tet.intersectsBound(
-                                                                                                       queryBound);
-                                                                                                   })
-                                                                                                   .mapToObj(t -> new Tet(
-                                                                                                   cx, cy, cz, this.l,
-                                                                                                   (byte) t).tmIndex());
-                                                                                })));
+        List<TetreeKey<?>> keys = new ArrayList<>();
+        for (int xi = gridMinX; xi <= gridMaxX; xi++) {
+            int cx = xi * length;
+            // Quick AABB cell reject on X
+            if (cx + length < qMinX || cx > qMaxX)
+                continue;
+            for (int yi = gridMinY; yi <= gridMaxY; yi++) {
+                int cy = yi * length;
+                // Quick AABB cell reject on Y
+                if (cy + length < qMinY || cy > qMaxY)
+                    continue;
+                for (int zi = gridMinZ; zi <= gridMaxZ; zi++) {
+                    int cz = zi * length;
+                    // Quick AABB cell reject on Z
+                    if (cz + length < qMinZ || cz > qMaxZ)
+                        continue;
+                    // SAT per-tet filter — allocation-free
+                    for (int t = 0; t < 6; t++) {
+                        if (intersects12DOPStatic(cx, cy, cz, this.l, t, qMinX, qMinY, qMinZ, qMaxX, qMaxY, qMaxZ)) {
+                            keys.add(new Tet(cx, cy, cz, this.l, (byte) t).tmIndex());
+                        }
+                    }
+                }
+            }
+        }
+        return keys.stream();
     }
 
     /**
@@ -1199,6 +1201,61 @@ public class Tet implements Spatial.aabt {
         float dyzMin = eyMin - ezMax, dyzMax = eyMax - ezMin;
         // Step 3: Compute tet's global slab ranges and check overlap (6 comparisons)
         // Local slab [0,h] or [-h,0] is shifted by anchor differences (axy = x-y, etc.)
+        int axy = x - y, axz = x - z, ayz = y - z;
+        return switch (type) {
+            case 0 ->
+                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
+                && dyzMin <= ayz + h;
+            case 1 ->
+                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
+                && dyzMin <= ayz + h;
+            case 2 ->
+                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
+                && dyzMin <= ayz;
+            case 3 ->
+                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
+                && dyzMin <= ayz;
+            case 4 ->
+                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz - h
+                && dyzMin <= ayz;
+            case 5 ->
+                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz
+                && dyzMin <= ayz + h;
+            default -> throw new IllegalStateException("Invalid type: " + type);
+        };
+    }
+
+    /**
+     * Static 12-DOP intersection test. Equivalent to {@link #intersects12DOP} but requires no Tet allocation.
+     * Tests overlap on all 6 DOP axes: 3 AABB axes + 3 difference axes {x-y, x-z, y-z}.
+     * <p>
+     * Cost: ~21 ops (6 AABB comparisons + 6 entity projections + 3 anchor differences + 6 slab comparisons).
+     *
+     * @param x     anchor X of the tet cell (world coordinates)
+     * @param y     anchor Y of the tet cell (world coordinates)
+     * @param z     anchor Z of the tet cell (world coordinates)
+     * @param l     refinement level
+     * @param type  tet type in [0,5]
+     * @param exMin minimum X of the query AABB
+     * @param eyMin minimum Y of the query AABB
+     * @param ezMin minimum Z of the query AABB
+     * @param exMax maximum X of the query AABB
+     * @param eyMax maximum Y of the query AABB
+     * @param ezMax maximum Z of the query AABB
+     * @return true if the query AABB intersects the tet's 12-DOP
+     */
+    static boolean intersects12DOPStatic(int x, int y, int z, byte l, int type,
+                                         float exMin, float eyMin, float ezMin,
+                                         float exMax, float eyMax, float ezMax) {
+        final int h = 1 << (Constants.getMaxRefinementLevel() - l);
+        // Step 1: AABB overlap (6 comparisons)
+        if (exMax < x || exMin > x + h || eyMax < y || eyMin > y + h || ezMax < z || ezMin > z + h)
+            return false;
+        // Step 2: Project entity AABB onto difference axes (6 subtractions)
+        float dxyMin = exMin - eyMax, dxyMax = exMax - eyMin;
+        float dxzMin = exMin - ezMax, dxzMax = exMax - ezMin;
+        float dyzMin = eyMin - ezMax, dyzMax = eyMax - ezMin;
+        // Step 3: Compute tet's global slab ranges and check overlap (6 comparisons)
         int axy = x - y, axz = x - z, ayz = y - z;
         return switch (type) {
             case 0 ->
