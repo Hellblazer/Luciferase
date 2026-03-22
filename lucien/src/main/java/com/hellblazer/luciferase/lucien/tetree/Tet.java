@@ -43,7 +43,7 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
  *
  * @author hal.hildebrand
  **/
-public class Tet {
+public class Tet implements Spatial.aabt {
     public static final  TetreeKey<?> ROOT_TET      = TetreeKey.getRoot();
     /**
      * Default root tetrahedron type (follows t8code standard)
@@ -817,6 +817,89 @@ public class Tet {
 
     public Point3i anchor() {
         return new Point3i(x, y, z);
+    }
+
+    // -------------------------------------------------------------------------
+    // Spatial.aabt implementation
+    // -------------------------------------------------------------------------
+
+    /**
+     * Answer true if the given point is contained within this tetrahedron.
+     * Delegates to the ultra-fast containment check.
+     */
+    @Override
+    public boolean contains(float px, float py, float pz) {
+        return containsUltraFast(px, py, pz);
+    }
+
+    /**
+     * Answer true if the given bounding volume is completely contained within this tetrahedron.
+     * Checks all vertices of {@code other} using the tetrahedral containment test.
+     */
+    @Override
+    public boolean containsBound(Spatial.aabt other) {
+        for (var v : other.vertices()) {
+            if (!containsUltraFast(v[0], v[1], v[2])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Answer true if this tetrahedron intersects the given bounding volume.
+     * Uses the full SAT-based tetrahedral intersection test.
+     */
+    @Override
+    public boolean intersectsBound(Spatial.aabt other) {
+        return tetrahedronIntersectsVolumeBounds(this, other.toVolumeBounds());
+    }
+
+    /**
+     * Return the four vertices of this tetrahedron as a float[][] array.
+     * Converts the Point3i coordinates to float arrays.
+     */
+    @Override
+    public float[][] vertices() {
+        var pts = coordinates();
+        return new float[][] { { pts[0].x, pts[0].y, pts[0].z }, { pts[1].x, pts[1].y, pts[1].z },
+                               { pts[2].x, pts[2].y, pts[2].z }, { pts[3].x, pts[3].y, pts[3].z } };
+    }
+
+    /**
+     * Return the axis-aligned bounding box of this tetrahedron.
+     */
+    @Override
+    public VolumeBounds toVolumeBounds() {
+        var pts = coordinates();
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
+        for (var p : pts) {
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            minZ = Math.min(minZ, p.z);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+            maxZ = Math.max(maxZ, p.z);
+        }
+        return new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    /**
+     * Answer true if this tetrahedron is completely contained within the given aabt bounds.
+     * Delegates to {@code bounds.containsBound(this)}.
+     */
+    @Override
+    public boolean containedBy(Spatial.aabt bounds) {
+        return bounds.containsBound(this);
+    }
+
+    /**
+     * Answer true if this tetrahedron intersects the given AABB defined by origin and extent corners.
+     */
+    @Override
+    public boolean intersects(float oX, float oY, float oZ, float eX, float eY, float eZ) {
+        return tetrahedronIntersectsVolumeBounds(this, new VolumeBounds(oX, oY, oZ, eX, eY, eZ));
     }
 
     /**
@@ -1751,16 +1834,16 @@ public class Tet {
         return type;
     }
 
-    public Point3i[] vertices() {
+    public Point3i[] vertexPoints() {
         var origin = new Point3i(x, y, z);
-        var vertices = new Point3i[4];
+        var pts = new Point3i[4];
         int i = 0;
         for (var vertex : Constants.SIMPLEX_STANDARD[type]) {
-            vertices[i] = new Point3i(vertex.x, vertex.y, vertex.z);
-            vertices[i].scaleAdd(length(), origin);
+            pts[i] = new Point3i(vertex.x, vertex.y, vertex.z);
+            pts[i].scaleAdd(length(), origin);
             i++;
         }
-        return vertices;
+        return pts;
     }
 
     public int x() {

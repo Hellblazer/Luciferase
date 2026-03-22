@@ -34,13 +34,13 @@ public class SealedInterfaceMigrationTest {
     // -----------------------------------------------------------------------
 
     /** Large bounding volume: [0, 1000] in all axes. */
-    private static final Spatial.aabt OUTER = new Spatial.aabt(0f, 0f, 0f, 1000f, 1000f, 1000f);
+    private static final Spatial.aabt OUTER = new Spatial.aabt.Box(0f, 0f, 0f, 1000f, 1000f, 1000f);
 
     /** Interior query volume: [100, 900] in all axes – strictly inside OUTER. */
-    private static final Spatial.aabt INNER = new Spatial.aabt(100f, 100f, 100f, 900f, 900f, 900f);
+    private static final Spatial.aabt INNER = new Spatial.aabt.Box(100f, 100f, 100f, 900f, 900f, 900f);
 
     /** Disjoint volume: [1100, 2000] in all axes. */
-    private static final Spatial.aabt FAR = new Spatial.aabt(1100f, 1100f, 1100f, 2000f, 2000f, 2000f);
+    private static final Spatial.aabt FAR = new Spatial.aabt.Box(1100f, 1100f, 1100f, 2000f, 2000f, 2000f);
 
     // -----------------------------------------------------------------------
     // Callsite 1 – Spatial.Cube.containedBy(aabt)  (Spatial.java:47)
@@ -199,7 +199,7 @@ public class SealedInterfaceMigrationTest {
 
     @Test
     void aabt_equalToOuter_isContained() {
-        var same = new Spatial.aabt(0f, 0f, 0f, 1000f, 1000f, 1000f);
+        var same = new Spatial.aabt.Box(0f, 0f, 0f, 1000f, 1000f, 1000f);
         assertTrue(same.containedBy(OUTER), "aabt identical to OUTER should be self-contained");
     }
 
@@ -211,7 +211,7 @@ public class SealedInterfaceMigrationTest {
     @Test
     void aabt_partiallyOverlapping_notContained() {
         // Origin outside OUTER on the low side (negative origin)
-        var partiallyOut = new Spatial.aabt(-10f, 100f, 100f, 900f, 900f, 900f);
+        var partiallyOut = new Spatial.aabt.Box(-10f, 100f, 100f, 900f, 900f, 900f);
         assertFalse(partiallyOut.containedBy(OUTER), "aabt with origin below OUTER origin should not be contained");
     }
 
@@ -251,7 +251,7 @@ public class SealedInterfaceMigrationTest {
 
     @Test
     void volumeBoundsFrom_aabt_mapsOriginAndExtentDirectly() {
-        var aabt = new Spatial.aabt(10f, 20f, 30f, 110f, 120f, 130f);
+        var aabt = new Spatial.aabt.Box(10f, 20f, 30f, 110f, 120f, 130f);
         var vb = VolumeBounds.from(aabt);
         assertNotNull(vb, "VolumeBounds.from(aabt) should not return null");
         assertEquals(10f, vb.minX(), 1e-6f, "minX should equal aabt.originX()");
@@ -367,46 +367,48 @@ public class SealedInterfaceMigrationTest {
     // -----------------------------------------------------------------------
 
     @Test
-    @Disabled("P2.2 will fix Simplex.containedBy to delegate to Tet geometry")
-    void simplex_containedBy_currentlyReturnsFalseUnconditionally() {
-        var tet = new Tet(0, 0, 0, (byte) 10, (byte) 0);
+    void simplex_containedBy_delegatesToTetGeometry() {
+        // Level 12: cell size = 512, which fits inside OUTER [0, 1000] for type-0 S0 tet at origin
+        // Type-0 vertices: (0,0,0), (512,0,0), (512,512,0), (512,512,512) — all within [0,1000]
+        var tet = new Tet(0, 0, 0, (byte) 12, (byte) 0);
         var key = tet.tmIndex();
         var simplex = new Simplex<>(key, "data");
-        // After migration this should return true when the simplex is inside the query volume
         assertTrue(simplex.containedBy(OUTER),
                    "Post-P2.2: Simplex inside query volume should be contained");
     }
 
     @Test
-    @Disabled("P2.2 will fix Simplex.intersects to delegate to Tet geometry")
-    void simplex_intersects_currentlyReturnsFalseUnconditionally() {
-        var tet = new Tet(0, 0, 0, (byte) 10, (byte) 0);
+    void simplex_intersects_delegatesToTetGeometry() {
+        // Level 12: cell size = 512, tet at origin — overlaps OUTER [0, 1000]
+        var tet = new Tet(0, 0, 0, (byte) 12, (byte) 0);
         var key = tet.tmIndex();
         var simplex = new Simplex<>(key, "data");
-        // After migration this should return true when the simplex overlaps the query volume
         assertTrue(simplex.intersects(OUTER.originX(), OUTER.originY(), OUTER.originZ(),
                                       OUTER.extentX(), OUTER.extentY(), OUTER.extentZ()),
                    "Post-P2.2: Simplex intersecting query volume should return true");
     }
 
-    /** Verify current stub behavior so regressions are detectable pre-migration. */
+    /** Verify that a Simplex far outside the query volume is not reported as contained. */
     @Test
-    void simplex_containedBy_returnsfalse_currentBehavior() {
+    void simplex_containedBy_outsideVolume_returnsFalse() {
+        // Level 10: cell size = 2048, extends well outside OUTER [0, 1000]
         var tet = new Tet(0, 0, 0, (byte) 10, (byte) 0);
         var key = tet.tmIndex();
         var simplex = new Simplex<>(key, "data");
         assertFalse(simplex.containedBy(OUTER),
-                    "Pre-P2.2: Simplex.containedBy must return false unconditionally");
+                    "Simplex extending beyond OUTER should not be contained");
     }
 
+    /** Verify that a Simplex intersecting the query volume is detected. */
     @Test
-    void simplex_intersects_returnsFalse_currentBehavior() {
+    void simplex_intersects_overlappingVolume_returnsTrue() {
+        // Level 10: cell size = 2048, tet origin at (0,0,0) — overlaps OUTER [0, 1000]
         var tet = new Tet(0, 0, 0, (byte) 10, (byte) 0);
         var key = tet.tmIndex();
         var simplex = new Simplex<>(key, "data");
-        assertFalse(simplex.intersects(OUTER.originX(), OUTER.originY(), OUTER.originZ(),
-                                       OUTER.extentX(), OUTER.extentY(), OUTER.extentZ()),
-                    "Pre-P2.2: Simplex.intersects must return false unconditionally");
+        assertTrue(simplex.intersects(OUTER.originX(), OUTER.originY(), OUTER.originZ(),
+                                      OUTER.extentX(), OUTER.extentY(), OUTER.extentZ()),
+                   "Simplex overlapping OUTER should intersect it");
     }
 
     // -----------------------------------------------------------------------
@@ -513,7 +515,7 @@ public class SealedInterfaceMigrationTest {
 
     @Test
     void aabt_accessors_returnConstructorValues() {
-        var q = new Spatial.aabt(1f, 2f, 3f, 4f, 5f, 6f);
+        var q = new Spatial.aabt.Box(1f, 2f, 3f, 4f, 5f, 6f);
         assertEquals(1f, q.originX(), 1e-6f);
         assertEquals(2f, q.originY(), 1e-6f);
         assertEquals(3f, q.originZ(), 1e-6f);
