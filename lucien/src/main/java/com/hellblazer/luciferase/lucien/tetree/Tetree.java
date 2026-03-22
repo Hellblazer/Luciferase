@@ -2575,22 +2575,23 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
 
                 // For each grid cell, enumerate all 6 tetrahedra
                 for (byte type = 0; type < 6; type++) {
-                    var tet = new Tet(x, y, z, level, type);
-
-                    // Check if this tetrahedron intersects/is contained in bounds
-                    boolean matches;
                     if (includeIntersecting) {
-                        matches = tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(),
-                                                       bounds.maxY(), bounds.maxZ());
+                        // Allocation-free 12-DOP test — only create Tet when needed for tmIndex()
+                        if (Tet.intersects12DOPStatic(x, y, z, level, type,
+                                                      bounds.minX(), bounds.minY(), bounds.minZ(),
+                                                      bounds.maxX(), bounds.maxY(), bounds.maxZ())) {
+                            var tetKey = new Tet(x, y, z, level, type).tmIndex();
+                            if (spatialIndex.containsKey(tetKey)) {
+                                result.add(tetKey);
+                            }
+                        }
                     } else {
-                        matches = Tet.tetrahedronContainedInVolumeBounds(tet, bounds);
-                    }
-
-                    if (matches) {
-                        var tetKey = tet.tmIndex();
-                        // Only add if this key exists in our spatial index
-                        if (spatialIndex.containsKey(tetKey)) {
-                            result.add(tetKey);
+                        var tet = new Tet(x, y, z, level, type);
+                        if (Tet.tetrahedronContainedInVolumeBounds(tet, bounds)) {
+                            var tetKey = tet.tmIndex();
+                            if (spatialIndex.containsKey(tetKey)) {
+                                result.add(tetKey);
+                            }
                         }
                     }
                 }
@@ -2735,12 +2736,12 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
                 for (int z = minZ; z <= maxZ; z++) {
                     // Each grid cell contains 6 tetrahedra (types 0-5)
                     for (byte type = 0; type < 6; type++) {
-                        Tet tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, type);
-
-                        // Only add if the tetrahedron actually intersects the bounds
-                        if (tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(),
-                                                bounds.maxY(), bounds.maxZ())) {
-                            results.add(tet.tmIndex());
+                        int cx = x * cellSize, cy = y * cellSize, cz = z * cellSize;
+                        // Allocation-free 12-DOP test — only create Tet when needed for tmIndex()
+                        if (Tet.intersects12DOPStatic(cx, cy, cz, level, type,
+                                                      bounds.minX(), bounds.minY(), bounds.minZ(),
+                                                      bounds.maxX(), bounds.maxY(), bounds.maxZ())) {
+                            results.add(new Tet(cx, cy, cz, level, type).tmIndex());
                         }
                     }
                 }
