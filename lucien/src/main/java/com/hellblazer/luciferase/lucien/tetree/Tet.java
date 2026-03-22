@@ -848,10 +848,28 @@ public class Tet implements Spatial.aabt {
 
     /**
      * Answer true if this tetrahedron intersects the given bounding volume.
-     * Uses the full SAT-based tetrahedral intersection test.
+     * <ul>
+     *   <li>If {@code other} is a {@link Tet}, uses the full tet-vs-tet SAT test via
+     *       {@link TetrahedralGeometry#tetrahedraIntersect}.</li>
+     *   <li>Otherwise falls back to the tet-vs-AABB test via
+     *       {@link #tetrahedronIntersectsVolumeBounds}.</li>
+     * </ul>
      */
     @Override
     public boolean intersectsBound(Spatial.aabt other) {
+        if (other instanceof Tet otherTet) {
+            var myPts    = coordinates();
+            var otherPts = otherTet.coordinates();
+            var v1 = new Point3f[] { new Point3f(myPts[0].x, myPts[0].y, myPts[0].z),
+                                     new Point3f(myPts[1].x, myPts[1].y, myPts[1].z),
+                                     new Point3f(myPts[2].x, myPts[2].y, myPts[2].z),
+                                     new Point3f(myPts[3].x, myPts[3].y, myPts[3].z) };
+            var v2 = new Point3f[] { new Point3f(otherPts[0].x, otherPts[0].y, otherPts[0].z),
+                                     new Point3f(otherPts[1].x, otherPts[1].y, otherPts[1].z),
+                                     new Point3f(otherPts[2].x, otherPts[2].y, otherPts[2].z),
+                                     new Point3f(otherPts[3].x, otherPts[3].y, otherPts[3].z) };
+            return TetrahedralGeometry.tetrahedraIntersect(v1, v2);
+        }
         return tetrahedronIntersectsVolumeBounds(this, other.toVolumeBounds());
     }
 
@@ -932,6 +950,69 @@ public class Tet implements Spatial.aabt {
             var tet = Tet.tetrahedron(key);
             return tetrahedronIntersectsVolume(tet, volume);
         });
+    }
+
+    /**
+     * AABT-based range query: walks the grid at this tet's level and returns keys for all tetrahedra that
+     * pass SAT-based intersection with the given bounding volume. Compared to the AABB path (which emits all
+     * 6 tet types per qualifying grid cell), this method tests each tet individually using
+     * {@link Spatial.aabt#intersectsBound(Spatial.aabt)} and only emits those that pass.
+     *
+     * <p>This is the AABT spike implementation — it adds a parallel path alongside the existing AABB traversal.
+     * It does NOT replace the AABB path.</p>
+     *
+     * @param queryBound the query volume as an aabt (may be a Box or a Tet)
+     * @return stream of TetreeKeys for tets that intersect the query bound via SAT
+     */
+    public Stream<TetreeKey<?>> intersectingBound(Spatial.aabt queryBound) {
+        return aabtSpatialRangeQueryKeys(queryBound);
+    }
+
+    /**
+     * Hierarchical AABT traversal: like the AABB path but filters individual tet types per cell
+     * using {@link Tet#intersectsBound(Spatial.aabt)} (SAT) instead of emitting all 6 per cell.
+     */
+    Stream<TetreeKey<?>> aabtSpatialRangeQueryKeys(Spatial.aabt queryBound) {
+        var bounds = queryBound.toVolumeBounds();
+        int length = Constants.lengthAtLevel(this.l);
+
+        int minX = (int) Math.floor(bounds.minX() / length);
+        int maxX = (int) Math.ceil(bounds.maxX() / length);
+        int minY = (int) Math.floor(bounds.minY() / length);
+        int maxY = (int) Math.ceil(bounds.maxY() / length);
+        int minZ = (int) Math.floor(bounds.minZ() / length);
+        int maxZ = (int) Math.ceil(bounds.maxZ() / length);
+
+        return IntStream.rangeClosed(minX, maxX).boxed().flatMap(xi -> IntStream.rangeClosed(minY, maxY)
+                                                                                .boxed()
+                                                                                .flatMap(yi -> IntStream.rangeClosed(
+                                                                                minZ, maxZ).boxed().flatMap(zi -> {
+                                                                                    int cx = xi * length;
+                                                                                    int cy = yi * length;
+                                                                                    int cz = zi * length;
+                                                                                    // Quick AABB cell reject
+                                                                                    if (cx + length < bounds.minX()
+                                                                                    || cx > bounds.maxX()
+                                                                                    || cy + length < bounds.minY()
+                                                                                    || cy > bounds.maxY()
+                                                                                    || cz + length < bounds.minZ()
+                                                                                    || cz > bounds.maxZ()) {
+                                                                                        return Stream.empty();
+                                                                                    }
+                                                                                    // SAT per-tet filter
+                                                                                    return IntStream.range(0, 6)
+                                                                                                   .filter(t -> {
+                                                                                                       var tet = new Tet(
+                                                                                                       cx, cy, cz,
+                                                                                                       this.l,
+                                                                                                       (byte) t);
+                                                                                                       return tet.intersectsBound(
+                                                                                                       queryBound);
+                                                                                                   })
+                                                                                                   .mapToObj(t -> new Tet(
+                                                                                                   cx, cy, cz, this.l,
+                                                                                                   (byte) t).tmIndex());
+                                                                                })));
     }
 
     /**
