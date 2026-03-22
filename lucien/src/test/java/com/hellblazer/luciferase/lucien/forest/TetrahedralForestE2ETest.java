@@ -531,7 +531,7 @@ class TetrahedralForestE2ETest {
     /**
      * Test entity movement across subdivided trees.
      *
-     * Verifies that entities are correctly redistributed during subdivision using containsUltraFast,
+     * Verifies that entities are correctly redistributed during subdivision using contains12DOP,
      * first-match-wins tie-breaking, and that no entities are lost in the process.
      */
     @Test
@@ -595,11 +595,11 @@ class TetrahedralForestE2ETest {
         assertTrue(root.isSubdivided(), "Root should be subdivided");
         assertEquals(6, root.getChildTreeIds().size(), "Should have 6 tetrahedral children");
 
-        // 5. Verify all children have tetrahedral bounds (required for containsUltraFast)
+        // 5. Verify all children have tetrahedral bounds (required for contains12DOP)
         for (var childId : root.getChildTreeIds()) {
             var child = forest.getTree(childId);
             assertInstanceOf(TetrahedralBounds.class, child.getTreeBounds(),
-                           "Child should have TetrahedralBounds for containsUltraFast");
+                           "Child should have TetrahedralBounds for contains12DOP");
         }
 
         // 6. Verify entities were redistributed: count total entities across all children

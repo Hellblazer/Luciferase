@@ -61,7 +61,7 @@ class TetrahedralSubdivisionForestTest {
 
     @Test
     void testTetrahedralBoundsContainsPointUsingUltraFast() {
-        // Test exact tetrahedral containment using Tet.containsUltraFast()
+        // Test exact tetrahedral containment using Tet.contains12DOP()
         // Create a simple S0 tetrahedron at origin with level 5
         var tet = new Tet(0, 0, 0, (byte) 5, (byte) 0); // S0: vertices 0, 1, 3, 7
         var tetBounds = new TetrahedralBounds(tet);

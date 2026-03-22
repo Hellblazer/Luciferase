@@ -9,14 +9,14 @@ import javax.vecmath.Point3i;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test to verify that Tet.contains and containsUltraFast methods work correctly. This is essential for spatial indexing
+ * Test to verify that Tet.contains and contains12DOP methods work correctly. This is essential for spatial indexing
  * operations like point location and collision detection.
  */
 public class TetContainsTest {
 
     @Test
     void testContainsConsistency() {
-        // Verify that contains() and containsUltraFast() give same results
+        // Verify that contains() and contains12DOP() give same results
         var tet = new Tet(0, 0, 0, (byte) 10, (byte) 3);
 
         // Test various points
@@ -27,9 +27,9 @@ public class TetContainsTest {
 
         for (var point : testPoints) {
             boolean contains = tet.contains(point);
-            boolean containsUltraFast = tet.containsUltraFast(point.x, point.y, point.z);
-            assertEquals(contains, containsUltraFast,
-                         String.format("contains() and containsUltraFast() should match for point %s", point));
+            boolean contains12DOP = tet.contains12DOP(point.x, point.y, point.z);
+            assertEquals(contains, contains12DOP,
+                         String.format("contains() and contains12DOP() should match for point %s", point));
         }
     }
 

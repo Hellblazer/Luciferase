@@ -435,7 +435,7 @@ public class SealedInterfaceMigrationTest {
             float cy = (coords[0].y + coords[1].y + coords[2].y + coords[3].y) / 4.0f;
             float cz = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4.0f;
 
-            assertTrue(tet.containsUltraFast(cx, cy, cz),
+            assertTrue(tet.contains12DOP(cx, cy, cz),
                        "Centroid of S-type " + type + " tet should be contained by itself");
         }
     }
@@ -459,7 +459,7 @@ public class SealedInterfaceMigrationTest {
                     boolean foundContaining = false;
                     for (byte type = 0; type < 6; type++) {
                         var tet = new Tet(0, 0, 0, level, type);
-                        if (tet.containsUltraFast(px, py, pz)) {
+                        if (tet.contains12DOP(px, py, pz)) {
                             foundContaining = true;
                             break;
                         }
@@ -497,7 +497,7 @@ public class SealedInterfaceMigrationTest {
             boolean contained = false;
             for (byte type = 0; type < 6; type++) {
                 var tet = new Tet(0, 0, 0, level, type);
-                if (tet.containsUltraFast(pt[0], pt[1], pt[2])) {
+                if (tet.contains12DOP(pt[0], pt[1], pt[2])) {
                     contained = true;
                     break;
                 }

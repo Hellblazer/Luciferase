@@ -61,7 +61,7 @@ public class TetreeBoundingFilteredIntegrationTest {
         // Locate a Tet that contains the point at level 8 (coarser than insert level 10)
         Tet queryTet = Tet.locatePointBeyRefinementFromRoot(pos.x, pos.y, pos.z, (byte) 8);
         assertNotNull(queryTet, "Should find a tet containing (100,100,100) at level 8");
-        assertTrue(queryTet.containsUltraFast(pos.x, pos.y, pos.z),
+        assertTrue(queryTet.contains12DOP(pos.x, pos.y, pos.z),
                    "Query tet must contain the inserted point");
 
         var nodes = tetree.boundingFiltered(queryTet).toList();
@@ -153,8 +153,8 @@ public class TetreeBoundingFilteredIntegrationTest {
         assertNotNull(queryTet);
 
         // Verify the tet contains both points before running the region query
-        boolean bothInside = queryTet.containsUltraFast(pos1.x, pos1.y, pos1.z)
-                             && queryTet.containsUltraFast(pos2.x, pos2.y, pos2.z);
+        boolean bothInside = queryTet.contains12DOP(pos1.x, pos1.y, pos1.z)
+                             && queryTet.contains12DOP(pos2.x, pos2.y, pos2.z);
 
         List<SpatialIndex.CollisionPair<LongEntityID, String>> collisions =
                 tetree.findCollisionsInRegion(queryTet);
@@ -170,9 +170,9 @@ public class TetreeBoundingFilteredIntegrationTest {
             // to tet subdivision), the region query may return 0 or 1 collisions.
             // In either case it must not return false positives (entities not in the region).
             collisions.forEach(c -> {
-                assertFalse(c.involves(id1) && !queryTet.containsUltraFast(pos1.x, pos1.y, pos1.z),
+                assertFalse(c.involves(id1) && !queryTet.contains12DOP(pos1.x, pos1.y, pos1.z),
                             "Should not report entity outside region");
-                assertFalse(c.involves(id2) && !queryTet.containsUltraFast(pos2.x, pos2.y, pos2.z),
+                assertFalse(c.involves(id2) && !queryTet.contains12DOP(pos2.x, pos2.y, pos2.z),
                             "Should not report entity outside region");
             });
         }
@@ -201,7 +201,7 @@ public class TetreeBoundingFilteredIntegrationTest {
         assertNotNull(queryTet);
 
         // Confirm queryTet does not contain the far-away positions
-        assertFalse(queryTet.containsUltraFast(pos3.x, pos3.y, pos3.z),
+        assertFalse(queryTet.contains12DOP(pos3.x, pos3.y, pos3.z),
                     "Query tet at level 12 must not contain (800,800,800)");
 
         List<SpatialIndex.CollisionPair<LongEntityID, String>> regionCollisions =

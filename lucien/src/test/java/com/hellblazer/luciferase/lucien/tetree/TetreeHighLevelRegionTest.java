@@ -70,9 +70,8 @@ public class TetreeHighLevelRegionTest {
                 }
 
                 // Check if the intersection test is working
-                var volumeBounds = new com.hellblazer.luciferase.lucien.VolumeBounds(0, 0, 0, 100, 100, 100);
-                boolean intersectsVolume = Tet.tetrahedronIntersectsVolumeBounds(tet, volumeBounds);
-                System.out.println("    tetrahedronIntersectsVolumeBounds: " + intersectsVolume);
+                boolean intersectsVolume = tet.intersects12DOP(0, 0, 0, 100, 100, 100);
+                System.out.println("    intersects12DOP: " + intersectsVolume);
             }
 
             // At all levels, we should find the entity since it's at (50,50,50) within (0,0,0)-(100,100,100)

@@ -8,16 +8,13 @@ import java.util.Random;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Correctness test comparing 12-DOP intersection against the existing (incomplete) SAT implementation.
+ * Correctness tests for {@link Tet#intersects12DOP}.
  *
  * <h2>Key invariant</h2>
- * The existing SAT ({@link Tet#tetrahedronIntersectsVolumeBounds}) omits the 9 edge-cross-product axes,
- * so it can produce FALSE POSITIVES (reports intersection when there is none). The 12-DOP is exact for
- * Kuhn tetrahedra. Therefore:
+ * The 12-DOP is exact for Kuhn tetrahedra (no false positives, no false negatives). Tests verify:
  * <ul>
- *   <li>If SAT says false → 12-DOP MUST say false ({@code !sat → !dop})</li>
- *   <li>If 12-DOP says true → SAT MUST say true ({@code dop → sat})</li>
- *   <li>SAT-true / 12-DOP-false cases are SAT false positives — expected and counted</li>
+ *   <li>No false negatives vs point-sampling reference</li>
+ *   <li>Deterministic edge cases (AABB containing entire tet, centroid AABB, touching face)</li>
  * </ul>
  */
 public class Tet12DOPIntersectionCorrectnessTest {
@@ -26,37 +23,26 @@ public class Tet12DOPIntersectionCorrectnessTest {
     private static final int MAX_LEVEL = 21;
 
     // -----------------------------------------------------------------------
-    // Test 1: No false negatives vs SAT (random AABB sweep)
+    // Test 1: intersects() consistent with intersects12DOP (random AABB sweep)
     // -----------------------------------------------------------------------
 
     /**
-     * For 6 types × 3 levels × 10 000 random AABBs verify:
-     * <ol>
-     *   <li>{@code !sat → !dop} — 12-DOP never says "no" when SAT says "no"</li>
-     *   <li>{@code dop → sat} — 12-DOP never says "yes" when SAT says "no"</li>
-     * </ol>
-     * SAT-true/12-DOP-false pairs are counted as expected SAT false positives.
+     * For 6 types × 3 levels × 10 000 random AABBs verify that
+     * {@link Tet#intersects} agrees with {@link Tet#intersects12DOP} on every case.
      */
     @Test
-    void noFalseNegativesVsSAT() {
+    void intersectsConsistentWithIntersects12DOP() {
         byte[] levels = { 5, 10, 15 };
         int   trials = 10_000;
         var   rng    = new Random(42);
 
-        int totalSatFalsePositives = 0;
-        int totalTrials            = 0;
-
         for (byte level : levels) {
-            int h = 1 << (MAX_LEVEL - level); // cell size at this level
+            int h = 1 << (MAX_LEVEL - level);
 
             for (byte type = 0; type <= 5; type++) {
-                // Anchor at origin — always valid (multiples of h)
                 var tet = new Tet(0, 0, 0, (byte) level, type);
 
-                int satFalsePositives = 0;
-
                 for (int t = 0; t < trials; t++) {
-                    // Generate a random AABB whose coordinates span roughly [-2h, 3h]
                     float x0 = (rng.nextFloat() - 0.5f) * 3 * h;
                     float y0 = (rng.nextFloat() - 0.5f) * 3 * h;
                     float z0 = (rng.nextFloat() - 0.5f) * 3 * h;
@@ -68,35 +54,16 @@ public class Tet12DOPIntersectionCorrectnessTest {
                     float minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
                     float minZ = Math.min(z0, z1), maxZ = Math.max(z0, z1);
 
-                    boolean sat = tet.intersects(minX, minY, minZ, maxX, maxY, maxZ);
-                    boolean dop = tet.intersects12DOP(minX, minY, minZ, maxX, maxY, maxZ);
+                    boolean result1 = tet.intersects(minX, minY, minZ, maxX, maxY, maxZ);
+                    boolean result2 = tet.intersects12DOP(minX, minY, minZ, maxX, maxY, maxZ);
 
-                    // Core invariant: dop → sat  (equivalently: !sat → !dop)
-                    if (dop) {
-                        assertTrue(sat,
-                                   ("Level %d type %d trial %d: 12-DOP says true but SAT says false — "
-                                   + "12-DOP false negative! AABB=[%.1f,%.1f,%.1f]-[%.1f,%.1f,%.1f]").formatted(
-                                   level, type, t, minX, minY, minZ, maxX, maxY, maxZ));
-                    }
-
-                    if (sat && !dop) {
-                        satFalsePositives++;
-                    }
+                    assertEquals(result1, result2,
+                                 ("Level %d type %d trial %d: intersects() != intersects12DOP() "
+                                 + "for AABB=[%.1f,%.1f,%.1f]-[%.1f,%.1f,%.1f]").formatted(
+                                 level, type, t, minX, minY, minZ, maxX, maxY, maxZ));
                 }
-
-                totalSatFalsePositives += satFalsePositives;
-                totalTrials += trials;
-                // SAT false positives are expected (incomplete SAT) — just verify count is sane (< 50%)
-                assertTrue(satFalsePositives < trials / 2,
-                           "Level %d type %d: suspiciously many SAT false positives: %d / %d".formatted(
-                           level, type, satFalsePositives, trials));
             }
         }
-
-        // Diagnostic: log overall false-positive rate (not a failure criterion)
-        System.out.printf("SAT false-positive rate: %d / %d (%.1f%%)%n",
-                          totalSatFalsePositives, totalTrials,
-                          100.0 * totalSatFalsePositives / totalTrials);
     }
 
     // -----------------------------------------------------------------------

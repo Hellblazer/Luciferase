@@ -61,7 +61,7 @@ public class BeyPointLocationTest {
         
         assertNotNull(result);
         assertEquals(1, result.l());
-        assertTrue(result.containsUltraFast(point.x, point.y, point.z));
+        assertTrue(result.contains12DOP(point.x, point.y, point.z));
     }
     
     @Test
@@ -74,7 +74,7 @@ public class BeyPointLocationTest {
             
             assertNotNull(result, "Should find tetrahedron at level " + level);
             assertEquals(level, result.l(), "Should be at correct level");
-            assertTrue(result.containsUltraFast(point.x, point.y, point.z), 
+            assertTrue(result.contains12DOP(point.x, point.y, point.z), 
                 "Result should contain the point at level " + level);
             
             // Note: We cannot verify parent-child containment with Bey refinement
@@ -120,7 +120,7 @@ public class BeyPointLocationTest {
             var beyResult = Tet.locatePointBeyRefinementFromRoot(point.x, point.y, point.z, (byte)5);
             
             assertNotNull(beyResult);
-            assertTrue(beyResult.containsUltraFast(point.x, point.y, point.z));
+            assertTrue(beyResult.contains12DOP(point.x, point.y, point.z));
         }
     }
     
@@ -175,7 +175,7 @@ public class BeyPointLocationTest {
                 
                 // NOTE: Due to S0-S5 coordinate fix, location algorithm may not be perfectly 
                 // aligned with containment test. This is expected during transition.
-                boolean contains = result.containsUltraFast(point.x, point.y, point.z);
+                boolean contains = result.contains12DOP(point.x, point.y, point.z);
                 if (!contains) {
                     System.out.printf("Warning: Located tet at level %d doesn't contain point (expected during S0-S5 transition)\n", level);
                 } else {
@@ -188,7 +188,7 @@ public class BeyPointLocationTest {
                     boolean foundInChild = false;
                     for (int i = 0; i < 8; i++) {
                         var child = result.child(i);
-                        if (child.containsUltraFast(point.x, point.y, point.z)) {
+                        if (child.contains12DOP(point.x, point.y, point.z)) {
                             foundInChild = true;
                             break;
                         }
@@ -224,7 +224,7 @@ public class BeyPointLocationTest {
                 
                 // If we reached target level, verify containment
                 if (result.l() == 7) {
-                    assertTrue(result.containsUltraFast(testPoint.x, testPoint.y, testPoint.z),
+                    assertTrue(result.contains12DOP(testPoint.x, testPoint.y, testPoint.z),
                         "Result should contain the test point");
                 }
             }

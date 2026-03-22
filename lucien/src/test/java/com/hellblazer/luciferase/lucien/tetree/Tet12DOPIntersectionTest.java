@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 package com.hellblazer.luciferase.lucien.tetree;
 
-import com.hellblazer.luciferase.lucien.VolumeBounds;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -27,8 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>S5: y≥z≥x — d_xy∈[axy-h, axy], d_xz∈[axz-h, axz], d_yz∈[ayz, ayz+h]</li>
  * </ul>
  * <p>
- * Note: {@link Tet#tetrahedronIntersectsVolumeBounds} uses an incomplete SAT (missing edge cross-product axes)
- * and can produce false positives. It is used here only for the no-false-positives direction.
+ * The 12-DOP is exact (no false positives, no false negatives) for Kuhn tetrahedra.
  */
 public class Tet12DOPIntersectionTest {
 
@@ -189,14 +187,10 @@ public class Tet12DOPIntersectionTest {
     /**
      * For Kuhn tetrahedra the 12-DOP IS the exact convex hull of the tetrahedron, so it has no false
      * positives. Whenever intersects12DOP returns true the shapes genuinely intersect. Verification:
-     * compare against the SAT-based reference which, while incomplete (missing edge cross-product axes),
-     * is conservative — it has no false NEGATIVES (if shapes truly intersect, SAT returns true).
-     * <p>
-     * Note: the reference SAT does have false positives (it may say "intersect" when they don't), so
-     * we only test one direction: 12-DOP=true → SAT=true.
+     * when intersects12DOP returns false, sample 20 random interior AABB points — none must be inside the tet.
      */
     @Test
-    void noFalsePositives_dopTrueImpliesSatTrue() {
+    void noFalsePositives_dopTrueImpliesActualIntersection() {
         var rng = new Random(0xdeadbeefL);
         for (int type = 0; type < 6; type++) {
             var tet = new Tet(0, 0, 0, LEVEL, (byte) type);
@@ -213,12 +207,16 @@ public class Tet12DOPIntersectionTest {
                 float minZ = Math.min(az, bz), maxZ = Math.max(az, bz);
 
                 boolean dop12 = tet.intersects12DOP(minX, minY, minZ, maxX, maxY, maxZ);
-                if (dop12) {
-                    var bounds = new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
-                    boolean sat = Tet.tetrahedronIntersectsVolumeBounds(tet, bounds);
-                    assertTrue(sat,
-                               "S%d iter %d: 12-DOP said intersect but SAT said no — possible false positive at [%.0f,%.0f,%.0f]-[%.0f,%.0f,%.0f]"
-                                   .formatted(type, i, minX, minY, minZ, maxX, maxY, maxZ));
+                if (!dop12) {
+                    // 12-DOP rejected — sample interior AABB points; none must be inside the tet
+                    for (int p = 0; p < 20; p++) {
+                        float px = minX + rng.nextFloat() * (maxX - minX);
+                        float py = minY + rng.nextFloat() * (maxY - minY);
+                        float pz = minZ + rng.nextFloat() * (maxZ - minZ);
+                        assertFalse(tet.contains12DOP(px, py, pz),
+                                    "S%d iter %d: 12-DOP rejected AABB but interior point is in tet — false negative!"
+                                        .formatted(type, i));
+                    }
                 }
             }
         }

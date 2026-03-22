@@ -805,7 +805,7 @@ public class PredatorPreyGridWebDemo {
                     float my = y / scale;
                     float mz = z / scale;
 
-                    if (tet.containsUltraFast(mx, my, mz)) {
+                    if (tet.contains12DOP(mx, my, mz)) {
                         return new Point3f(x, y, z);
                     }
                     attempts++;
@@ -855,7 +855,7 @@ public class PredatorPreyGridWebDemo {
                 float my = position.y / scale;
                 float mz = position.z / scale;
 
-                return tet.containsUltraFast(mx, my, mz);
+                return tet.contains12DOP(mx, my, mz);
             }
         }
 
@@ -909,7 +909,7 @@ public class PredatorPreyGridWebDemo {
                     var tet = tetreeKey.toTet();
 
                     // Tetrahedral containment test - the "acceptor" check
-                    if (tet.containsUltraFast(mx, my, mz)) {
+                    if (tet.contains12DOP(mx, my, mz)) {
                         return bubble; // This bubble's domain contains the position
                     }
                     break;

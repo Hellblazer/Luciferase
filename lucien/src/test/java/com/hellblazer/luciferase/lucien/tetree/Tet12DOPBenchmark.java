@@ -5,16 +5,14 @@ import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import javax.vecmath.Point3f;
 import java.util.Random;
 
 /**
- * Comparative benchmark: 12-DOP vs determinant-based containment, and 12-DOP intersection throughput.
+ * Throughput benchmark: 12-DOP containment and intersection operations.
  * <p>
  * Run: {@code mvn test -pl lucien -Dtest=Tet12DOPBenchmark -Dsurefire.rerunFailingTestsCount=0}
  */
 @Tag("performance")
-@SuppressWarnings("deprecation")
 class Tet12DOPBenchmark {
 
     private static final int WARMUP = 200;
@@ -62,25 +60,11 @@ class Tet12DOPBenchmark {
         }
         long dop12Ns = System.nanoTime() - start;
 
-        // Warmup + measure containsUltraFast
-        for (int w = 0; w < WARMUP; w++) {
-            for (var tet : tets) for (var p : points) tet.containsUltraFast(p[0], p[1], p[2]);
-        }
-        start = System.nanoTime();
-        int hitsDet = 0;
-        for (int m = 0; m < MEASURE; m++) {
-            for (var tet : tets) for (var p : points) if (tet.containsUltraFast(p[0], p[1], p[2])) hitsDet++;
-        }
-        long detNs = System.nanoTime() - start;
-
         long totalOps = (long) MEASURE * tets.length * POINTS_PER_ITER;
         double dopNs = (double) dop12Ns / totalOps;
-        double detNsOp = (double) detNs / totalOps;
 
-        System.out.println("--- Point Containment (11 ops vs 84 ops) ---");
-        System.out.printf("  contains12DOP:     %5.1f ns/op  (hits=%d)%n", dopNs, hits12);
-        System.out.printf("  containsUltraFast: %5.1f ns/op  (hits=%d)%n", detNsOp, hitsDet);
-        System.out.printf("  Speedup: %.1fx%n%n", detNsOp / dopNs);
+        System.out.println("--- Point Containment (11 ops) ---");
+        System.out.printf("  contains12DOP: %5.1f ns/op  (hits=%d)%n", dopNs, hits12);
     }
 
     private void benchmarkAABBIntersection(Tet[] tets, int h) {
@@ -120,14 +104,6 @@ class Tet12DOPBenchmark {
             tetsB[i] = new Tet(rng.nextInt(4) * h, rng.nextInt(4) * h, rng.nextInt(4) * h, LEVEL, (byte) rng.nextInt(6));
         }
 
-        // Build vertex arrays for SAT comparison
-        Point3f[][] vertsA = new Point3f[TETS_PER_ITER][];
-        Point3f[][] vertsB = new Point3f[TETS_PER_ITER][];
-        for (int i = 0; i < TETS_PER_ITER; i++) {
-            vertsA[i] = toPoint3f(tetsA[i].coordinates());
-            vertsB[i] = toPoint3f(tetsB[i].coordinates());
-        }
-
         // Warmup + measure intersectsTet12DOP
         for (int w = 0; w < WARMUP; w++) {
             for (int i = 0; i < TETS_PER_ITER; i++) tetsA[i].intersectsTet12DOP(tetsB[i]);
@@ -139,32 +115,10 @@ class Tet12DOPBenchmark {
         }
         long dop12Ns = System.nanoTime() - start;
 
-        // Warmup + measure SAT tet-vs-tet
-        for (int w = 0; w < WARMUP; w++) {
-            for (int i = 0; i < TETS_PER_ITER; i++) TetrahedralGeometry.tetrahedraIntersect(vertsA[i], vertsB[i]);
-        }
-        start = System.nanoTime();
-        int hitsSAT = 0;
-        for (int m = 0; m < MEASURE; m++) {
-            for (int i = 0; i < TETS_PER_ITER; i++) if (TetrahedralGeometry.tetrahedraIntersect(vertsA[i], vertsB[i])) hitsSAT++;
-        }
-        long satNs = System.nanoTime() - start;
-
         long totalOps = (long) MEASURE * TETS_PER_ITER;
         double dopNsOp = (double) dop12Ns / totalOps;
-        double satNsOp = (double) satNs / totalOps;
 
-        System.out.println("--- Tet-vs-Tet Intersection (18 ops vs SAT) ---");
+        System.out.println("--- Tet-vs-Tet Intersection (18 ops) ---");
         System.out.printf("  intersectsTet12DOP: %5.1f ns/op  (hits=%d)%n", dopNsOp, hits12);
-        System.out.printf("  SAT tetrahedra:     %5.1f ns/op  (hits=%d)%n", satNsOp, hitsSAT);
-        System.out.printf("  Speedup: %.1fx%n%n", satNsOp / dopNsOp);
-    }
-
-    private static Point3f[] toPoint3f(javax.vecmath.Point3i[] coords) {
-        var result = new Point3f[coords.length];
-        for (int i = 0; i < coords.length; i++) {
-            result[i] = new Point3f(coords[i].x, coords[i].y, coords[i].z);
-        }
-        return result;
     }
 }

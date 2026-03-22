@@ -1,7 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.Ray3D;
-import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -33,75 +32,6 @@ public class TetrahedralGeometry {
             cachedIndices[i] = -1;
             cachedVertices[i] = new Point3f[] { new Point3f(), new Point3f(), new Point3f(), new Point3f() };
         }
-    }
-
-    /**
-     * Test if an axis-aligned bounding box intersects a tetrahedron. Uses the Separating Axis Theorem (SAT) for
-     * accurate intersection testing.
-     *
-     * @param bounds   The entity bounds (AABB)
-     * @param vertices The tetrahedron vertices (must be 4 points)
-     * @return true if the AABB intersects the tetrahedron
-     * @deprecated Use {@link Tet#intersects12DOP} instead. This SAT-based method will be removed in a future release.
-     */
-    @Deprecated(since = "2026-03", forRemoval = true)
-    public static boolean aabbIntersectsTetrahedron(EntityBounds bounds, Point3f[] vertices) {
-        if (vertices.length != 4) {
-            throw new IllegalArgumentException("Tetrahedron must have exactly 4 vertices");
-        }
-
-        // First do a quick AABB vs AABB test
-        float tetMinX = Float.MAX_VALUE, tetMinY = Float.MAX_VALUE, tetMinZ = Float.MAX_VALUE;
-        float tetMaxX = Float.MIN_VALUE, tetMaxY = Float.MIN_VALUE, tetMaxZ = Float.MIN_VALUE;
-
-        for (Point3f v : vertices) {
-            tetMinX = Math.min(tetMinX, v.x);
-            tetMinY = Math.min(tetMinY, v.y);
-            tetMinZ = Math.min(tetMinZ, v.z);
-            tetMaxX = Math.max(tetMaxX, v.x);
-            tetMaxY = Math.max(tetMaxY, v.y);
-            tetMaxZ = Math.max(tetMaxZ, v.z);
-        }
-
-        // Quick rejection test
-        if (bounds.getMaxX() < tetMinX || bounds.getMinX() > tetMaxX || bounds.getMaxY() < tetMinY
-        || bounds.getMinY() > tetMaxY || bounds.getMaxZ() < tetMinZ || bounds.getMinZ() > tetMaxZ) {
-            return false;
-        }
-
-        // If AABB contains all tetrahedron vertices, they intersect
-        boolean allInside = true;
-        for (Point3f v : vertices) {
-            if (v.x < bounds.getMinX() || v.x > bounds.getMaxX() || v.y < bounds.getMinY() || v.y > bounds.getMaxY()
-            || v.z < bounds.getMinZ() || v.z > bounds.getMaxZ()) {
-                allInside = false;
-                break;
-            }
-        }
-        if (allInside) {
-            return true;
-        }
-
-        // Check if any AABB corner is inside the tetrahedron
-        Point3f[] corners = new Point3f[8];
-        corners[0] = new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ());
-        corners[1] = new Point3f(bounds.getMaxX(), bounds.getMinY(), bounds.getMinZ());
-        corners[2] = new Point3f(bounds.getMinX(), bounds.getMaxY(), bounds.getMinZ());
-        corners[3] = new Point3f(bounds.getMaxX(), bounds.getMaxY(), bounds.getMinZ());
-        corners[4] = new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMaxZ());
-        corners[5] = new Point3f(bounds.getMaxX(), bounds.getMinY(), bounds.getMaxZ());
-        corners[6] = new Point3f(bounds.getMinX(), bounds.getMaxY(), bounds.getMaxZ());
-        corners[7] = new Point3f(bounds.getMaxX(), bounds.getMaxY(), bounds.getMaxZ());
-
-        for (Point3f corner : corners) {
-            if (pointInTetrahedronForAABB(corner, vertices)) {
-                return true;
-            }
-        }
-
-        // Use SAT for edge-face intersections
-        // Test AABB edges against tetrahedron faces
-        return satTestAABBTetrahedron(bounds, vertices);
     }
 
     /**
@@ -432,24 +362,6 @@ public class TetrahedralGeometry {
 
         // Plane intersects if vertices are on both sides, or touches if all on plane
         return hasPositive && hasNegative;
-    }
-
-    /**
-     * Test if a point is inside a tetrahedron using barycentric coordinates (for AABB test)
-     */
-    private static boolean pointInTetrahedronForAABB(Point3f p, Point3f[] vertices) {
-        // Use the same orientation test as the deprecated Tet.containsUltraFast (determinant-based)
-        Point3f v0 = vertices[0];
-        Point3f v1 = vertices[1];
-        Point3f v2 = vertices[2];
-        Point3f v3 = vertices[3];
-
-        // Check if point is on the correct side of all four faces
-        return sameSide(p, v0, v1, v2, v3) && sameSide(p, v1, v0, v2, v3) && sameSide(p, v2, v0, v1, v3) && sameSide(p,
-                                                                                                                     v3,
-                                                                                                                     v0,
-                                                                                                                     v1,
-                                                                                                                     v2);
     }
 
     /**
@@ -845,72 +757,6 @@ public class TetrahedralGeometry {
     }
 
     /**
-     * Separating Axis Theorem test for AABB-tetrahedron intersection
-     *
-     * @deprecated Use {@link Tet#intersects12DOP} instead. This SAT-based method will be removed in a future release.
-     */
-    @Deprecated(since = "2026-03", forRemoval = true)
-    private static boolean satTestAABBTetrahedron(EntityBounds bounds, Point3f[] vertices) {
-        // For a complete SAT test, we would need to check:
-        // 1. The 3 AABB face normals (axis-aligned)
-        // 2. The 4 tetrahedron face normals
-        // 3. The 9 cross products of AABB edges with tetrahedron edges
-
-        // For now, we'll do a simplified test checking tetrahedron faces
-        // against AABB edges, which catches most cases
-
-        // Check each tetrahedron face
-        int[][] faces = { { 0, 1, 2 }, { 0, 1, 3 }, { 0, 2, 3 }, { 1, 2, 3 } };
-
-        for (int[] face : faces) {
-            Vector3f v1 = new Vector3f(vertices[face[1]].x - vertices[face[0]].x,
-                                       vertices[face[1]].y - vertices[face[0]].y,
-                                       vertices[face[1]].z - vertices[face[0]].z);
-            Vector3f v2 = new Vector3f(vertices[face[2]].x - vertices[face[0]].x,
-                                       vertices[face[2]].y - vertices[face[0]].y,
-                                       vertices[face[2]].z - vertices[face[0]].z);
-            Vector3f normal = new Vector3f();
-            normal.cross(v1, v2);
-            normal.normalize();
-
-            // Project AABB onto this normal
-            float r = Math.abs(normal.x) * (bounds.getMaxX() - bounds.getMinX()) * 0.5f + Math.abs(normal.y) * (
-            bounds.getMaxY() - bounds.getMinY()) * 0.5f + Math.abs(normal.z) * (bounds.getMaxZ() - bounds.getMinZ())
-            * 0.5f;
-
-            Point3f center = new Point3f((bounds.getMinX() + bounds.getMaxX()) * 0.5f,
-                                         (bounds.getMinY() + bounds.getMaxY()) * 0.5f,
-                                         (bounds.getMinZ() + bounds.getMaxZ()) * 0.5f);
-
-            float s = normal.x * (center.x - vertices[face[0]].x) + normal.y * (center.y - vertices[face[0]].y)
-            + normal.z * (center.z - vertices[face[0]].z);
-
-            // Check separation
-            if (Math.abs(s) > r) {
-                // Check if we're on the outside of this face
-                boolean outside = true;
-                for (int i = 0; i < 4; i++) {
-                    if (i == face[0] || i == face[1] || i == face[2]) {
-                        continue;
-                    }
-                    float d = normal.x * (vertices[i].x - vertices[face[0]].x) + normal.y * (vertices[i].y
-                                                                                             - vertices[face[0]].y)
-                    + normal.z * (vertices[i].z - vertices[face[0]].z);
-                    if (s * d > 0) {
-                        outside = false;
-                        break;
-                    }
-                }
-                if (outside) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * Test if a line segment intersects a triangle
      */
     private static boolean segmentIntersectsTriangle(Point3f p1, Point3f p2, Point3f t0, Point3f t1, Point3f t2) {
@@ -953,42 +799,6 @@ public class TetrahedralGeometry {
 
         float t = f * edge2.dot(q);
         return t >= EPSILON && t <= segmentLength;
-    }
-
-    /**
-     * Test if two tetrahedra intersect each other. Returns true if the tetrahedra share any volume.
-     *
-     * @param vertices1 First tetrahedron vertices (must be 4 points)
-     * @param vertices2 Second tetrahedron vertices (must be 4 points)
-     * @return true if the tetrahedra intersect
-     * @deprecated Use {@link Tet#intersectsTet12DOP(Tet)} instead — 18-operation 12-DOP test replaces this SAT implementation.
-     */
-    @Deprecated(since = "2026-03", forRemoval = true)
-    public static boolean tetrahedraIntersect(Point3f[] vertices1, Point3f[] vertices2) {
-        if (vertices1.length != 4 || vertices2.length != 4) {
-            throw new IllegalArgumentException("Both tetrahedra must have exactly 4 vertices");
-        }
-
-        // First check if any vertex of one tetrahedron is inside the other
-        for (Point3f v : vertices1) {
-            if (containsPoint(v, vertices2)) {
-                return true;
-            }
-        }
-
-        for (Point3f v : vertices2) {
-            if (containsPoint(v, vertices1)) {
-                return true;
-            }
-        }
-
-        // Check for edge-face intersections using SAT
-        // This is a simplified version - a complete implementation would check
-        // all 15 potential separating axes (4 face normals from each tet +
-        // 6 cross products between edges)
-
-        // For now, check if edges of one tet intersect faces of the other
-        return checkEdgeFaceIntersections(vertices1, vertices2) || checkEdgeFaceIntersections(vertices2, vertices1);
     }
 
     private static boolean tetrahedraShareSpace(Point3i[] vertices1, Point3i[] vertices2) {

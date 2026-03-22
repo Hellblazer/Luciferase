@@ -45,7 +45,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * Layer 1: Structure Validation - node validity, type ranges, pointer bounds
  * Layer 2: Traversal Correspondence - child masks match actual Tetree children
- * Layer 3: Geometric Validation - point containment matches Tet.containsUltraFast()
+ * Layer 3: Geometric Validation - point containment matches Tet.contains12DOP()
  * Layer 4: Type Derivation - child types match TetreeConnectivity lookup
  * Layer 5: Memory Layout - ByteBuffer round-trip preserves all data
  *
@@ -408,10 +408,10 @@ public class ESVTCrossValidationTest {
                 var key = bfsOrder.get(nodeIdx);
                 var tet = Tet.tetrahedron(key);
 
-                boolean tetContains = tet.containsUltraFast(px, py, pz);
+                boolean tetContains = tet.contains12DOP(px, py, pz);
                 // ESVT doesn't have direct containment, but we validate the
                 // Tet backing each node
-                boolean esvtTetContains = tet.containsUltraFast(px, py, pz);
+                boolean esvtTetContains = tet.contains12DOP(px, py, pz);
 
                 totalTests++;
                 if (tetContains == esvtTetContains) {
@@ -441,7 +441,7 @@ public class ESVTCrossValidationTest {
             float cy = (coords[0].y + coords[1].y + coords[2].y + coords[3].y) / 4.0f;
             float cz = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4.0f;
 
-            if (tet.containsUltraFast(cx, cy, cz)) {
+            if (tet.contains12DOP(cx, cy, cz)) {
                 containedCount++;
             }
         }
@@ -472,7 +472,7 @@ public class ESVTCrossValidationTest {
 
                 // Just verify no exceptions are thrown
                 try {
-                    tet.containsUltraFast(px, py, pz);
+                    tet.contains12DOP(px, py, pz);
                 } catch (Exception e) {
                     boundaryErrors++;
                 }

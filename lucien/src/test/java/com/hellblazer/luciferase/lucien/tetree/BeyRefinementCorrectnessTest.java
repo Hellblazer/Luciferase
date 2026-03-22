@@ -123,7 +123,7 @@ public class BeyRefinementCorrectnessTest {
             var childCount = 0;
             for (int c = 0; c < 8; c++) {
                 var child = parent.child(c);
-                if (child.containsUltraFast(point.x, point.y, point.z)) {
+                if (child.contains12DOP(point.x, point.y, point.z)) {
                     childCount++;
                 }
             }

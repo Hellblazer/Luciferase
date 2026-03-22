@@ -8,9 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for Tet.tetrahedronIntersectsVolumeBounds() specifically targeting the SAT-only case:
- * tet and AABB whose bounding boxes overlap but whose actual geometries do not intersect, and
- * where no vertex, corner, or edge test detects the separation.
+ * Tests for Tet.intersects12DOP() specifically targeting the geometric-only case:
+ * tet and AABB whose bounding boxes overlap but whose actual geometries do not intersect.
  */
 public class TetIntersectsVolumeBoundsTest {
 
@@ -39,7 +38,7 @@ public class TetIntersectsVolumeBoundsTest {
         float margin = 1.0f;
         var bounds = new VolumeBounds(-margin, -margin, h - margin, margin, margin, h + margin);
 
-        assertFalse(Tet.tetrahedronIntersectsVolumeBounds(tet, bounds),
+        assertFalse(tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ()),
                     "AABB near (0,0,h) should not intersect S0 tet whose body is in the high-x region");
     }
 
@@ -61,7 +60,7 @@ public class TetIntersectsVolumeBoundsTest {
         float half = h / 20f;  // small extent relative to tet size
         var bounds = new VolumeBounds(cx - half, cy - half, cz - half, cx + half, cy + half, cz + half);
 
-        assertTrue(Tet.tetrahedronIntersectsVolumeBounds(tet, bounds),
+        assertTrue(tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ()),
                    "AABB centred on S0 tet centroid should intersect");
     }
 
@@ -77,7 +76,7 @@ public class TetIntersectsVolumeBoundsTest {
         // AABB far beyond the tet in all axes
         var bounds = new VolumeBounds(2f * h, 2f * h, 2f * h, 3f * h, 3f * h, 3f * h);
 
-        assertFalse(Tet.tetrahedronIntersectsVolumeBounds(tet, bounds),
+        assertFalse(tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ()),
                     "AABB entirely outside tet bounding box should not intersect");
     }
 }

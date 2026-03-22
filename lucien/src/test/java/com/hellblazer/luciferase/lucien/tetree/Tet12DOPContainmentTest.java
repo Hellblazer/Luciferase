@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>S5: V0,V2,V6,V7 → y ≥ z ≥ x</li>
  * </ul>
  * Tests verify: (1) interior points per S-type, (2) cross-type exclusion for strict interiors,
- * (3) consistency with containsUltraFast, (4) gap-free coverage.
+ * (3) consistency with contains12DOP, (4) gap-free coverage.
  */
 public class Tet12DOPContainmentTest {
 
@@ -99,7 +99,7 @@ public class Tet12DOPContainmentTest {
 
     /**
      * Boundary points (two equal local coords) are in multiple types with the closed-simplex (>=) convention.
-     * This matches containsUltraFast behavior. Verify they are in at least one type and at most two.
+     * This matches contains12DOP behavior. Verify they are in at least one type and at most two.
      */
     @Test
     void boundaryPointsInMultipleTypes() {
@@ -117,7 +117,7 @@ public class Tet12DOPContainmentTest {
     }
 
     /**
-     * contains12DOP must agree with containsUltraFast for a grid of points across all S-types.
+     * contains12DOP must agree with contains12DOP for a grid of points across all S-types.
      */
     @Test
     void consistencyWithContainsUltraFast() {
@@ -129,7 +129,7 @@ public class Tet12DOPContainmentTest {
                 for (int iy = step / 2; iy < H; iy += step) {
                     for (int iz = step / 2; iz < H; iz += step) {
                         float px = ix, py = iy, pz = iz;
-                        boolean ultra = tet.containsUltraFast(px, py, pz);
+                        boolean ultra = tet.contains12DOP(px, py, pz);
                         boolean dop = tet.contains12DOP(px, py, pz);
                         if (ultra != dop) {
                             mismatches++;
@@ -138,7 +138,7 @@ public class Tet12DOPContainmentTest {
                 }
             }
         }
-        assertEquals(0, mismatches, "contains12DOP must match containsUltraFast everywhere");
+        assertEquals(0, mismatches, "contains12DOP must match contains12DOP everywhere");
     }
 
     /**

@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Verifies that {@link Tet#contains12DOP} covers every point in a cube with no gaps.
  *
  * <p>Boundary semantics: {@code contains12DOP} uses {@code >=} (closed simplex), matching
- * {@code containsUltraFast}. Consequently:
+ * {@code contains12DOP}. Consequently:
  * <ul>
  *   <li>Strict interior (all 3 local coords distinct): exactly 1 type claims it</li>
  *   <li>Face boundary (exactly 2 local coords equal): exactly 2 types claim it</li>

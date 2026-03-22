@@ -100,14 +100,6 @@ public class Tet implements Spatial.aabt {
     }
 
     /**
-     * Check if a point is contained within the tetrahedron. This uses the proper tetrahedral containment test, not just
-     * the bounding box.
-     */
-    private static boolean containsPointInTetrahedron(Tet tet, float px, float py, float pz) {
-        return tet.contains12DOP(px, py, pz);
-    }
-
-    /**
      * Create a validated Tet instance. This factory method ensures that only valid tetrahedra can be created.
      *
      * @param x     X coordinate (must be non-negative)
@@ -641,30 +633,6 @@ public class Tet implements Spatial.aabt {
     }
 
     /**
-     * @deprecated Use {@link #intersects12DOP} directly. This SAT-based method will be removed in a future release.
-     */
-    @Deprecated(since = "2026-03", forRemoval = true)
-    // Check if a tetrahedron intersects with a volume
-    public static boolean tetrahedronIntersectsVolume(Tet tet, Spatial volume) {
-        var bounds = VolumeBounds.from(volume);
-        if (bounds == null) {
-            return false;
-        }
-        return tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
-                                   bounds.maxZ());
-    }
-
-    /**
-     * @deprecated Use {@link #intersects12DOP} directly. This SAT-based method will be removed in a future release.
-     */
-    @Deprecated(since = "2026-03", forRemoval = true)
-    // Check if a tetrahedron intersects with volume bounds (proper tetrahedral geometry)
-    public static boolean tetrahedronIntersectsVolumeBounds(Tet tet, VolumeBounds bounds) {
-        return tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
-                                   bounds.maxZ());
-    }
-
-    /**
      * Validates that the given coordinates represent correct anchor coordinates for the specified level and type.
      *
      * @param x     X coordinate
@@ -1096,165 +1064,16 @@ public class Tet implements Spatial.aabt {
     }
 
     /**
-     * Ultra-fast contains check using direct arithmetic without method calls.
-     *
-     * Based on the plane-based algorithm which requires: - 12 multiplications per plane test (48 total) - 8 additions
-     * per plane test (32 total) - 4 comparisons (one per face)
-     *
-     * @param px X coordinate of the point to test
-     * @param py Y coordinate of the point to test
-     * @param pz Z coordinate of the point to test
-     * @return true if the point is inside the tetrahedron
-     * @deprecated Use {@link #contains12DOP(float, float, float)} instead — 11 ops vs 84, same results.
-     */
-    @Deprecated(since = "2026-03", forRemoval = true)
-    public boolean containsUltraFast(float px, float py, float pz) {
-        // Inline all computations for maximum performance
-        final int h = 1 << (Constants.getMaxRefinementLevel() - l);
-
-        // Precompute all vertex coordinates using S0-S5 subdivision
-        float v0x = x, v0y = y, v0z = z;  // v0 is the anchor point (always same for all types)
-        float v1x, v1y, v1z;
-        float v2x, v2y, v2z;
-        float v3x = x + h, v3y = y + h, v3z = z + h; // v3 is always the opposite corner
-
-        // Apply S0-S5 vertex assignments based on type
-        switch (type) {
-            case 0: // S0: vertices 0, 1, 3, 7
-                v1x = x + h;
-                v1y = y;
-                v1z = z;     // V1
-                v2x = x + h;
-                v2y = y + h;
-                v2z = z;     // V3
-                break;
-            case 1: // S1: vertices 0, 2, 3, 7
-                v1x = x;
-                v1y = y + h;
-                v1z = z;     // V2
-                v2x = x + h;
-                v2y = y + h;
-                v2z = z;     // V3
-                break;
-            case 2: // S2: vertices 0, 4, 5, 7
-                v1x = x;
-                v1y = y;
-                v1z = z + h; // V4
-                v2x = x + h;
-                v2y = y;
-                v2z = z + h; // V5
-                break;
-            case 3: // S3: vertices 0, 4, 6, 7
-                v1x = x;
-                v1y = y;
-                v1z = z + h; // V4
-                v2x = x;
-                v2y = y + h;
-                v2z = z + h; // V6
-                break;
-            case 4: // S4: vertices 0, 1, 5, 7
-                v1x = x + h;
-                v1y = y;
-                v1z = z;     // V1
-                v2x = x + h;
-                v2y = y;
-                v2z = z + h; // V5
-                break;
-            case 5: // S5: vertices 0, 2, 6, 7
-                v1x = x;
-                v1y = y + h;
-                v1z = z;     // V2
-                v2x = x;
-                v2y = y + h;
-                v2z = z + h; // V6
-                break;
-            default:
-                throw new IllegalStateException("Invalid tet type: " + type);
-        }
-
-        // Determine if this is a mirrored (left-handed) tetrahedron
-        // Types 1, 3, 4 are mirrors of types 0, 2, 5 respectively
-        boolean isMirrored = (type == 1 || type == 3 || type == 4);
-
-        // Inline the plane equation calculations directly
-        // For mirrored tetrahedra, we need to reverse the inequality tests
-
-        // Face 1: v1, v2, v3 (opposite v0)
-        float adx = v1x - px;
-        float bdx = v2x - px;
-        float cdx = v3x - px;
-        float ady = v1y - py;
-        float bdy = v2y - py;
-        float cdy = v3y - py;
-        float adz = v1z - pz;
-        float bdz = v2z - pz;
-        float cdz = v3z - pz;
-
-        float det1 = adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
-        if (isMirrored ? det1 > 0 : det1 < 0) {
-            return false;
-        }
-
-        // Face 2: v0, v3, v2 (opposite v1)
-        adx = v0x - px;
-        bdx = v3x - px;
-        cdx = v2x - px;
-        ady = v0y - py;
-        bdy = v3y - py;
-        cdy = v2y - py;
-        adz = v0z - pz;
-        bdz = v3z - pz;
-        cdz = v2z - pz;
-
-        float det2 = adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
-        if (isMirrored ? det2 > 0 : det2 < 0) {
-            return false;
-        }
-
-        // Face 3: v0, v1, v3 (opposite v2)
-        adx = v0x - px;
-        bdx = v1x - px;
-        cdx = v3x - px;
-        ady = v0y - py;
-        bdy = v1y - py;
-        cdy = v3y - py;
-        adz = v0z - pz;
-        bdz = v1z - pz;
-        cdz = v3z - pz;
-
-        float det3 = adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
-        if (isMirrored ? det3 > 0 : det3 < 0) {
-            return false;
-        }
-
-        // Face 4: v0, v2, v1 (opposite v3)
-        adx = v0x - px;
-        bdx = v2x - px;
-        cdx = v1x - px;
-        ady = v0y - py;
-        bdy = v2y - py;
-        cdy = v1y - py;
-        adz = v0z - pz;
-        bdz = v2z - pz;
-        cdz = v1z - pz;
-
-        float det4 = adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
-        return isMirrored ? det4 <= 0 : det4 >= 0;
-    }
-
-    /**
      * 12-DOP exact containment test using the permutohedron ordering structure. AABB check (6 comparisons) + local
      * coordinate subtraction (3 ops) + type-specific ordering test (2 comparisons) = 11 ops total.
      * <p>
      * The ordering for each S-type is derived from the Kuhn simplex vertex paths in {@link #coordinates()}. Uses
-     * closed-simplex convention ({@code >=}) matching {@link #containsUltraFast} — points on shared faces may be
-     * contained by adjacent types.
+     * closed-simplex convention ({@code >=}) — points on shared faces may be contained by adjacent types.
      *
      * @param px X coordinate of the point to test
      * @param py Y coordinate of the point to test
      * @param pz Z coordinate of the point to test
      * @return true if the point is inside this tetrahedron
-     * @see #containsUltraFast(float, float, float)
      */
     public boolean contains12DOP(float px, float py, float pz) {
         final int h = 1 << (Constants.getMaxRefinementLevel() - l);

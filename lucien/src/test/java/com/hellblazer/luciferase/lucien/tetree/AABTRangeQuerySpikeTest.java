@@ -227,10 +227,9 @@ class AABTRangeQuerySpikeTest {
      * the full SAT test so our AABT path is internally consistent with the existing AABB path.
      */
     @Test
-    void intersectsBoundConsistentWithTetrahedronIntersectsVolumeBounds() {
+    void intersectsBoundConsistentWithIntersects12DOP() {
         byte level = 12;
         var queryBox = new Spatial.aabt.Box(100f, 100f, 100f, 300f, 300f, 300f);
-        var qBounds  = new VolumeBounds(100f, 100f, 100f, 300f, 300f, 300f);
 
         int cellSize = Constants.lengthAtLevel(level);
         // Pick the cell that contains (200, 200, 200)
@@ -240,10 +239,10 @@ class AABTRangeQuerySpikeTest {
 
         for (byte type = 0; type < 6; type++) {
             var tet = new Tet(cx, cy, cz, level, type);
-            boolean viaSAT  = tet.intersectsBound(queryBox);
-            boolean viaFull = Tet.tetrahedronIntersectsVolumeBounds(tet, qBounds);
-            assertEquals(viaFull, viaSAT,
-                         "intersectsBound disagrees with tetrahedronIntersectsVolumeBounds for type " + type);
+            boolean viaBound  = tet.intersectsBound(queryBox);
+            boolean via12DOP  = tet.intersects12DOP(100f, 100f, 100f, 300f, 300f, 300f);
+            assertEquals(via12DOP, viaBound,
+                         "intersectsBound disagrees with intersects12DOP for type " + type);
         }
     }
 
