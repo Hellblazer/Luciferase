@@ -15,7 +15,7 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
 public class ThreeOrthoscheme extends Polyhedron {
 
     public ThreeOrthoscheme(Tet tet) {
-        var vectors = tet.vertices();
+        var vectors = tet.vertexPoints();
         var v0 = new Vector3d(vectors[0].x, vectors[0].y, vectors[0].z);
         var v1 = new Vector3d(vectors[1].x, vectors[1].y, vectors[1].z);
         var v2 = new Vector3d(vectors[2].x, vectors[2].y, vectors[2].z);

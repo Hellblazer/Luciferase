@@ -38,6 +38,13 @@ performance-results/summary-*.txt
 
 # Beads workflow - track issues.jsonl directly
 .beads/db.sqlite3
+.beads/push-state.json
+.beads/dolt-monitor.pid.lock
+.beads/.beads-credential-key
+.beads/daemon.lock
+.beads/daemon.log
+.beads/daemon-*.log.gz
+.beads/.jsonl.lock
 .gitattributes
 /.vscode/settings.json
 portal/logs/
