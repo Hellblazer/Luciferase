@@ -130,7 +130,15 @@ A `Tet(x, y, z, level, type)` can compute its AABR by:
 
 This is a one-time O(1) computation (4 vertices × 3 additions + 3 min/max passes).
 
-## Open Questions
+## Status: REFUTED
+
+The paniq FCC transform produces identical AABR bounds for all 6 S-types within a cube — zero tightening over AABB. V0 and V7 (shared by all S-types) dominate min/max on all 3 tet axes. The rhombohedron is actually 4x larger than the AABB in Cartesian volume. See critique findings below.
+
+The FCC transform may still be useful for **neighbor-finding** (ghost-layer construction in the Forest module), but NOT for bounding volumes.
+
+**Next direction**: Type-specific difference coordinates and/or k-DOP. See follow-up analysis.
+
+## Open Questions (moot — hypothesis refuted)
 
 1. **Exact tightness ratio**: What is the volume of the rhombohedron vs the AABB for each S-type? Need to compute with concrete numbers.
 2. **Entity bounds**: Can entity bounds (currently AABB) be expressed as AABR for tighter Tetree queries?
