@@ -2,7 +2,8 @@
 title: "12-DOP Exact Containment for Kuhn Tetrahedra — Replace containsUltraFast"
 id: RDR-002
 type: Architecture
-status: accepted
+status: closed
+closed_date: 2026-03-22
 priority: high
 author: hal.hildebrand
 reviewed-by: self
