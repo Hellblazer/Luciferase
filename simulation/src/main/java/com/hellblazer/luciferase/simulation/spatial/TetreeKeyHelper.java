@@ -2,6 +2,7 @@ package com.hellblazer.luciferase.simulation.spatial;
 
 import com.hellblazer.luciferase.simulation.spatial.*;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 
@@ -54,8 +55,13 @@ public class TetreeKeyHelper {
      * @return TetreeKey for the tetrahedron containing the point, or null if outside bounds
      */
     public static TetreeKey<?> positionToKey(float x, float y, float z, byte level) {
-        // Use Tet's locate method to find containing tetrahedron
-        var tet = Tet.locatePointBeyRefinementFromRoot(x, y, z, level);
+        // Scale normalized [0,1] coordinates to tetree integer coordinate space.
+        // Clamp to just inside the valid domain [0, MAX_EXTENT) to handle x=1.0 boundary.
+        float scale = Constants.MAX_EXTENT;
+        float sx = Math.min(x * scale, scale - 1.0f);
+        float sy = Math.min(y * scale, scale - 1.0f);
+        float sz = Math.min(z * scale, scale - 1.0f);
+        var tet = Tet.locatePointBeyRefinementFromRoot(sx, sy, sz, level);
 
         if (tet == null) {
             return null;  // Position outside tetree bounds

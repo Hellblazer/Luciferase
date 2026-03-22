@@ -23,12 +23,13 @@ public class Constants {
                                                                                { 0, 1, 2, 3, 4, 5 } };
     /* in dependence of a type x give the type of
      * the child with Morton number y */
-    public static final byte[][] TYPE_TO_TYPE_OF_CHILD_MORTON = new byte[][] { { 0, 0, 4, 5, 0, 1, 2, 0 },
-                                                                               { 1, 1, 2, 3, 0, 1, 5, 1 },
-                                                                               { 2, 0, 1, 2, 2, 3, 4, 2 },
-                                                                               { 3, 3, 4, 5, 1, 2, 3, 3 },
-                                                                               { 4, 2, 3, 4, 0, 4, 5, 4 },
-                                                                               { 5, 0, 1, 5, 3, 4, 5, 5 } };
+    /* Derived from TetreeConnectivity: PARENT_TYPE_TO_CHILD_TYPE[parent][INDEX_TO_BEY_NUMBER[parent][morton]] */
+    public static final byte[][] TYPE_TO_TYPE_OF_CHILD_MORTON = new byte[][] { { 0, 0, 5, 1, 0, 4, 2, 0 },
+                                                                               { 1, 1, 0, 4, 5, 1, 3, 1 },
+                                                                               { 2, 0, 4, 2, 2, 3, 5, 2 },
+                                                                               { 3, 3, 5, 1, 4, 2, 3, 3 },
+                                                                               { 4, 3, 2, 4, 1, 4, 0, 4 },
+                                                                               { 5, 3, 2, 5, 0, 1, 5, 5 } };
 
     /* In dependence of a type x give the type of
      * the child with Bey number y */

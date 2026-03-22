@@ -67,13 +67,17 @@ public final class ESVTNodeGeometry {
     /**
      * Child type derivation: [parentType][childIndex] -> childType
      */
+    /**
+     * Child types by Bey index — matches TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE exactly.
+     * [parentType][beyChildIndex] -> childType
+     */
     public static final int[][] PARENT_TYPE_TO_CHILD_TYPE = {
-        {0, 0, 0, 0, 4, 5, 2, 1},  // Parent type 0
-        {1, 1, 1, 1, 3, 2, 5, 0},  // Parent type 1
-        {2, 2, 2, 2, 0, 1, 4, 3},  // Parent type 2
-        {3, 3, 3, 3, 5, 4, 1, 2},  // Parent type 3
-        {4, 4, 4, 4, 2, 3, 0, 5},  // Parent type 4
-        {5, 5, 5, 5, 1, 0, 3, 4}   // Parent type 5
+        {0, 0, 0, 0, 5, 1, 2, 4},  // Parent type 0
+        {1, 1, 1, 1, 4, 0, 3, 5},  // Parent type 1
+        {2, 2, 2, 2, 0, 4, 5, 3},  // Parent type 2
+        {3, 3, 3, 3, 1, 5, 4, 2},  // Parent type 3
+        {4, 4, 4, 4, 3, 2, 1, 0},  // Parent type 4
+        {5, 5, 5, 5, 2, 3, 0, 1}   // Parent type 5
     };
 
     /**
