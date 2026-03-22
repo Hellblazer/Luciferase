@@ -436,7 +436,7 @@ public class TetrahedralGeometry {
      * Test if a point is inside a tetrahedron using barycentric coordinates (for AABB test)
      */
     private static boolean pointInTetrahedronForAABB(Point3f p, Point3f[] vertices) {
-        // Use the same orientation test as Tet.containsUltraFast
+        // Use the same orientation test as the deprecated Tet.containsUltraFast (determinant-based)
         Point3f v0 = vertices[0];
         Point3f v1 = vertices[1];
         Point3f v2 = vertices[2];
@@ -956,7 +956,9 @@ public class TetrahedralGeometry {
      * @param vertices1 First tetrahedron vertices (must be 4 points)
      * @param vertices2 Second tetrahedron vertices (must be 4 points)
      * @return true if the tetrahedra intersect
+     * @deprecated Use {@link Tet#intersectsTet12DOP(Tet)} instead — 18-operation 12-DOP test replaces this SAT implementation.
      */
+    @Deprecated(since = "2026-03", forRemoval = true)
     public static boolean tetrahedraIntersect(Point3f[] vertices1, Point3f[] vertices2) {
         if (vertices1.length != 4 || vertices2.length != 4) {
             throw new IllegalArgumentException("Both tetrahedra must have exactly 4 vertices");

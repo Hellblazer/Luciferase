@@ -640,122 +640,28 @@ public class Tet implements Spatial.aabt {
         return true;
     }
 
+    /**
+     * @deprecated Use {@link #intersects12DOP} directly. This SAT-based method will be removed in a future release.
+     */
+    @Deprecated(since = "2026-03", forRemoval = true)
     // Check if a tetrahedron intersects with a volume
     public static boolean tetrahedronIntersectsVolume(Tet tet, Spatial volume) {
-        var vertices = tet.coordinates();
         var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
             return false;
         }
-
-        // Fast path: any tet vertex inside the AABB
-        for (var vertex : vertices) {
-            if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY()
-            && vertex.y <= bounds.maxY() && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
-                return true;
-            }
-        }
-
-        // Fast path: AABB center inside the tetrahedron
-        var centerPoint = new Point3f((bounds.minX() + bounds.maxX()) / 2, (bounds.minY() + bounds.maxY()) / 2,
-                                      (bounds.minZ() + bounds.maxZ()) / 2);
-        if (tet.contains(centerPoint)) {
-            return true;
-        }
-
-        // Test tet edges against AABB: catches edge-face crossings where no vertex or
-        // center is inside the other shape.
-        int[][] edges = { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 1, 2 }, { 1, 3 }, { 2, 3 } };
-        for (int[] edge : edges) {
-            var p0 = new Point3f(vertices[edge[0]].x, vertices[edge[0]].y, vertices[edge[0]].z);
-            var p1 = new Point3f(vertices[edge[1]].x, vertices[edge[1]].y, vertices[edge[1]].z);
-            if (lineSegmentIntersectsAABB(p0, p1, bounds)) {
-                return true;
-            }
-        }
-
-        // SAT fallback: catches the remaining face-face crossing case where no vertex,
-        // AABB corner, or edge crosses the other volume.
-        var floatVertices = new Point3f[vertices.length];
-        for (int i = 0; i < vertices.length; i++) {
-            floatVertices[i] = new Point3f(vertices[i].x, vertices[i].y, vertices[i].z);
-        }
-        var entityBounds = new com.hellblazer.luciferase.lucien.entity.EntityBounds(
-        new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()),
-        new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()));
-        return TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, floatVertices);
+        return tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
+                                   bounds.maxZ());
     }
 
+    /**
+     * @deprecated Use {@link #intersects12DOP} directly. This SAT-based method will be removed in a future release.
+     */
+    @Deprecated(since = "2026-03", forRemoval = true)
     // Check if a tetrahedron intersects with volume bounds (proper tetrahedral geometry)
     public static boolean tetrahedronIntersectsVolumeBounds(Tet tet, VolumeBounds bounds) {
-        var vertices = tet.coordinates();
-
-        // Quick bounding box rejection test first
-        float tetMinX = Float.MAX_VALUE, tetMaxX = Float.MIN_VALUE;
-        float tetMinY = Float.MAX_VALUE, tetMaxY = Float.MIN_VALUE;
-        float tetMinZ = Float.MAX_VALUE, tetMaxZ = Float.MIN_VALUE;
-
-        for (var vertex : vertices) {
-            tetMinX = Math.min(tetMinX, vertex.x);
-            tetMaxX = Math.max(tetMaxX, vertex.x);
-            tetMinY = Math.min(tetMinY, vertex.y);
-            tetMaxY = Math.max(tetMaxY, vertex.y);
-            tetMinZ = Math.min(tetMinZ, vertex.z);
-            tetMaxZ = Math.max(tetMaxZ, vertex.z);
-        }
-
-        // Bounding box intersection test
-        if (tetMaxX < bounds.minX() || tetMinX > bounds.maxX() || tetMaxY < bounds.minY() || tetMinY > bounds.maxY()
-        || tetMaxZ < bounds.minZ() || tetMinZ > bounds.maxZ()) {
-            return false;
-        }
-
-        // Test if any vertex of tetrahedron is inside bounds
-        for (var vertex : vertices) {
-            if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY()
-            && vertex.y <= bounds.maxY() && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
-                return true;
-            }
-        }
-
-        // Test if any corner of bounds is inside tetrahedron
-        var boundCorners = new Point3f[] { new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), new Point3f(
-        bounds.maxX(), bounds.minY(), bounds.minZ()), new Point3f(bounds.minX(), bounds.maxY(), bounds.minZ()),
-                                           new Point3f(bounds.maxX(), bounds.maxY(), bounds.minZ()), new Point3f(
-        bounds.minX(), bounds.minY(), bounds.maxZ()), new Point3f(bounds.maxX(), bounds.minY(), bounds.maxZ()),
-                                           new Point3f(bounds.minX(), bounds.maxY(), bounds.maxZ()), new Point3f(
-        bounds.maxX(), bounds.maxY(), bounds.maxZ()) };
-
-        for (var corner : boundCorners) {
-            if (tet.contains(corner)) {
-                return true;
-            }
-        }
-
-        // Test tetrahedron edges against AABB
-        // A tetrahedron has 6 edges: (0,1), (0,2), (0,3), (1,2), (1,3), (2,3)
-        int[][] edges = { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 1, 2 }, { 1, 3 }, { 2, 3 } };
-
-        for (int[] edge : edges) {
-            Point3f p0 = new Point3f(vertices[edge[0]].x, vertices[edge[0]].y, vertices[edge[0]].z);
-            Point3f p1 = new Point3f(vertices[edge[1]].x, vertices[edge[1]].y, vertices[edge[1]].z);
-
-            if (lineSegmentIntersectsAABB(p0, p1, bounds)) {
-                return true;
-            }
-        }
-
-        // If we've gotten this far, check for face-face intersections using the
-        // Separating Axis Theorem, which catches the remaining case where a tet
-        // face intersects an AABB face with no vertex, corner, or edge crossing.
-        var entityBounds = new com.hellblazer.luciferase.lucien.entity.EntityBounds(
-            new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()),
-            new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()));
-        var floatVertices = new Point3f[vertices.length];
-        for (int i = 0; i < vertices.length; i++) {
-            floatVertices[i] = new Point3f(vertices[i].x, vertices[i].y, vertices[i].z);
-        }
-        return TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, floatVertices);
+        return tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
+                                   bounds.maxZ());
     }
 
     /**
@@ -851,28 +757,18 @@ public class Tet implements Spatial.aabt {
     /**
      * Answer true if this tetrahedron intersects the given bounding volume.
      * <ul>
-     *   <li>If {@code other} is a {@link Tet}, uses the full tet-vs-tet SAT test via
-     *       {@link TetrahedralGeometry#tetrahedraIntersect}.</li>
-     *   <li>Otherwise falls back to the tet-vs-AABB test via
-     *       {@link #tetrahedronIntersectsVolumeBounds}.</li>
+     *   <li>If {@code other} is a {@link Tet}, uses the 12-DOP tet-vs-tet test via
+     *       {@link #intersectsTet12DOP}.</li>
+     *   <li>Otherwise uses the 12-DOP AABB-vs-tet test via {@link #intersects12DOP}.</li>
      * </ul>
      */
     @Override
     public boolean intersectsBound(Spatial.aabt other) {
         if (other instanceof Tet otherTet) {
-            var myPts    = coordinates();
-            var otherPts = otherTet.coordinates();
-            var v1 = new Point3f[] { new Point3f(myPts[0].x, myPts[0].y, myPts[0].z),
-                                     new Point3f(myPts[1].x, myPts[1].y, myPts[1].z),
-                                     new Point3f(myPts[2].x, myPts[2].y, myPts[2].z),
-                                     new Point3f(myPts[3].x, myPts[3].y, myPts[3].z) };
-            var v2 = new Point3f[] { new Point3f(otherPts[0].x, otherPts[0].y, otherPts[0].z),
-                                     new Point3f(otherPts[1].x, otherPts[1].y, otherPts[1].z),
-                                     new Point3f(otherPts[2].x, otherPts[2].y, otherPts[2].z),
-                                     new Point3f(otherPts[3].x, otherPts[3].y, otherPts[3].z) };
-            return TetrahedralGeometry.tetrahedraIntersect(v1, v2);
+            return intersectsTet12DOP(otherTet);
         }
-        return tetrahedronIntersectsVolumeBounds(this, other.toVolumeBounds());
+        var b = other.toVolumeBounds();
+        return intersects12DOP(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ());
     }
 
     /**
