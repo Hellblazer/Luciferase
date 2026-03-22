@@ -6,6 +6,7 @@
 /bin/
 /.mvn/jvm.config
 **/.pm
+**/.serena
 
 **/.claude
 **/.quint
