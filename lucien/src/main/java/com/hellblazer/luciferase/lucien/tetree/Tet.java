@@ -661,8 +661,19 @@ public class Tet {
             return true;
         }
 
-        // SAT fallback: handles edge-face crossings missed by the two fast paths above.
-        // Convert tet vertices (Point3i) to Point3f[] for TetrahedralGeometry.
+        // Test tet edges against AABB: catches edge-face crossings where no vertex or
+        // center is inside the other shape.
+        int[][] edges = { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 1, 2 }, { 1, 3 }, { 2, 3 } };
+        for (int[] edge : edges) {
+            var p0 = new Point3f(vertices[edge[0]].x, vertices[edge[0]].y, vertices[edge[0]].z);
+            var p1 = new Point3f(vertices[edge[1]].x, vertices[edge[1]].y, vertices[edge[1]].z);
+            if (lineSegmentIntersectsAABB(p0, p1, bounds)) {
+                return true;
+            }
+        }
+
+        // SAT fallback: catches the remaining face-face crossing case where no vertex,
+        // AABB corner, or edge crosses the other volume.
         var floatVertices = new Point3f[vertices.length];
         for (int i = 0; i < vertices.length; i++) {
             floatVertices[i] = new Point3f(vertices[i].x, vertices[i].y, vertices[i].z);
