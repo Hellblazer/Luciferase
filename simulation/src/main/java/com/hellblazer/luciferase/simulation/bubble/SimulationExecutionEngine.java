@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Simulation tick loop execution engine.
@@ -52,6 +53,7 @@ public class SimulationExecutionEngine implements AutoCloseable {
     private final AtomicLong tickCount;
     private final AtomicLong currentBucket;
     private volatile Clock clock = Clock.system();
+    private final ReentrantLock tickLock = new ReentrantLock();
     private ScheduledFuture<?> tickTask;
 
     /**
@@ -93,8 +95,18 @@ public class SimulationExecutionEngine implements AutoCloseable {
             throw new IllegalStateException("Simulation is already running");
         }
 
+        // Guard tick execution with lock so stop() can wait for in-flight ticks
+        Runnable guarded = () -> {
+            tickLock.lock();
+            try {
+                tickCallback.run();
+            } finally {
+                tickLock.unlock();
+            }
+        };
+
         tickTask = scheduler.scheduleAtFixedRate(
-            tickCallback,
+            guarded,
             0,
             DEFAULT_TICK_INTERVAL_MS,
             TimeUnit.MILLISECONDS
@@ -104,34 +116,19 @@ public class SimulationExecutionEngine implements AutoCloseable {
     /**
      * Stop the simulation tick loop.
      * <p>
-     * Cancels the scheduled tick task and waits for any in-flight tick to complete.
-     * This ensures clean shutdown and prevents race conditions in tests that check
-     * simulation state immediately after stop().
-     * <p>
-     * Timeout: 1 second. If tick doesn't complete within this time, forces cancellation.
+     * Cancels the scheduled tick task and waits for any in-flight tick to complete
+     * by acquiring the tick lock. This ensures clean shutdown and prevents race
+     * conditions in tests that check simulation state immediately after stop().
      */
     public void stop() {
         if (running.getAndSet(false)) {
             if (tickTask != null) {
-                // Cancel task (mayInterruptIfRunning=false to allow clean completion)
                 tickTask.cancel(false);
-
-                // Wait for in-flight tick to complete (prevents race conditions)
-                try {
-                    tickTask.get(1, TimeUnit.SECONDS);
-                } catch (TimeoutException e) {
-                    // Tick took too long - force cancellation
-                    tickTask.cancel(true);
-                } catch (CancellationException e) {
-                    // Task was already cancelled - expected
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                } catch (ExecutionException e) {
-                    // Tick threw exception - already logged by simulation
-                }
-
                 tickTask = null;
             }
+            // Block until any in-flight tick completes — the tick holds this lock while running
+            tickLock.lock();
+            tickLock.unlock();
         }
     }
 
