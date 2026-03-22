@@ -646,7 +646,7 @@ public class Tet {
             return false;
         }
 
-        // Simple AABB intersection test - any vertex within bounds indicates intersection
+        // Fast path: any tet vertex inside the AABB
         for (var vertex : vertices) {
             if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY()
             && vertex.y <= bounds.maxY() && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
@@ -654,10 +654,23 @@ public class Tet {
             }
         }
 
-        // Also check if the volume center is inside the tetrahedron
+        // Fast path: AABB center inside the tetrahedron
         var centerPoint = new Point3f((bounds.minX() + bounds.maxX()) / 2, (bounds.minY() + bounds.maxY()) / 2,
                                       (bounds.minZ() + bounds.maxZ()) / 2);
-        return tet.contains(centerPoint);
+        if (tet.contains(centerPoint)) {
+            return true;
+        }
+
+        // SAT fallback: handles edge-face crossings missed by the two fast paths above.
+        // Convert tet vertices (Point3i) to Point3f[] for TetrahedralGeometry.
+        var floatVertices = new Point3f[vertices.length];
+        for (int i = 0; i < vertices.length; i++) {
+            floatVertices[i] = new Point3f(vertices[i].x, vertices[i].y, vertices[i].z);
+        }
+        var entityBounds = new com.hellblazer.luciferase.lucien.entity.EntityBounds(
+        new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()),
+        new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()));
+        return TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, floatVertices);
     }
 
     // Check if a tetrahedron intersects with volume bounds (proper tetrahedral geometry)
@@ -719,9 +732,17 @@ public class Tet {
             }
         }
 
-        // If we've gotten this far, the volumes might still intersect along faces
-        // For now, use conservative approximation
-        return true;
+        // If we've gotten this far, check for face-face intersections using the
+        // Separating Axis Theorem, which catches the remaining case where a tet
+        // face intersects an AABB face with no vertex, corner, or edge crossing.
+        var entityBounds = new com.hellblazer.luciferase.lucien.entity.EntityBounds(
+            new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()),
+            new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()));
+        var floatVertices = new Point3f[vertices.length];
+        for (int i = 0; i < vertices.length; i++) {
+            floatVertices[i] = new Point3f(vertices[i].x, vertices[i].y, vertices[i].z);
+        }
+        return TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, floatVertices);
     }
 
     /**
