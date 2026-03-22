@@ -1799,18 +1799,26 @@ public class Tet implements Spatial.aabt {
         int shiftedY = y;
         int shiftedZ = z;
 
-        // V2 OPTIMIZATION: Build parent chain in reverse order while building bits
-        // Stack to hold types as we walk up
+        // Compute ancestor types directly from coordinates — zero Tet allocations.
+        // Uses TYPE_CID_TO_BEYID + PARENT_TYPE_TO_CHILD_TYPE tables (same as computeParentType).
+        // types[i] = type at level i+1 in the ancestry. types[l-1] = this.type (leaf).
         byte[] types = new byte[l];
-        Tet current = this;
-
-        // Walk up to collect types efficiently
-        for (int i = l - 1; i >= 0; i--) {
-            types[i] = current.type;
-            if (i > 0) {
-                current = current.parent();
-            }
+        byte ancestorType = 0; // root type
+        for (int lvl = 1; lvl < l; lvl++) {
+            int parentH = Constants.lengthAtLevel((byte) (lvl - 1));
+            int halfH = parentH >> 1;
+            int ancestorX = (x / parentH) * parentH;
+            int ancestorY = (y / parentH) * parentH;
+            int ancestorZ = (z / parentH) * parentH;
+            int cubeId = 0;
+            if (x >= ancestorX + halfH) cubeId |= 1;
+            if (y >= ancestorY + halfH) cubeId |= 2;
+            if (z >= ancestorZ + halfH) cubeId |= 4;
+            byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[ancestorType][cubeId];
+            ancestorType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[ancestorType][beyId];
+            types[lvl - 1] = ancestorType;
         }
+        types[l - 1] = type; // Leaf type is always this.type
 
         // Now build bits with types in correct order
         // We support up to level 21 with 128-bit representation
