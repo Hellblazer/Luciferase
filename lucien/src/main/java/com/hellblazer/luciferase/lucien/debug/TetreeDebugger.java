@@ -269,7 +269,7 @@ public class TetreeDebugger<ID extends EntityID, Content>
                 }
 
                 // Check if point is actually contained
-                var contained = tet.containsUltraFast(position.x, position.y, position.z);
+                var contained = tet.contains12DOP(position.x, position.y, position.z);
                 sb.append(String.format("Point contained: %s\n", contained));
 
                 sb.append(String.format("Entities in tetrahedron: %d\n", containingNode.entityIds().size()));

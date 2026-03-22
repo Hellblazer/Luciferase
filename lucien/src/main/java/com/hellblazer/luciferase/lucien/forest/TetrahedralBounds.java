@@ -24,13 +24,13 @@ import javax.vecmath.Point3i;
 
 /**
  * TreeBounds implementation for tetrahedral regions.
- * Uses exact tetrahedral containment testing via Tet.containsUltraFast().
+ * Uses exact tetrahedral containment testing via Tet.contains12DOP().
  *
  * This bound type is used when AdaptiveForest subdivides using the TETRAHEDRAL strategy.
  * It provides exact geometric containment (not AABB approximation) and supports both
  * S0-S5 characteristic tetrahedra (from cubic subdivision) and Bey subdivision children.
  *
- * CRITICAL: containsPoint() uses Tet.containsUltraFast() for EXACT tetrahedral geometry.
+ * CRITICAL: containsPoint() uses Tet.contains12DOP() for EXACT tetrahedral geometry.
  * Do NOT use AABB approximation for containment - that is only valid for toAABB().
  *
  * @param tet the tetrahedron defining this region
@@ -41,7 +41,7 @@ public record TetrahedralBounds(Tet tet) implements TreeBounds {
     @Override
     public boolean containsPoint(float x, float y, float z) {
         // Use EXACT tetrahedral containment - NOT AABB approximation
-        return tet.containsUltraFast(x, y, z);
+        return tet.contains12DOP(x, y, z);
     }
 
     @Override

@@ -25,7 +25,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityBounds;
  * This interface provides polymorphic containment testing that dispatches to the correct
  * geometric algorithm based on the bound type:
  * - CubicBounds uses AABB intersection test
- * - TetrahedralBounds uses exact tetrahedral containment (Tet.containsUltraFast)
+ * - TetrahedralBounds uses exact tetrahedral containment (Tet.contains12DOP)
  *
  * The sealed interface ensures compile-time exhaustiveness checking when pattern matching
  * and prevents invalid bound types from being introduced.
