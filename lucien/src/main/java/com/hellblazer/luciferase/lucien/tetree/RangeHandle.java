@@ -196,11 +196,12 @@ public class RangeHandle {
         }
         
         @Override
-        public boolean containedBy(Spatial.aabt aabt) {
-            // Check if this bounding box is completely contained within the tetrahedral bounds
-            return bounds.minX() >= aabt.originX() && bounds.maxX() <= aabt.extentX() &&
-                   bounds.minY() >= aabt.originY() && bounds.maxY() <= aabt.extentY() &&
-                   bounds.minZ() >= aabt.originZ() && bounds.maxZ() <= aabt.extentZ();
+        public boolean containedBy(Spatial.aabt bounds) {
+            // Check if this bounding box is completely contained within the given aabt bounds
+            var vb = bounds.toVolumeBounds();
+            return this.bounds.minX() >= vb.minX() && this.bounds.maxX() <= vb.maxX()
+                   && this.bounds.minY() >= vb.minY() && this.bounds.maxY() <= vb.maxY()
+                   && this.bounds.minZ() >= vb.minZ() && this.bounds.maxZ() <= vb.maxZ();
         }
         
         @Override

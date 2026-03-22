@@ -43,7 +43,7 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
  *
  * @author hal.hildebrand
  **/
-public class Tet {
+public class Tet implements Spatial.aabt {
     public static final  TetreeKey<?> ROOT_TET      = TetreeKey.getRoot();
     /**
      * Default root tetrahedron type (follows t8code standard)
@@ -646,7 +646,7 @@ public class Tet {
             return false;
         }
 
-        // Simple AABB intersection test - any vertex within bounds indicates intersection
+        // Fast path: any tet vertex inside the AABB
         for (var vertex : vertices) {
             if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY()
             && vertex.y <= bounds.maxY() && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
@@ -654,10 +654,34 @@ public class Tet {
             }
         }
 
-        // Also check if the volume center is inside the tetrahedron
+        // Fast path: AABB center inside the tetrahedron
         var centerPoint = new Point3f((bounds.minX() + bounds.maxX()) / 2, (bounds.minY() + bounds.maxY()) / 2,
                                       (bounds.minZ() + bounds.maxZ()) / 2);
-        return tet.contains(centerPoint);
+        if (tet.contains(centerPoint)) {
+            return true;
+        }
+
+        // Test tet edges against AABB: catches edge-face crossings where no vertex or
+        // center is inside the other shape.
+        int[][] edges = { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 1, 2 }, { 1, 3 }, { 2, 3 } };
+        for (int[] edge : edges) {
+            var p0 = new Point3f(vertices[edge[0]].x, vertices[edge[0]].y, vertices[edge[0]].z);
+            var p1 = new Point3f(vertices[edge[1]].x, vertices[edge[1]].y, vertices[edge[1]].z);
+            if (lineSegmentIntersectsAABB(p0, p1, bounds)) {
+                return true;
+            }
+        }
+
+        // SAT fallback: catches the remaining face-face crossing case where no vertex,
+        // AABB corner, or edge crosses the other volume.
+        var floatVertices = new Point3f[vertices.length];
+        for (int i = 0; i < vertices.length; i++) {
+            floatVertices[i] = new Point3f(vertices[i].x, vertices[i].y, vertices[i].z);
+        }
+        var entityBounds = new com.hellblazer.luciferase.lucien.entity.EntityBounds(
+        new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()),
+        new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()));
+        return TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, floatVertices);
     }
 
     // Check if a tetrahedron intersects with volume bounds (proper tetrahedral geometry)
@@ -719,9 +743,17 @@ public class Tet {
             }
         }
 
-        // If we've gotten this far, the volumes might still intersect along faces
-        // For now, use conservative approximation
-        return true;
+        // If we've gotten this far, check for face-face intersections using the
+        // Separating Axis Theorem, which catches the remaining case where a tet
+        // face intersects an AABB face with no vertex, corner, or edge crossing.
+        var entityBounds = new com.hellblazer.luciferase.lucien.entity.EntityBounds(
+            new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()),
+            new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()));
+        var floatVertices = new Point3f[vertices.length];
+        for (int i = 0; i < vertices.length; i++) {
+            floatVertices[i] = new Point3f(vertices[i].x, vertices[i].y, vertices[i].z);
+        }
+        return TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, floatVertices);
     }
 
     /**
@@ -787,6 +819,107 @@ public class Tet {
         return new Point3i(x, y, z);
     }
 
+    // -------------------------------------------------------------------------
+    // Spatial.aabt implementation
+    // -------------------------------------------------------------------------
+
+    /**
+     * Answer true if the given point is contained within this tetrahedron.
+     * Delegates to the ultra-fast containment check.
+     */
+    @Override
+    public boolean contains(float px, float py, float pz) {
+        return containsUltraFast(px, py, pz);
+    }
+
+    /**
+     * Answer true if the given bounding volume is completely contained within this tetrahedron.
+     * Checks all vertices of {@code other} using the tetrahedral containment test.
+     */
+    @Override
+    public boolean containsBound(Spatial.aabt other) {
+        for (var v : other.vertices()) {
+            if (!containsUltraFast(v[0], v[1], v[2])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Answer true if this tetrahedron intersects the given bounding volume.
+     * <ul>
+     *   <li>If {@code other} is a {@link Tet}, uses the full tet-vs-tet SAT test via
+     *       {@link TetrahedralGeometry#tetrahedraIntersect}.</li>
+     *   <li>Otherwise falls back to the tet-vs-AABB test via
+     *       {@link #tetrahedronIntersectsVolumeBounds}.</li>
+     * </ul>
+     */
+    @Override
+    public boolean intersectsBound(Spatial.aabt other) {
+        if (other instanceof Tet otherTet) {
+            var myPts    = coordinates();
+            var otherPts = otherTet.coordinates();
+            var v1 = new Point3f[] { new Point3f(myPts[0].x, myPts[0].y, myPts[0].z),
+                                     new Point3f(myPts[1].x, myPts[1].y, myPts[1].z),
+                                     new Point3f(myPts[2].x, myPts[2].y, myPts[2].z),
+                                     new Point3f(myPts[3].x, myPts[3].y, myPts[3].z) };
+            var v2 = new Point3f[] { new Point3f(otherPts[0].x, otherPts[0].y, otherPts[0].z),
+                                     new Point3f(otherPts[1].x, otherPts[1].y, otherPts[1].z),
+                                     new Point3f(otherPts[2].x, otherPts[2].y, otherPts[2].z),
+                                     new Point3f(otherPts[3].x, otherPts[3].y, otherPts[3].z) };
+            return TetrahedralGeometry.tetrahedraIntersect(v1, v2);
+        }
+        return tetrahedronIntersectsVolumeBounds(this, other.toVolumeBounds());
+    }
+
+    /**
+     * Return the four vertices of this tetrahedron as a float[][] array.
+     * Converts the Point3i coordinates to float arrays.
+     */
+    @Override
+    public float[][] vertices() {
+        var pts = coordinates();
+        return new float[][] { { pts[0].x, pts[0].y, pts[0].z }, { pts[1].x, pts[1].y, pts[1].z },
+                               { pts[2].x, pts[2].y, pts[2].z }, { pts[3].x, pts[3].y, pts[3].z } };
+    }
+
+    /**
+     * Return the axis-aligned bounding box of this tetrahedron.
+     */
+    @Override
+    public VolumeBounds toVolumeBounds() {
+        var pts = coordinates();
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
+        for (var p : pts) {
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            minZ = Math.min(minZ, p.z);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+            maxZ = Math.max(maxZ, p.z);
+        }
+        return new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    /**
+     * Answer true if this tetrahedron is completely contained within the given aabt bounds.
+     * Delegates to {@code bounds.containsBound(this)}.
+     */
+    @Override
+    public boolean containedBy(Spatial.aabt bounds) {
+        return bounds.containsBound(this);
+    }
+
+    /**
+     * Answer true if this tetrahedron intersects the given AABB defined by origin and extent corners.
+     */
+    @Override
+    public boolean intersects(float oX, float oY, float oZ, float eX, float eY, float eZ) {
+        return tetrahedronIntersectsVolumeBounds(this, new VolumeBounds(oX, oY, oZ, eX, eY, eZ));
+    }
+
     /**
      * @param volume - the enclosing volume
      * @return the Stream of TetreeKeys locating the Tets bounded by the volume
@@ -817,6 +950,69 @@ public class Tet {
             var tet = Tet.tetrahedron(key);
             return tetrahedronIntersectsVolume(tet, volume);
         });
+    }
+
+    /**
+     * AABT-based range query: walks the grid at this tet's level and returns keys for all tetrahedra that
+     * pass SAT-based intersection with the given bounding volume. Compared to the AABB path (which emits all
+     * 6 tet types per qualifying grid cell), this method tests each tet individually using
+     * {@link Spatial.aabt#intersectsBound(Spatial.aabt)} and only emits those that pass.
+     *
+     * <p>This is the AABT spike implementation — it adds a parallel path alongside the existing AABB traversal.
+     * It does NOT replace the AABB path.</p>
+     *
+     * @param queryBound the query volume as an aabt (may be a Box or a Tet)
+     * @return stream of TetreeKeys for tets that intersect the query bound via SAT
+     */
+    public Stream<TetreeKey<?>> intersectingBound(Spatial.aabt queryBound) {
+        return aabtSpatialRangeQueryKeys(queryBound);
+    }
+
+    /**
+     * Hierarchical AABT traversal: like the AABB path but filters individual tet types per cell
+     * using {@link Tet#intersectsBound(Spatial.aabt)} (SAT) instead of emitting all 6 per cell.
+     */
+    Stream<TetreeKey<?>> aabtSpatialRangeQueryKeys(Spatial.aabt queryBound) {
+        var bounds = queryBound.toVolumeBounds();
+        int length = Constants.lengthAtLevel(this.l);
+
+        int minX = (int) Math.floor(bounds.minX() / length);
+        int maxX = (int) Math.ceil(bounds.maxX() / length);
+        int minY = (int) Math.floor(bounds.minY() / length);
+        int maxY = (int) Math.ceil(bounds.maxY() / length);
+        int minZ = (int) Math.floor(bounds.minZ() / length);
+        int maxZ = (int) Math.ceil(bounds.maxZ() / length);
+
+        return IntStream.rangeClosed(minX, maxX).boxed().flatMap(xi -> IntStream.rangeClosed(minY, maxY)
+                                                                                .boxed()
+                                                                                .flatMap(yi -> IntStream.rangeClosed(
+                                                                                minZ, maxZ).boxed().flatMap(zi -> {
+                                                                                    int cx = xi * length;
+                                                                                    int cy = yi * length;
+                                                                                    int cz = zi * length;
+                                                                                    // Quick AABB cell reject
+                                                                                    if (cx + length < bounds.minX()
+                                                                                    || cx > bounds.maxX()
+                                                                                    || cy + length < bounds.minY()
+                                                                                    || cy > bounds.maxY()
+                                                                                    || cz + length < bounds.minZ()
+                                                                                    || cz > bounds.maxZ()) {
+                                                                                        return Stream.empty();
+                                                                                    }
+                                                                                    // SAT per-tet filter
+                                                                                    return IntStream.range(0, 6)
+                                                                                                   .filter(t -> {
+                                                                                                       var tet = new Tet(
+                                                                                                       cx, cy, cz,
+                                                                                                       this.l,
+                                                                                                       (byte) t);
+                                                                                                       return tet.intersectsBound(
+                                                                                                       queryBound);
+                                                                                                   })
+                                                                                                   .mapToObj(t -> new Tet(
+                                                                                                   cx, cy, cz, this.l,
+                                                                                                   (byte) t).tmIndex());
+                                                                                })));
     }
 
     /**
@@ -1719,16 +1915,16 @@ public class Tet {
         return type;
     }
 
-    public Point3i[] vertices() {
+    public Point3i[] vertexPoints() {
         var origin = new Point3i(x, y, z);
-        var vertices = new Point3i[4];
+        var pts = new Point3i[4];
         int i = 0;
         for (var vertex : Constants.SIMPLEX_STANDARD[type]) {
-            vertices[i] = new Point3i(vertex.x, vertex.y, vertex.z);
-            vertices[i].scaleAdd(length(), origin);
+            pts[i] = new Point3i(vertex.x, vertex.y, vertex.z);
+            pts[i].scaleAdd(length(), origin);
             i++;
         }
-        return vertices;
+        return pts;
     }
 
     public int x() {

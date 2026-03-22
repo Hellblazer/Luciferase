@@ -30,8 +30,9 @@ import javax.vecmath.Vector3d;
  */
 public record Simplex<Data>(TetreeKey<? extends TetreeKey<?>> index, Data cell) implements Spatial {
     @Override
-    public boolean containedBy(aabt aabt) {
-        return false;
+    public boolean containedBy(aabt bounds) {
+        var tet = Tet.tetrahedron(index);
+        return bounds.containsBound(tet);
     }
 
     /**
@@ -52,6 +53,13 @@ public record Simplex<Data>(TetreeKey<? extends TetreeKey<?>> index, Data cell) 
     @Override
     public boolean intersects(float originX, float originY, float originZ, float extentX, float extentY,
                               float extentZ) {
-        return false;
+        var tet = Tet.tetrahedron(index);
+        return Tet.tetrahedronIntersectsVolumeBounds(tet,
+                                                     new com.hellblazer.luciferase.lucien.VolumeBounds(originX,
+                                                                                                       originY,
+                                                                                                       originZ,
+                                                                                                       extentX,
+                                                                                                       extentY,
+                                                                                                       extentZ));
     }
 }
