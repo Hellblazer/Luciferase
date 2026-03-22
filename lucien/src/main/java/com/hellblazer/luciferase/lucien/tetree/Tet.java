@@ -104,7 +104,7 @@ public class Tet implements Spatial.aabt {
      * the bounding box.
      */
     private static boolean containsPointInTetrahedron(Tet tet, float px, float py, float pz) {
-        return tet.containsUltraFast(px, py, pz);
+        return tet.contains12DOP(px, py, pz);
     }
 
     /**
@@ -282,7 +282,7 @@ public class Tet implements Spatial.aabt {
         // Special case for level 0 - only type 0 exists
         if (targetLevel == 0) {
             Tet root = new Tet(0, 0, 0, (byte) 0, (byte) 0);
-            return root.containsUltraFast(px, py, pz) ? root : null;
+            return root.contains12DOP(px, py, pz) ? root : null;
         }
 
         // Start at a coarse level where we can reliably find a containing tetrahedron
@@ -829,7 +829,7 @@ public class Tet implements Spatial.aabt {
      */
     @Override
     public boolean contains(float px, float py, float pz) {
-        return containsUltraFast(px, py, pz);
+        return contains12DOP(px, py, pz);
     }
 
     /**
@@ -839,7 +839,7 @@ public class Tet implements Spatial.aabt {
     @Override
     public boolean containsBound(Spatial.aabt other) {
         for (var v : other.vertices()) {
-            if (!containsUltraFast(v[0], v[1], v[2])) {
+            if (!contains12DOP(v[0], v[1], v[2])) {
                 return false;
             }
         }
@@ -1193,12 +1193,11 @@ public class Tet implements Spatial.aabt {
     }
 
     public boolean contains(Tuple3f point) {
-        return containsUltraFast(point.x, point.y, point.z);
+        return contains12DOP(point.x, point.y, point.z);
     }
 
     /**
-     * Ultra-fast contains check using direct arithmetic without method calls. This is the fastest possible
-     * implementation for tetrahedral containment testing, achieving up to 4x speedup over the standard method.
+     * Ultra-fast contains check using direct arithmetic without method calls.
      *
      * Based on the plane-based algorithm which requires: - 12 multiplications per plane test (48 total) - 8 additions
      * per plane test (32 total) - 4 comparisons (one per face)
@@ -1207,7 +1206,9 @@ public class Tet implements Spatial.aabt {
      * @param py Y coordinate of the point to test
      * @param pz Z coordinate of the point to test
      * @return true if the point is inside the tetrahedron
+     * @deprecated Use {@link #contains12DOP(float, float, float)} instead — 11 ops vs 84, same results.
      */
+    @Deprecated(since = "2026-03", forRemoval = true)
     public boolean containsUltraFast(float px, float py, float pz) {
         // Inline all computations for maximum performance
         final int h = 1 << (Constants.getMaxRefinementLevel() - l);
@@ -1341,6 +1342,171 @@ public class Tet implements Spatial.aabt {
         float det4 = adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
         return isMirrored ? det4 <= 0 : det4 >= 0;
     }
+
+    /**
+     * 12-DOP exact containment test using the permutohedron ordering structure. AABB check (6 comparisons) + local
+     * coordinate subtraction (3 ops) + type-specific ordering test (2 comparisons) = 11 ops total.
+     * <p>
+     * The ordering for each S-type is derived from the Kuhn simplex vertex paths in {@link #coordinates()}. Uses
+     * closed-simplex convention ({@code >=}) matching {@link #containsUltraFast} — points on shared faces may be
+     * contained by adjacent types.
+     *
+     * @param px X coordinate of the point to test
+     * @param py Y coordinate of the point to test
+     * @param pz Z coordinate of the point to test
+     * @return true if the point is inside this tetrahedron
+     * @see #containsUltraFast(float, float, float)
+     */
+    public boolean contains12DOP(float px, float py, float pz) {
+        final int h = 1 << (Constants.getMaxRefinementLevel() - l);
+        // AABB early-out (6 comparisons)
+        if (px < x || px > x + h || py < y || py > y + h || pz < z || pz > z + h)
+            return false;
+        // Local coordinates (3 subtractions)
+        float u = px - x, v = py - y, w = pz - z;
+        // Ordering test (2 comparisons) — derived from vertex geometry (Kuhn simplex edge paths)
+        return switch (type) {
+            case 0 -> u >= v && v >= w;  // S0: V0,V1,V3,V7 → x ≥ y ≥ z
+            case 1 -> v >= u && u >= w;  // S1: V0,V2,V3,V7 → y ≥ x ≥ z
+            case 2 -> w >= u && u >= v;  // S2: V0,V4,V5,V7 → z ≥ x ≥ y
+            case 3 -> w >= v && v >= u;  // S3: V0,V4,V6,V7 → z ≥ y ≥ x
+            case 4 -> u >= w && w >= v;  // S4: V0,V1,V5,V7 → x ≥ z ≥ y
+            case 5 -> v >= w && w >= u;  // S5: V0,V2,V6,V7 → y ≥ z ≥ x
+            default -> throw new IllegalStateException("Invalid type: " + type);
+        };
+    }
+
+    /**
+     * 12-DOP tet-vs-tet intersection test. Two tetrahedra intersect iff their projections overlap
+     * on all 6 axes: 3 AABB axes and 3 difference axes (d_xy, d_xz, d_yz).
+     * <p>
+     * Each S-type's difference-axis slab is either [0,h] (sign=0) or [-h,0] (sign=1):
+     * <pre>
+     *   S0: d_xy=+, d_xz=+, d_yz=+
+     *   S1: d_xy=-, d_xz=+, d_yz=+
+     *   S2: d_xy=+, d_xz=-, d_yz=-
+     *   S3: d_xy=-, d_xz=-, d_yz=-
+     *   S4: d_xy=+, d_xz=+, d_yz=-
+     *   S5: d_xy=-, d_xz=-, d_yz=+
+     * </pre>
+     * Global slab for axis diff = anchor_diff, sign s, size h:
+     * {@code lo = diff - s*h,  hi = diff + (1-s)*h}.
+     * Overlap (closed convention ≥): {@code lo1 <= hi2 && lo2 <= hi1}.
+     * <p>
+     * Uses closed-simplex convention matching {@link #contains12DOP} — face-touching tets count
+     * as intersecting.
+     *
+     * @param other the other tetrahedron
+     * @return true if the two tetrahedra intersect (including face/edge/vertex contact)
+     */
+    public boolean intersectsTet12DOP(Tet other) {
+        final int h1 = 1 << (Constants.getMaxRefinementLevel() - l);
+        final int h2 = 1 << (Constants.getMaxRefinementLevel() - other.l);
+        // AABB overlap (3 axes, 6 comparisons)
+        if (x + h1 < other.x || other.x + h2 < x) return false;
+        if (y + h1 < other.y || other.y + h2 < y) return false;
+        if (z + h1 < other.z || other.z + h2 < z) return false;
+        // Difference-axis slab overlap
+        int[] s1 = slabBounds12DOP(x, y, z, l, type);
+        int[] s2 = slabBounds12DOP(other.x, other.y, other.z, other.l, other.type);
+        // d_xy: s1=[lo0,hi0], s2=[lo1,hi1]
+        if (s1[0] > s2[1] || s2[0] > s1[1]) return false;
+        // d_xz
+        if (s1[2] > s2[3] || s2[2] > s1[3]) return false;
+        // d_yz
+        if (s1[4] > s2[5] || s2[4] > s1[5]) return false;
+        return true;
+    }
+
+    /**
+     * Returns the global 12-DOP slab bounds for a tetrahedron as an int[6]:
+     * {@code [lo_xy, hi_xy, lo_xz, hi_xz, lo_yz, hi_yz]}.
+     * <p>
+     * For sign s (0 = [0,h], 1 = [-h,0]):
+     * {@code lo = anchor_diff - s*h},  {@code hi = anchor_diff + (1-s)*h}.
+     *
+     * @param ax    anchor x
+     * @param ay    anchor y
+     * @param az    anchor z
+     * @param level refinement level
+     * @param type  S-type (0-5)
+     * @return int[6] of global slab bounds
+     */
+    private static int[] slabBounds12DOP(int ax, int ay, int az, byte level, byte type) {
+        final int h = 1 << (Constants.getMaxRefinementLevel() - level);
+        final int dxy = ax - ay;
+        final int dxz = ax - az;
+        final int dyz = ay - az;
+        // sign encoding: 0 means slab [0,h] (lo=diff, hi=diff+h)
+        //                1 means slab [-h,0] (lo=diff-h, hi=diff)
+        return switch (type) {
+            case 0 -> // d_xy=+, d_xz=+, d_yz=+
+                new int[]{ dxy,     dxy + h, dxz,     dxz + h, dyz,     dyz + h };
+            case 1 -> // d_xy=-, d_xz=+, d_yz=+
+                new int[]{ dxy - h, dxy,     dxz,     dxz + h, dyz,     dyz + h };
+            case 2 -> // d_xy=+, d_xz=-, d_yz=-
+                new int[]{ dxy,     dxy + h, dxz - h, dxz,     dyz - h, dyz     };
+            case 3 -> // d_xy=-, d_xz=-, d_yz=-
+                new int[]{ dxy - h, dxy,     dxz - h, dxz,     dyz - h, dyz     };
+            case 4 -> // d_xy=+, d_xz=+, d_yz=-
+                new int[]{ dxy,     dxy + h, dxz,     dxz + h, dyz - h, dyz     };
+            case 5 -> // d_xy=-, d_xz=-, d_yz=+
+                new int[]{ dxy - h, dxy,     dxz - h, dxz,     dyz,     dyz + h };
+            default -> throw new IllegalStateException("Invalid type: " + type);
+        };
+    }
+
+    /**
+     * 12-DOP intersection test between this tetrahedron and an axis-aligned bounding box. Tests overlap on all 6
+     * DOP axes: 3 AABB axes + 3 difference axes {x-y, x-z, y-z}.
+     * <p>
+     * Cost: ~21 ops (6 AABB comparisons + 6 entity projections + 3 anchor differences + 6 slab comparisons).
+     *
+     * @param exMin minimum X of the entity AABB
+     * @param eyMin minimum Y of the entity AABB
+     * @param ezMin minimum Z of the entity AABB
+     * @param exMax maximum X of the entity AABB
+     * @param eyMax maximum Y of the entity AABB
+     * @param ezMax maximum Z of the entity AABB
+     * @return true if the AABB intersects this tetrahedron's 12-DOP
+     */
+    public boolean intersects12DOP(float exMin, float eyMin, float ezMin, float exMax, float eyMax, float ezMax) {
+        final int h = 1 << (Constants.getMaxRefinementLevel() - l);
+        // Step 1: AABB overlap (6 comparisons)
+        if (exMax < x || exMin > x + h || eyMax < y || eyMin > y + h || ezMax < z || ezMin > z + h)
+            return false;
+        // Step 2: Project entity AABB onto difference axes (6 subtractions)
+        float dxyMin = exMin - eyMax, dxyMax = exMax - eyMin;
+        float dxzMin = exMin - ezMax, dxzMax = exMax - ezMin;
+        float dyzMin = eyMin - ezMax, dyzMax = eyMax - ezMin;
+        // Step 3: Compute tet's global slab ranges and check overlap (6 comparisons)
+        // Local slab [0,h] or [-h,0] is shifted by anchor differences (axy = x-y, etc.)
+        int axy = x - y, axz = x - z, ayz = y - z;
+        return switch (type) {
+            case 0 ->
+                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
+                && dyzMin <= ayz + h;
+            case 1 ->
+                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
+                && dyzMin <= ayz + h;
+            case 2 ->
+                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
+                && dyzMin <= ayz;
+            case 3 ->
+                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
+                && dyzMin <= ayz;
+            case 4 ->
+                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz - h
+                && dyzMin <= ayz;
+            case 5 ->
+                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz
+                && dyzMin <= ayz + h;
+            default -> throw new IllegalStateException("Invalid type: " + type);
+        };
+    }
+
+
+
 
     /**
      * Answer the 3D coordinates of the tetrahedron represented by the receiver Using t8code's canonical vertex
@@ -1715,7 +1881,7 @@ public class Tet implements Spatial.aabt {
         Tet current = this;
 
         // Check if current contains the point
-        if (!current.containsUltraFast(px, py, pz)) {
+        if (!current.contains12DOP(px, py, pz)) {
             return null; // Point not in this tetrahedron's subtree
         }
 
@@ -1726,7 +1892,7 @@ public class Tet implements Spatial.aabt {
             // Check all 8 Bey children
             for (int i = 0; i < 8; i++) {
                 Tet child = current.child(i);
-                if (child.containsUltraFast(px, py, pz)) {
+                if (child.contains12DOP(px, py, pz)) {
                     current = child;
                     found = true;
                     break;
