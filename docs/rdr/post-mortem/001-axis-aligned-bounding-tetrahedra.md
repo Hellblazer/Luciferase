@@ -50,3 +50,11 @@
 3. **Bug fixes and type cleanup are independently valuable.** Even though the grand vision didn't materialize, Phases 1-2 delivered real value. Separate "fix what's broken" from "add new capability."
 
 4. **Gate critique has blind spots for performance hypotheses.** Three rounds caught structural issues (callsite inventory, migration atomicity, method naming) but none questioned whether SAT cost would offset candidate reduction. Performance claims need benchmarks, not just architectural review.
+
+## Follow-Up: 12-DOP Exact Containment (2026-03-22)
+
+Post-RDR-001 research discovered that the 6 axes {x, y, z, x-y, x-z, y-z} form a 12-DOP providing **mathematically exact** containment for all S0-S5 Kuhn tetrahedra at 11 ops (vs 84 for SAT). This resolves the SAT cost problem entirely — the `containsUltraFast()` determinant math can be replaced by 3 subtractions + 2 ordering comparisons. The structural reason: S0-S5 are the chambers of the A₂ root system's hyperplane arrangement (permutohedron).
+
+Two intermediate hypotheses (rhombohedral AABR, type-specific difference coordinates) were explored and refuted before arriving at this result.
+
+See: `lucien/doc/AABT_12DOP_EXACT_CONTAINMENT.md`
