@@ -1503,24 +1503,13 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
 
     @Override
     protected boolean doesNodeIntersectVolume(TetreeKey<? extends TetreeKey<?>> tetIndex, Spatial volume) {
-        Tet tet = Tet.tetrahedron(tetIndex);
-        // Use the same logic as the SFC range computation for consistency
         var bounds = getVolumeBounds(volume);
         if (bounds == null) {
             return false;
         }
-
-        // Debug output
-        boolean debug = false;
-        if (debug && tet.x() == 512 && tet.y() == 0 && tet.z() == 0 && tet.l() == 13) {
-            log.debug("doesNodeIntersectVolume debug for tet at (512,0,0):");
-            log.debug("  tetIndex: {}", tetIndex);
-            log.debug("  tet: {}", tet);
-            log.debug("  bounds: {}", bounds);
-            log.debug("  result: {}", Tet.tetrahedronIntersectsVolumeBounds(tet, bounds));
-        }
-
-        return Tet.tetrahedronIntersectsVolumeBounds(tet, bounds);
+        var tet = Tet.tetrahedron(tetIndex);
+        return tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
+                                   bounds.maxZ());
     }
 
     // ===== Frustum Intersection Implementation =====
@@ -2591,7 +2580,8 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
                     // Check if this tetrahedron intersects/is contained in bounds
                     boolean matches;
                     if (includeIntersecting) {
-                        matches = Tet.tetrahedronIntersectsVolumeBounds(tet, bounds);
+                        matches = tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(),
+                                                       bounds.maxY(), bounds.maxZ());
                     } else {
                         matches = Tet.tetrahedronContainedInVolumeBounds(tet, bounds);
                     }
@@ -2636,7 +2626,8 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
                     Tet tet = Tet.tetrahedron(spatialKey);
 
                     if (includeIntersecting) {
-                        if (Tet.tetrahedronIntersectsVolumeBounds(tet, bounds)) {
+                        if (tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(),
+                                                bounds.maxY(), bounds.maxZ())) {
                             result.add(spatialKey);
                         }
                     } else {
@@ -2666,7 +2657,8 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
                     Tet tet = Tet.tetrahedron(spatialKey);
 
                     if (includeIntersecting) {
-                        if (Tet.tetrahedronIntersectsVolumeBounds(tet, bounds)) {
+                        if (tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(),
+                                                bounds.maxY(), bounds.maxZ())) {
                             result.add(spatialKey);
                         }
                     } else {
@@ -2746,7 +2738,8 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
                         Tet tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, type);
 
                         // Only add if the tetrahedron actually intersects the bounds
-                        if (Tet.tetrahedronIntersectsVolumeBounds(tet, bounds)) {
+                        if (tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(),
+                                                bounds.maxY(), bounds.maxZ())) {
                             results.add(tet.tmIndex());
                         }
                     }

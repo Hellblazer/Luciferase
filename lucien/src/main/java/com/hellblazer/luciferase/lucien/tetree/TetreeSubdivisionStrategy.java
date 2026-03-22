@@ -86,12 +86,9 @@ extends SubdivisionStrategy<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
         for (int i = 0; i < TETREE_CHILDREN; i++) {
             Tet childTet = parentTet.child(i);
 
-            // Get child tetrahedron vertices
-            Point3i[] intVertices = childTet.coordinates();
-            Point3f[] vertices = convertToFloat(intVertices);
-
-            // Check if entity bounds intersect this tetrahedron using proper geometric test
-            if (TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, vertices)) {
+            // Check if entity bounds intersect this tetrahedron using 12-DOP test
+            if (childTet.intersects12DOP(entityBounds.getMinX(), entityBounds.getMinY(), entityBounds.getMinZ(),
+                                         entityBounds.getMaxX(), entityBounds.getMaxY(), entityBounds.getMaxZ())) {
                 targetNodes.add(childTet.tmIndex());
             }
         }

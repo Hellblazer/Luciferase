@@ -42,7 +42,9 @@ public class TetrahedralGeometry {
      * @param bounds   The entity bounds (AABB)
      * @param vertices The tetrahedron vertices (must be 4 points)
      * @return true if the AABB intersects the tetrahedron
+     * @deprecated Use {@link Tet#intersects12DOP} instead. This SAT-based method will be removed in a future release.
      */
+    @Deprecated(since = "2026-03", forRemoval = true)
     public static boolean aabbIntersectsTetrahedron(EntityBounds bounds, Point3f[] vertices) {
         if (vertices.length != 4) {
             throw new IllegalArgumentException("Tetrahedron must have exactly 4 vertices");
@@ -844,7 +846,10 @@ public class TetrahedralGeometry {
 
     /**
      * Separating Axis Theorem test for AABB-tetrahedron intersection
+     *
+     * @deprecated Use {@link Tet#intersects12DOP} instead. This SAT-based method will be removed in a future release.
      */
+    @Deprecated(since = "2026-03", forRemoval = true)
     private static boolean satTestAABBTetrahedron(EntityBounds bounds, Point3f[] vertices) {
         // For a complete SAT test, we would need to check:
         // 1. The 3 AABB face normals (axis-aligned)

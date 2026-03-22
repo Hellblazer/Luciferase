@@ -815,7 +815,7 @@ public class Tet implements Spatial.aabt {
      */
     @Override
     public boolean intersects(float oX, float oY, float oZ, float eX, float eY, float eZ) {
-        return tetrahedronIntersectsVolumeBounds(this, new VolumeBounds(oX, oY, oZ, eX, eY, eZ));
+        return intersects12DOP(oX, oY, oZ, eX, eY, eZ);
     }
 
     /**
@@ -846,7 +846,8 @@ public class Tet implements Spatial.aabt {
 
         return spatialRangeQueryKeys(bounds, true).filter(key -> {
             var tet = Tet.tetrahedron(key);
-            return tetrahedronIntersectsVolume(tet, volume);
+            return tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
+                                       bounds.maxZ());
         });
     }
 
@@ -1685,7 +1686,8 @@ public class Tet implements Spatial.aabt {
 
         return spatialRangeQueryKeys(bounds, true).filter(key -> {
             var tet = Tet.tetrahedron(key);
-            return tetrahedronIntersectsVolume(tet, volume);
+            return tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
+                                       bounds.maxZ());
         }).findFirst().orElse(null);
     }
 
@@ -2378,7 +2380,8 @@ public class Tet implements Spatial.aabt {
 
             if (includeIntersecting) {
                 // Check if tetrahedron intersects the volume bounds
-                if (tetrahedronIntersectsVolumeBounds(tet, bounds)) {
+                if (tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
+                                        bounds.maxZ())) {
                     return true;
                 }
             } else {

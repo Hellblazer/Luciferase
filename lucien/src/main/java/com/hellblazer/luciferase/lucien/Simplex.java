@@ -54,12 +54,6 @@ public record Simplex<Data>(TetreeKey<? extends TetreeKey<?>> index, Data cell) 
     public boolean intersects(float originX, float originY, float originZ, float extentX, float extentY,
                               float extentZ) {
         var tet = Tet.tetrahedron(index);
-        return Tet.tetrahedronIntersectsVolumeBounds(tet,
-                                                     new com.hellblazer.luciferase.lucien.VolumeBounds(originX,
-                                                                                                       originY,
-                                                                                                       originZ,
-                                                                                                       extentX,
-                                                                                                       extentY,
-                                                                                                       extentZ));
+        return tet.intersects12DOP(originX, originY, originZ, extentX, extentY, extentZ);
     }
 }

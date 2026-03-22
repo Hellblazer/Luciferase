@@ -18,11 +18,9 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
-import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.visitor.AbstractTreeVisitor;
 
-import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 
 import java.util.ArrayList;
@@ -212,21 +210,8 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
      */
     private boolean nodeIntersectsBounds(TetreeKey<? extends TetreeKey<?>> nodeKey, VolumeBounds bounds) {
         var tet = Tet.tetrahedron(nodeKey);
-        
-        // Get the actual tetrahedron vertices
-        Point3i[] intVertices = tet.coordinates();
-        Point3f[] vertices = new Point3f[4];
-        for (int i = 0; i < 4; i++) {
-            vertices[i] = new Point3f(intVertices[i].x, intVertices[i].y, intVertices[i].z);
-        }
-        
-        // Create EntityBounds from VolumeBounds for the intersection test
-        Point3f minPoint = new Point3f(bounds.minX(), bounds.minY(), bounds.minZ());
-        Point3f maxPoint = new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ());
-        EntityBounds entityBounds = new EntityBounds(minPoint, maxPoint);
-        
-        // Use the proper tetrahedral geometry intersection test
-        return TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, vertices);
+        return tet.intersects12DOP(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
+                                   bounds.maxZ());
     }
     
     /**
