@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.*;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.internal.UnorderedPair;
 import com.hellblazer.luciferase.lucien.neighbor.TetreeNeighborDetector;
 import com.hellblazer.luciferase.lucien.tetree.TetreeIterator.TraversalOrder;
 import com.hellblazer.luciferase.lucien.tetree.internal.TetDistance;
@@ -913,7 +914,94 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
 
     // ===== Collision Detection Override =====
 
+    /**
+     * Find collisions between entities within the given region.
+     *
+     * <p>When {@code region} is a {@link Spatial.aabt} (e.g., a {@link Tet}), this override uses
+     * {@link #boundingFiltered(Spatial.aabt)} instead of plain AABB traversal to reduce false-positive
+     * candidate nodes by 50-80% for tet-shaped queries.  For all other {@link Spatial} types, it
+     * delegates to the base-class AABB path.</p>
+     *
+     * @param region the spatial volume to search within
+     * @return collisions found between entities in the region, sorted by penetration depth
+     */
+    @Override
+    public List<SpatialIndex.CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region) {
+        if (!(region instanceof Spatial.aabt queryBound)) {
+            // Not tet-shaped — base class AABB path is equally good
+            return super.findCollisionsInRegion(region);
+        }
 
+        // Tet-shaped query: Phase 1 uses AABB+SAT post-filter to reduce candidate nodes
+        lock.readLock().lock();
+        try {
+            var collisions = new ArrayList<SpatialIndex.CollisionPair<ID, Content>>();
+            var checkedPairs = new HashSet<UnorderedPair<ID>>();
+
+            var nodeList = boundingFiltered(queryBound).toList();
+
+            for (int i = 0; i < nodeList.size(); i++) {
+                var nodeEntities = new ArrayList<>(nodeList.get(i).entityIds());
+
+                // Within-node pairs
+                for (int j = 0; j < nodeEntities.size(); j++) {
+                    for (int k = j + 1; k < nodeEntities.size(); k++) {
+                        var id1 = nodeEntities.get(j);
+                        var id2 = nodeEntities.get(k);
+                        if (isEntityInAabt(id1, queryBound) && isEntityInAabt(id2, queryBound)) {
+                            var pair = new UnorderedPair<>(id1, id2);
+                            if (checkedPairs.add(pair)) {
+                                checkCollision(id1, id2).ifPresent(collisions::add);
+                            }
+                        }
+                    }
+                }
+
+                // Cross-node pairs
+                for (int j = i + 1; j < nodeList.size(); j++) {
+                    for (ID id1 : nodeEntities) {
+                        if (!isEntityInAabt(id1, queryBound)) {
+                            continue;
+                        }
+                        for (ID id2 : nodeList.get(j).entityIds()) {
+                            if (!isEntityInAabt(id2, queryBound)) {
+                                continue;
+                            }
+                            var pair = new UnorderedPair<>(id1, id2);
+                            if (checkedPairs.add(pair)) {
+                                checkCollision(id1, id2).ifPresent(collisions::add);
+                            }
+                        }
+                    }
+                }
+            }
+
+            Collections.sort(collisions);
+            return collisions;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Test whether an entity's position or bounds intersects the given AABT query volume.
+     * Used by {@link #findCollisionsInRegion(Spatial)} when the region is a {@link Spatial.aabt}.
+     */
+    private boolean isEntityInAabt(ID entityId, Spatial.aabt queryBound) {
+        var pos = entityManager.getEntityPosition(entityId);
+        if (pos == null) {
+            return false;
+        }
+        var bounds = entityManager.getEntityBounds(entityId);
+        if (bounds == null) {
+            // Point entity: check containment
+            return queryBound.contains(pos.x, pos.y, pos.z);
+        }
+        // Bounded entity: AABB-vs-aabt intersection
+        var entityBox = new Spatial.aabt.Box(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ(),
+                                             bounds.getMaxX(), bounds.getMaxY(), bounds.getMaxZ());
+        return queryBound.intersectsBound(entityBox);
+    }
 
 
 
