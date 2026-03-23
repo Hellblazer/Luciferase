@@ -70,6 +70,6 @@
 
 ## Open Items
 
-1. **BeySubdivision vertex ordering**: `subdivisionCoordinates()` vs `coordinates()` ordering mismatch causes 12-DOP false negatives for some Bey parent-child pairs. Needs investigation and possible fix.
+1. **BeySubdivision vertex ordering**: RESOLVED — `BeySubdivision.getBeyChild()` and `subdivide()` now use `coordinates()` instead of `subdivisionCoordinates()`. The `CHILD_TYPES` table (interior children 4-7) updated to match S0-S5 convention. No 12-DOP false negatives for Bey parent-child pairs.
 
-2. **AABT pipeline optimization**: Tree traversal overhead dominates wall-clock despite fast primitives. Need to optimize the visiting pattern / early termination strategy.
+2. **AABT pipeline optimization**: PARTIALLY RESOLVED — allocation-free `intersects12DOPStatic` and table-based tmIndex (zero Tet allocations per traversal step) deployed. Remaining bottleneck is tmIndex O(level) parent-chain walk; this is a fundamental constraint of globally-unique TetreeKey encoding and cannot be eliminated without a structural change to the SFC.

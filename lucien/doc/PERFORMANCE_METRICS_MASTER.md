@@ -184,6 +184,25 @@ if (maxDistance >= Constants.MAX_COORD) {
 
 ---
 
+## 12-DOP Exact Containment Performance (RDR-002, March 2026)
+
+Replacement of SAT/determinant-based methods with permutohedron-based 12-DOP.
+
+| Operation | Old Method | Old Cost | 12-DOP | 12-DOP Cost | Speedup |
+|-----------|-----------|----------|--------|-------------|---------|
+| Point containment | containsUltraFast (determinant) | ~4.1 ns (84 ops) | contains12DOP | ~4.2 ns (11 ops) | ~1x (JIT-equivalent) |
+| AABB-vs-tet intersection | SAT (incomplete, 1.2% FP) | ~100+ ops | intersects12DOP | ~4.7 ns (18 ops) | Exact, 0% FP |
+| Tet-vs-tet intersection | TetrahedralGeometry SAT | ~135 ns | intersectsTet12DOP | ~4.3 ns (18 ops) | **27.5x** |
+
+### AABT Traversal (aabtSpatialRangeQueryKeys)
+- Candidate reduction: 50-80% for tet-shaped queries
+- Wall-clock vs AABB: 0.10-0.20x (small spans), bottleneck is tmIndex O(level)
+- Optimizations applied: intersects12DOPStatic (allocation-free), table-based tmIndex (zero Tet allocations)
+
+See: lucien/doc/AABT_12DOP_EXACT_CONTAINMENT.md, lucien/doc/12DOP_SLAB_RANGES.md
+
+---
+
 ## Current Performance Metrics (August 3, 2025)
 
 These are the authoritative performance numbers based on OctreeVsTetreeVsPrismBenchmark run on Mac OS X aarch64, Java HotSpot(TM) 64-Bit Server VM 24, 16 processors, 512 MB memory.

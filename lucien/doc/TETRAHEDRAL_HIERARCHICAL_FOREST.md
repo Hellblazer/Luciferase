@@ -73,7 +73,7 @@ public sealed interface TreeBounds
 
 **TetrahedralBounds**:
 - Wraps Tet (tetrahedral geometry)
-- containsPoint() uses `Tet.containsUltraFast()` for exact containment
+- containsPoint() uses `Tet.contains12DOP()` for exact containment (11 ops via 12-DOP slab test; replaces the old 84-op determinant method — see `AABT_12DOP_EXACT_CONTAINMENT.md`)
 - toAABB() computes bounding box from tet vertices (for ghost layer broad-phase)
 - centroid() returns (v0+v1+v2+v3)/4 (**NOT** cube center formula)
 

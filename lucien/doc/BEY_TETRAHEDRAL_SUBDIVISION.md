@@ -286,10 +286,16 @@ Tet child = BeySubdivision.getBeyChild(parent, beyIndex);
 
 ## Technical Notes
 
+### Coordinate System Alignment (March 2026)
+
+`BeySubdivision.getBeyChild()` and `subdivide()` previously used `subdivisionCoordinates()` (t8code ei/ej convention) which differs from `coordinates()` (S0-S5 Kuhn vertex geometry) for 5 of 6 types. This caused `contains12DOP()` to produce false negatives for some Bey parent-child pairs.
+
+**Fix**: Both methods now use `coordinates()`. The `CHILD_TYPES` table (interior children 4-7) was also updated to match the S0-S5 convention. The canonical source of truth is `TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE`.
+
 ### Critical Implementation Details
 
 1. **Never use cube coordinates** for tetrahedral operations
-2. **Always use actual tetrahedron vertices** from `subdivisionCoordinates()`
+2. **Always use actual tetrahedron vertices** from `coordinates()`
 3. **Edge midpoints are geometric**, not grid-based
 4. **All children must be inside parent** - this is validated
 5. **The octahedron splitting** is key to Bey refinement

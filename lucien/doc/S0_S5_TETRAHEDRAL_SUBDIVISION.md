@@ -114,10 +114,31 @@ private static byte classifyPointInCube(float x, float y, float z) {
 The S0-S5 subdivision is implemented in:
 
 - `Tet.coordinates()`: Returns actual S0-S5 vertices based on type
-- `TetrahedralGeometry.containsUltraFast()`: Handles containment with proper face orientation
+- `Tet.contains12DOP()`: Primary containment method — 11 ops via 12-DOP slab test (replaced the old determinant-based `containsUltraFast()`)
 - `Tetree.locate()`: Uses deterministic classification for point location
+
+## 12-DOP Containment and the S0-S5 Ordering Test
+
+The S0-S5 type ordering test **is** the 12-DOP containment test for Kuhn tetrahedra. Each type is characterised by a
+strict coordinate ordering that corresponds directly to a pair of 12-DOP slab half-spaces:
+
+| Type | Ordering condition |
+|------|--------------------|
+| S0   | x ≥ y ≥ z          |
+| S1   | y ≥ x ≥ z          |
+| S2   | z ≥ x ≥ y          |
+| S3   | z ≥ y ≥ x          |
+| S4   | x ≥ z ≥ y          |
+| S5   | y ≥ z ≥ x          |
+
+`Tet.contains12DOP()` tests these ordering inequalities directly — 11 scalar comparisons total — replacing the
+previous determinant-based `containsUltraFast()` which required up to 84 floating-point operations. The result is
+exact (not approximate) because Kuhn tetrahedra have axis-aligned slab boundaries. See
+`AABT_12DOP_EXACT_CONTAINMENT.md` and `12DOP_SLAB_RANGES.md` for the full derivation.
 
 ## Historical Note
 
 Prior to July 2025, the implementation used an ei/ej algorithm that resulted in only 35% containment rate. The S0-S5 fix
 achieved 100% containment and proper cube tiling, resolving long-standing visualization and spatial query issues.
+`containsUltraFast()` (determinant method, ~84 ops) was subsequently replaced by `contains12DOP()` (11 ops) in the
+RDR-002 revision (March 2026).

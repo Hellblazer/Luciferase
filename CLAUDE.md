@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-**Last Updated**: 2026-01-13
+**Last Updated**: 2026-03-22
 **Status**: Current
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -115,6 +115,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 - **Thread-Safe**: ConcurrentSkipListMap for O(log n) operations with concurrent access
 - **Multi-Entity Support**: Multiple entities per spatial location with CopyOnWriteArrayList
 - **Feature Complete**: Ray intersection, collision detection, frustum culling, spatial range queries, k-NN search
+- **12-DOP Exact Containment**: `contains12DOP` (11 ops), `intersects12DOP` (18 ops), `intersectsTet12DOP` (18 ops, 27.5x faster than old SAT); see `lucien/doc/AABT_12DOP_EXACT_CONTAINMENT.md` and `lucien/doc/12DOP_SLAB_RANGES.md`
 
 ### Critical Context Files
 
@@ -199,7 +200,8 @@ Historical reference:
 
 - **S0-S5 Pattern**: 6 tetrahedra perfectly tile a cube using specific vertex combinations
 - **Coordinate System**: All types share V0 (origin) and V7 (opposite corner)
-- **Containment**: Uses `containsUltraFast()` with special handling for mirrored tetrahedra (types 1,3,4)
+- **Containment**: Uses `contains12DOP()` — 11-op coordinate ordering test based on Kuhn simplex vertex geometry; no mirroring needed, each type is a simple 2-comparison ordering test
+- **Reference**: `lucien/doc/AABT_12DOP_EXACT_CONTAINMENT.md`
 - **Location**: Tet.java coordinates() method
 - **Validation**: TetS0S5SubdivisionTest validates implementation
 - **Result**: 100% containment rate with perfect cube tiling (no gaps/overlaps)

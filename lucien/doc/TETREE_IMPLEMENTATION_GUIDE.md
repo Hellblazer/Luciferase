@@ -82,7 +82,19 @@ The implementation uses several lookup tables from t8code:
 - **TYPE_TO_TYPE_OF_CHILD**: Child type based on parent type and Bey ID
 - **PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID**: Many-to-one mappings (this is expected)
 
-### 4. Coordinate System Constraints
+### 4. Point Containment — 12-DOP Method
+
+`Tet.contains12DOP()` is the primary containment and intersection method for all Kuhn tetrahedra. It replaces the
+former determinant-based `containsUltraFast()`:
+
+- **Cost**: 11 scalar comparisons (vs ~84 floating-point ops previously)
+- **Exactness**: Exact — not approximate — because Kuhn tet boundaries are axis-aligned coordinate-ordering slabs
+- **Principle**: Each S0-S5 type is defined by a coordinate ordering (e.g. S0: x≥y≥z); the 12-DOP test simply
+  checks those inequalities, corresponding directly to 12-DOP slab half-spaces
+
+For detailed derivation and slab ranges see `AABT_12DOP_EXACT_CONTAINMENT.md` and `12DOP_SLAB_RANGES.md`.
+
+### 5. Coordinate System Constraints
 
 ```java
 
@@ -99,7 +111,7 @@ private void validatePositiveCoordinates(Point3f point) {
 
 ```
 
-### 5. Tetrahedral vs Cubic Geometry
+### 6. Tetrahedral vs Cubic Geometry
 
 ```java
 
@@ -154,7 +166,7 @@ Point3f centroid = new Point3f(
 2. ✅ Parent-child relationships are consistent
 3. ✅ SFC indices round-trip correctly
 4. ✅ Face neighbors are computed correctly
-5. ✅ Tetrahedral containment tests work
+5. ✅ Tetrahedral containment tests work (`contains12DOP()` — 11-op 12-DOP slab method)
 
 ## Future Considerations
 
