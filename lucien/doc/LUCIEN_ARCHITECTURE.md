@@ -1,6 +1,6 @@
 # Lucien Module Architecture
 
-**Last Updated**: 2026-01-20
+**Last Updated**: 2026-03-22
 **Status**: Current
 
 ## Overview
@@ -13,7 +13,7 @@ The Luciferase codebase underwent architectural simplification in 2025, focusing
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 195 Java files organized across 18 packages, providing a comprehensive spatial indexing system
+The module consists of 263 Java files organized across 19 packages, providing a comprehensive spatial indexing system
 with advanced features including collision detection, tree balancing, visitor patterns, forest management, and distributed
 ghost support. All core features are complete, including the S0-S5 tetrahedral subdivision, anisotropic prism subdivision,
 and full ghost layer implementation with gRPC communication.
@@ -73,7 +73,7 @@ com.hellblazer.luciferase.lucien/
 │   ├── Collision: PrismCollisionDetector
 │   ├── Intersection: PrismRayIntersector
 │   └── Navigation: PrismNeighborFinder
-├── balancing/ (3 classes)
+├── balancing/ (64 classes)
 │   ├── TreeBalancer - Main balancing interface
 │   ├── TreeBalancingStrategy - Strategy pattern
 │   └── DefaultBalancingStrategy - Default implementation
@@ -87,7 +87,7 @@ com.hellblazer.luciferase.lucien/
 │   ├── AbstractTreeVisitor - Base implementation
 │   ├── Concrete: EntityCollectorVisitor, NodeCountVisitor
 │   └── Support: TraversalContext, TraversalStrategy
-├── forest/ (26 classes total: 15 core + 11 ghost)
+├── forest/ (38 classes total)
 │   ├── Core: Forest, TreeNode, TreeMetadata, TreeLocation, ForestConfig
 │   ├── Management: DynamicForestManager, ForestEntityManager, ForestLoadBalancer, AdaptiveForestEntityManager
 │   ├── Specialized: GridForest, AdaptiveForest, HierarchicalForest
@@ -343,6 +343,15 @@ This replaced the legacy ei/ej algorithm and provides:
 - Correct geometric containment for all entities
 - Standard subdivision matching academic literature
 
+### 12-DOP Exact Containment (RDR-002, 2026)
+
+S0-S5 Kuhn tetrahedra are chambers of the A₂ hyperplane arrangement. The 6 axes {x, y, z, x-y, x-z, y-z} form a
+12-DOP providing mathematically exact containment:
+
+- `contains12DOP(x, y, z)` — 11 ops point containment (replaces determinant-based method, 84 ops)
+- `intersects12DOP(minX, minY, minZ, maxX, maxY, maxZ)` — 18 ops AABB intersection
+- `intersectsTet12DOP(other)` — 18 ops tet-tet intersection
+
 ### Key Methods
 
 - `calculateSpatialIndex()` - Uses Tet.locate() for tetrahedral index
@@ -350,6 +359,7 @@ This replaced the legacy ei/ej algorithm and provides:
 - `addNeighboringNodes()` - Tetrahedral neighbor traversal
 - `validatePositiveCoordinates()` - Enforces positive coordinate constraint
 - `Tet.coordinates()` - Returns actual S0-S5 vertices (not AABB approximation)
+- `Tet.contains12DOP()` - Primary containment method via 12-DOP slab test
 
 ## Prism Implementation
 

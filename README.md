@@ -1,6 +1,6 @@
 # Luciferase
 
-**Last Updated**: 2026-01-20
+**Last Updated**: 2026-03-22
 **Status**: Post-Stabilization: Feature Development Phase | Health 8/10 ✅ | 2,365 Tests All Passing ✅
 
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
@@ -61,8 +61,7 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 | [render](render/README.md) | ESVO implementation with LWJGL rendering, FFM integration |
 | [sentry](sentry/README.md) | Delaunay tetrahedralization for kinetic point tracking |
 | [portal](portal/README.md) | JavaFX 3D visualization and mesh handling |
-| [von](von/README.md) | Voronoi-based area-of-interest perception framework |
-| [simulation](simulation/README.md) | Distributed simulation with deterministic testing, entity migration, and simulation bubbles |
+| [simulation](simulation/README.md) | Distributed simulation with deterministic testing, entity migration, and simulation bubbles (includes von/VON perception package) |
 | [grpc](grpc/README.md) | Protocol buffer definitions for ghost layer synchronization |
 
 ### External Dependencies
@@ -254,7 +253,7 @@ Comprehensive cleanup and accuracy audit of entire repository:
 
 ### Architecture & Design
 - [CLAUDE.md](CLAUDE.md) - Development guide and architectural decisions
-- [Lucien Architecture](lucien/doc/LUCIEN_ARCHITECTURE.md) - Spatial indexing details (195 classes, 18 packages)
+- [Lucien Architecture](lucien/doc/LUCIEN_ARCHITECTURE.md) - Spatial indexing details (263 Java files, 19 packages)
 - [Lucien Architecture Summary](lucien/doc/ARCHITECTURE_SUMMARY.md) - High-level overview with inheritance hierarchy
 - [H3 Determinism Epic](simulation/doc/H3_DETERMINISM_EPIC.md) - Deterministic testing architecture and implementation
 
@@ -277,7 +276,7 @@ Comprehensive cleanup and accuracy audit of entire repository:
 ### Documentation Consolidation (2026-01-20) ✅
 
 **Comprehensive repository cleanup with 100% accuracy verification**
-- Audited and corrected all architecture documentation (195 Java files across 18 packages)
+- Audited and corrected all architecture documentation (263 Java files across 19 packages)
 - Fixed critical accuracy issues: Ghost overhead 0.01x-0.25x, TestClock APIs, performance variance context
 - Verified 8 major performance claims through 18.1M test queries
 - Created complete test framework guide with specific thresholds for all performance tests

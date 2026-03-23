@@ -1,6 +1,6 @@
 # Luciferase Architecture Overview
 
-**Last Updated**: 2026-01-12
+**Last Updated**: 2026-03-22
 **Status**: Current
 
 This document provides a high-level architecture overview of the Luciferase spatial data structure and visualization library.
@@ -52,7 +52,6 @@ graph TD
     subgraph "Core Libraries"
         Lucien[lucien<br/>Spatial Indexing]
         Sentry[sentry<br/>Tetrahedralization]
-        Von[von<br/>Voronoi Perception]
     end
 
     subgraph "Shared Utilities"
@@ -66,9 +65,7 @@ graph TD
     Render --> Lucien
     Render --> Common
     Simulation --> Lucien
-    Simulation --> Von
     Simulation --> GRPC
-    Von --> Lucien
     Lucien --> Common
     Lucien --> Dyada
     Sentry --> Common
@@ -79,11 +76,10 @@ graph TD
 | Module | Dependencies | Purpose |
 |--------|-------------|---------|
 | **lucien** | common, dyada-java | Spatial indexing, collision detection, ghost layer |
-| **simulation** | lucien, grpc, von | Distributed animation, entity migration, bubbles |
+| **simulation** | lucien, grpc | Distributed animation, entity migration, bubbles (includes von/VON perception package) |
 | **render** | lucien, common | ESVO rendering, GPU ray tracing |
 | **portal** | lucien, common | JavaFX visualization, mesh generation |
 | **sentry** | common | Delaunay tetrahedralization, kinetic tracking |
-| **von** | lucien | Voronoi-based area-of-interest perception |
 | **grpc** | - | Protocol buffer definitions for serialization |
 | **common** | - | Optimized collections, geometry utilities |
 
@@ -139,7 +135,7 @@ AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>
 
 ### Lucien Module Architecture
 
-**190+ Java files, 18 packages**
+**263 Java files, 19 packages**
 
 #### Core Spatial Index Types
 
@@ -163,7 +159,7 @@ AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>
 - Material properties and response
 - BVH (Bounding Volume Hierarchy) optimization
 
-**Forest Management** (27 classes):
+**Forest Management** (38 classes):
 - Multi-tree coordination
 - Ghost layer synchronization
 - Distributed spatial partitioning
@@ -391,6 +387,7 @@ public class MyService {
 - Generic `AbstractSpatialIndex<Key, ID, Content>` design for code reuse
 - ConcurrentSkipListMap over dual HashMap/TreeSet (54-61% memory savings)
 - S0-S5 tetrahedral subdivision (100% cube tiling, no gaps/overlaps)
+- 12-DOP exact containment: `contains12DOP()` (11 ops), `intersects12DOP()` / `intersectsTet12DOP()` (18 ops) replace determinant-based methods
 
 **Distributed Simulation**:
 - Clock interface for deterministic testing (H3 Epic)
