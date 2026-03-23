@@ -1,5 +1,7 @@
 # Luciferase
 
+**Last Updated**: 2026-03-22
+
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
 
 3D spatial indexing, collision detection, and visualization for Java 25.
