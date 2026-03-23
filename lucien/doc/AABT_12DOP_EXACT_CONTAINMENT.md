@@ -140,17 +140,12 @@ This result supersedes the SAT-based approach from RDR-001. The 12-DOP achieves 
 
 ### what is the 12-DOP we refer to formally known as?
 
-    The 12-DOP (12 Discrete Oriented Polytope) using axes {x, y, z, x-y, x-z, y-z} corresponds to several formal mathematical concepts:
+The 12-DOP (12 Discrete Oriented Polytope) using axes {x, y, z, x-y, x-z, y-z} corresponds to several formal mathematical concepts:
 
-    1. k-DOP / Discrete Oriented Polytope — the computational geometry term. A 12-DOP is the intersection of 6 slabs (12 half-spaces) along 6 chosen axis directions. This is the standard
-    name in collision detection literature.
-    2. Permutohedron (or permutahedron) — the convex hull of all permutations of a vector. The S0-S5 regions are the chambers of the permutohedron's normal fan (also called the braid
-    arrangement). The permutohedron of order 3 in 3D is exactly what we're exploiting.
-    3. Type A₂ hyperplane arrangement (or braid arrangement) — the arrangement of hyperplanes x=y, x=z, y=z in R³. The 6 connected components (chambers) of the complement of this arrangement
-     are exactly the S0-S5 regions. This is the Coxeter arrangement of the symmetric group S₃.
-    4. Weyl chambers of S₃ — in Lie theory, the 6 regions are the Weyl chambers of the type A₂ root system, with roots {x-y, x-z, y-z}.
-    5. Freudenthal / Kuhn simplicial decomposition — in combinatorial topology, this is the standard decomposition of a cube into simplices by sorting coordinates, attributed independently
-    to Freudenthal (1942) and Kuhn (1960). Each simplex corresponds to a permutation.
+1. **k-DOP / Discrete Oriented Polytope** — the computational geometry term. A 12-DOP is the intersection of 6 slabs (12 half-spaces) along 6 chosen axis directions. This is the standard name in collision detection literature.
+2. **Permutohedron (or permutahedron)** — the convex hull of all permutations of a vector. The S0-S5 regions are the chambers of the permutohedron's normal fan (also called the braid arrangement). The permutohedron of order 3 in 3D is exactly what we're exploiting.
+3. **Type A₂ hyperplane arrangement (or braid arrangement)** — the arrangement of hyperplanes x=y, x=z, y=z in R³. The 6 connected components (chambers) of the complement of this arrangement are exactly the S0-S5 regions. This is the Coxeter arrangement of the symmetric group S₃.
+4. **Weyl chambers of S₃** — in Lie theory, the 6 regions are the Weyl chambers of the type A₂ root system, with roots {x-y, x-z, y-z}.
+5. **Freudenthal / Kuhn simplicial decomposition** — in combinatorial topology, this is the standard decomposition of a cube into simplices by sorting coordinates, attributed independently to Freudenthal (1942) and Kuhn (1960). Each simplex corresponds to a permutation.
 
-    The most precise formal name for what we're doing is: containment testing via the Kuhn simplicial decomposition using the type-A₂ braid arrangement as a 12-DOP. In practice, "12-DOP with
-     permutohedron axes" or just "ordering-based containment for Kuhn simplices" would be understood by the relevant communities (computational geometry, mesh generation, spatial indexing)
+The most precise formal name for what we're doing is: containment testing via the Kuhn simplicial decomposition using the type-A₂ braid arrangement as a 12-DOP. In practice, "12-DOP with permutohedron axes" or just "ordering-based containment for Kuhn simplices" would be understood by the relevant communities (computational geometry, mesh generation, spatial indexing).
