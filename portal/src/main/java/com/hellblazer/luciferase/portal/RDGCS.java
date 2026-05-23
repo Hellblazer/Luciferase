@@ -30,6 +30,23 @@ abstract public class RDGCS extends Grid {
              new Pair<Integer, Integer>(-5, 5), 1d);
     }
 
+    /**
+     * Constructs the grid with an explicit origin and per-axis intervals.
+     * <p>
+     * <b>Axis initialisation, origin semantics</b> (Luciferase-3xa): the
+     * {@code xAxis/yAxis/zAxis} fields below are populated by transforming the
+     * Cartesian unit axes through {@link #toCartesian(Point3D)}, which only
+     * yields the intended RDG-basis-in-Cartesian-frame vectors when
+     * {@code origin = (0, 0, 0)}. For non-zero {@code origin} the
+     * {@code .subtract(origin)} mixes Cartesian (X_AXIS) and RDG (origin)
+     * coordinate systems; callers passing a non-zero origin should not rely on
+     * the {@code xAxis/yAxis/zAxis} fields being meaningful. The grid
+     * construction primitives that use those fields ({@link #construct})
+     * remain correct for the zero-origin default and for relative-axis
+     * geometry; fixing the non-zero-origin path requires deciding whether
+     * {@code origin} is in Cartesian or RDG coordinates and is deferred as
+     * out-of-scope for the {@code portal-rdfcc-quality} cleanup batch.
+     */
     public RDGCS(Point3D origin, Pair<Integer, Integer> xExtent, double intervalX, Pair<Integer, Integer> yExtent,
                  double intervalY, Pair<Integer, Integer> zExtent, double intervalZ) {
         super(intervalX, intervalY, intervalZ, origin, xExtent, yExtent, zExtent);

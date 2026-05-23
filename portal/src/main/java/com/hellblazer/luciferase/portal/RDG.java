@@ -52,14 +52,30 @@ public class RDG extends RDGCS {
 
     }
 
+    /**
+     * Not implemented for the RDG-coordinates variant. The RDG coordinate system
+     * uses a different basis than {@link Tetrahedral} (which implements these
+     * vector primitives via its own metric tensor); deriving the equivalent
+     * cross/dot/rotation in the RDG basis is non-trivial and has no production
+     * callers today. Throws {@link UnsupportedOperationException} rather than
+     * the previous silent {@code null}/{@code 0} returns that could corrupt
+     * downstream math (Luciferase-etb).
+     *
+     * @throws UnsupportedOperationException always
+     */
     @Override
     public Point3f cross(Tuple3f u, Tuple3f v) {
-        return null;
+        throw new UnsupportedOperationException(
+            "cross is not implemented for the RDG-coordinates variant; use Tetrahedral instead");
     }
 
+    /**
+     * @throws UnsupportedOperationException always — see {@link #cross(Tuple3f, Tuple3f)}
+     */
     @Override
     public float dot(Vector3f u, Vector3f v) {
-        return 0;
+        throw new UnsupportedOperationException(
+            "dot is not implemented for the RDG-coordinates variant; use Tetrahedral instead");
     }
 
     @Override
@@ -70,7 +86,7 @@ public class RDG extends RDGCS {
         var neighbors = new Point3i[12];
         neighbors[0] = new Point3i(x + 1, y, z);
         neighbors[1] = new Point3i(x - 1, y, z);
-        neighbors[2] = new Point3i(x, y + 1, 1);
+        neighbors[2] = new Point3i(x, y + 1, z);
         neighbors[3] = new Point3i(x, y - 1, z);
         neighbors[4] = new Point3i(x, y, z + 1);
         neighbors[5] = new Point3i(x, y, z - 1);
@@ -83,9 +99,13 @@ public class RDG extends RDGCS {
         return neighbors;
     }
 
+    /**
+     * @throws UnsupportedOperationException always — see {@link #cross(Tuple3f, Tuple3f)}
+     */
     @Override
     public Vector3f rotateVectorCC(Vector3f vec, Vector3f axis, double theta) {
-        return null;
+        throw new UnsupportedOperationException(
+            "rotateVectorCC is not implemented for the RDG-coordinates variant; use Tetrahedral instead");
     }
 
     /**

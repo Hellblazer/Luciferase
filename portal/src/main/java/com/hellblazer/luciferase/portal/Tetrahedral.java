@@ -94,9 +94,21 @@ public class Tetrahedral extends RDGCS {
         (u.x * (3 * v.y + v.z) - u.y * (v.z + 3 * v.x) - u.z * (v.x - v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2));
     }
 
+    /**
+     * Tetrahedral-basis inner product derived from the metric tensor
+     * {@code G_ii = 1, G_ij = 1/2} (i ≠ j). The previous implementation had
+     * multiple incorrect coefficients ({@code u.y*(v.x+v.x)} instead of
+     * {@code u.y*v.y + (...)/2}, trailing {@code u.z*v.x} instead of
+     * {@code u.z*v.z}) — Luciferase-7jk.
+     *
+     * @param u left vector in Tetrahedral basis
+     * @param v right vector in Tetrahedral basis
+     * @return {@code Σ_ij G_ij · u_i · v_j}
+     */
     @Override
     public float dot(Vector3f u, Vector3f v) {
-        return (u.x * (v.x + v.y) + u.y * (v.x + v.x) + u.z * (v.y + v.x)) / 2 + u.x * v.x + u.y * v.y + u.z * v.x;
+        return u.x * v.x + u.y * v.y + u.z * v.z
+             + (u.x * v.y + u.y * v.x + u.x * v.z + u.z * v.x + u.y * v.z + u.z * v.y) / 2f;
     }
 
     @Override
@@ -155,23 +167,40 @@ public class Tetrahedral extends RDGCS {
 
     @Override
     public Point3i toRDG(Tuple3f cartesian) {
-        return new Point3i((int) ((-cartesian.x + cartesian.y + cartesian.z) * MULTIPLICATIVE_ROOT_2),
-                           (int) ((cartesian.x - cartesian.y + cartesian.z) * MULTIPLICATIVE_ROOT_2),
-                           (int) ((cartesian.x + cartesian.y - cartesian.z) * MULTIPLICATIVE_ROOT_2));
+        return new Point3i((int) ((-cartesian.x + cartesian.y + cartesian.z) * DIVIDE_ROOT_2),
+                           (int) ((cartesian.x - cartesian.y + cartesian.z) * DIVIDE_ROOT_2),
+                           (int) ((cartesian.x + cartesian.y - cartesian.z) * DIVIDE_ROOT_2));
     }
 
+    /**
+     * Return the 6 FCC second-shell vertex-connected neighbors of {@code cell}.
+     * <p>
+     * In Tetrahedral coordinates these are the 6 offsets {@code (±1, ±1, ∓1)}
+     * with mixed signs whose Cartesian images are the 6 axis-aligned points at
+     * distance {@code sqrt(2)} from origin (the FCC second shell). The
+     * previous implementation returned a mix of face-neighbor (distance 1) and
+     * third-shell (distance sqrt(11)) offsets — Luciferase-xnf.
+     *
+     * @param cell the cell whose vertex-connected neighbors to return
+     * @return 6 distinct offsets all at Cartesian distance {@code sqrt(2)} from
+     *         {@code cell}
+     */
     @Override
     public Point3i[] vertexConnectedNeighbors(Point3i cell) {
         var x = cell.x;
         var y = cell.y;
         var z = cell.z;
+        // Cartesian images via toCartesian((a,b,c)) = ((b+c), (a+c), (a+b)) / √2:
+        // (+1,+1,-1) → ( 0,  0,  √2)    (-1,-1,+1) → ( 0,  0, -√2)
+        // (+1,-1,+1) → ( 0,  √2, 0)     (-1,+1,-1) → ( 0, -√2, 0)
+        // (-1,+1,+1) → ( √2, 0,  0)     (+1,-1,-1) → (-√2, 0,  0)
         var neighbors = new Point3i[6];
-        neighbors[0] = new Point3i(x + 1, y + 1, z);
-        neighbors[1] = new Point3i(x + 1, y - 1, z);
-        neighbors[2] = new Point3i(x - 1, y + 1, z);
-        neighbors[3] = new Point3i(x - 1, y - 1, z);
-        neighbors[4] = new Point3i(x, y - 1, z + 1);
-        neighbors[5] = new Point3i(x, y + 1, z - 1);
+        neighbors[0] = new Point3i(x + 1, y + 1, z - 1);
+        neighbors[1] = new Point3i(x - 1, y - 1, z + 1);
+        neighbors[2] = new Point3i(x + 1, y - 1, z + 1);
+        neighbors[3] = new Point3i(x - 1, y + 1, z - 1);
+        neighbors[4] = new Point3i(x - 1, y + 1, z + 1);
+        neighbors[5] = new Point3i(x + 1, y - 1, z - 1);
         return neighbors;
     }
 }

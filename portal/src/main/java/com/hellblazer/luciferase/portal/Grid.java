@@ -27,7 +27,15 @@ public abstract class Grid {
     protected static final Point3D                X_AXIS                = new Point3D(1, 0, 0);
     protected static final Point3D                Y_AXIS                = new Point3D(0, 1, 0);
     protected static final Point3D                Z_AXIS                = new Point3D(0, 0, 1);
-    protected static final float                  MULTIPLICATIVE_ROOT_2 = (float) pow(2, -0.5);
+    /**
+     * 1 / sqrt(2) ≈ 0.7071. Used to convert between Cartesian and Tetrahedral
+     * coordinates: a Tetrahedral basis vector (1,0,0) maps to Cartesian
+     * (0, 1/√2, 1/√2), so multiplying by this constant is the per-component
+     * scale of the toCartesian / toRDG transforms. The historical companion
+     * constant {@code MULTIPLICATIVE_ROOT_2} (also 1/√2) was removed in
+     * Luciferase-yyb because its name implied sqrt(2) ≈ 1.4142 and previously
+     * misled an audit agent into a spurious "factor-of-2 round-trip" conclusion.
+     */
     protected static final float                  DIVIDE_ROOT_2         = (float) (1 / sqrt(2));
     protected final        double                 intervalX;
     protected final        double                 intervalY;
