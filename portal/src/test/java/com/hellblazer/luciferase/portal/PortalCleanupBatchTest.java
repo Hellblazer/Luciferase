@@ -178,9 +178,8 @@ public class PortalCleanupBatchTest {
 
     @Test
     void symmetryOrthoIsGroupClosed() {
-        // For each (g, h) ∈ {0..47}^2, the composition (symmetryOrtho(g, symmetryOrtho(h, p))
-        // applied to a representative point must equal symmetryOrtho(k, p) for some k.
-        // Sufficient closure check at a single non-degenerate point.
+        // Generic Cartesian point with all distinct, all non-zero components —
+        // its Oh orbit is the full 48 elements (no axis/plane stabilisers).
         var p = new Point3i(1, 2, 3);
         var orbit = new HashSet<String>();
         for (int g = 0; g < 48; g++) {
@@ -188,31 +187,59 @@ public class PortalCleanupBatchTest {
             orbit.add(q.x + "," + q.y + "," + q.z);
         }
         assertEquals(48, orbit.size(),
-                     "symmetryOrtho applied to a generic point must give 48 distinct images "
+                     "symmetryOrtho applied to a generic Cartesian point must give 48 distinct images "
                      + "(verified Oh group structure)");
     }
 
     @Test
-    void symmetryRdgIsNotYetGroupClosedFinding() {
-        // Audit finding (Luciferase-f2z): the RDG-coord symmetry() table has
-        // duplicate or otherwise non-distinct entries — only 24 distinct images
-        // emerge for a generic point, not the 48 expected from a proper Oh
-        // group. Fixing requires deriving each table entry from the verified
-        // symmetryOrtho() via toRDG/toCartesian; tracked as a follow-up.
+    void symmetryRdgIsGroupClosedOnGenericPoint() {
+        // CHOICE OF TEST POINT (Luciferase-f2z investigation): use an RDG point
+        // whose Cartesian image has all distinct, all-non-zero components. RDG
+        // (1, 3, 3) maps to Cartesian (1+3-3, -1+3, 3) = (1, 2, 3), which has
+        // the full 48-element Oh orbit. The naïve choice RDG (1, 2, 3) maps to
+        // Cartesian (0, 1, 3) whose 0 component creates a reflection
+        // stabiliser, yielding only 24 orbit elements — that does not test
+        // group closure, it tests stabiliser arithmetic.
         //
-        // This test latches the current (broken) orbit size as a regression
-        // anchor: if a future change happens to make it pass with 48 (true
-        // fix) or breaks it further (e.g. 12), CI catches it.
-        var p = new Point3i(1, 2, 3);
+        // An earlier draft of this test used (1, 2, 3) directly and claimed a
+        // 24-element bug in RDG.symmetry; the root-cause investigation
+        // (Luciferase-yai) showed the table is in fact correct (0 mismatches
+        // vs the table derived from symmetryOrtho through toCartesian/toRDG),
+        // and the 24-vs-48 gap was a test-point artefact.
+        var p = new Point3i(1, 3, 3);
         var orbit = new HashSet<String>();
         for (int g = 0; g < 48; g++) {
             var q = rdg.symmetry(g, p);
             orbit.add(q.x + "," + q.y + "," + q.z);
         }
-        assertEquals(24, orbit.size(),
-                     "RDG.symmetry currently produces 24 distinct images on generic point "
-                     + "(Luciferase-f2z finding — actual fix deferred to follow-up). "
-                     + "If this hits 48, replace this assertion with the proper "
-                     + "48-element closure check.");
+        assertEquals(48, orbit.size(),
+                     "RDG.symmetry applied to a generic-Cartesian-image RDG point must give "
+                     + "48 distinct images (parallel to symmetryOrtho)");
+    }
+
+    @Test
+    void symmetryRdgMatchesSymmetryOrthoViaCoordTransform() {
+        // Cross-system correspondence: for every group element g and every RDG
+        // point p, symmetry(g, p) must equal toRDG(symmetryOrtho(g, toCartesian(p))).
+        // The toCartesian/toRDG transforms preserve integrality only when the
+        // intermediate division by 2 produces integers — every Oh image of an
+        // integer Cartesian point in this lattice satisfies that, so the test
+        // can compare integer-to-integer.
+        var rdgPoints = new Point3i[] {
+            new Point3i(0, 0, 0), new Point3i(1, 3, 3),
+            new Point3i(2, 4, 5), new Point3i(3, 5, 7), new Point3i(5, 7, 11)
+        };
+        for (var p : rdgPoints) {
+            var cart = rdg.toCartesian(p);
+            for (int g = 0; g < 48; g++) {
+                var via = rdg.symmetry(g, p);
+                var roundtrip = rdg.symmetryOrtho(g, new Point3i((int) cart.getX(), (int) cart.getY(),
+                                                                  (int) cart.getZ()));
+                var expected = rdg.toRDG(new javax.vecmath.Point3f(roundtrip.x, roundtrip.y, roundtrip.z));
+                assertEquals(expected, via,
+                             "symmetry(g=" + g + ", " + p + ") via direct table must match "
+                             + "toRDG(symmetryOrtho(g, toCartesian(p)))");
+            }
+        }
     }
 }
