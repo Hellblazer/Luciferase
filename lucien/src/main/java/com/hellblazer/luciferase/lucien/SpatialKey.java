@@ -16,9 +16,6 @@
  */
 package com.hellblazer.luciferase.lucien;
 
-import com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey;
-import com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey;
-
 /**
  * Base interface for all spatial index keys.
  *
@@ -76,38 +73,8 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
     @Override
     String toString();
 
-    /**
-     * Convert this SpatialKey to its protobuf representation.
-     */
-    default com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey toProtoSpatialKey() {
-        var builder = com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey.newBuilder();
-        
-        if (this instanceof com.hellblazer.luciferase.lucien.octree.MortonKey mortonKey) {
-            builder.setMorton(mortonKey.toProto());
-        } else if (this instanceof com.hellblazer.luciferase.lucien.tetree.TetreeKey<?> tetreeKey) {
-            builder.setTetree(TetreeKey.newBuilder()
-                .setLevel(tetreeKey.getLevel())
-                .setLow(tetreeKey.getLowBits())
-                .setHigh(tetreeKey.getHighBits())
-                .build());
-        } else {
-            throw new UnsupportedOperationException("Unknown SpatialKey type: " + this.getClass().getName());
-        }
-        
-        return builder.build();
-    }
-
-    /**
-     * Create a SpatialKey from its protobuf representation.
-     */
-    static SpatialKey<?> fromProtoSpatialKey(com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey proto) {
-        return switch (proto.getKeyTypeCase()) {
-            case MORTON -> com.hellblazer.luciferase.lucien.octree.MortonKey.fromProto(proto.getMorton());
-            case TETREE -> {
-                var t = proto.getTetree();
-                yield com.hellblazer.luciferase.lucien.tetree.TetreeKey.create((byte) t.getLevel(), t.getLow(), t.getHigh());
-            }
-            case KEYTYPE_NOT_SET -> throw new IllegalArgumentException("SpatialKey protobuf has no key type set");
-        };
-    }
+    // toProtoSpatialKey() and fromProtoSpatialKey() were removed under
+    // Luciferase-546. Serialisation now lives in ProtobufConverters and routes
+    // through SpatialKeySerdeRegistry; adding a new SpatialKey implementation
+    // requires registering a SpatialKeySerde, not editing this file.
 }

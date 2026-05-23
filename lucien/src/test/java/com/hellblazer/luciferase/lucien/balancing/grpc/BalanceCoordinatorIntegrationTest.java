@@ -84,9 +84,7 @@ class BalanceCoordinatorIntegrationTest {
 
     @Test
     void testRequestRefinement() {
-        var spatialKey = SpatialKey.newBuilder()
-            .setMorton(MortonKey.newBuilder().setMortonCode(0x12345L).build())
-            .build();
+        var spatialKey = mortonKey(0x12345L);
 
         var request = RefinementRequest.newBuilder()
             .setRequesterRank(1)
@@ -144,12 +142,8 @@ class BalanceCoordinatorIntegrationTest {
     @Test
     void testExchangeViolations() {
         var violation = BalanceViolation.newBuilder()
-            .setLocalKey(SpatialKey.newBuilder()
-                .setMorton(MortonKey.newBuilder().setMortonCode(100L).build())
-                .build())
-            .setGhostKey(SpatialKey.newBuilder()
-                .setMorton(MortonKey.newBuilder().setMortonCode(200L).build())
-                .build())
+            .setLocalKey(mortonKey(100L))
+            .setGhostKey(mortonKey(200L))
             .setLocalLevel(5)
             .setGhostLevel(7)
             .setLevelDifference(2)
@@ -239,5 +233,11 @@ class BalanceCoordinatorIntegrationTest {
                 .setTimestamp(System.currentTimeMillis())
                 .build();
         }
+    }
+
+    /** Build a proto SpatialKey envelope from a long Morton code (Luciferase-546 serde dispatch). */
+    private static SpatialKey mortonKey(long mortonCode) {
+        return com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyToProtobuf(
+            new com.hellblazer.luciferase.lucien.octree.MortonKey(mortonCode, (byte) 0));
     }
 }

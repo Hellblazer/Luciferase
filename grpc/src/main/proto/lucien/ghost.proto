@@ -22,21 +22,30 @@ message EntityBounds {
     Point3f max = 2;
 }
 
-// Base spatial key message
+// Extensible spatial key envelope (Luciferase-546).
+//
+// Replaces the prior oneof<MortonKey | TetreeKey> schema. The key type is now
+// identified by a string discriminator (type_id) and the payload is opaque
+// bytes serialised by the corresponding SpatialKeySerde registered in
+// com.hellblazer.luciferase.lucien.SpatialKeySerdeRegistry. Adding a new
+// SpatialKey implementation does not require editing this .proto.
+//
+// Conventional type_ids: "morton" for octree MortonKey, "tetree" for
+// TetreeKey. The legacy MortonKey / TetreeKey messages below remain as the
+// canonical payload encodings used by the built-in serdes; they are no longer
+// directly embedded in SpatialKey.
 message SpatialKey {
-    oneof key_type {
-        MortonKey morton = 1;
-        TetreeKey tetree = 2;
-    }
+    string type_id = 1;
+    bytes payload = 2;
 }
 
-// Morton key for Octree
+// Morton key for Octree — serialised inside SpatialKey.payload by MortonKeySerde.
 message MortonKey {
     uint64 morton_code = 1;
     uint32 level = 2;
 }
 
-// Tetree key
+// Tetree key — serialised inside SpatialKey.payload by TetreeKeySerde.
 message TetreeKey {
     uint64 low = 1;
     uint64 high = 2;
