@@ -7,6 +7,11 @@ This directory archives JMH baseline results for RDR-003 Phase 0. Each file is t
 JMH native JSON output captured at a known code state, intended to be compared
 against by later phases.
 
+## Files
+
+- `simulation-von-aoi-baseline-2026-05.json` — Steps 1 + 1b (linear-scan, both levels)
+- `simulation-von-aoi-tetree-2026-05.json` — Step 3 (Tetree-backed, both levels)
+
 ## simulation-von-aoi-baseline-2026-05.json
 
 **Scope**: RDR-003 Phase 0 Steps 1 + 1b (beads `Luciferase-d8a` + `Luciferase-jp7`).
@@ -119,3 +124,152 @@ should be a drop-in comparison: same benchmark methods, same `@Param` matrix.
 Per-row ratio against this file gives the Tetree's intrinsic speedup; the Step 4
 go/no-go criterion (p99 latency / aggregate throughput vs simulation AoI budget)
 reads off this comparison directly.
+
+## simulation-von-aoi-tetree-2026-05.json
+
+**Scope**: RDR-003 Phase 0 Step 3 (bead `Luciferase-sc4`).
+
+**What's measured**: Same parameter matrix and methods as the baseline above,
+but against the Tetree-backed `SpatialNeighborIndex` shipped in `Luciferase-mj7`.
+`findWithinRadius` delegates to
+`AbstractSpatialIndex.findNeighborsIncludingGhosts(position, radius)`;
+`findKNearest` delegates to `AbstractSpatialIndex.kNearestNeighbors(position, k,
+Float.POSITIVE_INFINITY)`. Spatial level is consumed by the index path (unlike
+the linear-scan baseline where the level was inert).
+
+**Run environment**: identical to baseline (Apple M4 Max, GraalVM 25.0.1+8, JMH
+1.37, `AverageTime` μs/op, 5×1s warmup + 10×1s measurement, `@Fork(0)` in-process).
+
+### Headline results — gated cells (level=18, r=50)
+
+After the dual-store dispatcher decision (RDR-003 §Revision History 2026-05-23
+"Phase 0 Step 3 outcome"). `findKNearest` / `findClosestTo` route through the
+Tetree's k-NN cache; `findWithinRadius` and bounds-based queries route through
+a flat `ConcurrentHashMap` linear scan. Both stores synchronised on
+insert / remove / updatePosition.
+
+| Gated metric (level=18, r=50) | Threshold | Dual-store F | Verdict |
+|---|---|---|---|
+| `findKNearest` mean @ N=10K | ≤ 2.0 ms | 0.48 μs | PASS |
+| `findKNearest` mean @ N=100K | ≤ 5.0 ms | 0.51 μs | PASS |
+| `findWithinRadius` mean @ N=10K | ≤ 2.0 ms | 58 μs | PASS |
+| `findWithinRadius` mean @ N=100K | ≤ 5.0 ms | 920 μs | PASS |
+| Sub-linear scaling `findKNearest` | required | yes (constant) | PASS |
+| Sub-linear scaling `findWithinRadius` | required | linear (criterion retired) | N/A — see RDR |
+
+### Threshold check — all four absolute-latency thresholds pass
+
+The sub-linear scaling criterion was retired for `findWithinRadius` per the
+RDR §Revision History 2026-05-23 "Phase 0 Step 3 outcome" entry: the criterion
+was a proxy for "Tetree spatial pruning is being exercised", and the dual-store
+decision explicitly chooses linear scan for that operation based on
+absolute-latency evidence. The absolute-latency criterion remains the
+load-bearing gate.
+
+### Investigation path that led to F (chronological, with measured outcomes)
+
+Five sequential investigations narrowed the cause of the original Step 3 failure
+and led to the dual-store decision. Documented in full in RDR-003 §Revision
+History 2026-05-23. Summary, all numbers `findWithinRadius` mean μs/op at
+N=100K r=50 L=18:
+
+| # | Approach | Mean @ N=100K r=50 | vs 5 ms threshold |
+|---|---|---|---|
+| 1 | Step 2 (`mj7`): all-Tetree, `findNeighborsIncludingGhosts` via k-NN cache | 271,174 μs | 54× over (catastrophic) |
+| 2 | Step 2.1 (`2mn`): switch to `bounding(Spatial.Sphere)` + radius post-filter | 8,014 μs | 60% over |
+| 3 | Level sweep (L=14, 15, 16, 17, 18 at r=50) | 7,948–8,232 μs across all levels | level-invariant; 60% over |
+| 4 | Imperative loop (no `.distinct()`, no stream pipeline) | 7,660 μs | 53% over |
+| 5 | Dual-store F: `findWithinRadius` → flat ConcurrentHashMap linear scan | **920 μs** | **PASS (5.4× margin)** |
+
+The root cause established by 3-4: at the VoN typical radius (sphere covers
+~6% of world volume), the Tetree's `bounding(Sphere)` path enumerates ~12,500
+candidate entities and pays ~500 ns per candidate for the
+`tetree.getEntity` concurrent-map lookup. Total ~6 ms floor regardless of
+cell granularity or stream-pipeline overhead. The flat-map linear scan's
+per-entity cost is ~15 ns (`Point3D.distance` only), so it wins by ~30×
+per-entity even though it visits 8× more entities.
+
+### Per-cell speedup ratios — Dual-store F vs linear-scan baseline (level=18)
+
+| Op | N | Linear baseline | Dual-store F | Ratio |
+|---|---|---|---|---|
+| `findKNearest` | 1K | 103 μs | 0.45 μs | 228× (cache-hit dominated) |
+| `findKNearest` | 10K | 1575 μs | 0.48 μs | 3273× (cache-hit dominated) |
+| `findKNearest` | 100K | 21,809 μs | 0.51 μs | 42,762× (cache-hit dominated) |
+| `findWithinRadius` r=50 | 1K | 7.7 μs | 4.21 μs | 1.83× |
+| `findWithinRadius` r=50 | 10K | 94 μs | 58.45 μs | 1.61× |
+| `findWithinRadius` r=50 | 100K | 1574 μs | 919.9 μs | 1.71× |
+
+The flat-map linear scan in the dual-store path is ~1.7× faster than the
+original linear-scan-via-stream baseline because the imperative for-loop
++ `ArrayList` accumulator avoids `.stream().filter().collect()` overhead.
+The `findKNearest` "speedups" remain cache-hit dominated (real for VoN's
+60 Hz tick pattern; cold-cache k-NN cost is unmeasured — flagged for any
+future workload that defeats the level-15 cache).
+
+### Confounds surfaced in the original (pre-2.1) Step 3 — historical record
+
+**Confound 1: Step 2 routed range queries through the k-NN cache.**
+
+`SpatialNeighborIndex.findWithinRadius(center, radius)` calls
+`tetree.findNeighborsIncludingGhosts(center, radius)` which is implemented as
+`kNearestNeighbors(position, Integer.MAX_VALUE, radius)`
+(`AbstractSpatialIndex.java:5096`). This routes an unbounded-result range query
+through the k-NN result cache, which:
+
+- Stores cache entries keyed `(level-15 spatial key, k, maxDistance)` carrying
+  the full result-id list as the cache value
+- At N=100K, r=50, the result is ~6500 entities — each cache entry is a 6500-id
+  list, and each lookup must iterate the list to construct `NeighborResult`s
+- GC pressure on the giant lists causes the catastrophic variance at N=100K
+  (the run-iteration min was 866 μs, max 96 ms, stdev 38 ms — a 100× span)
+- The 271 ms mean at N=100K r=50 is noise-dominated but the magnitude reveals a
+  real pathology, not a measurement artifact
+
+The correct alternative for radius queries is `entitiesInRegion(Spatial.Cube)`
+(via `spatialRangeQuery` — `AbstractSpatialIndex.java:419, 433`) with the AABB
+of the ball, then post-filter by radius. This was not the choice made in Step 2.
+
+**Recommendation: file a Step 2.1 bead to rewrite `findWithinRadius` using
+`spatialRangeQuery` + radius post-filter, then re-run Step 3 before any Step 4
+decision.** The current Phase 1 SHIPS verdict is gated by a Step 2 implementation
+issue, not by the Tetree's underlying capability.
+
+**Confound 2: `findKNearest` measurements are k-NN-cache-hit-dominated.**
+
+The k-NN cache (`AbstractSpatialIndex.java:1429-1438`) keys queries at level 15
+(cell-edge 64 units in a 200³ world → ~64 distinct cache buckets). The benchmark
+cycles 128 query centers across `QUERY_CENTER_COUNT=128` → mean cache reuse ≈ 2×.
+After warmup every measurement iteration hits the cache. The 0.55 μs measurement
+is the cache lookup latency, not the cost of a cold k-NN computation.
+
+This is REAL for production VoN: at 60 Hz tick and bubble speed << 64 units/tick,
+consecutive AoI queries from the same bubble stay in the same level-15 cell, and
+the cache delivers exactly this 0.55 μs latency. So the threshold PASS is real
+*for production-representative workloads*. But the cold-cache k-NN cost is
+unmeasured by the current harness; if a future workload defeats the cache (e.g.,
+high-velocity entities, large bubble counts each querying distinct centers), the
+cost picture changes.
+
+**Recommendation: when Step 2 is reworked, add a second findKNearest benchmark
+variant with `QUERY_CENTER_COUNT >= 4096` to defeat the cache and measure
+cold-cache k-NN cost separately.** Both the cache-hit and cache-miss numbers are
+operationally relevant for different VoN access patterns.
+
+### Per-cell observations — Dual-store F
+
+- `findKNearest` is essentially constant across `(N, r, level)` at ~0.45–0.59 μs
+  — cache lookups at level 15 dominate. Spatial level and radius do not affect
+  the cache-lookup path. The dual-store Node-lookup-via-flat-map adds no
+  measurable overhead vs the original Tetree-only path (was 0.55–0.58 μs).
+- `findWithinRadius` scales `O(N)` with N (1K → 10K = ~14×; 10K → 100K = ~16×)
+  reflecting the flat-map linear scan + result-list build. Radius effect is
+  modest (1K r=10: 3.6 μs → 1K r=100: 6.0 μs) because per-entity distance
+  cost is constant; only the result-add fraction grows.
+- All four absolute-latency thresholds pass with substantial margin:
+  `findKNearest` at 4150–9860× margin (cache benefit), `findWithinRadius` at
+  34× margin at N=10K and 5.4× margin at N=100K.
+- The dual-store's Node-lookup-via-flat-map (`nodes.get(id.getValue())` after
+  `tetree.kNearestNeighbors` returns) is functionally equivalent to and
+  performance-equivalent to the prior `tetree.getEntity` lookup — both are
+  ConcurrentHashMap-backed and within JIT-noise of each other.
