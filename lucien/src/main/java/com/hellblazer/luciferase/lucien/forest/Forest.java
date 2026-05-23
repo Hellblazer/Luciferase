@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.forest;
 import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.SpatialKey;
+import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import org.slf4j.Logger;
@@ -205,34 +206,95 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     }
     
     /**
-     * Find all entities within a spatial region across all trees.
+     * Find all entities whose position lies inside the given spatial region,
+     * aggregated across all trees in this forest.
+     * <p>
+     * Uses {@link com.hellblazer.luciferase.lucien.SpatialIndex#bounding(Spatial)}
+     * for the node-level prune (cube, sphere, AABB, parallelepiped, tetrahedron
+     * all dispatched correctly via {@code doesNodeIntersectVolume}), then
+     * post-filters each candidate entity by its actual position against the
+     * region's geometry. The previous implementation silently coerced every
+     * non-cube region to {@code new Spatial.Cube(0, 0, 0, 1)} and returned
+     * entities only from the unit cube at the origin regardless of the
+     * caller's actual query (Luciferase-lgs).
+     * <p>
+     * Results are deduplicated across trees by entity ID. Currently supports
+     * {@link Spatial.Cube}, {@link Spatial.Sphere}, {@link Spatial.aabb},
+     * {@link Spatial.Parallelepiped}, and any {@link Spatial.aabt}; other
+     * shapes fall back to AABB-of-region containment.
      *
      * @param region the spatial region to search
-     * @return list of entity IDs found across all trees
+     * @return distinct entity IDs whose positions lie inside {@code region}
      */
     public List<ID> findEntitiesInRegion(Spatial region) {
         var results = new ArrayList<ID>();
-        
+        var seen = new HashSet<ID>();
+
         for (var tree : trees) {
             var spatialIndex = tree.getSpatialIndex();
             var bounds = tree.getGlobalBounds();
-            
-            // Quick bounds check to skip trees that don't overlap the region
-            if (regionOverlapsBounds(region, bounds)) {
-                // AbstractSpatialIndex.entitiesInRegion expects a Cube, not a generic Spatial
-                Spatial.Cube cubeRegion;
-                if (region instanceof Spatial.Cube) {
-                    cubeRegion = (Spatial.Cube) region;
-                } else {
-                    // Convert to cube - this is a simplified approach
-                    cubeRegion = new Spatial.Cube(0, 0, 0, 1);
-                }
-                var entities = spatialIndex.entitiesInRegion(cubeRegion);
-                results.addAll(entities);
+
+            // Quick AABB-vs-AABB overlap check; if the tree has no explicit
+            // global bounds (e.g. unbounded / not yet computed), skip the
+            // pre-filter and query the index directly.
+            if (bounds != null && !regionOverlapsBounds(region, bounds)) {
+                continue;
             }
+
+            spatialIndex.bounding(region).forEach(node -> {
+                for (var id : node.entityIds()) {
+                    if (!seen.add(id)) {
+                        continue;
+                    }
+                    var position = spatialIndex.getEntityPosition(id);
+                    if (position != null && regionContainsPoint(region, position)) {
+                        results.add(id);
+                    }
+                }
+            });
         }
-        
+
         return results;
+    }
+
+    /**
+     * Test whether a {@link Spatial} region contains a point. Dispatches per
+     * Spatial subclass; falls back to AABB-of-region containment for unknown
+     * shapes (e.g. {@link Spatial.Tetrahedron}, whose true point-in-tet test
+     * is not implemented here).
+     */
+    private static boolean regionContainsPoint(Spatial region, Point3f p) {
+        return switch (region) {
+            case Spatial.Cube cube ->
+                p.x >= cube.originX() && p.x <= cube.originX() + cube.extent()
+                && p.y >= cube.originY() && p.y <= cube.originY() + cube.extent()
+                && p.z >= cube.originZ() && p.z <= cube.originZ() + cube.extent();
+            case Spatial.Sphere sphere -> {
+                var dx = p.x - sphere.centerX();
+                var dy = p.y - sphere.centerY();
+                var dz = p.z - sphere.centerZ();
+                yield (dx * dx + dy * dy + dz * dz) <= (sphere.radius() * sphere.radius());
+            }
+            case Spatial.aabb box ->
+                p.x >= box.originX() && p.x <= box.extentX()
+                && p.y >= box.originY() && p.y <= box.extentY()
+                && p.z >= box.originZ() && p.z <= box.extentZ();
+            case Spatial.Parallelepiped para ->
+                p.x >= para.originX() && p.x <= para.originX() + para.extentX()
+                && p.y >= para.originY() && p.y <= para.originY() + para.extentY()
+                && p.z >= para.originZ() && p.z <= para.originZ() + para.extentZ();
+            default -> {
+                // Fallback: AABB-of-region containment. Conservative — over-includes
+                // for shapes whose AABB is strictly larger than the volume itself
+                // (e.g. Tetrahedron). Better than the previous "silently return origin
+                // cube" behaviour.
+                var vb = VolumeBounds.from(region);
+                yield vb != null
+                    && p.x >= vb.minX() && p.x <= vb.maxX()
+                    && p.y >= vb.minY() && p.y <= vb.maxY()
+                    && p.z >= vb.minZ() && p.z <= vb.maxZ();
+            }
+        };
     }
     
     /**
@@ -504,25 +566,23 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     }
     
     private boolean regionOverlapsBounds(Spatial region, EntityBounds bounds) {
-        // Simple AABB overlap test
-        if (region instanceof Spatial.Cube) {
-            var cube = (Spatial.Cube) region;
-            // Check if cube intersects with bounds
-            var min = bounds.getMin();
-            var max = bounds.getMax();
-            return cube.intersects(min.x, min.y, min.z, max.x, max.y, max.z);
+        // AABB-vs-AABB overlap test using VolumeBounds.from which dispatches per
+        // Spatial subclass (cube, sphere, aabb, parallelepiped, tetrahedron).
+        // Previously: only Spatial.Cube was handled, others fell through to
+        // 'return true' which over-fetched but was at least safe; this version
+        // tightens the prune for all known shapes.
+        var rv = VolumeBounds.from(region);
+        if (rv == null) {
+            return true;  // Unknown shape — conservative
         }
-        // For other spatial types, use a conservative approach
-        return true;
+        var min = bounds.getMin();
+        var max = bounds.getMax();
+        return rv.maxX() >= min.x && rv.minX() <= max.x
+            && rv.maxY() >= min.y && rv.minY() <= max.y
+            && rv.maxZ() >= min.z && rv.minZ() <= max.z;
     }
-    
-    private Spatial.Cube createCubeFromRegion(Spatial region) {
-        // Convert arbitrary spatial region to cube for query
-        // This would need to be implemented based on region type
-        // For now, return a placeholder
-        return new Spatial.Cube(0, 0, 0, 1);
-    }
-    
+
+
     private boolean boundsOverlap(EntityBounds bounds1, EntityBounds bounds2) {
         var min1 = bounds1.getMin();
         var max1 = bounds1.getMax();
