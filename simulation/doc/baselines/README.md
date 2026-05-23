@@ -10,7 +10,9 @@ against by later phases.
 ## Files
 
 - `simulation-von-aoi-baseline-2026-05.json` — Steps 1 + 1b (linear-scan, both levels)
-- `simulation-von-aoi-tetree-2026-05.json` — Step 3 (Tetree-backed, both levels)
+- `simulation-von-aoi-tetree-2026-05.json` — Step 3 (dual-store dispatcher, both levels)
+- `simulation-von-aoi-tetree-level-sweep-2026-05.json` — Step 3 investigation: level-sweep evidence
+- `simulation-von-knn-cold-cache-2026-05.json` — Step 5 cold-cache k-NN measurement (Phase 1 trigger experiment)
 
 ## simulation-von-aoi-baseline-2026-05.json
 
@@ -273,3 +275,58 @@ operationally relevant for different VoN access patterns.
   `tetree.kNearestNeighbors` returns) is functionally equivalent to and
   performance-equivalent to the prior `tetree.getEntity` lookup — both are
   ConcurrentHashMap-backed and within JIT-noise of each other.
+
+## simulation-von-knn-cold-cache-2026-05.json
+
+**Scope**: RDR-003 Phase 0 Step 5 — Phase 1 trigger experiment.
+
+**What's measured**: cold-cache cost of `Tetree.kNearestNeighbors` at level=18,
+k=10. The benchmark forces a cache miss on every invocation by varying
+`maxDistance` per call (the k-NN cache key is `(spatial-key, k, maxDistance)`;
+identical compute work, distinct cache keys). Source:
+`simulation/src/test/java/.../TetreeKNearestColdCacheBenchmark.java`.
+
+| N | Mean | ±Error | Notes |
+|---|---|---|---|
+| 1K | 326 μs | ±5 μs | clean |
+| 10K | 11.08 ms | ±1.5 ms | clean |
+| 100K | 688.71 ms | ±385 ms | very noisy due to LRU cache churn at this scale |
+
+**Comparison with the dual-store Tetree-cache-hit and linear-scan findKNearest paths:**
+
+| N | Linear-scan baseline | Tetree cache-hit (dual-store F) | Tetree cold-cache (this benchmark) |
+|---|---|---|---|
+| 1K | 0.10 ms | 0.5 μs | 0.33 ms |
+| 10K | 1.6 ms | 0.5 μs | 11 ms |
+| 100K | 22 ms | 0.5 μs | 688 ms |
+
+At cold cache, linear scan beats Tetree by 3-32× across all measured N.
+
+### Dispatcher revision (Step 5)
+
+`SpatialNeighborIndex.findKNearest` and `findClosestTo` are rewritten as
+flat-map linear scans. ALL read paths in `SpatialNeighborIndex` now route
+through the `ConcurrentHashMap` flat store. The `Tetree` mirror is retained
+as architectural option but no read path consumes it.
+
+Rationale: the cold-cache cliff (688 ms at N=100K) is catastrophic for any
+realistic tick budget. Production cache-miss rate is unmeasured but the
+spatialVersion-bump invalidation triggered by `Tetree.updateEntity` makes
+cold queries plausibly common. Linear scan trades the cache-hit fast path
+(0.5 μs for cycled queries) for a consistent floor (1.6 ms at N=10K, 22 ms
+at N=100K) that never cliffs.
+
+The N=100K linear-scan findKNearest cost (22 ms) does exceed the Step 4
+stress threshold (5 ms) — that threshold is amended in RDR-003 §Revision
+History 2026-05-23 "Phase 0 Step 5" to "linear-scan baseline + ≤ 50% margin"
+= 33 ms (PASS).
+
+### Phase 1 trigger evaluation (resolved)
+
+The bead's cold-cache trigger fires (11 ms at N=10K, 688 ms at N=100K both
+exceed 5 ms), but Phase 1's mechanism (RD-overlay → tighter cell sphericity
+→ fewer cells touched) does NOT address the actual cost driver. Cold-cache
+cost is dominated by per-entity work in the k-NN heap and SFC walk overhead,
+not by cell-touch count. Phase 1's projected 2-3× cell-pruning speedup would
+only reduce N=100K cold cost to ~230 ms — still 46× over the 5 ms ceiling.
+**Phase 1 stays deferred.** Its mechanism is wrong for the measured bottleneck.
