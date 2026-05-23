@@ -326,13 +326,21 @@ class EntityMigrationContextTest {
         var entityId = "testEntity";
         fsm.initializeOwned(entityId);
 
-        long startTime = System.currentTimeMillis();
-
         // When - Transition to MIGRATING_OUT
         fsm.transition(entityId, EntityMigrationState.MIGRATING_OUT);
 
         var context = fsm.getMigrationContext(entityId);
         assertNotNull(context, "Context should exist");
+
+        // Reference time is the FSM's actual recorded startTimeMs, NOT a separate
+        // System.currentTimeMillis() reading: the FSM samples its clock during
+        // transition() at a slightly different wall-clock instant than the test
+        // could capture externally, so a separate startTime is ±a-few-ms off the
+        // FSM's truth — making the startTime+1000ms boundary assertion flaky
+        // under CPU load (Luciferase-b3v). The FSM already supports Clock
+        // injection (EntityMigrationStateMachine.setClock); reading the
+        // recorded startTimeMs is the minimum-change deterministic anchor.
+        long startTime = context.startTimeMs;
 
         // Then - Verify timeout calculation
         assertEquals(1000L, context.timeoutMs - context.startTimeMs,
