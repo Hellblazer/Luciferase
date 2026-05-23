@@ -109,7 +109,17 @@ public interface NeighborDetector<Key extends SpatialKey<Key>> {
     List<NeighborInfo<Key>> findNeighborsWithOwners(Key element, GhostType type);
     
     /**
-     * Direction enumeration for boundary checking.
+     * Cartesian domain boundary direction for axis-aligned queries.
+     * <p>
+     * <b>Scope (Luciferase-bhc).</b> This enum models the six Cartesian
+     * half-axis directions of the global coordinate system and is intended
+     * for axis-aligned <i>domain-boundary</i> tests (e.g. "is this entity
+     * within {@code marginAlongPOSITIVE_X} of the world's positive-x face").
+     * It is <b>NOT</b> a topological face-neighbor descriptor: a tetrahedral
+     * cell has 4 triangular faces, an octahedral cell has 8, and neither set
+     * is enumerable as ± Cartesian axes. Code that needs topological face
+     * neighbors should use cell-type-specific primitives (e.g.
+     * {@code Tetree.findFaceNeighbor}) rather than this enum.
      */
     enum Direction {
         POSITIVE_X, NEGATIVE_X,
