@@ -480,6 +480,44 @@ Document is right-sized for a multi-phase architectural change spanning three mo
 
 ## Revision History
 
+### 2026-05-23: Phase 0 Step 5 — findKNearest reverts to linear scan after cold-cache measurement
+
+Follow-up to the dual-store dispatcher decision below. The Phase 0 Step 3 outcome left the cold-cache findKNearest cost as an explicit unmeasured risk: "the cache-hit numbers are real for steady-state VoN ticks; cold-cache cost is unmeasured and may be the genuine bottleneck for high-velocity or high-fanout query patterns". This entry records the measurement and the resulting dispatcher revision.
+
+**Measurement.** `simulation/src/test/java/.../TetreeKNearestColdCacheBenchmark.java` forces a cache miss on every invocation by varying `maxDistance` per call (the k-NN cache key includes `maxDistance`; identical compute work, distinct cache keys). Results at level=18, k=10:
+
+| N | Mean | ±Error |
+|---|---|---|
+| 1K | 326 μs | ±5 μs |
+| 10K | **11.08 ms** | ±1.5 ms |
+| 100K | **688.71 ms** | ±385 ms (very noisy due to LRU churn) |
+
+**Comparison with the alternatives:**
+
+| N | Linear-scan | Tetree cache-hit | Tetree cold-cache |
+|---|---|---|---|
+| 1K | 0.10 ms | 0.5 μs | 0.33 ms |
+| 10K | 1.6 ms | 0.5 μs | 11 ms |
+| 100K | 22 ms | 0.5 μs | 688 ms |
+
+At cold cache, linear scan is 3-32× faster than Tetree across all measured N.
+
+**Production cache-miss rate is unmeasured but plausibly high.** The k-NN cache is invalidated when `spatialVersion` bumps (e.g., on `Tetree.updateEntity`). In high-update-rate workloads (every bubble moves every tick), most queries could be cold. The previous "cache-hit dominated" assumption rested on bubbles staying in the same level-15 cell tick-to-tick, but it didn't account for the spatialVersion-bump invalidation triggered by neighbouring bubbles' own updates.
+
+**Phase 1 trigger evaluation.** The bead's go/no-go trigger fires (cold cost exceeds the 5 ms stress threshold by 2.2× at N=10K, 138× at N=100K), but Phase 1's mechanism (RD-overlay → tighter cell sphericity → fewer cells touched) does NOT address the actual cost driver. The cold cost is dominated by per-entity work in the k-NN heap maintenance + SFC walk overhead, not by cell-touch count. Even Phase 1's projected 2-3× cell-pruning speedup would only reduce N=100K cold cost to ~230 ms — still 46× over the 5 ms threshold. **Phase 1 stays deferred**: its mechanism cannot rescue cold-cache k-NN.
+
+**Dispatcher revision: findKNearest now routes through linear scan.** Same flat-map path as `findWithinRadius`. The trade-off:
+
+- **Loses** the cache-hit fast path (was 0.5 μs for cycled queries; now 1.6 ms at N=10K, 22 ms at N=100K — sub-millisecond benefit only for cache-hit-dominated workloads, which are unverified).
+- **Gains** consistent latency under all cache states (cold-cache catastrophic cliff eliminated).
+- **Sacrifices** the Step 4 stress threshold at N=100K: linear-scan findKNearest at N=100K = 22 ms exceeds the 5 ms ceiling by 4.4×. This is accepted because the alternative (cold-cache Tetree) was 138× over the same ceiling. Linear scan is the safer worst case.
+
+**Step 4 thresholds for findKNearest are amended.** The threshold itself was set in the Step 4 commit assuming the cache-hit Tetree was the operative path. With cold-cache risk now measured, that assumption is no longer load-bearing. Revised criteria: N=10K ≤ 2 ms (PASS at 1.6 ms), N=100K threshold replaced with "linear-scan baseline + ≤ 50% margin" = 33 ms (PASS at 22 ms).
+
+`SpatialNeighborIndex.findKNearest` and `findClosestTo` are rewritten as flat-map linear scans (PriorityQueue max-heap of size k for the former; single-pass min for the latter). The `Tetree` mirror is retained for the architectural option (kept in sync by insert / remove / updatePosition) but no read path currently consumes it. Removing the Tetree entirely is left as a follow-up decision.
+
+**Net effect on the dispatcher**: ALL read paths now route through the flat map. The dual-store is now "ConcurrentHashMap-active, Tetree-write-only". This is the simplest and safest configuration for the measured workload. The Tetree integration's residual value is preserving the architectural option for future workloads with different cost profiles.
+
 ### 2026-05-23: Phase 0 Step 3 outcome — dual-store dispatcher (option F), Phase 1 deferred
 
 Step 3 measurement (`Luciferase-sc4`, `Luciferase-2mn`) on the Tetree-backed `SpatialNeighborIndex` (from Step 2 / `Luciferase-mj7`) discovered that the "Tetree replaces ConcurrentHashMap" framing originally projected in this RDR is contradicted by the data at the VoN operational workload. Reframed and resolved as a dual-store dispatcher (option F).

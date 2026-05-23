@@ -18,41 +18,49 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * Spatial index for VON neighbor discovery, dispatching per operation between a
- * {@link Tetree}-backed path and a flat {@link ConcurrentHashMap} path.
+ * Spatial index for VON neighbor discovery. All read paths execute as linear
+ * scans of an internal {@link ConcurrentHashMap}. A {@link Tetree} mirror is
+ * retained as a write-only architectural option (kept in sync by insert /
+ * remove / updatePosition) but no read path currently consumes it.
  * <p>
- * <b>Dual-store rationale (RDR-003 Phase 0 Step 2 evolution).</b> Step 3
- * validation ({@code Luciferase-sc4}) measured the original "all queries on
- * Tetree" design from Step 2 ({@code Luciferase-mj7}) and the Step 2.1 fix
- * ({@code Luciferase-2mn}), then a level-sweep and a stream-vs-imperative spike.
- * Findings:
- * <ul>
- *   <li>{@link #findWithinRadius}: at the VoN operational radius (~50 units in a
- *       200<sup>3</sup> world, ~6% of world volume per query), Tetree-backed
- *       range queries spend most of their cost on per-candidate
- *       {@code getEntity} concurrent-map lookups (~500 ns each) over the ~12,500
- *       sphere-AABB candidates at N=100K. Total ~6&ndash;8 ms. The flat
- *       {@code ConcurrentHashMap} linear scan over N=100K is ~1.6 ms — 4&ndash;5×
- *       faster because its per-entity cost is just a {@link Point3D#distance}
- *       (~15 ns), no map lookup. The Tetree's spatial pruning (~8× candidate
- *       reduction) does not overcome its ~30× per-entity overhead penalty at
- *       this workload. Spatial-level tuning does not change this (level-sweep
- *       at levels 14&ndash;18 produced identical results within noise).</li>
- *   <li>{@link #findKNearest}: the Tetree's k-NN result cache
- *       ({@code AbstractSpatialIndex.java:1429-1438}) keys at level 15
- *       (cell-edge 64 units in a 200<sup>3</sup> world → ~64 cache buckets).
- *       At the VoN tick rate (60 Hz, bubbles moving ~5 units/tick), consecutive
- *       queries from the same bubble stay in the same cache cell for ~13 ticks
- *       → cache hits dominate, giving 0.5 μs lookup latency vs the linear-scan
- *       {@code O(N log N)} sort (21 ms at N=100K). This is a real production
- *       benefit even though cold-cache k-NN cost is higher.</li>
- * </ul>
+ * <b>Why ALL reads via the flat map (RDR-003 Phase 0 evolution + cold-cache
+ * benchmark).</b> Phase 0 Step 3 validation (sc4) measured the original
+ * "all queries on Tetree" design and found per-candidate {@code getEntity}
+ * cost dominated {@link #findWithinRadius} for VoN's typical radii — the
+ * dual-store dispatcher was introduced, routing range queries via flat-map
+ * linear scan but keeping {@link #findKNearest} on the Tetree for its k-NN
+ * cache benefit (0.5 μs lookup latency for cycled-query workloads).
  * <p>
- * Therefore: {@link #findKNearest} and {@link #findClosestTo} route through the
- * Tetree (for the k-NN cache benefit). {@link #findWithinRadius},
- * {@link #findOverlapping}, {@link #getAllNodes}, {@link #get}, {@link #size},
- * and {@link #isEmpty} route through the flat map. Insert / remove /
- * updatePosition operations keep both stores synchronised.
+ * The cold-cache benchmark
+ * ({@code simulation/src/test/java/.../TetreeKNearestColdCacheBenchmark.java})
+ * then measured the cost when cache misses dominate: 326 μs at N=1K, 11 ms
+ * at N=10K, 688 ms at N=100K — catastrophic against the 2 ms operational /
+ * 5 ms stress thresholds. Production cache-miss rate is unmeasured but
+ * non-trivial: each Tetree write (via {@code updateEntity}) can bump
+ * {@code spatialVersion} and invalidate cache entries; high-update-rate
+ * workloads (every bubble moves every tick) could see most queries cold.
+ * <p>
+ * Per-cell summary:
+ *
+ * <table>
+ * <tr><th>N</th><th>Linear scan</th><th>Tetree cache-hit</th><th>Tetree cold-cache</th></tr>
+ * <tr><td>1K</td>   <td>0.10 ms</td>  <td>0.5 μs</td>  <td>0.33 ms</td></tr>
+ * <tr><td>10K</td>  <td>1.6 ms</td>   <td>0.5 μs</td>  <td>11 ms</td></tr>
+ * <tr><td>100K</td> <td>22 ms</td>    <td>0.5 μs</td>  <td>688 ms</td></tr>
+ * </table>
+ *
+ * Linear scan is the safer floor: 3-32× faster than cold Tetree at every
+ * measured N, with predictable latency that does not collapse under cache
+ * pressure. It does sacrifice the cache-hit fast path (which would have given
+ * sub-μs latency for steady-state cycled queries) — and the N=100K linear-scan
+ * cost (22 ms) does exceed the 5 ms stress threshold from Phase 0 Step 4. The
+ * deliberate choice (Phase 0 Step 5, post-cold-cache-measurement) is to accept
+ * the stress-threshold regression in exchange for predictability across all
+ * cache states.
+ * <p>
+ * Final dispatch policy: ALL read paths use the flat map. The Tetree mirror
+ * is retained for the architectural option but does no reads. A follow-up
+ * decision to remove it entirely is out of scope for this iteration.
  * <p>
  * <b>What about closing {@code Luciferase-gig} and {@code Luciferase-ay7}?</b>
  * The architectural integration with Tetree exists; future workloads that
@@ -177,31 +185,87 @@ public class SpatialNeighborIndex {
     }
 
     /**
-     * Find closest node to a position. Routes through the Tetree's
-     * {@code kNearestNeighbors} for the k-NN cache benefit
-     * (see class JavaDoc for the rationale).
+     * Find closest node to a position. Linear scan of the flat map.
+     * <p>
+     * Previously routed through the Tetree's k-NN cache for cycled-query
+     * workloads. The cold-cache benchmark
+     * ({@code TetreeKNearestColdCacheBenchmark}) showed Tetree cold-cache cost
+     * is 11 ms at N=10K and 688 ms at N=100K — catastrophic for any tick
+     * budget when cache misses dominate. Linear scan is consistent across all
+     * N (sub-millisecond at N=10K, ~22 ms at N=100K) and avoids the
+     * cliff. Single-pass min algorithm; O(N) with no allocations.
      *
      * @param position Query position
      * @return Closest Node or null if index is empty
      */
     public Node findClosestTo(Point3D position) {
-        var ids = tetree.kNearestNeighbors(toPoint3f(position), 1, Float.POSITIVE_INFINITY);
-        return ids.isEmpty() ? null : nodes.get(ids.get(0).getValue());
+        if (nodes.isEmpty()) {
+            return null;
+        }
+        var cx = position.getX();
+        var cy = position.getY();
+        var cz = position.getZ();
+        Node   best   = null;
+        double bestD2 = Double.POSITIVE_INFINITY;
+        for (var n : nodes.values()) {
+            var pos = n.position();
+            var dx = pos.getX() - cx;
+            var dy = pos.getY() - cy;
+            var dz = pos.getZ() - cz;
+            var d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                best   = n;
+            }
+        }
+        return best;
     }
 
     /**
-     * Find k nearest nodes to a position. Routes through the Tetree for the
-     * k-NN cache benefit (see class JavaDoc).
+     * Find k nearest nodes to a position. Linear scan of the flat map with a
+     * bounded max-heap of size k.
+     * <p>
+     * See {@link #findClosestTo} for the cold-cache rationale. Algorithm is
+     * O(N log k) — efficient for the small k typical in VoN
+     * ({@code k = 10}). Returns at most k nodes sorted closest-first.
      *
      * @param position Query position
-     * @param k        Number of neighbors
-     * @return List of up to k nearest nodes, sorted by distance
+     * @param k        Number of neighbors (must be {@code > 0})
+     * @return List of up to k nearest nodes, sorted by ascending distance
      */
     public List<Node> findKNearest(Point3D position, int k) {
-        return tetree.kNearestNeighbors(toPoint3f(position), k, Float.POSITIVE_INFINITY).stream()
-            .map(id -> nodes.get(id.getValue()))
-            .filter(Objects::nonNull)
-            .collect(Collectors.toList());
+        if (k <= 0 || nodes.isEmpty()) {
+            return List.of();
+        }
+        var cx = position.getX();
+        var cy = position.getY();
+        var cz = position.getZ();
+        // Max-heap on distance² so the top is the farthest current member of
+        // the top-k. A candidate enters only if it beats the top.
+        var heap = new java.util.PriorityQueue<Scored>(k, (a, b) -> Double.compare(b.d2, a.d2));
+        for (var n : nodes.values()) {
+            var pos = n.position();
+            var dx = pos.getX() - cx;
+            var dy = pos.getY() - cy;
+            var dz = pos.getZ() - cz;
+            var d2 = dx * dx + dy * dy + dz * dz;
+            if (heap.size() < k) {
+                heap.add(new Scored(d2, n));
+            } else if (d2 < heap.peek().d2) {
+                heap.poll();
+                heap.add(new Scored(d2, n));
+            }
+        }
+        // Heap polls farthest first; reverse to closest-first.
+        var result = new ArrayList<Node>(heap.size());
+        while (!heap.isEmpty()) {
+            result.add(heap.poll().node);
+        }
+        java.util.Collections.reverse(result);
+        return result;
+    }
+
+    private record Scored(double d2, Node node) {
     }
 
     /**

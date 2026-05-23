@@ -1,0 +1,217 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.TetreeKNearestColdCacheBenchmark.findKNearestColdCache",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "spatialLevel" : "18"
+        },
+        "primaryMetric" : {
+            "score" : 326.28073204922055,
+            "scoreError" : 4.7583623375911035,
+            "scoreConfidence" : [
+                321.52236971162944,
+                331.03909438681166
+            ],
+            "scorePercentiles" : {
+                "0.0" : 320.19364950431725,
+                "50.0" : 326.2609042306184,
+                "90.0" : 331.9810811533649,
+                "95.0" : 332.3562277556441,
+                "99.0" : 332.3562277556441,
+                "99.9" : 332.3562277556441,
+                "99.99" : 332.3562277556441,
+                "99.999" : 332.3562277556441,
+                "99.9999" : 332.3562277556441,
+                "100.0" : 332.3562277556441
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    327.2774324942792,
+                    328.604761732852,
+                    327.349528604119,
+                    325.68120617886177,
+                    324.0318770226537,
+                    326.1756409253829,
+                    326.34616753585397,
+                    320.19364950431725,
+                    324.790828738242,
+                    332.3562277556441
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.TetreeKNearestColdCacheBenchmark.findKNearestColdCache",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "spatialLevel" : "18"
+        },
+        "primaryMetric" : {
+            "score" : 11083.819177593452,
+            "scoreError" : 1483.937732378245,
+            "scoreConfidence" : [
+                9599.881445215207,
+                12567.756909971697
+            ],
+            "scorePercentiles" : {
+                "0.0" : 9324.82099074074,
+                "50.0" : 11247.334752747252,
+                "90.0" : 12481.873108511903,
+                "95.0" : 12538.5333375,
+                "99.0" : 12538.5333375,
+                "99.9" : 12538.5333375,
+                "99.99" : 12538.5333375,
+                "99.999" : 12538.5333375,
+                "99.9999" : 12538.5333375,
+                "100.0" : 12538.5333375
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    11481.887640449439,
+                    11321.3,
+                    10203.516414141413,
+                    11971.931047619048,
+                    10660.697255319148,
+                    11945.589705882352,
+                    11173.369505494506,
+                    10216.545878787878,
+                    9324.82099074074,
+                    12538.5333375
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.TetreeKNearestColdCacheBenchmark.findKNearestColdCache",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "spatialLevel" : "18"
+        },
+        "primaryMetric" : {
+            "score" : 688714.3603500001,
+            "scoreError" : 385327.7996774311,
+            "scoreConfidence" : [
+                303386.560672569,
+                1074042.1600274313
+            ],
+            "scorePercentiles" : {
+                "0.0" : 334135.472,
+                "50.0" : 650477.125,
+                "90.0" : 1106328.4747000001,
+                "95.0" : 1116081.583,
+                "99.0" : 1116081.583,
+                "99.9" : 1116081.583,
+                "99.99" : 1116081.583,
+                "99.999" : 1116081.583,
+                "99.9999" : 1116081.583,
+                "100.0" : 1116081.583
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    580106.9443333333,
+                    527754.3196666667,
+                    1116081.583,
+                    648401.3955,
+                    884068.222,
+                    1018550.5,
+                    394024.125,
+                    334135.472,
+                    652552.8545,
+                    731468.1875
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+
