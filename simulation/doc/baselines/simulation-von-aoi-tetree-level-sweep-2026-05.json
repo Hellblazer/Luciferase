@@ -1,0 +1,2164 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "queryRadius" : "50",
+            "spatialLevel" : "14"
+        },
+        "primaryMetric" : {
+            "score" : 0.5127054230380795,
+            "scoreError" : 0.005991182365631685,
+            "scoreConfidence" : [
+                0.5067142406724479,
+                0.5186966054037112
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5053977357036472,
+                "50.0" : 0.5115038224822903,
+                "90.0" : 0.5174564792224131,
+                "95.0" : 0.517468276616379,
+                "99.0" : 0.517468276616379,
+                "99.9" : 0.517468276616379,
+                "99.99" : 0.517468276616379,
+                "99.999" : 0.517468276616379,
+                "99.9999" : 0.517468276616379,
+                "100.0" : 0.517468276616379
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5115943812520518,
+                    0.5094521929358424,
+                    0.5113739607707048,
+                    0.5107465533622303,
+                    0.5168822671007218,
+                    0.517468276616379,
+                    0.5173503026767207,
+                    0.5053977357036472,
+                    0.5153752962499691,
+                    0.5114132637125289
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "queryRadius" : "50",
+            "spatialLevel" : "15"
+        },
+        "primaryMetric" : {
+            "score" : 0.4948329807362993,
+            "scoreError" : 0.008323017870719982,
+            "scoreConfidence" : [
+                0.4865099628655793,
+                0.5031559986070192
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.4861566674397819,
+                "50.0" : 0.4944012260462096,
+                "90.0" : 0.5035065535971674,
+                "95.0" : 0.5038506890373992,
+                "99.0" : 0.5038506890373992,
+                "99.9" : 0.5038506890373992,
+                "99.99" : 0.5038506890373992,
+                "99.999" : 0.5038506890373992,
+                "99.9999" : 0.5038506890373992,
+                "100.0" : 0.5038506890373992
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5038506890373992,
+                    0.4936141513249318,
+                    0.4861566674397819,
+                    0.49356061563225395,
+                    0.49875915731067666,
+                    0.5004093346350817,
+                    0.4868736737767844,
+                    0.49497747107813594,
+                    0.49630306611366404,
+                    0.4938249810142833
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "queryRadius" : "50",
+            "spatialLevel" : "16"
+        },
+        "primaryMetric" : {
+            "score" : 0.49201087280267364,
+            "scoreError" : 0.00893338409519161,
+            "scoreConfidence" : [
+                0.483077488707482,
+                0.5009442568978653
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.48425125914699857,
+                "50.0" : 0.4915067625985048,
+                "90.0" : 0.5017427148637896,
+                "95.0" : 0.502115409438805,
+                "99.0" : 0.502115409438805,
+                "99.9" : 0.502115409438805,
+                "99.99" : 0.502115409438805,
+                "99.999" : 0.502115409438805,
+                "99.9999" : 0.502115409438805,
+                "100.0" : 0.502115409438805
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.4865683658089378,
+                    0.4983884636886513,
+                    0.502115409438805,
+                    0.49266849221988845,
+                    0.49664484119215296,
+                    0.48425125914699857,
+                    0.49034503297712106,
+                    0.48598876341201064,
+                    0.4947540647536362,
+                    0.48838403538853403
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "queryRadius" : "50",
+            "spatialLevel" : "17"
+        },
+        "primaryMetric" : {
+            "score" : 0.4960680647632225,
+            "scoreError" : 0.005791113571760644,
+            "scoreConfidence" : [
+                0.49027695119146186,
+                0.5018591783349832
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.4870869174651568,
+                "50.0" : 0.4970679593358044,
+                "90.0" : 0.5003144999056316,
+                "95.0" : 0.5004476760301356,
+                "99.0" : 0.5004476760301356,
+                "99.9" : 0.5004476760301356,
+                "99.99" : 0.5004476760301356,
+                "99.999" : 0.5004476760301356,
+                "99.9999" : 0.5004476760301356,
+                "100.0" : 0.5004476760301356
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.4870869174651568,
+                    0.4971880996528296,
+                    0.4930998538392685,
+                    0.49694781901877916,
+                    0.49911591478509487,
+                    0.49766794521718144,
+                    0.49400122460630436,
+                    0.5004476760301356,
+                    0.496936817204621,
+                    0.49818837981285413
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "queryRadius" : "50",
+            "spatialLevel" : "18"
+        },
+        "primaryMetric" : {
+            "score" : 0.5084169639973025,
+            "scoreError" : 0.013019545274223455,
+            "scoreConfidence" : [
+                0.4953974187230791,
+                0.521436509271526
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.4943874426195861,
+                "50.0" : 0.5076027538238792,
+                "90.0" : 0.5211794905268944,
+                "95.0" : 0.5214941198941024,
+                "99.0" : 0.5214941198941024,
+                "99.9" : 0.5214941198941024,
+                "99.99" : 0.5214941198941024,
+                "99.999" : 0.5214941198941024,
+                "99.9999" : 0.5214941198941024,
+                "100.0" : 0.5214941198941024
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5003771832624659,
+                    0.503525539713312,
+                    0.5029249919569888,
+                    0.4943874426195861,
+                    0.5109947139987877,
+                    0.5214941198941024,
+                    0.516912314658003,
+                    0.518347826222022,
+                    0.5086302387626048,
+                    0.5065752688851535
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "queryRadius" : "50",
+            "spatialLevel" : "14"
+        },
+        "primaryMetric" : {
+            "score" : 0.5456178942609354,
+            "scoreError" : 0.007466434582785985,
+            "scoreConfidence" : [
+                0.5381514596781495,
+                0.5530843288437214
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5380613907299348,
+                "50.0" : 0.545646856229635,
+                "90.0" : 0.5543403852195176,
+                "95.0" : 0.5546937567395814,
+                "99.0" : 0.5546937567395814,
+                "99.9" : 0.5546937567395814,
+                "99.99" : 0.5546937567395814,
+                "99.999" : 0.5546937567395814,
+                "99.9999" : 0.5546937567395814,
+                "100.0" : 0.5546937567395814
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5405032259839075,
+                    0.551160041538943,
+                    0.5430550222496326,
+                    0.5464251953862027,
+                    0.5546937567395814,
+                    0.5462098803454398,
+                    0.5380613907299348,
+                    0.5482566757054876,
+                    0.5427299218163945,
+                    0.5450838321138302
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "queryRadius" : "50",
+            "spatialLevel" : "15"
+        },
+        "primaryMetric" : {
+            "score" : 0.5505106934979977,
+            "scoreError" : 0.02516024488898829,
+            "scoreConfidence" : [
+                0.5253504486090095,
+                0.575670938386986
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5410937544718336,
+                "50.0" : 0.5454860164676715,
+                "90.0" : 0.5926447472269711,
+                "95.0" : 0.5974474608463328,
+                "99.0" : 0.5974474608463328,
+                "99.9" : 0.5974474608463328,
+                "99.99" : 0.5974474608463328,
+                "99.999" : 0.5974474608463328,
+                "99.9999" : 0.5974474608463328,
+                "100.0" : 0.5974474608463328
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5410937544718336,
+                    0.5432536452632315,
+                    0.5453196282372508,
+                    0.5466083259236632,
+                    0.544079309704491,
+                    0.5453971163345117,
+                    0.549420324652716,
+                    0.5455749166008312,
+                    0.5974474608463328,
+                    0.5469124529451159
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "queryRadius" : "50",
+            "spatialLevel" : "16"
+        },
+        "primaryMetric" : {
+            "score" : 0.5591764200017434,
+            "scoreError" : 0.01020864812623451,
+            "scoreConfidence" : [
+                0.5489677718755088,
+                0.569385068127978
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5497908828194742,
+                "50.0" : 0.5581528162826732,
+                "90.0" : 0.57199686235362,
+                "95.0" : 0.5728650515725199,
+                "99.0" : 0.5728650515725199,
+                "99.9" : 0.5728650515725199,
+                "99.99" : 0.5728650515725199,
+                "99.999" : 0.5728650515725199,
+                "99.9999" : 0.5728650515725199,
+                "100.0" : 0.5728650515725199
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5497908828194742,
+                    0.5728650515725199,
+                    0.55647239476401,
+                    0.559081793682942,
+                    0.5541326241581863,
+                    0.5641831593835211,
+                    0.5524104719644485,
+                    0.5620346432137128,
+                    0.5572238388824043,
+                    0.5635693395762151
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "queryRadius" : "50",
+            "spatialLevel" : "17"
+        },
+        "primaryMetric" : {
+            "score" : 0.5433740356115563,
+            "scoreError" : 0.009868925712743927,
+            "scoreConfidence" : [
+                0.5335051098988124,
+                0.5532429613243002
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5355231323154441,
+                "50.0" : 0.5415359997161253,
+                "90.0" : 0.5562255333345529,
+                "95.0" : 0.5567506825811513,
+                "99.0" : 0.5567506825811513,
+                "99.9" : 0.5567506825811513,
+                "99.99" : 0.5567506825811513,
+                "99.999" : 0.5567506825811513,
+                "99.9999" : 0.5567506825811513,
+                "100.0" : 0.5567506825811513
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5401982270371445,
+                    0.5385836563661656,
+                    0.54310692282385,
+                    0.5355231323154441,
+                    0.5422941686455923,
+                    0.5383572715321023,
+                    0.5567506825811513,
+                    0.5407778307866584,
+                    0.5514991901151671,
+                    0.5466492739122868
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "queryRadius" : "50",
+            "spatialLevel" : "18"
+        },
+        "primaryMetric" : {
+            "score" : 0.5546819394669577,
+            "scoreError" : 0.008676389502076854,
+            "scoreConfidence" : [
+                0.5460055499648808,
+                0.5633583289690345
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5459166412875831,
+                "50.0" : 0.553751835459749,
+                "90.0" : 0.563785640115669,
+                "95.0" : 0.5640902047433811,
+                "99.0" : 0.5640902047433811,
+                "99.9" : 0.5640902047433811,
+                "99.99" : 0.5640902047433811,
+                "99.999" : 0.5640902047433811,
+                "99.9999" : 0.5640902047433811,
+                "100.0" : 0.5640902047433811
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5473472709663992,
+                    0.5640902047433811,
+                    0.5521354728471333,
+                    0.5539366816258523,
+                    0.5556765602201782,
+                    0.5535669892936458,
+                    0.5459166412875831,
+                    0.5610445584662598,
+                    0.5533495668587137,
+                    0.5597554483604292
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "queryRadius" : "50",
+            "spatialLevel" : "14"
+        },
+        "primaryMetric" : {
+            "score" : 0.5720622412657124,
+            "scoreError" : 0.009042543930635263,
+            "scoreConfidence" : [
+                0.5630196973350771,
+                0.5811047851963477
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5648807952993252,
+                "50.0" : 0.5718739375768753,
+                "90.0" : 0.5816096001953182,
+                "95.0" : 0.5820842666002631,
+                "99.0" : 0.5820842666002631,
+                "99.9" : 0.5820842666002631,
+                "99.99" : 0.5820842666002631,
+                "99.999" : 0.5820842666002631,
+                "99.9999" : 0.5820842666002631,
+                "100.0" : 0.5820842666002631
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5675884432459075,
+                    0.5657445169079534,
+                    0.5750728287811997,
+                    0.5686750463725508,
+                    0.5750852845669369,
+                    0.5669527468927468,
+                    0.5773376025508138,
+                    0.577200881439427,
+                    0.5820842666002631,
+                    0.5648807952993252
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "queryRadius" : "50",
+            "spatialLevel" : "15"
+        },
+        "primaryMetric" : {
+            "score" : 0.5698581870108638,
+            "scoreError" : 0.005941031071691602,
+            "scoreConfidence" : [
+                0.5639171559391721,
+                0.5757992180825554
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5640560874134594,
+                "50.0" : 0.569826678662453,
+                "90.0" : 0.5754945494274442,
+                "95.0" : 0.5756546798216335,
+                "99.0" : 0.5756546798216335,
+                "99.9" : 0.5756546798216335,
+                "99.99" : 0.5756546798216335,
+                "99.999" : 0.5756546798216335,
+                "99.9999" : 0.5756546798216335,
+                "100.0" : 0.5756546798216335
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5672151158051566,
+                    0.572487398832438,
+                    0.5756546798216335,
+                    0.5640967735942741,
+                    0.5696933056493799,
+                    0.5640560874134594,
+                    0.5690054786461702,
+                    0.569960051675526,
+                    0.5723596027908597,
+                    0.5740533758797396
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "queryRadius" : "50",
+            "spatialLevel" : "16"
+        },
+        "primaryMetric" : {
+            "score" : 0.5748101558105597,
+            "scoreError" : 0.00709815974682467,
+            "scoreConfidence" : [
+                0.567711996063735,
+                0.5819083155573844
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5673146945990076,
+                "50.0" : 0.5756002793938797,
+                "90.0" : 0.5818999020969008,
+                "95.0" : 0.5820607198327776,
+                "99.0" : 0.5820607198327776,
+                "99.9" : 0.5820607198327776,
+                "99.99" : 0.5820607198327776,
+                "99.999" : 0.5820607198327776,
+                "99.9999" : 0.5820607198327776,
+                "100.0" : 0.5820607198327776
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5767171970978803,
+                    0.5754844846334082,
+                    0.5723434783130211,
+                    0.5768848491477951,
+                    0.5723571728450277,
+                    0.5820607198327776,
+                    0.5673146945990076,
+                    0.5804525424740093,
+                    0.5687703450083195,
+                    0.5757160741543512
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "queryRadius" : "50",
+            "spatialLevel" : "17"
+        },
+        "primaryMetric" : {
+            "score" : 0.5930990322329803,
+            "scoreError" : 0.007518848241731565,
+            "scoreConfidence" : [
+                0.5855801839912488,
+                0.6006178804747119
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5865806116618977,
+                "50.0" : 0.5938666938830457,
+                "90.0" : 0.5995968117378723,
+                "95.0" : 0.5997428184267245,
+                "99.0" : 0.5997428184267245,
+                "99.9" : 0.5997428184267245,
+                "99.99" : 0.5997428184267245,
+                "99.999" : 0.5997428184267245,
+                "99.9999" : 0.5997428184267245,
+                "100.0" : 0.5997428184267245
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5935820795171887,
+                    0.5868092274861589,
+                    0.5982827515382021,
+                    0.5912930082812974,
+                    0.5958467965596554,
+                    0.5870468615344416,
+                    0.5997428184267245,
+                    0.5941513082489026,
+                    0.5976548590753338,
+                    0.5865806116618977
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findKNearest",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "queryRadius" : "50",
+            "spatialLevel" : "18"
+        },
+        "primaryMetric" : {
+            "score" : 0.5656171223534919,
+            "scoreError" : 0.007705032217379946,
+            "scoreConfidence" : [
+                0.557912090136112,
+                0.5733221545708719
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.5571105843486499,
+                "50.0" : 0.5657505312947073,
+                "90.0" : 0.5711605456685943,
+                "95.0" : 0.5711837550297754,
+                "99.0" : 0.5711837550297754,
+                "99.9" : 0.5711837550297754,
+                "99.99" : 0.5711837550297754,
+                "99.999" : 0.5711837550297754,
+                "99.9999" : 0.5711837550297754,
+                "100.0" : 0.5711837550297754
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.5654584012387759,
+                    0.5689840286413528,
+                    0.5628125120408538,
+                    0.5660426613506386,
+                    0.5571105843486499,
+                    0.5711837550297754,
+                    0.5579489906315687,
+                    0.5709516614179644,
+                    0.5652059506377295,
+                    0.570472678197611
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "queryRadius" : "50",
+            "spatialLevel" : "14"
+        },
+        "primaryMetric" : {
+            "score" : 156.6893338094555,
+            "scoreError" : 1.8758461076908302,
+            "scoreConfidence" : [
+                154.81348770176467,
+                158.5651799171463
+            ],
+            "scorePercentiles" : {
+                "0.0" : 154.7730244015444,
+                "50.0" : 156.43164455814352,
+                "90.0" : 159.2259769126108,
+                "95.0" : 159.4288299395482,
+                "99.0" : 159.4288299395482,
+                "99.9" : 159.4288299395482,
+                "99.99" : 159.4288299395482,
+                "99.999" : 159.4288299395482,
+                "99.9999" : 159.4288299395482,
+                "100.0" : 159.4288299395482
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    157.3346351075522,
+                    155.59559704739704,
+                    159.4288299395482,
+                    156.49718925671456,
+                    156.21458160561184,
+                    154.7730244015444,
+                    156.36609985957247,
+                    156.9487013312451,
+                    157.40029967017435,
+                    156.334379875195
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "queryRadius" : "50",
+            "spatialLevel" : "15"
+        },
+        "primaryMetric" : {
+            "score" : 156.46366861701566,
+            "scoreError" : 1.4973379586850533,
+            "scoreConfidence" : [
+                154.9663306583306,
+                157.9610065757007
+            ],
+            "scorePercentiles" : {
+                "0.0" : 154.79030228606734,
+                "50.0" : 156.44707144042673,
+                "90.0" : 158.2227274623021,
+                "95.0" : 158.30238941548183,
+                "99.0" : 158.30238941548183,
+                "99.9" : 158.30238941548183,
+                "99.99" : 158.30238941548183,
+                "99.999" : 158.30238941548183,
+                "99.9999" : 158.30238941548183,
+                "100.0" : 158.30238941548183
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    155.72520714840715,
+                    156.63190965926853,
+                    154.79030228606734,
+                    156.56454069676613,
+                    156.205319563523,
+                    158.30238941548183,
+                    156.9360610806578,
+                    157.50576988368437,
+                    155.64558425221307,
+                    156.32960218408735
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "queryRadius" : "50",
+            "spatialLevel" : "16"
+        },
+        "primaryMetric" : {
+            "score" : 156.1830850090742,
+            "scoreError" : 2.035329910926175,
+            "scoreConfidence" : [
+                154.14775509814802,
+                158.21841492000038
+            ],
+            "scorePercentiles" : {
+                "0.0" : 153.82317728319262,
+                "50.0" : 156.00958926438653,
+                "90.0" : 158.5551873031461,
+                "95.0" : 158.65566941101963,
+                "99.0" : 158.65566941101963,
+                "99.9" : 158.65566941101963,
+                "99.99" : 158.65566941101963,
+                "99.999" : 158.65566941101963,
+                "99.9999" : 158.65566941101963,
+                "100.0" : 158.65566941101963
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    158.65566941101963,
+                    155.69772886886264,
+                    156.50594783695144,
+                    154.93204375386517,
+                    155.77941862272655,
+                    153.82317728319262,
+                    155.9577431906615,
+                    156.06143533811155,
+                    157.65084833228445,
+                    156.76683745306633
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "queryRadius" : "50",
+            "spatialLevel" : "17"
+        },
+        "primaryMetric" : {
+            "score" : 156.55372968263845,
+            "scoreError" : 1.0666607159324804,
+            "scoreConfidence" : [
+                155.48706896670598,
+                157.62039039857092
+            ],
+            "scorePercentiles" : {
+                "0.0" : 155.60188276397517,
+                "50.0" : 156.46931363029591,
+                "90.0" : 157.47185239505149,
+                "95.0" : 157.48163869244067,
+                "99.0" : 157.48163869244067,
+                "99.9" : 157.48163869244067,
+                "99.99" : 157.48163869244067,
+                "99.999" : 157.48163869244067,
+                "99.9999" : 157.48163869244067,
+                "100.0" : 157.48163869244067
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    155.60188276397517,
+                    157.0643166562108,
+                    155.93122109849074,
+                    157.38377571854878,
+                    156.34278471138845,
+                    157.48163869244067,
+                    156.31439447824053,
+                    156.59584254920338,
+                    155.626093648082,
+                    157.19534650980393
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "1000",
+            "queryRadius" : "50",
+            "spatialLevel" : "18"
+        },
+        "primaryMetric" : {
+            "score" : 155.9107562204625,
+            "scoreError" : 1.4327562819710633,
+            "scoreConfidence" : [
+                154.47799993849145,
+                157.34351250243355
+            ],
+            "scorePercentiles" : {
+                "0.0" : 154.3560665434381,
+                "50.0" : 156.0564882865898,
+                "90.0" : 157.18082273611105,
+                "95.0" : 157.21770081581425,
+                "99.0" : 157.21770081581425,
+                "99.9" : 157.21770081581425,
+                "99.99" : 157.21770081581425,
+                "99.999" : 157.21770081581425,
+                "99.9999" : 157.21770081581425,
+                "100.0" : 157.21770081581425
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    156.8233129794896,
+                    155.30068696730203,
+                    156.84892001878228,
+                    154.3560665434381,
+                    155.38282537220843,
+                    154.7374922791847,
+                    156.3275806552262,
+                    156.03270009342884,
+                    157.21770081581425,
+                    156.08027647975078
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "queryRadius" : "50",
+            "spatialLevel" : "14"
+        },
+        "primaryMetric" : {
+            "score" : 1043.379214901381,
+            "scoreError" : 10.383136986487056,
+            "scoreConfidence" : [
+                1032.996077914894,
+                1053.762351887868
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1033.3253353973168,
+                "50.0" : 1044.0834203125,
+                "90.0" : 1054.0432549745717,
+                "95.0" : 1054.4268317560463,
+                "99.0" : 1054.4268317560463,
+                "99.9" : 1054.4268317560463,
+                "99.99" : 1054.4268317560463,
+                "99.999" : 1054.4268317560463,
+                "99.9999" : 1054.4268317560463,
+                "100.0" : 1054.4268317560463
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    1042.2285166320166,
+                    1044.2015625,
+                    1034.6860165118678,
+                    1048.329890167364,
+                    1054.4268317560463,
+                    1045.2491751824818,
+                    1036.7884788004137,
+                    1043.965278125,
+                    1033.3253353973168,
+                    1050.5910639412998
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "queryRadius" : "50",
+            "spatialLevel" : "15"
+        },
+        "primaryMetric" : {
+            "score" : 1037.5784033884884,
+            "scoreError" : 10.864273643480978,
+            "scoreConfidence" : [
+                1026.7141297450073,
+                1048.4426770319694
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1026.163254861822,
+                "50.0" : 1037.3847868133316,
+                "90.0" : 1048.0308435306783,
+                "95.0" : 1048.331720711297,
+                "99.0" : 1048.331720711297,
+                "99.9" : 1048.331720711297,
+                "99.99" : 1048.331720711297,
+                "99.999" : 1048.331720711297,
+                "99.9999" : 1048.331720711297,
+                "100.0" : 1048.331720711297
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    1045.3229489051096,
+                    1031.1842417695473,
+                    1048.331720711297,
+                    1032.1885942327497,
+                    1041.7069033264033,
+                    1026.163254861822,
+                    1043.0418397502601,
+                    1034.0945995872032,
+                    1040.67497403946,
+                    1033.074956701031
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "queryRadius" : "50",
+            "spatialLevel" : "16"
+        },
+        "primaryMetric" : {
+            "score" : 1043.7929163202675,
+            "scoreError" : 11.100039525142424,
+            "scoreConfidence" : [
+                1032.6928767951251,
+                1054.89295584541
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1035.35750672182,
+                "50.0" : 1042.8712020833334,
+                "90.0" : 1054.2376813648173,
+                "95.0" : 1054.4182881177708,
+                "99.0" : 1054.4182881177708,
+                "99.9" : 1054.4182881177708,
+                "99.99" : 1054.4182881177708,
+                "99.999" : 1054.4182881177708,
+                "99.9999" : 1054.4182881177708,
+                "100.0" : 1054.4182881177708
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    1042.744921875,
+                    1047.180642633229,
+                    1035.35750672182,
+                    1054.4182881177708,
+                    1036.3290672182006,
+                    1042.9974822916668,
+                    1037.8202639751553,
+                    1052.6122205882352,
+                    1036.5425284384694,
+                    1051.926241343127
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "queryRadius" : "50",
+            "spatialLevel" : "17"
+        },
+        "primaryMetric" : {
+            "score" : 1042.081322298245,
+            "scoreError" : 11.476241389293003,
+            "scoreConfidence" : [
+                1030.605080908952,
+                1053.5575636875378
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1027.9167528205128,
+                "50.0" : 1041.6019661309406,
+                "90.0" : 1053.0859029074484,
+                "95.0" : 1053.1515231092437,
+                "99.0" : 1053.1515231092437,
+                "99.9" : 1053.1515231092437,
+                "99.99" : 1053.1515231092437,
+                "99.999" : 1053.1515231092437,
+                "99.9999" : 1053.1515231092437,
+                "100.0" : 1053.1515231092437
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    1053.1515231092437,
+                    1038.1354378881988,
+                    1045.8080907194994,
+                    1035.6132055785124,
+                    1041.3591640706127,
+                    1027.9167528205128,
+                    1052.4953210912906,
+                    1041.8447681912683,
+                    1044.9852427083333,
+                    1039.5037168049791
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "10000",
+            "queryRadius" : "50",
+            "spatialLevel" : "18"
+        },
+        "primaryMetric" : {
+            "score" : 1058.2569490379606,
+            "scoreError" : 31.89673816826353,
+            "scoreConfidence" : [
+                1026.360210869697,
+                1090.153687206224
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1037.978649068323,
+                "50.0" : 1052.7381267087276,
+                "90.0" : 1103.3562816597416,
+                "95.0" : 1106.6327726269315,
+                "99.0" : 1106.6327726269315,
+                "99.9" : 1106.6327726269315,
+                "99.99" : 1106.6327726269315,
+                "99.999" : 1106.6327726269315,
+                "99.9999" : 1106.6327726269315,
+                "100.0" : 1106.6327726269315
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    1039.4787780082988,
+                    1053.6693396424816,
+                    1037.978649068323,
+                    1051.8069137749737,
+                    1041.792618899273,
+                    1073.867862955032,
+                    1106.6327726269315,
+                    1073.3096006423982,
+                    1048.8478472803347,
+                    1055.1851074815595
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "queryRadius" : "50",
+            "spatialLevel" : "14"
+        },
+        "primaryMetric" : {
+            "score" : 8211.450860038869,
+            "scoreError" : 163.0665201406588,
+            "scoreConfidence" : [
+                8048.38433989821,
+                8374.517380179528
+            ],
+            "scorePercentiles" : {
+                "0.0" : 7956.851190476191,
+                "50.0" : 8250.869102359056,
+                "90.0" : 8324.209367477306,
+                "95.0" : 8327.417702479339,
+                "99.0" : 8327.417702479339,
+                "99.9" : 8327.417702479339,
+                "99.99" : 8327.417702479339,
+                "99.999" : 8327.417702479339,
+                "99.9999" : 8327.417702479339,
+                "100.0" : 8327.417702479339
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    8225.490853658537,
+                    7956.851190476191,
+                    8253.67418032787,
+                    8268.511270491803,
+                    8253.843581967212,
+                    8170.567073170731,
+                    8327.417702479339,
+                    8248.064024390244,
+                    8114.754370967742,
+                    8295.334352459016
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "queryRadius" : "50",
+            "spatialLevel" : "15"
+        },
+        "primaryMetric" : {
+            "score" : 7948.395756323429,
+            "scoreError" : 99.05925684973073,
+            "scoreConfidence" : [
+                7849.3364994736985,
+                8047.455013173159
+            ],
+            "scorePercentiles" : {
+                "0.0" : 7856.124671875,
+                "50.0" : 7937.80905511811,
+                "90.0" : 8044.6069024,
+                "95.0" : 8046.700336,
+                "99.0" : 8046.700336,
+                "99.9" : 8046.700336,
+                "99.99" : 8046.700336,
+                "99.999" : 8046.700336,
+                "99.9999" : 8046.700336,
+                "100.0" : 8046.700336
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    8046.700336,
+                    7928.674866141732,
+                    8025.766,
+                    7899.684377952756,
+                    7946.943244094488,
+                    7884.9749296875,
+                    7975.69246031746,
+                    7856.124671875,
+                    8017.522,
+                    7901.874677165354
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "queryRadius" : "50",
+            "spatialLevel" : "16"
+        },
+        "primaryMetric" : {
+            "score" : 8108.775791653352,
+            "scoreError" : 155.77845979036266,
+            "scoreConfidence" : [
+                7952.997331862989,
+                8264.554251443715
+            ],
+            "scorePercentiles" : {
+                "0.0" : 7927.3907480314965,
+                "50.0" : 8141.600509998689,
+                "90.0" : 8251.731612361722,
+                "95.0" : 8259.394467213115,
+                "99.0" : 8259.394467213115,
+                "99.9" : 8259.394467213115,
+                "99.99" : 8259.394467213115,
+                "99.999" : 8259.394467213115,
+                "99.9999" : 8259.394467213115,
+                "100.0" : 8259.394467213115
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    7927.3907480314965,
+                    8049.175336,
+                    8182.765918699187,
+                    8173.116195121951,
+                    8123.858540322581,
+                    8259.394467213115,
+                    8181.037943089431,
+                    8159.342479674797,
+                    7988.2969523809525,
+                    8043.379336
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "queryRadius" : "50",
+            "spatialLevel" : "17"
+        },
+        "primaryMetric" : {
+            "score" : 8083.8081543097,
+            "scoreError" : 284.3832325491319,
+            "scoreConfidence" : [
+                7799.4249217605675,
+                8368.19138685883
+            ],
+            "scorePercentiles" : {
+                "0.0" : 7926.51411023622,
+                "50.0" : 8066.824787612903,
+                "90.0" : 8512.08307298726,
+                "95.0" : 8552.236344537816,
+                "99.0" : 8552.236344537816,
+                "99.9" : 8552.236344537816,
+                "99.99" : 8552.236344537816,
+                "99.999" : 8552.236344537816,
+                "99.9999" : 8552.236344537816,
+                "100.0" : 8552.236344537816
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    8150.7036290322585,
+                    7933.23720472441,
+                    8086.695903225806,
+                    7952.661373015873,
+                    8552.236344537816,
+                    8147.5161290322585,
+                    8046.953672,
+                    7929.791338582677,
+                    8111.7718387096775,
+                    7926.51411023622
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.hellblazer.luciferase.simulation.von.SpatialNeighborIndexBaselineBenchmark.findWithinRadius",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 0,
+        "jvm" : "/Users/hal.hildebrand/.sdkman/candidates/java/25.0.1-graal/bin/java",
+        "jvmArgs" : [
+            "-XX:ThreadPriorityPolicy=1",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCIProduct",
+            "-XX:+EnableJVMCI",
+            "-XX:-UnlockExperimentalVMOptions",
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+            "-Dclassworlds.conf=/opt/homebrew/Cellar/maven/3.9.14/libexec/bin/m2.conf",
+            "-Dmaven.home=/opt/homebrew/Cellar/maven/3.9.14/libexec",
+            "-Dlibrary.jansi.path=/opt/homebrew/Cellar/maven/3.9.14/libexec/lib/jansi-native",
+            "-Dmaven.multiModuleProjectDirectory=/Users/hal.hildebrand/git/Luciferase"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS-jvmci-b01",
+        "warmupIterations" : 5,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "entityCount" : "100000",
+            "queryRadius" : "50",
+            "spatialLevel" : "18"
+        },
+        "primaryMetric" : {
+            "score" : 8231.639108722778,
+            "scoreError" : 182.3812167921787,
+            "scoreConfidence" : [
+                8049.2578919306,
+                8414.020325514957
+            ],
+            "scorePercentiles" : {
+                "0.0" : 8027.470664,
+                "50.0" : 8295.12017768595,
+                "90.0" : 8362.450948884298,
+                "95.0" : 8365.067016666666,
+                "99.0" : 8365.067016666666,
+                "99.9" : 8365.067016666666,
+                "99.99" : 8365.067016666666,
+                "99.999" : 8365.067016666666,
+                "99.9999" : 8365.067016666666,
+                "100.0" : 8365.067016666666
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    8027.470664,
+                    8305.967975206611,
+                    8365.067016666666,
+                    8338.906338842975,
+                    8074.127336,
+                    8311.550958677686,
+                    8176.915650406504,
+                    8308.27238016529,
+                    8123.840387096774,
+                    8284.27238016529
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+
