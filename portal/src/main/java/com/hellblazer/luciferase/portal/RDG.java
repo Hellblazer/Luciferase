@@ -268,12 +268,21 @@ public class RDG extends RDGCS {
         return new Point3D(x + y - z, -x + y, z);
     }
 
+    /**
+     * Inverse of {@link #toCartesian(Tuple3i)} via the RDG basis change.
+     * <p>
+     * Uses {@link Math#round} (not C-style {@code (int)} truncation) for
+     * consistency with {@link Tetrahedral#toRDG(Tuple3f)} (Luciferase-6oa).
+     * For integer cartesian inputs this is a no-op change since the inverse
+     * produces exact integers; for non-integer cartesian inputs the rounding
+     * yields the nearest RDG lattice point rather than truncating toward 0.
+     */
     @Override
     public Point3i toRDG(Tuple3f cartesian) {
         var x = cartesian.getX();
         var y = cartesian.getY();
         var z = cartesian.getZ();
-        return new Point3i((int) ((x - y + z) / 2), (int) ((x + y + z) / 2), (int) z);
+        return new Point3i(Math.round((x - y + z) / 2f), Math.round((x + y + z) / 2f), Math.round(z));
     }
 
     @Override

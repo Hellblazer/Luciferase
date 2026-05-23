@@ -165,11 +165,23 @@ public class Tetrahedral extends RDGCS {
                            (rdg.getX() + rdg.getY()) * DIVIDE_ROOT_2);
     }
 
+    /**
+     * Inverse of {@link #toCartesian(Tuple3i)} via the Tetrahedral basis change.
+     * <p>
+     * Uses {@link Math#round} (not C-style {@code (int)} truncation) to invert
+     * the {@code 1/√2} basis scale faithfully. The earlier truncation
+     * implementation broke the {@code toRDG(toCartesian(p)) == p} round-trip
+     * for unit-magnitude integer points: for example,
+     * {@code toCartesian((1, 0, 0)) = (0, 1/√2, 1/√2)} and the inverse
+     * computation produced floats in the {@code [0.99999..., 1.00000...]}
+     * neighbourhood that {@code (int)} cast to {@code 0} (Luciferase-6oa
+     * audit finding).
+     */
     @Override
     public Point3i toRDG(Tuple3f cartesian) {
-        return new Point3i((int) ((-cartesian.x + cartesian.y + cartesian.z) * DIVIDE_ROOT_2),
-                           (int) ((cartesian.x - cartesian.y + cartesian.z) * DIVIDE_ROOT_2),
-                           (int) ((cartesian.x + cartesian.y - cartesian.z) * DIVIDE_ROOT_2));
+        return new Point3i(Math.round((-cartesian.x + cartesian.y + cartesian.z) * DIVIDE_ROOT_2),
+                           Math.round(( cartesian.x - cartesian.y + cartesian.z) * DIVIDE_ROOT_2),
+                           Math.round(( cartesian.x + cartesian.y - cartesian.z) * DIVIDE_ROOT_2));
     }
 
     /**
