@@ -27,7 +27,17 @@ import java.util.function.Consumer;
  * - Enclosing neighbors via bounds overlap
  * - Performance target: JOIN latency < 100ms
  * <p>
- * Thread-safe: Delegates to thread-safe SpatialNeighborIndex.
+ * Thread-safe: {@link #join(Node, Point3D)} runs under a per-protocol lock so
+ * concurrent join attempts see a consistent view of the index between the
+ * neighbor-discovery and self-insertion steps. Without this serialisation,
+ * two joiners landing simultaneously could each call
+ * {@code findOverlapping(joiner.bounds())} BEFORE either has inserted into
+ * the index, so neither sees the other as a neighbor — producing a permanent
+ * bidirectional-link gap detected by neighbor-consistency (NC) metrics.
+ * Observed: {@code IntegrationTest.testConcurrentJoinsHandled} on M4 Max ran
+ * NC = 0.43 deterministically under the old unsynchronised implementation
+ * (Luciferase-x0t). Joins are per-bubble-lifecycle events (not per-tick), so
+ * the serialisation cost is negligible at production rates.
  *
  * @author hal.hildebrand
  */
@@ -35,6 +45,7 @@ public class JoinProtocol {
 
     private final SpatialNeighborIndex index;
     private final Consumer<Event> eventEmitter;
+    private final Object joinLock = new Object();
 
     /**
      * Create a JOIN protocol handler.
@@ -65,34 +76,41 @@ public class JoinProtocol {
         Objects.requireNonNull(joiner, "joiner cannot be null");
         Objects.requireNonNull(position, "position cannot be null");
 
-        // Check if already in index (idempotent)
-        if (index.get(joiner.id()) != null) {
-            return;  // Already joined
+        // Serialise concurrent joins so steps 1-5 below see a consistent index.
+        // Without this, two concurrent joiners each call findOverlapping before
+        // either inserts, miss each other, and form a permanent neighbor-link
+        // gap (see class JavaDoc / Luciferase-x0t).
+        synchronized (joinLock) {
+            // Check if already in index (idempotent)
+            if (index.get(joiner.id()) != null) {
+                return;  // Already joined
+            }
+
+            // Step 1: Route to acceptor (closest bubble)
+            Node acceptor = findAcceptor(joiner, position);
+
+            // Step 2: Get neighbor list from acceptor
+            Set<Node> neighbors = getNeighborList(joiner, acceptor);
+
+            // Step 3 & 4: Establish bidirectional neighbor relationships
+            for (Node neighbor : neighbors) {
+                // Add neighbor to joiner's list
+                joiner.addNeighbor(neighbor.id());
+
+                // Notify neighbor of new joiner
+                neighbor.notifyJoin(joiner);
+
+                // Add joiner to neighbor's list
+                neighbor.addNeighbor(joiner.id());
+            }
+
+            // Step 5: Add joiner to index
+            index.insert(joiner);
+
+            // Step 6: Emit JOIN event (still under lock to preserve emit order
+            // relative to index state — event consumers may snapshot the index)
+            eventEmitter.accept(new Event.Join(joiner.id(), position));
         }
-
-        // Step 1: Route to acceptor (closest bubble)
-        Node acceptor = findAcceptor(joiner, position);
-
-        // Step 2: Get neighbor list from acceptor
-        Set<Node> neighbors = getNeighborList(joiner, acceptor);
-
-        // Step 3 & 4: Establish bidirectional neighbor relationships
-        for (Node neighbor : neighbors) {
-            // Add neighbor to joiner's list
-            joiner.addNeighbor(neighbor.id());
-
-            // Notify neighbor of new joiner
-            neighbor.notifyJoin(joiner);
-
-            // Add joiner to neighbor's list
-            neighbor.addNeighbor(joiner.id());
-        }
-
-        // Step 5: Add joiner to index
-        index.insert(joiner);
-
-        // Step 6: Emit JOIN event
-        eventEmitter.accept(new Event.Join(joiner.id(), position));
     }
 
     /**
