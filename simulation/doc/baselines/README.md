@@ -202,7 +202,7 @@ per-entity even though it visits 8× more entities.
 
 The flat-map linear scan in the dual-store path is ~1.7× faster than the
 original linear-scan-via-stream baseline because the imperative for-loop
-+ `ArrayList` accumulator avoids `.stream().filter().collect()` overhead.
+with an `ArrayList` accumulator avoids `.stream().filter().collect()` overhead.
 The `findKNearest` "speedups" remain cache-hit dominated (real for VoN's
 60 Hz tick pattern; cold-cache k-NN cost is unmeasured — flagged for any
 future workload that defeats the level-15 cache).
