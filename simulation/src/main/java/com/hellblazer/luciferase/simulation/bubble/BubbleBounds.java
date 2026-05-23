@@ -91,14 +91,38 @@ public final class BubbleBounds implements Serializable {
     }
 
     /**
-     * Create bounds from entity positions.
+     * Create bounds from entity positions at the default spatial level.
      * <p>
-     * Finds the smallest tetrahedron (at level 10) that encompasses all positions.
+     * Convenience overload that uses {@link SpatialLevelHeuristic#DEFAULT_SPATIAL_LEVEL}
+     * (currently {@code 18}, computed from the default-VoN AoI radius of {@code 50}).
+     * <p>
+     * <b>Behavior change (RDR-003 Phase 0 Step 0):</b> this overload previously hardcoded
+     * level {@code 10} (cell-edge {@code 2048}), which collapsed the entire default
+     * {@code 200}-unit world into a single Tetree cell. Callers that depended on the old
+     * single-cell bucketing should switch to {@link #fromEntityPositions(List, byte)} with
+     * an explicit level.
      *
      * @param positions List of entity positions
-     * @return BubbleBounds enclosing all positions
+     * @return BubbleBounds enclosing all positions at {@link SpatialLevelHeuristic#DEFAULT_SPATIAL_LEVEL}
      */
     public static BubbleBounds fromEntityPositions(List<Point3f> positions) {
+        return fromEntityPositions(positions, SpatialLevelHeuristic.DEFAULT_SPATIAL_LEVEL);
+    }
+
+    /**
+     * Create bounds from entity positions at the specified Tetree refinement level.
+     * <p>
+     * The caller-supplied {@code spatialLevel} determines cell-edge granularity in
+     * absolute Tetree coordinate units ({@code 2^(MAX_REFINEMENT_LEVEL - spatialLevel)}).
+     * Callers that own a {@code spatialLevel} (e.g. {@code Manager} via
+     * {@link BubbleBoundsTracker}) should use this overload to thread the level explicitly.
+     *
+     * @param positions    List of entity positions
+     * @param spatialLevel Tetree refinement level for the root key
+     * @return BubbleBounds enclosing all positions at the given level
+     * @throws IllegalArgumentException if {@code positions} is empty
+     */
+    public static BubbleBounds fromEntityPositions(List<Point3f> positions, byte spatialLevel) {
         if (positions.isEmpty()) {
             throw new IllegalArgumentException("Cannot create bounds from empty position list");
         }
@@ -126,15 +150,15 @@ public final class BubbleBounds implements Serializable {
         float cy = (float) positions.stream().mapToDouble(p -> p.y).average().orElseThrow();
         float cz = (float) positions.stream().mapToDouble(p -> p.z).average().orElseThrow();
 
-        // Locate tetrahedron containing centroid at level 10
-        var tet = Tet.locatePointBeyRefinementFromRoot(cx, cy, cz, (byte) 10);
+        // Locate tetrahedron containing centroid at the requested level
+        var tet = Tet.locatePointBeyRefinementFromRoot(cx, cy, cz, spatialLevel);
         TetreeKey<?> key;
 
         if (tet != null) {
             key = tet.tmIndex();
         } else {
-            // Fallback to root tetrahedron if position is outside valid range
-            key = TetreeKey.create((byte) 10, 0L, 0L);
+            // Fallback to root tetrahedron at the requested level if position is outside valid range
+            key = TetreeKey.create(spatialLevel, 0L, 0L);
         }
 
         return new BubbleBounds(key, rdgMin, rdgMax);
@@ -265,13 +289,13 @@ public final class BubbleBounds implements Serializable {
     }
 
     /**
-     * Recalculate bounds from a new set of entity positions.
+     * Recalculate bounds from a new set of entity positions, preserving this instance's level.
      *
      * @param entityPositions New entity positions
-     * @return New BubbleBounds computed from positions
+     * @return New BubbleBounds computed from positions at the current level
      */
     public BubbleBounds recalculate(List<Point3f> entityPositions) {
-        return fromEntityPositions(entityPositions);
+        return fromEntityPositions(entityPositions, level());
     }
 
     /**

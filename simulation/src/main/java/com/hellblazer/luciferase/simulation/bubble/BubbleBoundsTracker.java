@@ -86,7 +86,7 @@ public class BubbleBoundsTracker implements EntityChangeListener {
 
         var positions = new ArrayList<>(entityPositions.values());
         if (!positions.isEmpty()) {
-            bounds = BubbleBounds.fromEntityPositions(positions);
+            bounds = BubbleBounds.fromEntityPositions(positions, spatialLevel);
         }
     }
 
@@ -96,7 +96,7 @@ public class BubbleBoundsTracker implements EntityChangeListener {
 
         // Update bounds
         if (bounds == null) {
-            bounds = BubbleBounds.fromEntityPositions(List.of(position));
+            bounds = BubbleBounds.fromEntityPositions(List.of(position), spatialLevel);
         } else {
             bounds = bounds.expand(position);
         }

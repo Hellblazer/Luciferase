@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.SpatialLevelHeuristic;
 import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
 import com.hellblazer.luciferase.simulation.lifecycle.EnhancedBubbleAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.LifecycleCoordinator;
@@ -71,11 +72,25 @@ public class Manager {
 
     /**
      * Create a Manager with default configuration.
+     * <p>
+     * Defaults: {@code spatialLevel = }{@link SpatialLevelHeuristic#DEFAULT_SPATIAL_LEVEL}
+     * (computed from {@code aoiRadius = 50}; currently {@code 18}),
+     * {@code targetFrameMs = 16}, {@code aoiRadius = 50.0}.
+     * <p>
+     * <b>Behavior change (RDR-003 Phase 0 Step 0):</b> the default {@code spatialLevel}
+     * previously was a hardcoded {@code 10} (cell-edge {@code 2048}), which collapsed the
+     * default {@code 200}-unit VoN world into a single Tetree cell and made any spatial-
+     * index query degenerate to a linear scan. It is now computed from the AoI radius via
+     * {@link SpatialLevelHeuristic#computeDefault(float)} targeting
+     * {@code r &approx; 8&middot;cell-edge}. Tests or callers that implicitly depended on
+     * single-cell bucketing should use the explicit 4-arg or 5-arg constructor with a
+     * deliberate {@code spatialLevel}.
      *
      * @param transportRegistry Transport registry for P2P communication
      */
     public Manager(LocalServerTransport.Registry transportRegistry) {
-        this(transportRegistry, (byte) 10, 16L, 50.0f);
+        this(transportRegistry, SpatialLevelHeuristic.DEFAULT_SPATIAL_LEVEL, 16L,
+             SpatialLevelHeuristic.DEFAULT_AOI_RADIUS);
     }
 
     /**
