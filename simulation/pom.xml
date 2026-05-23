@@ -128,6 +128,29 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <executions>
+                    <!-- JMH annotation processor must run on test sources to
+                         generate META-INF/BenchmarkList. Without an explicit
+                         <annotationProcessorPaths>, JDK 25 + maven-compiler-plugin
+                         3.11 defaults to -proc:none for tests, so JMH benchmarks
+                         silently lack their dispatch list. -->
+                    <execution>
+                        <id>default-testCompile</id>
+                        <configuration>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.openjdk.jmh</groupId>
+                                    <artifactId>jmh-generator-annprocess</artifactId>
+                                    <version>${jmh.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <!-- Exclude integration tests from normal test phase -->
