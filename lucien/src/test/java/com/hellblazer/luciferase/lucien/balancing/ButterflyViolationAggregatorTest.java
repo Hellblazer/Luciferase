@@ -303,20 +303,22 @@ class ButterflyViolationAggregatorTest {
                                             int localLevel, int ghostLevel,
                                             int levelDiff, int sourceRank) {
         return BalanceViolation.newBuilder()
-            .setLocalKey(SpatialKey.newBuilder()
-                .setMorton(com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey.newBuilder()
-                    .setMortonCode(localKeyId)
-                    .build())
-                .build())
-            .setGhostKey(SpatialKey.newBuilder()
-                .setMorton(com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey.newBuilder()
-                    .setMortonCode(ghostKeyId)
-                    .build())
-                .build())
+            .setLocalKey(mortonKey(localKeyId))
+            .setGhostKey(mortonKey(ghostKeyId))
             .setLocalLevel(localLevel)
             .setGhostLevel(ghostLevel)
             .setLevelDifference(levelDiff)
             .setSourceRank(sourceRank)
             .build();
+    }
+
+    /**
+     * Build a proto SpatialKey envelope from a long Morton code (level 0).
+     * Routes through the SpatialKeySerdeRegistry (Luciferase-546) so this
+     * helper does not need to know the new envelope shape.
+     */
+    private static SpatialKey mortonKey(long mortonCode) {
+        return com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyToProtobuf(
+            new com.hellblazer.luciferase.lucien.octree.MortonKey(mortonCode, (byte) 0));
     }
 }

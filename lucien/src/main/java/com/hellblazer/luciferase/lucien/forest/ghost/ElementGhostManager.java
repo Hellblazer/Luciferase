@@ -413,7 +413,7 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
     private void processReceivedGhostElement(com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement ghostElementProto) {
         try {
             // Convert protobuf ghost element to local representation
-            var spatialKey = com.hellblazer.luciferase.lucien.SpatialKey.fromProtoSpatialKey(ghostElementProto.getSpatialKey());
+            var spatialKey = com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyFromProtobuf(ghostElementProto.getSpatialKey());
             
             // Convert protobuf position to javax.vecmath.Point3f
             var protoPos = ghostElementProto.getPosition();

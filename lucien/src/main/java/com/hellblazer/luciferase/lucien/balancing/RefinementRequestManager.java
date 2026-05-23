@@ -76,11 +76,6 @@ public class RefinementRequestManager {
      */
     public RefinementRequest buildRequest(int requesterRank, int roundNumber,
                                          List<SpatialKey> boundaryKeys, int treeLevel) {
-        // TODO: Implement SpatialKey to proto conversion
-        // The boundaryKeys need to be converted to proto lucien.ghost.SpatialKey messages.
-        // This requires checking the key type (MortonKey vs TetreeKey) and converting appropriately.
-        // For now, we add placeholder keys to prevent null pointer exceptions.
-
         totalRequests.incrementAndGet();
 
         log.debug("Building refinement request: rank={}, round={}, level={}, keys={}",
@@ -93,9 +88,13 @@ public class RefinementRequestManager {
             .setTreeLevel(treeLevel)
             .setTimestamp(System.currentTimeMillis());
 
-        // TODO: Convert boundary keys to proto format and add them
-        // For now, placeholder implementation - needs proper SpatialKey conversion
-        // .addAllBoundaryKeys(convertedKeys)
+        // Convert each boundary key to proto via the SpatialKeySerdeRegistry
+        // (Luciferase-546). Type-agnostic: any SpatialKey impl with a registered
+        // serde flows through unchanged.
+        for (var key : boundaryKeys) {
+            builder.addBoundaryKeys(
+                com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyToProtobuf(key));
+        }
 
         return builder.build();
     }

@@ -571,21 +571,19 @@ class Phase4E2ETest {
                                                     int localLevel, int ghostLevel,
                                                     int levelDiff, int sourceRank) {
         return BalanceViolation.newBuilder()
-            .setLocalKey(SpatialKey.newBuilder()
-                .setMorton(com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey.newBuilder()
-                    .setMortonCode(localKeyId)
-                    .build())
-                .build())
-            .setGhostKey(SpatialKey.newBuilder()
-                .setMorton(com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey.newBuilder()
-                    .setMortonCode(ghostKeyId)
-                    .build())
-                .build())
+            .setLocalKey(mortonKey(localKeyId))
+            .setGhostKey(mortonKey(ghostKeyId))
             .setLocalLevel(localLevel)
             .setGhostLevel(ghostLevel)
             .setLevelDifference(levelDiff)
             .setSourceRank(sourceRank)
             .build();
+    }
+
+    /** Build a proto SpatialKey envelope from a long Morton code (Luciferase-546 serde dispatch). */
+    private static SpatialKey mortonKey(long mortonCode) {
+        return com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyToProtobuf(
+            new com.hellblazer.luciferase.lucien.octree.MortonKey(mortonCode, (byte) 0));
     }
 
     /**

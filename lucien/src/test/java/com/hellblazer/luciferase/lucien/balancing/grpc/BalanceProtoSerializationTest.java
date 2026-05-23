@@ -39,9 +39,7 @@ class BalanceProtoSerializationTest {
 
     @Test
     void testRefinementRequestSerialization() {
-        var spatialKey = SpatialKey.newBuilder()
-            .setMorton(MortonKey.newBuilder().setMortonCode(0x12345L).build())
-            .build();
+        var spatialKey = mortonKey(0x12345L);
 
         var request = RefinementRequest.newBuilder()
             .setRequesterRank(1)
@@ -123,5 +121,11 @@ class BalanceProtoSerializationTest {
         } catch (Exception e) {
             fail("Failed to deserialize: " + e.getMessage());
         }
+    }
+
+    /** Build a proto SpatialKey envelope from a long Morton code (Luciferase-546 serde dispatch). */
+    private static SpatialKey mortonKey(long mortonCode) {
+        return com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyToProtobuf(
+            new com.hellblazer.luciferase.lucien.octree.MortonKey(mortonCode, (byte) 0));
     }
 }

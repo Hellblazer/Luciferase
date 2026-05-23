@@ -17,14 +17,13 @@
 
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
+import com.google.protobuf.ByteString;
 import com.hellblazer.luciferase.lucien.SpatialKey;
+import com.hellblazer.luciferase.lucien.SpatialKeySerde;
+import com.hellblazer.luciferase.lucien.SpatialKeySerdeRegistry;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.UUIDEntityID;
-import com.hellblazer.luciferase.lucien.octree.MortonKey;
-import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
-import com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey;
-import com.hellblazer.luciferase.lucien.tetree.ExtendedTetreeKey;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
 
 import javax.vecmath.Point3f;
@@ -45,72 +44,54 @@ public final class ProtobufConverters {
     }
     
     /**
-     * Converts a spatial key to protobuf format.
-     * 
+     * Converts a spatial key to its protobuf envelope (Luciferase-546).
+     * <p>
+     * Dispatches via {@link SpatialKeySerdeRegistry#forKey(SpatialKey)} —
+     * no {@code instanceof} switch. To add support for a new SpatialKey type,
+     * register a {@link SpatialKeySerde} for it; no edits to this method
+     * are required.
+     *
      * @param key the spatial key to convert
-     * @return the protobuf representation
-     * @throws IllegalArgumentException if the key type is unsupported
+     * @return the protobuf envelope (type_id + opaque payload)
+     * @throws IllegalArgumentException if no serde is registered for the key's class
      */
     public static com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey spatialKeyToProtobuf(
             com.hellblazer.luciferase.lucien.SpatialKey<?> key) {
-        
-        var builder = com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey.newBuilder();
-        
-        if (key instanceof MortonKey mortonKey) {
-            builder.setMorton(com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey.newBuilder()
-                .setMortonCode(mortonKey.getMortonCode())
-                .setLevel(mortonKey.getLevel())
-                .build());
-        } else if (key instanceof TetreeKey<?> tetreeKey) {
-            builder.setTetree(com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey.newBuilder()
-                .setLow(tetreeKey.getLowBits())
-                .setHigh(tetreeKey.getHighBits())
-                .setLevel(tetreeKey.getLevel())
-                .build());
-        } else {
-            throw new IllegalArgumentException("Unsupported spatial key type: " + key.getClass());
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        SpatialKeySerde serde = SpatialKeySerdeRegistry.forKey((com.hellblazer.luciferase.lucien.SpatialKey) key);
+        if (serde == null) {
+            throw new IllegalArgumentException("No SpatialKeySerde registered for key class: " + key.getClass());
         }
-        
-        return builder.build();
+        @SuppressWarnings("unchecked")
+        var payload = serde.serialize(key);
+        return com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey.newBuilder()
+            .setTypeId(serde.typeId())
+            .setPayload(ByteString.copyFrom(payload))
+            .build();
     }
-    
+
     /**
-     * Converts a protobuf spatial key to domain object.
-     * 
-     * @param proto the protobuf spatial key
-     * @return the domain spatial key
-     * @throws IllegalArgumentException if the key type is not set or unsupported
+     * Converts a protobuf spatial key envelope back to a domain object
+     * (Luciferase-546). Dispatches via
+     * {@link SpatialKeySerdeRegistry#forTypeId(String)}.
+     *
+     * @param proto the protobuf envelope
+     * @return the deserialised spatial key
+     * @throws IllegalArgumentException if no serde is registered for the
+     *                                  envelope's {@code type_id}
      */
     public static com.hellblazer.luciferase.lucien.SpatialKey<?> spatialKeyFromProtobuf(
             com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey proto) {
-        
-        return switch (proto.getKeyTypeCase()) {
-            case MORTON -> new MortonKey(proto.getMorton().getMortonCode(), (byte) proto.getMorton().getLevel());
-            case TETREE -> {
-                var tetree = proto.getTetree();
-                yield createTetreeKey(tetree.getLow(), tetree.getHigh(), tetree.getLevel());
-            }
-            case KEYTYPE_NOT_SET -> throw new IllegalArgumentException("Spatial key type not set");
-        };
-    }
-    
-    /**
-     * Creates a TetreeKey from protobuf values.
-     * Automatically chooses between CompactTetreeKey and ExtendedTetreeKey based on level.
-     * 
-     * @param low the low bits
-     * @param high the high bits
-     * @param level the level
-     * @return the appropriate TetreeKey implementation
-     */
-    private static TetreeKey<?> createTetreeKey(long low, long high, int level) {
-        if (level <= 10) {
-            // Use CompactTetreeKey for levels 0-10
-            return new CompactTetreeKey((byte) level, low);
-        } else {
-            // Use ExtendedTetreeKey for levels 11-21
-            return new ExtendedTetreeKey((byte) level, low, high);
+        var typeId = proto.getTypeId();
+        if (typeId.isEmpty()) {
+            throw new IllegalArgumentException("SpatialKey protobuf has no type_id set");
         }
+        var serde = SpatialKeySerdeRegistry.forTypeId(typeId);
+        if (serde == null) {
+            throw new IllegalArgumentException(
+                "No SpatialKeySerde registered for type_id '" + typeId + "'");
+        }
+        return serde.deserialize(proto.getPayload().toByteArray());
     }
     
     /**
