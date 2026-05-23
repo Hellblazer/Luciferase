@@ -469,6 +469,39 @@ Document is right-sized for a multi-phase architectural change spanning three mo
 
 ## Revision History
 
+### 2026-05-23: Phase 0 Step 0 implementation — formula correction
+
+Implementation of Step 0 (Luciferase-hic) surfaced an algebraic error in the literal default-level formula recorded earlier in this section. The text said:
+
+> `level = clamp(MAX_LEVEL - ceil(log2(worldExtent / (8 * medianAoiRadius))), MIN_USEFUL_LEVEL, MAX_LEVEL)` targeting r ≈ 8·cell-edge
+
+Evaluating the literal formula for the default configuration (`worldExtent = 200`, `medianAoiRadius = 50`) produces:
+
+```
+worldExtent / (8 * medianAoiRadius) = 200 / 400 = 0.5
+log2(0.5) = -1
+ceil(-1) = -1
+21 - (-1) = 22 → clamp to MAX_LEVEL = 21
+```
+
+That gives level 21 (cell-edge = 1, `r/cell-edge = 50`) which contradicts both the same paragraph's "r ≈ 8·cell-edge" target and research-003's empirical recommendation of level 17–18.
+
+Solving the target relation directly:
+
+```
+r = 8 · cell-edge
+cell-edge = 2^(MAX_LEVEL - L)
+→ L = MAX_LEVEL - log2(r / 8)
+    = MAX_LEVEL + 3 - log2(r)
+    = 24 - log2(r)
+```
+
+For r=50: L = 24 - ceil(log2(50)) = 24 - 6 = 18 ✓ (matches research-003).
+
+**Adopted formula:** `L = clamp(24 - ceil(log2(r)), MIN_USEFUL_LEVEL=8, MAX_LEVEL=21)`. The `worldExtent` parameter, present in the literal but not load-bearing in the target relation, was dropped from the default-computation API. Implemented in `simulation/.../bubble/SpatialLevelHeuristic.java`.
+
+Step 0 also threaded the level explicitly through `Manager` (no-arg constructor) and `BubbleBounds.fromEntityPositions` (new parameterized overload, no-arg overload delegates to `DEFAULT_SPATIAL_LEVEL`). The six other `(byte) 10` hardcodes in the simulation module (`GridMultiBubbleSimulation`, `BubbleLifecycle`, `AdaptiveSplitPolicy`, `DelosSocketTransport`, `GhostStateManager`, `EntityVisualizationServer`) were left untouched — out of Step 0 scope; potential follow-up beads if any prove to need similar threading.
+
 ### 2026-05-23: Initial Draft
 
 Created from 360°-analysis session 2026-05-22/23. Five parallel agents (web research, mixedbread archive scan, lucien code integration, portal code audit, mathematical rigor) converged on the three-phase plan with Phase 0 prepended. Math corrections folded in: 48 orthoschemes/RD not 24, no obtuse-vertex children due to FCC parity, AoI speedup range 2-3× to 15-20×, Greiner-Grosso refinement exact and closed. Phase 2 cost re-estimated up (substantial, not "weeks") after discovering `TetreeKey` hardcodes 8-fanout. Phase 0 inserted ahead of Phase 1 after discovering VoN has no spatial index at all.
