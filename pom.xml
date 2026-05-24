@@ -13,10 +13,10 @@
         <maven.compiler.source>${java.target.version}</maven.compiler.source>
         <maven.compiler.target>${java.target.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <junit.version>5.9.1</junit.version>
+        <junit.version>5.11.4</junit.version>
         <logback.version>1.5.13</logback.version>
         <grpc.version>1.77.0</grpc.version>
-        <protobuf.version>4.28.2</protobuf.version>
+        <protobuf.version>4.28.3</protobuf.version>
         <h2.version>2.1.212</h2.version>
         <javafx.version>${java.target.version}</javafx.version>
         <prime-mover.version>1.0.6</prime-mover.version>
@@ -28,7 +28,7 @@
         <lwjgl.natives>natives-linux</lwjgl.natives>
         <gpu-support.version>1.0.8</gpu-support.version>
         <javalin.version>6.3.0</javalin.version>
-        <test.fork>15</test.fork>
+        <test.forks>15</test.forks>
     </properties>
 
     <licenses>
@@ -499,7 +499,7 @@
                                 </requireMavenVersion>
                                 <dependencyConvergence/>
                                 <requireJavaVersion>
-                                    <version>[24,)</version>
+                                    <version>[25,)</version>
                                 </requireJavaVersion>
                             </rules>
                         </configuration>
@@ -536,11 +536,18 @@
                     <configuration>
                         <forkCount>${test.forks}</forkCount>
                         <useModulePath>false</useModulePath>
-                        <argLine>-Djava.awt.headless=true</argLine>
-                        <argLine>--enable-preview --add-modules jdk.incubator.vector</argLine>
+                        <argLine>-Djava.awt.headless=true --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
                         <environmentVariables>
                             <CI>${env.CI}</CI>
                         </environmentVariables>
+                        <!-- Performance / benchmark tests are excluded from the default test
+                             cycle. Activate the `performance` profile (mvn test -Pperformance)
+                             to run them. See CLAUDE.md > Performance Testing. -->
+                        <excludes>
+                            <exclude>**/*Benchmark*.java</exclude>
+                            <exclude>**/*PerformanceTest.java</exclude>
+                            <exclude>**/*PerformanceProfilerTest.java</exclude>
+                        </excludes>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -807,6 +814,31 @@
             <properties>
                 <lwjgl.natives>natives-windows-arm64</lwjgl.natives>
             </properties>
+        </profile>
+        <!-- Performance / benchmark tests opt-in.
+             Default cycle excludes *Benchmark*.java and *PerformanceTest.java
+             (see surefire pluginManagement configuration). This profile flips
+             surefire to include only those files. -->
+        <profile>
+            <id>performance</id>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>org.apache.maven.plugins</groupId>
+                            <artifactId>maven-surefire-plugin</artifactId>
+                            <configuration>
+                                <excludes combine.self="override"/>
+                                <includes>
+                                    <include>**/*Benchmark*.java</include>
+                                    <include>**/*PerformanceTest.java</include>
+                                    <include>**/*PerformanceProfilerTest.java</include>
+                                </includes>
+                            </configuration>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
         </profile>
     </profiles>
 </project>
