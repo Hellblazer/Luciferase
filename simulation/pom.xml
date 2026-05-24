@@ -153,6 +153,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <!-- Re-state the root ${test.excluded.groups} exclusion: this
+                         module's own surefire <configuration> replaces the
+                         inherited pluginManagement config, so the
+                         @Tag("performance") exclusion must be repeated here. -->
+                    <excludedGroups>${test.excluded.groups}</excludedGroups>
                     <!-- Exclude integration tests from normal test phase -->
                     <excludes>
                         <exclude>**/integration/multiprocess/**/*Test.java</exclude>
@@ -212,4 +217,99 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- CI test batches. These replace the old `surefire:test -Dtest=<globs>`
+             invocations. -Dtest is a selection-time override that BYPASSES JUnit
+             tag filtering (excludedGroups), so @Tag("performance") tests would run
+             anyway under -Dtest. Surefire <includes> in a profile, by contrast,
+             COMPOSES with the inherited <excludedGroups>${test.excluded.groups}>
+             — a test must match the include AND not carry an excluded tag. Each
+             batch profile only adds <includes>; the excludedGroups and the
+             multiprocess <excludes> come from the module's base surefire config.
+             See Luciferase-nz5. -->
+        <profile>
+            <id>ci-batch-1</id>
+            <build><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/bubble/**/*Test.java</include>
+                        <include>**/behavior/**/*Test.java</include>
+                        <include>**/metrics/**/*Test.java</include>
+                        <include>**/validation/**/*Test.java</include>
+                        <include>**/tumbler/**/*Test.java</include>
+                        <include>**/viz/**/*Test.java</include>
+                        <include>**/spatial/**/*Test.java</include>
+                        <include>**/lifecycle/**/*Test.java</include>
+                        <include>**/config/**/*Test.java</include>
+                        <include>**/events/**/*Test.java</include>
+                    </includes>
+                </configuration>
+            </plugin></plugins></build>
+        </profile>
+        <profile>
+            <id>ci-batch-2</id>
+            <build><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/von/**/*Test.java</include>
+                        <include>**/transport/**/*Test.java</include>
+                        <include>**/integration/**/*Test.java</include>
+                        <include>**/topology/**/*Test.java</include>
+                        <include>**/animation/**/*Test.java</include>
+                        <include>**/entity/**/*Test.java</include>
+                        <include>**/persistence/**/*Test.java</include>
+                        <include>**/scheduling/**/*Test.java</include>
+                        <include>**/tick/**/*Test.java</include>
+                    </includes>
+                </configuration>
+            </plugin></plugins></build>
+        </profile>
+        <profile>
+            <id>ci-batch-3</id>
+            <build><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/causality/**/*Test.java</include>
+                        <include>**/distributed/migration/**/*Test.java</include>
+                        <include>**/distributed/grid/**/*Test.java</include>
+                    </includes>
+                </configuration>
+            </plugin></plugins></build>
+        </profile>
+        <profile>
+            <id>ci-batch-4</id>
+            <build><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/distributed/*Test.java</include>
+                        <include>**/distributed/integration/**/*Test.java</include>
+                        <include>**/distributed/network/**/*Test.java</include>
+                        <include>**/delos/**/*Test.java</include>
+                    </includes>
+                </configuration>
+            </plugin></plugins></build>
+        </profile>
+        <profile>
+            <id>ci-batch-5</id>
+            <build><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/consensus/**/*Test.java</include>
+                        <include>**/ghost/**/*Test.java</include>
+                    </includes>
+                </configuration>
+            </plugin></plugins></build>
+        </profile>
+    </profiles>
 </project>

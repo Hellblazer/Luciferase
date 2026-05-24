@@ -150,7 +150,10 @@ jobs:
       - name: Test Batch 1 (Fast unit tests - bubble, behavior, metrics, lifecycle, config, events)
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/bubble/**/*Test,**/behavior/**/*Test,**/metrics/**/*Test,**/validation/**/*Test,**/tumbler/**/*Test,**/viz/**/*Test,**/spatial/**/*Test,**/lifecycle/**/*Test,**/config/**/*Test,**/events/**/*Test' --file pom.xml
+          # -Pci-batch-1 sets surefire <includes> for this batch's packages.
+          # Unlike -Dtest, <includes> composes with excludedGroups so
+          # @Tag("performance") tests are correctly skipped. See Luciferase-nz5.
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Pci-batch-1 --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -222,7 +225,10 @@ jobs:
       - name: Test Batch 2 (VON overlay + transport + integration + topology + animation)
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/von/**/*Test,**/transport/**/*Test,**/integration/**/*Test,**/topology/**/*Test,**/animation/**/*Test,**/entity/**/*Test,**/persistence/**/*Test,**/scheduling/**/*Test,**/tick/**/*Test' --file pom.xml
+          # -Pci-batch-2: surefire <includes> compose with excludedGroups,
+          # and the module's <excludes> still drops multiprocess integration
+          # tests. See Luciferase-nz5.
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Pci-batch-2 --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -294,7 +300,8 @@ jobs:
       - name: Test Batch 3 (Causality + migration + grid coordination)
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/causality/**/*Test,**/distributed/migration/**/*Test,**/distributed/grid/**/*Test' --file pom.xml
+          # -Pci-batch-3. See Luciferase-nz5.
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Pci-batch-3 --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -366,7 +373,8 @@ jobs:
       - name: Test Batch 4 (Distributed systems + network + Delos integration)
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/distributed/*Test,**/distributed/integration/**/*Test,**/distributed/network/**/*Test,**/delos/**/*Test' --file pom.xml
+          # -Pci-batch-4. See Luciferase-nz5.
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Pci-batch-4 --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -438,7 +446,8 @@ jobs:
       - name: Test Batch 5 (Consensus committee + demo + ghost layer)
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/consensus/**/*Test,**/ghost/**/*Test' --file pom.xml
+          # -Pci-batch-5. See Luciferase-nz5.
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Pci-batch-5 --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -510,9 +519,12 @@ jobs:
       - name: Test Other Modules (grpc, common, lucien, sentry, render, portal, dyada-java)
         run: |
           export DISPLAY=:99.0
-          # Exclude memory-intensive tests from render module (require 4K+ resolution, >4GB heap)
-          # Exclude javafx tests (require full JavaFX toolkit, unreliable in CI)
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl grpc,common,lucien,sentry,render,portal,dyada-java -Drender.excludedGroups=memory-intensive -Dportal.excludedGroups=javafx --file pom.xml
+          # Exclude memory-intensive tests from render (require 4K+ resolution, >4GB heap)
+          # and javafx tests from portal (require full JavaFX toolkit, unreliable in CI).
+          # The leading " | " composes with the always-on ${test.excluded.groups}=performance
+          # exclusion in each module's surefire config (excludedGroups is a JUnit tag
+          # expression, so "performance | memory-intensive" excludes either tag).
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl grpc,common,lucien,sentry,render,portal,dyada-java "-Drender.excludedGroups= | memory-intensive" "-Dportal.excludedGroups= | javafx" --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}

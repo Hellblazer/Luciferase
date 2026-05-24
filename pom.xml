@@ -14,6 +14,13 @@
         <maven.compiler.target>${java.target.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.11.4</junit.version>
+        <!-- JUnit tag(s) excluded from the default test cycle. Performance,
+             benchmark, and timing-fragile-on-CI tests carry @Tag("performance")
+             and are skipped by default. Activate -Pperformance to run only
+             those. Single source of truth referenced by every module's
+             surefire <excludedGroups> so the exclusion is not lost when a
+             child module declares its own surefire <configuration>. -->
+        <test.excluded.groups>performance</test.excluded.groups>
         <logback.version>1.5.13</logback.version>
         <grpc.version>1.77.0</grpc.version>
         <protobuf.version>4.28.3</protobuf.version>
@@ -540,9 +547,17 @@
                         <environmentVariables>
                             <CI>${env.CI}</CI>
                         </environmentVariables>
-                        <!-- Performance / benchmark tests are excluded from the default test
-                             cycle. Activate the `performance` profile (mvn test -Pperformance)
-                             to run them. See CLAUDE.md > Performance Testing. -->
+                        <!-- Performance / benchmark / timing-fragile tests carry
+                             @Tag("performance") and are excluded from the default
+                             test cycle by group, not by filename pattern. This is
+                             robust against per-module surefire overrides because
+                             every module references the same ${test.excluded.groups}
+                             property. Activate -Pperformance to run ONLY the tagged
+                             tests. See CLAUDE.md > Performance Testing.
+                             The filename <excludes> are retained for legacy
+                             *Benchmark*/*PerformanceTest classes that have not yet
+                             been migrated to the tag (tracked: Luciferase-nz5). -->
+                        <excludedGroups>${test.excluded.groups}</excludedGroups>
                         <excludes>
                             <exclude>**/*Benchmark*.java</exclude>
                             <exclude>**/*PerformanceTest.java</exclude>
@@ -828,12 +843,21 @@
              through such module-level <plugins> declarations. -->
         <profile>
             <id>performance</id>
+            <properties>
+                <!-- Stop excluding the performance group so the profile runs it. -->
+                <test.excluded.groups></test.excluded.groups>
+            </properties>
             <build>
                 <plugins>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
+                            <!-- Run ONLY @Tag("performance") tests, and clear the
+                                 filename excludes so legacy *Benchmark*/*PerformanceTest
+                                 classes still run until they are migrated to the tag. -->
+                            <groups>performance</groups>
+                            <excludedGroups combine.self="override"/>
                             <excludes combine.self="override"/>
                             <includes combine.children="append">
                                 <include>**/*Benchmark*.java</include>

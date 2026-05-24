@@ -25,8 +25,8 @@ import com.hellblazer.luciferase.simulation.events.EntityUpdateEvent;
 import com.hellblazer.luciferase.simulation.ghost.GhostPhysicsMetrics;
 import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -226,10 +226,7 @@ class GhostPhysicsIntegrationTest {
      * Expected: All operations complete without errors in < 10ms.
      */
     @Test
-    @DisabledIfEnvironmentVariable(
-        named = "CI",
-        matches = "true",
-        disabledReason = "Flaky: 100-ghost creation <100ms threshold trips on GitHub Actions Ubuntu runners (observed 104ms — sits right on the cliff). Local dev coverage retained.")
+    @Tag("performance")
     void testScaleTest100Ghosts() {
         var ghostCount = 100;
         var startTime = System.currentTimeMillis();

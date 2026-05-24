@@ -168,8 +168,12 @@
                          enable-preview kept in sync with the root surefire argLine; this string
                          fully overrides the inherited argLine. -->
                     <argLine>${render.surefire.argLine} -Xmx4G -Xms1G --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
-                    <!-- Exclude memory-intensive tests in CI - they require more heap than typical CI runners provide -->
-                    <excludedGroups>${render.excludedGroups}</excludedGroups>
+                    <!-- Exclude the performance group (root default) plus any
+                         module-specific groups. render.excludedGroups is empty by
+                         default and, when CI sets it, must begin with a JUnit tag
+                         OR separator (e.g. " | memory-intensive") so the composed
+                         expression stays valid. -->
+                    <excludedGroups>${test.excluded.groups}${render.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
             

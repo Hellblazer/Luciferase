@@ -102,8 +102,12 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- Exclude javafx tests in CI - they require full JavaFX toolkit -->
-                    <excludedGroups>${portal.excludedGroups}</excludedGroups>
+                    <!-- Exclude the performance group (root default) plus any
+                         module-specific groups. portal.excludedGroups is empty by
+                         default and, when CI sets it, must begin with a JUnit tag
+                         OR separator (e.g. " | javafx") so the composed
+                         expression stays valid. -->
+                    <excludedGroups>${test.excluded.groups}${portal.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
         </plugins>
