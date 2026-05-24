@@ -24,6 +24,7 @@ import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -129,6 +130,10 @@ public class TwoOneBalanceCheckerTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(
+        named = "CI",
+        matches = "true",
+        disabledReason = "Flaky: 100-element processing <500ms threshold (even with CI-aware tolerance) trips on GitHub Actions Ubuntu runners (observed 2608ms). Local dev coverage retained.")
     public void testPerformanceCanProcessManyGhosts() {
         // Should process many elements efficiently
         // Note: CI runners may be 2-5x slower than local machines due to shared

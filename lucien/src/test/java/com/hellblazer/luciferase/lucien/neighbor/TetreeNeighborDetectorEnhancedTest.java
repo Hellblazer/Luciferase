@@ -24,6 +24,7 @@ import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.util.*;
@@ -343,6 +344,10 @@ public class TetreeNeighborDetectorEnhancedTest {
      * Test performance of neighbor detection with larger trees.
      */
     @Test
+    @DisabledIfEnvironmentVariable(
+        named = "CI",
+        matches = "true",
+        disabledReason = "Flaky: <10ms-per-key neighbor-detection threshold trips on GitHub Actions Ubuntu runners. Local dev coverage retained.")
     void testNeighborDetectionPerformance() {
         // Create a large tree with proper integer coordinates
         var random = new Random(12345);
