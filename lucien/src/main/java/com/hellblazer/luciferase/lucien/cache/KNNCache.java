@@ -6,12 +6,11 @@ package com.hellblazer.luciferase.lucien.cache;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Thread-safe LRU cache for k-nearest neighbor search results.
@@ -48,14 +47,25 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
     private static final int DEFAULT_MAX_ENTRIES = 10000;
     private static final float LOAD_FACTOR = 0.75f;
 
+    // Cache is a LinkedHashMap with access-order semantics — get() mutates the
+    // access-order list, so every public op (including reads) must hold the
+    // lock exclusively. The prior implementation paired a ReadWriteLock (which
+    // allowed concurrent get() calls under read mode) with Collections
+    // .synchronizedMap (which serialized only the underlying Map ops). That
+    // combination was both redundant and incorrect: synchronizedMap protected
+    // the bucket array, but the access-order linkage was untouched by reads
+    // through RWLock-read mode, leaving the LRU order open to races. A single
+    // ReentrantLock is the right primitive — exclusive everywhere, no second
+    // lock to track.
     private final Map<KNNQueryKey<Key>, CachedResult<ID>> cache;
-    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    private final ReentrantLock lock = new ReentrantLock();
     private final int maxEntries;
 
-    // Statistics
-    private long hits = 0;
-    private long misses = 0;
-    private long invalidations = 0;
+    // Statistics — incremented under lock, but exposed via Atomic for
+    // lock-free reads from getStats() / getHitRate().
+    private final AtomicLong hits = new AtomicLong();
+    private final AtomicLong misses = new AtomicLong();
+    private final AtomicLong invalidations = new AtomicLong();
 
     /**
      * Create k-NN cache with default capacity (10,000 entries)
@@ -71,19 +81,18 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
      */
     public KNNCache(int maxEntries) {
         this.maxEntries = maxEntries;
-        // LinkedHashMap with access-order for LRU eviction
-        this.cache = Collections.synchronizedMap(
-            new LinkedHashMap<KNNQueryKey<Key>, CachedResult<ID>>(
-                (int) (maxEntries / LOAD_FACTOR) + 1,
-                LOAD_FACTOR,
-                true // access-order for LRU
-            ) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<KNNQueryKey<Key>, CachedResult<ID>> eldest) {
-                    return size() > KNNCache.this.maxEntries;
-                }
+        // LinkedHashMap with access-order for LRU eviction. No synchronizedMap
+        // wrapper — all access is serialized by the outer ReentrantLock.
+        this.cache = new LinkedHashMap<>(
+            (int) (maxEntries / LOAD_FACTOR) + 1,
+            LOAD_FACTOR,
+            true // access-order for LRU
+        ) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<KNNQueryKey<Key>, CachedResult<ID>> eldest) {
+                return size() > KNNCache.this.maxEntries;
             }
-        );
+        };
     }
 
     /**
@@ -94,30 +103,30 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
      * @return Cached result if valid, null if miss or stale
      */
     public CachedResult<ID> get(KNNQueryKey<Key> queryKey, long currentVersion) {
-        lock.readLock().lock();
+        lock.lock();
         try {
             var cached = cache.get(queryKey);
             if (cached == null) {
-                misses++;
+                misses.incrementAndGet();
                 return null;
             }
 
             // Version check: cache valid if versions match
             if (cached.version != currentVersion) {
-                misses++;
+                misses.incrementAndGet();
                 return null;
             }
 
-            hits++;
+            hits.incrementAndGet();
             return cached;
         } finally {
-            lock.readLock().unlock();
+            lock.unlock();
         }
     }
 
     /**
      * Cache k-NN search result
-     * 
+     *
      * @param queryKey Composite query key (position + k + maxDistance)
      * @param entityIds List of entity IDs in order of increasing distance
      * @param distances Corresponding distances
@@ -126,54 +135,54 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
     public void put(KNNQueryKey<Key> queryKey, List<ID> entityIds, List<Float> distances, long version) {
         if (entityIds.size() != distances.size()) {
             throw new IllegalArgumentException(
-                "Entity IDs and distances must have same size: " + 
+                "Entity IDs and distances must have same size: " +
                 entityIds.size() + " vs " + distances.size()
             );
         }
 
-        lock.writeLock().lock();
+        lock.lock();
         try {
             var result = new CachedResult<>(entityIds, distances, version, System.nanoTime());
             cache.put(queryKey, result);
         } finally {
-            lock.writeLock().unlock();
+            lock.unlock();
         }
     }
 
     /**
      * Invalidate cache entry for a specific query
-     * 
+     *
      * @param queryKey Query key to invalidate
      */
     public void invalidate(KNNQueryKey<Key> queryKey) {
-        lock.writeLock().lock();
+        lock.lock();
         try {
             if (cache.remove(queryKey) != null) {
-                invalidations++;
+                invalidations.incrementAndGet();
             }
         } finally {
-            lock.writeLock().unlock();
+            lock.unlock();
         }
     }
 
     /**
      * Invalidate all cache entries for a specific spatial position
      * (all queries at that position, regardless of k or maxDistance)
-     * 
+     *
      * @param spatialKey Spatial key to invalidate
      */
     public void invalidatePosition(Key spatialKey) {
-        lock.writeLock().lock();
+        lock.lock();
         try {
             var keysToRemove = cache.keySet().stream()
                 .filter(qk -> qk.spatialKey().equals(spatialKey))
                 .toList();
             for (var key : keysToRemove) {
                 cache.remove(key);
-                invalidations++;
+                invalidations.incrementAndGet();
             }
         } finally {
-            lock.writeLock().unlock();
+            lock.unlock();
         }
     }
 
@@ -181,13 +190,13 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
      * Invalidate all cache entries
      */
     public void invalidateAll() {
-        lock.writeLock().lock();
+        lock.lock();
         try {
             int count = cache.size();
             cache.clear();
-            invalidations += count;
+            invalidations.addAndGet(count);
         } finally {
-            lock.writeLock().unlock();
+            lock.unlock();
         }
     }
 
@@ -195,33 +204,35 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
      * Get current cache size
      */
     public int size() {
-        lock.readLock().lock();
+        lock.lock();
         try {
             return cache.size();
         } finally {
-            lock.readLock().unlock();
+            lock.unlock();
         }
     }
 
     /**
-     * Get cache hit rate (0.0 to 1.0)
+     * Get cache hit rate (0.0 to 1.0). Lock-free — reads the atomic counters.
      */
     public double getHitRate() {
-        long total = hits + misses;
-        return total == 0 ? 0.0 : (double) hits / total;
+        long h = hits.get();
+        long m = misses.get();
+        long total = h + m;
+        return total == 0 ? 0.0 : (double) h / total;
     }
 
     /**
      * Get cache statistics
-     * 
+     *
      * @return Statistics summary
      */
     public CacheStats getStats() {
-        lock.readLock().lock();
+        lock.lock();
         try {
-            return new CacheStats(hits, misses, invalidations, cache.size(), maxEntries);
+            return new CacheStats(hits.get(), misses.get(), invalidations.get(), cache.size(), maxEntries);
         } finally {
-            lock.readLock().unlock();
+            lock.unlock();
         }
     }
 
@@ -229,13 +240,13 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
      * Reset statistics counters
      */
     public void resetStats() {
-        lock.writeLock().lock();
+        lock.lock();
         try {
-            hits = 0;
-            misses = 0;
-            invalidations = 0;
+            hits.set(0);
+            misses.set(0);
+            invalidations.set(0);
         } finally {
-            lock.writeLock().unlock();
+            lock.unlock();
         }
     }
 

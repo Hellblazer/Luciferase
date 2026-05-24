@@ -20,8 +20,8 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 
 import javax.vecmath.Point3f;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Entity container that holds all entity-related data. Consolidates content, locations, position, and bounds into a
@@ -44,7 +44,12 @@ public class Entity<Key extends SpatialKey<Key>, Content> {
     public Entity(Content content, Point3f position) {
         this.content = content;
         this.position = new Point3f(position);
-        this.locations = new HashSet<>();
+        // ConcurrentHashMap.newKeySet so addLocation/removeLocation from
+        // concurrent EntityManager paths (entities is itself ConcurrentHashMap,
+        // so multi-thread access to the same Entity is reachable) is safe and
+        // iteration via getLocations() does not throw CME. Plain HashSet was
+        // racy under any concurrent insert/move sequence.
+        this.locations = ConcurrentHashMap.newKeySet();
         this.bounds = null;
     }
 
@@ -54,7 +59,12 @@ public class Entity<Key extends SpatialKey<Key>, Content> {
     public Entity(Content content, Point3f position, EntityBounds bounds) {
         this.content = content;
         this.position = new Point3f(position);
-        this.locations = new HashSet<>();
+        // ConcurrentHashMap.newKeySet so addLocation/removeLocation from
+        // concurrent EntityManager paths (entities is itself ConcurrentHashMap,
+        // so multi-thread access to the same Entity is reachable) is safe and
+        // iteration via getLocations() does not throw CME. Plain HashSet was
+        // racy under any concurrent insert/move sequence.
+        this.locations = ConcurrentHashMap.newKeySet();
         this.bounds = bounds;
     }
 
