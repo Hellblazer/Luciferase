@@ -30,9 +30,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.Stack;
 
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -214,5 +218,81 @@ public class TetrahedronTest {
         assertEquals(d, face.getVertex(0));
         assertEquals(b, face.getVertex(1));
         assertEquals(a, face.getVertex(2));
+    }
+
+    /**
+     * Star-walk completeness regression test for the PR #86 fix to
+     * {@link Tetrahedron#visit(Vertex, StarVisitor, Stack, Set)}.
+     *
+     * The cases-A and -D switch arms had copy-paste bugs that pushed the
+     * wrong neighbor onto the traversal stack:
+     *   case A: when nB != null, pushed nC instead of nB
+     *   case D: when nA != null, pushed nB instead of nA
+     * The result was that {@link Tetrahedron#visitStar} silently skipped
+     * neighbors. Each tetrahedron in the star is the receiver in a unique
+     * traversal step; the visitor is invoked once per tet with the central
+     * vertex's ordinal in that tet. So a complete star walk over a vertex
+     * present in N tets must invoke the visitor exactly N times.
+     */
+    @Test
+    @DisplayName("visitStar visits all tetrahedra adjacent to a vertex exactly once")
+    public void testVisitStarCompleteness() {
+        // myOwnPrivateIdaho builds the universe tetrahedron containing the
+        // four bounding vertices. flip1to4 splits it around an inserted
+        // central vertex into four tets — each of which has the new vertex
+        // as one of its corners. The star around the new vertex is exactly
+        // those four tets.
+        var idaho = MutableGrid.myOwnPrivateIdaho(new MutableGrid());
+        var central = new Vertex(0.0f, 0.0f, 0.0f);
+        var ears = new ArrayList<OrientedFace>();
+        var firstChild = idaho.flip1to4(central, ears);
+        Assertions.assertNotNull(firstChild,
+            "flip1to4 should return one of the four child tetrahedra");
+
+        var visited = new HashSet<Tetrahedron>();
+        firstChild.visitStar(central, (v, t, a, b, c) -> {
+            boolean added = visited.add(t);
+            Assertions.assertTrue(added,
+                "Star walk visited the same tetrahedron twice: " + t);
+            Assertions.assertSame(central, t.getVertex(v),
+                "Visitor ordinal must reference the central vertex");
+        });
+
+        // Verify completeness: the central vertex's adjacent set must equal
+        // what visitStar visited. Vertex.getAdjacent / similar lookups are
+        // not directly exposed; instead, reconstruct the expected star by
+        // walking from firstChild via every neighbor pointer and counting
+        // tets that include the central vertex.
+        var expected = new HashSet<Tetrahedron>();
+        var pending = new Stack<Tetrahedron>();
+        pending.push(firstChild);
+        while (!pending.isEmpty()) {
+            var t = pending.pop();
+            if (!expected.add(t)) {
+                continue;
+            }
+            // Only walk to neighbors that share the central vertex.
+            for (var ord : V.values()) {
+                var nb = t.getNeighbor(ord);
+                if (nb != null && !expected.contains(nb)) {
+                    boolean nbContainsCentral = false;
+                    for (var v : V.values()) {
+                        if (nb.getVertex(v) == central) {
+                            nbContainsCentral = true;
+                            break;
+                        }
+                    }
+                    if (nbContainsCentral) {
+                        pending.push(nb);
+                    }
+                }
+            }
+        }
+
+        assertEquals(expected.size(), visited.size(),
+            "Star walk must visit every tetrahedron containing the central vertex: "
+            + "expected " + expected.size() + ", visited " + visited.size());
+        Assertions.assertTrue(visited.equals(expected),
+            "Star walk visited set must match expected adjacent set");
     }
 }

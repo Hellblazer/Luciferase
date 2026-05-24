@@ -36,7 +36,12 @@ public final class OctreeGPUMemory {
     private ByteBuffer nodeBuffer;
     private final long bufferSize;
     private final int nodeCount;
-    private boolean disposed = false;
+    // volatile because isDisposed() is read by background-staging threads
+    // that prepare uploads off the GL thread. Without it the JMM does not
+    // guarantee the staging thread sees writes made on the dispose/GL
+    // thread, so the guard before glBufferData could silently observe a
+    // stale false and dispatch GL calls against freed buffers.
+    private volatile boolean disposed = false;
     
     // Resource manager for GPU resources
     private final UnifiedResourceManager resourceManager = UnifiedResourceManager.getInstance();

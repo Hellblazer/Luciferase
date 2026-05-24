@@ -289,9 +289,26 @@ public final class PrismKey implements SpatialKey<PrismKey> {
         if (other == null) {
             return 1;
         }
-        
-        // Compare by consecutive index for spatial ordering
-        return Long.compare(this.consecutiveIndex(), other.consecutiveIndex());
+
+        // Lexicographic comparison on (level, line.z, type, n, y, x).
+        // The previous implementation compared by Long.compare(consecutiveIndex())
+        // which silently collided: (1) keys at different levels could share an
+        // index because level was not part of the encoding, and (2) at level
+        // 21 the packed long encoding cannot fit lineId without bit collisions
+        // (21 bits line + 64 bits triangle > 63 bits). A direct field-by-field
+        // comparison is correct at every valid level (0..MAX_LEVEL=21) and is
+        // consistent with equals (which uses Objects.equals(triangle, line)).
+        int cmp = Byte.compare(triangle.getLevel(), other.triangle.getLevel());
+        if (cmp != 0) return cmp;
+        cmp = Integer.compare(line.getZ(), other.line.getZ());
+        if (cmp != 0) return cmp;
+        cmp = Byte.compare(triangle.getType(), other.triangle.getType());
+        if (cmp != 0) return cmp;
+        cmp = Integer.compare(triangle.getN(), other.triangle.getN());
+        if (cmp != 0) return cmp;
+        cmp = Integer.compare(triangle.getY(), other.triangle.getY());
+        if (cmp != 0) return cmp;
+        return Integer.compare(triangle.getX(), other.triangle.getX());
     }
     
     // Object methods

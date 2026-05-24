@@ -411,7 +411,22 @@ public final class ESVTComputeRenderer {
                 coarseSampler = 0;
                 glDeleteSamplers(s);
             }
-            createOutputTexture();
+            try {
+                createOutputTexture();
+            } catch (RuntimeException re) {
+                // The old textures are already freed; createOutputTexture
+                // failed (driver OOM, lost context, etc.) so the renderer
+                // is no longer usable. Flip initialized to false so
+                // renderFrame fails fast at its initialized check instead
+                // of NPE-ing on the null output/coarse textures. The
+                // caller is expected to react to the rethrown exception
+                // (e.g. re-init at a smaller resolution or surface the
+                // error).
+                initialized = false;
+                log.error("ESVTComputeRenderer.resize: createOutputTexture failed at {}x{}; renderer marked uninitialized",
+                          frameWidth, frameHeight, re);
+                throw re;
+            }
 
             log.info("Resized ESVTComputeRenderer: {}x{}", frameWidth, frameHeight);
         }

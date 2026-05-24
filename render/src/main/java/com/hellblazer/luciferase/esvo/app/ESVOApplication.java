@@ -93,24 +93,31 @@ public class ESVOApplication {
         if (!initialized.get()) {
             return;
         }
-        
+
         running.set(false);
-        
-        // Shutdown background executor
+
+        // Shutdown background executor first so no new GL tasks can be
+        // queued during the rest of shutdown.
         if (backgroundExecutor != null) {
             backgroundExecutor.shutdown();
         }
-        
+
+        // Drop any pending GL work — gpuMemory is about to be disposed and
+        // executing the queued lambdas would either no-op (the disposed
+        // guard catches it) or race the dispose() call. Either way the
+        // queue must not accumulate across the renderer lifecycle.
+        pendingGlTasks.clear();
+
         // Clean up GPU memory
         if (gpuMemory != null) {
             gpuMemory.dispose(); // Use dispose() method
         }
-        
+
         // Clear scene
         if (scene != null) {
             scene.clear();
         }
-        
+
         initialized.set(false);
     }
     
