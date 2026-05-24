@@ -131,14 +131,20 @@ public final class ComputeShaderRenderer {
         
         // Use compute shader program
         glUseProgram(raycastProgram.getOpenGLId());
-        
+
+        // Ensure any prior writes to the octree SSBO (e.g. async upload) are
+        // visible to the compute shader before it reads them. Without this
+        // barrier the dispatch can read stale GPU memory and produce empty
+        // frames or wrong hits.
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
         // Dispatch compute shader
         int groupsX = (frameWidth + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
         int groupsY = (frameHeight + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y;
-        
+
         glDispatchCompute(groupsX, groupsY, WORKGROUP_SIZE_Z);
-        
-        // Ensure all writes are complete
+
+        // Ensure all image writes are visible to subsequent samplers / readback.
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
         
         // Check for errors
