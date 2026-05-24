@@ -103,9 +103,14 @@ public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUni
 
         // Convert octree data to ByteBuffer
         var nodeData = octreeToByteBuffer(data);
-
-        // Create buffer with raw OpenCL API for ByteBuffer compatibility
-        clNodeBuffer = createRawBuffer(nodeData, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
+        try {
+            // Create buffer with raw OpenCL API for ByteBuffer compatibility.
+            // CL_MEM_COPY_HOST_PTR copies the host data at creation time, so we
+            // can free the host ByteBuffer immediately after the call returns.
+            clNodeBuffer = createRawBuffer(nodeData, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
+        } finally {
+            memFree(nodeData);
+        }
     }
 
     /**
