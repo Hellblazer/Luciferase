@@ -123,10 +123,15 @@ class FailureRecoveryTest {
         migratorA.queueDeferredUpdate(entityId,
             new float[]{1.0f, 2.0f, 3.0f}, new float[]{0.1f, 0.2f, 0.3f});
 
+        // Use a monotonic counter rather than System.nanoTime() to keep the
+        // Lamport-style timestamp deterministic across runs — matches the
+        // pattern already used elsewhere in this file (lines 167, 205, 268).
+        long lamport = 0L;
+
         // First attempt succeeds
         var event1 = new EntityDepartureEvent(
             entityId, nodeA, nodeB,
-            EntityMigrationState.MIGRATING_OUT, System.nanoTime());
+            EntityMigrationState.MIGRATING_OUT, ++lamport);
         boolean sent1 = nodeActual.sendEntityDeparture(nodeB, event1);
         assertTrue(sent1, "First send should succeed before partition");
 
@@ -134,7 +139,7 @@ class FailureRecoveryTest {
         // In reality, this would be node becoming unreachable
         var event2 = new EntityDepartureEvent(
             entityId, nodeA, nodeB,
-            EntityMigrationState.MIGRATING_OUT, System.nanoTime());
+            EntityMigrationState.MIGRATING_OUT, ++lamport);
         // Second attempt may fail due to transient partition
         nodeActual.sendEntityDeparture(nodeB, event2);
 
@@ -239,9 +244,11 @@ class FailureRecoveryTest {
             EntityMigrationState.MIGRATING_OUT, 0L);
         nodeActual.sendEntityDeparture(nodeB, event);
 
-        // Simulate B failure by sending rollback
+        // Simulate B failure by sending rollback. Use a constant Lamport
+        // timestamp instead of System.nanoTime() to keep the test
+        // deterministic across runs (CLAUDE.md: no raw system clocks).
         var rollback = new EntityRollbackEvent(
-            entityId, nodeA, nodeB, "node_b_failure", System.nanoTime());
+            entityId, nodeA, nodeB, "node_b_failure", 1L);
         nodeTarget.sendEntityRollback(nodeA, rollback);
 
         // Observer should see the rollback
