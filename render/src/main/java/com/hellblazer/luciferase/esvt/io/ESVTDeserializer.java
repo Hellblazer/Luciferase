@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -275,6 +276,13 @@ public class ESVTDeserializer implements AutoCloseable {
 
         try (var bais = new ByteArrayInputStream(buffer.array());
              var ois = new ObjectInputStream(bais)) {
+            // Allow-list filter: only ESVTMetadata + JDK utility types.
+            // Untrusted .esvt files would otherwise be an RCE vector via
+            // standard ObjectInputStream gadget chains.
+            ois.setObjectInputFilter(ObjectInputFilter.Config.createFilter(
+                "com.hellblazer.luciferase.esvt.io.ESVTMetadata;"
+                + "java.util.*;java.lang.*;java.time.*;java.math.*;"
+                + "javax.vecmath.*;!*"));
             return (ESVTMetadata) ois.readObject();
         } catch (ClassNotFoundException e) {
             throw new IOException("Failed to deserialize metadata", e);

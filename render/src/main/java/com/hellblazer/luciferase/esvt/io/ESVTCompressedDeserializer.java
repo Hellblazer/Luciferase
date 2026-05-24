@@ -150,6 +150,13 @@ public class ESVTCompressedDeserializer implements AutoCloseable {
 
             try (var bais = new ByteArrayInputStream(metaBytes);
                  var ois = new ObjectInputStream(bais)) {
+                // Allow-list filter: only ESVTMetadata + JDK utility types.
+                // Untrusted compressed-ESVT files would otherwise be an RCE
+                // vector via standard ObjectInputStream gadget chains.
+                ois.setObjectInputFilter(ObjectInputFilter.Config.createFilter(
+                    "com.hellblazer.luciferase.esvt.io.ESVTMetadata;"
+                    + "java.util.*;java.lang.*;java.time.*;java.math.*;"
+                    + "javax.vecmath.*;!*"));
                 metadata = (ESVTMetadata) ois.readObject();
             } catch (ClassNotFoundException e) {
                 throw new IOException("Failed to deserialize metadata", e);

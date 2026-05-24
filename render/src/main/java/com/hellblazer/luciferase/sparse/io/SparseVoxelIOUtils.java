@@ -157,6 +157,14 @@ public final class SparseVoxelIOUtils {
      * @throws IOException            if deserialization fails
      * @throws ClassNotFoundException if the class cannot be found
      */
+    /**
+     * @deprecated Calls without an expected-type filter accept arbitrary
+     * deserialization which is a remote-code-execution risk on untrusted
+     * input. Use {@link #deserializeMetadata(byte[], Class)} instead so the
+     * input stream is constrained to the expected type plus JDK utility
+     * classes.
+     */
+    @Deprecated
     @SuppressWarnings("unchecked")
     public static <T> T deserializeMetadata(byte[] bytes) throws IOException, ClassNotFoundException {
         if (bytes == null || bytes.length == 0) {
@@ -165,6 +173,42 @@ public final class SparseVoxelIOUtils {
 
         try (var bais = new ByteArrayInputStream(bytes);
              var ois = new ObjectInputStream(bais)) {
+            // Best-effort filter for the deprecated path: allow only the
+            // metadata types we ship + JDK utility classes. Callers wanting
+            // a different type must use the type-parameterized overload
+            // below so the filter matches.
+            ois.setObjectInputFilter(ObjectInputFilter.Config.createFilter(
+                "com.hellblazer.luciferase.esvo.io.ESVOMetadata;"
+                + "com.hellblazer.luciferase.esvt.io.ESVTMetadata;"
+                + "java.util.*;java.lang.*;java.time.*;java.math.*;"
+                + "javax.vecmath.*;!*"));
+            return (T) ois.readObject();
+        }
+    }
+
+    /**
+     * Deserialize metadata bytes into an instance of {@code expectedType},
+     * with an {@link ObjectInputFilter} that rejects everything except
+     * {@code expectedType} and the JDK utility/primitive types it may
+     * transitively pull in. Use this whenever the metadata source is or
+     * might be untrusted (file from disk, payload over the wire).
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T deserializeMetadata(byte[] bytes, Class<T> expectedType)
+            throws IOException, ClassNotFoundException {
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        if (expectedType == null) {
+            throw new IllegalArgumentException("expectedType cannot be null");
+        }
+
+        try (var bais = new ByteArrayInputStream(bytes);
+             var ois = new ObjectInputStream(bais)) {
+            ois.setObjectInputFilter(ObjectInputFilter.Config.createFilter(
+                expectedType.getName() + ";"
+                + "java.util.*;java.lang.*;java.time.*;java.math.*;"
+                + "javax.vecmath.*;!*"));
             return (T) ois.readObject();
         }
     }
