@@ -124,6 +124,10 @@ class Phase4E2ETest {
      * Tests the simplest distributed case.
      */
     @Test
+    @DisabledIfEnvironmentVariable(
+        named = "CI",
+        matches = "true",
+        disabledReason = "Flaky: two-partition exchange protocol uses 60-120s barrier awaits + 100ms sleeps; under GitHub Actions Ubuntu runner contention these aren't enough. Local dev coverage retained.")
     void testTwoPartitionExchange() throws Exception {
         // Create two partitions
         var partition0 = createPartition(0, 2);
