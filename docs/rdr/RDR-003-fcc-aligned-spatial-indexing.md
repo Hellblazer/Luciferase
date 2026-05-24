@@ -2,12 +2,15 @@
 title: "FCC-Aligned Spatial Indexing for Luciferase — VoN Spatialization, RD Overlay, and Optional TetOctree"
 id: RDR-003
 type: Architecture
-status: accepted
+status: implemented
 priority: medium
 author: hal.hildebrand
 reviewed-by: self
 created: 2026-05-23
 accepted_date: 2026-05-23
+implemented_date: 2026-05-23
+close_reason: implemented
+post_mortem: docs/rdr/post-mortem/003-fcc-aligned-spatial-indexing.md
 related_issues: [Luciferase-tol, Luciferase-gig, Luciferase-ay7, Luciferase-lgs, Luciferase-6oa, RDR-002]
 ---
 
