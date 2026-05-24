@@ -3,9 +3,10 @@ package com.dyada.core.linearization;
 import com.dyada.core.coordinates.LevelIndex;
 import com.dyada.core.coordinates.Coordinate;
 import com.dyada.core.coordinates.CoordinateInterval;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -277,6 +278,7 @@ class MortonOrderLinearizationTest {
     }
     
     @Test
+    @Tag("performance")
     @DisplayName("Performance characteristics")
     void testPerformanceCharacteristics() {
         // Test that linearization is reasonably fast
