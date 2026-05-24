@@ -96,16 +96,20 @@ public class ESVOApplication {
 
         running.set(false);
 
-        // Shutdown background executor first so no new GL tasks can be
-        // queued during the rest of shutdown.
+        // Shutdown background executor: rejects NEW submissions but does
+        // not interrupt tasks already in-flight, so an in-flight staging
+        // task may still call pendingGlTasks.offer(...) after the clear()
+        // below. That leaked lambda is harmless because (a) the queue is
+        // not drained again after shutdown (renderFrame requires
+        // initialized=true, which we flip false at end-of-shutdown), and
+        // (b) the lambda's own gpuMemory.isDisposed() guard prevents any
+        // GL call against freed memory.
         if (backgroundExecutor != null) {
             backgroundExecutor.shutdown();
         }
 
-        // Drop any pending GL work — gpuMemory is about to be disposed and
-        // executing the queued lambdas would either no-op (the disposed
-        // guard catches it) or race the dispose() call. Either way the
-        // queue must not accumulate across the renderer lifecycle.
+        // Drop already-enqueued GL work — gpuMemory is about to be
+        // disposed and we will not run the queue again.
         pendingGlTasks.clear();
 
         // Clean up GPU memory
