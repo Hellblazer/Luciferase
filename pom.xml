@@ -818,26 +818,31 @@
         <!-- Performance / benchmark tests opt-in.
              Default cycle excludes *Benchmark*.java and *PerformanceTest.java
              (see surefire pluginManagement configuration). This profile flips
-             surefire to include only those files. -->
+             surefire to include only those files.
+
+             Configured in <build><plugins> rather than <pluginManagement> so
+             the <excludes combine.self="override"/> reliably clears the
+             inherited default excludes in child modules whose own surefire
+             configuration sits in <plugins> (lucien, render, sentry). A
+             pluginManagement-only override does not propagate uniformly
+             through such module-level <plugins> declarations. -->
         <profile>
             <id>performance</id>
             <build>
-                <pluginManagement>
-                    <plugins>
-                        <plugin>
-                            <groupId>org.apache.maven.plugins</groupId>
-                            <artifactId>maven-surefire-plugin</artifactId>
-                            <configuration>
-                                <excludes combine.self="override"/>
-                                <includes>
-                                    <include>**/*Benchmark*.java</include>
-                                    <include>**/*PerformanceTest.java</include>
-                                    <include>**/*PerformanceProfilerTest.java</include>
-                                </includes>
-                            </configuration>
-                        </plugin>
-                    </plugins>
-                </pluginManagement>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <excludes combine.self="override"/>
+                            <includes combine.children="append">
+                                <include>**/*Benchmark*.java</include>
+                                <include>**/*PerformanceTest.java</include>
+                                <include>**/*PerformanceProfilerTest.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
             </build>
         </profile>
     </profiles>

@@ -175,7 +175,10 @@
                                 <include>**/Prism*ComparisonTest.java</include>
                                 <include>**/LockFreePerformanceTest.java</include>
                             </includes>
-                            <argLine>-Xmx8g -XX:MaxMetaspaceSize=512m</argLine>
+                            <!-- Keep enable-preview, jdk.incubator.vector, and enable-native-access
+                                 in sync with the root surefire argLine; this profile fully
+                                 overrides the inherited argLine. -->
+                            <argLine>-Xmx8g -XX:MaxMetaspaceSize=512m --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
                             <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
                             <systemPropertyVariables>
                                 <RUN_SPATIAL_INDEX_PERF_TESTS>true</RUN_SPATIAL_INDEX_PERF_TESTS>
@@ -391,7 +394,9 @@
                                         <include>**/*Benchmark.java</include>
                                         <include>**/*PerformanceTest.java</include>
                                     </includes>
-                                    <argLine>-Xmx8g -XX:MaxMetaspaceSize=512m</argLine>
+                                    <!-- Keep enable-preview, jdk.incubator.vector, and enable-native-access
+                                         in sync with the root surefire argLine. -->
+                                    <argLine>-Xmx8g -XX:MaxMetaspaceSize=512m --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
                                     <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
                                     <systemPropertyVariables>
                                         <RUN_SPATIAL_INDEX_PERF_TESTS>true</RUN_SPATIAL_INDEX_PERF_TESTS>
@@ -582,8 +587,14 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
+                            <!-- Must keep enable-preview and enable-native-access flags in
+                                 sync with the root surefire argLine; this profile fully
+                                 overrides the inherited argLine string, so a missing flag
+                                 here silently disables it at runtime under this profile. -->
                             <argLine>
+                                --enable-preview
                                 --add-modules jdk.incubator.vector
+                                --enable-native-access=ALL-UNNAMED
                                 -Dlucien.enableSIMD=true
                                 -Xmx8g -XX:MaxMetaspaceSize=512m
                             </argLine>
