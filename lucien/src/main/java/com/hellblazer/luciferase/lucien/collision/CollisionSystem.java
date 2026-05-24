@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Complete collision detection and response system. Integrates spatial indexing, collision detection, and physics
@@ -57,7 +58,7 @@ public class CollisionSystem<ID extends EntityID, Content> {
         this.spatialIndex = spatialIndex;
         this.resolver = resolver;
         this.physicsProperties = new ConcurrentHashMap<>();
-        this.listeners = new ArrayList<>();
+        this.listeners = new CopyOnWriteArrayList<>();
         this.globalFilter = globalFilter;
     }
 

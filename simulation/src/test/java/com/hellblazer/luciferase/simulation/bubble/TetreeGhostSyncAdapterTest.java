@@ -18,8 +18,9 @@ package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.util.*;
@@ -295,6 +296,10 @@ class TetreeGhostSyncAdapterTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(
+        named = "CI",
+        matches = "true",
+        disabledReason = "Flaky: 16ms hard threshold for processBoundaryEntities trips on GitHub Actions Ubuntu runners (2-5x slower than dev hardware). Local dev coverage retained.")
     void testPerformance_ProcessBoundaryUnder16ms() {
         adapter = new TetreeGhostSyncAdapter(bubbleGrid, neighborFinder);
 

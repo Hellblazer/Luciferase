@@ -124,7 +124,7 @@ public class ShortArrayList implements RandomAccess {
             return false;
         }
 
-        int overflow = Short.MAX_VALUE - size;
+        int overflow = Integer.MAX_VALUE - size;
         if (overflow < list.size) {
             // We can't actually represent a list this large.
             throw new OutOfMemoryError();

@@ -8,6 +8,8 @@ import org.lwjgl.system.MemoryUtil;
 import javax.vecmath.Vector3f;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,6 +29,13 @@ public class ESVOApplication {
     private AdvancedRayTraversal rayTraversal;
     private OctreeGPUMemory gpuMemory;
     private ExecutorService backgroundExecutor;
+    /**
+     * GL-thread task queue. OpenGL calls must execute on the thread that owns
+     * the current GL context. Background tasks post upload work here; the
+     * render loop drains the queue at the start of each frame so the work runs
+     * synchronously on the GL thread.
+     */
+    private final Queue<Runnable> pendingGlTasks = new ConcurrentLinkedQueue<>();
     
     // Configuration
     private int renderWidth = 800;
@@ -84,24 +93,35 @@ public class ESVOApplication {
         if (!initialized.get()) {
             return;
         }
-        
+
         running.set(false);
-        
-        // Shutdown background executor
+
+        // Shutdown background executor: rejects NEW submissions but does
+        // not interrupt tasks already in-flight, so an in-flight staging
+        // task may still call pendingGlTasks.offer(...) after the clear()
+        // below. That leaked lambda is harmless because (a) the queue is
+        // not drained again after shutdown (renderFrame requires
+        // initialized=true, which we flip false at end-of-shutdown), and
+        // (b) the lambda's own gpuMemory.isDisposed() guard prevents any
+        // GL call against freed memory.
         if (backgroundExecutor != null) {
             backgroundExecutor.shutdown();
         }
-        
+
+        // Drop already-enqueued GL work — gpuMemory is about to be
+        // disposed and we will not run the queue again.
+        pendingGlTasks.clear();
+
         // Clean up GPU memory
         if (gpuMemory != null) {
             gpuMemory.dispose(); // Use dispose() method
         }
-        
+
         // Clear scene
         if (scene != null) {
             scene.clear();
         }
-        
+
         initialized.set(false);
     }
     
@@ -145,16 +165,23 @@ public class ESVOApplication {
         if (!initialized.get()) {
             throw new IllegalStateException("Application not initialized");
         }
-        
+
         performanceMonitor.startFrame();
-        
+
         try {
+            // Drain queued GL work on the render thread before traversal so
+            // any pending uploads land in the current frame.
+            Runnable glTask;
+            while ((glTask = pendingGlTasks.poll()) != null) {
+                glTask.run();
+            }
+
             // Perform ray traversal for each pixel
             int raysTraversed = performRayTraversal();
             int nodesVisited = raysTraversed * 5; // Estimate
             int voxelsHit = raysTraversed / 2; // Estimate
             performanceMonitor.recordTraversal(raysTraversed, nodesVisited, voxelsHit);
-            
+
         } finally {
             // End frame is handled by next startFrame() call
         }
@@ -235,31 +262,34 @@ public class ESVOApplication {
     // Private helper methods
     
     private void uploadToGPU(String name, ESVOOctreeData octree) {
+        // CPU staging (writeNode -> backing ByteBuffer) is thread-safe and runs
+        // off the GL thread. The actual GL upload (gpuMemory.uploadToGPU) must
+        // execute on the render thread because OpenGL contexts are bound to a
+        // single thread; we post it to pendingGlTasks for the next frame drain.
+        // The prior code invoked uploadToGPU directly from the background
+        // executor, which is undefined behavior — GL calls from a thread
+        // without the current context are silent no-ops at best, segfaults
+        // at worst.
         backgroundExecutor.submit(() -> {
             try {
-                // Convert octree to GPU format and upload
-                // This would typically involve converting to the GPU memory layout
-                // and uploading via OpenCL/CUDA/Compute Shader
-                
-                // For now, we just reserve space
-                int nodeCount = octree.getNodeIndices().length;
-                long memoryRequired = nodeCount * 8L; // 8 bytes per node
-                
-                if (!gpuMemory.isDisposed()) {
-                    // Upload octree nodes to GPU
-                    int[] nodeIndices = octree.getNodeIndices();
-                    for (int i = 0; i < Math.min(nodeIndices.length, gpuMemory.getNodeCount()); i++) {
-                        var node = octree.getNode(nodeIndices[i]);
-                        if (node != null) {
-                            gpuMemory.writeNode(i, node.getChildMask(), node.getContourPtr());
-                        }
-                    }
-                    gpuMemory.uploadToGPU();
+                if (gpuMemory.isDisposed()) {
+                    return;
                 }
-                
+                int[] nodeIndices = octree.getNodeIndices();
+                for (int i = 0; i < Math.min(nodeIndices.length, gpuMemory.getNodeCount()); i++) {
+                    var node = octree.getNode(nodeIndices[i]);
+                    if (node != null) {
+                        gpuMemory.writeNode(i, node.getChildMask(), node.getContourPtr());
+                    }
+                }
+                pendingGlTasks.offer(() -> {
+                    if (!gpuMemory.isDisposed()) {
+                        gpuMemory.uploadToGPU();
+                    }
+                });
             } catch (Exception e) {
                 // Log error but don't crash the application
-                System.err.println("Failed to upload octree to GPU: " + e.getMessage());
+                System.err.println("Failed to stage octree for GPU upload: " + e.getMessage());
             }
         });
     }

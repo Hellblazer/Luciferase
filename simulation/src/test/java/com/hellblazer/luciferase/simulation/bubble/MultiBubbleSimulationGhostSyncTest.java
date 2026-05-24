@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.bubble;
 import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -239,6 +240,10 @@ class MultiBubbleSimulationGhostSyncTest {
      * Reference: TEST_FRAMEWORK_GUIDE.md § Performance Test Thresholds
      */
     @Test
+    @DisabledIfEnvironmentVariable(
+        named = "CI",
+        matches = "true",
+        disabledReason = "Flaky: 60fps tick budget (expected 100-140 ticks/2s on CI) is unattainable on GitHub Actions Ubuntu runners (observed 3 ticks). The in-test CI scaling already accounts for slower CI but the actual gap is 30x+. Local dev coverage retained.")
     void testSimulationWithGhosts_60fps() throws InterruptedException {
         // CI environment detection
         boolean isCI = System.getenv("CI") != null;

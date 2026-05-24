@@ -52,15 +52,14 @@ public boolean contains12DOP(float px, float py, float pz) {
         return false;
     // Local coordinates (3 subtractions)
     float u = px - x, v = py - y, w = pz - z;
-    // Ordering test (2 comparisons) — EXACT, zero false positives
-    // Convention matches locatePointBeyRefinementFromRoot() exactly
+    // Ordering test (2 comparisons) — derived from vertex geometry (Kuhn simplex edge paths)
     return switch (type) {
-        case 0 -> u > w && w >= v;   // S0: x > z ≥ y  (code: y ≤ z < x)
-        case 1 -> u > v && v > w;    // S1: x > y > z  (code: z < y < x)
-        case 2 -> v > w && w >= u;   // S2: y > z ≥ x  (code: x ≤ z < y)
-        case 3 -> w >= v && v >= u;  // S3: z ≥ y ≥ x  (code: x ≤ y ≤ z)
-        case 4 -> v >= u && u > w;   // S4: y ≥ x > z  (code: z < x ≤ y)
-        case 5 -> w >= u && u > v;   // S5: z ≥ x > y  (code: y < x ≤ z)
+        case 0 -> u >= v && v >= w;  // S0: V0,V1,V3,V7 → x ≥ y ≥ z
+        case 1 -> v >= u && u >= w;  // S1: V0,V2,V3,V7 → y ≥ x ≥ z
+        case 2 -> w >= u && u >= v;  // S2: V0,V4,V5,V7 → z ≥ x ≥ y
+        case 3 -> w >= v && v >= u;  // S3: V0,V4,V6,V7 → z ≥ y ≥ x
+        case 4 -> u >= w && w >= v;  // S4: V0,V1,V5,V7 → x ≥ z ≥ y
+        case 5 -> v >= w && w >= u;  // S5: V0,V2,V6,V7 → y ≥ z ≥ x
         default -> throw new IllegalStateException("Invalid type: " + type);
     };
 }
@@ -68,7 +67,7 @@ public boolean contains12DOP(float px, float py, float pz) {
 
 **Cost: 8 comparisons + 3 subtractions = 11 ops. Exact. No multiplications.**
 
-**Boundary handling**: The mix of `>` and `>=` matches the existing `locatePointBeyRefinementFromRoot()` convention. Points on shared faces (where two coordinates are equal) are assigned to exactly one S-type, ensuring gap-free and overlap-free partitioning of the cube. For example, a point with u == w goes to S0 (w ≥ v case) or S5 (w ≥ u case) depending on v, never to both.
+**Boundary handling**: Inclusive `>=` on both comparisons matches the Kuhn-simplex edge-path derivation in `coordinates()`. Points on shared faces (where two coordinates are equal) are assigned to multiple S-types by design; the SFC refinement step disambiguates which child claims each shared face per the `12DOP_SLAB_RANGES.md` convention.
 
 ## AABB-vs-Tet Intersection Test
 

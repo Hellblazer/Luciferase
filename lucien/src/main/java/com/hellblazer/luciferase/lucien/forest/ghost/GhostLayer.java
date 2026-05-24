@@ -92,37 +92,140 @@ public class GhostLayer<Key extends SpatialKey<Key>, ID extends EntityID, Conten
      */
     public void addGhostElement(GhostElement<Key, ID, Content> element) {
         Objects.requireNonNull(element, "Ghost element cannot be null");
-        
-        ghostElements.compute(element.getSpatialKey(), (key, list) -> {
-            if (list == null) {
-                list = new ArrayList<>();
-            }
-            list.add(element);
-            numGhostElements.incrementAndGet();
-            return list;
-        });
-        
-        // Update process offsets
-        updateProcessOffset(element.getOwnerRank());
+
+        // Hold the writer lock so this mutation is serialized with the
+        // readers (getGhostElements, getGhostElementsInRange, getAllGhostElements,
+        // and stats). Without the lock the inner ArrayList could be mutated
+        // mid-iteration by a reader, producing CME or torn results — the
+        // ConcurrentNavigableMap protects only the outer map, not the per-key
+        // ArrayList payload.
+        lock.writeLock().lock();
+        try {
+            ghostElements.compute(element.getSpatialKey(), (key, list) -> {
+                if (list == null) {
+                    list = new ArrayList<>();
+                }
+                list.add(element);
+                numGhostElements.incrementAndGet();
+                return list;
+            });
+
+            // Update process offsets
+            updateProcessOffset(element.getOwnerRank());
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
-    
+
     /**
      * Adds a remote element (local element that is a ghost elsewhere).
-     * 
+     *
      * @param remoteRank the rank of the remote process
      * @param element the remote element
      */
     public void addRemoteElement(int remoteRank, RemoteElement<Key, ID, Content> element) {
         Objects.requireNonNull(element, "Remote element cannot be null");
-        
-        remoteElements.compute(remoteRank, (rank, set) -> {
-            if (set == null) {
-                set = new HashSet<>();
+
+        // See addGhostElement: lock serializes with readers and protects the
+        // inner HashSet from concurrent reader iteration.
+        lock.writeLock().lock();
+        try {
+            remoteElements.compute(remoteRank, (rank, set) -> {
+                if (set == null) {
+                    set = new HashSet<>();
+                }
+                set.add(element);
+                numRemoteElements.incrementAndGet();
+                return set;
+            });
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Removes a ghost element at the given spatial key. The first matching
+     * occurrence (by {@link Object#equals(Object)}) is removed; if the per-key
+     * list becomes empty the key itself is dropped from the index so future
+     * traversals do not see empty buckets.
+     *
+     * @param key     the spatial key the ghost was indexed at
+     * @param element the ghost element to remove (matched by equals)
+     * @return {@code true} if an element was removed, {@code false} otherwise
+     */
+    public boolean removeGhostElement(Key key, GhostElement<Key, ID, Content> element) {
+        Objects.requireNonNull(key, "Spatial key cannot be null");
+        Objects.requireNonNull(element, "Ghost element cannot be null");
+
+        lock.writeLock().lock();
+        try {
+            var list = ghostElements.get(key);
+            if (list == null) {
+                return false;
             }
-            set.add(element);
-            numRemoteElements.incrementAndGet();
-            return set;
-        });
+            boolean removed = list.remove(element);
+            if (removed) {
+                numGhostElements.decrementAndGet();
+                if (list.isEmpty()) {
+                    ghostElements.remove(key);
+                }
+            }
+            return removed;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Removes all ghost elements at the given spatial key.
+     *
+     * @param key the spatial key
+     * @return the number of ghost elements removed
+     */
+    public int removeGhostElementsAt(Key key) {
+        Objects.requireNonNull(key, "Spatial key cannot be null");
+
+        lock.writeLock().lock();
+        try {
+            var list = ghostElements.remove(key);
+            if (list == null) {
+                return 0;
+            }
+            numGhostElements.addAndGet(-list.size());
+            return list.size();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Removes a remote element from the set tracked for the given remote rank.
+     * If the rank's set becomes empty the rank entry itself is dropped.
+     *
+     * @param remoteRank the remote process rank
+     * @param element    the remote element to remove (matched by equals)
+     * @return {@code true} if an element was removed, {@code false} otherwise
+     */
+    public boolean removeRemoteElement(int remoteRank, RemoteElement<Key, ID, Content> element) {
+        Objects.requireNonNull(element, "Remote element cannot be null");
+
+        lock.writeLock().lock();
+        try {
+            var set = remoteElements.get(remoteRank);
+            if (set == null) {
+                return false;
+            }
+            boolean removed = set.remove(element);
+            if (removed) {
+                numRemoteElements.decrementAndGet();
+                if (set.isEmpty()) {
+                    remoteElements.remove(remoteRank);
+                }
+            }
+            return removed;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
     
     /**

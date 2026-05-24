@@ -164,8 +164,10 @@
                         <org.lwjgl.util.DebugAllocator>false</org.lwjgl.util.DebugAllocator>
                     </systemPropertyVariables>
                     <!-- Add JVM args for ESVO requirements. Use property for profile override.
-                         Increased heap to 4G for benchmark tests (Phase5a5BenchmarkTest with 4K frames needs significant heap) -->
-                    <argLine>${render.surefire.argLine} -Xmx4G -Xms1G --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
+                         Increased heap to 4G for benchmark tests (Phase5a5BenchmarkTest with 4K frames needs significant heap).
+                         enable-preview kept in sync with the root surefire argLine; this string
+                         fully overrides the inherited argLine. -->
+                    <argLine>${render.surefire.argLine} -Xmx4G -Xms1G --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
                     <!-- Exclude memory-intensive tests in CI - they require more heap than typical CI runners provide -->
                     <excludedGroups>${render.excludedGroups}</excludedGroups>
                 </configuration>
@@ -214,7 +216,9 @@
                                 <RUN_PERFORMANCE_TESTS>true</RUN_PERFORMANCE_TESTS>
                                 <java.awt.headless>true</java.awt.headless>
                             </systemPropertyVariables>
-                            <argLine>-Xmx4G -Xms1G --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
+                            <!-- Keep enable-preview in sync with the root surefire argLine;
+                                 this profile fully overrides the inherited argLine string. -->
+                            <argLine>-Xmx4G -Xms1G --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
                         </configuration>
                     </plugin>
                 </plugins>

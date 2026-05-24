@@ -48,7 +48,12 @@ public class RandomWalkBehavior implements EntityBehavior {
 
     /**
      * Create random walk behavior with default parameters.
+     *
+     * @deprecated Uses an unseeded {@link Random}; simulation results are not reproducible
+     *             across runs. Use a constructor that accepts an explicit seeded {@code Random}
+     *             for deterministic / replayable behavior.
      */
+    @Deprecated(since = "0.0.5")
     public RandomWalkBehavior() {
         this(new Random(), DEFAULT_MAX_SPEED, DEFAULT_AOI_RADIUS,
              DEFAULT_DIRECTION_CHANGE_PROBABILITY, WorldBounds.DEFAULT);

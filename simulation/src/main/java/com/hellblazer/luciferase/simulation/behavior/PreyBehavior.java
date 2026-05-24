@@ -79,7 +79,12 @@ public class PreyBehavior implements EntityBehavior {
 
     /**
      * Create prey behavior with default parameters.
+     *
+     * @deprecated Uses an unseeded {@link Random}; simulation results are not reproducible
+     *             across runs. Use the constructor that accepts an explicit {@code Random}
+     *             with a seed for deterministic / replayable behavior.
      */
+    @Deprecated(since = "0.0.5")
     public PreyBehavior() {
         this(DEFAULT_AOI_RADIUS, DEFAULT_MAX_SPEED, DEFAULT_PANIC_SPEED, DEFAULT_MAX_FORCE,
              1.5f, 1.0f, 1.0f, 3.0f, WorldBounds.DEFAULT, new Random());

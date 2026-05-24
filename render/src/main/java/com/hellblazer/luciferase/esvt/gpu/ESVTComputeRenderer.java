@@ -176,13 +176,18 @@ public final class ESVTComputeRenderer {
         // Use compute shader program
         glUseProgram(raycastProgram.getOpenGLId());
 
+        // Ensure any prior writes to the ESVT SSBO (e.g. async upload) are
+        // visible to the compute shader before it reads them. Without this
+        // barrier the dispatch can read stale GPU memory.
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
         // Dispatch compute shader
         int groupsX = (frameWidth + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
         int groupsY = (frameHeight + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y;
 
         glDispatchCompute(groupsX, groupsY, WORKGROUP_SIZE_Z);
 
-        // Ensure all writes are complete
+        // Ensure all image writes are visible to subsequent samplers / readback.
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
         // Check for errors
@@ -258,6 +263,10 @@ public final class ESVTComputeRenderer {
         // Bind coarse texture for output
         glBindImageTexture(COARSE_OUTPUT_BINDING, coarseTexture.getOpenGLId(), 0, false, 0,
                           GL_WRITE_ONLY, GL_R32F);
+
+        // Ensure any prior writes to the ESVT SSBO are visible before the
+        // coarse pass reads from it.
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         // Dispatch at coarse resolution
         int coarseGroupsX = (coarseWidth + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
@@ -381,17 +390,43 @@ public final class ESVTComputeRenderer {
         this.frameHeight = newHeight;
 
         if (initialized) {
+            // Null each handle as soon as it's closed. If a later close()
+            // throws (driver error, lost context) the surviving handle won't
+            // be re-closed by a subsequent dispose() — the prior code left
+            // both references intact through the close sequence, so a
+            // resize-time exception would leak a double-close on the next
+            // dispose() and crash the GL driver.
             if (outputTexture != null) {
-                outputTexture.close();
+                var t = outputTexture;
+                outputTexture = null;
+                t.close();
             }
             if (coarseTexture != null) {
-                coarseTexture.close();
+                var t = coarseTexture;
+                coarseTexture = null;
+                t.close();
             }
             if (coarseSampler != 0) {
-                glDeleteSamplers(coarseSampler);
+                int s = coarseSampler;
                 coarseSampler = 0;
+                glDeleteSamplers(s);
             }
-            createOutputTexture();
+            try {
+                createOutputTexture();
+            } catch (RuntimeException re) {
+                // The old textures are already freed; createOutputTexture
+                // failed (driver OOM, lost context, etc.) so the renderer
+                // is no longer usable. Flip initialized to false so
+                // renderFrame fails fast at its initialized check instead
+                // of NPE-ing on the null output/coarse textures. The
+                // caller is expected to react to the rethrown exception
+                // (e.g. re-init at a smaller resolution or surface the
+                // error).
+                initialized = false;
+                log.error("ESVTComputeRenderer.resize: createOutputTexture failed at {}x{}; renderer marked uninitialized",
+                          frameWidth, frameHeight, re);
+                throw re;
+            }
 
             log.info("Resized ESVTComputeRenderer: {}x{}", frameWidth, frameHeight);
         }

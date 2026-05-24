@@ -30,9 +30,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.Stack;
 
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -214,5 +218,134 @@ public class TetrahedronTest {
         assertEquals(d, face.getVertex(0));
         assertEquals(b, face.getVertex(1));
         assertEquals(a, face.getVertex(2));
+    }
+
+    /**
+     * Star-walk completeness regression test for the PR #86 fix to
+     * {@link Tetrahedron#visit(Vertex, StarVisitor, Stack, Set)}.
+     *
+     * The cases-A and -D switch arms had copy-paste bugs that pushed the
+     * wrong neighbor onto the traversal stack:
+     *   case A: when nB != null, pushed nC instead of nB
+     *   case D: when nA != null, pushed nB instead of nA
+     * The result was that {@link Tetrahedron#visitStar} silently skipped
+     * neighbors. Each tetrahedron in the star is the receiver in a unique
+     * traversal step; the visitor is invoked once per tet with the central
+     * vertex's ordinal in that tet. So a complete star walk over a vertex
+     * present in N tets must invoke the visitor exactly N times.
+     */
+    @Test
+    @DisplayName("visitStar visits all tetrahedra adjacent to a vertex exactly once")
+    public void testVisitStarCompleteness() {
+        // myOwnPrivateIdaho builds the universe tetrahedron containing the
+        // four bounding vertices. flip1to4 splits it around an inserted
+        // central vertex into four tets — each of which has the new vertex
+        // as one of its corners. The star around the new vertex is exactly
+        // those four tets.
+        var idaho = MutableGrid.myOwnPrivateIdaho(new MutableGrid());
+        var central = new Vertex(0.0f, 0.0f, 0.0f);
+        var ears = new ArrayList<OrientedFace>();
+        var firstChild = idaho.flip1to4(central, ears);
+        Assertions.assertNotNull(firstChild,
+            "flip1to4 should return one of the four child tetrahedra");
+
+        var visited = new HashSet<Tetrahedron>();
+        firstChild.visitStar(central, (v, t, a, b, c) -> {
+            boolean added = visited.add(t);
+            Assertions.assertTrue(added,
+                "Star walk visited the same tetrahedron twice: " + t);
+            Assertions.assertSame(central, t.getVertex(v),
+                "Visitor ordinal must reference the central vertex");
+        });
+
+        // Verify completeness: the central vertex's adjacent set must equal
+        // what visitStar visited. Vertex.getAdjacent / similar lookups are
+        // not directly exposed; instead, reconstruct the expected star by
+        // walking from firstChild via every neighbor pointer and counting
+        // tets that include the central vertex.
+        var expected = new HashSet<Tetrahedron>();
+        var pending = new Stack<Tetrahedron>();
+        pending.push(firstChild);
+        while (!pending.isEmpty()) {
+            var t = pending.pop();
+            if (!expected.add(t)) {
+                continue;
+            }
+            // Only walk to neighbors that share the central vertex.
+            for (var ord : V.values()) {
+                var nb = t.getNeighbor(ord);
+                if (nb != null && !expected.contains(nb)) {
+                    boolean nbContainsCentral = false;
+                    for (var v : V.values()) {
+                        if (nb.getVertex(v) == central) {
+                            nbContainsCentral = true;
+                            break;
+                        }
+                    }
+                    if (nbContainsCentral) {
+                        pending.push(nb);
+                    }
+                }
+            }
+        }
+
+        assertEquals(expected.size(), visited.size(),
+            "Star walk must visit every tetrahedron containing the central vertex: "
+            + "expected " + expected.size() + ", visited " + visited.size());
+        Assertions.assertTrue(visited.equals(expected),
+            "Star walk visited set must match expected adjacent set");
+    }
+
+    /**
+     * Direct regression test for the case-A copy-paste bug in
+     * {@link Tetrahedron#visit(Vertex, StarVisitor, Stack, Set)}.
+     *
+     * <p>{@link #testVisitStarCompleteness} only exercises case D because
+     * {@link Tetrahedron#flip1to4} puts the inserted vertex at ordinal D
+     * in every child tetrahedron. This test directly constructs a tet where
+     * the central vertex sits at ordinal A and asserts that {@code visit}
+     * pushes the correct neighbor (nB) onto the stack rather than the buggy
+     * one (nC). Pre-fix code path: case A with nB != null pushed nC.
+     */
+    @Test
+    @DisplayName("visit case A pushes nB, not nC, when central vertex is at ordinal A")
+    public void testVisitCaseAPushesCorrectNeighbor() {
+        var central = new Vertex(1000.0f, 1000.0f, 1000.0f);
+        var vb = new Vertex(2000.0f, 1000.0f, 1000.0f);
+        var vc = new Vertex(1000.0f, 2000.0f, 1000.0f);
+        var vd = new Vertex(1000.0f, 1000.0f, 2000.0f);
+        // Receiver: central is at ordinal A.
+        var receiver = new Tetrahedron(central, vb, vc, vd);
+
+        // Construct distinct sentinel neighbors so we can tell nB from nC
+        // by identity on the stack. Each sentinel shares the face opposite
+        // its ordinal with the receiver.
+        var nbVertex = new Vertex(3000.0f, 1000.0f, 1000.0f);
+        var ncVertex = new Vertex(1000.0f, 3000.0f, 1000.0f);
+        var ndVertex = new Vertex(1000.0f, 1000.0f, 3000.0f);
+        var nB = new Tetrahedron(central, nbVertex, vc, vd);
+        var nC = new Tetrahedron(central, vb, ncVertex, vd);
+        var nD = new Tetrahedron(central, vb, vc, ndVertex);
+        receiver.setNeighborB(nB);
+        receiver.setNeighborC(nC);
+        receiver.setNeighborD(nD);
+
+        var stack = new java.util.Stack<Tetrahedron>();
+        var visited = new java.util.HashSet<Tetrahedron>();
+        receiver.visit(central, (v, t, a, b, c) -> {
+            Assertions.assertSame(V.A, v, "Central vertex must be at ordinal A");
+        }, stack, visited);
+
+        // The buggy code path would have pushed nC twice (once for the nC
+        // branch, once for the nB branch) and never pushed nB. After the
+        // fix the stack contains exactly {nB, nC, nD}.
+        Assertions.assertEquals(3, stack.size(),
+            "Case A with all three nB/nC/nD non-null must push three neighbors");
+        Assertions.assertTrue(stack.contains(nB),
+            "Case A must push nB when nB != null (was pushing nC pre-fix)");
+        Assertions.assertTrue(stack.contains(nC),
+            "Case A must push nC when nC != null");
+        Assertions.assertTrue(stack.contains(nD),
+            "Case A must push nD when nD != null");
     }
 }

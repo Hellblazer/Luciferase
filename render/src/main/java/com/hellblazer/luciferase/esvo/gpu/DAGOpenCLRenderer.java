@@ -470,18 +470,26 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
 
         // Convert DAG data to ByteBuffer
         var nodeData = dagToByteBuffer(data);
-
-        // Create buffer with raw OpenCL API for ByteBuffer compatibility
-        clNodeBuffer = createRawBuffer(nodeData, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
+        try {
+            // CL_MEM_COPY_HOST_PTR copies at creation time; safe to free host buffer after.
+            clNodeBuffer = createRawBuffer(nodeData, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
+        } finally {
+            memFree(nodeData);
+        }
 
         // Phase 4.2.2a: Create minimal dummy buffer for childPointers parameter
         // For absolute addressing, childPointers is not actually used by the kernel
         // (child pointers come from node.childDescriptor), but the kernel signature
         // expects it. This minimal 1-uint buffer satisfies the parameter requirement.
         var dummyPointerData = memAlloc(4);
-        dummyPointerData.putInt(0);
-        dummyPointerData.flip();
-        clDummyChildPointersBuffer = createRawBuffer(dummyPointerData, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
+        try {
+            dummyPointerData.putInt(0);
+            dummyPointerData.flip();
+            clDummyChildPointersBuffer = createRawBuffer(dummyPointerData,
+                                                         CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
+        } finally {
+            memFree(dummyPointerData);
+        }
     }
 
     /**

@@ -75,7 +75,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 | -------- | ------------- |
 | **common** | Optimized collections (`FloatArrayList`, `OaHashSet`), geometry utilities |
 | **grpc** | Protocol buffer definitions for serialization |
-| **lucien** | Core spatial indexing (Octree, Tetree, SFCArrayIndex, Prism) - 190+ Java files, 18 packages |
+| **lucien** | Core spatial indexing (Octree, Tetree, SFCArrayIndex, Prism) - 267 Java files, 28 packages |
 | **render** | ESVO implementation with LWJGL rendering, FFM integration |
 | **sentry** | Delaunay tetrahedralization for kinetic point tracking |
 | **portal** | JavaFX 3D visualization and mesh handling |
@@ -86,26 +86,27 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 
 ### Lucien Module - Spatial Indexing
 
-**Total**: 190+ Java files organized across 18 packages (expanded from 98 in June 2025)
+**Total**: 267 Java files organized across 28 packages (recounted 2026-05-24; grew from the previously-documented 190+/18 as balancing/fault, balancing/grpc, forest/ghost/grpc, cache, and simd were added).
 
-- **Root Package** (29 classes): Core abstractions, spatial types, geometry utilities, performance optimization
+- **Root Package** (32 classes): Core abstractions, spatial types, geometry utilities, performance optimization
 - **Entity Management** (13 classes): Complete entity lifecycle management
-- **Octree** (6 classes): Morton curve-based cubic subdivision with O(1) operations
-- **Tetree** (34 classes): Tetrahedral subdivision with S0-S5 characteristic tetrahedra, 21-level support
-- **Prism** (8 classes): Anisotropic spatial subdivision with triangular/linear elements
+- **Octree** (5 + internal/1 = 6 classes): Morton curve-based cubic subdivision with O(1) operations
+- **Tetree** (33 + internal/1 = 34 classes): Tetrahedral subdivision with S0-S5 characteristic tetrahedra, 21-level support
+- **Prism** (9 classes): Anisotropic spatial subdivision with triangular/linear elements
 - **SFC** (5 classes): SFCArrayIndex flat Morton-sorted array, LITMAX/BIGMIN optimization
-- **Collision** (29 classes): Comprehensive collision detection with CCD and physics subpackages
-- **Balancing** (4 classes): Tree balancing strategies
+- **Collision** (18 + ccd/4 + physics/4 + physics/constraints/3 = 29 classes): Comprehensive collision detection with CCD and physics+constraints subpackages
+- **Balancing** (22 + fault/40 + grpc/2 = 64 classes): Tree balancing strategies, fault-recovery subsystem, gRPC balancing client
 - **Visitor** (6 classes): Tree traversal visitor pattern
-- **Forest** (27 classes): Multi-tree coordination, ghost layer, distributed support
+- **Forest** (22 + ghost/11 + ghost/grpc/7 = 40 classes): Multi-tree coordination, ghost layer, distributed support, gRPC ghost client
 - **Neighbor** (3 classes): Topological neighbor detection
-- **Lockfree** (3 classes): Lock-free concurrent operations
-- **Occlusion** (9+ classes): Dynamic Scene Occlusion Culling (DSOC) with adaptive Z-buffer
+- **Cache** (2 classes): KNN result cache with version-tracked invalidation
+- **Occlusion** (11 classes): Dynamic Scene Occlusion Culling (DSOC) with adaptive Z-buffer
 - **Debug** (4 classes): Debugging utilities for all spatial index types
-- **Internal** (4 classes): Entity caching and object pool utilities
+- **Internal** (5 classes): Entity caching and object pool utilities
 - **Geometry** (1 class): AABB intersection utilities
 - **Migration** (1 class): Spatial index type conversion utilities
 - **Profiler** (1 class): Performance profiling utilities
+- **SIMD** (1 class): SIMD-accelerated geometry primitives
 
 ### Key Architecture (Current State)
 

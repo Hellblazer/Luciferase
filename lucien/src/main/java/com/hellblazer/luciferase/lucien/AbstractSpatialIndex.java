@@ -1492,9 +1492,14 @@ implements SpatialIndex<Key, ID, Content> {
     public Stream<SpatialIndex.SpatialNode<Key, ID>> leafStream() {
         lock.readLock().lock();
         try {
-            return spatialIndex.entrySet().stream().filter(
-            entry -> !entry.getValue().isEmpty() && !hasChildren(entry.getKey())).map(
-            entry -> new SpatialIndex.SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
+            // Materialize inside lock to avoid lazy stream evaluating after lock release
+            var results = spatialIndex.entrySet()
+                                      .stream()
+                                      .filter(entry -> !entry.getValue().isEmpty() && !hasChildren(entry.getKey()))
+                                      .map(entry -> new SpatialIndex.SpatialNode<>(entry.getKey(),
+                                                                                   new HashSet<>(entry.getValue().getEntityIds())))
+                                      .collect(Collectors.toList());
+            return results.stream();
         } finally {
             lock.readLock().unlock();
         }
@@ -1509,10 +1514,16 @@ implements SpatialIndex<Key, ID, Content> {
     public Stream<SpatialIndex.SpatialNode<Key, ID>> levelStream(byte level) {
         lock.readLock().lock();
         try {
-            return spatialIndex.keySet().stream().filter(index -> index.getLevel() == level).map(
-            index -> Map.entry(index, spatialIndex.get(index))).filter(
-            entry -> entry.getValue() != null && !entry.getValue().isEmpty()).map(
-            entry -> new SpatialIndex.SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
+            // Materialize inside lock to avoid lazy stream evaluating after lock release
+            var results = spatialIndex.keySet()
+                                      .stream()
+                                      .filter(index -> index.getLevel() == level)
+                                      .map(index -> Map.entry(index, spatialIndex.get(index)))
+                                      .filter(entry -> entry.getValue() != null && !entry.getValue().isEmpty())
+                                      .map(entry -> new SpatialIndex.SpatialNode<>(entry.getKey(),
+                                                                                   new HashSet<>(entry.getValue().getEntityIds())))
+                                      .collect(Collectors.toList());
+            return results.stream();
         } finally {
             lock.readLock().unlock();
         }
@@ -1562,8 +1573,14 @@ implements SpatialIndex<Key, ID, Content> {
     public Stream<SpatialIndex.SpatialNode<Key, ID>> nodeStream() {
         lock.readLock().lock();
         try {
-            return spatialIndex.entrySet().stream().filter(entry -> !entry.getValue().isEmpty()).map(
-            entry -> new SpatialIndex.SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
+            // Materialize inside lock to avoid lazy stream evaluating after lock release
+            var results = spatialIndex.entrySet()
+                                      .stream()
+                                      .filter(entry -> !entry.getValue().isEmpty())
+                                      .map(entry -> new SpatialIndex.SpatialNode<>(entry.getKey(),
+                                                                                   new HashSet<>(entry.getValue().getEntityIds())))
+                                      .collect(Collectors.toList());
+            return results.stream();
         } finally {
             lock.readLock().unlock();
         }

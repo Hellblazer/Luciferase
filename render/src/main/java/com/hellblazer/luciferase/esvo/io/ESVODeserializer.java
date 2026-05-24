@@ -74,6 +74,14 @@ public class ESVODeserializer {
                 
                 ByteArrayInputStream bais = new ByteArrayInputStream(metadataBuffer.array());
                 try (ObjectInputStream ois = new ObjectInputStream(bais)) {
+                    // Restrict deserialization to the metadata class plus the JDK
+                    // collection / primitive wrappers it may transitively pull in.
+                    // Untrusted .esvo files would otherwise be a remote-code-
+                    // execution vector via standard ObjectInputStream gadget chains.
+                    ois.setObjectInputFilter(ObjectInputFilter.Config.createFilter(
+                        "com.hellblazer.luciferase.esvo.io.ESVOMetadata;"
+                        + "java.util.*;java.lang.*;java.time.*;java.math.*;"
+                        + "javax.vecmath.*;!*"));
                     metadata = (ESVOMetadata) ois.readObject();
                 } catch (ClassNotFoundException e) {
                     throw new IOException("Failed to deserialize metadata", e);

@@ -77,10 +77,18 @@ int getChildOffset(int validMask, int childIndex) {
     return popc8(mask);
 }
 
-// Critical Bug Fix #2: Transform world coordinates to octree space [0,1]
+// Transform world coordinates to octree space [0,1].
+// World -> object requires inverse(objectToWorld); object -> octree requires
+// inverse(octreeToObject). The prior implementation applied octreeToObject as
+// the forward direction, which transformed octree-space points back into
+// object space (the wrong direction). Result: rays were placed in the wrong
+// coordinate system and traversal returned spurious / missed hits.
+// TODO: precompute inverse on the CPU and upload as a uniform to avoid the
+// per-invocation inverse() cost.
 vec3 worldToOctree(vec3 worldPos) {
-    vec4 objPos = camera.octreeToObject * vec4(worldPos, 1.0);
-    vec3 normalized = (objPos.xyz + 1.0) * 0.5; // [-1,1] to [0,1]
+    vec4 objPos = inverse(camera.objectToWorld) * vec4(worldPos, 1.0);
+    vec4 octreePos = inverse(camera.octreeToObject) * objPos;
+    vec3 normalized = (octreePos.xyz + 1.0) * 0.5; // [-1,1] to [0,1]
     return normalized + vec3(OCTREE_MIN); // With OCTREE_MIN=0.0, stays in [0,1]
 }
 
@@ -160,15 +168,14 @@ vec4 traverseOctree(Ray ray) {
             continue;
         }
         
-        // Check if leaf node
-        if (nonLeafMask == 0) {
-            // Leaf node - we hit geometry
-            hit = true;
-            hitPoint = ray.origin + ray.direction * hitDistance;
-            hitNormal = vec3(0, 1, 0); // Placeholder normal
-            break;
-        }
-        
+        // Note: when nonLeafMask == 0 every valid child of this node is a leaf.
+        // The per-child intersection loop below still handles that case correctly
+        // (each leaf child is tested via intersectAABB, hitDistance is updated to
+        // t.x of the closest leaf, and hitPoint is computed from that t). The
+        // prior code took an early-exit branch here that set hit = true and
+        // computed hitPoint from the uninitialized hitDistance = 0, which placed
+        // every leaf hit at the camera origin.
+
         // Internal node - traverse children
         float cellSize = OCTREE_SIZE / float(1 << (currentScale + 1));
         int childPointer = getChildPointer(node);

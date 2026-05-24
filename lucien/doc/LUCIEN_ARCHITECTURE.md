@@ -13,7 +13,7 @@ The Luciferase codebase underwent architectural simplification in 2025, focusing
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 263 Java files organized across 19 packages, providing a comprehensive spatial indexing system
+The module consists of 267 Java files organized across 28 packages, providing a comprehensive spatial indexing system
 with advanced features including collision detection, tree balancing, visitor patterns, forest management, and distributed
 ghost support. All core features are complete, including the S0-S5 tetrahedral subdivision, anisotropic prism subdivision,
 and full ghost layer implementation with gRPC communication.

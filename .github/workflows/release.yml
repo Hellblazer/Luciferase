@@ -80,9 +80,13 @@ jobs:
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Build and test
+        # Releases must NOT skip tests — they are the last safety net before a
+        # versioned artifact is published to GitHub Packages. If a test failure
+        # blocks a release, fix the test or revert the offending change; do not
+        # bypass with -DskipTests.
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode clean install -DskipTests
+          xvfb-run -a ./mvnw -batch-mode clean install
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -110,6 +114,12 @@ jobs:
           git commit -m "Prepare next development iteration ${{ github.event.inputs.nextVersion }}"
 
       - name: Push changes and tags
+        # NOTE: This step pushes the release-version and next-snapshot commits
+        # directly to main, which conflicts with the repository-wide "PRs only"
+        # rule (see CLAUDE.md > Git). A future RDR should restructure this into
+        # a PR-based release flow (open release-prep PR -> tag merge commit).
+        # Until then, this remains the only sanctioned direct-push path on this
+        # repo and is restricted to workflow_dispatch on the release workflow.
         run: |
           git push origin HEAD:main
           git push origin v${{ github.event.inputs.releaseVersion }}

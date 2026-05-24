@@ -16,7 +16,7 @@ subdivision. The module uses inheritance to maximize code reuse while maintainin
 approach. All core features are complete, including S0-S5 tetrahedral subdivision with 100% geometric containment and
 anisotropic prism subdivision with triangular/linear spatial indexing.
 
-**Total Classes: 263 Java files** organized across 19 packages (including cache, simd, ghost, and neighbor detection)
+**Total Classes: 267 Java files** organized across 28 packages (including cache, simd, ghost, balancing/fault, balancing/grpc, forest/ghost/grpc, and neighbor detection)
 
 ## Package Overview
 

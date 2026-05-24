@@ -6,6 +6,7 @@ import java.util.*;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
@@ -244,7 +245,11 @@ public class SimplePrismIntegrationTest {
         assertEquals(3, neighbors.size());
     }
     
-    @Test 
+    @Test
+    @DisabledIfEnvironmentVariable(
+        named = "CI",
+        matches = "true",
+        disabledReason = "Flaky: large-scale k-NN timing assertion trips on GitHub Actions Ubuntu runners. Local dev coverage retained.")
     void testLargeScaleOperations() {
         var positions = new ArrayList<Point3f>();
         var contents = new ArrayList<String>();

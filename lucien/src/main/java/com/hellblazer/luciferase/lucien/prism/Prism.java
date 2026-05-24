@@ -384,10 +384,26 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     @Override
     protected boolean shouldContinueKNNSearch(PrismKey nodeIndex, Point3f queryPoint,
                                             java.util.PriorityQueue<com.hellblazer.luciferase.lucien.entity.EntityDistance<ID>> candidates) {
-        // Always continue if we haven't reached k candidates yet
-        // Note: PriorityQueue doesn't have a capacity, we need to track k separately
-        // For now, always continue to ensure we find all nearby entities
-        return true;
+        // Standard kNN pruning: continue iff the closest possible point in this
+        // node's bounds is no farther than the worst (head of max-heap) candidate
+        // we already have. If the AABB's closest point is strictly farther, no
+        // entity inside this node can improve the candidate set.
+        if (candidates.isEmpty()) {
+            return true;
+        }
+        var furthest = candidates.peek();
+        if (furthest == null) {
+            return true;
+        }
+        var bounds = getBounds(nodeIndex);
+        var closestX = Math.max(bounds[0], Math.min(queryPoint.x, bounds[3]));
+        var closestY = Math.max(bounds[1], Math.min(queryPoint.y, bounds[4]));
+        var closestZ = Math.max(bounds[2], Math.min(queryPoint.z, bounds[5]));
+        var dx = closestX - queryPoint.x;
+        var dy = closestY - queryPoint.y;
+        var dz = closestZ - queryPoint.z;
+        var nodeDistance = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        return nodeDistance <= furthest.distance();
     }
     
     @Override
@@ -397,15 +413,43 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     
     @Override
     protected boolean isNodeContainedInVolume(PrismKey nodeIndex, Spatial volume) {
+        // True containment: every point of the node must be inside the volume.
+        // We use the node's AABB as a conservative superset of the triangular
+        // prism it actually represents; if the AABB is contained, the prism
+        // (a subset of the AABB) is necessarily contained too. The prior code
+        // returned intersection instead of containment, which produced false
+        // positives that caused range queries to over-include nodes whose
+        // entities sat outside the requested volume.
         var bounds = getBounds(nodeIndex);
-        // Create an aabb for the node
-        var nodeAABB = new Spatial.aabb(
-            bounds[0], bounds[1], bounds[2],
-            bounds[3], bounds[4], bounds[5]
-        );
-        // Check if node is contained in volume by testing if volume contains all corners
-        // For now, just check intersection as a simpler test
-        return volume.intersects(bounds[0], bounds[1], bounds[2], bounds[3], bounds[4], bounds[5]);
+        var minX = bounds[0];
+        var minY = bounds[1];
+        var minZ = bounds[2];
+        var maxX = bounds[3];
+        var maxY = bounds[4];
+        var maxZ = bounds[5];
+        return switch (volume) {
+            case Spatial.Cube cube ->
+                minX >= cube.originX() && minY >= cube.originY() && minZ >= cube.originZ()
+                && maxX <= cube.originX() + cube.extent()
+                && maxY <= cube.originY() + cube.extent()
+                && maxZ <= cube.originZ() + cube.extent();
+            case Spatial.aabb box ->
+                minX >= box.originX() && minY >= box.originY() && minZ >= box.originZ()
+                && maxX <= box.extentX() && maxY <= box.extentY() && maxZ <= box.extentZ();
+            case Spatial.Sphere sphere -> {
+                var r2 = sphere.radius() * sphere.radius();
+                for (int i = 0; i < 8; i++) {
+                    var cx = ((i & 1) != 0 ? maxX : minX) - sphere.centerX();
+                    var cy = ((i & 2) != 0 ? maxY : minY) - sphere.centerY();
+                    var cz = ((i & 4) != 0 ? maxZ : minZ) - sphere.centerZ();
+                    if (cx * cx + cy * cy + cz * cz > r2) {
+                        yield false;
+                    }
+                }
+                yield true;
+            }
+            default -> false; // Conservative: exclude for volume types we don't recognise.
+        };
     }
     
     @Override

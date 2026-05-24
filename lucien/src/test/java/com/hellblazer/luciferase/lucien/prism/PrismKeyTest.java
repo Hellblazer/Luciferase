@@ -19,6 +19,9 @@ package com.hellblazer.luciferase.lucien.prism;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+
+import java.util.HashMap;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -461,8 +464,76 @@ class PrismKeyTest {
         // Should contain useful information
         assertTrue(str.length() > 40);
         assertFalse(str.contains("null"));
-        
+
         // Should show coordinates
         assertTrue(str.matches(".*\\(.*,.*,.*\\).*")); // Contains (x,y,z) pattern
+    }
+
+    @Test
+    @DisplayName("compareTo is consistent with equals across all valid levels")
+    void testCompareToInjectiveAtAllLevels() {
+        // Regression test for the PR #86 first-pass finding: PrismKey's
+        // long-packed consecutiveIndex collides at level 21 (3*21+1 = 64
+        // exceeds long width). compareTo must remain a total order
+        // consistent with equals at every level the constructor accepts —
+        // otherwise ConcurrentSkipListMap silently overwrites entries.
+        var seen = new HashMap<String, PrismKey>();
+        for (int level = 0; level <= Triangle.MAX_LEVEL; level++) {
+            // Build a small grid of keys at this level. The triangular
+            // constraint forces x + y < 2^level, so pick interior points.
+            int span = (level == 0) ? 1 : 2;
+            for (int x = 0; x < span; x++) {
+                for (int y = 0; y < span - x; y++) {
+                    for (int n = 0; n < span; n++) {
+                        for (int type = 0; type < (level == 0 ? 1 : 2); type++) {
+                            for (int z = 0; z < span; z++) {
+                                var triangle = new Triangle(level, type, x, y, n);
+                                var line = new Line(level, z);
+                                var key = new PrismKey(triangle, line);
+                                var fingerprint = String.format(
+                                    "L=%d/t=%d/x=%d/y=%d/n=%d/z=%d",
+                                    level, type, x, y, n, z);
+                                var prior = seen.put(fingerprint, key);
+                                assertNull(prior,
+                                    "Duplicate fingerprint within same level — test bug");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Every distinct PrismKey must compareTo != 0 against every other.
+        var keys = seen.values().toArray(new PrismKey[0]);
+        for (int i = 0; i < keys.length; i++) {
+            assertEquals(0, keys[i].compareTo(keys[i]),
+                "Key must compareTo == 0 against itself");
+            for (int j = i + 1; j < keys.length; j++) {
+                int cmp = keys[i].compareTo(keys[j]);
+                assertNotEquals(0, cmp,
+                    String.format("Distinct keys collided in compareTo: %s vs %s",
+                                  keys[i], keys[j]));
+                // Total ordering: cmp(a,b) and cmp(b,a) must have opposite signs.
+                assertEquals(Integer.signum(cmp), -Integer.signum(keys[j].compareTo(keys[i])),
+                    "compareTo not antisymmetric");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("compareTo is injective at MAX_LEVEL specifically")
+    void testCompareToInjectiveAtMaxLevel() {
+        // Direct probe of the level-21 collision class identified in the
+        // first-pass review. Construct two keys at MAX_LEVEL that differ
+        // only in Line.z — the buggy long-packed encoding made these compare
+        // equal because lineId << 64 reduces to lineId << 0.
+        int maxLevel = Triangle.MAX_LEVEL;
+        var triangle = new Triangle(maxLevel, 0, 0, 0, 0);
+        var lineA = new Line(maxLevel, 0);
+        var lineB = new Line(maxLevel, 1);
+        var keyA = new PrismKey(triangle, lineA);
+        var keyB = new PrismKey(triangle, lineB);
+        assertNotEquals(keyA, keyB, "Keys differing in Line.z must not be equal");
+        assertNotEquals(0, keyA.compareTo(keyB),
+            "compareTo must distinguish keys that differ only in Line.z at MAX_LEVEL");
     }
 }

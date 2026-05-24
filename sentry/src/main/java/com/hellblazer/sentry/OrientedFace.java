@@ -33,18 +33,6 @@ import static com.hellblazer.sentry.V.*;
  */
 
 public abstract class OrientedFace implements Iterable<Vertex> {
-    
-    // Cache for adjacent vertex
-    private Vertex cachedAdjacentVertex;
-    private boolean adjacentVertexCached = false;
-    
-    /**
-     * Invalidate the cached adjacent vertex. Should be called when topology changes.
-     */
-    protected void invalidateAdjacentVertexCache() {
-        adjacentVertexCached = false;
-        cachedAdjacentVertex = null;
-    }
 
     /**
      * Perform a flip for deletion of the vertex from the tetrahedralization. The incident and adjacent tetrahedra form
@@ -77,16 +65,34 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         }
 
         if (reflexEdges == 0 && isConvex(indexOf(n)) && isLocallyDelaunay(index, n, ears)) {
-            // Only one face of the opposing tetrahedron is visible
+            // Only one face of the opposing tetrahedron is visible.
             var created = flip2to3();
-            if (created[0].includes(n)) {
-                if (created[1].includes(n)) {
-                    ears.add(created[0].getFace(created[0].ordinalOf(created[1])));
+            // flip2to3 may return fewer than 3 tetrahedra when degenerate-pair
+            // removal killed one or more. The ear-promotion logic below requires
+            // the canonical 3-tet shape; if we got fewer, no ear can be safely
+            // promoted because the degenerate-removal already collapsed the
+            // relevant topology — the would-be ear faces do not exist as
+            // adjacencies anymore.
+            //
+            // INVARIANT: in both branches (length == 3 and length < 3) this
+            // method returns true, meaning "the receiver was processed; remove
+            // it from the ears list." The < 3 path intentionally does NOT add a
+            // replacement ear because the topology was simplified rather than
+            // refined; the caller's deletion-walk progresses by virtue of the
+            // smaller star, so missing the ear-add is correct, not a regression.
+            // A regression that re-introduced the unbounded created[0..2] access
+            // would manifest as ArrayIndexOutOfBoundsException during vertex
+            // deletion, not as a missing ear.
+            if (created.length == 3) {
+                if (created[0].includes(n)) {
+                    if (created[1].includes(n)) {
+                        ears.add(created[0].getFace(created[0].ordinalOf(created[1])));
+                    } else {
+                        ears.add(created[0].getFace(created[0].ordinalOf(created[2])));
+                    }
                 } else {
-                    ears.add(created[0].getFace(created[0].ordinalOf(created[2])));
+                    ears.add(created[1].getFace(created[1].ordinalOf(created[2])));
                 }
-            } else {
-                ears.add(created[1].getFace(created[1].ordinalOf(created[2])));
             }
             return true;
         } else if (reflexEdges == 1) {
@@ -321,17 +327,9 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return
      */
     public Vertex getAdjacentVertex() {
-        if (!adjacentVertexCached) {
-            Tetrahedron adjacent = getAdjacent();
-            var current = adjacent == null ? null : adjacent.ordinalOf(getIncident());
-            if (current == null) {
-                cachedAdjacentVertex = null;
-            } else {
-                cachedAdjacentVertex = adjacent.getVertex(current);
-            }
-            adjacentVertexCached = true;
-        }
-        return cachedAdjacentVertex;
+        Tetrahedron adjacent = getAdjacent();
+        var current = adjacent == null ? null : adjacent.ordinalOf(getIncident());
+        return current == null ? null : adjacent.getVertex(current);
     }
 
     /**

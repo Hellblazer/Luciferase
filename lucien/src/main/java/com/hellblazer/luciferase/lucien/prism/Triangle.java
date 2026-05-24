@@ -198,20 +198,27 @@ public final class Triangle {
     
     /**
      * Compute the space-filling curve index for this triangle element.
-     * 
-     * This implements a simplified version of t8code's triangular SFC algorithm.
+     *
+     * <p>This implements a simplified version of t8code's triangular SFC algorithm.
      * The full algorithm involves complex type transitions and cube_id computation
      * that preserves spatial locality through the triangular subdivision hierarchy.
-     * 
-     * For now, we use a simple linear combination of coordinates.
-     * TODO: Implement full t8code triangular SFC algorithm for optimal spatial locality.
-     * 
+     *
+     * <p>For now, we use a simple positional packing of coordinates. Each of
+     * {@code x}, {@code y}, {@code n} is bounded by {@code 2^level} at level L,
+     * and {@code type} is 0 or 1, so the encoding consumes {@code 3*level + 1}
+     * bits. At MAX_LEVEL=21 this is 64 bits and the result may be negative
+     * (sign bit set when {@code type=1}); the bit pattern remains a bijection
+     * with the input tuple, so callers using it as a hash/identity key are
+     * safe. The prior implementation used {@code level*2} as the per-field
+     * scale, doubling bit consumption and silently overflowing at level 11+,
+     * producing key collisions across distinct triangles.
+     *
+     * <p>TODO: Implement full t8code triangular SFC for optimal spatial locality.
+     *
      * @return the SFC index (consecutive index)
      */
     public long consecutiveIndex() {
-        // Simplified SFC - linear combination of coordinates
-        // This ensures different coordinates produce different indices
-        var levelScale = 1L << (level * 2); // Scale factor for this level
+        var levelScale = 1L << level;
         return x + (y * levelScale) + (n * levelScale * levelScale) + (type * levelScale * levelScale * levelScale);
     }
     
