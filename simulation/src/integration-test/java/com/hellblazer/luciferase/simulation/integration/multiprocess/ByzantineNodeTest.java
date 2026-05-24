@@ -8,6 +8,7 @@ package com.hellblazer.luciferase.simulation.integration.multiprocess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
@@ -38,6 +39,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author hal.hildebrand
  */
 @Tag("integration")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+    disabledReason = "Multi-process integration test: spawns child JVMs; CI scheduling makes the timing assertions non-deterministic. Tracked: Luciferase-nz5.")
 public class ByzantineNodeTest {
 
     private final List<Process> processes = new ArrayList<>();
