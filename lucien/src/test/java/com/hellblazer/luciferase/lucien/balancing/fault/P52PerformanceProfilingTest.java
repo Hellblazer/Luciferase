@@ -13,7 +13,6 @@ import com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,10 +39,7 @@ import static org.mockito.Mockito.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(
-    named = "CI",
-    matches = "true",
-    disabledReason = "Class-level gate: every test in this class is a perf/profiling test (latency, throughput, memory, bottleneck identification) with hardcoded thresholds tuned to local dev hardware. GitHub Actions Ubuntu runners (2-5x slower) fail the thresholds non-deterministically. Local dev coverage retained.")
+@Tag("performance")
 class P52PerformanceProfilingTest {
 
     private static final Logger log = LoggerFactory.getLogger(P52PerformanceProfilingTest.class);

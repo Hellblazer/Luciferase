@@ -7,8 +7,8 @@ package com.hellblazer.luciferase.esvt.traversal;
 
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.tetree.PluckerCoordinate;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -214,8 +214,7 @@ class EntryFaceIdentifierTest {
     }
 
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
-        disabledReason = "Nanosecond-level perf benchmark mixed into a correctness test class; CI runner timing makes the threshold non-deterministic (117ns/op observed vs threshold). Tracked: Luciferase-nz5.")
+    @Tag("performance")
     void testOperationCountBenchmark() {
         // Micro-benchmark to verify operation count is reasonable
         float[] products = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};

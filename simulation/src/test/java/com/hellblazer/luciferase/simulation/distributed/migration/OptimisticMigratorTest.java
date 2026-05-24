@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.DisplayName;
@@ -54,10 +55,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 @DisplayName("OptimisticMigrator - Deferred Update Queue")
-@DisabledIfEnvironmentVariable(
-    named = "CI",
-    matches = "true",
-    disabledReason = "Class-level gate: contains hardcoded ms-threshold performance tests (testPerformance100Migrations <10ms, testPerformanceQueueing1000Updates <100ms — both failed). Performance assertions don't belong with correctness tests; tracking a follow-up bead to split. Local dev coverage retained.")
+@Tag("performance")
 class OptimisticMigratorTest {
 
     private static final Logger log = LoggerFactory.getLogger(OptimisticMigratorTest.class);

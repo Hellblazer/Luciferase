@@ -853,17 +853,20 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
-                            <!-- Run ONLY @Tag("performance") tests, and clear the
-                                 filename excludes so legacy *Benchmark*/*PerformanceTest
-                                 classes still run until they are migrated to the tag. -->
+                            <!-- Run ONLY @Tag("performance") tests, across ALL test
+                                 classes. Selection is purely by group — NOT by
+                                 filename — because surefire composes <includes>
+                                 (filename) AND <groups> (tag) with logical AND, so
+                                 a filename <includes> here would wrongly require a
+                                 tagged test to ALSO live in a *PerformanceTest-named
+                                 class. Clear the default excludes/excludedGroups so
+                                 nothing filters the tagged set.
+                                 NOTE: legacy *Benchmark*/*PerformanceTest classes that
+                                 are not yet @Tag("performance") will not run here until
+                                 migrated (tracked: Luciferase-nz5). -->
                             <groups>performance</groups>
                             <excludedGroups combine.self="override"/>
                             <excludes combine.self="override"/>
-                            <includes combine.children="append">
-                                <include>**/*Benchmark*.java</include>
-                                <include>**/*PerformanceTest.java</include>
-                                <include>**/*PerformanceProfilerTest.java</include>
-                            </includes>
                         </configuration>
                     </plugin>
                 </plugins>

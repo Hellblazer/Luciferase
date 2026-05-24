@@ -24,8 +24,8 @@ import com.hellblazer.luciferase.simulation.events.EntityUpdateEvent;
 import com.hellblazer.luciferase.simulation.ghost.GhostPhysicsMetrics;
 import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.util.UUID;
@@ -207,10 +207,7 @@ class GhostPhysicsPerformanceTest {
      * Expected: Average operation latency < 100ms (hard target), stretch goal < 0.1ms.
      */
     @Test
-    @DisabledIfEnvironmentVariable(
-        named = "CI",
-        matches = "true",
-        disabledReason = "Flaky: 1000-op total <100ms threshold trips on GitHub Actions Ubuntu runners (observed 290ms). Local dev coverage retained.")
+    @Tag("performance")
     void testPerformanceTarget() {
         // Arrange: Perform 1000 operations
         var startTime = System.nanoTime();
