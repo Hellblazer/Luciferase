@@ -983,7 +983,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                     stack.push(nC);
                 }
                 if (nB != null) {
-                    stack.push(nC);
+                    stack.push(nB);
                 }
                 if (nD != null) {
                     stack.push(nD);
@@ -1019,7 +1019,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                     stack.push(nB);
                 }
                 if (nA != null) {
-                    stack.push(nB);
+                    stack.push(nA);
                 }
                 if (nC != null) {
                     stack.push(nC);
