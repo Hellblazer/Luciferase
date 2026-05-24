@@ -30,10 +30,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(
-    named = "CI",
-    matches = "true",
-    disabledReason = "Class-level gate: every test method orchestrates Javalin WebSocket servers with short-window connection/forwarding assertions. After 3 methods failed across CI rounds (testMultipleUpstreams, testCircuitBreakerOpensAfterMaxAttempts_C2, testEntityForwardingToRegionManager), the timing windows aren't reliable on GitHub Actions Ubuntu runners. Local dev coverage retained.")
 class EntityStreamConsumerTest {
 
     private AdaptiveRegionManager regionManager;

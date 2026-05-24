@@ -181,8 +181,6 @@
                             <includes>
                                 <include>**/*Benchmark.java</include>
                                 <include>**/*PerformanceTest.java</include>
-                                <include>**/*PerformanceValidationTest.java</include>
-                                <include>**/*PerformanceProfilingTest.java</include>
                                 <include>**/OctreeVsTetreeBenchmark.java</include>
                                 <include>**/SpatialIndexStressTest.java</include>
                                 <include>**/BaselinePerformanceBenchmark.java</include>

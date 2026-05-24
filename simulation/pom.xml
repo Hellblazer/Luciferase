@@ -153,13 +153,8 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- Exclude multi-process integration tests from the normal
-                         test phase (they spawn child JVMs and are slow/flaky on
-                         CI). combine.children="append" preserves the parent
-                         pom's pluginManagement <excludes> so we still get the
-                         performance / benchmark exclusions instead of replacing
-                         the inherited list with just this one entry. -->
-                    <excludes combine.children="append">
+                    <!-- Exclude integration tests from normal test phase -->
+                    <excludes>
                         <exclude>**/integration/multiprocess/**/*Test.java</exclude>
                     </excludes>
                 </configuration>

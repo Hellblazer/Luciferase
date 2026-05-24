@@ -540,22 +540,13 @@
                         <environmentVariables>
                             <CI>${env.CI}</CI>
                         </environmentVariables>
-                        <!-- Performance / benchmark tests are excluded from the
-                             default test cycle. Activate the `performance` profile
-                             (mvn test -Pperformance) to run them. See CLAUDE.md >
-                             Performance Testing.
-                             The Validation / Profiling suffixes cover modules that
-                             named their pure-perf classes with those instead of
-                             "PerformanceTest" (P416PerformanceValidationTest,
-                             P52PerformanceProfilingTest) — same intent. Child
-                             modules that declare their own <excludes> block must
-                             use combine.children="append" to preserve this list. -->
+                        <!-- Performance / benchmark tests are excluded from the default test
+                             cycle. Activate the `performance` profile (mvn test -Pperformance)
+                             to run them. See CLAUDE.md > Performance Testing. -->
                         <excludes>
                             <exclude>**/*Benchmark*.java</exclude>
                             <exclude>**/*PerformanceTest.java</exclude>
                             <exclude>**/*PerformanceProfilerTest.java</exclude>
-                            <exclude>**/*PerformanceValidationTest.java</exclude>
-                            <exclude>**/*PerformanceProfilingTest.java</exclude>
                         </excludes>
                     </configuration>
                 </plugin>

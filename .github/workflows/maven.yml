@@ -222,12 +222,7 @@ jobs:
       - name: Test Batch 2 (VON overlay + transport + integration + topology + animation)
         run: |
           export DISPLAY=:99.0
-          # !**/multiprocess/**/*Test excludes the multi-process integration
-          # tests that spawn child JVMs (slow + flaky on CI runners). Note
-          # the surefire <excludes> in simulation/pom.xml also excludes them,
-          # but explicit -Dtest patterns can bypass excludes — the negative
-          # pattern here makes the intent CLI-visible.
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/von/**/*Test,**/transport/**/*Test,**/integration/**/*Test,**/topology/**/*Test,**/animation/**/*Test,**/entity/**/*Test,**/persistence/**/*Test,**/scheduling/**/*Test,**/tick/**/*Test,!**/multiprocess/**/*Test' --file pom.xml
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl simulation -Dtest='**/von/**/*Test,**/transport/**/*Test,**/integration/**/*Test,**/topology/**/*Test,**/animation/**/*Test,**/entity/**/*Test,**/persistence/**/*Test,**/scheduling/**/*Test,**/tick/**/*Test' --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}

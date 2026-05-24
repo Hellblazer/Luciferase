@@ -45,10 +45,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfEnvironmentVariable(
-    named = "CI",
-    matches = "true",
-    disabledReason = "Class-level gate: every test method calls waitForSubdivision(., 2000ms) which polls for async subdivision to settle. After 3 methods failed across CI rounds (testGhostLayerWithBeySubdivision, testDistributedTwoServer, testEntityMovementAcrossSubdividedTrees), the 2-second deadline isn't reliable on GitHub Actions Ubuntu runners. Local dev coverage retained.")
 class TetrahedralForestE2ETest {
 
     /** Ghost zone width used in tests requiring ghost boundary detection. */
