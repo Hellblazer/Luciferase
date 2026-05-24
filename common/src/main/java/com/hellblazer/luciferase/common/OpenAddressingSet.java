@@ -91,7 +91,7 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
             if (equals(key, ob)) {
                 return true;
             }
-            index = index + (hash | 1) & table.length - 1;
+            index = (index + (hash | 1)) & (table.length - 1);
         } while (index != hash);
         return false;
     }
@@ -108,6 +108,9 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
 
             @Override
             public boolean hasNext() {
+                if (table == null) {
+                    return false;
+                }
                 while (next < table.length) {
                     if (table[next] != null && table[next] != DELETED) {
                         return true;
@@ -120,6 +123,9 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
             @SuppressWarnings("unchecked")
             @Override
             public T next() {
+                if (table == null) {
+                    throw new NoSuchElementException("Enumerator");
+                }
                 while (next < table.length) {
                     if (table[next] != null && table[next] != DELETED) {
                         return (T) table[next++];
@@ -155,7 +161,7 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
                     size -= 1;
                     return true;
                 }
-                index = index + (hash | 1) & table.length - 1;
+                index = (index + (hash | 1)) & (table.length - 1);
             } while (index != hash);
         }
         return false;
@@ -169,19 +175,36 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
     private boolean insert(Object key) {
         int hash = PRIME * getHash(key) >>> load;
         int index = hash;
+        int firstDeleted = -1;
         do {
             Object ob = table[index];
-            if (ob == null || ob == DELETED) {
-                table[index] = key;
+            if (ob == null) {
+                // End of the probe chain. Reuse the earliest DELETED tombstone
+                // if we saw one; otherwise insert at this null slot. Required
+                // to avoid duplicates when the key already exists past a
+                // tombstone earlier in the chain.
+                int target = (firstDeleted >= 0) ? firstDeleted : index;
+                table[target] = key;
                 size += 1;
                 return true;
             }
-            if (equals(key, ob)) {
+            if (ob == DELETED) {
+                if (firstDeleted < 0) {
+                    firstDeleted = index;
+                }
+            } else if (equals(key, ob)) {
                 table[index] = key;
                 return false;
             }
-            index = index + (hash | 1) & table.length - 1;
+            index = (index + (hash | 1)) & (table.length - 1);
         } while (index != hash);
+        // Probe wrapped without finding null. If we saw a tombstone we can
+        // reuse it; otherwise the table is genuinely full and needs a rehash.
+        if (firstDeleted >= 0) {
+            table[firstDeleted] = key;
+            size += 1;
+            return true;
+        }
         rehash();
         return insert(key);
     }
