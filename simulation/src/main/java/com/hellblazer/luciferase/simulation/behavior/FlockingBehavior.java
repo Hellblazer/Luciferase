@@ -77,7 +77,12 @@ public class FlockingBehavior implements EntityBehavior {
 
     /**
      * Create flocking behavior with default parameters.
+     *
+     * @deprecated Uses an unseeded {@link Random}; simulation results are not reproducible
+     *             across runs. Use the constructor that accepts an explicit {@code Random}
+     *             with a seed for deterministic / replayable behavior.
      */
+    @Deprecated(since = "0.0.5")
     public FlockingBehavior() {
         this(DEFAULT_AOI_RADIUS, DEFAULT_MAX_SPEED, DEFAULT_MAX_FORCE,
              1.5f, 1.0f, 1.0f, WorldBounds.DEFAULT, new Random());
@@ -89,7 +94,10 @@ public class FlockingBehavior implements EntityBehavior {
      * @param separationWeight Weight for separation force (typical: 1.0-2.0)
      * @param alignmentWeight  Weight for alignment force (typical: 0.5-1.5)
      * @param cohesionWeight   Weight for cohesion force (typical: 0.5-1.5)
+     * @deprecated Uses an unseeded {@link Random}. Use the full-customization constructor
+     *             with an explicit seeded {@code Random} for reproducible behavior.
      */
+    @Deprecated(since = "0.0.5")
     public FlockingBehavior(float separationWeight, float alignmentWeight, float cohesionWeight) {
         this(DEFAULT_AOI_RADIUS, DEFAULT_MAX_SPEED, DEFAULT_MAX_FORCE,
              separationWeight, alignmentWeight, cohesionWeight, WorldBounds.DEFAULT, new Random());

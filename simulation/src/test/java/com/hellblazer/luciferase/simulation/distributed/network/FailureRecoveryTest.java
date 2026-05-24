@@ -138,10 +138,13 @@ class FailureRecoveryTest {
         // Second attempt may fail due to transient partition
         nodeActual.sendEntityDeparture(nodeB, event2);
 
-        // System should still handle this gracefully
-        assertTrue(nodeActual.isNodeReachable(nodeB) ||
-                   !nodeActual.isNodeReachable(nodeB),
-            "Reachability should be deterministic");
+        // System should still handle this gracefully — calling isNodeReachable
+        // twice in succession must return the same value (no side effects, no
+        // race against an internal mutation that would flip the state).
+        boolean reachable1 = nodeActual.isNodeReachable(nodeB);
+        boolean reachable2 = nodeActual.isNodeReachable(nodeB);
+        assertEquals(reachable1, reachable2,
+                     "Reachability check must be idempotent and side-effect free");
 
         log.info("✓ Network partition handled: reachability state consistent");
     }
