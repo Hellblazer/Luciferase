@@ -31,12 +31,21 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author hal.hildebrand
  */
 public class Entity<Key extends SpatialKey<Key>, Content> {
-    private final Content        content;
-    private final Set<Key>       locations;
-    private       Point3f        position;
-    private       EntityBounds   bounds;
-    private       CollisionShape collisionShape;
-    private       EntityDynamics dynamics; // Optional dynamics tracking
+    private final    Content        content;
+    private final    Set<Key>       locations;
+    // EntityManager.entities is a ConcurrentHashMap, so two threads can reach
+    // the same Entity and call setPosition / setBounds / setCollisionShape /
+    // setDynamics concurrently with getters. Without volatile the writes
+    // are not guaranteed to publish to other threads, producing
+    // stale-read races even though there is no torn-write risk (these are
+    // reference assignments, atomic by JLS §17.7). Marking volatile gives
+    // each setter happens-before semantics relative to the corresponding
+    // getter without paying for a full Lock. (locations was the harder case
+    // and is covered by ConcurrentHashMap.newKeySet above.)
+    private volatile Point3f        position;
+    private volatile EntityBounds   bounds;
+    private volatile CollisionShape collisionShape;
+    private volatile EntityDynamics dynamics; // Optional dynamics tracking
 
     /**
      * Create an entity with content and position

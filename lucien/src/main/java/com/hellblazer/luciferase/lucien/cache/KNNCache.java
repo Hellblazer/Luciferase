@@ -47,22 +47,26 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
     private static final int DEFAULT_MAX_ENTRIES = 10000;
     private static final float LOAD_FACTOR = 0.75f;
 
-    // Cache is a LinkedHashMap with access-order semantics — get() mutates the
-    // access-order list, so every public op (including reads) must hold the
-    // lock exclusively. The prior implementation paired a ReadWriteLock (which
-    // allowed concurrent get() calls under read mode) with Collections
-    // .synchronizedMap (which serialized only the underlying Map ops). That
-    // combination was both redundant and incorrect: synchronizedMap protected
-    // the bucket array, but the access-order linkage was untouched by reads
-    // through RWLock-read mode, leaving the LRU order open to races. A single
-    // ReentrantLock is the right primitive — exclusive everywhere, no second
-    // lock to track.
+    // Cache is a LinkedHashMap with access-order semantics — get() mutates
+    // the access-order list, so every public op (including reads) must
+    // exclude all other accessors. The prior implementation paired a
+    // ReadWriteLock (allowing concurrent get() under read mode) with
+    // Collections.synchronizedMap. Despite the layered look, the
+    // synchronizedMap wrapper actually held its internal monitor across the
+    // full LinkedHashMap.get() call (including the access-order mutation),
+    // so the two-lock scheme was correct but redundant — every effective
+    // serialization happened on the synchronizedMap monitor. A single
+    // ReentrantLock provides the same semantics with one obvious primitive
+    // and removes the locked-inside-a-lock confusion the prior pattern
+    // invited.
     private final Map<KNNQueryKey<Key>, CachedResult<ID>> cache;
     private final ReentrantLock lock = new ReentrantLock();
     private final int maxEntries;
 
-    // Statistics — incremented under lock, but exposed via Atomic for
-    // lock-free reads from getStats() / getHitRate().
+    // Statistics — incremented under the cache lock but exposed via Atomic
+    // for approximate, lock-free reads from getHitRate(). getStats takes
+    // the lock so the (hits, misses, invalidations, size) snapshot is
+    // mutually consistent at the moment of the call.
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
     private final AtomicLong invalidations = new AtomicLong();
@@ -213,7 +217,10 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
     }
 
     /**
-     * Get cache hit rate (0.0 to 1.0). Lock-free — reads the atomic counters.
+     * Get cache hit rate (0.0 to 1.0). Lock-free — reads the atomic counters
+     * without coordination; the two reads can straddle a concurrent
+     * increment so the returned ratio is best-effort under contention.
+     * Acceptable for statistics; do not use as a correctness signal.
      */
     public double getHitRate() {
         long h = hits.get();

@@ -19,6 +19,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.util.ArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -147,5 +152,82 @@ class GhostLayerRemovalTest {
         assertFalse(layer.removeRemoteElement(0, remote(1, 99L, "missing")));
         assertFalse(layer.removeRemoteElement(7, remote(1, 1L, "a")));
         assertEquals(1L, layer.getNumRemoteElements());
+    }
+
+    /**
+     * Regression test for the lock-symmetry fix in this PR. Before the fix,
+     * {@code addGhostElement} mutated the per-key {@code ArrayList} inside
+     * {@code ghostElements.compute(...)} without holding the writer lock that
+     * readers acquired via {@code lock.readLock()}. A reader iterating the
+     * inner list could observe a torn read or throw
+     * {@link java.util.ConcurrentModificationException} mid-snapshot. After
+     * the fix both readers and writers hold the same {@code ReadWriteLock}.
+     *
+     * <p>If the lock-symmetry fix is reverted, this test fails fast with
+     * either a CME from the reader thread or an assertion mismatch on the
+     * final element count (because some elements were lost to the race).
+     */
+    @Test
+    @DisplayName("addGhostElement concurrent with getAllGhostElements does not throw or lose")
+    void testAddAndReadAreLockSymmetric() throws Exception {
+        var layer = new GhostLayer<MortonKey, LongEntityID, String>(GhostType.FACES);
+
+        int writerThreads = 4;
+        int perWriter = 250;
+        int readerThreads = 2;
+        var pool = Executors.newFixedThreadPool(writerThreads + readerThreads);
+        var go = new CountDownLatch(1);
+        var writersDone = new CountDownLatch(writerThreads);
+        var stop = new AtomicBoolean(false);
+        var errors = new ArrayList<Throwable>();
+
+        for (int w = 0; w < writerThreads; w++) {
+            final int base = w * perWriter;
+            pool.submit(() -> {
+                try {
+                    go.await();
+                    for (int i = 0; i < perWriter; i++) {
+                        layer.addGhostElement(ghost(base + i, base + i, "g" + (base + i)));
+                    }
+                } catch (Throwable ex) {
+                    synchronized (errors) { errors.add(ex); }
+                } finally {
+                    writersDone.countDown();
+                }
+            });
+        }
+        for (int r = 0; r < readerThreads; r++) {
+            pool.submit(() -> {
+                try {
+                    go.await();
+                    while (!stop.get()) {
+                        // Iterate the snapshot — must not throw CME under
+                        // concurrent writer activity.
+                        var snapshot = layer.getAllGhostElements();
+                        long ownerSum = 0;
+                        for (var g : snapshot) {
+                            ownerSum += g.getOwnerRank();
+                        }
+                        if (ownerSum < 0) throw new IllegalStateException();
+                    }
+                } catch (Throwable ex) {
+                    synchronized (errors) { errors.add(ex); }
+                }
+            });
+        }
+
+        go.countDown();
+        assertTrue(writersDone.await(30, TimeUnit.SECONDS),
+            "Writers did not finish in time");
+        stop.set(true);
+        pool.shutdown();
+        assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS));
+
+        synchronized (errors) {
+            assertTrue(errors.isEmpty(),
+                "Reader/writer concurrency produced exceptions: " + errors);
+        }
+        // Every writer-added element must be visible — no lost updates.
+        assertEquals((long) writerThreads * perWriter, layer.getNumGhostElements());
     }
 }
