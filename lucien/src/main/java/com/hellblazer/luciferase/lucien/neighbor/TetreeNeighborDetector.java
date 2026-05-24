@@ -328,38 +328,14 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<? exte
     }
     
     /**
-     * Convert a TetreeKey to a Tet object.
+     * Convert a TetreeKey to a Tet object via the canonical TM-index decoder.
+     * Delegates to {@link TetreeKey#toTet()} (which walks all path bits from
+     * root to the key's level). The prior local implementation only read the
+     * current level's 3-bit cell and silently dropped every higher-level bit,
+     * producing tets positioned as if they were direct children of the root.
      */
     public Tet keyToTet(TetreeKey<?> key) {
-        // Extract the level and TM-index data from the key
-        byte level = key.getLevel();
-        
-        if (level == 0) {
-            // Root tetrahedron
-            return new Tet(0, 0, 0, (byte)0, (byte)0);
-        }
-        
-        // For non-root tetrahedra, we need to extract the coordinate and type
-        // information from the TM-index bits
-        
-        // Get the coordinate and type at the current level
-        byte coordBits = key.getCoordBitsAtLevel(level);
-        byte type = key.getTypeAtLevel(level);
-        
-        // The coordinate bits encode which child position this tet occupies
-        // We need to reconstruct the actual coordinates based on the parent
-        // For now, use a simplified approach
-        int x = coordBits & 1;
-        int y = (coordBits >> 1) & 1;
-        int z = (coordBits >> 2) & 1;
-        
-        // Scale coordinates based on level
-        int scale = 1 << (21 - level); // 2^(21-level)
-        x *= scale;
-        y *= scale;
-        z *= scale;
-        
-        return new Tet(x, y, z, level, type);
+        return key.toTet();
     }
     
     /**
