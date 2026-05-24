@@ -1,10 +1,11 @@
 package com.dyada.performance;
 
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.time.Duration;
 import java.util.concurrent.*;
@@ -446,6 +447,8 @@ class DyAdaCacheTest {
 
     @Nested
     @DisplayName("Performance Characteristics")
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Nested perf class with hardcoded throughput/duration thresholds; CI runner variance makes them non-deterministic. Tracked: Luciferase-nz5.")
     class PerformanceTests {
 
         @Test
