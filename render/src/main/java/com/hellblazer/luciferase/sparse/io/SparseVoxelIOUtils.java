@@ -214,16 +214,12 @@ public final class SparseVoxelIOUtils {
     }
 
     /**
-     * Read metadata from a file channel at a specific offset.
-     *
-     * @param channel        The channel to read from
-     * @param metadataOffset Offset where metadata starts
-     * @param metadataSize   Size of metadata in bytes
-     * @param <T>            The expected metadata type
-     * @return The deserialized metadata, or null if size is 0
-     * @throws IOException            if read fails
-     * @throws ClassNotFoundException if the class cannot be found
+     * @deprecated Calls without an expected-type filter accept arbitrary
+     * deserialization which is a remote-code-execution risk on untrusted
+     * file inputs. Use {@link #readMetadata(FileChannel, long, long, Class)}
+     * instead so the inner stream is constrained to the expected type.
      */
+    @Deprecated
     public static <T> T readMetadata(FileChannel channel, long metadataOffset, long metadataSize)
             throws IOException, ClassNotFoundException {
 
@@ -239,6 +235,39 @@ public final class SparseVoxelIOUtils {
         }
 
         return deserializeMetadata(buffer.array());
+    }
+
+    /**
+     * Read metadata from a file channel at a specific offset, constraining
+     * deserialization to {@code expectedType} via an {@link ObjectInputFilter}.
+     * Use this whenever the file source is or might be untrusted.
+     *
+     * @param channel        The channel to read from
+     * @param metadataOffset Offset where metadata starts
+     * @param metadataSize   Size of metadata in bytes
+     * @param expectedType   The expected metadata class (used to build the
+     *                       deserialization filter)
+     * @param <T>            The expected metadata type
+     * @return The deserialized metadata, or null if size is 0
+     * @throws IOException            if read fails
+     * @throws ClassNotFoundException if the class cannot be found
+     */
+    public static <T> T readMetadata(FileChannel channel, long metadataOffset, long metadataSize,
+                                     Class<T> expectedType)
+            throws IOException, ClassNotFoundException {
+
+        if (metadataSize <= 0) {
+            return null;
+        }
+
+        channel.position(metadataOffset);
+        var buffer = ByteBuffer.allocate((int) metadataSize);
+        int bytesRead = channel.read(buffer);
+        if (bytesRead != metadataSize) {
+            throw new IOException("Expected " + metadataSize + " metadata bytes, read " + bytesRead);
+        }
+
+        return deserializeMetadata(buffer.array(), expectedType);
     }
 
     // === Version Detection ===

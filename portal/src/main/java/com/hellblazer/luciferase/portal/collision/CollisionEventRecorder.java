@@ -273,10 +273,22 @@ public class CollisionEventRecorder {
     }
     
     /**
-     * Load recorded session from file.
+     * Load recorded session from file. Restricts deserialization to the
+     * RecordingSession payload types plus the lucien entity / collision /
+     * vecmath types that ShapeSnapshot.bounds and EntityState.entityId
+     * (typed as Object in their declaring records) actually hold at
+     * runtime. Untrusted recording files would otherwise be a remote-code-
+     * execution vector via standard ObjectInputStream gadget chains.
      */
     public void loadSession(File file) throws IOException, ClassNotFoundException {
         try (var in = new ObjectInputStream(new FileInputStream(file))) {
+            in.setObjectInputFilter(ObjectInputFilter.Config.createFilter(
+                "com.hellblazer.luciferase.portal.collision.CollisionEventRecorder;"
+                + "com.hellblazer.luciferase.portal.collision.CollisionEventRecorder$*;"
+                + "com.hellblazer.luciferase.lucien.entity.*;"
+                + "com.hellblazer.luciferase.lucien.collision.*;"
+                + "javax.vecmath.*;"
+                + "java.util.*;java.lang.*;java.time.*;java.math.*;!*"));
             var session = (RecordingSession) in.readObject();
             
             sessionName.set(session.name);

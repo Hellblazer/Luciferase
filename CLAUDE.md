@@ -94,7 +94,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 - **Tetree** (33 + internal/1 = 34 classes): Tetrahedral subdivision with S0-S5 characteristic tetrahedra, 21-level support
 - **Prism** (9 classes): Anisotropic spatial subdivision with triangular/linear elements
 - **SFC** (5 classes): SFCArrayIndex flat Morton-sorted array, LITMAX/BIGMIN optimization
-- **Collision** (18 + ccd/4 + physics/4 = 26 classes): Comprehensive collision detection with CCD and physics subpackages
+- **Collision** (18 + ccd/4 + physics/4 + physics/constraints/3 = 29 classes): Comprehensive collision detection with CCD and physics+constraints subpackages
 - **Balancing** (22 + fault/40 + grpc/2 = 64 classes): Tree balancing strategies, fault-recovery subsystem, gRPC balancing client
 - **Visitor** (6 classes): Tree traversal visitor pattern
 - **Forest** (22 + ghost/11 + ghost/grpc/7 = 40 classes): Multi-tree coordination, ghost layer, distributed support, gRPC ghost client
