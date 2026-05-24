@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.util.HashSet;
 
@@ -159,6 +160,10 @@ class TetreeBubbleFactoryTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(
+        named = "CI",
+        matches = "true",
+        disabledReason = "Flaky: 100-bubble creation <100ms threshold trips on GitHub Actions Ubuntu runners (observed 274ms). Local dev coverage retained.")
     void testPerformance_Create100Bubbles_Under100ms() {
         var grid = new TetreeBubbleGrid((byte) 3);
 
