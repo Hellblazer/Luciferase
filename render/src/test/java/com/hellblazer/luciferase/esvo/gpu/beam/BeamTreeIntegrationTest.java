@@ -1,8 +1,8 @@
 package com.hellblazer.luciferase.esvo.gpu.beam;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
@@ -144,8 +144,7 @@ class BeamTreeIntegrationTest {
     }
 
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
-        disabledReason = "Perf assertion (batch creation <1ms) mixed into correctness test class. Tracked: Luciferase-nz5.")
+    @Tag("performance")
     void testPerformanceImprovement() {
         var tree = BeamTreeBuilder.from(rays)
                 .withMaxBatchSize(32)

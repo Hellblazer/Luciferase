@@ -9,8 +9,8 @@ import com.dyada.visualization.data.*;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import java.util.Map;
 
@@ -129,8 +129,7 @@ class DyAdaIntegrationTest extends TestBase {
     
     @Test
     @DisplayName("Performance and scalability test")
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
-        disabledReason = "Perf assertion (1000-entity scalability) mixed into integration class. Tracked: Luciferase-nz5.")
+    @Tag("performance")
     void testPerformanceAndScalability() {
         var entityCount = 1000;
         var startTime = System.nanoTime();

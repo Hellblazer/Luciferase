@@ -39,6 +39,12 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <!-- Re-state the root ${test.excluded.groups} exclusion: this
+                         module declares its own surefire <configuration>, which
+                         replaces (does not merge) the inherited pluginManagement
+                         config, so the @Tag("performance") exclusion must be
+                         repeated here. -->
+                    <excludedGroups>${test.excluded.groups}</excludedGroups>
                     <excludes>
                         <exclude>${ci.slow.test.excludes}</exclude>
                     </excludes>

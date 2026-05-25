@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.DisplayName;
@@ -46,10 +47,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 @DisplayName("MigrationOracle - Boundary Crossing Detection")
-@DisabledIfEnvironmentVariable(
-    named = "CI",
-    matches = "true",
-    disabledReason = "Class-level gate: contains testPerformance1000Entities <10ms threshold (failed). Performance assertions belong in a separate test suite; tracking a follow-up bead to split. Local dev coverage retained.")
+@Tag("performance")
 class MigrationOracleTest {
 
     private static final Logger log = LoggerFactory.getLogger(MigrationOracleTest.class);

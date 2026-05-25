@@ -27,8 +27,8 @@ import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.collision.SphereShape;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.DisplayName;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -409,10 +409,7 @@ class PrismTest {
     
     @Test
     @DisplayName("Performance: handles large entity counts")
-    @DisabledIfEnvironmentVariable(
-        named = "CI",
-        matches = "true",
-        disabledReason = "Flaky: 10K-entity range-query <100ms threshold trips on GitHub Actions Ubuntu runners. Local dev coverage retained.")
+    @Tag("performance")
     void testLargeEntityCount() {
         var entityCount = 10_000;
         var random = new Random(12345);

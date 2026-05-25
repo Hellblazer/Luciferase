@@ -20,8 +20,8 @@ package com.hellblazer.luciferase.simulation.causality;
 import com.hellblazer.luciferase.simulation.delos.mock.MockFirefliesView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -460,10 +460,7 @@ class EntityMigrationTimeoutIntegrationTest {
 
     @Test
     @DisplayName("Timeout performance scaling: O(n) acceptable with 1000 entities")
-    @DisabledIfEnvironmentVariable(
-        named = "CI",
-        matches = "true",
-        disabledReason = "Flaky: processTimeouts <50ms threshold trips on GitHub Actions Ubuntu runners (observed 218ms). Local dev coverage retained.")
+    @Tag("performance")
     void testTimeoutPerformanceScalingCheck() {
         // Given: FSM with 1000 entities in various states
         var config = EntityMigrationStateMachine.Configuration.builder()

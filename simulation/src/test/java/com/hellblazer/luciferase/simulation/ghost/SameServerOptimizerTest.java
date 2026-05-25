@@ -5,8 +5,8 @@ package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.util.UUID;
@@ -131,10 +131,7 @@ class SameServerOptimizerTest {
     }
 
     @Test
-    @DisabledIfEnvironmentVariable(
-        named = "CI",
-        matches = "true",
-        disabledReason = "Flaky: 10K-lookup <10ms threshold trips on GitHub Actions Ubuntu runners (observed 10ms — sits right on the cliff). Local dev coverage retained.")
+    @Tag("performance")
     void testOptimizationPerformance() {
         var serverId = UUID.randomUUID();
         var bubble1 = createBubble();
