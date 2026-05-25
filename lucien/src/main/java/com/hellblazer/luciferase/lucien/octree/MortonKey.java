@@ -400,23 +400,6 @@ public final class MortonKey implements SpatialKey<MortonKey> {
         }
     }
 
-    /**
-     * Convert this MortonKey to its protobuf representation.
-     */
-    public com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey toProto() {
-        return com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey.newBuilder()
-            .setMortonCode(mortonCode)
-            .setLevel(level)
-            .build();
-    }
-
-    /**
-     * Create a MortonKey from its protobuf representation.
-     */
-    public static MortonKey fromProto(com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey proto) {
-        return new MortonKey(proto.getMortonCode(), (byte) proto.getLevel());
-    }
-    
     // ===== SFC Range Estimation for k-NN Optimization =====
     
     /**
