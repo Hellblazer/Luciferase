@@ -550,7 +550,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                 // Deserialize ghost element using contentSerializer and idType
                 if (contentSerializer != null && idType != null) {
                     @SuppressWarnings("unchecked")
-                    var ghostElement = (GhostElement<Key, ID, Content>) GhostElement.fromProtobuf(
+                    var ghostElement = (GhostElement<Key, ID, Content>) ProtobufConverters.ghostElementFromProtobuf(
                         ghostProto,
                         contentSerializer,
                         idType
@@ -602,7 +602,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                     // Convert protobuf ghost element to domain object and add to ghost layer
                     if (contentSerializer != null && idType != null) {
                         @SuppressWarnings("unchecked")
-                        var ghostElement = (GhostElement<Key, ID, Content>) GhostElement.fromProtobuf(
+                        var ghostElement = (GhostElement<Key, ID, Content>) ProtobufConverters.ghostElementFromProtobuf(
                             ghostProto,
                             contentSerializer,
                             idType

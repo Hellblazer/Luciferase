@@ -242,7 +242,7 @@ public class GhostPerformanceBenchmark {
                 var serializeTime = benchmarkSerialization(ghostLayer, ghostCount);
                 
                 // Benchmark deserialization
-                var batch = ghostLayer.toProtobufBatch(0, 1000L, ContentSerializer.STRING_SERIALIZER);
+                var batch = ProtobufConverters.ghostLayerToProtobufBatch(ghostLayer, 0, 1000L, ContentSerializer.STRING_SERIALIZER);
                 var deserializeTime = benchmarkDeserialization(batch, ghostCount);
                 
                 // Calculate throughput
@@ -503,13 +503,13 @@ public class GhostPerformanceBenchmark {
             throws ContentSerializer.SerializationException {
         // Warmup
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            layer.toProtobufBatch(0, 1000L, ContentSerializer.STRING_SERIALIZER);
+            ProtobufConverters.ghostLayerToProtobufBatch(layer, 0, 1000L, ContentSerializer.STRING_SERIALIZER);
         }
         
         // Benchmark
         var start = System.nanoTime();
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-            layer.toProtobufBatch(0, 1000L, ContentSerializer.STRING_SERIALIZER);
+            ProtobufConverters.ghostLayerToProtobufBatch(layer, 0, 1000L, ContentSerializer.STRING_SERIALIZER);
         }
         return (System.nanoTime() - start) / BENCHMARK_ITERATIONS;
     }
@@ -519,7 +519,7 @@ public class GhostPerformanceBenchmark {
         // Warmup
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             for (var element : batch.getElementsList()) {
-                GhostElement.<MortonKey, LongEntityID, String>fromProtobuf(
+                ProtobufConverters.<MortonKey, LongEntityID, String>ghostElementFromProtobuf(
                     element, ContentSerializer.STRING_SERIALIZER, LongEntityID.class);
             }
         }
@@ -528,7 +528,7 @@ public class GhostPerformanceBenchmark {
         var start = System.nanoTime();
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
             for (var element : batch.getElementsList()) {
-                GhostElement.<MortonKey, LongEntityID, String>fromProtobuf(
+                ProtobufConverters.<MortonKey, LongEntityID, String>ghostElementFromProtobuf(
                     element, ContentSerializer.STRING_SERIALIZER, LongEntityID.class);
             }
         }
