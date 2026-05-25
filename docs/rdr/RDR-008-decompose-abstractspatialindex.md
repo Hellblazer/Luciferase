@@ -50,21 +50,48 @@ Tranches A–C touched this file repeatedly (stream materialization under lock, 
 
 ## Approach
 
-> To be completed in `/nx:rdr-research` + design. This is expected to be a phased, multi-PR decomposition. Initial candidate directions:
+> Candidate directions below; resolved by research (see [Research Findings](#research-findings)) into the phased recommendation that follows. This is a phased, multi-PR decomposition.
 
 1. **Map the method surface** — bucket all 135 public + the protected template methods into the cohesive clusters above; identify shared state each cluster touches (spatialIndex map, lock, spatialVersion, entityManager, knnCache).
 2. **Pick a decomposition style** — Strategy/delegate objects (e.g. `KnnSearcher`, `RangeQueryEngine`, `RayIntersector`, `CollisionEngine`) holding references to the shared storage + lock, vs. mixin-style interfaces with default methods, vs. composition with a small `SpatialIndexCore` holding state and feature objects delegating to it. Must keep the public `SpatialIndex` contract and the subclass template-method hooks intact.
 3. **Preserve the subclass seam** — Octree/Tetree/Prism/SFCArrayIndex override protected hooks; the decomposition must route those hooks to the right collaborator without forcing subclass rewrites (or with a clearly-scoped, mechanical subclass update).
-4. **Phase it** — extract one cluster at a time behind green tests (e.g. k-NN first, since it is self-contained and was a recent bug site), each phase its own PR. Define the phase boundaries + the `/nx:phase-review-gate` checkpoints up front.
+4. **Phase it** — extract one cluster at a time behind green tests (e.g. k-NN first, since it is self-contained and was a recent bug site), each phase its own PR. Define the phase boundaries + the `/conexus:phase-review-gate` checkpoints up front.
 5. **No behavior change** — this is a structural refactor; the full lucien suite (2400+ tests) must stay green at every phase. Performance parity verified via `-Pperformance` benchmarks.
+
+### Recommended direction (pending gate)
+
+Adopt **decomposition style (iii): core + feature-objects**, because research showed it minimizes subclass churn — the subclasses keep overriding the same protected hooks and never learn that collaborators exist.
+
+- **Structure.** Extract a `SpatialIndexCore` holding the six-field shared nucleus (`spatialIndex`, `lock`, `spatialVersion`, `knnCache`, `entityManager`, `entityCache`). `AbstractSpatialIndex` becomes a thin **façade** that implements a `SpatialGeometry<Key>` callback interface (the ~21 protected template hooks stay on the façade, so Octree/Tetree/Prism/SFCArrayIndex are **unchanged**) and delegates to feature objects, each holding `SpatialIndexCore` + the `SpatialGeometry<Key>` callback: `DsocController`, `GhostCoordinator`, `KnnSearcher`, a frustum/plane/ray culler, `CollisionEngine`, `EntityLifecycleManager`. The public `SpatialIndex<Key,ID,Content>` contract is untouched. Concurrency lives in one auditable place (`SpatialIndexCore`).
+- **Keep region/range queries and stream accessors *in the façade*** — they are tightly bound to the `spatialIndex`+`lock` nucleus and read as core responsibilities, not collaborators.
+- **Phase ordering** (each its own PR, behind a `/conexus:phase-review-gate`, full lucien suite green + `-Pperformance` parity at every step):
+  1. **DSOC (cluster k)** — cleanest first cut: 10+ dedicated private fields, **zero template hooks**, touches only the lock. No cross-RDR dependency.
+  2. **Distributed-ghost (cluster i)** — **dual-purpose: this is also RDR-007 Phase 0.** Prerequisite: RDR-007's interface inversion (the `:5183-5214` gRPC FQN types must hide behind an interface before extraction). Sequence RDR-007 first.
+  3. **k-NN + KNNCache (cluster b)** — moderate hooks (`shouldContinueKNNSearch`, `estimateNodeDistance`, `calculateSpatialIndex`); recent bug site (Tranches B–C, RDR-003).
+  4. **Frustum + plane + ray (clusters d+e bundled)** — shared traversal hooks, high internal cohesion.
+  5. **Collision (cluster f)** — self-contained once 1–4 are out.
+  6. **Entity lifecycle (cluster a)** — broadest shared-state footprint (7 fields incl. `knnCache`/`spatialVersion`), most disruptive, deliberately last.
+- **Scope correction:** the file is **~195 methods across 11 clusters**, not 135/7 — the RDR's count undershot, and the **DSOC** and **distributed-ghost** clusters are first-class extraction targets the original list omitted.
+
+## Research Findings
+
+> Investigation 2026-05-25 (`codebase-deep-analyzer`). Full detail in T2 `luciferase_rdr/008-research-1`.
+
+1. **~195 methods, 11 cohesive clusters.** Largest: entity lifecycle (~48), collision (~26), frustum/plane (~22), balancing/subdivision (~22), **distributed-ghost (~22)**, core/config (~20), region/range (~20); plus k-NN (~13), **DSOC (~13)**, stream accessors (~11), ray (~9).
+2. **Two-field nucleus + a coupling pair.** `spatialIndex` (`ConcurrentNavigableMap`, `:99`) and `lock` (`ReentrantReadWriteLock`, `:101`) are touched by every cluster; `spatialVersion` (`:137`) + `knnCache` (`:138`) couple entity-lifecycle to k-NN. Other state is cluster-dedicated (DSOC `:116-119`, ghost `:150-155`, balancing `:103,145-147`). Stream accessors **materialize under the read lock** (`.collect(...).stream()`) — the prior lazy-stream-after-unlock hazard is already fixed.
+3. **~21 protected template hooks; each serves exactly one cluster, no hook-splitting needed.** All four subclasses override the core ~15 (`calculateSpatialIndex`, `shouldContinueKNNSearch`, `getNodeBounds`, `doesNodeIntersectVolume`, `doesRayIntersectNode`, frustum/plane variants, …). This is the seam any decomposition must route.
+4. **Style (iii) wins on subclass churn.** A feature object (`KnnSearcher`) must call subclass-overridden hooks (`shouldContinueKNNSearch` at `:4320`, `calculateSpatialIndex` at `:1428` + 8 sites) — passed as a `SpatialGeometry<Key>` callback. Style (iii) (and the architecturally-equivalent delegate-with-`this` style (i)) keeps subclasses unchanged; mixin-with-defaults (ii) is worst (needs 6+ field accessors on the public interface).
+5. **Cleanest first extraction = DSOC** (dedicated state, zero hooks). **Distributed-ghost is the highest-leverage** because it discharges RDR-007's `AbstractSpatialIndex` blocker simultaneously — but only after RDR-007's interface inversion.
 
 ## Open Questions
 
-- Delegation/Strategy vs. interface-with-defaults vs. core+feature-objects — which best preserves the generic contract and minimizes subclass churn?
-- Can collaborators share the lock/version/map by reference safely, or does extraction force a concurrency rethink (the TOCTOU/lock work in Tranches B–C is relevant)?
-- Phase ordering: k-NN first (self-contained, recent bug site) or entity-lifecycle first (most foundational)?
-- How many phases / PRs, and what are the `/nx:phase-review-gate` boundaries?
-- Does RDR-003's future FCC query surface impose constraints on where the query seams should fall?
+- ~~Delegation/Strategy vs. interface-with-defaults vs. core+feature-objects — which best preserves the generic contract and minimizes subclass churn?~~ **Resolved (recommended):** core+feature-objects (style iii); subclasses stay unchanged because the façade keeps the `SpatialGeometry<Key>` hooks. Mixin-with-defaults rejected (leaks field accessors onto the public interface).
+- ~~Can collaborators share the lock/version/map by reference safely, or does extraction force a concurrency rethink?~~ **Resolved:** Share by reference via `SpatialIndexCore`; the nucleus is two fields (`spatialIndex`+`lock`) plus the `spatialVersion`/`knnCache` coupling. The lazy-stream-under-lock hazard is already fixed (stream accessors materialize inside the lock), so no concurrency rethink is forced — and centralizing the nucleus makes correctness auditable in one place.
+- ~~Phase ordering: k-NN first or entity-lifecycle first?~~ **Resolved:** Neither — **DSOC first** (zero hooks, dedicated state), then distributed-ghost (dual-purpose with RDR-007), then k-NN; entity-lifecycle **last** (broadest shared state).
+- ~~How many phases / PRs, and what are the `/conexus:phase-review-gate` boundaries?~~ **Resolved (proposed):** 6 phases (DSOC → distributed-ghost → k-NN → frustum/plane/ray → collision → entity-lifecycle), a gate at each.
+- ~~Does RDR-003's future FCC query surface impose constraints on where the query seams should fall?~~ **Partially open:** region/range + stream accessors are recommended to stay in the façade (core); whether RDR-003's FCC query work needs a dedicated query collaborator should be revisited when RDR-003 implementation resumes.
+
+**New cross-RDR constraint from research:** Phase 2 (distributed-ghost extraction) is identical to RDR-007's Phase 0 dependency inversion of `AbstractSpatialIndex` (`:5183-5214`). These must be sequenced together (RDR-007 first / jointly) and executed once.
 
 ## Decision
 
