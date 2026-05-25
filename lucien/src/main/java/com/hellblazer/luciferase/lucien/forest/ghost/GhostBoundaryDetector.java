@@ -84,10 +84,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     // Owner information for distributed support
     private final Map<Key, Integer> elementOwners;
 
-    // gRPC client for fetching remote ghost data (optional for distributed environments)
-    private final com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostServiceClient ghostServiceClient;
-
-    // Tree ID for distributed ghost requests
+    // Tree ID for distributed ghost requests (candidate-dead-field; flagged for follow-up review B6)
     private final long treeId;
 
     // ========================================
@@ -211,7 +208,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
                                  NeighborDetector<Key> neighborDetector,
                                  GhostType ghostType,
                                  GhostAlgorithm ghostAlgorithm) {
-        this(spatialIndex, neighborDetector, ghostType, ghostAlgorithm, null, null, 0L, 0f);
+        this(spatialIndex, neighborDetector, ghostType, ghostAlgorithm, null, 0L, 0f);
     }
 
     /**
@@ -221,7 +218,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
      * @param defaultGhostZoneWidth the default ghost zone width
      */
     public GhostBoundaryDetector(Forest<Key, ID, Content> forest, float defaultGhostZoneWidth) {
-        this(null, null, GhostType.FACES, GhostAlgorithm.CONSERVATIVE, forest, null, 0L, defaultGhostZoneWidth);
+        this(null, null, GhostType.FACES, GhostAlgorithm.CONSERVATIVE, forest, 0L, defaultGhostZoneWidth);
     }
 
     /**
@@ -232,7 +229,6 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
      * @param ghostType the type of ghosts to create
      * @param ghostAlgorithm the ghost creation algorithm
      * @param forest the forest (null for single-tree mode)
-     * @param ghostServiceClient gRPC client for remote ghost data (null for local-only)
      * @param treeId tree identifier for distributed ghost requests
      * @param defaultGhostZoneWidth default ghost zone width for forest mode
      */
@@ -241,7 +237,6 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
                                  GhostType ghostType,
                                  GhostAlgorithm ghostAlgorithm,
                                  Forest<Key, ID, Content> forest,
-                                 com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostServiceClient ghostServiceClient,
                                  long treeId,
                                  float defaultGhostZoneWidth) {
         // Element-level fields
@@ -252,7 +247,6 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
         this.boundaryElements = ConcurrentHashMap.newKeySet();
         this.processedElements = ConcurrentHashMap.newKeySet();
         this.elementOwners = new ConcurrentHashMap<>();
-        this.ghostServiceClient = ghostServiceClient;
         this.treeId = treeId;
 
         // Tree-level fields
