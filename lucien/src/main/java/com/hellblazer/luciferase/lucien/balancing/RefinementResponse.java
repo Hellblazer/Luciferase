@@ -58,4 +58,24 @@ public record RefinementResponse<Key extends SpatialKey<Key>, ID extends EntityI
     RefinementResponse<Key, ID, Content> empty() {
         return new RefinementResponse<>(0, 0, 0L, 0, List.of(), false, 0L);
     }
+
+    /**
+     * Returns true iff this response equals the {@link #empty()} sentinel (all fields at proto3 defaults).
+     *
+     * <p>Used by SIG-1 convergence guard: a round containing any empty response (unreachable peer mapped
+     * to {@code empty()} by the adapter) must NOT update {@code lastRoundIndicatedConvergence}, because
+     * the empty response's {@code needsFurtherRefinement == false} would otherwise prematurely signal
+     * convergence when a peer is simply unreachable.
+     *
+     * @return true if this is an empty/sentinel response
+     */
+    public boolean isEmpty() {
+        return requesterRank == 0
+            && responderRank == 0
+            && responderTreeId == 0L
+            && roundNumber == 0
+            && ghostElements.isEmpty()
+            && !needsFurtherRefinement
+            && timestamp == 0L;
+    }
 }

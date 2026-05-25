@@ -17,21 +17,18 @@
 package com.hellblazer.luciferase.lucien.balancing;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
-import com.hellblazer.luciferase.lucien.balancing.grpc.BalanceCoordinatorClient;
-import com.hellblazer.luciferase.lucien.balancing.proto.RefinementRequest;
-import com.hellblazer.luciferase.lucien.balancing.proto.RefinementResponse;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
-import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
-import com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Implements Phase 3 of parallel balancing: O(log P) cross-partition refinement protocol.
@@ -43,8 +40,8 @@ import java.util.stream.Collectors;
  * <p>Each refinement round:
  * <ol>
  *   <li>Identifies boundary elements needing refinement using level information</li>
- *   <li>Sends RefinementRequest to neighbor partitions via gRPC</li>
- *   <li>Receives RefinementResponse with ghost elements</li>
+ *   <li>Sends RefinementRequest to neighbor partitions via the domain exchange interface</li>
+ *   <li>Receives RefinementResponse with already-deserialized domain ghost elements</li>
  *   <li>Applies ghost elements to local forest</li>
  *   <li>Synchronizes all partitions via barrier</li>
  *   <li>Checks convergence (no more refinements needed)</li>
@@ -52,7 +49,7 @@ import java.util.stream.Collectors;
  *
  * <p>Based on the p4est parallel AMR algorithm (Burstedde et al., SIAM 2011).
  *
- * <p>Thread-safe: Uses immutable configuration and thread-safe client/registry.
+ * <p>Thread-safe: Uses immutable configuration and thread-safe exchange/registry.
  *
  * @param <Key> the spatial key type (MortonKey, TetreeKey, etc.)
  * @param <ID> the entity ID type
@@ -63,32 +60,30 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
 
     private static final Logger log = LoggerFactory.getLogger(CrossPartitionBalancePhase.class);
 
-    private final BalanceCoordinatorClient client;
+    private final RefinementExchange<Key, ID, Content> exchange;
     private final ParallelBalancer.PartitionRegistry registry;
     private final BalanceConfiguration config;
     private final RefinementRequestManager requestManager;
-    private volatile RefinementCoordinator coordinator;  // Initialized lazily in execute()
+    private volatile RefinementCoordinator<Key, ID, Content> coordinator;  // Initialized lazily in execute()
     private volatile boolean lastRoundIndicatedConvergence = false;
 
     // Forest context for violation detection and ghost element application
     private volatile Forest<Key, ID, Content> forest;
     private volatile GhostLayer<Key, ID, Content> ghostLayer;
     private volatile TwoOneBalanceChecker<Key, ID, Content> balanceChecker;
-    private volatile ContentSerializer<Content> contentSerializer;
-    private volatile Class<ID> idType;
 
     /**
      * Create a new cross-partition balance phase.
      *
-     * @param client the gRPC client for refinement requests
+     * @param exchange the domain exchange interface for refinement requests
      * @param registry the partition registry for coordination
      * @param config the balance configuration
      * @throws NullPointerException if any parameter is null
      */
-    public CrossPartitionBalancePhase(BalanceCoordinatorClient client,
-                                     ParallelBalancer.PartitionRegistry registry,
-                                     BalanceConfiguration config) {
-        this.client = Objects.requireNonNull(client, "client cannot be null");
+    public CrossPartitionBalancePhase(RefinementExchange<Key, ID, Content> exchange,
+                                      ParallelBalancer.PartitionRegistry registry,
+                                      BalanceConfiguration config) {
+        this.exchange = Objects.requireNonNull(exchange, "exchange cannot be null");
         this.registry = Objects.requireNonNull(registry, "registry cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.requestManager = new RefinementRequestManager();
@@ -103,33 +98,11 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
      * @throws NullPointerException if forest or ghostLayer is null
      */
     public void setForestContext(Forest<Key, ID, Content> forest,
-                                GhostLayer<Key, ID, Content> ghostLayer) {
+                                 GhostLayer<Key, ID, Content> ghostLayer) {
         this.forest = Objects.requireNonNull(forest, "forest cannot be null");
         this.ghostLayer = Objects.requireNonNull(ghostLayer, "ghostLayer cannot be null");
         this.balanceChecker = new TwoOneBalanceChecker<>();
         log.debug("Forest context set: forest with {} trees, {} ghost elements",
-                 forest.getTreeCount(), ghostLayer.getNumGhostElements());
-    }
-
-    /**
-     * Set forest context for violation detection and refinement with ghost element deserialization support.
-     *
-     * @param forest the local forest containing local elements
-     * @param ghostLayer the ghost layer for boundary element checking
-     * @param contentSerializer the serializer for content type
-     * @param idType the entity ID class for deserialization
-     * @throws NullPointerException if forest, ghostLayer, contentSerializer, or idType is null
-     */
-    public void setForestContext(Forest<Key, ID, Content> forest,
-                                GhostLayer<Key, ID, Content> ghostLayer,
-                                ContentSerializer<Content> contentSerializer,
-                                Class<ID> idType) {
-        this.forest = Objects.requireNonNull(forest, "forest cannot be null");
-        this.ghostLayer = Objects.requireNonNull(ghostLayer, "ghostLayer cannot be null");
-        this.contentSerializer = Objects.requireNonNull(contentSerializer, "contentSerializer cannot be null");
-        this.idType = Objects.requireNonNull(idType, "idType cannot be null");
-        this.balanceChecker = new TwoOneBalanceChecker<>();
-        log.debug("Forest context set: forest with {} trees, {} ghost elements (with deserialization support)",
                  forest.getTreeCount(), ghostLayer.getNumGhostElements());
     }
 
@@ -157,7 +130,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
 
         // Lazily initialize coordinator with rank and partition count
         if (coordinator == null) {
-            coordinator = new RefinementCoordinator(client, requestManager, initiatorRank, totalPartitions);
+            coordinator = new RefinementCoordinator<>(exchange, requestManager, initiatorRank, totalPartitions);
             log.debug("Initialized RefinementCoordinator for rank {} with {} total partitions",
                      initiatorRank, totalPartitions);
         }
@@ -235,15 +208,14 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
             var refinementNeeds = identifyRefinementNeeds(roundNumber);
 
             // Phase 2: Send requests to neighbors
-            // Send each request via client
-            var responses = new java.util.ArrayList<RefinementResponse>();
+            var responses = new ArrayList<RefinementResponse<Key, ID, Content>>();
 
             if (!refinementNeeds.isEmpty()) {
                 log.debug("Sending {} refinement requests in round {}", refinementNeeds.size(), roundNumber);
 
-                // Send each request via client and collect responses (for testing)
+                // Send each request via exchange and collect responses
                 for (int i = 0; i < refinementNeeds.size(); i++) {
-                    var responseFuture = client.requestRefinementAsync(i, 0L, roundNumber, 0, List.of());
+                    var responseFuture = exchange.requestRefinementAsync(i, 0L, roundNumber, 0, List.of());
                     try {
                         var response = responseFuture.get();
                         responses.add(response);
@@ -260,10 +232,19 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
             // Phase 4: Apply refinements from responses
             applyRefinementResponses(responses);
 
-            // Phase 5: Check if more refinement is needed
-            // Update convergence state based on responses
-            lastRoundIndicatedConvergence = responses.stream()
-                .noneMatch(RefinementResponse::getNeedsFurtherRefinement);
+            // Phase 5: Check if more refinement is needed.
+            // SIG-1: Exclude empty/sentinel responses from the convergence vote. A response
+            // mapped to RefinementResponse.empty() means the peer was unreachable; counting
+            // its needsFurtherRefinement==false as a vote toward convergence would risk
+            // premature termination. Only update lastRoundIndicatedConvergence when ALL
+            // responses are real (non-empty).
+            var realResponses = responses.stream().filter(r -> !r.isEmpty()).collect(Collectors.toList());
+            if (!realResponses.isEmpty()) {
+                lastRoundIndicatedConvergence = realResponses.stream()
+                    .noneMatch(RefinementResponse::needsFurtherRefinement);
+            }
+            // If all responses are empty (all peers unreachable), leave lastRoundIndicatedConvergence
+            // unchanged — equivalent to the old NPE-abort behavior that held the prior convergence state.
 
             var needsMore = !isConverged() && roundNumber < config.maxRounds();
 
@@ -295,7 +276,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
      * @param roundNumber the current round number
      * @param targetRounds the target number of rounds
      * @param balanceChecker the checker to detect violations
-     * @param coordinator the coordinator to send requests
+     * @param coordinator the coordinator to send requests (accessed via reflection for sendRequestsParallel)
      * @param <Coord> the coordinator type parameter
      * @return RoundResult with violations processed, round status, and timing
      * @throws java.util.concurrent.TimeoutException if requests timeout
@@ -335,8 +316,8 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         log.debug("Round {}: Grouped {} violations into {} rank groups",
                  roundNumber, violations.size(), violationsByRank.size());
 
-        // Step 3: Build RefinementRequests
-        var requests = new java.util.ArrayList<RefinementRequest>();
+        // Step 3: Build domain RefinementRequests
+        var requests = new java.util.ArrayList<RefinementRequest<Key>>();
         for (var entry : violationsByRank.entrySet()) {
             var sourceRank = entry.getKey();
             var groupViolations = entry.getValue();
@@ -347,33 +328,35 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                 .max()
                 .orElse(0);
 
-            // Collect boundary keys from violations
+            // Collect boundary keys from violations (domain SpatialKey, no proto conversion)
             var boundaryKeys = groupViolations.stream()
-                .flatMap(v -> java.util.stream.Stream.of(v.localKey(), v.ghostKey()))
-                .map(ProtobufConverters::spatialKeyToProtobuf)
+                .flatMap(v -> Stream.of(v.localKey(), v.ghostKey()))
                 .collect(Collectors.toList());
 
-            var request = RefinementRequest.newBuilder()
-                .setRequesterRank(registry.getCurrentPartitionId())
-                .setRequesterTreeId(0L)
-                .setRoundNumber(roundNumber)
-                .setTreeLevel(maxLevel)
-                .addAllBoundaryKeys(boundaryKeys)
-                .setTimestamp(System.currentTimeMillis())
-                .build();
+            var request = new RefinementRequest<>(
+                registry.getCurrentPartitionId(),
+                0L,
+                roundNumber,
+                maxLevel,
+                boundaryKeys,
+                System.currentTimeMillis()
+            );
 
             requests.add(request);
             log.trace("Round {}: Created request for rank {} with {} violations, level={}",
                      roundNumber, sourceRank, groupViolations.size(), maxLevel);
         }
 
-        // Step 4: Send async requests via coordinator
-        List<java.util.concurrent.CompletableFuture<RefinementResponse>> futures;
+        // Step 4: Send async requests via coordinator using reflection.
+        // sendRequestsParallel is private in RefinementCoordinator; we use getDeclaredMethod +
+        // setAccessible so it remains private. Erasure-matched: List.class covers the generic
+        // List<RefinementRequest<Key>> at the call site.
+        List<java.util.concurrent.CompletableFuture<RefinementResponse<Key, ID, Content>>> futures;
         try {
-            // Use reflection to call sendRequestsParallel on coordinator
-            var method = coordinator.getClass().getMethod("sendRequestsParallel", List.class);
+            var method = coordinator.getClass().getDeclaredMethod("sendRequestsParallel", List.class);
+            method.setAccessible(true);
             @SuppressWarnings("unchecked")
-            var result = (List<java.util.concurrent.CompletableFuture<RefinementResponse>>) method.invoke(coordinator, requests);
+            var result = (List<java.util.concurrent.CompletableFuture<RefinementResponse<Key, ID, Content>>>) method.invoke(coordinator, requests);
             futures = result;
         } catch (java.lang.reflect.InvocationTargetException e) {
             // Unwrap exceptions thrown by sendRequestsParallel()
@@ -390,7 +373,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         }
 
         // Step 5: Await all futures with timeout
-        var responses = new java.util.ArrayList<RefinementResponse>();
+        var responses = new java.util.ArrayList<RefinementResponse<Key, ID, Content>>();
         for (var future : futures) {
             try {
                 var response = future.get(5, java.util.concurrent.TimeUnit.SECONDS);
@@ -423,27 +406,21 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
      * Identify refinement needs at partition boundaries for the current round.
      *
      * <p>Uses the TwoOneBalanceChecker to detect 2:1 balance violations at partition
-     * boundaries and creates refinement requests for neighboring partitions.
+     * boundaries and creates domain refinement requests for neighboring partitions.
      *
-     * <p>In distributed balance protocol, each partition sends requests to its butterfly
-     * partners each round. The butterfly pattern ensures O(log P) communication.
-     *
-     * @return list of refinement requests for neighbors
+     * @param roundNumber the round number
+     * @return list of domain refinement requests for neighbors
      */
-    private List<RefinementRequest> identifyRefinementNeeds(int roundNumber) {
-        var requests = new java.util.ArrayList<RefinementRequest>();
+    private List<RefinementRequest<Key>> identifyRefinementNeeds(int roundNumber) {
+        var requests = new java.util.ArrayList<RefinementRequest<Key>>();
 
         // Check if forest context is available
         if (balanceChecker == null || forest == null || ghostLayer == null) {
             log.warn("Forest context not set, using fallback request for round {}", roundNumber);
             // Fallback: single empty request to maintain butterfly pattern
-            var request = RefinementRequest.newBuilder()
-                .setRequesterRank(registry.getCurrentPartitionId())
-                .setRequesterTreeId(0L)
-                .setRoundNumber(roundNumber)
-                .setTreeLevel(0)
-                .setTimestamp(System.currentTimeMillis())
-                .build();
+            var request = new RefinementRequest<Key>(
+                registry.getCurrentPartitionId(), 0L, roundNumber, 0, List.of(), System.currentTimeMillis()
+            );
             requests.add(request);
             return requests;
         }
@@ -454,13 +431,9 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         if (violations.isEmpty()) {
             log.debug("No 2:1 violations found in round {}", roundNumber);
             // Still send request to maintain butterfly pattern, but with no boundary keys
-            var request = RefinementRequest.newBuilder()
-                .setRequesterRank(registry.getCurrentPartitionId())
-                .setRequesterTreeId(0L)
-                .setRoundNumber(roundNumber)
-                .setTreeLevel(0)
-                .setTimestamp(System.currentTimeMillis())
-                .build();
+            var request = new RefinementRequest<Key>(
+                registry.getCurrentPartitionId(), 0L, roundNumber, 0, List.of(), System.currentTimeMillis()
+            );
             requests.add(request);
             return requests;
         }
@@ -474,7 +447,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                            .add(violation);
         }
 
-        // Create refinement request per source rank
+        // Create domain refinement request per source rank
         for (var entry : violationsByRank.entrySet()) {
             var sourceRank = entry.getKey();
             var groupViolations = entry.getValue();
@@ -485,21 +458,21 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                 .max()
                 .orElse(0);
 
-            // Collect boundary keys from violations
+            // Collect boundary keys from violations (domain SpatialKey, no proto conversion)
             var boundaryKeys = groupViolations.stream()
-                .flatMap(v -> java.util.stream.Stream.of(v.localKey(), v.ghostKey()))
-                .map(ProtobufConverters::spatialKeyToProtobuf)
+                .flatMap(v -> Stream.of(v.localKey(), v.ghostKey()))
                 .collect(Collectors.toList());
 
-            var request = RefinementRequest.newBuilder()
-                .setRequesterRank(registry.getCurrentPartitionId())
-                .setRequesterTreeId(0L)
-                .setRoundNumber(roundNumber)
-                .setTreeLevel(maxLevel)
-                .addAllBoundaryKeys(boundaryKeys)
-                .setTimestamp(System.currentTimeMillis());
+            var request = new RefinementRequest<>(
+                registry.getCurrentPartitionId(),
+                0L,
+                roundNumber,
+                maxLevel,
+                boundaryKeys,
+                System.currentTimeMillis()
+            );
 
-            requests.add(request.build());
+            requests.add(request);
             log.trace("Created request for rank {} with {} violations", sourceRank, groupViolations.size());
         }
 
@@ -507,18 +480,18 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     }
 
     /**
-     * Process a single refinement response and apply ghost elements to the ghost layer.
+     * Process a single refinement response and apply domain ghost elements to the ghost layer.
      *
-     * <p>This method deserializes ghost elements from the RefinementResponse protobuf
-     * and adds them to the local ghost layer for boundary element checking.
+     * <p>Ghost elements are already deserialized domain objects (deserialization happens in the
+     * grpc adapter, not here). Each element is applied individually with a per-element guard so
+     * a single bad element does not abort the whole batch.
      *
-     * @param response the refinement response from a remote partition
+     * @param response the domain refinement response from a remote partition (null is a no-op)
      * @param coordinator the refinement coordinator (for context/logging)
-     * @throws ContentSerializer.SerializationException if ghost element deserialization fails
      */
     public void applyRefinementResponses(
-            RefinementResponse response,
-            RefinementCoordinator coordinator) throws ContentSerializer.SerializationException {
+            RefinementResponse<Key, ID, Content> response,
+            RefinementCoordinator<Key, ID, Content> coordinator) {
 
         // Validate input
         if (response == null) {
@@ -531,63 +504,45 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
             return;
         }
 
-        // Extract ghost elements from response
-        var ghostProtos = response.getGhostElementsList();
-        if (ghostProtos.isEmpty()) {
+        // Extract already-deserialized domain ghost elements from response
+        var ghosts = response.ghostElements();
+        if (ghosts.isEmpty()) {
             log.debug("Response contains no ghost elements, returning");
             return;
         }
 
         log.debug("Processing {} ghost elements from response (responder rank: {})",
-                 ghostProtos.size(), response.getResponderRank());
+                 ghosts.size(), response.responderRank());
 
         var addedCount = 0;
         var skippedCount = 0;
 
-        // Process each ghost element
-        for (var ghostProto : ghostProtos) {
+        // Process each domain ghost element with per-element guard
+        for (var ghost : ghosts) {
             try {
-                // Deserialize ghost element using contentSerializer and idType
-                if (contentSerializer != null && idType != null) {
-                    @SuppressWarnings("unchecked")
-                    var ghostElement = (GhostElement<Key, ID, Content>) ProtobufConverters.ghostElementFromProtobuf(
-                        ghostProto,
-                        contentSerializer,
-                        idType
-                    );
+                ghostLayer.addGhostElement(ghost);
+                addedCount++;
 
-                    // Add to ghost layer
-                    ghostLayer.addGhostElement(ghostElement);
-                    addedCount++;
-
-                    log.trace("Added ghost element: key={}, entityId={}, ownerRank={}",
-                             ghostElement.getSpatialKey(),
-                             ghostElement.getEntityId(),
-                             ghostElement.getOwnerRank());
-                } else {
-                    // Backward compatibility: skip if serializer not configured
-                    log.trace("Skipping ghost element deserialization (no serializer configured)");
-                    skippedCount++;
-                }
-            } catch (ContentSerializer.SerializationException e) {
-                log.warn("Failed to deserialize ghost element from response: {}", e.getMessage());
-                skippedCount++;
+                log.trace("Added ghost element: key={}, entityId={}, ownerRank={}",
+                         ghost.getSpatialKey(),
+                         ghost.getEntityId(),
+                         ghost.getOwnerRank());
             } catch (Exception e) {
-                log.warn("Unexpected error processing ghost element: {}", e.getMessage(), e);
+                log.warn("Unexpected error adding ghost element: {}", e.getMessage(), e);
                 skippedCount++;
             }
         }
 
         log.debug("Applied {} ghost elements from response (rank {}), skipped {} invalid elements",
-                 addedCount, response.getResponderRank(), skippedCount);
+                 addedCount, response.responderRank(), skippedCount);
     }
 
     /**
-     * Process refinement responses and apply updates to forest.
+     * Process refinement responses and apply domain ghost elements to forest.
      *
-     * @param responses the refinement responses from neighbors
+     * @param responses the domain refinement responses from neighbors
      */
-    private void applyRefinementResponses(List<RefinementResponse> responses) {
+    private void applyRefinementResponses(List<RefinementResponse<Key, ID, Content>> responses) {
         if (ghostLayer == null) {
             log.debug("No ghost layer context, skipping response processing");
             return;
@@ -596,24 +551,12 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         int appliedCount = 0;
 
         for (var response : responses) {
-            // Extract ghost elements from response
-            for (var ghostProto : response.getGhostElementsList()) {
+            // Apply each already-deserialized domain ghost element with per-element guard
+            for (var ghost : response.ghostElements()) {
                 try {
-                    // Convert protobuf ghost element to domain object and add to ghost layer
-                    if (contentSerializer != null && idType != null) {
-                        @SuppressWarnings("unchecked")
-                        var ghostElement = (GhostElement<Key, ID, Content>) ProtobufConverters.ghostElementFromProtobuf(
-                            ghostProto,
-                            contentSerializer,
-                            idType
-                        );
-                        ghostLayer.addGhostElement(ghostElement);
-                        appliedCount++;
-                        log.trace("Applied ghost element from response");
-                    } else {
-                        // Backward compatibility: skip deserialization if serializer not configured
-                        log.trace("Skipping ghost element deserialization (no serializer configured)");
-                    }
+                    ghostLayer.addGhostElement(ghost);
+                    appliedCount++;
+                    log.trace("Applied ghost element from response");
                 } catch (Exception e) {
                     log.warn("Failed to apply ghost element from response: {}", e.getMessage());
                 }

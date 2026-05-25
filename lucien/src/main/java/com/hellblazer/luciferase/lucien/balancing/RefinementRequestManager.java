@@ -17,9 +17,6 @@
 package com.hellblazer.luciferase.lucien.balancing;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
-import com.hellblazer.luciferase.lucien.balancing.proto.RefinementRequest;
-import com.hellblazer.luciferase.lucien.balancing.proto.RefinementResponse;
-import com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey.Builder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,7 +54,7 @@ public class RefinementRequestManager {
     private final AtomicLong totalRoundTripTime = new AtomicLong(0);
 
     /**
-     * Build a RefinementRequest for specific boundaries.
+     * Build a domain RefinementRequest for specific boundaries.
      *
      * <p>The request includes:
      * <ul>
@@ -68,35 +65,22 @@ public class RefinementRequestManager {
      *   <li>Timestamp for tracking</li>
      * </ul>
      *
+     * @param <Key> the spatial key type
      * @param requesterRank the rank of the requesting partition
      * @param roundNumber the current refinement round
      * @param boundaryKeys the spatial keys at partition boundaries
      * @param treeLevel the level in the tree requiring refinement
-     * @return the refinement request
+     * @return the domain refinement request
      */
-    public RefinementRequest buildRequest(int requesterRank, int roundNumber,
-                                         List<SpatialKey> boundaryKeys, int treeLevel) {
+    public <Key extends SpatialKey<Key>> RefinementRequest<Key> buildRequest(int requesterRank, int roundNumber,
+                                                                              List<Key> boundaryKeys, int treeLevel) {
         totalRequests.incrementAndGet();
 
         log.debug("Building refinement request: rank={}, round={}, level={}, keys={}",
                  requesterRank, roundNumber, treeLevel, boundaryKeys.size());
 
-        var builder = RefinementRequest.newBuilder()
-            .setRequesterRank(requesterRank)
-            .setRequesterTreeId(0L)
-            .setRoundNumber(roundNumber)
-            .setTreeLevel(treeLevel)
-            .setTimestamp(System.currentTimeMillis());
-
-        // Convert each boundary key to proto via the SpatialKeySerdeRegistry
-        // (Luciferase-546). Type-agnostic: any SpatialKey impl with a registered
-        // serde flows through unchanged.
-        for (var key : boundaryKeys) {
-            builder.addBoundaryKeys(
-                com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyToProtobuf(key));
-        }
-
-        return builder.build();
+        return new RefinementRequest<>(requesterRank, 0L, roundNumber, treeLevel, boundaryKeys,
+                                       System.currentTimeMillis());
     }
 
     /**
@@ -106,11 +90,13 @@ public class RefinementRequestManager {
      * of the specified size. This reduces network overhead by sending multiple
      * refinement requests in a single RPC call (if supported by the protocol).
      *
+     * @param <Key> the spatial key type
      * @param requests the individual refinement requests
      * @param batchSize the maximum batch size
      * @return batched requests (may be fewer than input if combined)
      */
-    public List<RefinementRequest> batchRequests(List<RefinementRequest> requests, int batchSize) {
+    public <Key extends SpatialKey<Key>> List<RefinementRequest<Key>> batchRequests(
+            List<RefinementRequest<Key>> requests, int batchSize) {
         // TODO: Implement request batching
         // 1. Group requests by target partition
         // 2. Combine boundary keys from same target
@@ -124,14 +110,10 @@ public class RefinementRequestManager {
     /**
      * Track a refinement request round-trip.
      *
-     * @param request the request being sent
+     * @param request the domain request being sent
      * @param timestamp the send timestamp
      */
-    public void trackRequest(RefinementRequest request, long timestamp) {
-        // TODO: Implement request tracking
-        // 1. Generate unique key for request (rank + round)
-        // 2. Store timestamp in map
-
+    public void trackRequest(RefinementRequest<?> request, long timestamp) {
         var key = generateRequestKey(request);
         requestTimestamps.put(key, timestamp);
 
@@ -141,14 +123,9 @@ public class RefinementRequestManager {
     /**
      * Track a refinement response and update metrics.
      *
-     * @param response the response received
+     * @param response the domain response received
      */
-    public void trackResponse(RefinementResponse response) {
-        // TODO: Implement response tracking
-        // 1. Generate matching key from response
-        // 2. Calculate round-trip time
-        // 3. Update statistics
-
+    public void trackResponse(RefinementResponse<?, ?, ?> response) {
         totalResponses.incrementAndGet();
 
         var key = generateResponseKey(response);
@@ -209,14 +186,14 @@ public class RefinementRequestManager {
     /**
      * Generate a unique key for a refinement request.
      */
-    private String generateRequestKey(RefinementRequest request) {
-        return String.format("req-%d-%d", request.getRequesterRank(), request.getRoundNumber());
+    private String generateRequestKey(RefinementRequest<?> request) {
+        return String.format("req-%d-%d", request.requesterRank(), request.roundNumber());
     }
 
     /**
      * Generate a matching key for a refinement response.
      */
-    private String generateResponseKey(RefinementResponse response) {
-        return String.format("req-%d-%d", response.getRequesterRank(), response.getRoundNumber());
+    private String generateResponseKey(RefinementResponse<?, ?, ?> response) {
+        return String.format("req-%d-%d", response.requesterRank(), response.roundNumber());
     }
 }
