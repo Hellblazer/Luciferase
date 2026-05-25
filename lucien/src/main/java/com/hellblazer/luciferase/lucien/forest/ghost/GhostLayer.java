@@ -19,11 +19,8 @@ package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
-import com.google.protobuf.Timestamp;
 
 import javax.vecmath.Point3f;
-import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentNavigableMap;
