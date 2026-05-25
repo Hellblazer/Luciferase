@@ -2,12 +2,13 @@
 title: "Harden Network Deserialization on the VoN SocketServer"
 id: RDR-004
 type: Security
-status: draft
+status: accepted
 priority: high
 author: hal.hildebrand
-reviewed-by: pending
+reviewed-by: self
 created: 2026-05-24
-related_issues: [Luciferase-irh, RDR-003]
+accepted_date: 2026-05-25
+related_issues: [Luciferase-irh, RDR-003, Luciferase-ah3]
 ---
 
 # RDR-004: Harden Network Deserialization on the VoN SocketServer
@@ -58,9 +59,11 @@ The 360-review pass (2026-05-23, T2 `luciferase/360-review-2026-05-23-summary`) 
 
 Research showed the three options are not mutually exclusive — they are **layers on different time horizons**:
 
-- **Now — Direction A, unconditionally (defense-in-depth).** Add an `ObjectInputFilter` allow-list at the inbound site (`SocketServer.java:134`) and the response site (`SocketClient.java:107-109`), reusing the D-1 pattern verbatim. Independently, harden the bind guard: replace the string-equality loopback check (`SocketConnectionManager.java:95-99`) with `InetAddress.isLoopbackAddress()`, and enforce it inside `SocketServer` itself (the only current guard lives in the manager and is bypassable by direct instantiation). Cheap, reversible, lands this RDR.
+- **Now — Direction A, unconditionally (defense-in-depth).** Add an `ObjectInputFilter` allow-list at the inbound site (`SocketServer.java:134`) and the response site (`SocketClient.java:107-109`), reusing the D-1 pattern but **narrowed to the concrete types actually on the wire** — do *not* carry the broad `java.util.*` wildcard, which admits gadget-bearing collections (`PriorityQueue`, `TreeMap`, `LinkedList` — the ysoserial surface). See the corrected filter string in [Research Findings](#research-findings) §3, and ship a unit test asserting a `PriorityQueue` payload is **rejected**.
+  - **Bind hardening — precise enforcement points (both required, gating independently):** (1) In `SocketServer.start()`, immediately after `InetAddress.getByName(bindAddress.hostname())` (`:97`) and **before** `new ServerSocket(...)` (`:98`), assert `addr.isLoopbackAddress()` and throw `IllegalArgumentException` otherwise — `SocketServer` currently performs *zero* loopback check on the resolved address, so direct instantiation is ungated. (2) Replace the string-equality `isLoopback()` in `SocketConnectionManager.java:186` with `InetAddress.getByName(hostname).isLoopbackAddress()` (with DNS-resolution exception handling) so `"127.0.0.2"` or an off-loopback name no longer passes. Cheap, reversible, lands this RDR.
 - **Reject Direction C as the primary fix.** The Fireflies view exposes no per-peer cryptographic identity wired into the transport (only a view-epoch `Digest`); a bespoke socket→member authorization gate is high-cost net-new integration and duplicates RDR-005's auth model. The peer-identity/auth question belongs to **RDR-005**, not a one-off gate here.
 - **Direction B is the structural endgame, sequenced with RDR-005, and a hard gate on "Inc 7+".** `TransportVonMessage` is a flat struct that maps trivially to protobuf, the `grpc` module already covers the overlapping ghost types, and transport latency is dominated by the 300 ms Fireflies view-stability ACK (protobuf overhead is irrelevant). Replacing Java serialization eliminates the gadget surface rather than filtering it. **Critical constraint:** B (or at minimum the Direction-A filter, retained) MUST land before the planned "Inc 7+" work removes the loopback restriction — that is the moment the latent vuln becomes network-reachable.
+  - **Enforcement artifact (not just a doc note):** this gate is tracked by bead **`Luciferase-ah3`**, which BLOCKS the Inc 7+ loopback-removal work. Reference that bead from `SocketConnectionManager.isLoopback()` and consider a CI-enforced `@Disabled` guard test so the loopback restriction cannot be silently deleted under development pressure. (The `ProcessAddress.java:27-29` javadoc alone is insufficient.)
 
 ## Research Findings
 
@@ -68,7 +71,7 @@ Research showed the three options are not mutually exclusive — they are **laye
 
 1. **Trust boundary — loopback-only today, but weakly and temporarily.** Bind is `new ServerSocket(port, 50, addr)` at `SocketServer.java:97-98`; loopback is enforced only in `SocketConnectionManager.java:95-99` via **string equality** (`=="127.0.0.1"/"::1"/"localhost"`, `:185-186`) — not `InetAddress.isLoopbackAddress()`, so `127.0.0.2` or an off-loopback DNS name passes. `SocketServer` has no bind guard of its own. `ProcessAddress.java:27-29`: "In Inc 6, only localhost supported. In Inc 7+, remote hosts will be allowed." → the RCE surface is **latent now, network-reachable once Inc 7+ ships.**
 2. **Fireflies gives no usable peer identity.** `FirefliesMembershipView.getCurrentViewId()` (`:83-85`) returns a view-epoch `Digest` (proves a view exists, not who is connecting). The `accept()` loop (`SocketServer.java:107-109`) has no auth gate. Delos `Member` carries a certificate (Delos uses mTLS internally) but nothing maps an inbound socket to a `Member`. Direction C requires net-new integration.
-3. **D-1 filter pattern is directly reusable.** Four sites from PR #88: `render` `ESVODeserializer.java:81-84`, `ESVTDeserializer.java:282-285`, `SparseVoxelIOUtils.java:208-211` (parameterized), `portal` `CollisionEventRecorder.java:285-291`. Shape: `createFilter("<FQTYPE>;java.util.*;java.lang.*;java.time.*;java.math.*;javax.vecmath.*;!*")`. For VoN, allow `TransportVonMessage` + `TransportGhostData` + `TransportNeighborInfo` + `javax.vecmath.*` + JDK + `!*`.
+3. **D-1 filter pattern is reusable but must be narrowed for the network path.** Four sites from PR #88: `render` `ESVODeserializer.java:81-84`, `ESVTDeserializer.java:282-285`, `SparseVoxelIOUtils.java:208-211` (parameterized), `portal` `CollisionEventRecorder.java:285-291`, all using the broad `…;java.util.*;java.lang.*;…;!*` shape. **On an untrusted *network* socket that broad shape is a residual gadget risk** — `java.util.*` admits `PriorityQueue`/`TreeMap`/`LinkedList`, which appear in published gadget chains. The actual wire payload is records of `String`/`float`/`long`/`Long` plus `List<TransportGhostData>`/`List<TransportNeighborInfo>` (concrete type `java.util.ArrayList`); there is **no `javax.vecmath` type on the wire** (the `Point3D` in `TransportNeighborInfo` is conversion-only, never serialized), so that token is dropped. Corrected VoN filter: `createFilter("com.hellblazer.luciferase.simulation.von.TransportVonMessage;com.hellblazer.luciferase.simulation.von.TransportGhostData;com.hellblazer.luciferase.simulation.von.TransportNeighborInfo;java.util.ArrayList;java.util.Collections$UnmodifiableList;java.util.Arrays$ArrayList;java.lang.*;java.time.*;java.math.*;!*")` — with a test that a `PriorityQueue` is rejected.
 4. **protobuf migration is feasible.** `TransportVonMessage.java:48-63` is flat (String ids, decomposed `float posX/Y/Z`, `long timestamp`, `Long bucket`, `List<TransportGhostData>`, `List<TransportNeighborInfo>`) — no `Object` fields, no polymorphism. `grpc/.../lucien/ghost.proto` already defines `Point3f`/`EntityBounds`/`SpatialKey`/`GhostElement`/`GhostBatch`, overlapping the GhostSync payload. Latency floor is the 300 ms Fireflies ACK (`SocketTransport.java:198-199`); protobuf cost is sub-µs.
 5. **Bind constraint = the same loopback finding.** Confirms the separate MEDIUM `network-bind` finding: no interface restriction enforced in `SocketServer`, no security TODO present.
 
@@ -80,8 +83,16 @@ Research showed the three options are not mutually exclusive — they are **laye
 
 ## Decision
 
-_Pending research + gate._
+Accepted 2026-05-25 (gate PASSED, self-reviewed). The layered direction in [Recommended direction](#recommended-direction-pending-gate) is locked:
+
+1. **Direction A now (defense-in-depth), unconditionally.** A narrowed `ObjectInputFilter` allow-list on `SocketServer.java:134` and `SocketClient.java:107-109` (concrete wire types only — no `java.util.*` wildcard, no `javax.vecmath`), with a `PriorityQueue`-rejection test; plus bind hardening at both enforcement points (`SocketServer.start()` `isLoopbackAddress()` guard throwing `IllegalArgumentException`, and `SocketConnectionManager` switched to `InetAddress.getByName(host).isLoopbackAddress()`).
+2. **Direction B (protobuf wire format) is the structural endgame**, sequenced with RDR-005 and converging on one mTLS + cryptographically-verified-identity model — **hard-gated on "Inc 7+" via bead `Luciferase-ah3`**.
+3. **Direction C (bespoke Fireflies peer-identity gate) is rejected** as the primary fix; the peer-identity/auth question lives in RDR-005.
+
+Implementation is sequenced per T2 `luciferase_rdr/tranche-d-research-synthesis-2026-05-25` (Direction A is independent and immediate; Direction B pairs with RDR-005 and gates Inc 7+).
 
 ## Consequences
 
-_Pending._
+- **Positive:** closes the network-deserialization RCE surface immediately (A); establishes the Inc 7+ enforcement gate so the latent vuln cannot silently become reachable; sets up a single peer-identity model across the VoN data path and the gRPC control plane (B + RDR-005).
+- **Cost / risk:** the narrowed allow-list must track any future change to `TransportVonMessage`'s field types (a too-narrow filter breaks legit traffic — covered by tests); Direction B is a larger migration whose timing is bound to RDR-005 and the Inc 7+ milestone.
+- **Follow-on:** `Luciferase-ah3` blocks Inc 7+ loopback removal until A (retained) or B is in place.

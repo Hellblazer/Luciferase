@@ -2,12 +2,13 @@
 title: "gRPC TLS + Authentication Model for Ghost and Balancing Services"
 id: RDR-005
 type: Security
-status: draft
+status: accepted
 priority: high
 author: hal.hildebrand
-reviewed-by: pending
+reviewed-by: self
 created: 2026-05-24
-related_issues: [Luciferase-va5, RDR-004]
+accepted_date: 2026-05-25
+related_issues: [Luciferase-va5, RDR-004, RDR-007, Luciferase-ah3]
 ---
 
 # RDR-005: gRPC TLS + Authentication Model for Ghost and Balancing Services
@@ -63,13 +64,13 @@ The project already has a membership/identity substrate: **Fireflies** (Delos) p
 
 **Two-layer model: mTLS using Delos member certificates at the transport layer + a Fireflies-view `ServerInterceptor` for authorization.** Reject the token/bearer option — it requires a net-new issuer and rotation infrastructure for *weaker* peer binding, when the project already ships a certificate-backed identity substrate.
 
-- **Transport layer (mTLS).** Build `TlsServerCredentials` / `TlsChannelCredentials` from the local member's `CertificateWithPrivateKey` (Delos), requiring client certificates. **There is no shared CA**, so trust is *not* CA-pinning: use a permissive member-cert validator at the TLS layer (accept structurally valid member certs) and do the real trust decision at the interceptor.
-- **Authorization layer (`FirefliesAuthInterceptor`).** Extract the peer cert from `Grpc.TRANSPORT_ATTR_SSL_SESSION`, map it to a member id via the existing static bridge `Member.getMemberIdentifier(X509Certificate)` → `Digest`, and reject the call unless that id is in the *current* Fireflies view (`FirefliesMembershipView.getMembers()`). Peer identity = cluster member, exactly the binding the problem statement requires.
+- **Transport layer (mTLS).** Build `TlsServerCredentials` / `TlsChannelCredentials` from the local member's `CertificateWithPrivateKey` (Delos), requiring client certificates. **There is no shared CA**, so the TLS layer cannot CA-pin; it accepts structurally-valid certs (the Delos `CertificateValidator.NONE` no-op) and defers the *real* trust decision to the interceptor.
+- **Authorization layer (`FirefliesAuthInterceptor`) — must CRYPTOGRAPHICALLY VERIFY, not string-match.** ⚠️ **This is the security crux and the original design was forgeable.** `Member.getMemberIdentifier(X509Certificate)` is a *pure DN parser* — it decodes the `UID` field from the cert's X500 DN and hashes it, with **no signature check**. Member `Digest`s are *public* in a KERI system. So "accept any structurally-valid cert at TLS, then check `getMemberIdentifier(cert) ∈ view`" authenticates **nothing**: an attacker mints a self-signed cert carrying a legitimate member's `Digest` as its DN UID, passes the no-op TLS validator, and the interceptor's membership lookup admits it. The interceptor MUST instead cryptographically prove the peer holds the private key the member identifier commits to. Delos provides the binding: `ControlledIdentifier.provision(...)` signs the provisioned cert with the member's controlled (KERI-anchored) key. The interceptor must therefore, per inbound peer cert: (1) parse the candidate member `Digest` from the DN UID; (2) confirm that `Digest` is in the current Fireflies view; **and (3) verify the cert's signature against that member's committed public key obtained from the KERL** (or, equivalently, verify the cert against the presenter's own committed key to prove key-possession). Reject if any step fails. Peer identity = cryptographically-verified cluster member — the binding the problem statement requires. **The exact key-material source for step (3) (local KERL lookup vs. presenter-key verification) is a pre-implementation spike deliverable** (see below).
 - **Test carve-out (no env-var branch).** Add an optional `ChannelCredentials` / `ServerCredentials` constructor parameter to each client/manager, defaulting to `InsecureChannelCredentials.create()` / `InsecureServerCredentials.create()`. In-process balancing tests are unaffected; only `CommitteeP2PIntegrationTest` (a real Netty test) needs the cred gate.
-- **Placement (RDR-007-proof).** Put the shared `GrpcCredentialFactory` + `FirefliesAuthInterceptor` in the **`common`** module (already transitive to both `lucien` and `simulation`) and land them **before** RDR-007 moves the ghost/balancing clients to `lucien-distributed`, so the auth wiring is carried across once rather than redone.
+- **Placement + sequencing (RDR-007-proof; reconciled with RDR-007).** Put the shared `GrpcCredentialFactory` + `FirefliesAuthInterceptor` in the **`common`** module (already transitive to both `lucien` and `simulation`). These helpers have no `lucien` dependency, so they land **independently, at any time**. The **per-client credential wiring** (replacing each `.usePlaintext()`) waits until **after** the RDR-007 module move (`move-then-auth`), so the change lands once in the permanent home (`lucien-distributed`) rather than being made in `lucien` and then relocated. This supersedes the earlier "land auth before the move" framing and matches RDR-007's resolution; it will be recorded in this RDR's Decision section at accept.
 - **Convergence with RDR-004.** If VoN transport migrates to gRPC (RDR-004 Direction B), it inherits this exact mTLS + interceptor model — **one peer-identity mechanism across both the VoN data path and the control plane.** Strong reason to pair RDR-004-B and RDR-005.
 
-> **Pre-implementation spike required** before locking the Decision: (a) prove the cert-reachability workaround — thread the `ControlledIdentifierMember` from the `View` construction site to the credential factory, since `View.Node` does not expose it publicly; (b) prove the no-CA TLS validator that accepts any structurally-valid member cert and defers trust to the interceptor. Credential **rotation** is also open (Delos provisions certs on demand with caller-chosen validity and no auto-rotation hook).
+> **Pre-implementation spike required** before locking the Decision: (a) prove the cert-reachability workaround — thread the `ControlledIdentifierMember` from the `View` construction site to the credential factory, since `View.Node` does not expose it publicly; (b) **prove the interceptor's cryptographic peer verification** — establish the key-material source (local KERL public-key lookup keyed by member `Digest`, vs. verifying the presented cert against the presenter's own committed key) and demonstrate that a forged cert (legit member `Digest` in the DN UID, attacker key) is **rejected**. Credential **rotation** is also open (Delos provisions certs on demand with caller-chosen validity and no auto-rotation hook) and is a **hard blocker on the "Inc 7+" milestone** tracked by bead **`Luciferase-ah3`**, not on this gate.
 
 ## Research Findings
 
@@ -77,7 +78,7 @@ The project already has a membership/identity substrate: **Fireflies** (Delos) p
 
 1. **gRPC surface is entirely cross-process in production.** Servers: `GhostCommunicationManager.java:107` (`ServerBuilder.forPort`), `GrpcBubbleNetworkChannel.java:84` (`NettyServerBuilder.forPort`). Clients (all `.usePlaintext()`): `GhostServiceClient.java:378`, `BalanceCoordinatorClient.java:460`, `GrpcBubbleNetworkChannel.java:348`. `BalanceCoordinatorServer` has no production builder (test-only in-process). All production builders need real credentials.
 2. **Delos cert + private key exist but aren't reachable through `View.Node`'s public API.** `ControlledIdentifierMember.getCertificateWithPrivateKey(Instant, Duration, SignatureAlgorithm)` → `CertificateWithPrivateKey.getX509Certificate()` / `getPrivateKey()`, but `View.Node.wrapped` (the `ControlledIdentifierMember`) is private with no getter. Workaround without a Delos change: retain the `ControlledIdentifierMember` reference at `View` construction and feed it to a credential factory. **No shared CA** — certs are provisioned on demand via KERI/KERL; trust must be "cert DN UID → member id in view," not CA pinning.
-3. **View-based authorization is feasible and the bridge already exists.** `FirefliesMembershipView.getMembers()` (`:62`) yields the member set (`Member.getId()` → `Digest`); the static `Member.getMemberIdentifier(X509Certificate)` extracts a `Digest` from the cert's X500 DN UID. A `ServerInterceptor` ties them together once mTLS supplies a peer cert. Not yet implemented anywhere.
+3. **View-based authorization is feasible but membership lookup ALONE is forgeable.** `FirefliesMembershipView.getMembers()` (`:62`) yields the member set (`Member.getId()` → `Digest`). The static `Member.getMemberIdentifier(X509Certificate)` **only parses** the `UID` from the cert's X500 DN and hashes it — **it performs no signature verification**, and the available TLS validator (`CertificateValidator.NONE`) is a no-op. Since member `Digest`s are public in KERI, a `getMemberIdentifier(cert) ∈ view` check authenticates nothing (any self-signed cert bearing a member's `Digest` passes). The `ServerInterceptor` must additionally verify the cert's signature against the member's KERI-committed key — the cert is signed by the member's controlled key via `ControlledIdentifier.provision(...)`. Not yet implemented anywhere.
 4. **Test carve-out is clean.** In-process balancing tests (`BalanceCoordinatorIntegrationTest.java:60-68`, `Phase4E2ETest.java:561-565`) need zero change; only `CommitteeP2PIntegrationTest.java:75,93` (real Netty) needs the cred gate. An optional credentials constructor param defaulting to insecure gates production vs test without an env-var code branch.
 5. **RDR-007 split is known.** `GhostServiceClient`, `GhostCommunicationManager`, `BalanceCoordinatorClient`, `BalanceCoordinatorServer` move to `lucien-distributed`; `GrpcBubbleNetworkChannel` and `CommitteeServiceImpl` stay in `simulation`. Shared auth helpers belong in `common` to survive the move.
 
@@ -92,8 +93,17 @@ The project already has a membership/identity substrate: **Fireflies** (Delos) p
 
 ## Decision
 
-_Pending research + gate._
+Accepted 2026-05-25 (gate PASSED, self-reviewed). The two-layer model in [Recommended direction](#recommended-direction-pending-gate) is locked:
+
+1. **mTLS using Delos member certificates** (token/bearer rejected — weaker binding for more infrastructure). `TlsServerCredentials`/`TlsChannelCredentials` built from the local member's `CertificateWithPrivateKey`, threaded from the `View` construction site.
+2. **Authorization via `FirefliesAuthInterceptor` that cryptographically verifies** the peer cert's signature against the member's KERI-committed public key from the KERL, then checks the member `Digest` is in the current Fireflies view. A DN-UID string match alone is **forbidden** — it is forgeable.
+3. **Helpers (`GrpcCredentialFactory`, `FirefliesAuthInterceptor`) live in `common`** and land independently; **per-client credential wiring waits until after the RDR-007 module move** (`move-then-auth`).
+4. **Test carve-out:** optional credentials constructor param defaulting to `Insecure*Credentials.create()`; in-process tests unaffected.
+
+**Pre-implementation spike (load-bearing, must complete before close):** (a) prove cert reachability by threading `ControlledIdentifierMember`; (b) prove the interceptor's cryptographic verification rejects a forged cert and fix the key-material source (local KERL lookup vs. presenter-key verification).
 
 ## Consequences
 
-_Pending._
+- **Positive:** converts an unauthenticated control plane into a cryptographically peer-verified one reusing the existing KERI/Fireflies identity substrate — no parallel PKI/token issuer; one identity model shared with RDR-004 Direction B.
+- **Cost / risk:** the no-CA model places the entire trust burden on the KERL binding and the interceptor's signature check — the spike must demonstrate forgery rejection before any production wiring. Credential **rotation** is unresolved (Delos has no auto-rotation hook) and is a **hard blocker on Inc 7+** (`Luciferase-ah3`), not on this acceptance.
+- **Sequencing:** gated behind RDR-007's module move for the per-client wiring; common helpers can proceed immediately.

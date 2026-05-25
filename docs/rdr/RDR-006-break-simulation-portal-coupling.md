@@ -2,11 +2,12 @@
 title: "Break the simulation→portal Coupling (BubbleBounds JavaFX Pull-In)"
 id: RDR-006
 type: Architecture
-status: draft
+status: accepted
 priority: medium
 author: hal.hildebrand
-reviewed-by: pending
+reviewed-by: self
 created: 2026-05-24
+accepted_date: 2026-05-25
 related_issues: [Luciferase-jvs, Luciferase-7n1, RDR-003]
 ---
 
@@ -56,13 +57,16 @@ This RDR overlaps the Clock-package-rename concern (`Luciferase-7n1`): both are 
 
 Extract the **UI-free RD math kernel** — `toRDG` plus the `vecmath`-only methods (`euclideanNorm`, `l1`, `cross`, `dot`, `rotateVectorCC`, the connected-neighbor helpers) — into a non-JavaFX home, leaving the scene-graph/mesh layer (`construct`, `positionTransform`, the `Point3D`-typed `toCartesian` overloads) in `portal`.
 
+- **Extraction shape — standalone class, NOT a subclass (avoids the inheritance trap).** The kernel must be a new **standalone** class with **no inheritance from `Grid`, `RDGCS`, or any `javafx.*` type**; the vecmath methods are moved/copied, not inherited. The JavaFX pull-in is *structural via the `Tetrahedral → RDGCS → Grid` chain* (`Grid` is the JavaFX carrier), so an implementer who reaches the kernel by subclassing `RDGCS` would silently drag the entire JavaFX chain back in and the regression would survive undetected until `dependency:tree`.
 - **`common` is disqualified.** Research found `common` *already declares* `javafx-graphics`, so landing the math there does not remove JavaFX from the headless classpath — it would defeat the purpose. (This is a separate smell: `common` is not the clean leaf the module name implies — a follow-up worth filing.)
 - **Home — `lucien` vs a new `geometry`/`rd-geom` module (the real tradeoff).** `lucien` is the minimal-change option (no new module; `simulation` already depends on it; `portal` already depends on it; RDR-003's FCC work wants this math reachable from `lucien` anyway). The counter-pull: **RDR-008 is actively trying to *shrink* `lucien`**, so growing it with RD math is in tension. A small `vecmath`-only `geometry` module that both `lucien` and `portal` depend on is the purer single-responsibility answer at the cost of one new module. **Decision deferred to the gate**; both are viable and neither creates a dependency cycle (`portal → lucien → common` already holds).
 - **API ripple.** The two `toCartesian` overloads return `javafx.geometry.Point3D`. The kernel's version must return `Point3f`/`Tuple3f`; this propagates to `BubbleBounds.toCartesian` and `BubbleBounds.centroid` (both currently `Point3D`). `portal` keeps a JavaFX-typed rendering layer (subclass or thin wrapper) over the extracted math.
-- **Consumers are minimal.** `BubbleBounds` is the *only* non-portal compile consumer; `RDGridViewer` (portal) is the only other. So the blast radius is two files plus the extraction.
+- **`Tetrahedral` consumers are minimal** — `BubbleBounds` is the *only* non-portal compile consumer of `Tetrahedral`; `RDGridViewer` (portal) is the only other.
+- **⚠️ But fixing `BubbleBounds` alone does NOT remove JavaFX from `simulation` — the `von` package carries a second coupling.** `simulation/.../von/TransportNeighborInfo.java:22` imports `javafx.geometry.Point3D`, and `Message.java` embeds `Point3D` in the records `JoinRequest`, `Move`, `NeighborInfo`, and `Bubble.NeighborState`. The blast radius is therefore **not** "two files": the `von`-layer `Point3D` usages must be **in scope for this pass** (swap to `Point3f`/`Tuple3f`), *or* explicitly carved out as a documented follow-up with the honest acknowledgement that the `dependency:tree` criterion below will not yet pass. Silence is not an option — the original "two files" framing was wrong.
+- **Wire-format note (cross-ref RDR-004).** `BubbleBounds` itself is *not* on the wire today (its `coordSystem` is `transient`; `TransportVonMessage` decomposes to primitives; `TransportNeighborInfo` Phase 6A nulls `BubbleBounds`). So the `toCartesian`/`centroid` return-type change (`Point3D`→`Point3f`) is an internal compile-time ripple, not a wire-compat break. **However**, `TransportNeighborInfo`'s Phase 6B ("add `BubbleBounds` serialization when needed", `:34`) *will* introduce a `BubbleBounds` wire dependency — when that lands it must cross-reference RDR-004's deserialization hardening.
 - **Coverage.** Three RD-math tests already exist in `portal` (`RDFCCMathCoverageTest`, `PortalCleanupBatchTest`, `RDGeometrySmokeTest`) — the RDR's "zero coverage" was inaccurate for `portal`. Port these to the new home with the extraction.
 - **Fold in the Clock rename** (`Luciferase-7n1`) as a second "domain primitive in the right module" move in the same pass.
-- **Verify** `mvn dependency:tree -pl simulation` shows no `javafx-*` afterward.
+- **Verify** `mvn dependency:tree -pl simulation` shows no `javafx-*` afterward — which **requires the `von`-package `Point3D` usages above to be addressed**, not just `BubbleBounds`.
 
 ## Research Findings
 
@@ -85,8 +89,15 @@ Extract the **UI-free RD math kernel** — `toRDG` plus the `vecmath`-only metho
 
 ## Decision
 
-_Pending research + gate._
+Accepted 2026-05-25 (gate PASSED, self-reviewed). Locked:
+
+1. **Extract the UI-free RD math kernel** (`toRDG` + the vecmath methods) as a **standalone class with no `Grid`/`RDGCS`/`javafx.*` inheritance** — the inheritance chain is the JavaFX carrier, so the kernel must be lifted out of it, not subclassed.
+2. **Home:** a new `vecmath`-only geometry module is preferred over `lucien` (which RDR-008 is shrinking); `common` is disqualified (it already pulls `javafx-graphics`). The final home is an implementation-planning pick between those two — both are cycle-free.
+3. **Scope includes the `von`-package `Point3D` usages** (`TransportNeighborInfo.java:22`, `Message.java`), not just `BubbleBounds` — otherwise `mvn dependency:tree -pl simulation` will still show `javafx-*`. The `toCartesian` `Point3D`→`Point3f` change ripples to `BubbleBounds.toCartesian`/`centroid`.
+4. **Fold in the Clock package rename** (`Luciferase-7n1`) and **port the three existing portal RD tests** to the new home.
 
 ## Consequences
 
-_Pending._
+- **Positive:** removes JavaFX from the headless `simulation`/distributed classpath; puts the RD math where RDR-003's FCC work can reach it without UI coupling; corrects the `domain-primitive-in-wrong-module` smell (incl. Clock).
+- **Cost / risk:** an internal API ripple (`Point3D`→`Point3f`) across `BubbleBounds` and the `von` records; if a new module is chosen, one module of overhead. `portal` keeps a thin `Point3D`-typed rendering layer over the kernel.
+- **Watch:** `TransportNeighborInfo` Phase 6B will introduce a `BubbleBounds` wire dependency — at that point it must cross-reference RDR-004's deserialization hardening. **Follow-up:** `common`'s `javafx-graphics` dependency undermines it as a leaf module (separate cleanup).

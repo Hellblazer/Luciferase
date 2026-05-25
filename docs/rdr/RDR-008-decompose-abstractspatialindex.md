@@ -2,12 +2,13 @@
 title: "Decompose the AbstractSpatialIndex God-Class"
 id: RDR-008
 type: Architecture
-status: draft
+status: accepted
 priority: medium
 author: hal.hildebrand
-reviewed-by: pending
+reviewed-by: self
 created: 2026-05-24
-related_issues: [Luciferase-x5i, RDR-002, RDR-003]
+accepted_date: 2026-05-25
+related_issues: [Luciferase-x5i, RDR-002, RDR-003, RDR-007, Luciferase-aos]
 ---
 
 # RDR-008: Decompose the AbstractSpatialIndex God-Class
@@ -62,14 +63,15 @@ Tranches A–C touched this file repeatedly (stream materialization under lock, 
 
 Adopt **decomposition style (iii): core + feature-objects**, because research showed it minimizes subclass churn — the subclasses keep overriding the same protected hooks and never learn that collaborators exist.
 
-- **Structure.** Extract a `SpatialIndexCore` holding the six-field shared nucleus (`spatialIndex`, `lock`, `spatialVersion`, `knnCache`, `entityManager`, `entityCache`). `AbstractSpatialIndex` becomes a thin **façade** that implements a `SpatialGeometry<Key>` callback interface (the ~21 protected template hooks stay on the façade, so Octree/Tetree/Prism/SFCArrayIndex are **unchanged**) and delegates to feature objects, each holding `SpatialIndexCore` + the `SpatialGeometry<Key>` callback: `DsocController`, `GhostCoordinator`, `KnnSearcher`, a frustum/plane/ray culler, `CollisionEngine`, `EntityLifecycleManager`. The public `SpatialIndex<Key,ID,Content>` contract is untouched. Concurrency lives in one auditable place (`SpatialIndexCore`).
-- **Keep region/range queries and stream accessors *in the façade*** — they are tightly bound to the `spatialIndex`+`lock` nucleus and read as core responsibilities, not collaborators.
+- **Structure.** Extract a `SpatialIndexCore` holding the six-field shared nucleus (`spatialIndex`, `lock`, `spatialVersion`, `knnCache`, `entityManager`, `entityCache`). `AbstractSpatialIndex` becomes a thin **façade** that implements a `SpatialGeometry<Key>` callback interface (the ~21 protected template hooks stay on the façade) and delegates to feature objects, each holding `SpatialIndexCore` + the `SpatialGeometry<Key>` callback: `DsocController`, `GhostCoordinator`, `KnnSearcher`, a frustum/plane/ray culler, `CollisionEngine`, `EntityLifecycleManager`. The public `SpatialIndex<Key,ID,Content>` contract is untouched. Concurrency lives in one auditable place (`SpatialIndexCore`).
+- **⚠️ "Subclasses unchanged" holds only through Phase 4 — the collision phase forces a scoped Tetree change (corrected).** The earlier blanket "subclasses are unchanged" claim is **false** for the collision and entity-lifecycle phases: `Tetree` does not merely override template *hooks*, it overrides the *public* `findAllCollisions`/`findCollisions` (`Tetree.java:157,169,187,207`) with geometry-specific logic that reaches **directly** into `spatialIndex`, `lock`, and `entityManager` under `lock.readLock()`. Once those fields move into `SpatialIndexCore`, the overrides no longer compile unmodified. Resolution: the façade **retains `protected` access to the nucleus** (either the fields stay `protected` on the façade with `SpatialIndexCore` wrapping access, or the façade exposes `protected` accessors) so subclass overrides keep compiling — **and** `Tetree`'s collision overrides are refactored as a **known, scoped task inside Phase 5** (collision), not assumed free. Net: subclasses are genuinely untouched through Phases 1–4 (DSOC, ghost, k-NN, culling); Phase 5 carries a bounded Tetree change; `insertBatch` (which toggles a Tetree-private flag then calls `super`) is unaffected.
+- **Keep region/range queries and stream accessors *in the façade*** — they are tightly bound to the `spatialIndex`+`lock` nucleus and read as core responsibilities, not collaborators. **Success criterion (auditable):** the residual façade after all six phases is expected to be ≈70 methods (region/range ~20 + streams ~11 + ~21 template hooks + core/config ~20) — large but a coherent geometry-interface + core-accessor surface, no longer a god class. State the post-decomposition method count as an explicit acceptance target.
 - **Phase ordering** (each its own PR, behind a `/conexus:phase-review-gate`, full lucien suite green + `-Pperformance` parity at every step):
   1. **DSOC (cluster k)** — cleanest first cut: 10+ dedicated private fields, **zero template hooks**, touches only the lock. No cross-RDR dependency.
-  2. **Distributed-ghost (cluster i)** — **dual-purpose: this is also RDR-007 Phase 0.** Prerequisite: RDR-007's interface inversion (the `:5183-5214` gRPC FQN types must hide behind an interface before extraction). Sequence RDR-007 first.
+  2. **Distributed-ghost (cluster i)** — **dual-purpose: depends on RDR-007 Phase 0.** Prerequisite: RDR-007's interface inversion (the `:5183-5214` gRPC FQN types must hide behind an interface before extraction). This is **not the same PR** as RDR-007 Phase 0 — that phase introduces the interfaces (minimum to unblock the move); this phase is the full `GhostCoordinator` extraction and lands after it. Both are owned by the shared bead **`Luciferase-aos`** (which defines the interface contract); sequence RDR-007 Phase 0 first.
   3. **k-NN + KNNCache (cluster b)** — moderate hooks (`shouldContinueKNNSearch`, `estimateNodeDistance`, `calculateSpatialIndex`); recent bug site (Tranches B–C, RDR-003).
   4. **Frustum + plane + ray (clusters d+e bundled)** — shared traversal hooks, high internal cohesion.
-  5. **Collision (cluster f)** — self-contained once 1–4 are out.
+  5. **Collision (cluster f)** — self-contained once 1–4 are out, **and includes the scoped `Tetree` collision-override refactor** noted above. Phase 5 testing MUST add a `Tetree`-specific cross-tetrahedra collision test — that same-cell-tetrahedron path is unique to `Tetree` (the logic beyond `super.findAllCollisions()`) and is invisible to the generic suite.
   6. **Entity lifecycle (cluster a)** — broadest shared-state footprint (7 fields incl. `knnCache`/`spatialVersion`), most disruptive, deliberately last.
 - **Scope correction:** the file is **~195 methods across 11 clusters**, not 135/7 — the RDR's count undershot, and the **DSOC** and **distributed-ghost** clusters are first-class extraction targets the original list omitted.
 
@@ -85,18 +87,24 @@ Adopt **decomposition style (iii): core + feature-objects**, because research sh
 
 ## Open Questions
 
-- ~~Delegation/Strategy vs. interface-with-defaults vs. core+feature-objects — which best preserves the generic contract and minimizes subclass churn?~~ **Resolved (recommended):** core+feature-objects (style iii); subclasses stay unchanged because the façade keeps the `SpatialGeometry<Key>` hooks. Mixin-with-defaults rejected (leaks field accessors onto the public interface).
-- ~~Can collaborators share the lock/version/map by reference safely, or does extraction force a concurrency rethink?~~ **Resolved:** Share by reference via `SpatialIndexCore`; the nucleus is two fields (`spatialIndex`+`lock`) plus the `spatialVersion`/`knnCache` coupling. The lazy-stream-under-lock hazard is already fixed (stream accessors materialize inside the lock), so no concurrency rethink is forced — and centralizing the nucleus makes correctness auditable in one place.
+- ~~Delegation/Strategy vs. interface-with-defaults vs. core+feature-objects — which best preserves the generic contract and minimizes subclass churn?~~ **Resolved (recommended):** core+feature-objects (style iii); subclasses are unchanged through Phases 1–4 because the façade keeps the `SpatialGeometry<Key>` hooks **and retains `protected` access to the nucleus**. Phase 5 carries a bounded `Tetree` collision-override refactor (those overrides touch the nucleus directly — see the corrected Structure note). Mixin-with-defaults rejected (leaks field accessors onto the public interface).
+- ~~Can collaborators share the lock/version/map by reference safely, or does extraction force a concurrency rethink?~~ **Resolved:** Share by reference via `SpatialIndexCore`. The lazy-stream-under-lock hazard is already fixed (stream accessors materialize inside the lock), so no concurrency rethink is forced. The one cross-feature ordering path — `EntityLifecycleManager` increments `spatialVersion`, `KnnSearcher` reads it for cache invalidation — is already correct without extra synchronization: the **write-lock release** in `EntityLifecycleManager` *happens-before* the subsequent **read-lock acquire** in `KnnSearcher` (Java Memory Model monitor semantics), guaranteeing `spatialVersion` visibility. Centralizing the nucleus makes this auditable in one place.
 - ~~Phase ordering: k-NN first or entity-lifecycle first?~~ **Resolved:** Neither — **DSOC first** (zero hooks, dedicated state), then distributed-ghost (dual-purpose with RDR-007), then k-NN; entity-lifecycle **last** (broadest shared state).
 - ~~How many phases / PRs, and what are the `/conexus:phase-review-gate` boundaries?~~ **Resolved (proposed):** 6 phases (DSOC → distributed-ghost → k-NN → frustum/plane/ray → collision → entity-lifecycle), a gate at each.
 - ~~Does RDR-003's future FCC query surface impose constraints on where the query seams should fall?~~ **Partially open:** region/range + stream accessors are recommended to stay in the façade (core); whether RDR-003's FCC query work needs a dedicated query collaborator should be revisited when RDR-003 implementation resumes.
 
-**New cross-RDR constraint from research:** Phase 2 (distributed-ghost extraction) is identical to RDR-007's Phase 0 dependency inversion of `AbstractSpatialIndex` (`:5183-5214`). These must be sequenced together (RDR-007 first / jointly) and executed once.
+**New cross-RDR constraint from research:** Phase 2 (distributed-ghost extraction) **depends on** RDR-007's Phase 0 dependency inversion of `AbstractSpatialIndex` (`:5183-5214`) — they are *not* the same PR. RDR-007 Phase 0 introduces the interfaces and severs the FQN references (minimum to unblock the module move); RDR-008 Phase 2 is the larger `GhostCoordinator` feature-object extraction that lands after it. Both are owned by the shared coordination bead **`Luciferase-aos`**, which defines the interface contract before either RDR begins Phase 1+.
 
 ## Decision
 
-_Pending research + gate._
+Accepted 2026-05-25 (gate PASSED, self-reviewed). Locked:
+
+1. **Style:** core + feature-objects. `SpatialIndexCore` holds the six-field nucleus; `AbstractSpatialIndex` becomes a façade implementing `SpatialGeometry<Key>` (keeping the ~21 subclass template hooks) **and retaining `protected` access to the nucleus** so subclass overrides keep compiling. Feature objects: `DsocController`, `GhostCoordinator`, `KnnSearcher`, frustum/plane/ray culler, `CollisionEngine`, `EntityLifecycleManager`. Region/range queries and stream accessors stay in the façade.
+2. **Phases** (6, each its own PR behind `/conexus:phase-review-gate`, full lucien suite green + `-Pperformance` parity each): P1 DSOC → P2 distributed-ghost (depends on RDR-007 Phase 0, owned by `Luciferase-aos`; not the same PR) → P3 k-NN → P4 frustum/plane/ray → P5 collision (**includes the scoped `Tetree` collision-override refactor + a Tetree-specific cross-tetrahedra collision test**) → P6 entity-lifecycle.
+3. **Subclasses are genuinely unchanged through P1–P4;** P5 carries a bounded, explicit `Tetree` change. Residual façade ≈70 methods is the acceptance target.
 
 ## Consequences
 
-_Pending._
+- **Positive:** turns a 5.7k-LOC / ~195-method god class into a façade + cohesive collaborators with the concurrency nucleus auditable in one place; the public `SpatialIndex` contract and (through P4) the subclasses are untouched.
+- **Cost / risk:** P5 forces a bounded `Tetree` collision refactor (its overrides reach the nucleus directly) — scoped and test-covered, not free. The façade's `protected` nucleus re-exposure is a partial-bypass risk to police at each phase-review-gate. P2 is gated on RDR-007 Phase 0.
+- **No behavior change** is the invariant; any test/benchmark regression at a phase boundary blocks that phase.
