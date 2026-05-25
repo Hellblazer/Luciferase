@@ -61,9 +61,9 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
     // Owner information for distributed support (placeholder for now)
     private final Map<Key, Integer> elementOwners;
     
-    // gRPC client for fetching remote ghost data (optional for distributed environments)
-    private final com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostServiceClient ghostServiceClient;
-    
+    // Ghost exchange for fetching remote ghost data (optional for distributed environments)
+    private final GhostExchange<Key, ID, Content> ghostExchange;
+
     // Tree ID for distributed ghost requests
     private final long treeId;
     
@@ -81,20 +81,20 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
     }
     
     /**
-     * Create an element ghost manager with gRPC support.
-     * 
+     * Create an element ghost manager with ghost exchange support.
+     *
      * @param spatialIndex the spatial index
      * @param neighborDetector the neighbor detector for this index type
      * @param ghostType the type of ghosts to create
-     * @param ghostServiceClient gRPC client for remote ghost data fetching (null for local-only operation)
+     * @param ghostExchange ghost exchange for remote ghost data fetching (null for local-only operation)
      * @param treeId tree identifier for distributed ghost requests
      */
     public ElementGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
                               NeighborDetector<Key> neighborDetector,
                               GhostType ghostType,
-                              com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostServiceClient ghostServiceClient,
+                              GhostExchange<Key, ID, Content> ghostExchange,
                               long treeId) {
-        this(spatialIndex, neighborDetector, ghostType, GhostAlgorithm.CONSERVATIVE, ghostServiceClient, treeId);
+        this(spatialIndex, neighborDetector, ghostType, GhostAlgorithm.CONSERVATIVE, ghostExchange, treeId);
     }
     
     /**
@@ -114,19 +114,19 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
     
     /**
      * Create an element ghost manager with full configuration.
-     * 
+     *
      * @param spatialIndex the spatial index
      * @param neighborDetector the neighbor detector for this index type
      * @param ghostType the type of ghosts to create
      * @param ghostAlgorithm the ghost creation algorithm to use
-     * @param ghostServiceClient gRPC client for remote ghost data fetching (null for local-only operation)
+     * @param ghostExchange ghost exchange for remote ghost data fetching (null for local-only operation)
      * @param treeId tree identifier for distributed ghost requests
      */
     public ElementGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
                               NeighborDetector<Key> neighborDetector,
                               GhostType ghostType,
                               GhostAlgorithm ghostAlgorithm,
-                              com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostServiceClient ghostServiceClient,
+                              GhostExchange<Key, ID, Content> ghostExchange,
                               long treeId) {
         this.spatialIndex = Objects.requireNonNull(spatialIndex);
         this.neighborDetector = Objects.requireNonNull(neighborDetector);
@@ -135,7 +135,7 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
         this.boundaryElements = new ConcurrentSkipListSet<>();
         this.processedElements = ConcurrentHashMap.newKeySet();
         this.elementOwners = new ConcurrentHashMap<>();
-        this.ghostServiceClient = ghostServiceClient;
+        this.ghostExchange = ghostExchange;
         this.treeId = treeId;
     }
     
@@ -370,38 +370,33 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
     
     private void createGhostElement(Key neighborKey, int ownerRank) {
         // Create a ghost element for this non-local neighbor
-        
-        if (ghostServiceClient != null && treeId != 0L) {
-            // Use gRPC to fetch real ghost data from remote process
+
+        if (ghostExchange != null && treeId != 0L) {
+            // Use ghost exchange to fetch domain ghost elements from remote process
             try {
-                var ghostBatch = ghostServiceClient.requestGhosts(
-                    ownerRank, 
-                    treeId, 
-                    ghostLayer.getGhostType(), 
-                    List.of(neighborKey)
-                );
-                
-                if (ghostBatch != null) {
-                    // Process the received ghost elements
-                    for (var ghostElementProto : ghostBatch.getElementsList()) {
-                        processReceivedGhostElement(ghostElementProto);
+                var elements = ghostExchange.requestGhostElements(ownerRank, treeId, ghostLayer.getGhostType(),
+                                                                  List.of(neighborKey));
+
+                if (elements != null) {
+                    for (var e : elements) {
+                        ghostLayer.addGhostElement(e);
                     }
-                    log.debug("Successfully fetched ghost element for neighbor key: {} from owner: {}", 
+                    log.debug("Successfully fetched ghost element for neighbor key: {} from owner: {}",
                              neighborKey, ownerRank);
                 } else {
-                    log.warn("Failed to fetch ghost element for neighbor key: {} from owner: {}", 
+                    log.warn("Failed to fetch ghost element for neighbor key: {} from owner: {}",
                             neighborKey, ownerRank);
                 }
-                
+
             } catch (Exception e) {
-                log.error("Error fetching ghost element for neighbor key: {} from owner: {}: {}", 
+                log.error("Error fetching ghost element for neighbor key: {} from owner: {}: {}",
                          neighborKey, ownerRank, e.getMessage(), e);
             }
         } else {
             // Local-only mode: create a placeholder ghost element for testing
-            log.debug("Creating placeholder ghost element for neighbor key: {} from owner: {} (no gRPC client)", 
+            log.debug("Creating placeholder ghost element for neighbor key: {} from owner: {} (no gRPC client)",
                      neighborKey, ownerRank);
-            
+
             // Create a minimal ghost element with synthetic data
             createPlaceholderGhostElement(neighborKey, ownerRank);
         }
