@@ -57,6 +57,12 @@ public final class GrpcCredentialFactory {
     /**
      * Server credentials presenting {@code certificate}/{@code key} and requiring (but not CA-validating)
      * a client certificate, so {@link PeerAuthInterceptor} can verify it.
+     * <p>
+     * <b>WARNING — must be paired with {@link PeerAuthInterceptor}.</b> These credentials require a client
+     * certificate but trust <em>any</em> certificate at the TLS layer (no shared CA). Used without the
+     * interceptor, the resulting server is encrypted but <b>UNAUTHENTICATED</b> — it admits any caller that
+     * presents any certificate. Prefer {@link #serverAuth(PrivateKey, X509Certificate, PeerVerifier)}, which
+     * returns the credentials and a matching interceptor together so the two cannot be separated by mistake.
      */
     public static ServerCredentials mtlsServer(PrivateKey key, X509Certificate certificate) {
         Objects.requireNonNull(key, "key");
@@ -69,8 +75,16 @@ public final class GrpcCredentialFactory {
     }
 
     /**
-     * Channel credentials presenting {@code certificate}/{@code key} for mutual TLS, trusting any server
-     * certificate at the TLS layer (peer identity is verified by the server-side interceptor).
+     * Channel credentials presenting {@code certificate}/{@code key} for mutual TLS.
+     * <p>
+     * <b>WARNING — no client-side server-identity check.</b> Like the server side there is no shared CA, so
+     * this channel trusts <em>any</em> server certificate at the TLS layer. Authorization is currently
+     * enforced only at the server (the server verifies the client). The client therefore has no
+     * cryptographic assurance that the endpoint it dialed is a real cluster member — it relies on the
+     * endpoint address being trusted (e.g. resolved from the Fireflies view). Symmetric client-side
+     * verification is part of the RDR-005 pre-implementation spike (the {@code FirefliesPeerVerifier} work);
+     * until it lands, treat {@code mtlsChannel} as "encrypt + present my identity," not "authenticate the
+     * server."
      */
     public static ChannelCredentials mtlsChannel(PrivateKey key, X509Certificate certificate) {
         Objects.requireNonNull(key, "key");
@@ -79,6 +93,24 @@ public final class GrpcCredentialFactory {
                                     .keyManager(keyManagers(key, certificate))
                                     .trustManager(ACCEPT_ANY_CERT)
                                     .build();
+    }
+
+    /**
+     * The two halves of server-side mTLS auth that must always be used together: the transport
+     * {@link ServerCredentials} and the {@link PeerAuthInterceptor} that actually authenticates peers.
+     */
+    public record ServerAuth(ServerCredentials credentials, PeerAuthInterceptor interceptor) {
+    }
+
+    /**
+     * Build server credentials and the matching {@link PeerAuthInterceptor} as a single unit. This is the
+     * recommended way to stand up an authenticated server: it is impossible to obtain the trust-any
+     * credentials without also obtaining the interceptor that performs the real verification.
+     *
+     * @param verifier the cryptographic peer-verification policy (see {@link PeerVerifier})
+     */
+    public static ServerAuth serverAuth(PrivateKey key, X509Certificate certificate, PeerVerifier verifier) {
+        return new ServerAuth(mtlsServer(key, certificate), new PeerAuthInterceptor(verifier));
     }
 
     /**
@@ -100,12 +132,16 @@ public final class GrpcCredentialFactory {
      * {@code keyManager(KeyManager...)} (grpc-api accepts {@code KeyManager}/PEM, not raw key+cert).
      */
     private static KeyManager[] keyManagers(PrivateKey key, X509Certificate certificate) {
+        // Transient in-memory keystore, never persisted. A fixed non-empty password is used for both the
+        // key entry and the factory init: empty PKCS12 key-entry passwords are an edge case on some JVMs
+        // (J9 / FIPS), whereas a consistent non-empty password is handled uniformly everywhere.
+        var password = "luciferase-transient".toCharArray();
         try {
             var keyStore = KeyStore.getInstance("PKCS12");
             keyStore.load(null, null);
-            keyStore.setKeyEntry("member", key, new char[0], new X509Certificate[] { certificate });
+            keyStore.setKeyEntry("member", key, password, new X509Certificate[] { certificate });
             var factory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-            factory.init(keyStore, new char[0]);
+            factory.init(keyStore, password);
             return factory.getKeyManagers();
         } catch (GeneralSecurityException | IOException e) {
             throw new IllegalStateException("Unable to build key manager from member certificate", e);

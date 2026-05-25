@@ -34,7 +34,11 @@ import java.util.Optional;
  * key the member identity commits to — e.g. verify the certificate's signature against the member's
  * KERI-committed public key obtained from the KERL, then confirm membership in the current view. A match
  * on the certificate's DN/UID alone is <b>forbidden</b>: member identifiers are public, so a DN match
- * authenticates nothing and is forgeable.
+ * authenticates nothing and is forgeable (this was the original RDR-005 design defect). Returning a present
+ * {@link Optional} commits to "this peer cryptographically proved key-possession", never to "this peer's DN
+ * parsed to a known identifier". Every implementation MUST ship a regression test proving that a
+ * <b>forged</b> certificate (a legitimate member's identifier carried by an attacker-generated key) is
+ * rejected.
  *
  * @author hal.hildebrand
  */

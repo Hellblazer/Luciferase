@@ -107,6 +107,13 @@ class GrpcAuthTest {
         assertNotNull(GrpcCredentialFactory.mtlsChannel(key, cert), "mTLS channel credentials");
     }
 
+    @Test
+    void serverAuthBundlesCredentialsAndInterceptor() throws Exception {
+        var bundle = GrpcCredentialFactory.serverAuth(testKey(), testCertificate(), acceptingVerifier("m1"));
+        assertNotNull(bundle.credentials(), "bundle must carry server credentials");
+        assertNotNull(bundle.interceptor(), "bundle must carry the matching interceptor");
+    }
+
     // ---- PeerAuthInterceptor --------------------------------------------------------------------
 
     @Test
@@ -126,6 +133,8 @@ class GrpcAuthTest {
         var handler = new RecordingHandler();
         var call = new FakeServerCall(attributesWith(unverifiedSession()));
 
+        // An accepting verifier is used deliberately: the denial must come from the missing peer cert
+        // (getPeerCertificates throws SSLPeerUnverifiedException), NOT the verifier — which is never called.
         new PeerAuthInterceptor(acceptingVerifier("anyone")).interceptCall(call, new Metadata(), handler);
 
         assertFalse(handler.started, "handler must not be invoked when no peer cert is available");
@@ -133,9 +142,20 @@ class GrpcAuthTest {
     }
 
     @Test
+    void deniesWhenPeerCertificateChainIsEmpty() {
+        var handler = new RecordingHandler();
+        var call = new FakeServerCall(attributesWith(sessionWithCerts())); // zero-length chain
+
+        new PeerAuthInterceptor(acceptingVerifier("anyone")).interceptCall(call, new Metadata(), handler);
+
+        assertFalse(handler.started, "handler must not be invoked when the peer cert chain is empty");
+        assertEquals(Status.Code.UNAUTHENTICATED, call.closedStatus.getCode());
+    }
+
+    @Test
     void deniesWhenVerifierRejects() throws Exception {
         var handler = new RecordingHandler();
-        var call = new FakeServerCall(attributesWith(sessionWithCert(testCertificate())));
+        var call = new FakeServerCall(attributesWith(sessionWithCerts(testCertificate())));
 
         new PeerAuthInterceptor(rejectingVerifier()).interceptCall(call, new Metadata(), handler);
 
@@ -146,7 +166,7 @@ class GrpcAuthTest {
     @Test
     void admitsVerifiedPeerAndExposesIdentity() throws Exception {
         var handler = new RecordingHandler();
-        var call = new FakeServerCall(attributesWith(sessionWithCert(testCertificate())));
+        var call = new FakeServerCall(attributesWith(sessionWithCerts(testCertificate())));
 
         new PeerAuthInterceptor(acceptingVerifier("member-42")).interceptCall(call, new Metadata(), handler);
 
@@ -169,10 +189,10 @@ class GrpcAuthTest {
         return Attributes.newBuilder().set(Grpc.TRANSPORT_ATTR_SSL_SESSION, session).build();
     }
 
-    private static SSLSession sessionWithCert(Certificate cert) {
+    private static SSLSession sessionWithCerts(Certificate... certs) {
         return proxySession((method, args) -> {
             if (method.getName().equals("getPeerCertificates")) {
-                return new Certificate[] { cert };
+                return certs;
             }
             return objectMethodOrNull(method, args);
         });
