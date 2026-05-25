@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
+import com.hellblazer.luciferase.lucien.forest.ghost.ServiceDiscovery;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -460,34 +461,5 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
             case EDGES -> com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostType.EDGES;
             case VERTICES -> com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostType.VERTICES;
         };
-    }
-    
-    /**
-     * Interface for service discovery mechanism.
-     */
-    public interface ServiceDiscovery {
-        
-        /**
-         * Gets the gRPC endpoint for a specific process rank.
-         * 
-         * @param rank the process rank
-         * @return the endpoint (host:port), or null if not found
-         */
-        String getEndpoint(int rank);
-        
-        /**
-         * Registers this process's endpoint.
-         * 
-         * @param rank the process rank
-         * @param endpoint the endpoint (host:port)
-         */
-        void registerEndpoint(int rank, String endpoint);
-        
-        /**
-         * Gets all known endpoints.
-         * 
-         * @return map of rank to endpoint
-         */
-        Map<Integer, String> getAllEndpoints();
     }
 }

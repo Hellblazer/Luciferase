@@ -5172,15 +5172,19 @@ implements SpatialIndex<Key, ID, Content> {
     // ========================================
     
     /**
-     * Sets up distributed ghost management with the provided communication manager.
+     * Sets up distributed ghost management with the provided ghost channel.
      *
-     * @param communicationManager the gRPC communication manager
-     * @param contentSerializer the content serializer
-     * @param entityIdClass the entity ID class for deserialization
+     * <p>{@code contentSerializer} and {@code entityIdClass} are not read by the current
+     * implementation; they are retained for API stability and prospective deserialization
+     * wiring when the gRPC clients move to a distributed module (RDR-007 Phase 1).
+     *
+     * @param ghostChannel the pre-built ghost channel for batched cross-process transmission
+     * @param contentSerializer the content serializer (currently unused; see note above)
+     * @param entityIdClass the entity ID class for deserialization (currently unused; see note above)
      * @param currentRank the rank of this process
      * @param treeId the tree identifier
      */
-    public void setupDistributedGhosts(com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostCommunicationManager<Key, ID, Content> communicationManager,
+    public void setupDistributedGhosts(GhostChannel<Key, ID, Content> ghostChannel,
                                       ContentSerializer<Content> contentSerializer,
                                       Class<ID> entityIdClass,
                                       int currentRank,
@@ -5191,10 +5195,6 @@ implements SpatialIndex<Key, ID, Content> {
                 log.warn("Cannot setup distributed ghosts - local ghost manager not initialized");
                 return;
             }
-
-            // Create ghost channel wrapping the communication manager
-            var ghostChannel = new com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<>(
-                communicationManager, currentRank, treeId, getGhostType());
 
             this.distributedGhostManager = new DistributedGhostManager<>(
                 this, ghostChannel, ghostBoundaryDetector);
@@ -5211,7 +5211,7 @@ implements SpatialIndex<Key, ID, Content> {
      *
      * @param serviceDiscovery the service discovery to find other processes
      */
-    public void initializeDistributedGhosts(com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostServiceClient.ServiceDiscovery serviceDiscovery) {
+    public void initializeDistributedGhosts(ServiceDiscovery serviceDiscovery) {
         if (distributedGhostManager != null) {
             distributedGhostManager.initialize(serviceDiscovery);
         } else {
