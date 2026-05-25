@@ -46,7 +46,7 @@ It is sequenced with RDR-005 (gRPC TLS+auth): the auth wiring touches exactly th
 
 ## Approach
 
-> To be completed in `/nx:rdr-research` + design. Initial candidate directions:
+> Candidate directions below; resolved by research (see [Research Findings](#research-findings)) into the phased recommendation that follows.
 
 1. **Draw the seam** — precisely classify each class in `forest/ghost/grpc` and `balancing/grpc` as "transport/RPC" (moves) vs "abstraction" (stays). Identify any back-references from core lucien into the grpc packages (those are the layering violations to sever).
 2. **Define `lucien-distributed`** — new Maven module, `lucien-distributed` → `lucien` + `grpc`; strip gRPC/netty/protobuf from `lucien`'s own deps once the move is complete.
@@ -54,12 +54,32 @@ It is sequenced with RDR-005 (gRPC TLS+auth): the auth wiring touches exactly th
 4. **Sequence with RDR-005** — decide whether auth lands before the move (in lucien, moved as a unit) or after (in the new module). Avoid doing the auth wiring twice.
 5. **Verify** — `mvn dependency:tree -pl lucien` shows no grpc/netty after the split; full build + ghost/balancing integration tests green.
 
+### Recommended direction (pending gate)
+
+**This is not a clean leaf-move — research found 8+ compile-time back-references from `lucien` core *into* the gRPC packages, so a dependency-inversion phase must precede the physical move.** Phased:
+
+- **Phase 0 — dependency inversion (the hard part).** Introduce `lucien`-resident interfaces for the gRPC collaborators that core `lucien` references (`GhostCommunicationManager`, `GhostServiceClient.ServiceDiscovery`, `GrpcGhostChannel`, `BalanceCoordinatorClient`), and **replace the protobuf message types at the balancing boundary** (`RefinementRequest`/`RefinementResponse`/`BalanceViolation` used directly by `CrossPartitionBalancePhase` and `DistributedViolationAggregator`) with domain objects — that proto-type leak is what forces `lucien` to keep the `grpc` compile dependency. Sever the `AbstractSpatialIndex` references at `:5183` / `:5195-5196` / `:5214`. **This same extraction is RDR-008 Phase 2 (the distributed-ghost cluster) — do it once, coordinated.**
+- **Phase 1 — create `lucien-distributed`** (`lucien` + `grpc` + `grpc-netty-shaded`); move the 9 transport classes from `forest/ghost/grpc` + `balancing/grpc`, plus the `GrpcGhostChannel` impl.
+- **Phase 2 — re-point + strip.** Update consumers (all in `lucien/src/test` — **`simulation`'s production code does not consume these**, so its pom is unchanged), migrate/test-scope the ghost & balancing integration tests, and remove `grpc`/`netty` from `lucien`'s deps. Verify `mvn dependency:tree -pl lucien` shows no grpc/netty.
+- **Module name:** `lucien-distributed` (matches the 360-review finding) over the narrower `lucien-grpc`.
+- **RDR-005 sequencing:** the shared auth helpers (`GrpcCredentialFactory`, `FirefliesAuthInterceptor`) have no `lucien` dependency → land them in `common` independently, any time. Do the **module move (this RDR) before wiring per-client credentials (RDR-005)** so the `.usePlaintext()`→credentials change lands once, in the permanent home.
+
+## Research Findings
+
+> Investigation 2026-05-25 (`codebase-deep-analyzer`, building on `005-research-1`). Full detail in T2 `luciferase_rdr/007-research-1`.
+
+1. **The seam is clean at the package level: 9 grpc-subpackage classes move.** `forest/ghost/grpc/` (7: `GhostCommunicationManager`, `GhostExchangeServiceImpl`, `GhostServiceClient`, `MortonKeySerde`, `TetreeKeySerde`, `ProtobufConverters`, `SimpleServiceDiscovery`) and `balancing/grpc/` (2: `BalanceCoordinatorClient`, `BalanceCoordinatorServer`). Abstractions (`GhostLayer`, `GhostType`, `GhostElement`, etc.) sit in parent packages with zero grpc imports — they stay. `GrpcGhostChannel` (in `forest/ghost/`, not the subpackage) is borderline and moves with the bundle.
+2. **But there are 8+ back-references from `lucien` core into the grpc packages (the real blocker).** Most notably `AbstractSpatialIndex` itself: `:5183` `setupDistributedGhosts(GhostCommunicationManager,…)`, `:5195-5196` `new GrpcGhostChannel<>(…)`, `:5214` `initializeDistributedGhosts(GhostServiceClient.ServiceDiscovery)`. Also `GhostBoundaryDetector`, `ElementGhostManager`, `DistributedGhostManager`, and balancing-parent classes (`RefinementCoordinator`, `CrossPartitionBalancePhase`, `DistributedViolationAggregator`, `DefaultParallelBalancer`). `CrossPartitionBalancePhase` is the worst — it imports the client *and* `ProtobufConverters` *and* proto message types directly.
+3. **`simulation` does not consume these in production** (only `GhostZoneManager`, a stay-class, via tests). Every grpc consumer is in `lucien/src/test`. So only `lucien/pom.xml`, the new `lucien-distributed/pom.xml`, and root `pom.xml` change — **`simulation/pom.xml` is untouched.**
+4. **`lucien` cannot drop the `grpc` compile dep until the proto-type leak is fixed.** `lucien/pom.xml:36-38` compile-depends on the `grpc` module for proto stubs; `grpc-netty-shaded`/`grpc-testing` are test-scope only. After Phase 0 inverts the proto types at the balancing boundary, `lucien` retains just `common`/`h2-mvstore`/`guava`/`slf4j`; `lucien-distributed` takes `lucien`+`grpc`+`grpc-netty-shaded`.
+5. **Cross-RDR coordination:** Phase 0's `AbstractSpatialIndex` inversion is identical to RDR-008's Phase 2 distributed-ghost extraction. Sequence RDR-007 Phase 0 with / before RDR-008 Phase 2.
+
 ## Open Questions
 
-- Are there compile-time back-references from `lucien` core into the `*/grpc/` packages that must be inverted first?
-- Module name: `lucien-distributed` vs `lucien-grpc` vs `lucien-ghost-transport`?
-- Do `simulation`'s distributed paths consume these directly, or only via forest APIs (affects how many poms change)?
-- RDR-005 ordering: auth-then-move, or move-then-auth?
+- ~~Are there compile-time back-references from `lucien` core into the `*/grpc/` packages that must be inverted first?~~ **Resolved — yes, 8+.** Including `AbstractSpatialIndex` (`:5183/:5195-5196/:5214`), the ghost managers, and the balancing-parent classes. Dependency inversion (Phase 0) is mandatory before any physical move. The proto-type leak in `CrossPartitionBalancePhase`/`DistributedViolationAggregator` is what pins `lucien`'s `grpc` compile dep.
+- ~~Module name: `lucien-distributed` vs `lucien-grpc` vs `lucien-ghost-transport`?~~ **Resolved:** `lucien-distributed` (matches the 360-review finding; broader than just gRPC transport).
+- ~~Do `simulation`'s distributed paths consume these directly, or only via forest APIs (affects how many poms change)?~~ **Resolved:** Not at all in production — every consumer is in `lucien/src/test`. `simulation/pom.xml` is unchanged; only `lucien`, new `lucien-distributed`, and root poms change.
+- ~~RDR-005 ordering: auth-then-move, or move-then-auth?~~ **Resolved:** Move-then-auth. Common auth helpers land in `common` independently; per-client credential wiring (RDR-005) happens after the move, in the permanent home.
 
 ## Decision
 
