@@ -16,41 +16,42 @@
  */
 package com.hellblazer.luciferase.lucien.balancing;
 
-import com.hellblazer.luciferase.lucien.balancing.grpc.BalanceCoordinatorClient;
-import com.hellblazer.luciferase.lucien.balancing.proto.BalanceViolation;
-import com.hellblazer.luciferase.lucien.balancing.proto.ViolationAck;
-import com.hellblazer.luciferase.lucien.balancing.proto.ViolationBatch;
-import io.grpc.StatusRuntimeException;
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
 
 /**
- * Distributed violation aggregator using gRPC for cross-partition exchange.
+ * Distributed violation aggregator using a {@link ViolationExchange} port for cross-partition exchange.
  *
- * <p>Wraps ButterflyViolationAggregator with gRPC-based network communication.
+ * <p>Wraps {@link ButterflyViolationAggregator} with network communication via the domain exchange port.
  * Provides timeout handling, retry logic, and metrics for distributed operation.
  *
  * <p>Configuration:
  * <ul>
  *   <li>Timeout: 5 seconds per exchange
- *   <li>Retries: 1 retry on transient failures (UNAVAILABLE, RESOURCE_EXHAUSTED)
+ *   <li>Retries: 1 retry on transient failures
  *   <li>Failure handling: Graceful degradation - continues with partial results
  * </ul>
  *
+ * @param <Key> the spatial key type (MortonKey, TetreeKey, etc.)
  * @author hal.hildebrand
  */
-public class DistributedViolationAggregator {
+public class DistributedViolationAggregator<Key extends SpatialKey<Key>> {
 
     private static final Logger log = LoggerFactory.getLogger(DistributedViolationAggregator.class);
     private static final long DEFAULT_TIMEOUT_MILLIS = 5000;
     private static final int MAX_RETRIES = 1;
 
-    private final ButterflyViolationAggregator aggregator;
-    private final BalanceCoordinatorClient client;
+    private final ButterflyViolationAggregator<Key> aggregator;
+    private final ViolationExchange<Key> exchange;
     private final int myRank;
     private final long timeoutMillis;
 
@@ -66,10 +67,10 @@ public class DistributedViolationAggregator {
      *
      * @param myRank this partition's rank
      * @param totalPartitions total number of partitions
-     * @param client gRPC client for network communication
+     * @param exchange the violation-exchange port for network communication
      */
-    public DistributedViolationAggregator(int myRank, int totalPartitions, BalanceCoordinatorClient client) {
-        this(myRank, totalPartitions, client, DEFAULT_TIMEOUT_MILLIS);
+    public DistributedViolationAggregator(int myRank, int totalPartitions, ViolationExchange<Key> exchange) {
+        this(myRank, totalPartitions, exchange, DEFAULT_TIMEOUT_MILLIS);
     }
 
     /**
@@ -77,15 +78,15 @@ public class DistributedViolationAggregator {
      *
      * @param myRank this partition's rank
      * @param totalPartitions total number of partitions
-     * @param client gRPC client for network communication
+     * @param exchange the violation-exchange port for network communication
      * @param timeoutMillis timeout for each exchange in milliseconds
      */
     public DistributedViolationAggregator(int myRank, int totalPartitions,
-                                         BalanceCoordinatorClient client, long timeoutMillis) {
-        Objects.requireNonNull(client, "client cannot be null");
+                                         ViolationExchange<Key> exchange, long timeoutMillis) {
+        Objects.requireNonNull(exchange, "exchange cannot be null");
 
         this.myRank = myRank;
-        this.client = client;
+        this.exchange = exchange;
         this.timeoutMillis = timeoutMillis;
         this.successfulExchanges = new AtomicLong(0);
         this.failedExchanges = new AtomicLong(0);
@@ -93,11 +94,11 @@ public class DistributedViolationAggregator {
         this.timeouts = new AtomicLong(0);
         this.exchangeLatencies = new ConcurrentHashMap<>();
 
-        // Create exchanger function that uses gRPC client
-        var exchanger = this.createGrpcExchanger();
+        // Create exchanger function backed by the exchange port
+        var exchanger = this.createExchanger();
 
-        // Create butterfly aggregator with gRPC exchanger
-        this.aggregator = new ButterflyViolationAggregator(myRank, totalPartitions, exchanger);
+        // Create butterfly aggregator with the exchanger
+        this.aggregator = new ButterflyViolationAggregator<>(myRank, totalPartitions, exchanger);
 
         log.debug("DistributedViolationAggregator initialized for rank {} of {} partitions (timeout: {}ms)",
                  myRank, totalPartitions, timeoutMillis);
@@ -110,7 +111,8 @@ public class DistributedViolationAggregator {
      * @return set of all violations from all partitions (deduplicated)
      * @throws NullPointerException if localViolations is null
      */
-    public Set<BalanceViolation> aggregateDistributed(List<BalanceViolation> localViolations) {
+    public Set<TwoOneBalanceChecker.BalanceViolation<Key>> aggregateDistributed(
+            List<TwoOneBalanceChecker.BalanceViolation<Key>> localViolations) {
         Objects.requireNonNull(localViolations, "localViolations cannot be null");
 
         log.debug("Starting distributed violation aggregation with {} local violations", localViolations.size());
@@ -126,9 +128,9 @@ public class DistributedViolationAggregator {
     }
 
     /**
-     * Creates a gRPC-based exchanger function with timeout and retry handling.
+     * Creates an exchanger function with timeout and retry handling, backed by the exchange port.
      */
-    private java.util.function.BiFunction<Integer, ViolationBatch, ViolationBatch> createGrpcExchanger() {
+    private BiFunction<Integer, ViolationBatch<Key>, ViolationBatch<Key>> createExchanger() {
         return (partner, batch) -> {
             var startTime = System.currentTimeMillis();
 
@@ -140,29 +142,25 @@ public class DistributedViolationAggregator {
                         log.debug("Retry attempt {} for exchange with partner {}", attempt, partner);
                     }
 
-                    var responseBatch = client.exchangeViolations(batch);
+                    var responseBatch = exchange.exchangeViolations(batch);
 
+                    // A null response signals a skipped exchange (no connection); fall through to the
+                    // empty-batch fallback without counting it as a success (graceful degradation).
                     if (responseBatch != null) {
                         successfulExchanges.incrementAndGet();
                         var latency = System.currentTimeMillis() - startTime;
                         exchangeLatencies.put(partner, latency);
 
                         log.debug("Successfully exchanged {} violations with partner {} ({}ms, {} received)",
-                                 batch.getViolationsCount(), partner, latency,
-                                 responseBatch.getViolationsCount());
+                                 batch.violations().size(), partner, latency,
+                                 responseBatch.violations().size());
 
                         // Return partner's violations for merging
                         return responseBatch;
                     }
 
-                } catch (StatusRuntimeException e) {
-                    var status = e.getStatus();
-
-                    // Check if this is a transient failure worth retrying
-                    var isTransient = status.getCode() == io.grpc.Status.Code.UNAVAILABLE ||
-                                     status.getCode() == io.grpc.Status.Code.RESOURCE_EXHAUSTED;
-
-                    if (status.getCode() == io.grpc.Status.Code.DEADLINE_EXCEEDED) {
+                } catch (BalanceExchangeException e) {
+                    if (e.isTimeout()) {
                         timeouts.incrementAndGet();
                         log.warn("Exchange with partner {} timed out after {}ms",
                                 partner, System.currentTimeMillis() - startTime);
@@ -170,15 +168,15 @@ public class DistributedViolationAggregator {
                         break; // Don't retry timeouts
                     }
 
-                    if (!isTransient || attempt == MAX_RETRIES) {
+                    if (!e.isTransient() || attempt == MAX_RETRIES) {
                         log.error("Exchange with partner {} failed: {} (attempt {}/{})",
-                                 partner, status, attempt + 1, MAX_RETRIES + 1);
+                                 partner, e.getMessage(), attempt + 1, MAX_RETRIES + 1);
                         failedExchanges.incrementAndGet();
                         break;
                     }
 
                     log.debug("Transient failure on exchange with partner {}: {}, will retry",
-                             partner, status);
+                             partner, e.getMessage());
 
                 } catch (Exception e) {
                     log.error("Unexpected error exchanging with partner {}: {}",
@@ -189,12 +187,7 @@ public class DistributedViolationAggregator {
             }
 
             // Return empty batch on failure - aggregation continues with partial results
-            return ViolationBatch.newBuilder()
-                .setRequesterRank(partner)
-                .setResponderRank(myRank)
-                .setRoundNumber(batch.getRoundNumber())
-                .setTimestamp(System.currentTimeMillis())
-                .build();
+            return new ViolationBatch<>(partner, myRank, batch.roundNumber(), List.of(), System.currentTimeMillis());
         };
     }
 

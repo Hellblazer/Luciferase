@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.lucien.balancing;
 
 import com.hellblazer.luciferase.lucien.balancing.grpc.BalanceCoordinatorClient;
 import com.hellblazer.luciferase.lucien.balancing.grpc.BalanceCoordinatorServer;
+import com.hellblazer.luciferase.lucien.balancing.grpc.GrpcBalanceExchange;
 import com.hellblazer.luciferase.lucien.balancing.proto.BalanceStatistics;
 import com.hellblazer.luciferase.lucien.balancing.proto.BalanceViolation;
 import com.hellblazer.luciferase.lucien.balancing.proto.RefinementRequest;
@@ -26,6 +27,7 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.forest.Forest;
 import com.hellblazer.luciferase.lucien.forest.ForestConfig;
+import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
@@ -334,7 +336,7 @@ class Phase4E2ETest {
 
         // Aggregate on all partitions CONCURRENTLY (critical for distributed testing)
         var startTime = System.currentTimeMillis();
-        var futures = new ArrayList<java.util.concurrent.CompletableFuture<Set<BalanceViolation>>>();
+        var futures = new ArrayList<java.util.concurrent.CompletableFuture<Set<TwoOneBalanceChecker.BalanceViolation<MortonKey>>>>();
         for (var partition : partitions) {
             var future = java.util.concurrent.CompletableFuture.supplyAsync(
                 () -> partition.detectAndAggregate()
@@ -343,7 +345,7 @@ class Phase4E2ETest {
         }
 
         // Wait for all to complete
-        var results = new ArrayList<Set<BalanceViolation>>();
+        var results = new ArrayList<Set<TwoOneBalanceChecker.BalanceViolation<MortonKey>>>();
         for (var future : futures) {
             results.add(future.join());
         }
@@ -494,7 +496,7 @@ class Phase4E2ETest {
 
         // Aggregate CONCURRENTLY
         var startTime = System.currentTimeMillis();
-        var futures = new ArrayList<java.util.concurrent.CompletableFuture<Set<BalanceViolation>>>();
+        var futures = new ArrayList<java.util.concurrent.CompletableFuture<Set<TwoOneBalanceChecker.BalanceViolation<MortonKey>>>>();
         for (var partition : partitions) {
             var future = java.util.concurrent.CompletableFuture.supplyAsync(
                 () -> partition.detectAndAggregate()
@@ -503,7 +505,7 @@ class Phase4E2ETest {
         }
 
         // Wait for all to complete
-        var results = new ArrayList<Set<BalanceViolation>>();
+        var results = new ArrayList<Set<TwoOneBalanceChecker.BalanceViolation<MortonKey>>>();
         for (var future : futures) {
             results.add(future.join());
         }
@@ -591,6 +593,32 @@ class Phase4E2ETest {
             new com.hellblazer.luciferase.lucien.octree.MortonKey(mortonCode, (byte) 0));
     }
 
+    /** Shared String content serializer for the GrpcBalanceExchange adapter (unused on the violation path). */
+    private static final ContentSerializer<String> STRING_SERIALIZER = new ContentSerializer<>() {
+        @Override
+        public com.google.protobuf.ByteString serialize(String content) {
+            return com.google.protobuf.ByteString.copyFromUtf8(content);
+        }
+
+        @Override
+        public String deserialize(com.google.protobuf.ByteString bytes) {
+            return bytes.toStringUtf8();
+        }
+
+        @Override
+        public String getContentType() {
+            return "string";
+        }
+    };
+
+    /** Converts a proto violation (wire form) to the domain violation the aggregator consumes. */
+    private static TwoOneBalanceChecker.BalanceViolation<MortonKey> toDomainViolation(BalanceViolation proto) {
+        return new TwoOneBalanceChecker.BalanceViolation<>(
+            (MortonKey) com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyFromProtobuf(proto.getLocalKey()),
+            (MortonKey) com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyFromProtobuf(proto.getGhostKey()),
+            proto.getLocalLevel(), proto.getGhostLevel(), proto.getLevelDifference(), proto.getSourceRank());
+    }
+
     /**
      * Represents a single partition in the distributed system with the complete Phase 4 pipeline.
      */
@@ -604,7 +632,7 @@ class Phase4E2ETest {
         final List<BalanceViolation> localViolations;
         final AtomicInteger violationIdCounter;
         BalanceCoordinatorClient client;
-        DistributedViolationAggregator aggregator;
+        DistributedViolationAggregator<MortonKey> aggregator;
 
         Partition(int rank, int totalPartitions) {
             this.rank = rank;
@@ -649,9 +677,12 @@ class Phase4E2ETest {
                 }
             };
 
-            // Create client with in-process channels
+            // Create client with in-process channels. The aggregator works in domain types; the
+            // GrpcBalanceExchange adapter bridges to the proto gRPC wire (its serializer is unused on
+            // the violation-exchange path but required by the adapter contract).
             this.client = new InProcessBalanceCoordinatorClient(rank, serviceDiscovery);
-            this.aggregator = new DistributedViolationAggregator(rank, totalPartitions, client, 2000);
+            var exchange = new GrpcBalanceExchange<MortonKey, LongEntityID, String>(client, STRING_SERIALIZER, LongEntityID.class);
+            this.aggregator = new DistributedViolationAggregator<>(rank, totalPartitions, exchange, 2000);
         }
 
         /**
@@ -675,10 +706,16 @@ class Phase4E2ETest {
         /**
          * Executes the complete pipeline: detection → aggregation → distribution.
          */
-        Set<BalanceViolation> detectAndAggregate() {
-            // In a real system, ParallelViolationDetector would detect violations from ghost layer
-            // For E2E testing, we use pre-created violations
-            return aggregator.aggregateDistributed(new ArrayList<>(localViolations));
+        Set<TwoOneBalanceChecker.BalanceViolation<MortonKey>> detectAndAggregate() {
+            // In a real system, ParallelViolationDetector would detect violations from the ghost layer.
+            // For E2E testing we use pre-created violations. The wire-side proto violations are converted
+            // to domain for the aggregator; the gRPC server/client wire (Path B and processViolations)
+            // stays proto.
+            var domainLocal = new ArrayList<TwoOneBalanceChecker.BalanceViolation<MortonKey>>();
+            for (var proto : localViolations) {
+                domainLocal.add(toDomainViolation(proto));
+            }
+            return aggregator.aggregateDistributed(domainLocal);
         }
 
         /**
