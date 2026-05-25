@@ -23,6 +23,7 @@ import com.hellblazer.luciferase.simulation.von.TransportGhostData;
 import com.hellblazer.luciferase.simulation.von.TransportNeighborInfo;
 import com.hellblazer.luciferase.simulation.von.TransportVonMessage;
 import javafx.geometry.Point3D;
+import javax.vecmath.Point3f;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -115,30 +116,47 @@ class VonDeserializationHardeningTest {
     }
 
     /**
-     * Exercises the real producer path: {@link MessageConverter#toTransport} serializes a JoinResponse's
-     * neighbor list onto the wire. The prior implementation used {@code Stream.toList()}, which emits an
-     * {@code ImmutableCollections} type that is NOT on the allow-list — so a legitimate JoinResponse with
-     * neighbors would be rejected by the filter. This guards that regression end-to-end (it would fail
-     * against the unfixed converter).
+     * Producer↔filter contract guard. The filter is only correct if every {@link MessageConverter}
+     * producer emits allow-listed concrete types onto the wire. That coupling is implicit: a JoinResponse
+     * regression already occurred when the neighbor list was built with {@code Stream.toList()} (an
+     * {@code ImmutableCollections} type not on the allow-list), which would have silently dropped every
+     * JoinResponse carrying neighbors. This test drives <em>every</em> {@code Message} subtype through the
+     * real {@code toTransport} → serialize → filtered-deserialize path, so the same class of regression on
+     * any message type (e.g. a future collection-typed field) fails CI rather than production traffic.
      */
     @Test
-    void filterAcceptsJoinResponseFromConverter() throws IOException {
-        var neighbors = Set.of(
-            new Message.NeighborInfo(UUID.randomUUID(), new Point3D(1, 2, 3), null),
-            new Message.NeighborInfo(UUID.randomUUID(), new Point3D(4, 5, 6), null),
-            new Message.NeighborInfo(UUID.randomUUID(), new Point3D(7, 8, 9), null));
-        var wire = MessageConverter.toTransport(new Message.JoinResponse(UUID.randomUUID(), neighbors, 123L));
+    void filterAcceptsEveryConverterProducedMessageType() throws IOException {
+        var ghost = new Message.TransportGhost("e1", new Point3f(1, 2, 3), "java.lang.String", "v", "tree-1", 1L, 2L, 3L);
+        var neighbor = new Message.NeighborInfo(UUID.randomUUID(), new Point3D(1, 2, 3), null);
+        List<Message> messages = List.of(
+            new Message.JoinRequest(UUID.randomUUID(), new Point3D(1, 2, 3), null, 1L),
+            new Message.JoinResponse(UUID.randomUUID(), Set.of(neighbor), 2L),
+            new Message.Move(UUID.randomUUID(), new Point3D(4, 5, 6), null, 3L),
+            new Message.Leave(UUID.randomUUID(), 4L),
+            new Message.GhostSync(UUID.randomUUID(), List.of(ghost), 9L, 5L),
+            new Message.Ack(UUID.randomUUID(), UUID.randomUUID(), 6L),
+            new Message.Query(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "position", 7L),
+            new Message.QueryResponse(UUID.randomUUID(), UUID.randomUUID(), "{}", 8L));
 
-        var bytes = serialize(wire);
-        var decoded = assertDoesNotThrow(() -> deserializeFiltered(bytes),
-                                         "A JoinResponse produced by MessageConverter must pass the filter");
-        assertEquals(wire, decoded, "Converter-produced JoinResponse must round-trip through the filter");
+        for (var message : messages) {
+            var wire = MessageConverter.toTransport(message);
+            var bytes = serialize(wire);
+            var decoded = assertDoesNotThrow(() -> deserializeFiltered(bytes),
+                () -> message.getClass().getSimpleName() + " produced by MessageConverter must pass the filter");
+            assertEquals(wire, decoded,
+                () -> message.getClass().getSimpleName() + " must round-trip through the filter unchanged");
+        }
     }
 
     /**
      * {@link SocketServer#start()} must reject a non-loopback bind address (RDR-004 bind hardening).
      * {@code 8.8.8.8} is an IPv4 literal — {@code getByName} resolves it without a DNS lookup — so the
      * guard fires deterministically before {@code new ServerSocket(...)} is reached.
+     * <p>
+     * <b>Inc 7+ enforcement artifact (Luciferase-ah3).</b> This test is the CI tripwire that keeps the
+     * loopback restriction from being silently deleted: removing the guard in {@code SocketServer.start()}
+     * (or in {@code SocketConnectionManager.isLoopback()}) fails here. Do not relax or delete it without
+     * landing the deserialization hardening that {@code Luciferase-ah3} gates.
      */
     @Test
     void socketServerRejectsNonLoopbackBind() {
