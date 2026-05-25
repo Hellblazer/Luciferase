@@ -18,7 +18,6 @@ package com.hellblazer.luciferase.lucien.balancing;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.balancing.fault.InFlightOperationTracker;
-import com.hellblazer.luciferase.lucien.balancing.grpc.BalanceCoordinatorClient;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
 import com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager;
@@ -155,10 +154,10 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
 
         log.debug("Starting Phase 3: Cross-partition balance");
 
-        // Check if forest context and gRPC client are available for full implementation
-        var coordinatorClient = createBalanceCoordinatorClient(registry);
-        if (currentForest != null && currentGhostManager != null && coordinatorClient != null) {
-            log.debug("Full forest context and client available, using CrossPartitionBalancePhase");
+        // Check if forest context and exchange are available for full implementation
+        var exchange = createRefinementExchange(registry);
+        if (currentForest != null && currentGhostManager != null && exchange != null) {
+            log.debug("Full forest context and exchange available, using CrossPartitionBalancePhase");
 
             try {
                 // Get ghost layer from the ghost manager
@@ -167,7 +166,7 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
                 // Create cross-partition balance phase if not already created
                 if (crossPartitionPhase == null) {
                     crossPartitionPhase = new CrossPartitionBalancePhase<>(
-                        coordinatorClient,
+                        exchange,
                         registry,
                         configuration
                     );
@@ -191,8 +190,8 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
             }
         } else {
             // Fallback: skeleton implementation for testing without full context
-            if (coordinatorClient == null) {
-                log.debug("gRPC client not available, using skeleton implementation");
+            if (exchange == null) {
+                log.debug("Refinement exchange not available, using skeleton implementation");
             } else {
                 log.debug("No forest context available, using skeleton implementation");
             }
@@ -354,21 +353,17 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
     }
 
     /**
-     * Create a balance coordinator client for gRPC refinement communication.
+     * Create a domain RefinementExchange for cross-partition refinement communication.
      *
-     * <p>This factory method creates the gRPC client that CrossPartitionBalancePhase uses
-     * to send refinement requests to neighbor partitions.
+     * <p>Returns null (stub) until gRPC integration is complete (RDR-007 P1).
+     * The concrete adapter ({@code GrpcBalanceExchange}) lives in the grpc adapter package.
      *
      * @param registry the partition registry for client configuration
-     * @return a new balance coordinator client
+     * @return a domain RefinementExchange, or null if not yet available
      */
-    private BalanceCoordinatorClient createBalanceCoordinatorClient(PartitionRegistry registry) {
-        // TODO: Implement gRPC client creation from registry
-        // For now, return a stub that delegates to the registry
-        log.debug("Creating BalanceCoordinatorClient for partition {}", registry.getCurrentPartitionId());
-
-        // This will be fully implemented when gRPC integration is complete
-        // For skeleton tests, this can be mocked
+    private RefinementExchange<Key, ID, Content> createRefinementExchange(PartitionRegistry registry) {
+        // TODO: return the grpc adapter wrapping the coordinator client (RDR-007 P1)
+        log.debug("RefinementExchange not yet available for partition {}", registry.getCurrentPartitionId());
         return null;
     }
 }

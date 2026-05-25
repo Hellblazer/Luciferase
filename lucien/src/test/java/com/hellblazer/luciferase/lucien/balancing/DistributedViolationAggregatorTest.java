@@ -16,12 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.balancing;
 
-import com.hellblazer.luciferase.lucien.balancing.grpc.BalanceCoordinatorClient;
-import com.hellblazer.luciferase.lucien.balancing.proto.BalanceViolation;
-import com.hellblazer.luciferase.lucien.balancing.proto.ViolationBatch;
-import com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey;
-import io.grpc.StatusRuntimeException;
-import io.grpc.Status;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -33,48 +28,37 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * Tests for DistributedViolationAggregator - gRPC-based violation exchange.
+ * Tests for DistributedViolationAggregator - violation exchange via the {@link ViolationExchange} port.
  *
  * @author hal.hildebrand
  */
 class DistributedViolationAggregatorTest {
 
-    private BalanceCoordinatorClient mockClient;
-    private DistributedViolationAggregator aggregator;
+    private ViolationExchange<MortonKey> mockExchange;
+    private DistributedViolationAggregator<MortonKey> aggregator;
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setUp() {
-        mockClient = mock(BalanceCoordinatorClient.class);
-        aggregator = new DistributedViolationAggregator(0, 4, mockClient);
+        mockExchange = mock(ViolationExchange.class);
+        aggregator = new DistributedViolationAggregator<>(0, 4, mockExchange);
     }
 
     @Test
-    void testSuccessfulDistributedExchange() {
+    void testSuccessfulDistributedExchange() throws Exception {
         // Create local violations
         var localViolations = List.of(
             createViolation(1, 2, 5, 7, 2, 0),
             createViolation(3, 4, 6, 8, 2, 0)
         );
 
-        // Mock successful gRPC responses with partner violations
+        // Mock successful responses with partner violations
         var partnerViolation1 = createViolation(5, 6, 7, 9, 2, 1);
         var partnerViolation2 = createViolation(7, 8, 8, 10, 2, 2);
 
-        when(mockClient.exchangeViolations(any(ViolationBatch.class)))
-            .thenReturn(ViolationBatch.newBuilder()
-                .setRequesterRank(1)
-                .setResponderRank(0)
-                .setRoundNumber(0)
-                .addViolations(partnerViolation1)
-                .setTimestamp(System.currentTimeMillis())
-                .build())
-            .thenReturn(ViolationBatch.newBuilder()
-                .setRequesterRank(2)
-                .setResponderRank(0)
-                .setRoundNumber(1)
-                .addViolations(partnerViolation2)
-                .setTimestamp(System.currentTimeMillis())
-                .build());
+        when(mockExchange.exchangeViolations(any()))
+            .thenReturn(new ViolationBatch<>(1, 0, 0, List.of(partnerViolation1), System.currentTimeMillis()))
+            .thenReturn(new ViolationBatch<>(2, 0, 1, List.of(partnerViolation2), System.currentTimeMillis()));
 
         // Execute aggregation
         var result = aggregator.aggregateDistributed(localViolations);
@@ -86,26 +70,21 @@ class DistributedViolationAggregatorTest {
         assertTrue(result.contains(partnerViolation2));
         assertEquals(4, result.size());
 
-        // Verify gRPC calls were made (2 rounds for 4 partitions)
-        verify(mockClient, times(2)).exchangeViolations(any(ViolationBatch.class));
+        // Verify exchanges were made (2 rounds for 4 partitions)
+        verify(mockExchange, times(2)).exchangeViolations(any());
     }
 
     @Test
-    void testTimeoutHandling() {
+    void testTimeoutHandling() throws Exception {
         // Create local violations
         var localViolations = List.of(
             createViolation(1, 2, 5, 7, 2, 0)
         );
 
         // Mock timeout on first call, success on second
-        when(mockClient.exchangeViolations(any(ViolationBatch.class)))
-            .thenThrow(new StatusRuntimeException(Status.DEADLINE_EXCEEDED))
-            .thenReturn(ViolationBatch.newBuilder()
-                .setRequesterRank(2)
-                .setResponderRank(0)
-                .setRoundNumber(1)
-                .setTimestamp(System.currentTimeMillis())
-                .build());
+        when(mockExchange.exchangeViolations(any()))
+            .thenThrow(new BalanceExchangeException("deadline exceeded", false, true))
+            .thenReturn(new ViolationBatch<>(2, 0, 1, List.of(), System.currentTimeMillis()));
 
         // Execute aggregation - should handle timeout gracefully
         var result = aggregator.aggregateDistributed(localViolations);
@@ -114,12 +93,12 @@ class DistributedViolationAggregatorTest {
         assertNotNull(result);
         assertTrue(result.containsAll(localViolations));
 
-        // Verify both calls were attempted
-        verify(mockClient, times(2)).exchangeViolations(any(ViolationBatch.class));
+        // Verify both calls were attempted (timeout is not retried)
+        verify(mockExchange, times(2)).exchangeViolations(any());
     }
 
     @Test
-    void testRetryOnTransientFailure() {
+    void testRetryOnTransientFailure() throws Exception {
         // Create local violations
         var localViolations = List.of(
             createViolation(1, 2, 5, 7, 2, 0)
@@ -128,17 +107,12 @@ class DistributedViolationAggregatorTest {
         var callCount = new AtomicInteger(0);
 
         // Mock transient failure on first attempt, success on retry
-        when(mockClient.exchangeViolations(any(ViolationBatch.class)))
+        when(mockExchange.exchangeViolations(any()))
             .thenAnswer(invocation -> {
                 if (callCount.getAndIncrement() == 0) {
-                    throw new StatusRuntimeException(Status.UNAVAILABLE);
+                    throw new BalanceExchangeException("unavailable", true, false);
                 }
-                return ViolationBatch.newBuilder()
-                    .setRequesterRank(1)
-                    .setResponderRank(0)
-                    .setRoundNumber(0)
-                    .setTimestamp(System.currentTimeMillis())
-                    .build();
+                return new ViolationBatch<>(1, 0, 0, List.of(), System.currentTimeMillis());
             });
 
         // Execute aggregation
@@ -148,28 +122,22 @@ class DistributedViolationAggregatorTest {
         assertNotNull(result);
         assertTrue(result.containsAll(localViolations));
 
-        // Verify retry happened (1 original + 1 retry = 2 calls for first round)
-        // Plus 1 for second round = 3 total
-        verify(mockClient, atLeast(2)).exchangeViolations(any(ViolationBatch.class));
+        // Verify retry happened (1 original + 1 retry for first round, plus second round)
+        verify(mockExchange, atLeast(2)).exchangeViolations(any());
     }
 
     @Test
-    void testPartialFailureDoesNotBlockAggregation() {
+    void testPartialFailureDoesNotBlockAggregation() throws Exception {
         // Create local violations
         var localViolations = List.of(
             createViolation(1, 2, 5, 7, 2, 0)
         );
 
-        // Mock first round fails permanently, second round succeeds
-        when(mockClient.exchangeViolations(any(ViolationBatch.class)))
-            .thenThrow(new StatusRuntimeException(Status.UNAVAILABLE))
-            .thenThrow(new StatusRuntimeException(Status.UNAVAILABLE))
-            .thenReturn(ViolationBatch.newBuilder()
-                .setRequesterRank(2)
-                .setResponderRank(0)
-                .setRoundNumber(1)
-                .setTimestamp(System.currentTimeMillis())
-                .build());
+        // Mock first round fails permanently (transient + retry exhausted), second round succeeds
+        when(mockExchange.exchangeViolations(any()))
+            .thenThrow(new BalanceExchangeException("unavailable", true, false))
+            .thenThrow(new BalanceExchangeException("unavailable", true, false))
+            .thenReturn(new ViolationBatch<>(2, 0, 1, List.of(), System.currentTimeMillis()));
 
         // Execute aggregation
         var result = aggregator.aggregateDistributed(localViolations);
@@ -187,17 +155,12 @@ class DistributedViolationAggregatorTest {
     }
 
     @Test
-    void testShutdownCleansUpResources() {
+    void testShutdownCleansUpResources() throws Exception {
         // Execute aggregation to initialize state
         var localViolations = List.of(createViolation(1, 2, 5, 7, 2, 0));
 
-        when(mockClient.exchangeViolations(any(ViolationBatch.class)))
-            .thenReturn(ViolationBatch.newBuilder()
-                .setRequesterRank(1)
-                .setResponderRank(0)
-                .setRoundNumber(0)
-                .setTimestamp(System.currentTimeMillis())
-                .build());
+        when(mockExchange.exchangeViolations(any()))
+            .thenReturn(new ViolationBatch<>(1, 0, 0, List.of(), System.currentTimeMillis()));
 
         aggregator.aggregateDistributed(localViolations);
 
@@ -206,24 +169,14 @@ class DistributedViolationAggregatorTest {
     }
 
     /**
-     * Helper to create a BalanceViolation for testing.
+     * Helper to create a domain BalanceViolation for testing (level-0 Morton keys, levelDiff > 1).
      */
-    private BalanceViolation createViolation(long localKeyId, long ghostKeyId,
-                                            int localLevel, int ghostLevel,
-                                            int levelDiff, int sourceRank) {
-        return BalanceViolation.newBuilder()
-            .setLocalKey(mortonKey(localKeyId))
-            .setGhostKey(mortonKey(ghostKeyId))
-            .setLocalLevel(localLevel)
-            .setGhostLevel(ghostLevel)
-            .setLevelDifference(levelDiff)
-            .setSourceRank(sourceRank)
-            .build();
-    }
-
-    /** Build a proto SpatialKey envelope from a long Morton code (Luciferase-546 serde dispatch). */
-    private static SpatialKey mortonKey(long mortonCode) {
-        return com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyToProtobuf(
-            new com.hellblazer.luciferase.lucien.octree.MortonKey(mortonCode, (byte) 0));
+    private TwoOneBalanceChecker.BalanceViolation<MortonKey> createViolation(long localKeyId, long ghostKeyId,
+                                                                             int localLevel, int ghostLevel,
+                                                                             int levelDiff, int sourceRank) {
+        return new TwoOneBalanceChecker.BalanceViolation<>(
+            new MortonKey(localKeyId, (byte) 0),
+            new MortonKey(ghostKeyId, (byte) 0),
+            localLevel, ghostLevel, levelDiff, sourceRank);
     }
 }

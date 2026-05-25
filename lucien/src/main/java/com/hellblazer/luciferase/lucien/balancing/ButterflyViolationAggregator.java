@@ -16,12 +16,17 @@
  */
 package com.hellblazer.luciferase.lucien.balancing;
 
-import com.hellblazer.luciferase.lucien.balancing.proto.BalanceViolation;
-import com.hellblazer.luciferase.lucien.balancing.proto.ViolationBatch;
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.BiFunction;
 
 /**
@@ -35,16 +40,20 @@ import java.util.function.BiFunction;
  * <p>Violations are deduplicated using a composite key of (localKey, ghostKey)
  * to handle cases where the same violation is reported by multiple partitions.
  *
+ * <p>Operates entirely on domain types ({@link ViolationBatch}, {@link TwoOneBalanceChecker.BalanceViolation});
+ * the exchanger function is the seam to the transport, supplied by the caller.
+ *
+ * @param <Key> the spatial key type (MortonKey, TetreeKey, etc.)
  * @see ButterflyPattern
  * @author hal.hildebrand
  */
-public class ButterflyViolationAggregator {
+public class ButterflyViolationAggregator<Key extends SpatialKey<Key>> {
 
     private static final Logger log = LoggerFactory.getLogger(ButterflyViolationAggregator.class);
 
     private final int myRank;
     private final int totalPartitions;
-    private final BiFunction<Integer, ViolationBatch, ViolationBatch> violationExchanger;
+    private final BiFunction<Integer, ViolationBatch<Key>, ViolationBatch<Key>> violationExchanger;
 
     /**
      * Creates a new butterfly violation aggregator.
@@ -56,7 +65,7 @@ public class ButterflyViolationAggregator {
      * @throws NullPointerException if violationExchanger is null
      */
     public ButterflyViolationAggregator(int myRank, int totalPartitions,
-                                       BiFunction<Integer, ViolationBatch, ViolationBatch> violationExchanger) {
+                                       BiFunction<Integer, ViolationBatch<Key>, ViolationBatch<Key>> violationExchanger) {
         if (totalPartitions <= 0) {
             throw new IllegalArgumentException("totalPartitions must be positive, got " + totalPartitions);
         }
@@ -92,11 +101,12 @@ public class ButterflyViolationAggregator {
      * @return set of all violations from all partitions (deduplicated)
      * @throws NullPointerException if localViolations is null
      */
-    public Set<BalanceViolation> aggregateViolations(List<BalanceViolation> localViolations) {
+    public Set<TwoOneBalanceChecker.BalanceViolation<Key>> aggregateViolations(
+            List<TwoOneBalanceChecker.BalanceViolation<Key>> localViolations) {
         Objects.requireNonNull(localViolations, "localViolations cannot be null");
 
         // Use LinkedHashMap for deduplication while preserving insertion order
-        var aggregatedViolations = new LinkedHashMap<ViolationKey, BalanceViolation>();
+        var aggregatedViolations = new LinkedHashMap<ViolationKey, TwoOneBalanceChecker.BalanceViolation<Key>>();
 
         // Add local violations
         for (var violation : localViolations) {
@@ -130,7 +140,7 @@ public class ButterflyViolationAggregator {
             var receivedBatch = exchangeWithPartner(partner, round, aggregatedViolations.values());
 
             // Merge received violations (deduplicate)
-            for (var violation : receivedBatch.getViolationsList()) {
+            for (var violation : receivedBatch.violations()) {
                 var key = new ViolationKey(violation);
                 aggregatedViolations.putIfAbsent(key, violation);
             }
@@ -151,21 +161,10 @@ public class ButterflyViolationAggregator {
      * @param violations current aggregated violations to send
      * @return violations received from partner
      */
-    private ViolationBatch exchangeWithPartner(int partner, int round,
-                                              Collection<BalanceViolation> violations) {
-        // Build batch to send
-        var batchBuilder = ViolationBatch.newBuilder()
-            .setRequesterRank(myRank)
-            .setResponderRank(partner)
-            .setRoundNumber(round)
-            .setTimestamp(System.currentTimeMillis());
-
-        // Add all current violations (includes local + previously received)
-        for (var violation : violations) {
-            batchBuilder.addViolations(violation);
-        }
-
-        var batch = batchBuilder.build();
+    private ViolationBatch<Key> exchangeWithPartner(int partner, int round,
+                                                   Collection<TwoOneBalanceChecker.BalanceViolation<Key>> violations) {
+        // Build batch to send (includes local + previously received)
+        var batch = new ViolationBatch<>(myRank, partner, round, new ArrayList<>(violations), System.currentTimeMillis());
 
         log.debug("Sending {} violations to partner {} in round {}", violations.size(), partner, round);
 
@@ -173,7 +172,7 @@ public class ButterflyViolationAggregator {
         var receivedBatch = violationExchanger.apply(partner, batch);
 
         log.debug("Received {} violations from partner {} in round {}",
-                 receivedBatch.getViolationsCount(), partner, round);
+                 receivedBatch.violations().size(), partner, round);
 
         return receivedBatch;
     }
@@ -186,11 +185,10 @@ public class ButterflyViolationAggregator {
         private final int localKeyHash;
         private final int ghostKeyHash;
 
-        ViolationKey(BalanceViolation violation) {
-            // Use the full SpatialKey hashCode for uniqueness
-            // SpatialKey contains oneof(MortonKey, TetreeKey) so hashCode handles both
-            this.localKeyHash = violation.getLocalKey().hashCode();
-            this.ghostKeyHash = violation.getGhostKey().hashCode();
+        ViolationKey(TwoOneBalanceChecker.BalanceViolation<?> violation) {
+            // Use the full SpatialKey hashCode for uniqueness (handles MortonKey, TetreeKey, etc.)
+            this.localKeyHash = violation.localKey().hashCode();
+            this.ghostKeyHash = violation.ghostKey().hashCode();
         }
 
         @Override

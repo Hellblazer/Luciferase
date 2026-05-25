@@ -16,10 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.balancing;
 
-import com.hellblazer.luciferase.lucien.balancing.proto.BalanceViolation;
-import com.hellblazer.luciferase.lucien.balancing.proto.ViolationAck;
-import com.hellblazer.luciferase.lucien.balancing.proto.ViolationBatch;
-import com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests for ButterflyViolationAggregator - distributed violation exchange using butterfly pattern.
+ * Operates on domain types ({@link ViolationBatch}, {@link TwoOneBalanceChecker.BalanceViolation}).
  *
  * @author hal.hildebrand
  */
@@ -46,34 +44,30 @@ class ButterflyViolationAggregatorTest {
      * Mock violation exchanger for testing.
      * Simulates bidirectional exchange between partners.
      */
-    static class MockViolationExchanger implements BiFunction<Integer, ViolationBatch, ViolationBatch> {
-        private ViolationBatch lastSentBatch;
-        private ViolationBatch responseToReturn;
+    static class MockViolationExchanger implements BiFunction<Integer, ViolationBatch<MortonKey>, ViolationBatch<MortonKey>> {
+        private ViolationBatch<MortonKey> lastSentBatch;
+        private ViolationBatch<MortonKey> responseToReturn;
 
-        void setResponse(ViolationBatch response) {
+        void setResponse(ViolationBatch<MortonKey> response) {
             this.responseToReturn = response;
         }
 
-        ViolationBatch getLastSentBatch() {
+        ViolationBatch<MortonKey> getLastSentBatch() {
             return lastSentBatch;
         }
 
         @Override
-        public ViolationBatch apply(Integer partner, ViolationBatch batch) {
+        public ViolationBatch<MortonKey> apply(Integer partner, ViolationBatch<MortonKey> batch) {
             lastSentBatch = batch;
             return responseToReturn != null ? responseToReturn :
-                ViolationBatch.newBuilder()
-                    .setRequesterRank(partner)
-                    .setResponderRank(batch.getRequesterRank())
-                    .setRoundNumber(batch.getRoundNumber())
-                    .setTimestamp(System.currentTimeMillis())
-                    .build();
+                new ViolationBatch<>(partner, batch.requesterRank(), batch.roundNumber(),
+                                     List.of(), System.currentTimeMillis());
         }
     }
 
     @Test
     void testSinglePartitionNoExchange() {
-        var aggregator = new ButterflyViolationAggregator(0, 1, mockExchanger);
+        var aggregator = new ButterflyViolationAggregator<MortonKey>(0, 1, mockExchanger);
 
         var localViolations = List.of(
             createViolation(1, 2, 5, 7, 2, 0)
@@ -92,7 +86,7 @@ class ButterflyViolationAggregatorTest {
     @Test
     void testTwoPartitionsOneRound() {
         // Partition 0 exchanges with partition 1
-        var aggregator = new ButterflyViolationAggregator(0, 2, mockExchanger);
+        var aggregator = new ButterflyViolationAggregator<MortonKey>(0, 2, mockExchanger);
 
         var localViolations = List.of(
             createViolation(1, 2, 5, 7, 2, 0)
@@ -104,13 +98,7 @@ class ButterflyViolationAggregatorTest {
 
         // Mock the exchange response
         mockExchanger.setResponse(
-            ViolationBatch.newBuilder()
-                .setRequesterRank(1)
-                .setResponderRank(0)
-                .setRoundNumber(0)
-                .addAllViolations(partnerViolations)
-                .setTimestamp(System.currentTimeMillis())
-                .build()
+            new ViolationBatch<>(1, 0, 0, partnerViolations, System.currentTimeMillis())
         );
 
         var result = aggregator.aggregateViolations(localViolations);
@@ -123,9 +111,9 @@ class ButterflyViolationAggregatorTest {
         // Verify one exchange happened
         var lastBatch = mockExchanger.getLastSentBatch();
         assertNotNull(lastBatch);
-        assertEquals(0, lastBatch.getRequesterRank());
-        assertEquals(0, lastBatch.getRoundNumber());
-        assertEquals(1, lastBatch.getViolationsCount());
+        assertEquals(0, lastBatch.requesterRank());
+        assertEquals(0, lastBatch.roundNumber());
+        assertEquals(1, lastBatch.violations().size());
     }
 
     @Test
@@ -133,8 +121,6 @@ class ButterflyViolationAggregatorTest {
         // Partition 0 exchanges with:
         // - Round 0: partition 1 (0 XOR 1 = 1)
         // - Round 1: partition 2 (0 XOR 2 = 2)
-        var aggregator = new ButterflyViolationAggregator(0, 4, mockExchanger);
-
         var localViolations = List.of(
             createViolation(1, 2, 5, 7, 2, 0)
         );
@@ -144,21 +130,16 @@ class ButterflyViolationAggregatorTest {
         var round1Violations = List.of(createViolation(5, 6, 7, 9, 2, 2));
 
         // Use a custom exchanger that returns different violations per round
-        var roundAwareExchanger = new BiFunction<Integer, ViolationBatch, ViolationBatch>() {
+        var roundAwareExchanger = new BiFunction<Integer, ViolationBatch<MortonKey>, ViolationBatch<MortonKey>>() {
             @Override
-            public ViolationBatch apply(Integer partner, ViolationBatch batch) {
-                var violations = batch.getRoundNumber() == 0 ? round0Violations : round1Violations;
-                return ViolationBatch.newBuilder()
-                    .setRequesterRank(partner)
-                    .setResponderRank(batch.getRequesterRank())
-                    .setRoundNumber(batch.getRoundNumber())
-                    .addAllViolations(violations)
-                    .setTimestamp(System.currentTimeMillis())
-                    .build();
+            public ViolationBatch<MortonKey> apply(Integer partner, ViolationBatch<MortonKey> batch) {
+                var violations = batch.roundNumber() == 0 ? round0Violations : round1Violations;
+                return new ViolationBatch<>(partner, batch.requesterRank(), batch.roundNumber(),
+                                            violations, System.currentTimeMillis());
             }
         };
 
-        aggregator = new ButterflyViolationAggregator(0, 4, roundAwareExchanger);
+        var aggregator = new ButterflyViolationAggregator<MortonKey>(0, 4, roundAwareExchanger);
         var result = aggregator.aggregateViolations(localViolations);
 
         assertNotNull(result);
@@ -174,7 +155,7 @@ class ButterflyViolationAggregatorTest {
         // Partition 5 in round 0: partner = 5 XOR 1 = 4 (valid)
         // Partition 5 in round 1: partner = 5 XOR 2 = 7 (>= 6, skip)
         // Partition 5 in round 2: partner = 5 XOR 4 = 1 (valid)
-        var aggregator = new ButterflyViolationAggregator(5, 6, mockExchanger);
+        var aggregator = new ButterflyViolationAggregator<MortonKey>(5, 6, mockExchanger);
 
         var localViolations = List.of(
             createViolation(1, 2, 5, 7, 2, 5)
@@ -189,7 +170,7 @@ class ButterflyViolationAggregatorTest {
 
     @Test
     void testDeduplicationOfDuplicateViolations() {
-        var aggregator = new ButterflyViolationAggregator(0, 2, mockExchanger);
+        var aggregator = new ButterflyViolationAggregator<MortonKey>(0, 2, mockExchanger);
 
         // Same violation appears locally and from partner
         var duplicateViolation = createViolation(1, 2, 5, 7, 2, 0);
@@ -197,13 +178,7 @@ class ButterflyViolationAggregatorTest {
 
         // Partner sends the same violation
         mockExchanger.setResponse(
-            ViolationBatch.newBuilder()
-                .setRequesterRank(1)
-                .setResponderRank(0)
-                .setRoundNumber(0)
-                .addViolations(duplicateViolation)
-                .setTimestamp(System.currentTimeMillis())
-                .build()
+            new ViolationBatch<>(1, 0, 0, List.of(duplicateViolation), System.currentTimeMillis())
         );
 
         var result = aggregator.aggregateViolations(localViolations);
@@ -215,7 +190,7 @@ class ButterflyViolationAggregatorTest {
 
     @Test
     void testEmptyLocalViolations() {
-        var aggregator = new ButterflyViolationAggregator(0, 2, mockExchanger);
+        var aggregator = new ButterflyViolationAggregator<MortonKey>(0, 2, mockExchanger);
 
         var result = aggregator.aggregateViolations(List.of());
 
@@ -225,7 +200,7 @@ class ButterflyViolationAggregatorTest {
 
     @Test
     void testNullLocalViolationsThrowsException() {
-        var aggregator = new ButterflyViolationAggregator(0, 2, mockExchanger);
+        var aggregator = new ButterflyViolationAggregator<MortonKey>(0, 2, mockExchanger);
 
         assertThrows(NullPointerException.class, () -> {
             aggregator.aggregateViolations(null);
@@ -235,55 +210,49 @@ class ButterflyViolationAggregatorTest {
     @Test
     void testInvalidRankThrowsException() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new ButterflyViolationAggregator(-1, 4, mockExchanger);
+            new ButterflyViolationAggregator<MortonKey>(-1, 4, mockExchanger);
         });
 
         assertThrows(IllegalArgumentException.class, () -> {
-            new ButterflyViolationAggregator(4, 4, mockExchanger);
+            new ButterflyViolationAggregator<MortonKey>(4, 4, mockExchanger);
         });
     }
 
     @Test
     void testInvalidTotalPartitionsThrowsException() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new ButterflyViolationAggregator(0, 0, mockExchanger);
+            new ButterflyViolationAggregator<MortonKey>(0, 0, mockExchanger);
         });
 
         assertThrows(IllegalArgumentException.class, () -> {
-            new ButterflyViolationAggregator(0, -1, mockExchanger);
+            new ButterflyViolationAggregator<MortonKey>(0, -1, mockExchanger);
         });
     }
 
     @Test
     void testNullExchangerThrowsException() {
         assertThrows(NullPointerException.class, () -> {
-            new ButterflyViolationAggregator(0, 4, null);
+            new ButterflyViolationAggregator<MortonKey>(0, 4, null);
         });
     }
 
     @Test
     void testButterflyPartnerCalculation() {
         // Test that correct partners are calculated per round
-        var aggregator = new ButterflyViolationAggregator(0, 8, mockExchanger);
-
         var localViolations = List.of(createViolation(1, 2, 5, 7, 2, 0));
 
         // Track which partners are contacted
         var contactedPartners = new java.util.HashSet<Integer>();
-        var partnerTracker = new BiFunction<Integer, ViolationBatch, ViolationBatch>() {
+        var partnerTracker = new BiFunction<Integer, ViolationBatch<MortonKey>, ViolationBatch<MortonKey>>() {
             @Override
-            public ViolationBatch apply(Integer partner, ViolationBatch batch) {
+            public ViolationBatch<MortonKey> apply(Integer partner, ViolationBatch<MortonKey> batch) {
                 contactedPartners.add(partner);
-                return ViolationBatch.newBuilder()
-                    .setRequesterRank(partner)
-                    .setResponderRank(batch.getRequesterRank())
-                    .setRoundNumber(batch.getRoundNumber())
-                    .setTimestamp(System.currentTimeMillis())
-                    .build();
+                return new ViolationBatch<>(partner, batch.requesterRank(), batch.roundNumber(),
+                                            List.of(), System.currentTimeMillis());
             }
         };
 
-        aggregator = new ButterflyViolationAggregator(0, 8, partnerTracker);
+        var aggregator = new ButterflyViolationAggregator<MortonKey>(0, 8, partnerTracker);
         aggregator.aggregateViolations(localViolations);
 
         // For rank 0 with 8 partitions (3 rounds):
@@ -297,28 +266,14 @@ class ButterflyViolationAggregatorTest {
     }
 
     /**
-     * Helper to create a BalanceViolation for testing.
+     * Helper to create a domain BalanceViolation for testing (level-0 Morton keys, levelDiff > 1).
      */
-    private BalanceViolation createViolation(long localKeyId, long ghostKeyId,
-                                            int localLevel, int ghostLevel,
-                                            int levelDiff, int sourceRank) {
-        return BalanceViolation.newBuilder()
-            .setLocalKey(mortonKey(localKeyId))
-            .setGhostKey(mortonKey(ghostKeyId))
-            .setLocalLevel(localLevel)
-            .setGhostLevel(ghostLevel)
-            .setLevelDifference(levelDiff)
-            .setSourceRank(sourceRank)
-            .build();
-    }
-
-    /**
-     * Build a proto SpatialKey envelope from a long Morton code (level 0).
-     * Routes through the SpatialKeySerdeRegistry (Luciferase-546) so this
-     * helper does not need to know the new envelope shape.
-     */
-    private static SpatialKey mortonKey(long mortonCode) {
-        return com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyToProtobuf(
-            new com.hellblazer.luciferase.lucien.octree.MortonKey(mortonCode, (byte) 0));
+    private TwoOneBalanceChecker.BalanceViolation<MortonKey> createViolation(long localKeyId, long ghostKeyId,
+                                                                             int localLevel, int ghostLevel,
+                                                                             int levelDiff, int sourceRank) {
+        return new TwoOneBalanceChecker.BalanceViolation<>(
+            new MortonKey(localKeyId, (byte) 0),
+            new MortonKey(ghostKeyId, (byte) 0),
+            localLevel, ghostLevel, levelDiff, sourceRank);
     }
 }

@@ -16,9 +16,8 @@
  */
 package com.hellblazer.luciferase.lucien.balancing;
 
-import com.hellblazer.luciferase.lucien.balancing.grpc.BalanceCoordinatorClient;
-import com.hellblazer.luciferase.lucien.balancing.proto.RefinementRequest;
-import com.hellblazer.luciferase.lucien.balancing.proto.RefinementResponse;
+import com.hellblazer.luciferase.lucien.SpatialKey;
+import com.hellblazer.luciferase.lucien.entity.EntityID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,15 +40,18 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>Based on the p4est parallel AMR algorithm's O(log P) refinement protocol.
  *
- * <p>Thread-safe: Uses thread-safe client and request manager.
+ * <p>Thread-safe: Uses thread-safe exchange and request manager.
  *
+ * @param <Key> the spatial key type (MortonKey, TetreeKey, etc.)
+ * @param <ID> the entity ID type
+ * @param <Content> the content type stored with entities
  * @author hal.hildebrand
  */
-public class RefinementCoordinator {
+public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
 
     private static final Logger log = LoggerFactory.getLogger(RefinementCoordinator.class);
 
-    private final BalanceCoordinatorClient client;
+    private final RefinementExchange<Key, ID, Content> exchange;
     private final RefinementRequestManager requestManager;
     private final int myRank;
     private final int totalPartitions;
@@ -57,16 +59,17 @@ public class RefinementCoordinator {
     /**
      * Create a new refinement coordinator.
      *
-     * @param client the gRPC client for communication
+     * @param exchange the domain exchange interface for refinement communication
      * @param requestManager the request manager for tracking
      * @param myRank this partition's rank (0 to P-1)
      * @param totalPartitions total number of partitions P
-     * @throws NullPointerException if client or requestManager is null
+     * @throws NullPointerException if exchange or requestManager is null
      * @throws IllegalArgumentException if myRank < 0 or totalPartitions <= 0
      */
-    public RefinementCoordinator(BalanceCoordinatorClient client, RefinementRequestManager requestManager,
-                                int myRank, int totalPartitions) {
-        this.client = Objects.requireNonNull(client, "client cannot be null");
+    public RefinementCoordinator(RefinementExchange<Key, ID, Content> exchange,
+                                 RefinementRequestManager requestManager,
+                                 int myRank, int totalPartitions) {
+        this.exchange = Objects.requireNonNull(exchange, "exchange cannot be null");
         this.requestManager = Objects.requireNonNull(requestManager, "requestManager cannot be null");
 
         if (myRank < 0) {
@@ -182,15 +185,15 @@ public class RefinementCoordinator {
                 var futures = sendRequestsParallel(requests);
 
                 // Wait for responses with timeout
-                var responses = new ArrayList<RefinementResponse>();
+                var responses = new ArrayList<RefinementResponse<Key, ID, Content>>();
                 for (var future : futures) {
                     try {
                         var response = future.get(5, TimeUnit.SECONDS);
                         responses.add(response);
 
                         // Track refinements from this response
-                        if (response.getGhostElementsCount() > 0) {
-                            refinementsApplied += response.getGhostElementsCount();
+                        if (response.ghostElements().size() > 0) {
+                            refinementsApplied += response.ghostElements().size();
                         }
                     } catch (Exception e) {
                         log.warn("Failed to get response from partner {} in round {}: {}",
@@ -223,17 +226,18 @@ public class RefinementCoordinator {
      * @param roundNumber the current round number
      * @return list of refinement requests (typically 1 per partner)
      */
-    private List<RefinementRequest> buildRequestsForPartner(int partnerRank, int roundNumber) {
-        var requests = new ArrayList<RefinementRequest>();
+    private List<RefinementRequest<Key>> buildRequestsForPartner(int partnerRank, int roundNumber) {
+        var requests = new ArrayList<RefinementRequest<Key>>();
 
         // Build request for this partner
-        var request = RefinementRequest.newBuilder()
-            .setRequesterRank(myRank)
-            .setRequesterTreeId(0L)  // TODO: support multiple trees
-            .setRoundNumber(roundNumber)
-            .setTreeLevel(0)  // TODO: extract actual level from boundary violations
-            .setTimestamp(System.currentTimeMillis())
-            .build();
+        var request = new RefinementRequest<Key>(
+            myRank,
+            0L,  // TODO: support multiple trees
+            roundNumber,
+            0,   // TODO: extract actual level from boundary violations
+            List.of(),
+            System.currentTimeMillis()
+        );
 
         requests.add(request);
 
@@ -272,13 +276,14 @@ public class RefinementCoordinator {
      * in a single refinement round. In the butterfly pattern, each rank communicates with
      * exactly one partner per round (calculated as rank XOR 2^round).
      *
-     * @param requests the refinement requests to send (typically 1 per butterfly partner)
+     * @param requests the domain refinement requests to send (typically 1 per butterfly partner)
      * @return futures for all requests
      */
-    private List<CompletableFuture<RefinementResponse>> sendRequestsParallel(List<RefinementRequest> requests) {
+    private List<CompletableFuture<RefinementResponse<Key, ID, Content>>> sendRequestsParallel(
+            List<RefinementRequest<Key>> requests) {
         log.debug("Sending {} refinement requests in parallel", requests.size());
 
-        var futures = new ArrayList<CompletableFuture<RefinementResponse>>();
+        var futures = new ArrayList<CompletableFuture<RefinementResponse<Key, ID, Content>>>();
 
         // Default timeout of 5 seconds per request
         // (will be made configurable via BalanceConfiguration in future phases)
@@ -288,24 +293,24 @@ public class RefinementCoordinator {
             // Track request for monitoring
             requestManager.trackRequest(request, System.currentTimeMillis());
 
-            // Send async with timeout
-            var future = client.requestRefinementAsync(
-                request.getRequesterRank(),
-                request.getRequesterTreeId(),
-                request.getRoundNumber(),
-                request.getTreeLevel(),
-                request.getBoundaryKeysList()
+            // Send async with timeout via domain exchange
+            var future = exchange.requestRefinementAsync(
+                request.requesterRank(),
+                request.requesterTreeId(),
+                request.roundNumber(),
+                request.treeLevel(),
+                request.boundaryKeys()
             )
-            .orTimeout(timeoutSeconds, TimeUnit.SECONDS)  // Default 5 second timeout
+            .orTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .exceptionally(ex -> {
                 log.warn("Request from rank {} failed in round {}: {}",
-                    request.getRequesterRank(), request.getRoundNumber(), ex.getMessage());
+                    request.requesterRank(), request.roundNumber(), ex.getMessage());
                 // Return empty response on timeout/failure
-                return RefinementResponse.getDefaultInstance();
+                return RefinementResponse.empty();
             });
 
             futures.add(future);
-            log.trace("Queued request from rank {} in round {}", request.getRequesterRank(), request.getRoundNumber());
+            log.trace("Queued request from rank {} in round {}", request.requesterRank(), request.roundNumber());
         }
 
         return futures;
