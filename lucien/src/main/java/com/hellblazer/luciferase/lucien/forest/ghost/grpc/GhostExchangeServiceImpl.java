@@ -194,9 +194,10 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 for (var treeId : request.getTreeIdsList()) {
                     var ghostLayer = ghostLayerProvider.getGhostLayer(treeId);
                     if (ghostLayer != null) {
-                        var batch = ghostLayer.toProtobufBatch(
-                            ghostLayerProvider.getCurrentRank(), 
-                            treeId, 
+                        var batch = ProtobufConverters.ghostLayerToProtobufBatch(
+                            ghostLayer,
+                            ghostLayerProvider.getCurrentRank(),
+                            treeId,
                             contentSerializer);
                         responseBuilder.addBatches(batch);
                         totalElements += batch.getElementsCount();
@@ -267,14 +268,15 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 var key = ProtobufConverters.spatialKeyFromProtobuf(keyProto);
                 var elements = ghostLayer.getGhostElements((Key) key);
                 for (var element : elements) {
-                    batchBuilder.addElements(element.toProtobuf(contentSerializer));
+                    batchBuilder.addElements(ProtobufConverters.ghostElementToProtobuf(element, contentSerializer));
                 }
             }
             
             return batchBuilder.build();
         } else {
             // Request for all ghosts
-            return ghostLayer.toProtobufBatch(
+            return ProtobufConverters.ghostLayerToProtobufBatch(
+                ghostLayer,
                 ghostLayerProvider.getCurrentRank(),
                 request.getRequesterTreeId(),
                 contentSerializer);
@@ -292,7 +294,7 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
             
             switch (update.getUpdateTypeCase()) {
                 case INSERT -> {
-                    var element = GhostElement.<Key, ID, Content>fromProtobuf(
+                    var element = ProtobufConverters.<Key, ID, Content>ghostElementFromProtobuf(
                         update.getInsert(), contentSerializer, entityIdClass);
                     ghostLayerProvider.addGhostElement(element);
                     entityId = element.getEntityId().toString();
@@ -300,7 +302,7 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                     log.debug("Inserted ghost element: {}", entityId);
                 }
                 case UPDATE -> {
-                    var element = GhostElement.<Key, ID, Content>fromProtobuf(
+                    var element = ProtobufConverters.<Key, ID, Content>ghostElementFromProtobuf(
                         update.getUpdate(), contentSerializer, entityIdClass);
                     ghostLayerProvider.updateGhostElement(element);
                     entityId = element.getEntityId().toString();
