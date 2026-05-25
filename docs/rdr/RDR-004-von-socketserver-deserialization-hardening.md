@@ -46,7 +46,7 @@ The 360-review pass (2026-05-23, T2 `luciferase/360-review-2026-05-23-summary`) 
 
 ## Approach
 
-> To be completed in `/nx:rdr-research` + design. Initial candidate directions:
+> Candidate directions below; resolved by research (see [Research Findings](#research-findings)) into the layered recommendation that follows.
 
 1. **Threat-model the VoN socket** — determine the actual trust boundary: loopback-only dev, cluster-internal (mutually authenticated peers via Fireflies view), or untrusted. The answer gates how much hardening is warranted.
 2. **Option A — ObjectInputFilter allow-list** (minimum): restrict to `TransportVonMessage` + the JDK/vecmath types it transitively carries, mirroring the D-1 file-site pattern. Cheap, reversible, but Java serialization remains the format.
@@ -54,11 +54,29 @@ The 360-review pass (2026-05-23, T2 `luciferase/360-review-2026-05-23-summary`) 
 4. **Option C — bind/peer-identity constraint**: combine a filter with a loopback or Fireflies-view-authenticated bind so only known peers can connect (overlaps RDR-005's auth model).
 5. Decide single direction; sequence against RDR-005 (shared auth/transport concerns).
 
+### Recommended direction (pending gate)
+
+Research showed the three options are not mutually exclusive — they are **layers on different time horizons**:
+
+- **Now — Direction A, unconditionally (defense-in-depth).** Add an `ObjectInputFilter` allow-list at the inbound site (`SocketServer.java:134`) and the response site (`SocketClient.java:107-109`), reusing the D-1 pattern verbatim. Independently, harden the bind guard: replace the string-equality loopback check (`SocketConnectionManager.java:95-99`) with `InetAddress.isLoopbackAddress()`, and enforce it inside `SocketServer` itself (the only current guard lives in the manager and is bypassable by direct instantiation). Cheap, reversible, lands this RDR.
+- **Reject Direction C as the primary fix.** The Fireflies view exposes no per-peer cryptographic identity wired into the transport (only a view-epoch `Digest`); a bespoke socket→member authorization gate is high-cost net-new integration and duplicates RDR-005's auth model. The peer-identity/auth question belongs to **RDR-005**, not a one-off gate here.
+- **Direction B is the structural endgame, sequenced with RDR-005, and a hard gate on "Inc 7+".** `TransportVonMessage` is a flat struct that maps trivially to protobuf, the `grpc` module already covers the overlapping ghost types, and transport latency is dominated by the 300 ms Fireflies view-stability ACK (protobuf overhead is irrelevant). Replacing Java serialization eliminates the gadget surface rather than filtering it. **Critical constraint:** B (or at minimum the Direction-A filter, retained) MUST land before the planned "Inc 7+" work removes the loopback restriction — that is the moment the latent vuln becomes network-reachable.
+
+## Research Findings
+
+> Code investigation 2026-05-25 (`codebase-deep-analyzer`). Full detail in T2 `luciferase_rdr/004-research-1`.
+
+1. **Trust boundary — loopback-only today, but weakly and temporarily.** Bind is `new ServerSocket(port, 50, addr)` at `SocketServer.java:97-98`; loopback is enforced only in `SocketConnectionManager.java:95-99` via **string equality** (`=="127.0.0.1"/"::1"/"localhost"`, `:185-186`) — not `InetAddress.isLoopbackAddress()`, so `127.0.0.2` or an off-loopback DNS name passes. `SocketServer` has no bind guard of its own. `ProcessAddress.java:27-29`: "In Inc 6, only localhost supported. In Inc 7+, remote hosts will be allowed." → the RCE surface is **latent now, network-reachable once Inc 7+ ships.**
+2. **Fireflies gives no usable peer identity.** `FirefliesMembershipView.getCurrentViewId()` (`:83-85`) returns a view-epoch `Digest` (proves a view exists, not who is connecting). The `accept()` loop (`SocketServer.java:107-109`) has no auth gate. Delos `Member` carries a certificate (Delos uses mTLS internally) but nothing maps an inbound socket to a `Member`. Direction C requires net-new integration.
+3. **D-1 filter pattern is directly reusable.** Four sites from PR #88: `render` `ESVODeserializer.java:81-84`, `ESVTDeserializer.java:282-285`, `SparseVoxelIOUtils.java:208-211` (parameterized), `portal` `CollisionEventRecorder.java:285-291`. Shape: `createFilter("<FQTYPE>;java.util.*;java.lang.*;java.time.*;java.math.*;javax.vecmath.*;!*")`. For VoN, allow `TransportVonMessage` + `TransportGhostData` + `TransportNeighborInfo` + `javax.vecmath.*` + JDK + `!*`.
+4. **protobuf migration is feasible.** `TransportVonMessage.java:48-63` is flat (String ids, decomposed `float posX/Y/Z`, `long timestamp`, `Long bucket`, `List<TransportGhostData>`, `List<TransportNeighborInfo>`) — no `Object` fields, no polymorphism. `grpc/.../lucien/ghost.proto` already defines `Point3f`/`EntityBounds`/`SpatialKey`/`GhostElement`/`GhostBatch`, overlapping the GhostSync payload. Latency floor is the 300 ms Fireflies ACK (`SocketTransport.java:198-199`); protobuf cost is sub-µs.
+5. **Bind constraint = the same loopback finding.** Confirms the separate MEDIUM `network-bind` finding: no interface restriction enforced in `SocketServer`, no security TODO present.
+
 ## Open Questions
 
-- Is the VoN socket ever exposed beyond loopback / a trusted cluster subnet in any deployment?
-- Should VoN transport migrate to gRPC entirely (converging with RDR-005), making this moot?
-- Does the Fireflies view already give us a peer-identity primitive we can gate `accept()` on?
+- ~~Is the VoN socket ever exposed beyond loopback / a trusted cluster subnet in any deployment?~~ **Resolved:** Not today (loopback-only, `SocketConnectionManager.java:95-99`), but `ProcessAddress.java:27-29` schedules remote-host exposure for "Inc 7+". The loopback guard is a bypassable string check, not enforced in `SocketServer`.
+- ~~Should VoN transport migrate to gRPC entirely (converging with RDR-005), making this moot?~~ **Resolved (recommended):** Yes, as the structural endgame (Direction B) — `TransportVonMessage` is flat and protobuf-mappable, `grpc` already covers the overlapping ghost types, and latency is dominated by the Fireflies ACK. Sequenced with RDR-005, gated on Inc 7+.
+- ~~Does the Fireflies view already give us a peer-identity primitive we can gate `accept()` on?~~ **Resolved:** No — only a view-epoch `Digest`, no per-peer cryptographic identity wired into the transport. A peer-identity gate is net-new work that belongs to RDR-005's auth model.
 
 ## Decision
 
