@@ -17,9 +17,12 @@
 
 package com.hellblazer.luciferase.simulation.von.transport;
 
+import com.hellblazer.luciferase.simulation.von.Message;
+import com.hellblazer.luciferase.simulation.von.MessageConverter;
 import com.hellblazer.luciferase.simulation.von.TransportGhostData;
 import com.hellblazer.luciferase.simulation.von.TransportNeighborInfo;
 import com.hellblazer.luciferase.simulation.von.TransportVonMessage;
+import javafx.geometry.Point3D;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -32,6 +35,8 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -107,6 +112,27 @@ class VonDeserializationHardeningTest {
                                          "A legitimate TransportVonMessage must pass the filter");
 
         assertEquals(original, decoded, "Round-tripped message must equal the original");
+    }
+
+    /**
+     * Exercises the real producer path: {@link MessageConverter#toTransport} serializes a JoinResponse's
+     * neighbor list onto the wire. The prior implementation used {@code Stream.toList()}, which emits an
+     * {@code ImmutableCollections} type that is NOT on the allow-list — so a legitimate JoinResponse with
+     * neighbors would be rejected by the filter. This guards that regression end-to-end (it would fail
+     * against the unfixed converter).
+     */
+    @Test
+    void filterAcceptsJoinResponseFromConverter() throws IOException {
+        var neighbors = Set.of(
+            new Message.NeighborInfo(UUID.randomUUID(), new Point3D(1, 2, 3), null),
+            new Message.NeighborInfo(UUID.randomUUID(), new Point3D(4, 5, 6), null),
+            new Message.NeighborInfo(UUID.randomUUID(), new Point3D(7, 8, 9), null));
+        var wire = MessageConverter.toTransport(new Message.JoinResponse(UUID.randomUUID(), neighbors, 123L));
+
+        var bytes = serialize(wire);
+        var decoded = assertDoesNotThrow(() -> deserializeFiltered(bytes),
+                                         "A JoinResponse produced by MessageConverter must pass the filter");
+        assertEquals(wire, decoded, "Converter-produced JoinResponse must round-trip through the filter");
     }
 
     /**
