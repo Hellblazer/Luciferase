@@ -348,13 +348,16 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         }
 
         // Step 4: Send async requests via coordinator using reflection.
-        // sendRequestsParallel is private in RefinementCoordinator; we use getDeclaredMethod +
-        // setAccessible so it remains private. Erasure-matched: List.class covers the generic
-        // List<RefinementRequest<Key>> at the call site.
+        // This 4-arg overload is a TEST-ONLY entry point (no production caller); the production round
+        // path is executeRefinementRound -> the private 1-arg identifyRefinementNeeds, which sends via
+        // the exchange directly. Tests pass a coordinator exposing a PUBLIC sendRequestsParallel, so
+        // getMethod (public-only) resolves it — byte-identical to the pre-inversion behavior. We keep
+        // getMethod (not getDeclaredMethod/setAccessible) precisely to preserve that behavior: against a
+        // real RefinementCoordinator (private method) this throws NoSuchMethodException, exactly as before.
+        // Erasure-matched: List.class covers the generic List<RefinementRequest<Key>> at the call site.
         List<java.util.concurrent.CompletableFuture<RefinementResponse<Key, ID, Content>>> futures;
         try {
-            var method = coordinator.getClass().getDeclaredMethod("sendRequestsParallel", List.class);
-            method.setAccessible(true);
+            var method = coordinator.getClass().getMethod("sendRequestsParallel", List.class);
             @SuppressWarnings("unchecked")
             var result = (List<java.util.concurrent.CompletableFuture<RefinementResponse<Key, ID, Content>>>) method.invoke(coordinator, requests);
             futures = result;
@@ -551,6 +554,11 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         int appliedCount = 0;
 
         for (var response : responses) {
+            // Skip empty/sentinel responses (unreachable peers) for symmetry with the convergence-vote
+            // filter. They carry no ghost elements so this is a no-op, but keeps the two paths aligned.
+            if (response.isEmpty()) {
+                continue;
+            }
             // Apply each already-deserialized domain ghost element with per-element guard
             for (var ghost : response.ghostElements()) {
                 try {

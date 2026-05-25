@@ -235,6 +235,40 @@ public class CrossPartitionBalancePhaseResponseHandlingTest {
         assertTrue(allGhosts.stream().anyMatch(g -> "content-3".equals(g.getContent())), "Should have content-3");
     }
 
+    // TEST 7: Per-element guard — one element whose add() throws must not abort the rest of the batch.
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testApplyRefinementResponses_PerElementGuardSkipsThrowingElement() {
+        var poisonKey = new MortonKey(999L, (byte) 3);
+        // A ghost layer that throws when adding the poison element, to exercise the per-element guard.
+        var throwingLayer = new GhostLayer<MortonKey, LongEntityID, String>(GhostType.FACES) {
+            @Override
+            public void addGhostElement(GhostElement<MortonKey, LongEntityID, String> element) {
+                if (element.getSpatialKey().equals(poisonKey)) {
+                    throw new RuntimeException("simulated add failure");
+                }
+                super.addGhostElement(element);
+            }
+        };
+        var localPhase = new CrossPartitionBalancePhase<MortonKey, LongEntityID, String>(
+            exchange, registry, BalanceConfiguration.defaultConfig());
+        localPhase.setForestContext(forest, throwingLayer);
+
+        var good1 = new GhostElement<>(new MortonKey(100L, (byte) 3), new LongEntityID(1L), "g1",
+                                       new Point3f(1, 1, 1), 1, 0L);
+        var poison = new GhostElement<>(poisonKey, new LongEntityID(2L), "bad",
+                                        new Point3f(2, 2, 2), 1, 0L);
+        var good2 = new GhostElement<>(new MortonKey(200L, (byte) 3), new LongEntityID(3L), "g2",
+                                       new Point3f(3, 3, 3), 1, 0L);
+        var response = new RefinementResponse<>(0, 1, 0L, 1, List.of(good1, poison, good2), false,
+                                                System.currentTimeMillis());
+
+        assertDoesNotThrow(() -> localPhase.applyRefinementResponses(response, coordinator),
+            "Per-element guard must not let one throwing element abort the batch");
+        assertEquals(2, throwingLayer.getNumGhostElements(),
+            "The two good elements must be added; the throwing one skipped (per-element guard)");
+    }
+
     // Mock implementations
 
     @FunctionalInterface

@@ -67,6 +67,11 @@ public record RefinementResponse<Key extends SpatialKey<Key>, ID extends EntityI
      * the empty response's {@code needsFurtherRefinement == false} would otherwise prematurely signal
      * convergence when a peer is simply unreachable.
      *
+     * <p>Collision safety: a real peer response cannot match this sentinel. Refinement rounds are
+     * 1-based ({@code roundNumber >= 1}) so a genuine response carries {@code roundNumber != 0}, and a
+     * real responder stamps a non-zero {@code timestamp}; either field alone rules out a false positive.
+     * The full field conjunction is belt-and-suspenders on top of those two load-bearing invariants.
+     *
      * @return true if this is an empty/sentinel response
      */
     public boolean isEmpty() {
