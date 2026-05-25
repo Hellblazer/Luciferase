@@ -249,38 +249,4 @@ public final class ProtobufConverters {
 
         return batch.build();
     }
-
-    /**
-     * Converts a range of ghost elements in a layer to a Protocol Buffer batch.
-     *
-     * @param layer the ghost layer
-     * @param fromKey the starting key (inclusive)
-     * @param toKey the ending key (inclusive)
-     * @param sourceRank the rank of this process
-     * @param sourceTreeId the tree ID of this process
-     * @param contentSerializer the serializer for content
-     * @param <K> the spatial key type
-     * @param <I> the entity ID type
-     * @param <C> the content type
-     * @return the protobuf ghost batch
-     * @throws ContentSerializer.SerializationException if serialization fails
-     */
-    public static <K extends SpatialKey<K>, I extends EntityID, C> GhostBatch ghostLayerToProtobufBatch(
-            GhostLayer<K, I, C> layer, K fromKey, K toKey, int sourceRank, long sourceTreeId,
-            ContentSerializer<C> contentSerializer) throws ContentSerializer.SerializationException {
-
-        var batch = GhostBatch.newBuilder()
-            .setSourceRank(sourceRank)
-            .setSourceTreeId(sourceTreeId)
-            .setTimestamp(Timestamp.newBuilder()
-                .setSeconds(System.currentTimeMillis() / 1000)
-                .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
-                .build());
-
-        for (var element : layer.getGhostElementsInRange(fromKey, toKey)) {
-            batch.addElements(ghostElementToProtobuf(element, contentSerializer));
-        }
-
-        return batch.build();
-    }
 }
