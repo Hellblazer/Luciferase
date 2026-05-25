@@ -2,12 +2,13 @@
 title: "Harden Network Deserialization on the VoN SocketServer"
 id: RDR-004
 type: Security
-status: draft
+status: accepted
 priority: high
 author: hal.hildebrand
-reviewed-by: pending
+reviewed-by: self
 created: 2026-05-24
-related_issues: [Luciferase-irh, RDR-003]
+accepted_date: 2026-05-25
+related_issues: [Luciferase-irh, RDR-003, Luciferase-ah3]
 ---
 
 # RDR-004: Harden Network Deserialization on the VoN SocketServer
@@ -82,8 +83,16 @@ Research showed the three options are not mutually exclusive — they are **laye
 
 ## Decision
 
-_Pending research + gate._
+Accepted 2026-05-25 (gate PASSED, self-reviewed). The layered direction in [Recommended direction](#recommended-direction-pending-gate) is locked:
+
+1. **Direction A now (defense-in-depth), unconditionally.** A narrowed `ObjectInputFilter` allow-list on `SocketServer.java:134` and `SocketClient.java:107-109` (concrete wire types only — no `java.util.*` wildcard, no `javax.vecmath`), with a `PriorityQueue`-rejection test; plus bind hardening at both enforcement points (`SocketServer.start()` `isLoopbackAddress()` guard throwing `IllegalArgumentException`, and `SocketConnectionManager` switched to `InetAddress.getByName(host).isLoopbackAddress()`).
+2. **Direction B (protobuf wire format) is the structural endgame**, sequenced with RDR-005 and converging on one mTLS + cryptographically-verified-identity model — **hard-gated on "Inc 7+" via bead `Luciferase-ah3`**.
+3. **Direction C (bespoke Fireflies peer-identity gate) is rejected** as the primary fix; the peer-identity/auth question lives in RDR-005.
+
+Implementation is sequenced per T2 `luciferase_rdr/tranche-d-research-synthesis-2026-05-25` (Direction A is independent and immediate; Direction B pairs with RDR-005 and gates Inc 7+).
 
 ## Consequences
 
-_Pending._
+- **Positive:** closes the network-deserialization RCE surface immediately (A); establishes the Inc 7+ enforcement gate so the latent vuln cannot silently become reachable; sets up a single peer-identity model across the VoN data path and the gRPC control plane (B + RDR-005).
+- **Cost / risk:** the narrowed allow-list must track any future change to `TransportVonMessage`'s field types (a too-narrow filter breaks legit traffic — covered by tests); Direction B is a larger migration whose timing is bound to RDR-005 and the Inc 7+ milestone.
+- **Follow-on:** `Luciferase-ah3` blocks Inc 7+ loopback removal until A (retained) or B is in place.

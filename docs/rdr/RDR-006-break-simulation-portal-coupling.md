@@ -2,11 +2,12 @@
 title: "Break the simulation→portal Coupling (BubbleBounds JavaFX Pull-In)"
 id: RDR-006
 type: Architecture
-status: draft
+status: accepted
 priority: medium
 author: hal.hildebrand
-reviewed-by: pending
+reviewed-by: self
 created: 2026-05-24
+accepted_date: 2026-05-25
 related_issues: [Luciferase-jvs, Luciferase-7n1, RDR-003]
 ---
 
@@ -88,8 +89,15 @@ Extract the **UI-free RD math kernel** — `toRDG` plus the `vecmath`-only metho
 
 ## Decision
 
-_Pending research + gate._
+Accepted 2026-05-25 (gate PASSED, self-reviewed). Locked:
+
+1. **Extract the UI-free RD math kernel** (`toRDG` + the vecmath methods) as a **standalone class with no `Grid`/`RDGCS`/`javafx.*` inheritance** — the inheritance chain is the JavaFX carrier, so the kernel must be lifted out of it, not subclassed.
+2. **Home:** a new `vecmath`-only geometry module is preferred over `lucien` (which RDR-008 is shrinking); `common` is disqualified (it already pulls `javafx-graphics`). The final home is an implementation-planning pick between those two — both are cycle-free.
+3. **Scope includes the `von`-package `Point3D` usages** (`TransportNeighborInfo.java:22`, `Message.java`), not just `BubbleBounds` — otherwise `mvn dependency:tree -pl simulation` will still show `javafx-*`. The `toCartesian` `Point3D`→`Point3f` change ripples to `BubbleBounds.toCartesian`/`centroid`.
+4. **Fold in the Clock package rename** (`Luciferase-7n1`) and **port the three existing portal RD tests** to the new home.
 
 ## Consequences
 
-_Pending._
+- **Positive:** removes JavaFX from the headless `simulation`/distributed classpath; puts the RD math where RDR-003's FCC work can reach it without UI coupling; corrects the `domain-primitive-in-wrong-module` smell (incl. Clock).
+- **Cost / risk:** an internal API ripple (`Point3D`→`Point3f`) across `BubbleBounds` and the `von` records; if a new module is chosen, one module of overhead. `portal` keeps a thin `Point3D`-typed rendering layer over the kernel.
+- **Watch:** `TransportNeighborInfo` Phase 6B will introduce a `BubbleBounds` wire dependency — at that point it must cross-reference RDR-004's deserialization hardening. **Follow-up:** `common`'s `javafx-graphics` dependency undermines it as a leaf module (separate cleanup).

@@ -2,12 +2,13 @@
 title: "Extract a lucien-distributed Module (gRPC Clients out of lucien)"
 id: RDR-007
 type: Architecture
-status: draft
+status: accepted
 priority: medium
 author: hal.hildebrand
-reviewed-by: pending
+reviewed-by: self
 created: 2026-05-24
-related_issues: [Luciferase-8cv, RDR-005]
+accepted_date: 2026-05-25
+related_issues: [Luciferase-8cv, RDR-005, RDR-008, Luciferase-aos]
 ---
 
 # RDR-007: Extract a lucien-distributed Module (gRPC Clients out of lucien)
@@ -85,8 +86,16 @@ It is sequenced with RDR-005 (gRPC TLS+auth): the auth wiring touches exactly th
 
 ## Decision
 
-_Pending research + gate._
+Accepted 2026-05-25 (gate PASSED, self-reviewed). Locked, phased:
+
+1. **Phase 0 — dependency inversion** (owned by shared bead `Luciferase-aos`; this is RDR-008 Phase 2's prerequisite): lucien-resident interfaces over the gRPC collaborators; sever `AbstractSpatialIndex` `:5183`/`:5195-5196`/`:5214`; replace the balancing-boundary proto message types with domain objects; **and** resolve the `io.grpc.StatusRuntimeException` leak in `DistributedViolationAggregator:23` (move it wholesale or wrap in a domain exception) — proto replacement alone won't drop the `io.grpc` dep. Enumerate all back-references exhaustively (8+ is conservative).
+2. **Phase 1 — create `lucien-distributed`** (`lucien` + `grpc` + `grpc-netty-shaded`); move the 9 transport classes + the `GrpcGhostChannel` impl.
+3. **Phase 2 — re-point + strip** `grpc`/`netty` from `lucien` (consumers are all in `lucien/src/test`; `simulation/pom.xml` is unchanged); verify `mvn dependency:tree -pl lucien` shows no grpc/netty.
+
+Module name: `lucien-distributed`. **Sequencing:** move-then-auth — RDR-005's per-client credential wiring lands after this move; RDR-005's common helpers are independent. RDR-007 Phase 0 (interfaces + sever, the minimum) is **not** the same PR as RDR-008 Phase 2 (full `GhostCoordinator` extraction), which depends on it.
 
 ## Consequences
 
-_Pending._
+- **Positive:** `lucien` becomes a true non-distributed spatial-index core (no gRPC/netty/protobuf compile deps); distributed concerns layer cleanly above it; the dependency inversion also unblocks RDR-008's god-class decomposition.
+- **Cost / risk:** Phase 0 is the hard part — the proto-type and `StatusRuntimeException` leaks mean inversion is more than a file move; under-enumerating back-references would leave `lucien` still depending on `grpc`. Mitigated by the shared `Luciferase-aos` interface contract defined before Phase 1.
+- **Sequencing:** coordinate Phase 0 with RDR-008 via `Luciferase-aos`; do not begin Phase 1 until the interface contract is settled.

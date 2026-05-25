@@ -2,12 +2,13 @@
 title: "Decompose the AbstractSpatialIndex God-Class"
 id: RDR-008
 type: Architecture
-status: draft
+status: accepted
 priority: medium
 author: hal.hildebrand
-reviewed-by: pending
+reviewed-by: self
 created: 2026-05-24
-related_issues: [Luciferase-x5i, RDR-002, RDR-003]
+accepted_date: 2026-05-25
+related_issues: [Luciferase-x5i, RDR-002, RDR-003, RDR-007, Luciferase-aos]
 ---
 
 # RDR-008: Decompose the AbstractSpatialIndex God-Class
@@ -96,8 +97,14 @@ Adopt **decomposition style (iii): core + feature-objects**, because research sh
 
 ## Decision
 
-_Pending research + gate._
+Accepted 2026-05-25 (gate PASSED, self-reviewed). Locked:
+
+1. **Style:** core + feature-objects. `SpatialIndexCore` holds the six-field nucleus; `AbstractSpatialIndex` becomes a façade implementing `SpatialGeometry<Key>` (keeping the ~21 subclass template hooks) **and retaining `protected` access to the nucleus** so subclass overrides keep compiling. Feature objects: `DsocController`, `GhostCoordinator`, `KnnSearcher`, frustum/plane/ray culler, `CollisionEngine`, `EntityLifecycleManager`. Region/range queries and stream accessors stay in the façade.
+2. **Phases** (6, each its own PR behind `/conexus:phase-review-gate`, full lucien suite green + `-Pperformance` parity each): P1 DSOC → P2 distributed-ghost (depends on RDR-007 Phase 0, owned by `Luciferase-aos`; not the same PR) → P3 k-NN → P4 frustum/plane/ray → P5 collision (**includes the scoped `Tetree` collision-override refactor + a Tetree-specific cross-tetrahedra collision test**) → P6 entity-lifecycle.
+3. **Subclasses are genuinely unchanged through P1–P4;** P5 carries a bounded, explicit `Tetree` change. Residual façade ≈70 methods is the acceptance target.
 
 ## Consequences
 
-_Pending._
+- **Positive:** turns a 5.7k-LOC / ~195-method god class into a façade + cohesive collaborators with the concurrency nucleus auditable in one place; the public `SpatialIndex` contract and (through P4) the subclasses are untouched.
+- **Cost / risk:** P5 forces a bounded `Tetree` collision refactor (its overrides reach the nucleus directly) — scoped and test-covered, not free. The façade's `protected` nucleus re-exposure is a partial-bypass risk to police at each phase-review-gate. P2 is gated on RDR-007 Phase 0.
+- **No behavior change** is the invariant; any test/benchmark regression at a phase boundary blocks that phase.

@@ -2,12 +2,13 @@
 title: "gRPC TLS + Authentication Model for Ghost and Balancing Services"
 id: RDR-005
 type: Security
-status: draft
+status: accepted
 priority: high
 author: hal.hildebrand
-reviewed-by: pending
+reviewed-by: self
 created: 2026-05-24
-related_issues: [Luciferase-va5, RDR-004]
+accepted_date: 2026-05-25
+related_issues: [Luciferase-va5, RDR-004, RDR-007, Luciferase-ah3]
 ---
 
 # RDR-005: gRPC TLS + Authentication Model for Ghost and Balancing Services
@@ -92,8 +93,17 @@ The project already has a membership/identity substrate: **Fireflies** (Delos) p
 
 ## Decision
 
-_Pending research + gate._
+Accepted 2026-05-25 (gate PASSED, self-reviewed). The two-layer model in [Recommended direction](#recommended-direction-pending-gate) is locked:
+
+1. **mTLS using Delos member certificates** (token/bearer rejected — weaker binding for more infrastructure). `TlsServerCredentials`/`TlsChannelCredentials` built from the local member's `CertificateWithPrivateKey`, threaded from the `View` construction site.
+2. **Authorization via `FirefliesAuthInterceptor` that cryptographically verifies** the peer cert's signature against the member's KERI-committed public key from the KERL, then checks the member `Digest` is in the current Fireflies view. A DN-UID string match alone is **forbidden** — it is forgeable.
+3. **Helpers (`GrpcCredentialFactory`, `FirefliesAuthInterceptor`) live in `common`** and land independently; **per-client credential wiring waits until after the RDR-007 module move** (`move-then-auth`).
+4. **Test carve-out:** optional credentials constructor param defaulting to `Insecure*Credentials.create()`; in-process tests unaffected.
+
+**Pre-implementation spike (load-bearing, must complete before close):** (a) prove cert reachability by threading `ControlledIdentifierMember`; (b) prove the interceptor's cryptographic verification rejects a forged cert and fix the key-material source (local KERL lookup vs. presenter-key verification).
 
 ## Consequences
 
-_Pending._
+- **Positive:** converts an unauthenticated control plane into a cryptographically peer-verified one reusing the existing KERI/Fireflies identity substrate — no parallel PKI/token issuer; one identity model shared with RDR-004 Direction B.
+- **Cost / risk:** the no-CA model places the entire trust burden on the KERL binding and the interceptor's signature check — the spike must demonstrate forgery rejection before any production wiring. Credential **rotation** is unresolved (Delos has no auto-rotation hook) and is a **hard blocker on Inc 7+** (`Luciferase-ah3`), not on this acceptance.
+- **Sequencing:** gated behind RDR-007's module move for the per-client wiring; common helpers can proceed immediately.
