@@ -95,6 +95,15 @@ public class SocketServer {
      */
     public void start() throws IOException {
         var addr = InetAddress.getByName(bindAddress.hostname());
+        // RDR-004: enforce loopback-only binding on the resolved address. SocketServer otherwise
+        // performs zero loopback check, so direct instantiation is ungated. Removing this restriction
+        // (Inc 7+ remote-host support) is gated on the VoN deserialization hardening landing first
+        // (bead Luciferase-ah3) — see ProcessAddress javadoc.
+        if (!addr.isLoopbackAddress()) {
+            throw new IllegalArgumentException(
+                "SocketServer may bind only to a loopback address (Inc 6 scope; Inc 7+ gated on Luciferase-ah3). Got: "
+                + bindAddress.hostname() + " -> " + addr.getHostAddress());
+        }
         this.serverSocket = new ServerSocket(bindAddress.port(), 50, addr);
         this.running = true;
 
@@ -132,6 +141,7 @@ public class SocketServer {
      */
     private void handleClient(Socket clientSocket) {
         try (var stream = new ObjectInputStream(clientSocket.getInputStream())) {
+            stream.setObjectInputFilter(VonTransportFilter.create());  // RDR-004: reject non-wire types
             while (running) {
                 var message = (TransportVonMessage) stream.readObject();
                 log.debug("Received message type={} from {}", message.type(), clientSocket.getRemoteSocketAddress());

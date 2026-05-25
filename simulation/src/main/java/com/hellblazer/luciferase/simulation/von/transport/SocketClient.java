@@ -105,6 +105,7 @@ public class SocketClient {
      */
     private void receiveMessages() {
         try (var inStream = new ObjectInputStream(socket.getInputStream())) {
+            inStream.setObjectInputFilter(VonTransportFilter.create());  // RDR-004: reject non-wire types
             while (connected) {
                 var message = (TransportVonMessage) inStream.readObject();
                 log.debug("Received message type={} from {}", message.type(), remoteAddress.toUrl());

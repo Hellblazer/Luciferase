@@ -171,10 +171,12 @@ public class MessageConverter {
     // ==================== JoinResponse Conversion ====================
 
     private static TransportVonMessage joinResponseToTransport(Message.JoinResponse msg) {
-        // Convert neighbor set to transport format
+        // Convert neighbor set to transport format. Collect into a concrete ArrayList: Stream.toList()
+        // returns an ImmutableCollections type that is not on the VoN deserialization allow-list
+        // (RDR-004), so it would be rejected on the receiving side.
         var transportNeighbors = msg.neighbors().stream()
             .map(TransportNeighborInfo::from)
-            .toList();
+            .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
 
         return new TransportVonMessage(
             "JoinResponse",
