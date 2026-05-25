@@ -62,6 +62,9 @@ public class GrpcBalanceExchange<Key extends SpatialKey<Key>, ID extends EntityI
     public GrpcBalanceExchange(BalanceCoordinatorClient client,
                                ContentSerializer<Content> contentSerializer,
                                Class<ID> idType) {
+        // The serializer and idType are required: the old CrossPartitionBalancePhase "skip deserialization
+        // when contentSerializer == null" backward-compat path is intentionally NOT carried over — that was
+        // a crutch for incomplete wiring, not a designed-for state. The boundary always deserializes.
         this.client = Objects.requireNonNull(client, "client cannot be null");
         this.contentSerializer = Objects.requireNonNull(contentSerializer, "contentSerializer cannot be null");
         this.idType = Objects.requireNonNull(idType, "idType cannot be null");

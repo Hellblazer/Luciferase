@@ -37,7 +37,11 @@ public interface ViolationExchange<Key extends SpatialKey<Key>> {
      * for bidirectional merge.
      *
      * @param batch the violation batch to send (its {@code responderRank} identifies the partner)
-     * @return the partner's violation batch
+     * @return the partner's violation batch, or {@code null} if no connection to the partner was available.
+     *         Callers MUST null-check: a {@code null} return signals a skipped (not failed) exchange and is
+     *         distinct from an empty batch, mirroring the underlying transport which yields no batch when a
+     *         connection is missing. The aggregator treats {@code null} as graceful degradation (no merge,
+     *         no success/failure tally), an empty batch as a successful exchange with zero violations.
      * @throws BalanceExchangeException if the exchange fails; inspect {@link BalanceExchangeException#isTransient()}
      *                                  and {@link BalanceExchangeException#isTimeout()} for retry classification
      */

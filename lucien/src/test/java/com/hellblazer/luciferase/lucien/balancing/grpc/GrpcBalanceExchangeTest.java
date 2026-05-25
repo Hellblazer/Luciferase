@@ -220,6 +220,62 @@ class GrpcBalanceExchangeTest {
         assertEquals(8, recvViolation.sourceRank());
     }
 
+    @Test
+    void exchangeViolationsSkipsWireViolationWithLevelDifferenceOne() throws Exception {
+        client.violationResponse = com.hellblazer.luciferase.lucien.balancing.proto.ViolationBatch.newBuilder()
+            .setRequesterRank(1).setResponderRank(0).setRoundNumber(0)
+            .addViolations(protoViolation(new MortonKey(1L, (byte) 2), new MortonKey(2L, (byte) 1), 2, 1, 1, 3))
+            .setTimestamp(0L)
+            .build();
+
+        var received = adapter.exchangeViolations(emptyBatch());
+
+        assertTrue(received.violations().isEmpty(),
+                   "A wire violation with levelDifference==1 must be skipped (domain record requires >1)");
+    }
+
+    @Test
+    void exchangeViolationsSkipsWireViolationWithLevelDifferenceZero() throws Exception {
+        client.violationResponse = com.hellblazer.luciferase.lucien.balancing.proto.ViolationBatch.newBuilder()
+            .setRequesterRank(1).setResponderRank(0).setRoundNumber(0)
+            .addViolations(protoViolation(new MortonKey(1L, (byte) 1), new MortonKey(2L, (byte) 1), 1, 1, 0, 3))
+            .setTimestamp(0L)
+            .build();
+
+        var received = adapter.exchangeViolations(emptyBatch());
+
+        assertTrue(received.violations().isEmpty(),
+                   "A wire violation with levelDifference==0 must be skipped");
+    }
+
+    @Test
+    void exchangeViolationsKeepsOnlyValidViolationsInMixedBatch() throws Exception {
+        client.violationResponse = com.hellblazer.luciferase.lucien.balancing.proto.ViolationBatch.newBuilder()
+            .setRequesterRank(1).setResponderRank(0).setRoundNumber(0)
+            .addViolations(protoViolation(new MortonKey(10L, (byte) 5), new MortonKey(11L, (byte) 2), 5, 2, 3, 3))
+            .addViolations(protoViolation(new MortonKey(12L, (byte) 2), new MortonKey(13L, (byte) 1), 2, 1, 1, 3))
+            .addViolations(protoViolation(new MortonKey(14L, (byte) 4), new MortonKey(15L, (byte) 2), 4, 2, 2, 3))
+            .setTimestamp(0L)
+            .build();
+
+        var received = adapter.exchangeViolations(emptyBatch());
+
+        assertEquals(2, received.violations().size(),
+                     "Only the two valid (levelDifference>1) violations survive; the invalid one is skipped, not the batch");
+        assertEquals(3, received.violations().get(0).levelDifference());
+        assertEquals(2, received.violations().get(1).levelDifference());
+    }
+
+    private com.hellblazer.luciferase.lucien.balancing.proto.BalanceViolation protoViolation(
+            MortonKey localKey, MortonKey ghostKey, int localLevel, int ghostLevel, int levelDiff, int sourceRank) {
+        return BalanceViolation.newBuilder()
+            .setLocalKey(ProtobufConverters.spatialKeyToProtobuf(localKey))
+            .setGhostKey(ProtobufConverters.spatialKeyToProtobuf(ghostKey))
+            .setLocalLevel(localLevel).setGhostLevel(ghostLevel)
+            .setLevelDifference(levelDiff).setSourceRank(sourceRank)
+            .build();
+    }
+
     private ViolationBatch<MortonKey> emptyBatch() {
         return new ViolationBatch<>(0, 1, 0, List.of(), 0L);
     }
