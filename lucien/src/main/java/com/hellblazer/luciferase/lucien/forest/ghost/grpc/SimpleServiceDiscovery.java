@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
+import com.hellblazer.luciferase.lucien.forest.ghost.ServiceDiscovery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +34,7 @@ import java.util.Objects;
  * 
  * @author Hal Hildebrand
  */
-public class SimpleServiceDiscovery implements GhostServiceClient.ServiceDiscovery {
+public class SimpleServiceDiscovery implements ServiceDiscovery {
     
     private static final Logger log = LoggerFactory.getLogger(SimpleServiceDiscovery.class);
     

@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
+import com.hellblazer.luciferase.lucien.forest.ghost.ServiceDiscovery;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
@@ -65,7 +66,7 @@ public class GhostCommunicationManager<Key extends SpatialKey<Key>, ID extends E
     private final Server server;
     private final GhostExchangeServiceImpl<Key, ID, Content> serviceImpl;
     private final GhostServiceClient<Key, ID, Content> client;
-    private final GhostServiceClient.ServiceDiscovery serviceDiscovery;
+    private final ServiceDiscovery serviceDiscovery;
     
     // Ghost layer management
     private final Map<Long, GhostLayer<Key, ID, Content>> ghostLayers;
@@ -86,7 +87,7 @@ public class GhostCommunicationManager<Key extends SpatialKey<Key>, ID extends E
                                    int port,
                                    ContentSerializer<Content> contentSerializer,
                                    Class<ID> entityIdClass,
-                                   GhostServiceClient.ServiceDiscovery serviceDiscovery) {
+                                   ServiceDiscovery serviceDiscovery) {
         this.currentRank = currentRank;
         this.bindAddress = bindAddress;
         this.port = port;
@@ -385,7 +386,7 @@ public class GhostCommunicationManager<Key extends SpatialKey<Key>, ID extends E
      * 
      * @return the service discovery
      */
-    public GhostServiceClient.ServiceDiscovery getServiceDiscovery() {
+    public ServiceDiscovery getServiceDiscovery() {
         return serviceDiscovery;
     }
     

@@ -21,8 +21,6 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
 import com.hellblazer.luciferase.lucien.balancing.fault.GhostSyncCallback;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostCommunicationManager;
-import com.hellblazer.luciferase.lucien.forest.ghost.grpc.SimpleServiceDiscovery;
 import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,11 +37,11 @@ import java.util.stream.Collectors;
  * Manages distributed ghost layers across multiple processes.
  *
  * <p>This class coordinates ghost element creation, synchronization, and updates
- * between distributed spatial index processes. It uses {@link GrpcGhostChannel}
+ * between distributed spatial index processes. It uses {@link GhostChannel}
  * for batched communication and integrates with the local ghost boundary detection.
  *
  * <p>Simplified from original implementation by delegating communication to
- * {@link GrpcGhostChannel}, reducing LOC from 430 to ~320.
+ * {@link GhostChannel}, reducing LOC from 430 to ~320.
  *
  * @param <Key> the type of spatial key used by the spatial index
  * @param <ID> the type of entity identifier
@@ -56,7 +54,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
     private static final Logger log = LoggerFactory.getLogger(DistributedGhostManager.class);
 
     private final AbstractSpatialIndex<Key, ID, Content> spatialIndex;
-    private final GrpcGhostChannel<Key, ID, Content> ghostChannel;
+    private final GhostChannel<Key, ID, Content> ghostChannel;
     private final GhostBoundaryDetector<Key, ID, Content> localGhostManager;
 
     // Configuration
@@ -83,7 +81,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
      * @param localGhostManager the local ghost manager
      */
     public DistributedGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
-                                  GrpcGhostChannel<Key, ID, Content> ghostChannel,
+                                  GhostChannel<Key, ID, Content> ghostChannel,
                                   GhostBoundaryDetector<Key, ID, Content> localGhostManager) {
         this.spatialIndex = Objects.requireNonNull(spatialIndex);
         this.ghostChannel = Objects.requireNonNull(ghostChannel);
@@ -112,7 +110,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
      *
      * @param serviceDiscovery the service discovery to find other processes
      */
-    public void initialize(com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostServiceClient.ServiceDiscovery serviceDiscovery) {
+    public void initialize(ServiceDiscovery serviceDiscovery) {
         log.info("Initializing distributed ghost layer for rank {}", currentRank);
 
         // Discover other processes

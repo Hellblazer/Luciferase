@@ -20,7 +20,6 @@ package com.hellblazer.luciferase.lucien.forest.ghost;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostCommunicationManager;
-import com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,7 +60,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author Hal Hildebrand
  */
-public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
+public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+    implements GhostChannel<Key, ID, Content> {
 
     private static final Logger log = LoggerFactory.getLogger(GrpcGhostChannel.class);
 
@@ -120,6 +120,7 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
      * @param targetRank the rank of the target process
      * @param ghostElement the ghost element to send
      */
+    @Override
     public void queueGhost(int targetRank, GhostElement<Key, ID, Content> ghostElement) {
         if (targetRank == currentRank) {
             log.debug("Skipping ghost queue for self (rank {})", currentRank);
@@ -199,6 +200,7 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
      * @param targetRank the rank of the target process
      * @return CompletableFuture that completes when flush finishes
      */
+    @Override
     public CompletableFuture<Void> flushToTarget(int targetRank) {
         var queue = queuedGhosts.remove(targetRank);
         if (queue == null || queue.isEmpty()) {
@@ -224,6 +226,7 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
      *
      * @return the total number of queued ghosts
      */
+    @Override
     public int getTotalPendingCount() {
         return queuedGhosts.values().stream()
                           .mapToInt(List::size)
@@ -242,6 +245,7 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
     /**
      * Clear all queued ghosts without sending them.
      */
+    @Override
     public void clear() {
         queuedGhosts.clear();
         log.debug("Cleared all queued ghosts");
@@ -252,6 +256,7 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
      *
      * @return the current process rank
      */
+    @Override
     public int getCurrentRank() {
         return currentRank;
     }
@@ -261,6 +266,7 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
      *
      * @return the tree identifier
      */
+    @Override
     public long getTreeId() {
         return treeId;
     }
@@ -270,6 +276,7 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
      *
      * @return the ghost type
      */
+    @Override
     public GhostType getGhostType() {
         return ghostType;
     }
