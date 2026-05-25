@@ -403,47 +403,6 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
     }
     
     /**
-     * Process a ghost element received from a remote process via gRPC.
-     */
-    private void processReceivedGhostElement(com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement ghostElementProto) {
-        try {
-            // Convert protobuf ghost element to local representation
-            var spatialKey = com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters.spatialKeyFromProtobuf(ghostElementProto.getSpatialKey());
-            
-            // Convert protobuf position to javax.vecmath.Point3f
-            var protoPos = ghostElementProto.getPosition();
-            var position = new Point3f(protoPos.getX(), protoPos.getY(), protoPos.getZ());
-            
-            // For now, we create placeholder ID and Content since we can't deserialize them generically
-            // In a real implementation, these would be properly deserialized from protobuf
-            @SuppressWarnings("unchecked")
-            ID placeholderEntityId = (ID) new com.hellblazer.luciferase.lucien.entity.UUIDEntityID(java.util.UUID.fromString(ghostElementProto.getEntityId()));
-            
-            @SuppressWarnings("unchecked") 
-            Content placeholderContent = (Content) ghostElementProto.getContent().toByteArray();
-            
-            // Create a proper ghost element with the received data
-            var ghostElement = new GhostElement<Key, ID, Content>(
-                (Key) spatialKey,
-                placeholderEntityId,
-                placeholderContent,
-                position,
-                ghostElementProto.getOwnerRank(),
-                treeId
-            );
-            
-            // Add to ghost layer
-            ghostLayer.addGhostElement(ghostElement);
-            
-            log.trace("Processed ghost element with key: {} from rank: {}", 
-                     spatialKey, ghostElementProto.getOwnerRank());
-                     
-        } catch (Exception e) {
-            log.error("Error processing received ghost element: {}", e.getMessage(), e);
-        }
-    }
-    
-    /**
      * Create a placeholder ghost element for local testing without gRPC.
      */
     private void createPlaceholderGhostElement(Key neighborKey, int ownerRank) {
