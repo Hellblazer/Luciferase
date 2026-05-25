@@ -19,10 +19,17 @@ package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.entity.UUIDEntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostExchange;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
 import com.hellblazer.luciferase.lucien.forest.ghost.ServiceDiscovery;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
+
+import javax.vecmath.Point3f;
+import java.util.ArrayList;
+import java.util.UUID;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Status;
@@ -55,7 +62,8 @@ import java.util.function.Consumer;
  * 
  * @author Hal Hildebrand
  */
-public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
+public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+        implements GhostExchange<Key, ID, Content> {
     
     private static final Logger log = LoggerFactory.getLogger(GhostServiceClient.class);
     
@@ -161,15 +169,61 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
     }
     
     /**
+     * Requests ghost elements from a remote process, returning domain objects.
+     *
+     * <p>This is the {@link GhostExchange} implementation. It calls the proto-returning
+     * {@link #requestGhosts} internally and converts each element verbatim — preserving the
+     * same stub conversion logic that lived in {@code ElementGhostManager.processReceivedGhostElement}
+     * before Inc2b. Per-element try/catch is preserved: one malformed proto logs and continues,
+     * it does NOT abort the whole batch.
+     *
+     * @param targetRank   the rank of the target process
+     * @param treeId       the tree ID to request ghosts for (threaded verbatim into each GhostElement)
+     * @param ghostType    the type of ghosts to request
+     * @param boundaryKeys specific boundary keys to request
+     * @return list of domain ghost elements, or {@code null} if the batch request fails
+     */
+    @Override
+    public List<GhostElement<Key, ID, Content>> requestGhostElements(
+            int targetRank, long treeId, GhostType ghostType, List<Key> boundaryKeys) {
+        var batch = requestGhosts(targetRank, treeId, ghostType, boundaryKeys);
+        if (batch == null) {
+            // Preserve old null-batch path so caller's "Failed to fetch" log fires identically.
+            return null;
+        }
+        var elements = new ArrayList<GhostElement<Key, ID, Content>>();
+        for (var proto : batch.getElementsList()) {
+            // PER-ELEMENT try/catch is LOAD-BEARING: verbatim relocation of the guard that
+            // was in ElementGhostManager.processReceivedGhostElement. One malformed proto
+            // must NOT abort the whole batch — log and continue.
+            try {
+                var spatialKey = ProtobufConverters.spatialKeyFromProtobuf(proto.getSpatialKey());
+                var p = proto.getPosition();
+                var position = new Point3f(p.getX(), p.getY(), p.getZ());
+                @SuppressWarnings("unchecked")
+                ID id = (ID) new UUIDEntityID(UUID.fromString(proto.getEntityId()));
+                @SuppressWarnings("unchecked")
+                Content content = (Content) proto.getContent().toByteArray();
+                elements.add(new GhostElement<>(
+                        (Key) spatialKey, id, content, position,
+                        proto.getOwnerRank(), treeId)); // treeId: PASSED arg, not client state
+            } catch (Exception e) {
+                log.error("Error processing received ghost element: {}", e.getMessage(), e);
+            }
+        }
+        return elements;
+    }
+
+    /**
      * Requests ghost elements asynchronously using virtual threads.
-     * 
+     *
      * @param targetRank the rank of the target process
      * @param treeId the tree ID to request ghosts for
      * @param ghostType the type of ghosts to request
      * @param boundaryKeys specific boundary keys to request (optional)
      * @return CompletableFuture with the ghost batch response
      */
-    public CompletableFuture<GhostBatch> requestGhostsAsync(int targetRank, long treeId, 
+    public CompletableFuture<GhostBatch> requestGhostsAsync(int targetRank, long treeId,
                                                            com.hellblazer.luciferase.lucien.forest.ghost.GhostType ghostType, List<Key> boundaryKeys) {
         return CompletableFuture.supplyAsync(() -> 
             requestGhosts(targetRank, treeId, ghostType, boundaryKeys), virtualExecutor);
