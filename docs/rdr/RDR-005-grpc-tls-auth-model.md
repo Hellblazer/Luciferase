@@ -48,7 +48,7 @@ The project already has a membership/identity substrate: **Fireflies** (Delos) p
 
 ## Approach
 
-> To be completed in `/nx:rdr-research` + design. Initial candidate directions:
+> Candidate directions below; resolved by research (see [Research Findings](#research-findings)) into the recommendation that follows.
 
 1. **Inventory the gRPC surface** — enumerate every server/client builder and RPC, and which run cross-process vs in-process (`InProcessServerBuilder` test usages should stay plaintext).
 2. **Auth model decision** — primary candidates:
@@ -59,12 +59,36 @@ The project already has a membership/identity substrate: **Fireflies** (Delos) p
 4. **In-process / test carve-out** — keep `InProcessServerBuilder` and CI plaintext for tests without weakening production (profile/config gate, not code-branch on an env var).
 5. **Sequencing with RDR-007** — land the auth wiring so the lucien→lucien-distributed module split doesn't have to redo it.
 
+### Recommended direction (pending gate)
+
+**Two-layer model: mTLS using Delos member certificates at the transport layer + a Fireflies-view `ServerInterceptor` for authorization.** Reject the token/bearer option — it requires a net-new issuer and rotation infrastructure for *weaker* peer binding, when the project already ships a certificate-backed identity substrate.
+
+- **Transport layer (mTLS).** Build `TlsServerCredentials` / `TlsChannelCredentials` from the local member's `CertificateWithPrivateKey` (Delos), requiring client certificates. **There is no shared CA**, so trust is *not* CA-pinning: use a permissive member-cert validator at the TLS layer (accept structurally valid member certs) and do the real trust decision at the interceptor.
+- **Authorization layer (`FirefliesAuthInterceptor`).** Extract the peer cert from `Grpc.TRANSPORT_ATTR_SSL_SESSION`, map it to a member id via the existing static bridge `Member.getMemberIdentifier(X509Certificate)` → `Digest`, and reject the call unless that id is in the *current* Fireflies view (`FirefliesMembershipView.getMembers()`). Peer identity = cluster member, exactly the binding the problem statement requires.
+- **Test carve-out (no env-var branch).** Add an optional `ChannelCredentials` / `ServerCredentials` constructor parameter to each client/manager, defaulting to `InsecureChannelCredentials.create()` / `InsecureServerCredentials.create()`. In-process balancing tests are unaffected; only `CommitteeP2PIntegrationTest` (a real Netty test) needs the cred gate.
+- **Placement (RDR-007-proof).** Put the shared `GrpcCredentialFactory` + `FirefliesAuthInterceptor` in the **`common`** module (already transitive to both `lucien` and `simulation`) and land them **before** RDR-007 moves the ghost/balancing clients to `lucien-distributed`, so the auth wiring is carried across once rather than redone.
+- **Convergence with RDR-004.** If VoN transport migrates to gRPC (RDR-004 Direction B), it inherits this exact mTLS + interceptor model — **one peer-identity mechanism across both the VoN data path and the control plane.** Strong reason to pair RDR-004-B and RDR-005.
+
+> **Pre-implementation spike required** before locking the Decision: (a) prove the cert-reachability workaround — thread the `ControlledIdentifierMember` from the `View` construction site to the credential factory, since `View.Node` does not expose it publicly; (b) prove the no-CA TLS validator that accepts any structurally-valid member cert and defers trust to the interceptor. Credential **rotation** is also open (Delos provisions certs on demand with caller-chosen validity and no auto-rotation hook).
+
+## Research Findings
+
+> Code + dependency investigation 2026-05-25 (`codebase-deep-analyzer`, Delos inspected via Serena `search_deps`). Full detail in T2 `luciferase_rdr/005-research-1`.
+
+1. **gRPC surface is entirely cross-process in production.** Servers: `GhostCommunicationManager.java:107` (`ServerBuilder.forPort`), `GrpcBubbleNetworkChannel.java:84` (`NettyServerBuilder.forPort`). Clients (all `.usePlaintext()`): `GhostServiceClient.java:378`, `BalanceCoordinatorClient.java:460`, `GrpcBubbleNetworkChannel.java:348`. `BalanceCoordinatorServer` has no production builder (test-only in-process). All production builders need real credentials.
+2. **Delos cert + private key exist but aren't reachable through `View.Node`'s public API.** `ControlledIdentifierMember.getCertificateWithPrivateKey(Instant, Duration, SignatureAlgorithm)` → `CertificateWithPrivateKey.getX509Certificate()` / `getPrivateKey()`, but `View.Node.wrapped` (the `ControlledIdentifierMember`) is private with no getter. Workaround without a Delos change: retain the `ControlledIdentifierMember` reference at `View` construction and feed it to a credential factory. **No shared CA** — certs are provisioned on demand via KERI/KERL; trust must be "cert DN UID → member id in view," not CA pinning.
+3. **View-based authorization is feasible and the bridge already exists.** `FirefliesMembershipView.getMembers()` (`:62`) yields the member set (`Member.getId()` → `Digest`); the static `Member.getMemberIdentifier(X509Certificate)` extracts a `Digest` from the cert's X500 DN UID. A `ServerInterceptor` ties them together once mTLS supplies a peer cert. Not yet implemented anywhere.
+4. **Test carve-out is clean.** In-process balancing tests (`BalanceCoordinatorIntegrationTest.java:60-68`, `Phase4E2ETest.java:561-565`) need zero change; only `CommitteeP2PIntegrationTest.java:75,93` (real Netty) needs the cred gate. An optional credentials constructor param defaulting to insecure gates production vs test without an env-var code branch.
+5. **RDR-007 split is known.** `GhostServiceClient`, `GhostCommunicationManager`, `BalanceCoordinatorClient`, `BalanceCoordinatorServer` move to `lucien-distributed`; `GrpcBubbleNetworkChannel` and `CommitteeServiceImpl` stay in `simulation`. Shared auth helpers belong in `common` to survive the move.
+
 ## Open Questions
 
-- Can Delos/Fireflies member certificates be used directly as gRPC `TlsChannelCredentials` / `TlsServerCredentials`?
-- Is there a deployment where these services are reachable outside a trusted subnet (raising urgency)?
-- Should the bubble network channel (simulation) and the ghost/balancing channels (lucien) share one credential mechanism, or do they have different trust boundaries?
-- How do tests run without real certs — in-process transport, a dev credential, or a test profile?
+- ~~Can Delos/Fireflies member certificates be used directly as gRPC `TlsChannelCredentials` / `TlsServerCredentials`?~~ **Resolved (with a caveat):** Yes — `ControlledIdentifierMember.getCertificateWithPrivateKey(...)` yields an `X509Certificate` + `PrivateKey`. Caveat: it isn't reachable through `View.Node`'s public API (private `wrapped` field), so the reference must be threaded from the `View` construction site. Spike to confirm.
+- ~~Is there a deployment where these services are reachable outside a trusted subnet (raising urgency)?~~ **Partially resolved:** Not yet found in code, but the control plane is unauthenticated *regardless* of subnet — any process reaching the port can call ghost/balance RPCs. Urgency is intrinsic, not deployment-gated. (Mirrors RDR-004's "Inc 7+" exposure trajectory.)
+- ~~Should the bubble network channel (simulation) and the ghost/balancing channels (lucien) share one credential mechanism, or do they have different trust boundaries?~~ **Resolved:** Share one mechanism — all are cross-process cluster RPCs whose peers are Fireflies members. Shared helpers (`GrpcCredentialFactory` + `FirefliesAuthInterceptor`) live in `common`.
+- ~~How do tests run without real certs — in-process transport, a dev credential, or a test profile?~~ **Resolved:** Optional credentials constructor param defaulting to `Insecure*Credentials.create()`. In-process tests unaffected; only `CommitteeP2PIntegrationTest` (real Netty) needs the gate. No env-var branch.
+
+**New open question from research:** Credential **rotation** — Delos provisions certs on demand with caller-chosen validity and exposes no auto-rotation hook. The rotation strategy (validity window, re-provision trigger, channel rebuild on rotation) must be settled before implementation.
 
 ## Decision
 
