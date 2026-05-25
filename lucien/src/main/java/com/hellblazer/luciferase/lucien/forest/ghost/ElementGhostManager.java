@@ -379,7 +379,12 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
 
                 if (elements != null) {
                     for (var e : elements) {
-                        ghostLayer.addGhostElement(e);
+                        // Guard each add so one bad element doesn't abort the rest of the batch.
+                        try {
+                            ghostLayer.addGhostElement(e);
+                        } catch (Exception addEx) {
+                            log.error("Error processing received ghost element: {}", addEx.getMessage(), addEx);
+                        }
                     }
                     log.debug("Successfully fetched ghost element for neighbor key: {} from owner: {}",
                              neighborKey, ownerRank);
