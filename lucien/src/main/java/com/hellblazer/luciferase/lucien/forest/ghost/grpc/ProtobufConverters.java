@@ -18,12 +18,16 @@
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.Timestamp;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.SpatialKeySerde;
 import com.hellblazer.luciferase.lucien.SpatialKeySerdeRegistry;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.UUIDEntityID;
+import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
 
 import javax.vecmath.Point3f;
@@ -141,7 +145,7 @@ public final class ProtobufConverters {
     
     /**
      * Converts an EntityID to string representation.
-     * 
+     *
      * @param entityId the entity ID to convert
      * @return the string representation
      */
@@ -154,5 +158,129 @@ public final class ProtobufConverters {
             // Fallback to toString for other implementations
             return entityId.toString();
         }
+    }
+
+    /**
+     * Converts a ghost element to its Protocol Buffer representation.
+     *
+     * @param element the ghost element to convert
+     * @param contentSerializer the serializer for the content type
+     * @param <K> the spatial key type
+     * @param <I> the entity ID type
+     * @param <C> the content type
+     * @return the protobuf representation
+     * @throws ContentSerializer.SerializationException if content serialization fails
+     */
+    public static <K extends SpatialKey<K>, I extends EntityID, C>
+            com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement ghostElementToProtobuf(
+            GhostElement<K, I, C> element,
+            ContentSerializer<C> contentSerializer) throws ContentSerializer.SerializationException {
+
+        var builder = com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement.newBuilder()
+            .setSpatialKey(spatialKeyToProtobuf(element.getSpatialKey()))
+            .setEntityId(entityIdToString(element.getEntityId()))
+            .setContent(contentSerializer.serialize(element.getContent()))
+            .setPosition(point3fToProtobuf(element.getPosition()))
+            .setOwnerRank(element.getOwnerRank())
+            .setGlobalTreeId(element.getGlobalTreeId())
+            .setTimestamp(Timestamp.newBuilder()
+                .setSeconds(System.currentTimeMillis() / 1000)
+                .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                .build());
+
+        return builder.build();
+    }
+
+    /**
+     * Creates a ghost element from its Protocol Buffer representation.
+     *
+     * @param proto the protobuf message
+     * @param contentSerializer the serializer for the content type
+     * @param entityIdClass the class for entity IDs
+     * @param <K> the spatial key type
+     * @param <I> the entity ID type
+     * @param <C> the content type
+     * @return the ghost element
+     * @throws ContentSerializer.SerializationException if content deserialization fails
+     */
+    @SuppressWarnings("unchecked")
+    public static <K extends SpatialKey<K>, I extends EntityID, C> GhostElement<K, I, C> ghostElementFromProtobuf(
+            com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement proto,
+            ContentSerializer<C> contentSerializer,
+            Class<I> entityIdClass) throws ContentSerializer.SerializationException {
+
+        var spatialKey = (K) spatialKeyFromProtobuf(proto.getSpatialKey());
+        var entityId = createEntityId(proto.getEntityId(), entityIdClass);
+        var content = contentSerializer.deserialize(proto.getContent());
+        var position = point3fFromProtobuf(proto.getPosition());
+
+        return new GhostElement<>(spatialKey, entityId, content, position,
+                                  proto.getOwnerRank(), proto.getGlobalTreeId());
+    }
+
+    /**
+     * Converts all ghost elements in a layer to a Protocol Buffer batch.
+     *
+     * @param layer the ghost layer
+     * @param sourceRank the rank of this process
+     * @param sourceTreeId the tree ID of this process
+     * @param contentSerializer the serializer for content
+     * @param <K> the spatial key type
+     * @param <I> the entity ID type
+     * @param <C> the content type
+     * @return the protobuf ghost batch
+     * @throws ContentSerializer.SerializationException if serialization fails
+     */
+    public static <K extends SpatialKey<K>, I extends EntityID, C> GhostBatch ghostLayerToProtobufBatch(
+            GhostLayer<K, I, C> layer, int sourceRank, long sourceTreeId,
+            ContentSerializer<C> contentSerializer) throws ContentSerializer.SerializationException {
+
+        var batch = GhostBatch.newBuilder()
+            .setSourceRank(sourceRank)
+            .setSourceTreeId(sourceTreeId)
+            .setTimestamp(Timestamp.newBuilder()
+                .setSeconds(System.currentTimeMillis() / 1000)
+                .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                .build());
+
+        for (var element : layer.getAllGhostElements()) {
+            batch.addElements(ghostElementToProtobuf(element, contentSerializer));
+        }
+
+        return batch.build();
+    }
+
+    /**
+     * Converts a range of ghost elements in a layer to a Protocol Buffer batch.
+     *
+     * @param layer the ghost layer
+     * @param fromKey the starting key (inclusive)
+     * @param toKey the ending key (inclusive)
+     * @param sourceRank the rank of this process
+     * @param sourceTreeId the tree ID of this process
+     * @param contentSerializer the serializer for content
+     * @param <K> the spatial key type
+     * @param <I> the entity ID type
+     * @param <C> the content type
+     * @return the protobuf ghost batch
+     * @throws ContentSerializer.SerializationException if serialization fails
+     */
+    public static <K extends SpatialKey<K>, I extends EntityID, C> GhostBatch ghostLayerToProtobufBatch(
+            GhostLayer<K, I, C> layer, K fromKey, K toKey, int sourceRank, long sourceTreeId,
+            ContentSerializer<C> contentSerializer) throws ContentSerializer.SerializationException {
+
+        var batch = GhostBatch.newBuilder()
+            .setSourceRank(sourceRank)
+            .setSourceTreeId(sourceTreeId)
+            .setTimestamp(Timestamp.newBuilder()
+                .setSeconds(System.currentTimeMillis() / 1000)
+                .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                .build());
+
+        for (var element : layer.getGhostElementsInRange(fromKey, toKey)) {
+            batch.addElements(ghostElementToProtobuf(element, contentSerializer));
+        }
+
+        return batch.build();
     }
 }
