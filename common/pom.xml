@@ -19,6 +19,13 @@
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-graphics</artifactId>
         </dependency>
+        <!-- grpc-api only (pure interfaces: credentials, ServerInterceptor) — no netty/Delos in the leaf.
+             RDR-005: the gRPC auth mechanism lives here; the Delos/Fireflies verification policy is
+             injected via PeerVerifier from modules where Delos already lives. -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-api</artifactId>
+        </dependency>
 
         <!-- Test Only Dependencies Below This Line-->
         <dependency>
