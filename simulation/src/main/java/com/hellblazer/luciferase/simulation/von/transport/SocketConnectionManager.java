@@ -22,6 +22,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -174,15 +176,22 @@ public class SocketConnectionManager implements ConnectionManager {
     }
 
     /**
-     * Check if a hostname is a loopback address.
+     * Check if a hostname resolves to a loopback address.
      * <p>
-     * Used for Inc 6 scope enforcement. Accepts IPv4 (127.0.0.1),
-     * IPv6 (::1), and DNS name (localhost).
+     * RDR-004: enforces Inc 6 loopback-only scope on the <em>resolved</em> address rather than a
+     * string match, so a name that resolves off-loopback no longer passes. Removing this restriction
+     * for Inc 7+ remote-host support is gated on the VoN deserialization hardening landing first
+     * (bead Luciferase-ah3). An unresolvable host is treated as non-loopback (rejected).
      *
      * @param hostname Hostname to check
-     * @return true if hostname is 127.0.0.1, ::1, or localhost
+     * @return true if {@code hostname} resolves to a loopback address
      */
     private boolean isLoopback(String hostname) {
-        return hostname.equals("127.0.0.1") || hostname.equals("::1") || hostname.equals("localhost");
+        try {
+            return InetAddress.getByName(hostname).isLoopbackAddress();
+        } catch (UnknownHostException e) {
+            log.warn("Cannot resolve host '{}' for loopback check; treating as non-loopback", hostname);
+            return false;
+        }
     }
 }
