@@ -76,6 +76,12 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
+                <artifactId>lucien</artifactId>
+                <version>${project.version}</version>
+                <type>test-jar</type>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
                 <version>${project.version}</version>
                 <artifactId>sentry</artifactId>
             </dependency>
