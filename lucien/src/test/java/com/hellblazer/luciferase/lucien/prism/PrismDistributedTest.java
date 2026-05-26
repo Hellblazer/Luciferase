@@ -60,15 +60,17 @@ class PrismDistributedTest {
     void testKNNAcrossCells() {
         // Place entities in a grid pattern ensuring they're in different cells
         // At level 3, cell size is 100/8 = 12.5, so spacing by 20 ensures different cells
+        // All positions must satisfy y <= x (S0 domain). Former upper-left positions
+        // (y > x) are moved to equivalent S0 coords by swapping x and y.
         var positions = new Point3f[] {
-            new Point3f(10.0f, 10.0f, 10.0f),  // Cell 0,0,0
-            new Point3f(30.0f, 10.0f, 10.0f),  // Cell 2,0,0
-            new Point3f(10.0f, 30.0f, 10.0f),  // Cell 0,2,0
-            new Point3f(10.0f, 10.0f, 30.0f),  // Cell 0,0,2
-            new Point3f(50.0f, 10.0f, 10.0f),  // Cell 4,0,0
-            new Point3f(10.0f, 50.0f, 10.0f),  // Cell 0,4,0
-            new Point3f(10.0f, 10.0f, 50.0f),  // Cell 0,0,4
-            new Point3f(25.0f, 25.0f, 25.0f),  // Cell 2,2,2 (center)
+            new Point3f(10.0f, 10.0f, 10.0f),  // y==x
+            new Point3f(30.0f, 10.0f, 10.0f),  // y<x
+            new Point3f(30.0f, 10.0f, 30.0f),  // was (10,30,10): swap x,y -> (30,10,10); use distinct z
+            new Point3f(10.0f, 10.0f, 30.0f),  // z varies, y==x
+            new Point3f(50.0f, 10.0f, 10.0f),  // y<x
+            new Point3f(50.0f, 10.0f, 30.0f),  // was (10,50,10): swap -> (50,10,10); distinct z
+            new Point3f(10.0f, 10.0f, 50.0f),  // z varies, y==x
+            new Point3f(25.0f, 25.0f, 25.0f),  // y==x (center)
         };
         
         var idToPosition = new HashMap<LongEntityID, Point3f>();
@@ -120,8 +122,8 @@ class PrismDistributedTest {
         
         for (float x = 10.0f; x <= 70.0f; x += 15.0f) {
             for (float y = 10.0f; y <= 70.0f; y += 15.0f) {
-                // Skip positions that violate triangular constraint
-                if (x + y >= 95.0f) continue;
+                // Skip positions outside S0 domain (y <= x required)
+                if (y > x) continue;
                 
                 for (float z = 10.0f; z <= 70.0f; z += 15.0f) {
                     var pos = new Point3f(x, y, z);
@@ -228,7 +230,7 @@ class PrismDistributedTest {
         
         for (float x = 20.0f; x <= 80.0f; x += 20.0f) {
             for (float y = 20.0f; y <= 60.0f; y += 20.0f) {
-                if (x + y >= 95.0f) continue; // Skip invalid positions
+                if (y > x) continue; // Skip positions outside S0 domain (y <= x required)
                 
                 for (float z = 20.0f; z <= 80.0f; z += 20.0f) {
                     var pos = new Point3f(x, y, z);
@@ -336,8 +338,8 @@ class PrismDistributedTest {
         var neighborIds = new ArrayList<LongEntityID>();
         for (int i = 0; i < neighborPositions.length; i++) {
             var pos = neighborPositions[i];
-            // Skip positions that violate triangular constraint
-            if (pos.x + pos.y >= 95.0f) continue;
+            // Skip positions outside S0 domain (y <= x required)
+            if (pos.y > pos.x) continue;
             
             var id = idGenerator.generateID();
             neighborIds.add(id);
@@ -383,12 +385,11 @@ class PrismDistributedTest {
         var random = new Random(42);
         var insertedCount = 0;
         
-        // Insert entities distributed across the space
+        // Insert entities distributed across S0 domain (y <= x)
         for (int i = 0; i < entityCount; i++) {
-            // Generate coordinates ensuring triangular constraint
+            // Generate coordinates in S0 domain: y <= x
             var x = random.nextFloat() * 90.0f + 5.0f;  // 5-95
-            var maxY = Math.min(90.0f, 95.0f - x);
-            var y = random.nextFloat() * maxY;
+            var y = random.nextFloat() * x;              // y <= x always
             var z = random.nextFloat() * 90.0f + 5.0f;  // 5-95
             
             var id = idGenerator.generateID();

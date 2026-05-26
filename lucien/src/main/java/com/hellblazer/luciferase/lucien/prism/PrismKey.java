@@ -45,6 +45,10 @@ public final class PrismKey implements SpatialKey<PrismKey> {
     
     private final Triangle triangle;    // Horizontal (x,y) component
     private final Line line;            // Vertical (z) component
+
+    // Lazily-computed cache of consecutiveIndex() (immutable key; deterministic; volatile to
+    // avoid a torn long read). compareTo() is on the ConcurrentSkipListMap hot path. -1 sentinel.
+    private volatile long cachedIndex = -1L;
     
     /**
      * Create a new PrismKey from triangle and line components.
@@ -104,26 +108,33 @@ public final class PrismKey implements SpatialKey<PrismKey> {
      * @return the composite SFC index
      */
     public long consecutiveIndex() {
-        var triangleId = triangle.consecutiveIndex();
-        var lineId = line.consecutiveIndex();
-
-        // Simple combination: line ID in high bits, triangle ID in low bits.
-        // Triangle.consecutiveIndex packs (type, x, y, n) into 3*level + 1
-        // bits at level L (x+y+n at L bits each, plus the type sign bit).
-        // The prior shift of level*2 + 2 bits was less than the triangle
-        // payload width and silently corrupted lineId by ORing into bits the
-        // triangle was already using, breaking uniqueness and SFC range
-        // queries. We now shift by exactly the triangle's bit width and mask
-        // the triangle payload so the two regions don't collide.
-        //
-        // At high levels this still overflows long (Line.z uses up to level
-        // bits, triangle uses up to 3L+1 bits, total can exceed 63). That is
-        // tracked as a separate concern alongside the proper-SFC TODO above
-        // — for practical use (level <= 15 here) the result is unique.
+        var cached = cachedIndex;
+        if (cached >= 0L) {
+            return cached;
+        }
         var level = getLevel();
-        var triangleBits = 3 * level + 1;
-        long triangleMask = (triangleBits >= 64) ? -1L : ((1L << triangleBits) - 1L);
-        return (lineId << triangleBits) | (triangleId & triangleMask);
+        if (level == 0) {
+            cachedIndex = 0L;
+            return 0L;
+        }
+        // Interleave per level: the triangle contributes its 2-bit tetrahedral-Morton local index
+        // and the line its 1-bit z-Morton digit, packed as a 3-bit digit per level with the line
+        // bit in the high position. This matches the Morton-order child mapping
+        // (childIndex = lineChildIndex*4 + triangleChildIndex), so the 8 prism children are
+        // contiguous: I(child_i) = I(prism)*8 + i. At MAX_LEVEL=21 the index is 3*21 = 63 bits —
+        // fits a signed long with no overflow (the prior shift-combine packing overflowed past
+        // ~level 15 and corrupted the line bits).
+        long triangleIndex = triangle.consecutiveIndex();  // base-4: 2 bits/level
+        long lineIndex = line.consecutiveIndex();           // base-2 z-Morton: 1 bit/level
+        long index = 0L;
+        for (int k = 1; k <= level; k++) {
+            int shift = level - k;
+            long triangleDigit = (triangleIndex >>> (2 * shift)) & 0b11L;
+            long lineBit = (lineIndex >>> shift) & 0b1L;
+            index = (index << 3) | (lineBit << 2) | triangleDigit;
+        }
+        cachedIndex = index;
+        return index;
     }
     
     @Override
@@ -290,25 +301,18 @@ public final class PrismKey implements SpatialKey<PrismKey> {
             return 1;
         }
 
-        // Lexicographic comparison on (level, line.z, type, n, y, x).
-        // The previous implementation compared by Long.compare(consecutiveIndex())
-        // which silently collided: (1) keys at different levels could share an
-        // index because level was not part of the encoding, and (2) at level
-        // 21 the packed long encoding cannot fit lineId without bit collisions
-        // (21 bits line + 64 bits triangle > 63 bits). A direct field-by-field
-        // comparison is correct at every valid level (0..MAX_LEVEL=21) and is
-        // consistent with equals (which uses Objects.equals(triangle, line)).
-        int cmp = Byte.compare(triangle.getLevel(), other.triangle.getLevel());
-        if (cmp != 0) return cmp;
-        cmp = Integer.compare(line.getZ(), other.line.getZ());
-        if (cmp != 0) return cmp;
-        cmp = Byte.compare(triangle.getType(), other.triangle.getType());
-        if (cmp != 0) return cmp;
-        cmp = Integer.compare(triangle.getN(), other.triangle.getN());
-        if (cmp != 0) return cmp;
-        cmp = Integer.compare(triangle.getY(), other.triangle.getY());
-        if (cmp != 0) return cmp;
-        return Integer.compare(triangle.getX(), other.triangle.getX());
+        // Order by the tetrahedral-Morton consecutive index (the SFC order), breaking ties by
+        // level. Within a level the index is a bijection to [0, 8^level), so it is injective;
+        // across levels an ancestor shares the index-prefix of its descendants and the level
+        // tie-break sorts it first. The pair (index, level) is therefore a total order consistent
+        // with equals, and — unlike the prior field-lexicographic order — it IS the SFC order, so
+        // the ConcurrentSkipListMap storage order that range queries walk matches consecutiveIndex()
+        // (RDR-009 P2). The index is 63 bits at MAX_LEVEL=21, so there is no overflow/collision.
+        int cmp = Long.compare(consecutiveIndex(), other.consecutiveIndex());
+        if (cmp != 0) {
+            return cmp;
+        }
+        return Byte.compare(triangle.getLevel(), other.triangle.getLevel());
     }
     
     // Object methods

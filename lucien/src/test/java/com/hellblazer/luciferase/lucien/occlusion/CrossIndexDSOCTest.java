@@ -386,24 +386,24 @@ public class CrossIndexDSOCTest {
     // Helper methods
     
     private List<Point3f> getCommonValidPositions() {
-        // Positions valid for all three index types (within all constraints)
+        // Positions valid for all three index types (Prism S0 domain: y <= x)
         return Arrays.asList(
             new Point3f(0.1f, 0.1f, 0.1f),
             new Point3f(0.2f, 0.2f, 0.2f),
             new Point3f(0.3f, 0.1f, 0.3f),
-            new Point3f(0.1f, 0.3f, 0.4f),
+            new Point3f(0.4f, 0.1f, 0.4f),
             new Point3f(0.25f, 0.25f, 0.5f),
             new Point3f(0.4f, 0.1f, 0.6f),
-            new Point3f(0.1f, 0.4f, 0.7f),
+            new Point3f(0.5f, 0.1f, 0.7f),
             new Point3f(0.3f, 0.3f, 0.8f),
             new Point3f(0.2f, 0.1f, 0.9f),
-            new Point3f(0.1f, 0.2f, 0.95f)
+            new Point3f(0.3f, 0.1f, 0.95f)
         );
     }
-    
+
     private boolean isValidPosition(Point3f pos, String indexType) {
         if (indexType.equals("Prism")) {
-            return pos.x + pos.y < 1.0f;
+            return pos.y <= pos.x;  // S0 domain: y <= x (RDR-009 P2)
         }
         return true;
     }

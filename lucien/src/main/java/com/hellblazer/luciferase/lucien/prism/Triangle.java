@@ -31,30 +31,25 @@ import java.util.Objects;
  * Kuhn simplex {@code {anchor, anchor+x̂, anchor+x̂+ŷ}} (≃ the reference root S0, the region
  * {@code y ≤ x}), and a type-1 triangle is the upper-left simplex
  * {@code {anchor, anchor+ŷ, anchor+x̂+ŷ}} (≃ S1). Refining a triangle of type {@code b} yields
- * children whose types form the Bey multiset {@code [b, b, b, 1-b]}: three corner-children keep
- * the orientation, one flips. See {@link #getVertices()}, {@link #computeChildType(int)} and
- * {@link #computeParentType()}.
+ * children whose types form the Bey multiset {@code [b, b, b, 1-b]}: three children keep the
+ * orientation, one flips. See {@link #getVertices()} and {@link #child(int)}.
  *
- * <p><b>Refinement is square-quadrant, not yet true Bey nesting.</b> {@link #child(int)} subdivides
- * by Morton grid-quadrant ({@code childX = 2x + bit}), and the type transition is a
- * <em>placeholder</em> that reproduces the Bey multiset shape and round-trips, but the
- * geometrically-faithful Bey interior-child (which flips orientation) is type-dependent and is
- * <em>not</em> the fixed cube-id-3 used here. True triangle-into-four Bey nesting is inseparable
- * from the tetrahedral Morton index and is deferred to RDR-009 Phase 2/Phase 7 along with the
- * SFC packing.
+ * <p><b>Indexing (RDR-009 P2): the real tetrahedral-Morton model.</b> {@link #child(int)},
+ * {@link #parent()} and {@link #getChildIndex()} implement true Bey refinement via the t8code 2D
+ * transition tables (parent-type Pt, child-type Ct, local-index Iloc, the σ permutation, and the
+ * child anchor offsets). {@link #consecutiveIndex()} is the t8 <em>consecutive</em> index
+ * {@code I(T)} — the per-level base-4 string of local indices — so children are contiguous
+ * ({@code I(child_i) = I(T)*4 + i}) and the locality / ancestor-grouping property holds. Anchors
+ * stay in the S0 region {@code y ≤ x}; a single Triangle (and hence a single Prism) tiles the
+ * lower-right half-cube. The upper-left root S1 for full-cube coverage is RDR-009 Phase 3
+ * (Luciferase-7iu), so {@link #fromWorldCoordinates} rejects {@code y > x} points.
  *
- * <p>The coordinate system uses {@code (x, y, n)} coordinates. The auxiliary coordinate
- * {@code n} is <b>derived</b> as {@code min(x, y)}: every triangle produced by the world-coordinate
- * constructors or by {@link #child(int)}/{@link #parent()} satisfies the invariant
- * {@code n == min(x, y)}, so it is conceptually a cache of {@code min(x, y)} in the
- * construction/navigation API. It carries no term in the true tetrahedral Morton index. However,
- * the <em>current</em> {@link #consecutiveIndex()} packing is not the TM-index — it is the
- * literature-rejected positional ("semiquadcode") form that still treats {@code n} as an
- * independent coordinate dimension. That is why the field cannot be eliminated yet and the raw
- * 5-arg constructor preserves {@code n} verbatim as a low-level escape hatch (e.g. exhaustive
- * collision-freeness sweeps over arbitrary {@code n}). Dropping {@code n} from the key is deferred
- * to RDR-009 Phase 2/Phase 7, which replaces the packing with the real TM-index; until then
- * {@link #consecutiveIndex()} and {@code PrismKey.compareTo} are left unchanged.
+ * <p>The coordinate system stores {@code (level, type, x, y)} — the t8 Tet-id — which is the
+ * identity used by {@link #equals(Object)}/{@link #hashCode()} and the SFC index. The legacy
+ * {@code n} field is the derived auxiliary coordinate {@code min(x, y)}; it carries no term in the
+ * consecutive index and is excluded from identity. It is retained only so the 5-arg constructor
+ * signature is unchanged; {@link #getN()} is deprecated and the field is slated for removal in
+ * RDR-009 Phase 7.
  *
  * @author hal.hildebrand
  */
@@ -74,12 +69,35 @@ public final class Triangle {
     
     /** Number of edges per triangle */
     public static final int EDGES = 3;
-    
+
+    // ── t8code 2D tetrahedral-Morton (dtri) transition tables (RDR-009 P2) ──
+    // cube-id c = (x&1) | ((y&1)<<1); type b in {0,1}. Derived from Burstedde & Holke,
+    // "A tetrahedral space-filling curve for non-conforming adaptive meshes" (Tables 1/2/6,
+    // Fig 8) and verified by child/parent round-trip + child-contiguity. The reference root is
+    // S0, the lower-right Kuhn triangle {y <= x}; these tables operate in Luciferase's
+    // level-local coordinates (x,y in [0,2^level)). See T2 luciferase_rdr/009-p2-t8-dtri-2d-tables.
+    /** Parent type PARENT_TYPE[cubeId][type] -> parent type (Pt, Fig 8). */
+    private static final int[][] PARENT_TYPE = { { 0, 1 }, { 0, 0 }, { 1, 1 }, { 0, 1 } };
+    /** Child type CHILD_TYPE[type][beyId] (Ct, Table 1): type b -> children [b,b,b,1-b]. */
+    private static final int[][] CHILD_TYPE = { { 0, 0, 0, 1 }, { 1, 1, 1, 0 } };
+    /** TM local index LOCAL_INDEX[type][cubeId] (Iloc, Table 6); also == getChildIndex(). */
+    private static final int[][] LOCAL_INDEX = { { 0, 1, 1, 3 }, { 0, 2, 2, 3 } };
+    /** TM local index -> Bey child id, sigma_b^{-1}[type][tmIndex] (Table 2). */
+    private static final int[][] TM_TO_BEY = { { 0, 1, 3, 2 }, { 0, 3, 1, 2 } };
+    /** Child anchor offset added to (2x,2y): CHILD_OFFSET[parentType][beyId] = {dx, dy}. */
+    private static final int[][][] CHILD_OFFSET = { { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 1, 0 } },
+                                                    { { 0, 0 }, { 0, 1 }, { 1, 1 }, { 0, 1 } } };
+
     private final byte level;          // Hierarchical level (0-21)
     private final byte type;           // Triangle type (0 or 1)
     private final int x;               // X coordinate
     private final int y;               // Y coordinate  
     private final int n;               // Derived auxiliary coordinate, cached as min(x, y) (see class javadoc)
+
+    // Lazily-computed cache of consecutiveIndex(). Triangle is immutable and the index is a
+    // deterministic function of (level, type, x, y), so a benign race is harmless; volatile
+    // avoids a torn read of the long. -1 is the "not yet computed" sentinel (the index is >= 0).
+    private volatile long cachedIndex = -1L;
     
     /**
      * Create a Triangle from world coordinates at a specific level.
@@ -172,6 +190,14 @@ public final class Triangle {
             return new Triangle(0, 0, 0, 0, 0);
         }
 
+        // The single Triangle index tiles the root S0 = lower-right half-cube {y <= x}. A point in
+        // the upper-left half belongs to the S1 root, which is RDR-009 Phase 3 (Luciferase-7iu).
+        if (worldY > worldX) {
+            throw new IllegalArgumentException(String.format(
+                "Point (%.4f, %.4f) is in the upper-left half (y > x), outside the S0 root triangle. "
+                + "Full-cube coverage (the S1 root) is RDR-009 Phase 3.", worldX, worldY));
+        }
+
         var scale = 1 << level;
         var quantX = Math.min((int) (worldX * scale), scale - 1);
         var quantY = Math.min((int) (worldY * scale), scale - 1);
@@ -200,23 +226,44 @@ public final class Triangle {
      * The full algorithm involves complex type transitions and cube_id computation
      * that preserves spatial locality through the triangular subdivision hierarchy.
      *
-     * <p>For now, we use a simple positional packing of coordinates. Each of
-     * {@code x}, {@code y}, {@code n} is bounded by {@code 2^level} at level L,
-     * and {@code type} is 0 or 1, so the encoding consumes {@code 3*level + 1}
-     * bits. At MAX_LEVEL=21 this is 64 bits and the result may be negative
-     * (sign bit set when {@code type=1}); the bit pattern remains a bijection
-     * with the input tuple, so callers using it as a hash/identity key are
-     * safe. The prior implementation used {@code level*2} as the per-field
-     * scale, doubling bit consumption and silently overflowing at level 11+,
-     * producing key collisions across distinct triangles.
+     * <p>This is the t8code <em>consecutive</em> index {@code I(T)} (Burstedde &amp; Holke, §4.5,
+     * eq. 55): the level-digit base-{@code 2^d}=4 number whose digits are the per-level local
+     * indices {@code I_loc}. It respects the tetrahedral-Morton order and gives the locality /
+     * ancestor-grouping property (Theorem 16): the four children of a triangle occupy the
+     * contiguous block {@code [I(T)*4, I(T)*4 + 4)}, i.e. {@code I(child_i) = I(T)*4 + i}.
      *
-     * <p>TODO: Implement full t8code triangular SFC for optimal spatial locality.
+     * <p>Computation walks the ancestor chain: the type of each ancestor is reconstructed from
+     * the leaf type via {@link #PARENT_TYPE}, and each level contributes
+     * {@code LOCAL_INDEX[type_k][cubeId_k]} as a base-4 digit (most-significant = level 1). At
+     * {@code MAX_LEVEL=21} this is {@code 2*21 = 42} bits — comfortably non-negative in a signed
+     * {@code long}, with no sign-flip. This replaces the prior positional packing
+     * ({@code x + y*2^L + n*2^{2L} + type*2^{3L}}, the literature-rejected "semiquadcode" that
+     * broke ancestor-grouping and sign-flipped at {@code type=1}); {@code n} carries no term.
      *
-     * @return the SFC index (consecutive index)
+     * @return the consecutive SFC index {@code I(T)}
      */
     public long consecutiveIndex() {
-        var levelScale = 1L << level;
-        return x + (y * levelScale) + (n * levelScale * levelScale) + (type * levelScale * levelScale * levelScale);
+        var cached = cachedIndex;
+        if (cached >= 0L) {
+            return cached;
+        }
+        // Single allocation-free backward pass (finest level first): walk the ancestor chain,
+        // contributing each level's base-4 local index LOCAL_INDEX[type_k][cubeId_k] at place
+        // 4^(level-k), and reconstruct the next-coarser ancestor type via PARENT_TYPE. (compareTo
+        // is on the ConcurrentSkipListMap hot path, so this avoids per-call heap allocation; the
+        // result is then cached since Triangle is immutable.)
+        long index = 0L;
+        int ancestorType = type;
+        long place = 1L;
+        for (int k = level; k >= 1; k--) {
+            int shift = level - k;
+            int cubeId = ((x >>> shift) & 1) | (((y >>> shift) & 1) << 1);
+            index += (long) LOCAL_INDEX[ancestorType][cubeId] * place;
+            place <<= 2;
+            ancestorType = PARENT_TYPE[cubeId][ancestorType];
+        }
+        cachedIndex = index;
+        return index;
     }
     
     
@@ -230,29 +277,14 @@ public final class Triangle {
             return null;
         }
         
+        // True t8code dtri parent (Algorithm 4.3): clear the finest coordinate bit and recover
+        // the parent's type from this triangle's cube-id and type via PARENT_TYPE (Pt).
+        var cubeId = (x & 1) | ((y & 1) << 1);
         var parentX = x >>> 1;
         var parentY = y >>> 1;
-        // n is derived: recompute from the parent's coordinates rather than un-shifting the
-        // child's n, so the single source of truth (n = min(x, y)) is preserved at every level.
-        var parentN = Math.min(parentX, parentY);
-        var parentType = computeParentType();
-
-        return new Triangle(level - 1, parentType, parentX, parentY, parentN);
-    }
-
-    /**
-     * Compute the parent's type from this triangle's type and cube-id — the exact inverse of
-     * {@link #computeChildType(int)}. The cube-id-3 child flips orientation relative to its
-     * parent while cube-ids 0–2 preserve it, so the parent's type is recovered by flipping back
-     * exactly when this triangle is the cube-id-3 child. (Placeholder convention — see
-     * {@link #computeChildType(int)}.)
-     */
-    private int computeParentType() {
-        var childIndex = getChildIndex();
-        if (childIndex == -1) {
-            return type; // already at root
-        }
-        return (childIndex == 3) ? (1 - type) : type;
+        var parentType = PARENT_TYPE[cubeId][type];
+        // n remains the derived auxiliary coordinate min(x,y) (vestigial; not in the SFC index).
+        return new Triangle(level - 1, parentType, parentX, parentY, Math.min(parentX, parentY));
     }
     
     /**
@@ -270,32 +302,16 @@ public final class Triangle {
             throw new IllegalArgumentException("Cannot get child of triangle at maximum level " + MAX_LEVEL);
         }
         
-        var childX = (x << 1) + (childIndex & 1);
-        var childY = (y << 1) + ((childIndex >> 1) & 1);
-        // n is derived: compute from the child's coordinates so the single source of truth
-        // (n = min(x, y)) holds at every refinement level.
-        var childN = Math.min(childX, childY);
-        var childType = computeChildType(childIndex);
-
-        return new Triangle(level + 1, childType, childX, childY, childN);
-    }
-
-    /**
-     * Compute a child's type from this (parent) triangle's type and the child's cube-id. A parent
-     * of type {@code b} produces children with the Bey multiset {@code [b, b, b, 1-b]}: three
-     * children inherit the parent's orientation and one flips. This replaces the prior non-Bey
-     * alternating rule {@code (type + i%2)%2}, which produced the wrong multiset
-     * {@code [b, b, 1-b, 1-b]}.
-     *
-     * <p><b>Placeholder, not the geometric Bey transition.</b> The flip is assigned to the fixed
-     * cube-id-3 child because that is the only assignment that round-trips under the type-independent
-     * {@link #getChildIndex()} (it is a bijection {@code b ↦ childType} at every cube-id). The
-     * geometrically-correct Bey interior-child is type-dependent (cube-id 2 for type 0, cube-id 1
-     * for type 1) and does <em>not</em> round-trip under square-quadrant refinement; reconciling
-     * that requires true Bey triangle nesting, deferred to RDR-009 Phase 2 with the TM-index.
-     */
-    private int computeChildType(int childIndex) {
-        return (childIndex == 3) ? (1 - type) : type;
+        // True t8code dtri child in tetrahedral-Morton order (Algorithms 4.4/4.5): the TM local
+        // index is mapped to a Bey child id, which selects the anchor offset and child type.
+        // The four children carry distinct local indices {0,1,2,3}, giving contiguous indices.
+        var beyId = TM_TO_BEY[type][childIndex];
+        var offset = CHILD_OFFSET[type][beyId];
+        var childX = (x << 1) + offset[0];
+        var childY = (y << 1) + offset[1];
+        var childType = CHILD_TYPE[type][beyId];
+        // n remains the derived auxiliary coordinate min(x,y) (vestigial; not in the SFC index).
+        return new Triangle(level + 1, childType, childX, childY, Math.min(childX, childY));
     }
     
     /**
@@ -307,9 +323,10 @@ public final class Triangle {
         if (level == 0) {
             return -1;
         }
-        
-        // Simplified - extract from coordinates
-        return (x & 1) + ((y & 1) << 1);
+        // Tetrahedral-Morton local index of this triangle within its parent: a function of the
+        // cube-id and type (LOCAL_INDEX = Iloc). child(i).getChildIndex() == i for all i.
+        var cubeId = (x & 1) | ((y & 1) << 1);
+        return LOCAL_INDEX[type][cubeId];
     }
     
     /**
@@ -388,20 +405,22 @@ public final class Triangle {
     public Triangle[] neighbors() {
         var neighbors = new Triangle[EDGES];
         
-        // Simplified same-type neighbor finding (the cross-diagonal S0↔S1 crossing logic is
-        // RDR-009 Phase 4); n is recomputed as min(x,y) for each neighbor's coordinates.
-        // Edge 0: right neighbor
-        if (x + 1 < (1 << level)) {
+        // Simplified same-type neighbor finding. A neighbor is only returned when it stays in the
+        // S0 root (y <= x): a neighbor with y > x lies in the S1 root, which (with cross-diagonal
+        // traversal) is RDR-009 Phase 3/Phase 4. Suppressing y > x is also REQUIRED for correctness
+        // — such a triangle is not a valid S0 key and would collide with a coordinate-swapped S0 key
+        // under consecutiveIndex()/compareTo(). n is recomputed as min(x,y) for each neighbor.
+        var max = 1 << level;
+        // Edge 0: right neighbor (x+1, y) — stays in S0 since y <= x < x+1.
+        if (x + 1 < max && y <= x + 1) {
             neighbors[0] = new Triangle(level, type, x + 1, y, Math.min(x + 1, y));
         }
-
-        // Edge 1: top neighbor
-        if (y + 1 < (1 << level)) {
+        // Edge 1: top neighbor (x, y+1) — only valid when y+1 <= x (else it crosses into S1).
+        if (y + 1 < max && y + 1 <= x) {
             neighbors[1] = new Triangle(level, type, x, y + 1, Math.min(x, y + 1));
         }
-
-        // Edge 2: diagonal neighbor (simplified)
-        if (x > 0 && y > 0) {
+        // Edge 2: diagonal neighbor (x-1, y-1) — preserves y <= x.
+        if (x > 0 && y > 0 && y - 1 <= x - 1) {
             neighbors[2] = new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1));
         }
 
@@ -420,21 +439,22 @@ public final class Triangle {
             throw new IllegalArgumentException("Edge index must be 0-2, got: " + edge);
         }
         
-        // Simplified same-type neighbor finding (cross-diagonal crossing is RDR-009 Phase 4);
-        // n is recomputed as min(x,y) for the neighbor's coordinates.
+        // Same-type S0 neighbor (see neighbors()): only returned when it stays in y <= x; a
+        // y > x neighbor is S1 (RDR-009 P3/P4) and would collide in consecutiveIndex()/compareTo().
+        var max = 1 << level;
         switch (edge) {
-            case 0: // right neighbor
-                if (x + 1 < (1 << level)) {
+            case 0: // right neighbor (x+1, y)
+                if (x + 1 < max && y <= x + 1) {
                     return new Triangle(level, type, x + 1, y, Math.min(x + 1, y));
                 }
                 break;
-            case 1: // top neighbor
-                if (y + 1 < (1 << level)) {
+            case 1: // top neighbor (x, y+1) — only valid when y+1 <= x
+                if (y + 1 < max && y + 1 <= x) {
                     return new Triangle(level, type, x, y + 1, Math.min(x, y + 1));
                 }
                 break;
-            case 2: // diagonal neighbor (simplified)
-                if (x > 0 && y > 0) {
+            case 2: // diagonal neighbor (x-1, y-1)
+                if (x > 0 && y > 0 && y - 1 <= x - 1) {
                     return new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1));
                 }
                 break;
@@ -485,6 +505,13 @@ public final class Triangle {
         return y;
     }
     
+    /**
+     * @deprecated The auxiliary coordinate {@code n} is the derived value {@code min(x, y)}; it
+     *     carries no identity or ordering information (RDR-009 P2 excluded it from
+     *     {@code equals}/{@code hashCode}/{@code consecutiveIndex}). The field and this accessor
+     *     are slated for removal with the 5-arg constructor in RDR-009 Phase 7.
+     */
+    @Deprecated
     public int getN() {
         return n;
     }
@@ -495,13 +522,15 @@ public final class Triangle {
     public boolean equals(Object obj) {
         if (this == obj) return true;
         if (!(obj instanceof Triangle other)) return false;
-        return level == other.level && type == other.type && 
-               x == other.x && y == other.y && n == other.n;
+        // Identity is (level, type, x, y) — the t8 Tet-id. n is a derived auxiliary coordinate
+        // (min(x,y)) carrying no independent information, so it is NOT part of identity; including
+        // it would make equals inconsistent with consecutiveIndex()/PrismKey.compareTo (RDR-009 P2).
+        return level == other.level && type == other.type && x == other.x && y == other.y;
     }
-    
+
     @Override
     public int hashCode() {
-        return Objects.hash(level, type, x, y, n);
+        return Objects.hash(level, type, x, y);
     }
     
     @Override

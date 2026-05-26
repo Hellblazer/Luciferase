@@ -115,10 +115,14 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
         float normY = y / worldSize;
         float normZ = z / worldSize;
         
-        // Validate triangular constraint
-        if (normX + normY >= 1.0f) {
+        // Validate the S0 domain (RDR-009 P2): a single Prism index tiles the root simplex S0,
+        // the lower-right half-cube {y <= x}. The upper-left half is the S1 root, added for
+        // full-cube coverage in RDR-009 Phase 3 (Luciferase-7iu). (This replaces the prior
+        // anti-diagonal constraint x + y < 1, which corresponded to the old per-cell SFC model.)
+        if (normY > normX) {
             throw new IllegalArgumentException(
-                String.format("Coordinates (%.3f, %.3f) violate triangular constraint: x + y must be < 1.0", 
+                String.format("Coordinates (%.3f, %.3f) are in the upper-left half (y > x), outside the "
+                            + "Prism S0 domain; full-cube coverage (the S1 root) is RDR-009 Phase 3.",
                             normX, normY));
         }
         

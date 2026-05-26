@@ -202,10 +202,11 @@ public class PrismEdgeCaseTest {
     
     @Test
     void testFrustumCullingEdgeCases() {
-        // Insert entities
+        // Insert entities; all must satisfy y <= x (S0 domain)
+        // Use x = i*8, y = i*6 so y < x for all i > 0; i=0 gives (0,0) which is valid
         for (int i = 0; i < 10; i++) {
             float x = i * 8.0f;
-            float y = (9 - i) * 8.0f; // Ensures x+y < 100
+            float y = i * 6.0f; // y <= x since 6 < 8 (y <= x for S0 domain)
             prism.insert(new Point3f(x, y, 50.0f), (byte)10, "Frustum" + i);
         }
         
@@ -248,22 +249,22 @@ public class PrismEdgeCaseTest {
             prism.insertBatch(positions, contents, (byte)10);
         });
         
-        // Batch with some invalid positions
+        // Batch with some invalid positions (y > x violates S0 domain)
         List<Point3f> mixedPositions = Arrays.asList(
-            new Point3f(10, 10, 10),     // Valid
-            new Point3f(60, 60, 10),     // Invalid: x+y > worldSize
-            new Point3f(20, 20, 20)      // Valid
+            new Point3f(10, 10, 10),     // Valid: y == x
+            new Point3f(10, 60, 10),     // Invalid: y > x (upper-left half)
+            new Point3f(20, 20, 20)      // Valid: y == x
         );
         List<String> mixedContents = Arrays.asList("Valid1", "Invalid", "Valid2");
-        
+
         // Should either skip invalid or throw for entire batch
         try {
             var mixedIds = prism.insertBatch(mixedPositions, mixedContents, (byte)10);
             // If it succeeds, should have handled invalid position somehow
             assertTrue(mixedIds.size() <= 3);
         } catch (IllegalArgumentException e) {
-            // Expected if strict validation
-            assertTrue(e.getMessage().contains("constraint"));
+            // Expected if strict validation; message says "upper-left half"
+            assertTrue(e.getMessage().contains("upper-left") || e.getMessage().contains("S0"));
         }
     }
     
@@ -271,16 +272,17 @@ public class PrismEdgeCaseTest {
     void testNumericalPrecisionAtBoundaries() {
         // Test positions that are exactly at subdivision boundaries
         float cellSize = worldSize / (1 << 10); // Level 10 cell size
-        
-        // Insert at exact cell boundaries
+
+        // Insert at exact cell boundaries; y must be <= x (S0 domain).
+        // Use x = i*cellSize, y = (i-1)*cellSize (or 0 when i==0) to keep y <= x.
         for (int i = 0; i < 10; i++) {
             float x = i * cellSize;
-            float y = Math.min((9 - i) * cellSize, worldSize - x - 0.001f);
+            float y = Math.max(0f, (i - 1)) * cellSize; // y <= x always
             var pos = new Point3f(x, y, i * cellSize);
             var id = prism.insert(pos, (byte)10, "Boundary" + i);
             assertTrue(prism.containsEntity(id));
         }
-        
+
         // Test queries at boundaries
         var boundaryQuery = new Point3f(5 * cellSize, 4 * cellSize, 5 * cellSize);
         var boundaryNeighbors = prism.kNearestNeighbors(boundaryQuery, 5, cellSize * 2);
@@ -289,25 +291,28 @@ public class PrismEdgeCaseTest {
     
     @Test
     void testLevelTransitionBehavior() {
-        // Insert entities at parent-child level boundaries
+        // Insert entities at parent-child level boundaries.
+        // parentPos: (25,25,50) has y==x which is on the S0 boundary; valid.
+        // Children must also satisfy y <= x: use dx >= dy always by applying a
+        // positive dx and a dy that is at most dx, keeping y <= x.
         var parentPos = new Point3f(25.0f, 25.0f, 50.0f);
         var parentId = prism.insert(parentPos, (byte)5, "Parent");
-        
-        // Insert children in same spatial region at finer level
+
         float offset = 0.01f;
         for (int i = 0; i < 8; i++) {
-            float dx = (i & 1) * offset;
-            float dy = ((i >> 1) & 1) * offset;
+            // dx grows with bit 0 and 1 to ensure dx >= dy (at most the same)
+            float dx = ((i & 1) + ((i >> 1) & 1)) * offset; // 0, 1, 1, or 2 * offset
+            float dy = (i & 1) * offset;                     // 0 or offset (always <= dx)
             float dz = ((i >> 2) & 1) * offset;
-            
+
             var childPos = new Point3f(parentPos.x + dx, parentPos.y + dy, parentPos.z + dz);
             prism.insert(childPos, (byte)10, "Child" + i);
         }
-        
+
         assertEquals(9, prism.entityCount());
-        
+
         // Query should find all entities despite level differences
-        var allNear = prism.kNearestNeighbors(parentPos, 10, offset * 3);
+        var allNear = prism.kNearestNeighbors(parentPos, 10, offset * 5);
         assertTrue(allNear.size() >= 1); // At least parent
     }
     

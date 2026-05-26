@@ -47,7 +47,7 @@ public class PrismSpatialQueriesSimpleTest {
         var id1 = prism.insert(new Point3f(0.2f, 0.2f, 2), (byte)5, "Entity1");
         var id2 = prism.insert(new Point3f(0.3f, 0.3f, 3), (byte)5, "Entity2");
         var id3 = prism.insert(new Point3f(0.1f, 0.1f, 7), (byte)5, "Entity3");
-        var id4 = prism.insert(new Point3f(0.1f, 0.2f, 5), (byte)5, "Entity4");
+        var id4 = prism.insert(new Point3f(0.2f, 0.1f, 5), (byte)5, "Entity4"); // was (0.1,0.2): flipped to y<=x
         
         // Create a search triangle in XY plane
         Triangle searchTriangle = new Triangle(0, 0, 0, 0, 0);

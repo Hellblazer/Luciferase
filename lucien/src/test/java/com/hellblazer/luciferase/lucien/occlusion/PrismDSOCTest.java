@@ -102,15 +102,16 @@ public class PrismDSOCTest {
         List<LongEntityID> visibleIds = new ArrayList<>();
         List<LongEntityID> hiddenIds = new ArrayList<>();
         
-        // Insert at least 50 entities to meet MIN_ENTITIES_FOR_DSOC threshold
+        // Insert at least 50 entities to meet MIN_ENTITIES_FOR_DSOC threshold.
+        // Use y <= x (S0 domain): x grows with column index, y grows more slowly.
         for (int i = 0; i < 60; i++) {
             var id = new LongEntityID(i);
-            // Create positions that satisfy x + y < 1
-            float x = 0.01f + (i % 10) * 0.08f;
-            float y = 0.01f + (i / 10) * 0.08f; // Grid layout
+            // Grid layout: x = col*0.08+0.01, y = row*0.04+0.01 so y < x for col > row
+            float x = 0.01f + (i % 10) * 0.08f;   // 0.01 to 0.73
+            float y = 0.01f + (i / 10) * 0.04f;    // 0.01 to 0.21; always < x since col>=row*2
             float z = 0.1f + (i % 5) * 0.1f;
-            
-            if (x + y < 1.0f) { // Verify constraint
+
+            if (y <= x) { // Verify S0 domain
                 prism.insert(id, new Point3f(x, y, z), (byte) 10, "Entity" + i);
                 
                 if (i < 30) {
@@ -192,19 +193,19 @@ public class PrismDSOCTest {
         // Insert entities in specific triangular regions
         Map<Integer, LongEntityID> triangleEntities = new HashMap<>();
         
-        // Create entities in different triangular subdivisions
+        // Create entities in different triangular subdivisions; all must satisfy y <= x (S0 domain)
         float[][] positions = {
-            {0.1f, 0.1f, 0.1f},  // Lower left triangle
-            {0.7f, 0.2f, 0.2f},  // Lower right triangle
-            {0.2f, 0.6f, 0.3f},  // Upper triangle
-            {0.4f, 0.3f, 0.4f},  // Center triangle
-            {0.5f, 0.1f, 0.5f},  // Right edge
-            {0.1f, 0.5f, 0.6f}   // Left edge
+            {0.1f, 0.1f, 0.1f},  // y == x: S0 boundary
+            {0.7f, 0.2f, 0.2f},  // y < x: valid S0
+            {0.6f, 0.2f, 0.3f},  // was (0.2,0.6): flipped to y<x
+            {0.4f, 0.3f, 0.4f},  // y < x: valid S0
+            {0.5f, 0.1f, 0.5f},  // y < x: valid S0
+            {0.5f, 0.1f, 0.6f}   // was (0.1,0.5): flipped to y<x
         };
-        
+
         for (int i = 0; i < positions.length; i++) {
             var pos = positions[i];
-            if (pos[0] + pos[1] < 1.0f) { // Verify constraint
+            if (pos[1] <= pos[0]) { // Verify S0 domain (y <= x)
                 var id = new LongEntityID(i);
                 prism.insert(id, new Point3f(pos[0], pos[1], pos[2]), (byte) 10, "Entity" + i);
                 triangleEntities.put(i, id);
@@ -272,14 +273,14 @@ public class PrismDSOCTest {
     void testConcurrentDSOCOperations() throws InterruptedException, ExecutionException {
         prism.enableDSOC(config, 512, 512);
         
-        // Insert entities
+        // Insert entities in S0 domain (y <= x); x grows faster than y
         int entityCount = 100;
         for (int i = 0; i < entityCount; i++) {
-            float x = 0.01f + (i % 30) * 0.02f;
-            float y = 0.01f + (i % 20) * 0.01f;
+            float x = 0.02f + (i % 30) * 0.03f;  // x in [0.02, 0.89]
+            float y = 0.01f + (i % 10) * 0.01f;  // y in [0.01, 0.10], always <= x
             float z = 0.1f + (i % 10) * 0.08f;
-            
-            if (x + y < 1.0f) {
+
+            if (y <= x) {
                 prism.insert(new LongEntityID(i), new Point3f(x, y, z), (byte) 10, "Entity" + i);
             }
         }
@@ -297,16 +298,16 @@ public class PrismDSOCTest {
             }));
         }
         
-        // Concurrent entity updates
+        // Concurrent entity updates; keep y <= x (S0 domain)
         for (int i = 0; i < 10; i++) {
             final int entityId = i;
             futures.add(executor.submit(() -> {
                 var id = new LongEntityID(entityId);
-                float newX = 0.01f + (entityId % 30) * 0.025f;
-                float newY = 0.01f + (entityId % 20) * 0.012f;
+                float newX = 0.03f + (entityId % 30) * 0.025f;  // x in [0.03, 0.75]
+                float newY = 0.01f + (entityId % 10) * 0.012f;  // y in [0.01, 0.12], <= x
                 float newZ = 0.1f + (entityId % 10) * 0.09f;
-                
-                if (newX + newY < 1.0f) {
+
+                if (newY <= newX) {
                     prism.updateEntity(id, new Point3f(newX, newY, newZ), (byte) 10);
                 }
             }));
@@ -428,14 +429,15 @@ public class PrismDSOCTest {
     void testDSOCPerformanceWithPrismQueries() {
         prism.enableDSOC(config, 512, 512);
         
-        // Insert many entities
+        // Insert many entities in S0 domain (y <= x).
+        // Start x from 0.008 (i%100 >= 1) and keep y well below x.
         int insertedCount = 0;
-        for (int i = 0; i < 1000; i++) {
-            float x = (i % 100) * 0.008f;
-            float y = ((i / 100) % 10) * 0.05f;
+        for (int i = 1; i < 1001; i++) {  // start from 1 so x = (i%100)*0.008 >= 0.008
+            float x = (i % 100) * 0.008f;            // 0.008 to 0.792 (never 0)
+            float y = ((i / 100) % 10) * 0.004f;     // 0 to 0.036, always <= x
             float z = (i % 20) * 0.05f;
-            
-            if (x + y < 0.95f) { // Leave margin for constraint
+
+            if (y <= x) { // S0 domain
                 prism.insert(new LongEntityID(i), new Point3f(x, y, z), (byte) 10, "Entity" + i);
                 insertedCount++;
             }

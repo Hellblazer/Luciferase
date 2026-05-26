@@ -37,9 +37,9 @@ public class SimplePrismIntegrationTest {
     @Test
     void testBasicInsertion() {
         var id = idGenerator.generateID();
-        var position = new Point3f(15.0f, 20.0f, 30.0f); // Spans multiple cells, respects x+y<100
+        var position = new Point3f(20.0f, 15.0f, 30.0f); // S0 domain: y <= x (was 15,20 which had y>x)
         var content = "Test Entity";
-        
+
         // Insert entity
         prism.insert(id, position, (byte)5, content);
         
@@ -53,11 +53,11 @@ public class SimplePrismIntegrationTest {
         var positions = new ArrayList<Point3f>();
         var contents = new ArrayList<String>();
         
-        // Create positions that span multiple spatial cells, respecting triangular constraint
-        positions.add(new Point3f(5.0f, 8.0f, 10.0f));      // Low-range cells, x+y=13<100 ✓
-        positions.add(new Point3f(20.0f, 15.0f, 25.0f));     // Mid-range cells, x+y=35<100 ✓  
-        positions.add(new Point3f(40.0f, 30.0f, 50.0f));     // High-value cells, x+y=70<100 ✓
-        positions.add(new Point3f(25.0f, 35.0f, 60.0f));     // Different cells, x+y=60<100 ✓
+        // Create positions that span multiple spatial cells; all satisfy y <= x (S0 domain)
+        positions.add(new Point3f(8.0f, 5.0f, 10.0f));      // Low-range cells, y<x ✓ (was 5,8 y>x)
+        positions.add(new Point3f(20.0f, 15.0f, 25.0f));     // Mid-range cells, y<x ✓
+        positions.add(new Point3f(40.0f, 30.0f, 50.0f));     // High-value cells, y<x ✓
+        positions.add(new Point3f(35.0f, 25.0f, 60.0f));     // Different cells, y<x ✓ (was 25,35 y>x)
         
         contents.add("Entity1");
         contents.add("Entity2");
@@ -169,15 +169,15 @@ public class SimplePrismIntegrationTest {
     @Test
     void testTriangularConstraintValidation() {
         var id = idGenerator.generateID();
-        
-        // Test valid position (within triangular constraint: x+y<100, all<100)
-        var validPosition = new Point3f(30.0f, 40.0f, 50.0f); // x+y=70<100 ✓
+
+        // Test valid position (S0 domain: y <= x)
+        var validPosition = new Point3f(40.0f, 30.0f, 50.0f); // y < x ✓ (was 30,40 which had y>x)
         assertDoesNotThrow(() -> {
             prism.insert(id, validPosition, (byte)5, "Valid");
         });
-        
-        // Test invalid position (violates triangular constraint x + y >= 100)
-        var invalidPosition = new Point3f(60.0f, 60.0f, 50.0f); // x+y=120>100 ✗
+
+        // Test invalid position (violates S0 domain: y > x)
+        var invalidPosition = new Point3f(10.0f, 60.0f, 50.0f); // y > x ✗
         assertThrows(IllegalArgumentException.class, () -> {
             var badId = idGenerator.generateID();
             prism.insert(badId, invalidPosition, (byte)5, "Invalid");
@@ -187,7 +187,7 @@ public class SimplePrismIntegrationTest {
     @Test
     void testEntityRemoval() {
         var id = idGenerator.generateID();
-        var position = new Point3f(20.0f, 25.0f, 35.0f); // x+y=45<100 ✓
+        var position = new Point3f(25.0f, 20.0f, 35.0f); // y<x ✓ (was 20,25 which had y>x)
         
         // Insert entity
         prism.insert(id, position, (byte)5, "ToRemove");
@@ -204,8 +204,8 @@ public class SimplePrismIntegrationTest {
     @Test
     void testEntityMovement() {
         var id = idGenerator.generateID();
-        var originalPosition = new Point3f(10.0f, 15.0f, 25.0f); // x+y=25<100 ✓
-        var newPosition = new Point3f(30.0f, 35.0f, 45.0f);     // x+y=65<100 ✓
+        var originalPosition = new Point3f(15.0f, 10.0f, 25.0f); // y<x ✓ (was 10,15 y>x)
+        var newPosition = new Point3f(35.0f, 30.0f, 45.0f);      // y<x ✓ (was 30,35 y>x)
         
         // Insert entity
         prism.insert(id, originalPosition, (byte)5, "Movable");
@@ -222,7 +222,7 @@ public class SimplePrismIntegrationTest {
     
     @Test
     void testMultipleEntitiesAtSamePosition() {
-        var position = new Point3f(25.0f, 30.0f, 40.0f); // x+y=55<100 ✓
+        var position = new Point3f(30.0f, 25.0f, 40.0f); // y<x ✓ (was 25,30 y>x)
         
         var id1 = idGenerator.generateID();
         var id2 = idGenerator.generateID();
@@ -252,11 +252,11 @@ public class SimplePrismIntegrationTest {
         var contents = new ArrayList<String>();
         var random = new Random(42); // Fixed seed for reproducibility
         
-        // Generate many valid positions across multiple spatial cells
+        // Generate many valid positions across multiple spatial cells; y <= x (S0 domain)
         for (int i = 0; i < 100; i++) {
-            float x = random.nextFloat() * 70.0f;              // 0 to 70
-            float y = random.nextFloat() * (70.0f - x);        // Ensure x + y < 70 (within 100 constraint)
-            float z = random.nextFloat() * 90.0f;              // 0 to 90
+            float x = random.nextFloat() * 70.0f * 0.95f;  // 0 to ~66.5
+            float y = random.nextFloat() * x;               // y <= x always
+            float z = random.nextFloat() * 90.0f;           // 0 to 90
             
             positions.add(new Point3f(x, y, z));
             contents.add("Entity" + i);

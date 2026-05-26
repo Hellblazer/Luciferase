@@ -229,10 +229,11 @@ public class PrismVsOctreeComparisonTest {
         var positions = new ArrayList<Point3f>(count);
         
         for (int i = 0; i < count; i++) {
-            float x = random.nextFloat() * (worldSize * 0.7f);  // 0 to 70% of worldSize
-            float y = random.nextFloat() * (worldSize * 0.7f - x); // Ensure x + y < 70% of worldSize
+            // RDR-009 P2: a single Prism tiles the S0 root — the lower-right half-cube y <= x.
+            float x = random.nextFloat() * (worldSize * 0.95f);
+            float y = random.nextFloat() * x; // y in [0, x] => y <= x (S0)
             float z = random.nextFloat() * worldSize;
-            
+
             positions.add(new Point3f(x, y, z));
         }
         

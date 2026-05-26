@@ -559,9 +559,9 @@ public class ForestMultiIndexTest {
         var treeNode = forest.getTree(treeId);
         var spatialIndex = treeNode.getSpatialIndex();
         
-        // Direct insertion to spatial index
+        // Direct insertion to spatial index; must satisfy y <= x (S0 domain)
         var id1 = new LongEntityID(1);
-        var pos1 = new Point3f(0.02f, 0.03f, 0.5f);  // x+y=0.05 < 1.0
+        var pos1 = new Point3f(0.03f, 0.02f, 0.5f);  // y<x: valid S0 (was 0.02,0.03 y>x)
         spatialIndex.insert(id1, pos1, (byte)10, "Entity 1");
         
         assertEquals(1, spatialIndex.entityCount());
@@ -587,13 +587,13 @@ public class ForestMultiIndexTest {
         forest.addTree(tree2);
         forest.addTree(tree3);
         
-        // Insert entities
+        // Insert entities; all satisfy y <= x (S0 domain)
         var positions = List.of(
-            new Point3f(0.01f, 0.01f, 0.5f),   // x+y=0.02 < 1.0
-            new Point3f(0.02f, 0.02f, 0.6f),   // x+y=0.04 < 1.0
-            new Point3f(0.03f, 0.03f, 0.7f),   // x+y=0.06 < 1.0
-            new Point3f(0.04f, 0.01f, 0.8f),   // x+y=0.05 < 1.0
-            new Point3f(0.01f, 0.04f, 0.9f)    // x+y=0.05 < 1.0
+            new Point3f(0.01f, 0.01f, 0.5f),   // y==x: valid S0
+            new Point3f(0.02f, 0.02f, 0.6f),   // y==x: valid S0
+            new Point3f(0.03f, 0.03f, 0.7f),   // y==x: valid S0
+            new Point3f(0.04f, 0.01f, 0.8f),   // y<x: valid S0
+            new Point3f(0.04f, 0.01f, 0.9f)    // was (0.01,0.04) y>x: flipped to y<x
         );
         
         for (int i = 0; i < positions.size(); i++) {
@@ -659,14 +659,13 @@ public class ForestMultiIndexTest {
         
         var entityManager = new ForestEntityManager<>(forest, idGenerator);
         
-        // Test with larger dataset
+        // Test with larger dataset; all positions in S0 domain (y < x strictly).
+        // x = col*0.020+0.030 (0.030..0.210), y = row*0.002+0.001 (0.001..0.019): y < x always.
         int entityCount = 100;
         for (int i = 0; i < entityCount; i++) {
-            // Generate positions that satisfy x + y < 1.0
-            float x = (i % 10) * 0.008f + 0.001f;  // 0.001 to 0.073
-            float y = ((i / 10) % 10) * 0.002f + 0.001f;  // 0.001 to 0.019
-            float z = (i / 100) * 0.1f + 0.5f;  // 0.5 to 0.6
-            // Ensure x + y < 1.0: max is 0.073 + 0.019 = 0.092 < 1.0
+            float x = (i % 10) * 0.020f + 0.030f;         // 0.030 to 0.210
+            float y = ((i / 10) % 10) * 0.002f + 0.001f;  // 0.001 to 0.019 (strictly < x)
+            float z = (i / 100) * 0.1f + 0.5f;            // 0.5 to 0.6
             var pos = new Point3f(x, y, z);
             entityManager.insert(new LongEntityID(i), "Entity " + i, pos, null);
         }

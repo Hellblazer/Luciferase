@@ -415,9 +415,9 @@ public class DSOCZBufferAdaptationTest {
     // Helper methods
     
     private void insertOcclusionScene(AbstractSpatialIndex<?, LongEntityID, String> index, String indexType) {
-        // Front occluders
+        // Front occluders — x increases, y fixed at 0.1f so y <= x for all i
         for (int i = 0; i < 5; i++) {
-            var pos = new Point3f(0.1f + i * 0.15f, 0.3f, 0.3f);
+            var pos = new Point3f(0.3f + i * 0.12f, 0.1f, 0.3f);
             if (isValidPosition(pos, indexType)) {
                 index.insert(new LongEntityID(i), pos, (byte) 8, "Occluder" + i);
             }
@@ -448,10 +448,11 @@ public class DSOCZBufferAdaptationTest {
     
     private Point3f getValidPosition(int seed, String indexType) {
         Random rand = new Random(seed);
-        
+
         if (indexType.equals("Prism")) {
-            float x = rand.nextFloat() * 0.4f;
-            float y = rand.nextFloat() * 0.4f;
+            // S0 domain: y <= x. Draw x first, then y as a fraction of x.
+            float x = 0.05f + rand.nextFloat() * 0.85f;
+            float y = rand.nextFloat() * x;
             float z = rand.nextFloat() * 0.9f;
             return new Point3f(x, y, z);
         } else {
@@ -462,10 +463,10 @@ public class DSOCZBufferAdaptationTest {
             );
         }
     }
-    
+
     private boolean isValidPosition(Point3f pos, String indexType) {
         if (indexType.equals("Prism")) {
-            return pos.x + pos.y < 1.0f;
+            return pos.y <= pos.x;  // S0 domain: y <= x (RDR-009 P2)
         }
         return true;
     }
@@ -475,34 +476,32 @@ public class DSOCZBufferAdaptationTest {
         float baseX = (cluster % 3) * 0.3f + 0.1f;
         float baseY = (cluster / 3) * 0.3f + 0.1f;
         float baseZ = 0.5f;
-        
+
         Random rand = new Random(index);
         float x = baseX + rand.nextFloat() * 0.05f;
         float y = baseY + rand.nextFloat() * 0.05f;
         float z = baseZ + rand.nextFloat() * 0.1f;
-        
-        if (indexType.equals("Prism") && x + y >= 1.0f) {
-            float scale = 0.9f / (x + y);
-            x *= scale;
-            y *= scale;
+
+        if (indexType.equals("Prism") && y > x) {
+            // Swap so y <= x (S0 domain)
+            float tmp = x; x = y; y = tmp;
         }
-        
+
         return new Point3f(x, y, z);
     }
-    
+
     private Point3f getScatteredPosition(int index, String indexType) {
         Random rand = new Random(index * 13);
-        
+
         float x = rand.nextFloat() * 0.95f;
         float y = rand.nextFloat() * 0.95f;
         float z = rand.nextFloat() * 0.95f;
-        
-        if (indexType.equals("Prism") && x + y >= 1.0f) {
-            float scale = 0.9f / (x + y);
-            x *= scale;
-            y *= scale;
+
+        if (indexType.equals("Prism") && y > x) {
+            // Swap so y <= x (S0 domain)
+            float tmp = x; x = y; y = tmp;
         }
-        
+
         return new Point3f(x, y, z);
     }
     
