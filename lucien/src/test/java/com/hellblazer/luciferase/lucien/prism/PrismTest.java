@@ -350,8 +350,10 @@ class PrismTest {
     @Test
     @DisplayName("Subdivision creates correct prism children")
     void testPrismSubdivision() {
-        // Create a prism key at level 2
-        var triangle = new Triangle(2, 0, 1, 1, 2);
+        // Create a prism key at level 2. n = min(x,y) = min(1,1) = 1 (RDR-009 P1: n is the
+        // derived auxiliary coordinate min(x,y); parent()/child() recompute it from coordinates,
+        // so a fixture must use the consistent value to round-trip to itself).
+        var triangle = new Triangle(2, 0, 1, 1, 1);
         var line = new Line(2, 1);
         var parentKey = new PrismKey(triangle, line);
         

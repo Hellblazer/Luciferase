@@ -25,13 +25,37 @@ import java.util.Objects;
  * of prism spatial keys. The space-filling curve is complex, adapted from t8code's triangular SFC
  * algorithm that preserves spatial locality through recursive subdivision.
  * 
- * Triangles use a type system (0 or 1) to handle orientation during subdivision, similar to
- * t8code's dtri implementation. Each triangle subdivides into 4 child triangles with appropriate
- * type transitions to maintain geometric consistency.
- * 
- * The coordinate system uses (x, y, n) coordinates where n is an auxiliary coordinate for
- * the triangular space-filling curve computation.
- * 
+ * Triangles use a type system (0 or 1) encoding the t8code/Bey <em>orientation</em>:
+ * {@code Type(T) = i ⟺ T ≃ Sᵢ}. Geometrically each grid cell is split along its
+ * <em>main</em> diagonal (anchor → opposite corner): a type-0 triangle is the lower-right
+ * Kuhn simplex {@code {anchor, anchor+x̂, anchor+x̂+ŷ}} (≃ the reference root S0, the region
+ * {@code y ≤ x}), and a type-1 triangle is the upper-left simplex
+ * {@code {anchor, anchor+ŷ, anchor+x̂+ŷ}} (≃ S1). Refining a triangle of type {@code b} yields
+ * children whose types form the Bey multiset {@code [b, b, b, 1-b]}: three corner-children keep
+ * the orientation, one flips. See {@link #getVertices()}, {@link #computeChildType(int)} and
+ * {@link #computeParentType()}.
+ *
+ * <p><b>Refinement is square-quadrant, not yet true Bey nesting.</b> {@link #child(int)} subdivides
+ * by Morton grid-quadrant ({@code childX = 2x + bit}), and the type transition is a
+ * <em>placeholder</em> that reproduces the Bey multiset shape and round-trips, but the
+ * geometrically-faithful Bey interior-child (which flips orientation) is type-dependent and is
+ * <em>not</em> the fixed cube-id-3 used here. True triangle-into-four Bey nesting is inseparable
+ * from the tetrahedral Morton index and is deferred to RDR-009 Phase 2/Phase 7 along with the
+ * SFC packing.
+ *
+ * <p>The coordinate system uses {@code (x, y, n)} coordinates. The auxiliary coordinate
+ * {@code n} is <b>derived</b> as {@code min(x, y)}: every triangle produced by the world-coordinate
+ * constructors or by {@link #child(int)}/{@link #parent()} satisfies the invariant
+ * {@code n == min(x, y)}, so it is conceptually a cache of {@code min(x, y)} in the
+ * construction/navigation API. It carries no term in the true tetrahedral Morton index. However,
+ * the <em>current</em> {@link #consecutiveIndex()} packing is not the TM-index — it is the
+ * literature-rejected positional ("semiquadcode") form that still treats {@code n} as an
+ * independent coordinate dimension. That is why the field cannot be eliminated yet and the raw
+ * 5-arg constructor preserves {@code n} verbatim as a low-level escape hatch (e.g. exhaustive
+ * collision-freeness sweeps over arbitrary {@code n}). Dropping {@code n} from the key is deferred
+ * to RDR-009 Phase 2/Phase 7, which replaces the packing with the real TM-index; until then
+ * {@link #consecutiveIndex()} and {@code PrismKey.compareTo} are left unchanged.
+ *
  * @author hal.hildebrand
  */
 public final class Triangle {
@@ -55,7 +79,7 @@ public final class Triangle {
     private final byte type;           // Triangle type (0 or 1)
     private final int x;               // X coordinate
     private final int y;               // Y coordinate  
-    private final int n;               // Auxiliary coordinate for SFC
+    private final int n;               // Derived auxiliary coordinate, cached as min(x, y) (see class javadoc)
     
     /**
      * Create a Triangle from world coordinates at a specific level.
@@ -67,45 +91,12 @@ public final class Triangle {
      * @throws IllegalArgumentException if coordinates are invalid
      */
     public static Triangle fromWorldCoordinate(float worldX, float worldY, int level) {
-        if (worldX < 0 || worldX >= 1.0f || worldY < 0 || worldY >= 1.0f) {
-            throw new IllegalArgumentException(
-                String.format("World coordinates must be in [0,1), got: (%.3f, %.3f)", worldX, worldY));
-        }
-        if (level < 0 || level > MAX_LEVEL) {
-            throw new IllegalArgumentException("Level must be 0-" + MAX_LEVEL + ", got: " + level);
-        }
-        
-        // For level 0, return root triangle
-        if (level == 0) {
-            return new Triangle(0, 0, 0, 0, 0);
-        }
-        
-        // Quantize to grid
-        int scale = 1 << level;
-        int x = (int)(worldX * scale);
-        int y = (int)(worldY * scale);
-        
-        // Clamp to valid range
-        x = Math.min(x, scale - 1);
-        y = Math.min(y, scale - 1);
-        
-        // Ensure x + y < scale (triangular constraint)
-        if (x + y >= scale) {
-            // Point is outside triangular region, clamp to nearest valid point
-            // This maintains x + y = scale - 1
-            int total = scale - 1;
-            x = x * total / (x + y);
-            y = total - x;
-        }
-        
-        // Calculate n coordinate - ensure it's within bounds
-        int n = Math.min(scale - x - y, scale - 1);
-        
-        // Determine type based on parity of coordinates
-        // This is a simplified approach - in practice you might need more sophisticated type determination
-        int type = ((x + y) % 2 == 0) ? 0 : 1;
-        
-        return new Triangle(level, type, x, y, n);
+        // Single source of truth: delegate to fromWorldCoordinates. The prior body assigned a
+        // non-Bey type from coordinate parity ((x+y)%2), derived n from min(scale-x-y, scale-1)
+        // (inconsistent with the min(x,y) source of truth), and silently relocated x+y >= scale
+        // points onto the diagonal — a latent data-relocation hazard. All three are removed
+        // (RDR-009 Phase 1); both construction paths now agree.
+        return fromWorldCoordinates(worldX, worldY, level);
     }
     
     /**
@@ -172,27 +163,33 @@ public final class Triangle {
         if (worldY < 0.0f || worldY >= 1.0f) {
             throw new IllegalArgumentException("World Y coordinate must be [0.0, 1.0), got: " + worldY);
         }
-        
+        if (level < 0 || level > MAX_LEVEL) {
+            throw new IllegalArgumentException("Level must be 0-" + MAX_LEVEL + ", got: " + level);
+        }
+
         // For level 0, return root triangle
         if (level == 0) {
             return new Triangle(0, 0, 0, 0, 0);
         }
-        
+
         var scale = 1 << level;
         var quantX = Math.min((int) (worldX * scale), scale - 1);
         var quantY = Math.min((int) (worldY * scale), scale - 1);
-        
-        // Determine which triangle in the square contains the point
-        // Convert to local coordinates within the square [0,1) x [0,1)
+
+        // Determine which sub-triangle of the grid cell contains the point.
+        // Local coordinates within the cell [0,1) x [0,1):
         float localX = (worldX * scale) - quantX;
         float localY = (worldY * scale) - quantY;
-        
-        // Determine triangle type based on which side of the diagonal the point is on
-        // Type 0: bottom-left triangle (localX + localY <= 1.0)
-        // Type 1: top-right triangle (localX + localY > 1.0)
-        var type = (localX + localY > 1.0f) ? 1 : 0;
+
+        // t8code/Bey orientation: the cell is split along its MAIN diagonal (anchor → opposite
+        // corner). The lower-right half (localY <= localX) is the type-0 (≃ S0) triangle; the
+        // upper-left half (localY > localX) is the type-1 (≃ S1) triangle. This matches
+        // getVertices() so that the located triangle always contains its own point.
+        var type = (localY > localX) ? 1 : 0;
+
+        // n is the derived auxiliary coordinate min(x, y) — the single source of truth.
         var n = Math.min(quantX, quantY);
-        
+
         return new Triangle(level, type, quantX, quantY, n);
     }
     
@@ -233,26 +230,29 @@ public final class Triangle {
             return null;
         }
         
-        // Simplified parent computation - the full t8code algorithm handles type transitions
         var parentX = x >>> 1;
         var parentY = y >>> 1;
-        var parentN = n >>> 1;
+        // n is derived: recompute from the parent's coordinates rather than un-shifting the
+        // child's n, so the single source of truth (n = min(x, y)) is preserved at every level.
+        var parentN = Math.min(parentX, parentY);
         var parentType = computeParentType();
-        
+
         return new Triangle(level - 1, parentType, parentX, parentY, parentN);
     }
-    
+
     /**
-     * Compute the parent type based on current triangle state.
-     * This is a simplified version of t8code's type transition algorithm.
+     * Compute the parent's type from this triangle's type and cube-id — the exact inverse of
+     * {@link #computeChildType(int)}. The cube-id-3 child flips orientation relative to its
+     * parent while cube-ids 0–2 preserve it, so the parent's type is recovered by flipping back
+     * exactly when this triangle is the cube-id-3 child. (Placeholder convention — see
+     * {@link #computeChildType(int)}.)
      */
     private int computeParentType() {
-        // For simplified implementation, derive parent type from child index
         var childIndex = getChildIndex();
-        if (childIndex == -1) return type; // Already at root
-        
-        // Reverse the child type computation to get parent type
-        return (type - (childIndex % 2) + TYPES) % TYPES;
+        if (childIndex == -1) {
+            return type; // already at root
+        }
+        return (childIndex == 3) ? (1 - type) : type;
     }
     
     /**
@@ -270,22 +270,32 @@ public final class Triangle {
             throw new IllegalArgumentException("Cannot get child of triangle at maximum level " + MAX_LEVEL);
         }
         
-        // Simplified child computation - full t8code algorithm more complex
         var childX = (x << 1) + (childIndex & 1);
         var childY = (y << 1) + ((childIndex >> 1) & 1);
-        var childN = n << 1; // Simplified
+        // n is derived: compute from the child's coordinates so the single source of truth
+        // (n = min(x, y)) holds at every refinement level.
+        var childN = Math.min(childX, childY);
         var childType = computeChildType(childIndex);
-        
+
         return new Triangle(level + 1, childType, childX, childY, childN);
     }
-    
+
     /**
-     * Compute child type based on parent type and child index.
-     * This is a simplified version of t8code's type transition algorithm.
+     * Compute a child's type from this (parent) triangle's type and the child's cube-id. A parent
+     * of type {@code b} produces children with the Bey multiset {@code [b, b, b, 1-b]}: three
+     * children inherit the parent's orientation and one flips. This replaces the prior non-Bey
+     * alternating rule {@code (type + i%2)%2}, which produced the wrong multiset
+     * {@code [b, b, 1-b, 1-b]}.
+     *
+     * <p><b>Placeholder, not the geometric Bey transition.</b> The flip is assigned to the fixed
+     * cube-id-3 child because that is the only assignment that round-trips under the type-independent
+     * {@link #getChildIndex()} (it is a bijection {@code b ↦ childType} at every cube-id). The
+     * geometrically-correct Bey interior-child is type-dependent (cube-id 2 for type 0, cube-id 1
+     * for type 1) and does <em>not</em> round-trip under square-quadrant refinement; reconciling
+     * that requires true Bey triangle nesting, deferred to RDR-009 Phase 2 with the TM-index.
      */
     private int computeChildType(int childIndex) {
-        // Simplified type transitions - alternate based on parent type and child position
-        return (type + (childIndex % 2)) % TYPES;
+        return (childIndex == 3) ? (1 - type) : type;
     }
     
     /**
@@ -314,7 +324,12 @@ public final class Triangle {
             return false;
         }
         
-        // Special case for level 0 root triangle - covers entire [0,1) x [0,1) square
+        // Level-0 root covers the entire [0,1)² square. This is intentionally retained as a
+        // half-cube placeholder: with the main-diagonal geometry established here (P1), a strict
+        // type-0 root would only contain the lower-right half {y ≤ x}, leaving upper-left points
+        // unreachable until the S1 root is added. Removing this special case is therefore coupled
+        // to the two-prism cover — RDR-009 Phase 3 (Luciferase-7iu) "remove/specialize per root".
+        // TODO(RDR-009 P3): replace with type-based triangular containment once the S1 root exists.
         if (level == 0) {
             return true; // Already passed the [0,1) range check above
         }
@@ -373,22 +388,23 @@ public final class Triangle {
     public Triangle[] neighbors() {
         var neighbors = new Triangle[EDGES];
         
-        // Simplified neighbor finding - full t8code algorithm is more complex
+        // Simplified same-type neighbor finding (the cross-diagonal S0↔S1 crossing logic is
+        // RDR-009 Phase 4); n is recomputed as min(x,y) for each neighbor's coordinates.
         // Edge 0: right neighbor
         if (x + 1 < (1 << level)) {
-            neighbors[0] = new Triangle(level, type, x + 1, y, n);
+            neighbors[0] = new Triangle(level, type, x + 1, y, Math.min(x + 1, y));
         }
-        
-        // Edge 1: top neighbor  
+
+        // Edge 1: top neighbor
         if (y + 1 < (1 << level)) {
-            neighbors[1] = new Triangle(level, type, x, y + 1, n);
+            neighbors[1] = new Triangle(level, type, x, y + 1, Math.min(x, y + 1));
         }
-        
+
         // Edge 2: diagonal neighbor (simplified)
         if (x > 0 && y > 0) {
-            neighbors[2] = new Triangle(level, type, x - 1, y - 1, n);
+            neighbors[2] = new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1));
         }
-        
+
         return neighbors;
     }
     
@@ -404,21 +420,22 @@ public final class Triangle {
             throw new IllegalArgumentException("Edge index must be 0-2, got: " + edge);
         }
         
-        // Simplified neighbor finding - full t8code algorithm is more complex
+        // Simplified same-type neighbor finding (cross-diagonal crossing is RDR-009 Phase 4);
+        // n is recomputed as min(x,y) for the neighbor's coordinates.
         switch (edge) {
             case 0: // right neighbor
                 if (x + 1 < (1 << level)) {
-                    return new Triangle(level, type, x + 1, y, n);
+                    return new Triangle(level, type, x + 1, y, Math.min(x + 1, y));
                 }
                 break;
             case 1: // top neighbor
                 if (y + 1 < (1 << level)) {
-                    return new Triangle(level, type, x, y + 1, n);
+                    return new Triangle(level, type, x, y + 1, Math.min(x, y + 1));
                 }
                 break;
             case 2: // diagonal neighbor (simplified)
                 if (x > 0 && y > 0) {
-                    return new Triangle(level, type, x - 1, y - 1, n);
+                    return new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1));
                 }
                 break;
         }
@@ -506,18 +523,20 @@ public final class Triangle {
         float maxX = bounds[2];
         float maxY = bounds[3];
         
-        // For simplicity, return triangle vertices based on type
+        // t8code/Bey orientation: split the cell along its MAIN diagonal (minX,minY)→(maxX,maxY).
         if (type == 0) {
+            // Lower-right Kuhn simplex {anchor, anchor+x̂, anchor+x̂+ŷ} (the S0 orientation, y ≤ x).
             return new float[][]{
                 {minX, minY},
                 {maxX, minY},
-                {minX, maxY}
+                {maxX, maxY}
             };
         } else {
+            // Upper-left Kuhn simplex {anchor, anchor+ŷ, anchor+x̂+ŷ} (the S1 orientation, x ≤ y).
             return new float[][]{
-                {maxX, minY},
-                {maxX, maxY},
-                {minX, maxY}
+                {minX, minY},
+                {minX, maxY},
+                {maxX, maxY}
             };
         }
     }

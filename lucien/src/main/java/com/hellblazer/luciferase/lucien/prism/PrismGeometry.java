@@ -127,28 +127,15 @@ public final class PrismGeometry {
      * @return list of 3 vertices in 2D (x,y) coordinates
      */
     private static List<float[]> getTriangleVertices(Triangle triangle) {
+        // Single source of truth: use the triangle's own t8code/Bey-oriented vertices rather than
+        // recomputing a fixed lower-left shape. The prior hardcoded shape ignored the triangle's
+        // type, so the prism mesh disagreed with Triangle.getVertices() for type-1 (and, after the
+        // RDR-009 P1 main-diagonal reorientation, for type-0 too). Delegating keeps the mesh used
+        // by ray intersection / collision / nearest-neighbor consistent with the triangle geometry.
         var vertices = new ArrayList<float[]>(3);
-        
-        var bounds = triangle.getWorldBounds();
-        float minX = bounds[0];
-        float minY = bounds[1];
-        float maxX = bounds[2];
-        float maxY = bounds[3];
-        
-        // Create proper triangular vertices for triangular prism
-        // Standard right triangle in first quadrant with vertices at:
-        // (minX, minY), (maxX, minY), (minX, maxY)
-        // This ensures we stay within triangular constraint x + y <= 1.0
-        
-        // Bottom-left vertex (origin of triangle)
-        vertices.add(new float[] {minX, minY});
-        
-        // Bottom-right vertex 
-        vertices.add(new float[] {maxX, minY});
-        
-        // Top-left vertex (forms right triangle)
-        vertices.add(new float[] {minX, maxY});
-        
+        for (var v : triangle.getVertices()) {
+            vertices.add(new float[] { v[0], v[1] });
+        }
         return vertices;
     }
     
