@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * gRPC-based ghost channel adapter for distributed ghost communication.
@@ -73,7 +74,10 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
     private final GhostType ghostType;
 
     // Batching infrastructure
-    private final Map<Integer, List<GhostElement<Key, ID, Content>>> queuedGhosts;
+    // Per-target queues. ConcurrentLinkedQueue is thread-safe for concurrent add/poll, and
+    // flushToTarget drains via poll() (never removing the map entry), so a queueGhost racing a
+    // concurrent flush of the same target can never NPE or lose an element (Luciferase-3ko).
+    private final Map<Integer, Queue<GhostElement<Key, ID, Content>>> queuedGhosts;
     private final int batchSize;
 
     /**
@@ -129,10 +133,14 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
             return;
         }
 
-        queuedGhosts.computeIfAbsent(targetRank, k -> new ArrayList<>()).add(ghostElement);
+        // Capture the queue reference rather than re-getting it: a concurrent flushToTarget must
+        // not be able to null out the local 'queue' between the add and the size check.
+        var queue = queuedGhosts.computeIfAbsent(targetRank, k -> new ConcurrentLinkedQueue<>());
+        queue.add(ghostElement);
 
-        // Auto-flush if batch size reached
-        var queue = queuedGhosts.get(targetRank);
+        // Auto-flush when the batch fills. Advisory/best-effort: ConcurrentLinkedQueue.size() is O(n) and
+        // not atomic with add(), so the queue may transiently exceed batchSize under concurrent producers
+        // -- acceptable for a batched best-effort ghost channel (batchSize is small, ~100 by default).
         if (queue.size() >= batchSize) {
             flushToTarget(targetRank);
         }
@@ -204,12 +212,23 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
      */
     @Override
     public CompletableFuture<Void> flushToTarget(int targetRank) {
-        var queue = queuedGhosts.remove(targetRank);
-        if (queue == null || queue.isEmpty()) {
+        // Drain via poll() instead of remove()-then-read: the entry stays in the map, so a
+        // concurrent queueGhost.add() to the same target is never orphaned — it either lands in
+        // this batch (polled) or remains for the next flush. ConcurrentLinkedQueue makes the
+        // concurrent add/poll safe (no ConcurrentModificationException). (Luciferase-3ko)
+        var queue = queuedGhosts.get(targetRank);
+        if (queue == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        var batch = new ArrayList<GhostElement<Key, ID, Content>>();
+        for (GhostElement<Key, ID, Content> element; (element = queue.poll()) != null; ) {
+            batch.add(element);
+        }
+        if (batch.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
 
-        return sendBatch(targetRank, queue);
+        return sendBatch(targetRank, batch);
     }
 
     /**
@@ -231,7 +250,7 @@ public class GrpcGhostChannel<Key extends SpatialKey<Key>, ID extends EntityID, 
     @Override
     public int getTotalPendingCount() {
         return queuedGhosts.values().stream()
-                          .mapToInt(List::size)
+                          .mapToInt(Queue::size)
                           .sum();
     }
 
