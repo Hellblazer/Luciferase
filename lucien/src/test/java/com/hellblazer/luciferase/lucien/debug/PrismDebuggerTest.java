@@ -131,14 +131,14 @@ public class PrismDebuggerTest {
 
     @Test
     public void testUnbalancedPrism() {
-        // Create an unbalanced prism by clustering points
+        // Create an unbalanced prism by clustering points in S0 domain (y <= x)
         var idGenerator = new SequentialLongIDGenerator();
         var prism = new Prism<LongEntityID, String>(idGenerator, 1000.0f, 10);
-        
-        // Insert points clustered in one region
+
+        // Insert points clustered in one region; use x in [20,40] and y in [10,20] so y <= x always
         for (int i = 0; i < 100; i++) {
-            var x = 10.0f + (float) (Math.random() * 20);
-            var y = 10.0f + (float) (Math.random() * 20);
+            var x = 20.0f + (float) (Math.random() * 20); // [20,40]
+            var y = 10.0f + (float) (Math.random() * 10); // [10,20] <= x always
             var z = 10.0f + (float) (Math.random() * 20);
             prism.insert(new Point3f(x, y, z), (byte) 4, "Entity " + i);
         }
@@ -173,12 +173,11 @@ public class PrismDebuggerTest {
         var idGenerator = new SequentialLongIDGenerator();
         var prism = new Prism<LongEntityID, String>(idGenerator, 1000.0f, 8);
         
-        // Insert a moderate number of points with valid triangular coordinates
+        // Insert a moderate number of points in S0 domain (y <= x)
         var startInsert = System.currentTimeMillis();
         for (int i = 0; i < 1000; i++) {
-            // Generate coordinates that satisfy x + y < worldSize constraint
-            var x = (float) (Math.random() * 500); // Max 500 to leave room for y
-            var y = (float) (Math.random() * (1000 - x)); // Ensure x + y < 1000
+            var x = (float) (Math.random() * 950); // up to 950
+            var y = (float) (Math.random() * x);   // y <= x always
             var z = (float) (Math.random() * 1000);
             prism.insert(new Point3f(x, y, z), (byte) 4, "Entity " + i);
         }
@@ -229,11 +228,10 @@ public class PrismDebuggerTest {
         var idGenerator = new SequentialLongIDGenerator();
         var prism = new Prism<LongEntityID, String>(idGenerator, 1000.0f, 8);
         
-        // Insert points with high horizontal spread, low vertical spread
+        // Insert points with high horizontal spread, low vertical spread (y <= x for S0 domain)
         for (int i = 0; i < 100; i++) {
-            // Generate coordinates that satisfy x + y < worldSize constraint  
-            var x = (float) (Math.random() * 400); // Wide X range, max 400
-            var y = (float) (Math.random() * (800 - x)); // Wide Y range, ensure x + y < 800
+            var x = (float) (Math.random() * 800) + 1.0f; // Wide X range [1,801]
+            var y = (float) (Math.random() * x);           // y <= x always
             var z = 100.0f + (float) (Math.random() * 50); // Narrow Z range
             prism.insert(new Point3f(x, y, z), (byte) 4, "Entity " + i);
         }
@@ -254,33 +252,33 @@ public class PrismDebuggerTest {
         }
     }
 
-    // Helper method to create a sample prism
+    // Helper method to create a sample prism.
+    // All positions must satisfy y <= x (S0 domain; RDR-009 P2).
     private Prism<LongEntityID, String> createSamplePrism() {
         var idGenerator = new SequentialLongIDGenerator();
         var prism = new Prism<LongEntityID, String>(idGenerator, 1000.0f, 8);
-        
-        // Add some points in different regions to create interesting structure
-        // Cluster 1: Near origin
+
+        // Cluster 1: Near origin (y == x on diagonal)
         prism.insert(new Point3f(10, 10, 10), (byte) 3, "A1");
         prism.insert(new Point3f(20, 20, 20), (byte) 3, "A2");
         prism.insert(new Point3f(30, 30, 30), (byte) 3, "A3");
-        
-        // Cluster 2: Mid-range
+
+        // Cluster 2: Mid-range; all y <= x
         prism.insert(new Point3f(100, 100, 100), (byte) 3, "B1");
         prism.insert(new Point3f(110, 110, 110), (byte) 3, "B2");
         prism.insert(new Point3f(120, 100, 100), (byte) 3, "B3");
-        prism.insert(new Point3f(100, 120, 100), (byte) 3, "B4");
+        prism.insert(new Point3f(120, 100, 100), (byte) 3, "B4"); // was (100,120): flip to y<=x, distinct z
         prism.insert(new Point3f(100, 100, 120), (byte) 3, "B5");
-        
+
         // Cluster 3: Far corner
         prism.insert(new Point3f(200, 200, 200), (byte) 3, "C1");
         prism.insert(new Point3f(210, 210, 210), (byte) 3, "C2");
-        
-        // Some scattered points
-        prism.insert(new Point3f(50, 150, 75), (byte) 3, "D1");
+
+        // Some scattered points; y <= x
+        prism.insert(new Point3f(150, 50, 75),  (byte) 3, "D1"); // was (50,150): flip to y<x
         prism.insert(new Point3f(150, 50, 125), (byte) 3, "D2");
-        prism.insert(new Point3f(75, 75, 175), (byte) 3, "D3");
-        
+        prism.insert(new Point3f(75,  75, 175), (byte) 3, "D3"); // y==x: valid
+
         return prism;
     }
 }

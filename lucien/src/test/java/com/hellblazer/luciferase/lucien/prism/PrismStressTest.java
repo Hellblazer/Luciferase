@@ -182,26 +182,27 @@ public class PrismStressTest {
     
     @Test
     void testTriangularConstraintEdgeCases() {
-        // Test exact boundary
+        // Test S0 domain boundary: y <= x required (RDR-009 P2)
         float epsilon = 0.0001f;
-        
-        // Valid: x + y = worldSize - epsilon
+
+        // Valid: y == x (on the diagonal boundary of S0)
         var valid1 = new Point3f(worldSize * 0.5f - epsilon, worldSize * 0.5f - epsilon, 100.0f);
         assertDoesNotThrow(() -> prism.insert(valid1, (byte)10, "BoundaryValid"));
-        
-        // Invalid: x + y = worldSize
-        var invalid1 = new Point3f(worldSize * 0.5f, worldSize * 0.5f, 100.0f);
-        assertThrows(IllegalArgumentException.class, 
+
+        // Invalid: y > x (upper-left half, outside S0)
+        var invalid1 = new Point3f(worldSize * 0.3f, worldSize * 0.5f, 100.0f); // y > x
+        assertThrows(IllegalArgumentException.class,
                     () -> prism.insert(invalid1, (byte)10, "BoundaryInvalid"));
-        
-        // Test corner cases
-        var corner1 = new Point3f(worldSize - epsilon, 0.0f, 50.0f); // Max X, min Y
+
+        // Test corner cases: all must have y <= x
+        var corner1 = new Point3f(worldSize - epsilon, 0.0f, 50.0f); // Max X, y=0: valid
         assertDoesNotThrow(() -> prism.insert(corner1, (byte)10, "CornerMaxX"));
-        
-        var corner2 = new Point3f(0.0f, worldSize - epsilon, 50.0f); // Min X, max Y
-        assertDoesNotThrow(() -> prism.insert(corner2, (byte)10, "CornerMaxY"));
-        
-        var corner3 = new Point3f(epsilon, epsilon, 50.0f); // Near origin
+
+        // was (0, worldSize-e) which violates y <= x; use (worldSize-e, worldSize-e-1) instead
+        var corner2 = new Point3f(worldSize - epsilon, worldSize - epsilon - 1f, 50.0f); // y < x: valid
+        assertDoesNotThrow(() -> prism.insert(corner2, (byte)10, "CornerLargeXY"));
+
+        var corner3 = new Point3f(epsilon, epsilon, 50.0f); // Near origin, y==x: valid
         assertDoesNotThrow(() -> prism.insert(corner3, (byte)10, "CornerOrigin"));
     }
     
@@ -361,12 +362,11 @@ public class PrismStressTest {
     }
     
     private Point3f generateValidPosition(Random rand) {
-        // Generate position respecting triangular constraint
-        float x = rand.nextFloat() * (worldSize * 0.8f);
-        float maxY = worldSize * 0.8f - x;
-        float y = rand.nextFloat() * maxY;
+        // Generate position in S0 domain: y <= x (RDR-009 P2)
+        float x = rand.nextFloat() * (worldSize * 0.95f);
+        float y = rand.nextFloat() * x;  // y <= x always
         float z = rand.nextFloat() * worldSize;
-        
+
         return new Point3f(x, y, z);
     }
     

@@ -133,13 +133,13 @@ class PrismTest {
     @Test
     @DisplayName("k-NN search finds nearest neighbors")
     void testKNearestNeighbors() {
-        // Insert entities in a pattern (ensuring x + y < 1.0 for triangular constraint)
+        // Insert entities in a pattern (ensuring y <= x for S0 domain)
         var positions = new Point3f[] {
             new Point3f(0.1f, 0.1f, 0.1f),
             new Point3f(0.2f, 0.2f, 0.2f),
             new Point3f(0.3f, 0.3f, 0.3f),
-            new Point3f(0.5f, 0.1f, 0.1f),  // Changed from 0.8 to 0.5
-            new Point3f(0.1f, 0.5f, 0.1f),  // Changed from 0.8 to 0.5
+            new Point3f(0.5f, 0.1f, 0.1f),  // y < x: valid S0
+            new Point3f(0.5f, 0.1f, 0.1f),  // was (0.1,0.5): flip to y<=x
             new Point3f(0.1f, 0.1f, 0.8f)
         };
         
@@ -174,8 +174,8 @@ class PrismTest {
         for (float x = 0.1f; x < 1.0f; x += 0.2f) {
             for (float y = 0.1f; y < 1.0f; y += 0.2f) {
                 for (float z = 0.1f; z < 1.0f; z += 0.2f) {
-                    // Skip points outside triangular constraint
-                    if (x + y >= 1.0f) continue;
+                    // Skip points outside S0 domain (y <= x required)
+                    if (y > x) continue;
                     
                     var pos = new Point3f(x, y, z);
                     positions.add(pos);
@@ -247,7 +247,7 @@ class PrismTest {
         var ids = new ArrayList<LongEntityID>();
         for (float x = 0.1f; x < 0.9f; x += 0.2f) {
             for (float y = 0.1f; y < 0.9f; y += 0.2f) {
-                if (x + y >= 1.0f) continue; // Skip invalid triangular positions
+                if (y > x) continue; // Skip points outside S0 domain (require y <= x)
                 
                 for (float z = 0.1f; z < 0.9f; z += 0.2f) {
                     var pos = new Point3f(x, y, z);
@@ -279,8 +279,8 @@ class PrismTest {
         // Generate random positions
         var random = new Random(42);
         for (int i = 0; i < batchSize; i++) {
-            var x = random.nextFloat() * 0.9f;
-            var y = random.nextFloat() * (0.9f - x); // Ensure x + y < 1
+            var x = random.nextFloat() * 0.95f;  // Ensure y <= x (S0 domain)
+            var y = random.nextFloat() * x;
             var z = random.nextFloat();
             
             var pos = new Point3f(x, y, z);
@@ -328,21 +328,21 @@ class PrismTest {
     }
     
     @Test
-    @DisplayName("Prism-specific triangular constraint is enforced")
+    @DisplayName("Prism-specific S0 constraint is enforced (y <= x required)")
     void testTriangularConstraint() {
-        // Try to insert entity outside triangular region
+        // Try to insert entity outside S0 domain (y > x)
         assertThrows(IllegalArgumentException.class, () -> {
             var id = idGenerator.generateID();
             var content = "Invalid Position";
-            // x + y > 1 violates triangular constraint
-            prism.insert(id, new Point3f(0.7f, 0.7f, 0.5f), (byte)5, content);
+            // y > x violates S0 domain constraint
+            prism.insert(id, new Point3f(0.3f, 0.7f, 0.5f), (byte)5, content);
         });
-        
-        // Valid positions near boundary should work
+
+        // Valid positions (y <= x) near boundary should work
         assertDoesNotThrow(() -> {
             var id = idGenerator.generateID();
             var content = "Valid Position";
-            // x + y < 1 is valid
+            // y <= x is valid in S0
             prism.insert(id, new Point3f(0.5f, 0.4f, 0.5f), (byte)5, content);
         });
     }
@@ -381,14 +381,17 @@ class PrismTest {
     @DisplayName("Neighbor finding works for prisms")
     void testNeighborFinding() {
         // Insert entities in neighboring prisms
+        // All positions must satisfy y <= x (S0 domain). All 7 points are within the
+        // search cube [0.1,0.4]^3. Original upper-left neighbors (y > x) are
+        // relocated into S0 by keeping spatial spread but swapping or choosing y <= x.
         var positions = new Point3f[] {
-            new Point3f(0.25f, 0.25f, 0.25f), // Center
-            new Point3f(0.35f, 0.25f, 0.25f), // Right neighbor
-            new Point3f(0.25f, 0.35f, 0.25f), // Up neighbor
-            new Point3f(0.25f, 0.25f, 0.35f), // Above neighbor
-            new Point3f(0.15f, 0.25f, 0.25f), // Left neighbor
-            new Point3f(0.25f, 0.15f, 0.25f), // Down neighbor
-            new Point3f(0.25f, 0.25f, 0.15f)  // Below neighbor
+            new Point3f(0.25f, 0.25f, 0.25f), // Center (y == x: boundary, valid)
+            new Point3f(0.35f, 0.25f, 0.25f), // +x neighbor (y < x)
+            new Point3f(0.35f, 0.30f, 0.25f), // was (0.25,0.35,0.25): use (0.35,0.30) y<x, in range
+            new Point3f(0.25f, 0.25f, 0.35f), // +z neighbor (y == x, z varies: valid)
+            new Point3f(0.20f, 0.15f, 0.25f), // was (0.15,0.25): use (0.20,0.15) y<x, in range
+            new Point3f(0.25f, 0.15f, 0.25f), // -y neighbor (y < x: valid)
+            new Point3f(0.25f, 0.25f, 0.15f)  // -z neighbor (y == x, z varies: valid)
         };
         
         var ids = new ArrayList<LongEntityID>();

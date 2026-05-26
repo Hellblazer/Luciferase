@@ -110,8 +110,8 @@ public class PrismCrossIndexCompatibilityTest {
         for (int i = 0; i < positions.size(); i++) {
             var pos = positions.get(i);
             
-            // Check if position satisfies prism constraint
-            if (pos.x + pos.y < worldSize) {
+            // Check if position satisfies S0 domain (y <= x)
+            if (pos.y <= pos.x) {
                 // Remove from octree
                 assertTrue(octree.removeEntity(octreeIds.get(i)));
                 
@@ -192,31 +192,33 @@ public class PrismCrossIndexCompatibilityTest {
         var tetree = new Tetree<LongEntityID, String>(idGenerator, 100, (byte)21);
         var prism = new Prism<LongEntityID, String>(idGenerator, worldSize, 21);
         
-        // Test positions at various extremes
+        // Test positions at various extremes.
+        // Prism S0 domain requires y <= x; positions with y > x will throw.
+        // Updated list: (0,99,50) had y>x and is replaced with (99,0,50).
         List<Point3f> testPositions = Arrays.asList(
-            new Point3f(0.001f, 0.001f, 0.001f),      // Near origin
-            new Point3f(99.0f, 0.0f, 50.0f),          // X-axis extreme
-            new Point3f(0.0f, 99.0f, 50.0f),          // Y-axis extreme
-            new Point3f(49.0f, 49.0f, 99.0f),         // Near triangular boundary
-            new Point3f(25.0f, 25.0f, 0.0f),          // Z minimum
-            new Point3f(25.0f, 25.0f, 99.999f)        // Z maximum
+            new Point3f(0.001f, 0.001f, 0.001f),      // Near origin, y==x: valid S0
+            new Point3f(99.0f, 0.0f, 50.0f),          // X-axis extreme, y<x: valid S0
+            new Point3f(99.0f, 0.5f, 50.0f),          // was (0,99,50) y>x: use (99,0.5) y<x
+            new Point3f(49.0f, 49.0f, 99.0f),         // y==x boundary: valid S0
+            new Point3f(25.0f, 25.0f, 0.0f),          // y==x, Z minimum: valid S0
+            new Point3f(25.0f, 25.0f, 99.999f)        // y==x, Z maximum: valid S0
         );
-        
+
         for (int i = 0; i < testPositions.size(); i++) {
             var pos = testPositions.get(i);
             final int idx = i; // Make final for lambda
-            
+
             // Octree: Should accept all positive coordinates
             assertDoesNotThrow(() -> octree.insert(pos, (byte)10, "Octree" + idx));
-            
-            // Tetree: Should accept all positive coordinates  
+
+            // Tetree: Should accept all positive coordinates
             assertDoesNotThrow(() -> tetree.insert(pos, (byte)10, "Tetree" + idx));
-            
-            // Prism: Should only accept if x+y < worldSize
-            if (pos.x + pos.y < worldSize) {
+
+            // Prism: Should only accept if y <= x (S0 domain)
+            if (pos.y <= pos.x) {
                 assertDoesNotThrow(() -> prism.insert(pos, (byte)10, "Prism" + idx));
             } else {
-                assertThrows(IllegalArgumentException.class, 
+                assertThrows(IllegalArgumentException.class,
                            () -> prism.insert(pos, (byte)10, "Prism" + idx));
             }
         }
@@ -281,9 +283,9 @@ public class PrismCrossIndexCompatibilityTest {
     }
     
     private Point3f generatePrismPosition() {
-        // Prism requires x + y < worldSize
-        float x = random.nextFloat() * (worldSize * 0.7f);
-        float y = random.nextFloat() * (worldSize * 0.7f - x);
+        // Prism S0 domain requires y <= x (RDR-009 P2)
+        float x = random.nextFloat() * (worldSize * 0.95f);
+        float y = random.nextFloat() * x;  // y <= x always
         float z = random.nextFloat() * worldSize;
         return new Point3f(x, y, z);
     }
