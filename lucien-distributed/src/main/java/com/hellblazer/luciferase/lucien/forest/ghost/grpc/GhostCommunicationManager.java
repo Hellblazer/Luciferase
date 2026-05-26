@@ -133,9 +133,12 @@ public class GhostCommunicationManager<Key extends SpatialKey<Key>, ID extends E
         this.serviceImpl = new GhostExchangeServiceImpl<>(
             ghostLayerProvider, contentSerializer, entityIdClass);
 
-        // Create gRPC server (RDR-005: insecure by default; mTLS creds + the verifying
-        // PeerAuthInterceptor are injected together via ServerAuth, so trust-any TLS creds can never
-        // be installed without the interceptor that actually authenticates the peer).
+        // Create gRPC server (RDR-005: insecure by default). When a ServerAuth is supplied, its
+        // (trust-any) mTLS credentials and a PeerAuthInterceptor are installed together, so bare creds
+        // cannot be passed without *an* interceptor. The interceptor's PeerVerifier must be a real
+        // cryptographic verifier (the deferred FirefliesPeerVerifier) for the server to actually
+        // authenticate peers — prefer GrpcCredentialFactory.serverAuth(key, cert, verifier) over
+        // hand-rolling a ServerAuth, which could pair trust-any creds with a non-verifying interceptor.
         var serverCredentials = serverAuth == null
             ? GrpcCredentialFactory.insecureServer() : serverAuth.credentials();
         var serverBuilder = Grpc.newServerBuilderForPort(port, serverCredentials);

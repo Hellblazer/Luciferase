@@ -480,6 +480,8 @@ public class BalanceCoordinatorClient {
 
             log.debug("Creating channel to rank {} at {}", rank, endpoint);
             // RDR-005: credentials default to insecure (plaintext); mTLS is injected by the caller.
+            // endpoint is a host:port target — Grpc.newChannelBuilder resolves it as
+            // ManagedChannelBuilder.forTarget did (default name resolver).
             return Grpc.newChannelBuilder(endpoint, channelCredentials)
                 .keepAliveTime(30, TimeUnit.SECONDS)
                 .keepAliveTimeout(5, TimeUnit.SECONDS)
