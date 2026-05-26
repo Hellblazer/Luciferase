@@ -499,7 +499,54 @@ public final class Triangle {
         
         return null; // At boundary
     }
-    
+
+    /**
+     * Compute the same-level face-neighbor across face {@code f} — the t8code constant-time
+     * face-neighbor (Burstedde &amp; Holke, Table 3), extended to the two-prism cover (RDR-009 P4).
+     *
+     * <p>The three faces are numbered by the opposite vertex; face <b>1</b> is the hypotenuse (the
+     * cell's main diagonal) for both types. The neighbor's type is {@code 1 - type} and the
+     * reciprocal face is {@code 2 - f}. When the neighbor across a face falls outside the S0 root
+     * (across the global diagonal {@code y = x}: {@code ny > nx}, or {@code ny == nx} with a type-1
+     * neighbor) it is the interior S0↔S1 face — the neighbor is reflected into the sibling root
+     * (coordinates swapped, orientation and {@code half} flipped) rather than reported as a
+     * boundary. Only the outer square edges (a coordinate leaving {@code [0, 2^level)}) return
+     * {@code null}. Round-trips: {@code faceNeighbor(faceNeighbor(t, f), 2 - f) == t}.
+     *
+     * @param face the face index (0-2; face 1 is the hypotenuse / shared diagonal)
+     * @return the face-neighbor (possibly in the other root half), or null at the outer boundary
+     * @throws IllegalArgumentException if face is not 0-2
+     */
+    public Triangle faceNeighbor(int face) {
+        if (face < 0 || face >= EDGES) {
+            throw new IllegalArgumentException("Face index must be 0-2, got: " + face);
+        }
+        var max = 1 << level;
+        var neighborType = 1 - type; // t8 Table 3 (2D): N.b = 1 - T.b
+        int nx;
+        int ny;
+        if (type == 0) {
+            // type 0: f0 -> (x+h, y); f1 (hypotenuse) -> (x, y); f2 -> (x, y-h)   [h = 1 level-local]
+            nx = (face == 0) ? x + 1 : x;
+            ny = (face == 2) ? y - 1 : y;
+        } else {
+            // type 1: f0 -> (x, y+h); f1 (hypotenuse) -> (x, y); f2 -> (x-h, y)
+            nx = (face == 2) ? x - 1 : x;
+            ny = (face == 0) ? y + 1 : y;
+        }
+        // Outer square boundary: a coordinate left [0, 2^level) — a true domain edge, no neighbor.
+        if (nx < 0 || ny < 0 || nx >= max || ny >= max) {
+            return null;
+        }
+        // Crossed the main diagonal into the sibling root (S0 <-> S1): reflect across y = x — swap
+        // coordinates, flip orientation (1 - neighborType == type) and the half.
+        if (ny > nx || (ny == nx && neighborType == 1)) {
+            return new Triangle(level, 1 - neighborType, ny, nx, Math.min(ny, nx), 1 - half);
+        }
+        // Same-half neighbor within this root.
+        return new Triangle(level, neighborType, nx, ny, Math.min(nx, ny), half);
+    }
+
     /**
      * Get the world coordinate range for this triangle.
      * 
