@@ -156,6 +156,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <!-- Isolate each test class in a fresh forked JVM so a native LWJGL/OpenGL
+                         crash ("forked VM terminated without properly saying goodbye") fails only
+                         that class rather than corrupting the shared fork and killing the whole
+                         render batch (Luciferase-41a). Trades JVM-startup time for crash isolation. -->
+                    <reuseForks>false</reuseForks>
                     <systemPropertyVariables>
                         <java.awt.headless>true</java.awt.headless>
                         <lwjgl.opencl.explicitInit>true</lwjgl.opencl.explicitInit>
