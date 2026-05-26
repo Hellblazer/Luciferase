@@ -86,6 +86,9 @@ class TriangleBeyTypeTest {
                 for (int j = 1; j < 8; j++) {
                     float wx = i / 8.0f * 0.999f;
                     float wy = j / 8.0f * 0.999f;
+                    if (wy > wx) {
+                        continue; // RDR-009 P2: only the S0 root (y <= x) is indexable until P3
+                    }
                     int qx = Math.min((int) (wx * scale), scale - 1);
                     int qy = Math.min((int) (wy * scale), scale - 1);
                     float localX = wx * scale - qx;
@@ -113,6 +116,9 @@ class TriangleBeyTypeTest {
                 for (int j = 1; j < 10; j++) {
                     float wx = i / 10.0f * 0.999f;
                     float wy = j / 10.0f * 0.999f;
+                    if (wy > wx) {
+                        continue; // RDR-009 P2: only the S0 root (y <= x) is indexable until P3
+                    }
                     var a = Triangle.fromWorldCoordinate(wx, wy, level);
                     var b = Triangle.fromWorldCoordinates(wx, wy, level);
                     assertEquals(b.getType(), a.getType(), "type disagreement at " + wx + "," + wy + " L" + level);
@@ -181,6 +187,9 @@ class TriangleBeyTypeTest {
                 for (int j = 1; j < 8; j++) {
                     float wx = i / 8.0f * 0.999f;
                     float wy = j / 8.0f * 0.999f;
+                    if (wy > wx) {
+                        continue; // RDR-009 P2: only the S0 root (y <= x) is indexable until P3
+                    }
                     var parent = Triangle.fromWorldCoordinates(wx, wy, level);
                     assertEquals(Math.min(parent.getX(), parent.getY()), parent.getN(),
                         "constructed triangle must satisfy n = min(x,y)");

@@ -424,7 +424,9 @@ class PrismKeyTest {
         var key1 = new PrismKey(triangle1, line1);
         var key2 = new PrismKey(triangle1, line1);
         
-        var triangle2 = new Triangle(3, 1, 4, 2, 0); // Different n
+        // RDR-009 P2: n is no longer part of Triangle identity (it is the derived min(x,y)), so a
+        // distinct key must differ in a real field. Use a different anchor x (still S0: y <= x).
+        var triangle2 = new Triangle(3, 1, 3, 2, 2);
         var key3 = new PrismKey(triangle2, line1);
         
         var line2 = new Line(3, 4); // Different coordinate
@@ -472,51 +474,38 @@ class PrismKeyTest {
     }
 
     @Test
-    @DisplayName("compareTo is consistent with equals across all valid levels")
+    @DisplayName("compareTo is a total order consistent with equals across all valid levels")
     void testCompareToInjectiveAtAllLevels() {
-        // Regression test for the PR #86 first-pass finding: PrismKey's
-        // long-packed consecutiveIndex collides at level 21 (3*21+1 = 64
-        // exceeds long width). compareTo must remain a total order
-        // consistent with equals at every level the constructor accepts —
-        // otherwise ConcurrentSkipListMap silently overwrites entries.
-        var seen = new HashMap<String, PrismKey>();
+        // RDR-009 P2: compareTo orders by the tetrahedral-Morton consecutive index (level
+        // tie-break). The index is 63 bits at MAX_LEVEL=21 — no overflow/collision (the prior
+        // long-packed encoding collided past ~level 15). Build VALID S0 keys by refinement at
+        // every level (the raw constructor would also accept non-S0 anchors that never occur in
+        // a real index), vary the line z, and assert a total order consistent with equals so
+        // ConcurrentSkipListMap never silently overwrites entries.
+        var keys = new java.util.ArrayList<PrismKey>();
+        var seed = PrismKey.createRoot();
         for (int level = 0; level <= Triangle.MAX_LEVEL; level++) {
-            // Build a small grid of keys at this level. The triangular
-            // constraint forces x + y < 2^level, so pick interior points.
-            int span = (level == 0) ? 1 : 2;
-            for (int x = 0; x < span; x++) {
-                for (int y = 0; y < span - x; y++) {
-                    for (int n = 0; n < span; n++) {
-                        for (int type = 0; type < (level == 0 ? 1 : 2); type++) {
-                            for (int z = 0; z < span; z++) {
-                                var triangle = new Triangle(level, type, x, y, n);
-                                var line = new Line(level, z);
-                                var key = new PrismKey(triangle, line);
-                                var fingerprint = String.format(
-                                    "L=%d/t=%d/x=%d/y=%d/n=%d/z=%d",
-                                    level, type, x, y, n, z);
-                                var prior = seen.put(fingerprint, key);
-                                assertNull(prior,
-                                    "Duplicate fingerprint within same level — test bug");
-                            }
-                        }
-                    }
-                }
+            var tri = seed.getTriangle(); // a valid S0 triangle at this level
+            int span = Math.min(2, 1 << level);
+            for (int z = 0; z < span; z++) {
+                keys.add(new PrismKey(tri, new Line(level, z)));
+            }
+            if (level < Triangle.MAX_LEVEL) {
+                seed = seed.child((level * 3 + 1) % PrismKey.CHILDREN);
             }
         }
-        // Every distinct PrismKey must compareTo != 0 against every other.
-        var keys = seen.values().toArray(new PrismKey[0]);
-        for (int i = 0; i < keys.length; i++) {
-            assertEquals(0, keys[i].compareTo(keys[i]),
-                "Key must compareTo == 0 against itself");
-            for (int j = i + 1; j < keys.length; j++) {
-                int cmp = keys[i].compareTo(keys[j]);
-                assertNotEquals(0, cmp,
-                    String.format("Distinct keys collided in compareTo: %s vs %s",
-                                  keys[i], keys[j]));
-                // Total ordering: cmp(a,b) and cmp(b,a) must have opposite signs.
-                assertEquals(Integer.signum(cmp), -Integer.signum(keys[j].compareTo(keys[i])),
-                    "compareTo not antisymmetric");
+        for (int i = 0; i < keys.size(); i++) {
+            var a = keys.get(i);
+            assertEquals(0, a.compareTo(a), "Key must compareTo == 0 against itself");
+            for (int j = i + 1; j < keys.size(); j++) {
+                var b = keys.get(j);
+                int cmp = a.compareTo(b);
+                if (a.equals(b)) {
+                    assertEquals(0, cmp, "equal keys must compareTo 0");
+                } else {
+                    assertNotEquals(0, cmp, String.format("Distinct keys collided in compareTo: %s vs %s", a, b));
+                    assertEquals(Integer.signum(cmp), -Integer.signum(b.compareTo(a)), "compareTo not antisymmetric");
+                }
             }
         }
     }
