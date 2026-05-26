@@ -61,13 +61,13 @@ class GrpcBalanceExchangeTest {
         client = new MockBalanceCoordinatorClient();
         contentSerializer = new ContentSerializer<>() {
             @Override
-            public ByteString serialize(String content) {
-                return ByteString.copyFrom(content, StandardCharsets.UTF_8);
+            public byte[] serialize(String content) {
+                return content.getBytes(StandardCharsets.UTF_8);
             }
 
             @Override
-            public String deserialize(ByteString bytes) {
-                return bytes.toString(StandardCharsets.UTF_8);
+            public String deserialize(byte[] bytes) {
+                return new String(bytes, StandardCharsets.UTF_8);
             }
 
             @Override
@@ -285,7 +285,7 @@ class GrpcBalanceExchangeTest {
         return GhostElement.newBuilder()
             .setSpatialKey(ProtobufConverters.spatialKeyToProtobuf(key))
             .setEntityId(ProtobufConverters.entityIdToString(new LongEntityID(entityId)))
-            .setContent(contentSerializer.serialize(content))
+            .setContent(ByteString.copyFrom(contentSerializer.serialize(content)))
             .setPosition(ProtobufConverters.point3fToProtobuf(new Point3f(1, 2, 3)))
             .setOwnerRank(ownerRank)
             .setGlobalTreeId(0L)

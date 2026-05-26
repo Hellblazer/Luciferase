@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
-import com.google.protobuf.ByteString;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
@@ -54,13 +53,13 @@ class GhostElementRoundTripTest {
 
     private static final ContentSerializer<String> SERIALIZER = new ContentSerializer<>() {
         @Override
-        public ByteString serialize(String content) {
-            return ByteString.copyFrom(content, StandardCharsets.UTF_8);
+        public byte[] serialize(String content) {
+            return content.getBytes(StandardCharsets.UTF_8);
         }
 
         @Override
-        public String deserialize(ByteString bytes) {
-            return bytes.toString(StandardCharsets.UTF_8);
+        public String deserialize(byte[] bytes) {
+            return new String(bytes, StandardCharsets.UTF_8);
         }
 
         @Override
@@ -130,12 +129,12 @@ class GhostElementRoundTripTest {
             new GhostElement<>(new MortonKey(0x1L, (byte) 1), new LongEntityID(1L), "x", POSITION, 0, 0L), SERIALIZER);
         ContentSerializer<String> failing = new ContentSerializer<>() {
             @Override
-            public ByteString serialize(String content) {
-                return ByteString.EMPTY;
+            public byte[] serialize(String content) {
+                return new byte[0];
             }
 
             @Override
-            public String deserialize(ByteString bytes) throws SerializationException {
+            public String deserialize(byte[] bytes) throws SerializationException {
                 throw new SerializationException("simulated content corruption");
             }
 
