@@ -2,12 +2,14 @@
 title: "Extract a lucien-distributed Module (gRPC Clients out of lucien)"
 id: RDR-007
 type: Architecture
-status: accepted
+status: closed
+outcome: implemented
 priority: medium
 author: hal.hildebrand
 reviewed-by: self
 created: 2026-05-24
 accepted_date: 2026-05-25
+closed_date: 2026-05-26
 related_issues: [Luciferase-8cv, RDR-005, RDR-008, Luciferase-aos]
 ---
 
@@ -99,3 +101,16 @@ Module name: `lucien-distributed`. **Sequencing:** move-then-auth — RDR-005's 
 - **Positive:** `lucien` becomes a true non-distributed spatial-index core (no gRPC/netty/protobuf compile deps); distributed concerns layer cleanly above it; the dependency inversion also unblocks RDR-008's god-class decomposition.
 - **Cost / risk:** Phase 0 is the hard part — the proto-type and `StatusRuntimeException` leaks mean inversion is more than a file move; under-enumerating back-references would leave `lucien` still depending on `grpc`. Mitigated by the shared `Luciferase-aos` interface contract defined before Phase 1.
 - **Sequencing:** coordinate Phase 0 with RDR-008 via `Luciferase-aos`; do not begin Phase 1 until the interface contract is settled.
+
+## Outcome
+
+**Closed 2026-05-26 — implemented.** All three phases landed; `lucien` is now a non-distributed spatial-index core and the gRPC transport lives in `lucien-distributed`.
+
+- **Phase 0 (dependency inversion)** — bead `Luciferase-aos`, increments Inc1–Inc3 (PRs #96–#99). Introduced lucien-resident interfaces over the gRPC collaborators (`GhostChannel`/`ServiceDiscovery`, `GhostExchange`, the split `RefinementExchange`/`ViolationExchange`), replaced the balancing-boundary proto message types (`RefinementRequest`/`RefinementResponse`/`BalanceViolation`/`ViolationBatch`) with domain records, and resolved the `io.grpc.StatusRuntimeException` leak by wrapping it in a domain `BalanceExchangeException`. All ghost + balancing core classes became grep-clean of grpc/proto.
+- **Phase 1 + Phase 2** — PR-A #100 (ServiceLoader-ize `SpatialKeySerdeRegistry` + de-grpc the shared test fixtures to the `GhostChannel` interface) then PR-B #101 (create `lucien-distributed`; move the 11 transport classes + 7 integration tests + the `META-INF/services` serde file; strip grpc/netty/grpc-proto-module from `lucien`). `lucien-distributed` → `lucien` + `grpc` + `grpc-netty-shaded`; 34 tests green via ServiceLoader serde discovery.
+
+**Verification:** `mvn dependency:tree -pl lucien` shows no `grpc-netty-shaded`, `grpc-testing`, or the `grpc` proto-module; full reactor (10 modules) builds green. `simulation/pom.xml` unchanged, as predicted.
+
+**Refinement vs the original plan:** `lucien` legitimately retains a direct `protobuf-java` dependency — `ContentSerializer`'s public API uses `com.google.protobuf.ByteString`. RDR-007 extracted the gRPC **transport** (clients/netty/proto-generated-message-types); proto serialization in core is accepted. `io.grpc:grpc-api` also remains transitively via `common` (RDR-005 auth helpers, pre-existing).
+
+**Follow-ups (tracked, out of scope):** migrate `ContentSerializer` off `ByteString` to drop `protobuf-java` from `lucien`; a pre-existing `GrpcGhostChannel.queueGhost` TOCTOU race; and RDR-005 per-client mTLS wiring (the MOVE-THEN-AUTH step, now unblocked). Post-mortem: `post-mortem/007-extract-lucien-distributed-module.md`.
