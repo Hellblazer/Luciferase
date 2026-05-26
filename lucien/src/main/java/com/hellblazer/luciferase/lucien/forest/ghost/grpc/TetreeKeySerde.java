@@ -7,7 +7,6 @@ package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.hellblazer.luciferase.lucien.SpatialKeySerde;
-import com.hellblazer.luciferase.lucien.SpatialKeySerdeRegistry;
 import com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.ExtendedTetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
@@ -28,24 +27,28 @@ import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
  * for callers that have round-tripped existing payloads.
  * <p>
  * Registered against the {@link TetreeKey} abstract base; the
- * {@link SpatialKeySerdeRegistry} walks the class hierarchy at lookup time so
+ * {@code SpatialKeySerdeRegistry} walks the class hierarchy at lookup time so
  * both compact and extended runtime instances route to this serde.
+ * <p>
+ * Discovered via {@link java.util.ServiceLoader} (declared in
+ * {@code META-INF/services/com.hellblazer.luciferase.lucien.SpatialKeySerde}) and
+ * registered by {@code SpatialKeySerdeRegistry} from its static initialiser.
  *
  * @author hal.hildebrand
  */
 public final class TetreeKeySerde implements SpatialKeySerde<TetreeKey<?>> {
 
-    public static final  String          TYPE_ID  = "tetree";
-    public static final  TetreeKeySerde  INSTANCE = new TetreeKeySerde();
+    public static final String TYPE_ID = "tetree";
 
     /** Inclusive level boundary below which {@link CompactTetreeKey} is the natural concrete type. */
-    private static final int             COMPACT_LEVEL_MAX = 10;
+    private static final int COMPACT_LEVEL_MAX = 10;
 
-    static {
-        SpatialKeySerdeRegistry.register(INSTANCE);
-    }
-
-    private TetreeKeySerde() {
+    /**
+     * Public no-arg constructor required by {@link java.util.ServiceLoader} on the classpath
+     * (the {@code META-INF/services} mechanism instantiates each provider via its no-arg
+     * constructor). The serde is stateless.
+     */
+    public TetreeKeySerde() {
     }
 
     @Override
