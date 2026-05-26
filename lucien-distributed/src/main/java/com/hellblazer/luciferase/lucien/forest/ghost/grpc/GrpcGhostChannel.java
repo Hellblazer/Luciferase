@@ -15,11 +15,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.forest.ghost;
+package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostCommunicationManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

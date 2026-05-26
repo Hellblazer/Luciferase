@@ -27,7 +27,7 @@ import java.util.concurrent.CompletableFuture;
  *
  * <p>lucien core ({@link com.hellblazer.luciferase.lucien.AbstractSpatialIndex} and
  * {@link DistributedGhostManager}) depends on this interface rather than on a concrete gRPC
- * transport, so the gRPC implementation ({@link GrpcGhostChannel}) can be moved out of the
+ * transport, so the gRPC implementation ({@code GrpcGhostChannel}) can be moved out of the
  * core module without touching core.
  *
  * @param <Key>     the type of spatial key

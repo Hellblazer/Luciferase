@@ -53,6 +53,7 @@
     <modules>
         <module>grpc</module>
         <module>lucien</module>
+        <module>lucien-distributed</module>
         <module>portal</module>
         <module>common</module>
         <module>simulation</module>

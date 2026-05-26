@@ -33,8 +33,8 @@
             <artifactId>common</artifactId>
         </dependency>
         <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>grpc</artifactId>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
         </dependency>
         <dependency>
             <groupId>com.google.guava</groupId>
@@ -75,16 +75,6 @@
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-generator-annprocess</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.grpc</groupId>
-            <artifactId>grpc-netty-shaded</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.grpc</groupId>
-            <artifactId>grpc-testing</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- Performance reporting dependencies (versions managed by root pom) -->
