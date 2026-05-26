@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.dag.DAGBuilder;
 import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
 import com.hellblazer.luciferase.esvo.gpu.beam.StreamCPerformanceEvaluation;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 @DisplayName("Phase 5a: Stream C Performance Validation")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Requires OpenCL/GPU hardware not available in CI (native OpenCL renderer context) — Luciferase-41a")
 class StreamCPhase5aValidationTest {
 
     private StreamCPerformanceEvaluation evaluation;

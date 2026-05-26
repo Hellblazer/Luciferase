@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.esvo.gpu.beam;
 
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -14,6 +15,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * Validates that BeamTree integrates correctly with the renderer and produces
  * coherent ray batches for batch kernel processing.
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Requires OpenCL/GPU hardware not available in CI (native OpenCL renderer context) — Luciferase-41a")
 class DAGOpenCLRendererBeamIntegrationTest {
 
     private BeamKernelSelector selector;

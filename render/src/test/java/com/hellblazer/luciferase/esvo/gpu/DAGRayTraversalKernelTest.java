@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.dag.DAGBuilder;
 import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
 import com.hellblazer.luciferase.sparse.core.PointerAddressingMode;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +36,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 @DisplayName("F3.1: DAG Ray Traversal Kernel Architecture")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Requires OpenCL/GPU hardware not available in CI (native OpenCL renderer context) — Luciferase-41a")
 class DAGRayTraversalKernelTest {
 
     private DAGOpenCLRenderer renderer;

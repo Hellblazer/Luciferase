@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.esvo.gpu;
 
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,6 +30,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Kernel compilation with options
  * - Runtime recompilation support
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Requires OpenCL/GPU hardware not available in CI (native OpenCL renderer context) — Luciferase-41a")
 class ESVOOpenCLRendererBuildOptionsTest {
 
     @Test
