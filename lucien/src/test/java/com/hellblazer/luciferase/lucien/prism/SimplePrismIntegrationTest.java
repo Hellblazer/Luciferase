@@ -167,20 +167,20 @@ public class SimplePrismIntegrationTest {
     }
     
     @Test
-    void testTriangularConstraintValidation() {
+    void testFullCubeCoverage() {
         var id = idGenerator.generateID();
 
-        // Test valid position (S0 domain: y <= x)
-        var validPosition = new Point3f(40.0f, 30.0f, 50.0f); // y < x ✓ (was 30,40 which had y>x)
+        // RDR-009 P3 full-cube coverage: y < x lands in the S0 root.
+        var s0Position = new Point3f(40.0f, 30.0f, 50.0f); // y < x -> S0
         assertDoesNotThrow(() -> {
-            prism.insert(id, validPosition, (byte)5, "Valid");
+            prism.insert(id, s0Position, (byte)5, "S0");
         });
 
-        // Test invalid position (violates S0 domain: y > x)
-        var invalidPosition = new Point3f(10.0f, 60.0f, 50.0f); // y > x ✗
-        assertThrows(IllegalArgumentException.class, () -> {
-            var badId = idGenerator.generateID();
-            prism.insert(badId, invalidPosition, (byte)5, "Invalid");
+        // y > x now lands in the S1 root (formerly rejected).
+        var s1Position = new Point3f(10.0f, 60.0f, 50.0f); // y > x -> S1
+        assertDoesNotThrow(() -> {
+            var s1Id = idGenerator.generateID();
+            prism.insert(s1Id, s1Position, (byte)5, "S1");
         });
     }
     

@@ -301,14 +301,19 @@ public final class PrismKey implements SpatialKey<PrismKey> {
             return 1;
         }
 
-        // Order by the tetrahedral-Morton consecutive index (the SFC order), breaking ties by
-        // level. Within a level the index is a bijection to [0, 8^level), so it is injective;
-        // across levels an ancestor shares the index-prefix of its descendants and the level
-        // tie-break sorts it first. The pair (index, level) is therefore a total order consistent
-        // with equals, and — unlike the prior field-lexicographic order — it IS the SFC order, so
-        // the ConcurrentSkipListMap storage order that range queries walk matches consecutiveIndex()
-        // (RDR-009 P2). The index is 63 bits at MAX_LEVEL=21, so there is no overflow/collision.
-        int cmp = Long.compare(consecutiveIndex(), other.consecutiveIndex());
+        // Order by (root half, tetrahedral-Morton consecutive index, level) — the SFC storage
+        // order range queries walk. The half (S0=0, S1=1) is the primary key (RDR-009 P3), so the
+        // two roots occupy contiguous blocks: all of S0 then all of S1. Within a half the index is
+        // a bijection to [0, 8^level), and the level tie-break sorts an ancestor before its
+        // descendants. consecutiveIndex is per-half (the S1 anchor is stored in the S0 frame, so
+        // an S0 key and its S1 mirror share an index — the half disambiguates them). The triple is
+        // a total order consistent with equals (which includes the half). 63-bit index at
+        // MAX_LEVEL=21 — no overflow; the half is compared separately, not packed into the long.
+        int cmp = Byte.compare(triangle.getHalf(), other.triangle.getHalf());
+        if (cmp != 0) {
+            return cmp;
+        }
+        cmp = Long.compare(consecutiveIndex(), other.consecutiveIndex());
         if (cmp != 0) {
             return cmp;
         }

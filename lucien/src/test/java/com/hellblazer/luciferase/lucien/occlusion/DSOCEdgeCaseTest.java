@@ -208,13 +208,12 @@ public class DSOCEdgeCaseTest {
             index.removeEntity(cycleId);
         }
         
-        // Test 5: Update entity to invalid position
+        // Test 5: Update a Prism entity across the diagonal into the S1 half (RDR-009 P3 full cube).
         if (indexType.equals("Prism")) {
             var prismId = new LongEntityID(200);
-            index.insert(prismId, new Point3f(0.1f, 0.1f, 0.1f), (byte) 10, "PrismEntity");
-
-            // Try to update to invalid position (y > x, upper-left half = S1, not yet supported)
-            assertThrows(IllegalArgumentException.class, () ->
+            index.insert(prismId, new Point3f(0.1f, 0.1f, 0.1f), (byte) 10, "PrismEntity"); // S0
+            // y > x now lands in the S1 root (full-cube coverage) instead of throwing.
+            assertDoesNotThrow(() ->
                 index.updateEntity(prismId, new Point3f(0.3f, 0.6f, 0.1f), (byte) 10)
             );
         }
