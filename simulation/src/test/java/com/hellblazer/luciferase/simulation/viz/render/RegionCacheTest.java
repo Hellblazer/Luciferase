@@ -579,13 +579,14 @@ class RegionCacheTest {
                 3_000_000_000L  // 3GB > Integer.MAX_VALUE
         );
 
-        // C1 Fix: Put should succeed without overflow exception (weigher clamps internally)
-        cache.put(key, hugeRegion);
+        // C1 Fix: Put should succeed without overflow exception (weigher clamps internally).
+        // Use a cache whose capacity exceeds the weigher-clamped weight (Integer.MAX_VALUE ~ 2.1GB)
+        // so the entry is never size-evicted. The shared 10KB cache evicts a 3GB entry
+        // asynchronously, racing the get() and flaking under CI load (Luciferase-00i).
+        var bigCache = new RegionCache(4_000_000_000L, Duration.ofMinutes(5));
+        bigCache.put(key, hugeRegion);
 
-        // Use a single get() to avoid TOCTOU race with Caffeine's async eviction:
-        // the 3GB entry exceeds this test cache's capacity and Caffeine may evict it
-        // asynchronously between two separate get() calls.
-        var cached = cache.get(key);
+        var cached = bigCache.get(key);
         assertTrue(cached.isPresent(), "Huge region should be cached");
 
         // Verify sizeBytes preserved correctly (not clamped in CachedRegion)
