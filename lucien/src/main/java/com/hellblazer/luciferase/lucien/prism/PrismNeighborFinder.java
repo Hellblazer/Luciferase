@@ -75,11 +75,13 @@ public class PrismNeighborFinder {
         var level = prism.getLevel();
         
         if (face < 3) {
-            // Quadrilateral side faces (0, 1, 2)
-            // Keep the line component, find triangle neighbor
-            var triangleNeighbor = triangle.neighbor(face);
+            // Quadrilateral side faces (0, 1, 2). Keep the line; use the t8 face-neighbor, which
+            // crosses the shared S0/S1 diagonal (face 1 is the hypotenuse) into the sibling root
+            // rather than reporting it as a boundary (RDR-009 P4). Only the outer square edges
+            // return null.
+            var triangleNeighbor = triangle.faceNeighbor(face);
             if (triangleNeighbor == null) {
-                return null; // At boundary
+                return null; // At outer boundary
             }
             return new PrismKey(triangleNeighbor, line);
         } else if (face == FACE_TRIANGLE_BOTTOM) {
