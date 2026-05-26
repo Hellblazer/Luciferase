@@ -45,6 +45,10 @@ public final class PrismKey implements SpatialKey<PrismKey> {
     
     private final Triangle triangle;    // Horizontal (x,y) component
     private final Line line;            // Vertical (z) component
+
+    // Lazily-computed cache of consecutiveIndex() (immutable key; deterministic; volatile to
+    // avoid a torn long read). compareTo() is on the ConcurrentSkipListMap hot path. -1 sentinel.
+    private volatile long cachedIndex = -1L;
     
     /**
      * Create a new PrismKey from triangle and line components.
@@ -104,8 +108,13 @@ public final class PrismKey implements SpatialKey<PrismKey> {
      * @return the composite SFC index
      */
     public long consecutiveIndex() {
+        var cached = cachedIndex;
+        if (cached >= 0L) {
+            return cached;
+        }
         var level = getLevel();
         if (level == 0) {
+            cachedIndex = 0L;
             return 0L;
         }
         // Interleave per level: the triangle contributes its 2-bit tetrahedral-Morton local index
@@ -124,6 +133,7 @@ public final class PrismKey implements SpatialKey<PrismKey> {
             long lineBit = (lineIndex >>> shift) & 0b1L;
             index = (index << 3) | (lineBit << 2) | triangleDigit;
         }
+        cachedIndex = index;
         return index;
     }
     

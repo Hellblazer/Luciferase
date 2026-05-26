@@ -139,7 +139,7 @@ class PrismTest {
             new Point3f(0.2f, 0.2f, 0.2f),
             new Point3f(0.3f, 0.3f, 0.3f),
             new Point3f(0.5f, 0.1f, 0.1f),  // y < x: valid S0
-            new Point3f(0.5f, 0.1f, 0.1f),  // was (0.1,0.5): flip to y<=x
+            new Point3f(0.7f, 0.2f, 0.1f),  // was (0.1,0.5): a distinct S0 point (y < x)
             new Point3f(0.1f, 0.1f, 0.8f)
         };
         

@@ -31,30 +31,25 @@ import java.util.Objects;
  * Kuhn simplex {@code {anchor, anchor+x̂, anchor+x̂+ŷ}} (≃ the reference root S0, the region
  * {@code y ≤ x}), and a type-1 triangle is the upper-left simplex
  * {@code {anchor, anchor+ŷ, anchor+x̂+ŷ}} (≃ S1). Refining a triangle of type {@code b} yields
- * children whose types form the Bey multiset {@code [b, b, b, 1-b]}: three corner-children keep
- * the orientation, one flips. See {@link #getVertices()}, {@link #computeChildType(int)} and
- * {@link #computeParentType()}.
+ * children whose types form the Bey multiset {@code [b, b, b, 1-b]}: three children keep the
+ * orientation, one flips. See {@link #getVertices()} and {@link #child(int)}.
  *
- * <p><b>Refinement is square-quadrant, not yet true Bey nesting.</b> {@link #child(int)} subdivides
- * by Morton grid-quadrant ({@code childX = 2x + bit}), and the type transition is a
- * <em>placeholder</em> that reproduces the Bey multiset shape and round-trips, but the
- * geometrically-faithful Bey interior-child (which flips orientation) is type-dependent and is
- * <em>not</em> the fixed cube-id-3 used here. True triangle-into-four Bey nesting is inseparable
- * from the tetrahedral Morton index and is deferred to RDR-009 Phase 2/Phase 7 along with the
- * SFC packing.
+ * <p><b>Indexing (RDR-009 P2): the real tetrahedral-Morton model.</b> {@link #child(int)},
+ * {@link #parent()} and {@link #getChildIndex()} implement true Bey refinement via the t8code 2D
+ * transition tables (parent-type Pt, child-type Ct, local-index Iloc, the σ permutation, and the
+ * child anchor offsets). {@link #consecutiveIndex()} is the t8 <em>consecutive</em> index
+ * {@code I(T)} — the per-level base-4 string of local indices — so children are contiguous
+ * ({@code I(child_i) = I(T)*4 + i}) and the locality / ancestor-grouping property holds. Anchors
+ * stay in the S0 region {@code y ≤ x}; a single Triangle (and hence a single Prism) tiles the
+ * lower-right half-cube. The upper-left root S1 for full-cube coverage is RDR-009 Phase 3
+ * (Luciferase-7iu), so {@link #fromWorldCoordinates} rejects {@code y > x} points.
  *
- * <p>The coordinate system uses {@code (x, y, n)} coordinates. The auxiliary coordinate
- * {@code n} is <b>derived</b> as {@code min(x, y)}: every triangle produced by the world-coordinate
- * constructors or by {@link #child(int)}/{@link #parent()} satisfies the invariant
- * {@code n == min(x, y)}, so it is conceptually a cache of {@code min(x, y)} in the
- * construction/navigation API. It carries no term in the true tetrahedral Morton index. However,
- * the <em>current</em> {@link #consecutiveIndex()} packing is not the TM-index — it is the
- * literature-rejected positional ("semiquadcode") form that still treats {@code n} as an
- * independent coordinate dimension. That is why the field cannot be eliminated yet and the raw
- * 5-arg constructor preserves {@code n} verbatim as a low-level escape hatch (e.g. exhaustive
- * collision-freeness sweeps over arbitrary {@code n}). Dropping {@code n} from the key is deferred
- * to RDR-009 Phase 2/Phase 7, which replaces the packing with the real TM-index; until then
- * {@link #consecutiveIndex()} and {@code PrismKey.compareTo} are left unchanged.
+ * <p>The coordinate system stores {@code (level, type, x, y)} — the t8 Tet-id — which is the
+ * identity used by {@link #equals(Object)}/{@link #hashCode()} and the SFC index. The legacy
+ * {@code n} field is the derived auxiliary coordinate {@code min(x, y)}; it carries no term in the
+ * consecutive index and is excluded from identity. It is retained only so the 5-arg constructor
+ * signature is unchanged; {@link #getN()} is deprecated and the field is slated for removal in
+ * RDR-009 Phase 7.
  *
  * @author hal.hildebrand
  */
@@ -98,6 +93,11 @@ public final class Triangle {
     private final int x;               // X coordinate
     private final int y;               // Y coordinate  
     private final int n;               // Derived auxiliary coordinate, cached as min(x, y) (see class javadoc)
+
+    // Lazily-computed cache of consecutiveIndex(). Triangle is immutable and the index is a
+    // deterministic function of (level, type, x, y), so a benign race is harmless; volatile
+    // avoids a torn read of the long. -1 is the "not yet computed" sentinel (the index is >= 0).
+    private volatile long cachedIndex = -1L;
     
     /**
      * Create a Triangle from world coordinates at a specific level.
@@ -243,27 +243,26 @@ public final class Triangle {
      * @return the consecutive SFC index {@code I(T)}
      */
     public long consecutiveIndex() {
-        if (level == 0) {
-            return 0L;
+        var cached = cachedIndex;
+        if (cached >= 0L) {
+            return cached;
         }
-        // Reconstruct ancestor types from the leaf type by walking up via PARENT_TYPE.
-        var ell = level;
-        var cubeId = new int[ell + 1];
-        var ancestorType = new int[ell + 1];
-        ancestorType[ell] = type;
-        for (int k = ell; k >= 1; k--) {
-            int xb = (x >>> (ell - k)) & 1;
-            int yb = (y >>> (ell - k)) & 1;
-            cubeId[k] = xb | (yb << 1);
-            if (k > 1) {
-                ancestorType[k - 1] = PARENT_TYPE[cubeId[k]][ancestorType[k]];
-            }
-        }
-        // Assemble the base-4 consecutive index, most-significant digit = level 1.
+        // Single allocation-free backward pass (finest level first): walk the ancestor chain,
+        // contributing each level's base-4 local index LOCAL_INDEX[type_k][cubeId_k] at place
+        // 4^(level-k), and reconstruct the next-coarser ancestor type via PARENT_TYPE. (compareTo
+        // is on the ConcurrentSkipListMap hot path, so this avoids per-call heap allocation; the
+        // result is then cached since Triangle is immutable.)
         long index = 0L;
-        for (int k = 1; k <= ell; k++) {
-            index = (index << 2) | LOCAL_INDEX[ancestorType[k]][cubeId[k]];
+        int ancestorType = type;
+        long place = 1L;
+        for (int k = level; k >= 1; k--) {
+            int shift = level - k;
+            int cubeId = ((x >>> shift) & 1) | (((y >>> shift) & 1) << 1);
+            index += (long) LOCAL_INDEX[ancestorType][cubeId] * place;
+            place <<= 2;
+            ancestorType = PARENT_TYPE[cubeId][ancestorType];
         }
+        cachedIndex = index;
         return index;
     }
     
@@ -406,20 +405,22 @@ public final class Triangle {
     public Triangle[] neighbors() {
         var neighbors = new Triangle[EDGES];
         
-        // Simplified same-type neighbor finding (the cross-diagonal S0↔S1 crossing logic is
-        // RDR-009 Phase 4); n is recomputed as min(x,y) for each neighbor's coordinates.
-        // Edge 0: right neighbor
-        if (x + 1 < (1 << level)) {
+        // Simplified same-type neighbor finding. A neighbor is only returned when it stays in the
+        // S0 root (y <= x): a neighbor with y > x lies in the S1 root, which (with cross-diagonal
+        // traversal) is RDR-009 Phase 3/Phase 4. Suppressing y > x is also REQUIRED for correctness
+        // — such a triangle is not a valid S0 key and would collide with a coordinate-swapped S0 key
+        // under consecutiveIndex()/compareTo(). n is recomputed as min(x,y) for each neighbor.
+        var max = 1 << level;
+        // Edge 0: right neighbor (x+1, y) — stays in S0 since y <= x < x+1.
+        if (x + 1 < max && y <= x + 1) {
             neighbors[0] = new Triangle(level, type, x + 1, y, Math.min(x + 1, y));
         }
-
-        // Edge 1: top neighbor
-        if (y + 1 < (1 << level)) {
+        // Edge 1: top neighbor (x, y+1) — only valid when y+1 <= x (else it crosses into S1).
+        if (y + 1 < max && y + 1 <= x) {
             neighbors[1] = new Triangle(level, type, x, y + 1, Math.min(x, y + 1));
         }
-
-        // Edge 2: diagonal neighbor (simplified)
-        if (x > 0 && y > 0) {
+        // Edge 2: diagonal neighbor (x-1, y-1) — preserves y <= x.
+        if (x > 0 && y > 0 && y - 1 <= x - 1) {
             neighbors[2] = new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1));
         }
 
@@ -438,21 +439,22 @@ public final class Triangle {
             throw new IllegalArgumentException("Edge index must be 0-2, got: " + edge);
         }
         
-        // Simplified same-type neighbor finding (cross-diagonal crossing is RDR-009 Phase 4);
-        // n is recomputed as min(x,y) for the neighbor's coordinates.
+        // Same-type S0 neighbor (see neighbors()): only returned when it stays in y <= x; a
+        // y > x neighbor is S1 (RDR-009 P3/P4) and would collide in consecutiveIndex()/compareTo().
+        var max = 1 << level;
         switch (edge) {
-            case 0: // right neighbor
-                if (x + 1 < (1 << level)) {
+            case 0: // right neighbor (x+1, y)
+                if (x + 1 < max && y <= x + 1) {
                     return new Triangle(level, type, x + 1, y, Math.min(x + 1, y));
                 }
                 break;
-            case 1: // top neighbor
-                if (y + 1 < (1 << level)) {
+            case 1: // top neighbor (x, y+1) — only valid when y+1 <= x
+                if (y + 1 < max && y + 1 <= x) {
                     return new Triangle(level, type, x, y + 1, Math.min(x, y + 1));
                 }
                 break;
-            case 2: // diagonal neighbor (simplified)
-                if (x > 0 && y > 0) {
+            case 2: // diagonal neighbor (x-1, y-1)
+                if (x > 0 && y > 0 && y - 1 <= x - 1) {
                     return new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1));
                 }
                 break;
@@ -503,6 +505,13 @@ public final class Triangle {
         return y;
     }
     
+    /**
+     * @deprecated The auxiliary coordinate {@code n} is the derived value {@code min(x, y)}; it
+     *     carries no identity or ordering information (RDR-009 P2 excluded it from
+     *     {@code equals}/{@code hashCode}/{@code consecutiveIndex}). The field and this accessor
+     *     are slated for removal with the 5-arg constructor in RDR-009 Phase 7.
+     */
+    @Deprecated
     public int getN() {
         return n;
     }

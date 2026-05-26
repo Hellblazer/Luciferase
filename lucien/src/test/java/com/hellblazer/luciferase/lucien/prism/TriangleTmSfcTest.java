@@ -186,6 +186,38 @@ class TriangleTmSfcTest {
     }
 
     @Test
+    @DisplayName("neighbors() only return S0 (y<=x) triangles — no cross-diagonal compareTo collision")
+    void neighborsStayInS0() {
+        // Regression guard (review finding): a y>x neighbor (e.g. the top neighbor of a diagonal
+        // cell) is an S1 triangle that would collide with a coordinate-swapped S0 key under the
+        // consecutive index, breaking compareTo's consistency with equals in ConcurrentSkipListMap.
+        // neighbors()/neighbor() must suppress it (S0-only until the S1 root lands in Phase 3).
+        for (int level = 1; level <= 6; level++) {
+            int max = 1 << level;
+            for (int x = 0; x < max; x++) {
+                for (int y = 0; y <= x; y++) { // all S0 anchors
+                    for (int type = 0; type < Triangle.TYPES; type++) {
+                        var t = new Triangle(level, type, x, y, Math.min(x, y));
+                        for (var nb : t.neighbors()) {
+                            if (nb != null) {
+                                assertTrue(nb.getY() <= nb.getX(),
+                                    "neighbors() must not return a y>x triangle: " + nb + " from " + t);
+                            }
+                        }
+                        for (int e = 0; e < Triangle.EDGES; e++) {
+                            var nb = t.neighbor(e);
+                            if (nb != null) {
+                                assertTrue(nb.getY() <= nb.getX(),
+                                    "neighbor(" + e + ") must not return a y>x triangle: " + nb + " from " + t);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     @DisplayName("consecutiveIndex is collision-free across a uniform refinement level")
     void uniformLevelCollisionFree() {
         // Enumerate all level-5 descendants of the root via refinement; indices must be the
