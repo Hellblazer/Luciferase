@@ -414,6 +414,11 @@ public class Phase44ForestIntegrationFixture {
         org.mockito.Mockito.when(channel.getTreeId()).thenReturn(1L);
         org.mockito.Mockito.when(channel.getGhostType()).thenReturn(
             com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES);
+        // DistributedGhostManager.createDistributedGhostLayer() calls flushToTarget(...).join()
+        // unconditionally; stub it so the mock channel does not NPE on a null future.
+        org.mockito.Mockito.when(channel.flushToTarget(org.mockito.ArgumentMatchers.anyInt()))
+            .thenReturn(java.util.concurrent.CompletableFuture.<Void>completedFuture(null));
+        org.mockito.Mockito.when(channel.getTotalPendingCount()).thenReturn(0);
         return channel;
     }
 

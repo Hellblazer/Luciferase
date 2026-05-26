@@ -505,8 +505,14 @@ public class DefaultParallelBalancerPhase1Test {
         private static com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel<MortonKey, LongEntityID, String> createMockGhostChannel() {
             // De-grpc'd (RDR-007 P1-prep): mock the GhostChannel interface (was GrpcGhostChannel),
             // so this fixture keeps its dependency when GrpcGhostChannel moves to lucien-distributed.
-            return (com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel<MortonKey, LongEntityID, String>)
+            // Stub flushToTarget so DistributedGhostManager.createDistributedGhostLayer()'s
+            // unconditional flushToTarget(...).join() does not NPE on a null mock return.
+            var channel = (com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel<MortonKey, LongEntityID, String>)
                 mock(com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel.class);
+            when(channel.flushToTarget(org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(java.util.concurrent.CompletableFuture.<Void>completedFuture(null));
+            when(channel.getTotalPendingCount()).thenReturn(0);
+            return channel;
         }
 
         @SuppressWarnings("unchecked")
