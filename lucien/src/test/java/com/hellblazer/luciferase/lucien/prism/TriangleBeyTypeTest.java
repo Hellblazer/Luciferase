@@ -309,15 +309,14 @@ class TriangleBeyTypeTest {
     }
 
     @Test
-    @DisplayName("level-0 root contains the full [0,1)^2 square (P3-deferred placeholder trip-wire)")
-    void levelZeroRootContainsFullSquare() {
-        // Machine-enforces the TODO(RDR-009 P3) placeholder: until the S1 root exists, the level-0
-        // root must keep covering the whole square (both the lower-right S0 half and the upper-left
-        // half). If this is "fixed" to strict type-0 containment before P3, this test trips.
-        var root = new Triangle(0, 0, 0, 0, 0);
-        assertTrue(root.contains(0.8f, 0.2f), "root must contain lower-right (y < x) points");
-        assertTrue(root.contains(0.2f, 0.8f), "root must contain upper-left (y > x) points");
-        assertTrue(root.contains(0.5f, 0.5f), "root must contain on-diagonal points");
+    @DisplayName("level-0 roots are per-half (RDR-009 P3): S0 root contains only y<=x")
+    void levelZeroRootIsPerHalf() {
+        // RDR-009 P3 replaced the level-0 full-square placeholder with per-root containment: the
+        // S0 root contains only its lower-right half {y <= x}; the upper-left half is the S1 root.
+        var s0Root = new Triangle(0, 0, 0, 0, 0);
+        assertTrue(s0Root.contains(0.8f, 0.2f), "S0 root must contain lower-right (y < x) points");
+        assertTrue(s0Root.contains(0.5f, 0.5f), "S0 root must contain on-diagonal points");
+        assertTrue(!s0Root.contains(0.2f, 0.8f), "S0 root must NOT contain upper-left (y > x) points");
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────────

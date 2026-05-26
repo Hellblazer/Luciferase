@@ -181,29 +181,27 @@ public class PrismStressTest {
     }
     
     @Test
-    void testTriangularConstraintEdgeCases() {
-        // Test S0 domain boundary: y <= x required (RDR-009 P2)
+    void testFullCubeCoverageEdgeCases() {
+        // RDR-009 P3: both halves of the cube insert (S0 = y<=x, S1 = y>x). Diagonal -> S0.
         float epsilon = 0.0001f;
 
-        // Valid: y == x (on the diagonal boundary of S0)
-        var valid1 = new Point3f(worldSize * 0.5f - epsilon, worldSize * 0.5f - epsilon, 100.0f);
-        assertDoesNotThrow(() -> prism.insert(valid1, (byte)10, "BoundaryValid"));
+        // y == x (on the shared diagonal): S0.
+        var diagonal = new Point3f(worldSize * 0.5f - epsilon, worldSize * 0.5f - epsilon, 100.0f);
+        assertDoesNotThrow(() -> prism.insert(diagonal, (byte)10, "Diagonal"));
 
-        // Invalid: y > x (upper-left half, outside S0)
-        var invalid1 = new Point3f(worldSize * 0.3f, worldSize * 0.5f, 100.0f); // y > x
-        assertThrows(IllegalArgumentException.class,
-                    () -> prism.insert(invalid1, (byte)10, "BoundaryInvalid"));
+        // y > x (upper-left half): now lands in the S1 root rather than throwing.
+        var s1 = new Point3f(worldSize * 0.3f, worldSize * 0.5f, 100.0f); // y > x
+        assertDoesNotThrow(() -> prism.insert(s1, (byte)10, "S1"));
 
-        // Test corner cases: all must have y <= x
-        var corner1 = new Point3f(worldSize - epsilon, 0.0f, 50.0f); // Max X, y=0: valid
-        assertDoesNotThrow(() -> prism.insert(corner1, (byte)10, "CornerMaxX"));
+        // Corner cases across both halves.
+        var cornerMaxX = new Point3f(worldSize - epsilon, 0.0f, 50.0f); // y << x: S0
+        assertDoesNotThrow(() -> prism.insert(cornerMaxX, (byte)10, "CornerMaxX"));
 
-        // was (0, worldSize-e) which violates y <= x; use (worldSize-e, worldSize-e-1) instead
-        var corner2 = new Point3f(worldSize - epsilon, worldSize - epsilon - 1f, 50.0f); // y < x: valid
-        assertDoesNotThrow(() -> prism.insert(corner2, (byte)10, "CornerLargeXY"));
+        var cornerMaxY = new Point3f(0.0f, worldSize - epsilon, 50.0f); // y >> x: S1
+        assertDoesNotThrow(() -> prism.insert(cornerMaxY, (byte)10, "CornerMaxY"));
 
-        var corner3 = new Point3f(epsilon, epsilon, 50.0f); // Near origin, y==x: valid
-        assertDoesNotThrow(() -> prism.insert(corner3, (byte)10, "CornerOrigin"));
+        var cornerOrigin = new Point3f(epsilon, epsilon, 50.0f); // y == x: S0
+        assertDoesNotThrow(() -> prism.insert(cornerOrigin, (byte)10, "CornerOrigin"));
     }
     
     @Test

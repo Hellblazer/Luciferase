@@ -39,10 +39,18 @@ import java.util.Objects;
  * transition tables (parent-type Pt, child-type Ct, local-index Iloc, the σ permutation, and the
  * child anchor offsets). {@link #consecutiveIndex()} is the t8 <em>consecutive</em> index
  * {@code I(T)} — the per-level base-4 string of local indices — so children are contiguous
- * ({@code I(child_i) = I(T)*4 + i}) and the locality / ancestor-grouping property holds. Anchors
- * stay in the S0 region {@code y ≤ x}; a single Triangle (and hence a single Prism) tiles the
- * lower-right half-cube. The upper-left root S1 for full-cube coverage is RDR-009 Phase 3
- * (Luciferase-7iu), so {@link #fromWorldCoordinates} rejects {@code y > x} points.
+ * ({@code I(child_i) = I(T)*4 + i}) and the locality / ancestor-grouping property holds.
+ *
+ * <p><b>Two-prism full-cube cover (RDR-009 P3).</b> A triangle belongs to one of two root halves
+ * (see {@link #getHalf()}): S0 (half 0) is the lower-right Kuhn triangle {@code y ≤ x}; S1 (half 1)
+ * is the upper-left root {@code y ≥ x}, the reflection of S0 across the main diagonal {@code y = x}.
+ * Together they tile the full square. A half-1 triangle stores its anchor in the S0 frame (so the
+ * stored {@code x, y} always satisfy {@code y ≤ x}) and reuses all of the indexing/refinement
+ * logic above; only the geometry ({@link #getVertices()}, {@link #getWorldBounds()},
+ * {@link #contains}) reflects across {@code y = x}. {@link #fromWorldCoordinates} routes
+ * {@code y > x} points to S1 (the diagonal {@code y == x} belongs to S0, so coverage has no gaps
+ * or double-counting). The consecutive index is per-half; {@code PrismKey.compareTo} orders by
+ * half first, so the two roots form contiguous SFC blocks.
  *
  * <p>The coordinate system stores {@code (level, type, x, y)} — the t8 Tet-id — which is the
  * identity used by {@link #equals(Object)}/{@link #hashCode()} and the SFC index. The legacy
@@ -93,6 +101,7 @@ public final class Triangle {
     private final int x;               // X coordinate
     private final int y;               // Y coordinate  
     private final int n;               // Derived auxiliary coordinate, cached as min(x, y) (see class javadoc)
+    private final byte half;           // Root half: 0 = S0 (lower-right y<=x), 1 = S1 (reflected upper-left) — RDR-009 P3
 
     // Lazily-computed cache of consecutiveIndex(). Triangle is immutable and the index is a
     // deterministic function of (level, type, x, y), so a benign race is harmless; volatile
@@ -128,11 +137,29 @@ public final class Triangle {
      * @throws IllegalArgumentException if parameters are invalid
      */
     public Triangle(int level, int type, int x, int y, int n) {
+        this(level, type, x, y, n, 0);
+    }
+
+    /**
+     * Create a new Triangle element in the given root half.
+     *
+     * @param level the hierarchical level (0-21)
+     * @param type the triangle type (0 or 1)
+     * @param x the x coordinate (in the S0 frame — see {@link #getHalf()})
+     * @param y the y coordinate (in the S0 frame)
+     * @param n the auxiliary n coordinate
+     * @param half the root half: 0 = S0 (lower-right {@code y <= x}), 1 = S1 (reflected upper-left)
+     * @throws IllegalArgumentException if parameters are invalid
+     */
+    public Triangle(int level, int type, int x, int y, int n, int half) {
         if (level < 0 || level > MAX_LEVEL) {
             throw new IllegalArgumentException("Level must be 0-" + MAX_LEVEL + ", got: " + level);
         }
         if (type < 0 || type >= TYPES) {
             throw new IllegalArgumentException("Type must be 0 or 1, got: " + type);
+        }
+        if (half < 0 || half >= TYPES) {
+            throw new IllegalArgumentException("Half must be 0 (S0) or 1 (S1), got: " + half);
         }
         if (x < 0 || x > MAX_COORDINATE) {
             throw new IllegalArgumentException("X coordinate must be 0-" + MAX_COORDINATE + ", got: " + x);
@@ -164,6 +191,18 @@ public final class Triangle {
         this.x = x;
         this.y = y;
         this.n = n;
+        this.half = (byte) half;
+    }
+
+    /**
+     * The level-0 root of the S1 family — the upper-left Kuhn triangle {@code y >= x}, the
+     * reflection of the S0 root across the main diagonal. Together with {@code new Triangle(0,...)}
+     * (the S0 root) the two roots tile the full square (RDR-009 P3).
+     *
+     * @return the S1 root triangle
+     */
+    public static Triangle rootS1() {
+        return new Triangle(0, 0, 0, 0, 0, 1);
     }
     
     /**
@@ -185,38 +224,34 @@ public final class Triangle {
             throw new IllegalArgumentException("Level must be 0-" + MAX_LEVEL + ", got: " + level);
         }
 
-        // For level 0, return root triangle
-        if (level == 0) {
-            return new Triangle(0, 0, 0, 0, 0);
-        }
+        // Two-prism cover (RDR-009 P3): the square is split along the main diagonal y = x into
+        // two root simplices. y <= x is the S0 root (half 0); y > x is the S1 root (half 1), the
+        // reflection of S0 across y = x. For S1 we reflect the point into the S0 frame, locate the
+        // S0 leaf there, and tag it half 1 — so all of the t8 index/refinement logic is reused and
+        // S0 keys are unchanged. The diagonal y == x belongs to S0 (no double-counting).
+        int half = (worldY > worldX) ? 1 : 0;
+        float fx = (half == 1) ? worldY : worldX; // S0-frame coords: fx >= fy
+        float fy = (half == 1) ? worldX : worldY;
 
-        // The single Triangle index tiles the root S0 = lower-right half-cube {y <= x}. A point in
-        // the upper-left half belongs to the S1 root, which is RDR-009 Phase 3 (Luciferase-7iu).
-        if (worldY > worldX) {
-            throw new IllegalArgumentException(String.format(
-                "Point (%.4f, %.4f) is in the upper-left half (y > x), outside the S0 root triangle. "
-                + "Full-cube coverage (the S1 root) is RDR-009 Phase 3.", worldX, worldY));
+        // For level 0, return the root triangle of the appropriate half.
+        if (level == 0) {
+            return new Triangle(0, 0, 0, 0, 0, half);
         }
 
         var scale = 1 << level;
-        var quantX = Math.min((int) (worldX * scale), scale - 1);
-        var quantY = Math.min((int) (worldY * scale), scale - 1);
+        var quantX = Math.min((int) (fx * scale), scale - 1);
+        var quantY = Math.min((int) (fy * scale), scale - 1);
 
-        // Determine which sub-triangle of the grid cell contains the point.
-        // Local coordinates within the cell [0,1) x [0,1):
-        float localX = (worldX * scale) - quantX;
-        float localY = (worldY * scale) - quantY;
-
-        // t8code/Bey orientation: the cell is split along its MAIN diagonal (anchor → opposite
-        // corner). The lower-right half (localY <= localX) is the type-0 (≃ S0) triangle; the
-        // upper-left half (localY > localX) is the type-1 (≃ S1) triangle. This matches
-        // getVertices() so that the located triangle always contains its own point.
+        // t8code/Bey orientation within the S0 frame: the cell is split along its main diagonal;
+        // the lower-right half (localY <= localX) is type 0, the upper-left half is type 1.
+        float localX = (fx * scale) - quantX;
+        float localY = (fy * scale) - quantY;
         var type = (localY > localX) ? 1 : 0;
 
         // n is the derived auxiliary coordinate min(x, y) — the single source of truth.
         var n = Math.min(quantX, quantY);
 
-        return new Triangle(level, type, quantX, quantY, n);
+        return new Triangle(level, type, quantX, quantY, n, half);
     }
     
     /**
@@ -284,7 +319,8 @@ public final class Triangle {
         var parentY = y >>> 1;
         var parentType = PARENT_TYPE[cubeId][type];
         // n remains the derived auxiliary coordinate min(x,y) (vestigial; not in the SFC index).
-        return new Triangle(level - 1, parentType, parentX, parentY, Math.min(parentX, parentY));
+        // half is preserved — refinement/ancestry stays within the same root (S0 or S1).
+        return new Triangle(level - 1, parentType, parentX, parentY, Math.min(parentX, parentY), half);
     }
     
     /**
@@ -311,7 +347,8 @@ public final class Triangle {
         var childY = (y << 1) + offset[1];
         var childType = CHILD_TYPE[type][beyId];
         // n remains the derived auxiliary coordinate min(x,y) (vestigial; not in the SFC index).
-        return new Triangle(level + 1, childType, childX, childY, Math.min(childX, childY));
+        // half is preserved — children stay within the same root (S0 or S1).
+        return new Triangle(level + 1, childType, childX, childY, Math.min(childX, childY), half);
     }
     
     /**
@@ -331,7 +368,14 @@ public final class Triangle {
     
     /**
      * Test if this triangle contains the given world coordinates.
-     * 
+     *
+     * <p><b>Diagonal boundary (RDR-009 P3).</b> The S0 and S1 roots share the main diagonal
+     * {@code y == x} as a closed edge, and the barycentric test is inclusive, so a point exactly on
+     * the diagonal is contained by <em>both</em> halves (geometrically correct — it lies on the
+     * shared edge). For canonical single-half point classification (which prism owns a point) use
+     * {@link #fromWorldCoordinates}, which assigns {@code y == x} to S0 by convention; do not rely
+     * on {@code contains()} alone to pick a half on the diagonal.
+     *
      * @param worldX the world x-coordinate [0.0, 1.0)
      * @param worldY the world y-coordinate [0.0, 1.0)
      * @return true if the coordinates are contained in this triangle
@@ -340,18 +384,11 @@ public final class Triangle {
         if (worldX < 0.0f || worldX >= 1.0f || worldY < 0.0f || worldY >= 1.0f) {
             return false;
         }
-        
-        // Level-0 root covers the entire [0,1)² square. This is intentionally retained as a
-        // half-cube placeholder: with the main-diagonal geometry established here (P1), a strict
-        // type-0 root would only contain the lower-right half {y ≤ x}, leaving upper-left points
-        // unreachable until the S1 root is added. Removing this special case is therefore coupled
-        // to the two-prism cover — RDR-009 Phase 3 (Luciferase-7iu) "remove/specialize per root".
-        // TODO(RDR-009 P3): replace with type-based triangular containment once the S1 root exists.
-        if (level == 0) {
-            return true; // Already passed the [0,1) range check above
-        }
-        
-        // Get the world bounds for this triangle
+
+        // Per-root containment (RDR-009 P3): there is no level-0 full-square special case any more.
+        // getWorldBounds()/getVertices() already reflect for the S1 half, so the bounding-box +
+        // barycentric test below is correct for both roots — the S0 root contains only its
+        // lower-right half {y <= x} and the S1 root only its upper-left half {y >= x}.
         var bounds = getWorldBounds();
         float minX = bounds[0];
         float minY = bounds[1];
@@ -413,15 +450,15 @@ public final class Triangle {
         var max = 1 << level;
         // Edge 0: right neighbor (x+1, y) — stays in S0 since y <= x < x+1.
         if (x + 1 < max && y <= x + 1) {
-            neighbors[0] = new Triangle(level, type, x + 1, y, Math.min(x + 1, y));
+            neighbors[0] = new Triangle(level, type, x + 1, y, Math.min(x + 1, y), half);
         }
         // Edge 1: top neighbor (x, y+1) — only valid when y+1 <= x (else it crosses into S1).
         if (y + 1 < max && y + 1 <= x) {
-            neighbors[1] = new Triangle(level, type, x, y + 1, Math.min(x, y + 1));
+            neighbors[1] = new Triangle(level, type, x, y + 1, Math.min(x, y + 1), half);
         }
         // Edge 2: diagonal neighbor (x-1, y-1) — preserves y <= x.
         if (x > 0 && y > 0 && y - 1 <= x - 1) {
-            neighbors[2] = new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1));
+            neighbors[2] = new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1), half);
         }
 
         return neighbors;
@@ -445,17 +482,17 @@ public final class Triangle {
         switch (edge) {
             case 0: // right neighbor (x+1, y)
                 if (x + 1 < max && y <= x + 1) {
-                    return new Triangle(level, type, x + 1, y, Math.min(x + 1, y));
+                    return new Triangle(level, type, x + 1, y, Math.min(x + 1, y), half);
                 }
                 break;
             case 1: // top neighbor (x, y+1) — only valid when y+1 <= x
                 if (y + 1 < max && y + 1 <= x) {
-                    return new Triangle(level, type, x, y + 1, Math.min(x, y + 1));
+                    return new Triangle(level, type, x, y + 1, Math.min(x, y + 1), half);
                 }
                 break;
             case 2: // diagonal neighbor (x-1, y-1)
                 if (x > 0 && y > 0 && y - 1 <= x - 1) {
-                    return new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1));
+                    return new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1), half);
                 }
                 break;
         }
@@ -472,6 +509,11 @@ public final class Triangle {
         var scale = 1.0f / (1 << level);
         var minX = x * scale;
         var minY = y * scale;
+        // S1 (half 1) is the reflection of the S0 frame across the main diagonal y = x, so its
+        // world bounds are the S0-frame bounds with x/y swapped.
+        if (half == 1) {
+            return new float[]{minY, minX, minY + scale, minX + scale};
+        }
         return new float[]{minX, minY, minX + scale, minY + scale};
     }
     
@@ -484,7 +526,8 @@ public final class Triangle {
         var scale = 1.0f / (1 << level);
         var centerX = x * scale + scale * 0.5f;
         var centerY = y * scale + scale * 0.5f;
-        return new float[]{centerX, centerY};
+        // Reflect across y = x for the S1 half (see getWorldBounds).
+        return (half == 1) ? new float[]{centerY, centerX} : new float[]{centerX, centerY};
     }
     
     // Accessors
@@ -496,7 +539,19 @@ public final class Triangle {
     public byte getType() {
         return type;
     }
-    
+
+    /**
+     * The root half this triangle belongs to: {@code 0} = S0 (lower-right {@code y <= x}),
+     * {@code 1} = S1 (the upper-left root, the reflection of S0 across {@code y = x}). The stored
+     * {@code (x, y)} anchor is always in the S0 frame ({@code y <= x}); for the S1 half the
+     * geometry ({@link #getVertices()}, {@link #getWorldBounds()}, {@link #contains}) reflects it.
+     *
+     * @return 0 for S0, 1 for S1
+     */
+    public byte getHalf() {
+        return half;
+    }
+
     public int getX() {
         return x;
     }
@@ -522,15 +577,15 @@ public final class Triangle {
     public boolean equals(Object obj) {
         if (this == obj) return true;
         if (!(obj instanceof Triangle other)) return false;
-        // Identity is (level, type, x, y) — the t8 Tet-id. n is a derived auxiliary coordinate
-        // (min(x,y)) carrying no independent information, so it is NOT part of identity; including
-        // it would make equals inconsistent with consecutiveIndex()/PrismKey.compareTo (RDR-009 P2).
-        return level == other.level && type == other.type && x == other.x && y == other.y;
+        // Identity is (half, level, type, x, y) — the t8 Tet-id plus the root half (RDR-009 P3).
+        // n is the derived min(x,y) and carries no independent information, so it is excluded
+        // (including it would make equals inconsistent with consecutiveIndex()/PrismKey.compareTo).
+        return half == other.half && level == other.level && type == other.type && x == other.x && y == other.y;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(level, type, x, y);
+        return Objects.hash(half, level, type, x, y);
     }
     
     @Override
@@ -546,28 +601,34 @@ public final class Triangle {
      * @return array of 3 vertices as [x,y] coordinates
      */
     public float[][] getVertices() {
-        var bounds = getWorldBounds();
-        float minX = bounds[0];
-        float minY = bounds[1];
-        float maxX = bounds[2];
-        float maxY = bounds[3];
-        
+        // Build the vertices in the S0 frame from the (unreflected) cell bounds, then reflect for
+        // the S1 half. Note: we compute S0-frame bounds directly here rather than via
+        // getWorldBounds() (which already reflects for half 1) — reflecting the bounding box does
+        // not reflect the triangle's orientation, so we must swap the vertices themselves.
+        var scale = 1.0f / (1 << level);
+        float minX = x * scale;
+        float minY = y * scale;
+        float maxX = minX + scale;
+        float maxY = minY + scale;
+
         // t8code/Bey orientation: split the cell along its MAIN diagonal (minX,minY)→(maxX,maxY).
+        float[][] v;
         if (type == 0) {
             // Lower-right Kuhn simplex {anchor, anchor+x̂, anchor+x̂+ŷ} (the S0 orientation, y ≤ x).
-            return new float[][]{
-                {minX, minY},
-                {maxX, minY},
-                {maxX, maxY}
-            };
+            v = new float[][] { { minX, minY }, { maxX, minY }, { maxX, maxY } };
         } else {
             // Upper-left Kuhn simplex {anchor, anchor+ŷ, anchor+x̂+ŷ} (the S1 orientation, x ≤ y).
-            return new float[][]{
-                {minX, minY},
-                {minX, maxY},
-                {maxX, maxY}
-            };
+            v = new float[][] { { minX, minY }, { minX, maxY }, { maxX, maxY } };
         }
+        // S1 (half 1) is the reflection of the S0 frame across y = x — swap each vertex.
+        if (half == 1) {
+            for (var p : v) {
+                float t = p[0];
+                p[0] = p[1];
+                p[1] = t;
+            }
+        }
+        return v;
     }
     
     

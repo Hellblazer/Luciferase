@@ -115,18 +115,10 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
         float normY = y / worldSize;
         float normZ = z / worldSize;
         
-        // Validate the S0 domain (RDR-009 P2): a single Prism index tiles the root simplex S0,
-        // the lower-right half-cube {y <= x}. The upper-left half is the S1 root, added for
-        // full-cube coverage in RDR-009 Phase 3 (Luciferase-7iu). (This replaces the prior
-        // anti-diagonal constraint x + y < 1, which corresponded to the old per-cell SFC model.)
-        if (normY > normX) {
-            throw new IllegalArgumentException(
-                String.format("Coordinates (%.3f, %.3f) are in the upper-left half (y > x), outside the "
-                            + "Prism S0 domain; full-cube coverage (the S1 root) is RDR-009 Phase 3.",
-                            normX, normY));
-        }
-        
-        // Create Triangle from XY coordinates
+        // Full-cube two-prism cover (RDR-009 P3): y <= x routes to the S0 root, y > x to the S1
+        // root. Triangle.fromWorldCoordinates handles the routing (reflecting S1 into the S0
+        // frame), so every point in [0,worldSize)^3 maps to exactly one prism — no gaps, no
+        // double-counting along the diagonal, and no silent relocation of the old per-cell model.
         var triangle = Triangle.fromWorldCoordinate(normX, normY, level);
         
         // Create Line from Z coordinate

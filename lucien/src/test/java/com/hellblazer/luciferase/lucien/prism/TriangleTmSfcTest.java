@@ -179,10 +179,15 @@ class TriangleTmSfcTest {
     }
 
     @Test
-    @DisplayName("fromWorldCoordinates rejects upper-left (y>x) points — S1 is RDR-009 Phase 3")
-    void pointLocationRejectsS1() {
-        // A clearly upper-left point (y > x) has no S0 leaf until the S1 root is added in Phase 3.
-        assertThrows(IllegalArgumentException.class, () -> Triangle.fromWorldCoordinates(0.2f, 0.8f, 4));
+    @DisplayName("fromWorldCoordinates routes upper-left (y>x) points to the S1 root (RDR-009 P3)")
+    void pointLocationRoutesToS1() {
+        // RDR-009 P3 added the S1 root: an upper-left point (y > x) now lands in S1 (half 1) and is
+        // contained, rather than throwing (P2) or being silently relocated (pre-P1).
+        var s1 = Triangle.fromWorldCoordinates(0.2f, 0.8f, 4);
+        assertEquals(1, s1.getHalf(), "upper-left point must land in the S1 half");
+        assertTrue(s1.contains(0.2f, 0.8f), "the S1 triangle must contain its point");
+        // The lower-right mirror stays in S0.
+        assertEquals(0, Triangle.fromWorldCoordinates(0.8f, 0.2f, 4).getHalf());
     }
 
     @Test

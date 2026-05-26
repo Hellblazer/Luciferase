@@ -328,22 +328,17 @@ class PrismTest {
     }
     
     @Test
-    @DisplayName("Prism-specific S0 constraint is enforced (y <= x required)")
-    void testTriangularConstraint() {
-        // Try to insert entity outside S0 domain (y > x)
-        assertThrows(IllegalArgumentException.class, () -> {
-            var id = idGenerator.generateID();
-            var content = "Invalid Position";
-            // y > x violates S0 domain constraint
-            prism.insert(id, new Point3f(0.3f, 0.7f, 0.5f), (byte)5, content);
-        });
-
-        // Valid positions (y <= x) near boundary should work
+    @DisplayName("Prism covers the full cube (RDR-009 P3): both y<=x (S0) and y>x (S1) insert")
+    void testFullCubeCoverage() {
+        // y > x lands in the S1 root (no longer rejected — P3 added the second prism family).
         assertDoesNotThrow(() -> {
             var id = idGenerator.generateID();
-            var content = "Valid Position";
-            // y <= x is valid in S0
-            prism.insert(id, new Point3f(0.5f, 0.4f, 0.5f), (byte)5, content);
+            prism.insert(id, new Point3f(0.3f, 0.7f, 0.5f), (byte) 5, "S1 position");
+        });
+        // y <= x lands in the S0 root.
+        assertDoesNotThrow(() -> {
+            var id = idGenerator.generateID();
+            prism.insert(id, new Point3f(0.5f, 0.4f, 0.5f), (byte) 5, "S0 position");
         });
     }
     
