@@ -42,12 +42,12 @@ class TriangleTest {
         // Exhaustive sweep at low levels — cheap and complete over the
         // coordinate cube [0, 2^level) for each of x/y/n. Note: this is a
         // STRICT SUPERSET of the geometrically valid Triangle domain (the
-        // valid region is bounded by the triangular constraint x + y <
-        // 2^level, enforced by Triangle.fromWorldCoordinate but NOT by the
-        // direct constructor used here). Proving injectivity over the
-        // superset is a stronger claim than the valid domain alone, so this
-        // is conservative — any collision within the valid domain would
-        // also show here. The level cap is 6 because exhaustive at level
+        // world-coordinate constructors only ever produce triangles with the
+        // derived auxiliary coordinate n = min(x, y); the direct constructor
+        // used here stores arbitrary n, so it sweeps far more tuples than can
+        // actually occur). Proving injectivity over the superset is a stronger
+        // claim than the valid domain alone, so this is conservative — any
+        // collision within the valid domain would also show here. The level cap is 6 because exhaustive at level
         // 10 would be 2 * 1024^3 = 2B combinations, too slow for unit
         // tests. Levels 7..21 are covered by the sampled test below.
         for (int level = 1; level <= 6; level++) {

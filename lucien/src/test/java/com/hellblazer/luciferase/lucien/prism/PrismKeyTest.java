@@ -209,8 +209,10 @@ class PrismKeyTest {
         assertNull(root.parent());
         assertEquals(-1, root.getChildIndex());
         
-        // Test parent-child round trips
-        var key = new PrismKey(new Triangle(3, 1, 5, 3, 2), new Line(3, 6));
+        // Test parent-child round trips. n = min(x,y) = min(5,3) = 3 (RDR-009 P1: n is the
+        // derived auxiliary coordinate min(x,y); the parent()/child() round-trip recomputes it
+        // from coordinates rather than bit-shifting, so the fixture uses the consistent value).
+        var key = new PrismKey(new Triangle(3, 1, 5, 3, 3), new Line(3, 6));
         
         for (int childIndex = 0; childIndex < PrismKey.CHILDREN; childIndex++) {
             var child = key.child(childIndex);
