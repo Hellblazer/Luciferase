@@ -516,7 +516,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
 
-      - name: Test Other Modules (grpc, common, lucien, sentry, render, portal, dyada-java)
+      - name: Test Other Modules (grpc, common, lucien, lucien-distributed, sentry, render, portal, dyada-java)
         run: |
           export DISPLAY=:99.0
           # Exclude memory-intensive tests from render (require 4K+ resolution, >4GB heap)
@@ -524,7 +524,7 @@ jobs:
           # The leading " | " composes with the always-on ${test.excluded.groups}=performance
           # exclusion in each module's surefire config (excludedGroups is a JUnit tag
           # expression, so "performance | memory-intensive" excludes either tag).
-          xvfb-run -a ./mvnw -batch-mode surefire:test -pl grpc,common,lucien,sentry,render,portal,dyada-java "-Drender.excludedGroups= | memory-intensive" "-Dportal.excludedGroups= | javafx" --file pom.xml
+          xvfb-run -a ./mvnw -batch-mode surefire:test -pl grpc,common,lucien,lucien-distributed,sentry,render,portal,dyada-java "-Drender.excludedGroups= | memory-intensive" "-Dportal.excludedGroups= | javafx" --file pom.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
