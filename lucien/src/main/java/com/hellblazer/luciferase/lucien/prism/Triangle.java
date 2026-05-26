@@ -368,7 +368,14 @@ public final class Triangle {
     
     /**
      * Test if this triangle contains the given world coordinates.
-     * 
+     *
+     * <p><b>Diagonal boundary (RDR-009 P3).</b> The S0 and S1 roots share the main diagonal
+     * {@code y == x} as a closed edge, and the barycentric test is inclusive, so a point exactly on
+     * the diagonal is contained by <em>both</em> halves (geometrically correct — it lies on the
+     * shared edge). For canonical single-half point classification (which prism owns a point) use
+     * {@link #fromWorldCoordinates}, which assigns {@code y == x} to S0 by convention; do not rely
+     * on {@code contains()} alone to pick a half on the diagonal.
+     *
      * @param worldX the world x-coordinate [0.0, 1.0)
      * @param worldY the world y-coordinate [0.0, 1.0)
      * @return true if the coordinates are contained in this triangle

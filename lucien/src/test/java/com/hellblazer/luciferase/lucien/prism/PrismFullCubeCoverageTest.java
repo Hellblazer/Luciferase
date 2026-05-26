@@ -16,8 +16,14 @@
  */
 package com.hellblazer.luciferase.lucien.prism;
 
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import javax.vecmath.Point3f;
+
+import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -53,15 +59,56 @@ class PrismFullCubeCoverageTest {
                     // The located triangle must contain its own point (no gap).
                     assertTrue(tri.contains(wx, wy), String.format(
                         "located triangle (half %d) must contain (%.4f,%.4f)", tri.getHalf(), wx, wy));
-                    // The OTHER half's triangle at this point must NOT also contain it (no double count),
-                    // except exactly on the diagonal where the closed half-triangles share an edge.
+                    // No double-count: off the diagonal, the OPPOSITE half's triangle (same S0-frame
+                    // anchor, reflected geometry) must NOT contain the point. (On the diagonal the
+                    // two closed half-triangles share the edge, so both contain it — fromWorldCoordinates
+                    // assigns it to S0 by convention; see Triangle.contains javadoc.)
                     if (Math.abs(wx - wy) > 1e-4f) {
+                        var opposite = new Triangle(tri.getLevel(), tri.getType(), tri.getX(), tri.getY(),
+                                                    Math.min(tri.getX(), tri.getY()), 1 - tri.getHalf());
+                        assertFalse(opposite.contains(wx, wy), String.format(
+                            "opposite half must NOT contain (%.4f,%.4f) — no double count", wx, wy));
                         var prism = PrismKey.fromWorldCoordinates(wx, wy, 0.5f, level);
                         assertTrue(prism.contains(wx, wy, 0.5f), "prism must contain its point");
                     }
                 }
             }
         }
+    }
+
+    @Test
+    @DisplayName("Prism index inserts and retrieves entities in both halves (insert + insertBatch)")
+    void prismInsertAndRetrieveBothHalves() {
+        // Per-entity insert places each key at its correct half (calculateSpatialIndex -> S0/S1),
+        // so the default insert and insertBatch paths cover the full cube. (The opt-in
+        // StackBasedTreeBuilder, default off, seeds from a single root and does not yet support
+        // the two-prism cover — documented on PrismKey.createRoot, a P4 prerequisite.)
+        var prism = new Prism<LongEntityID, String>(new SequentialLongIDGenerator(), 1.0f, 21);
+
+        var s0 = new Point3f(0.8f, 0.3f, 0.5f); // y < x -> S0
+        var s1 = new Point3f(0.3f, 0.8f, 0.5f); // y > x -> S1
+        var s0Id = prism.insert(s0, (byte) 8, "S0");
+        var s1Id = prism.insert(s1, (byte) 8, "S1");
+        assertEquals(2, prism.entityCount());
+        assertTrue(prism.containsEntity(s0Id));
+        assertTrue(prism.containsEntity(s1Id));
+        assertTrue(prism.lookup(s0, (byte) 8).contains(s0Id), "S0 entity must be retrievable");
+        assertTrue(prism.lookup(s1, (byte) 8).contains(s1Id), "S1 entity must be retrievable");
+
+        // insertBatch (default per-entity path) with a mix of both halves.
+        var positions = new ArrayList<Point3f>();
+        var contents = new ArrayList<String>();
+        for (int i = 1; i < 20; i++) {
+            float a = i / 20.0f * 0.9f;
+            float b = (i % 7) / 20.0f * 0.9f;
+            positions.add(new Point3f(Math.max(a, b), Math.min(a, b), 0.4f)); // S0 (y<=x)
+            contents.add("S0-" + i);
+            positions.add(new Point3f(Math.min(a, b), Math.max(a, b) + 0.001f, 0.6f)); // S1 (y>x)
+            contents.add("S1-" + i);
+        }
+        var ids = prism.insertBatch(positions, contents, (byte) 8);
+        assertEquals(positions.size(), ids.size(), "all S0+S1 batch entities inserted");
+        assertEquals(2 + positions.size(), prism.entityCount());
     }
 
     @Test
