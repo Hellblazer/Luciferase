@@ -234,8 +234,81 @@ class TriangleBeyTypeTest {
                 Point3f bottom = prismVerts.get(i);
                 assertEquals(triVerts[i][0], bottom.x, EPS, "prism bottom vertex " + i + " x, type " + type);
                 assertEquals(triVerts[i][1], bottom.y, EPS, "prism bottom vertex " + i + " y, type " + type);
+                // Top triangle (indices 3-5) shares the same (x,y), only z differs.
+                Point3f top = prismVerts.get(i + 3);
+                assertEquals(triVerts[i][0], top.x, EPS, "prism top vertex " + i + " x, type " + type);
+                assertEquals(triVerts[i][1], top.y, EPS, "prism top vertex " + i + " y, type " + type);
             }
         }
+    }
+
+    // ── n=min(x,y) invariant under neighbor finding ───────────────────────────────────
+
+    @Test
+    @DisplayName("neighbors()/neighbor() preserve the n = min(x,y) invariant for both types")
+    void neighborNInvariant() {
+        // Guards the RDR-009 P1 change that recomputes n from each neighbor's coordinates
+        // (was: copied the source triangle's n). A P2 regression in neighbor n-derivation would
+        // otherwise have no trip-wire — neighbor traversal is correctness-critical for the TM-index.
+        for (int type = 0; type < Triangle.TYPES; type++) {
+            var t = new Triangle(3, type, 3, 2, Math.min(3, 2));
+            for (var nb : t.neighbors()) {
+                if (nb != null) {
+                    assertEquals(Math.min(nb.getX(), nb.getY()), nb.getN(),
+                        "neighbors()[*] must satisfy n = min(x,y), type " + type);
+                }
+            }
+            for (int e = 0; e < Triangle.EDGES; e++) {
+                var nb = t.neighbor(e);
+                if (nb != null) {
+                    assertEquals(Math.min(nb.getX(), nb.getY()), nb.getN(),
+                        "neighbor(" + e + ") must satisfy n = min(x,y), type " + type);
+                }
+            }
+        }
+    }
+
+    // ── point-location boundary + clamp-removal conventions (RDR-009 P1) ───────────────
+
+    @Test
+    @DisplayName("a point exactly on a cell's main diagonal (localX==localY) classifies as type 0 and is contained")
+    void diagonalBoundaryIsTypeZero() {
+        // localX == localY → the (localY > localX) rule yields type 0; getVertices()'s inclusive
+        // barycentric test must contain the on-diagonal point. Pins the documented boundary convention.
+        int level = 2;                 // scale = 4
+        float w = 1.5f / 4.0f;         // cell (1,1), localX = localY = 0.5 exactly
+        var tri = Triangle.fromWorldCoordinates(w, w, level);
+        assertEquals(1, tri.getX());
+        assertEquals(1, tri.getY());
+        assertEquals(0, tri.getType(), "on-diagonal point must classify as type 0");
+        assertTrue(tri.contains(w, w), "type-0 triangle must contain its on-diagonal boundary point");
+    }
+
+    @Test
+    @DisplayName("x+y>=scale points are NOT relocated (the silent diagonal clamp was removed)")
+    void nearBoundaryPointsAreNotClamped() {
+        // Old fromWorldCoordinate relocated x+y>=scale onto the diagonal: (0.9,0.9,2) → quant (3,3)
+        // with x+y=6 >= scale=4 was clamped to (1,2). The clamp is gone; the point keeps its true cell.
+        var tri = Triangle.fromWorldCoordinates(0.9f, 0.9f, 2);
+        assertEquals(3, tri.getX(), "x must not be relocated off its quantized cell");
+        assertEquals(3, tri.getY(), "y must not be relocated off its quantized cell");
+        assertEquals(Math.min(3, 3), tri.getN());
+        assertTrue(tri.contains(0.9f, 0.9f), "the located triangle must still contain its own point");
+        // fromWorldCoordinate (delegating) must agree — no residual clamp on that path either.
+        var viaSingular = Triangle.fromWorldCoordinate(0.9f, 0.9f, 2);
+        assertEquals(tri, viaSingular);
+    }
+
+    @Test
+    @DisplayName("level-0 root contains the full [0,1)^2 square (P3-deferred placeholder trip-wire)")
+    void levelZeroRootContainsFullSquare() {
+        // Machine-enforces the TODO(RDR-009 P3) placeholder: until the S1 root exists, the level-0
+        // root must keep covering the whole square (both the lower-right S0 half and the upper-left
+        // half). If this is "fixed" to strict type-0 containment before P3, this test trips.
+        var root = new Triangle(0, 0, 0, 0, 0);
+        assertTrue(root.contains(0.8f, 0.2f), "root must contain lower-right (y < x) points");
+        assertTrue(root.contains(0.2f, 0.8f), "root must contain upper-left (y > x) points");
+        assertTrue(root.contains(0.5f, 0.5f), "root must contain on-diagonal points");
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────────
