@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
+import com.hellblazer.luciferase.common.grpc.GrpcCredentialFactory;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
@@ -24,8 +25,9 @@ import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
 import com.hellblazer.luciferase.lucien.forest.ghost.ServiceDiscovery;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
+import io.grpc.ChannelCredentials;
+import io.grpc.Grpc;
 import io.grpc.Server;
-import io.grpc.ServerBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,6 +90,33 @@ public class GhostCommunicationManager<Key extends SpatialKey<Key>, ID extends E
                                    ContentSerializer<Content> contentSerializer,
                                    Class<ID> entityIdClass,
                                    ServiceDiscovery serviceDiscovery) {
+        this(currentRank, bindAddress, port, contentSerializer, entityIdClass, serviceDiscovery,
+             null, GrpcCredentialFactory.insecureChannel());
+    }
+
+    /**
+     * Creates a new ghost communication manager with explicit transport credentials (RDR-005).
+     *
+     * @param currentRank the rank of this process
+     * @param bindAddress the address to bind the server to
+     * @param port the port to bind the server to
+     * @param contentSerializer serializer for content objects
+     * @param entityIdClass class for entity ID deserialization
+     * @param serviceDiscovery service discovery mechanism
+     * @param serverAuth server transport credentials + the matching {@code PeerAuthInterceptor} as one
+     *        unit (from {@code GrpcCredentialFactory.serverAuth(...)}); {@code null} for an insecure
+     *        (plaintext, no auth) server suitable for in-process/test use
+     * @param channelCredentials outbound channel credentials for the embedded client —
+     *        {@code GrpcCredentialFactory.insecureChannel()} or {@code .mtlsChannel(...)}
+     */
+    public GhostCommunicationManager(int currentRank,
+                                   String bindAddress,
+                                   int port,
+                                   ContentSerializer<Content> contentSerializer,
+                                   Class<ID> entityIdClass,
+                                   ServiceDiscovery serviceDiscovery,
+                                   GrpcCredentialFactory.ServerAuth serverAuth,
+                                   ChannelCredentials channelCredentials) {
         this.currentRank = currentRank;
         this.bindAddress = bindAddress;
         this.port = port;
@@ -96,24 +125,34 @@ public class GhostCommunicationManager<Key extends SpatialKey<Key>, ID extends E
         this.serviceDiscovery = serviceDiscovery;
         this.ghostLayers = new ConcurrentHashMap<>();
         this.running = new AtomicBoolean(false);
-        
+
         // Create ghost layer provider
         var ghostLayerProvider = new GhostLayerProviderImpl();
-        
+
         // Create service implementation
         this.serviceImpl = new GhostExchangeServiceImpl<>(
             ghostLayerProvider, contentSerializer, entityIdClass);
-        
-        // Create gRPC server
-        this.server = ServerBuilder.forPort(port)
-            .addService(serviceImpl)
-            .build();
-        
-        // Create client
+
+        // Create gRPC server (RDR-005: insecure by default). When a ServerAuth is supplied, its
+        // (trust-any) mTLS credentials and a PeerAuthInterceptor are installed together, so bare creds
+        // cannot be passed without *an* interceptor. The interceptor's PeerVerifier must be a real
+        // cryptographic verifier (the deferred FirefliesPeerVerifier) for the server to actually
+        // authenticate peers — prefer GrpcCredentialFactory.serverAuth(key, cert, verifier) over
+        // hand-rolling a ServerAuth, which could pair trust-any creds with a non-verifying interceptor.
+        var serverCredentials = serverAuth == null
+            ? GrpcCredentialFactory.insecureServer() : serverAuth.credentials();
+        var serverBuilder = Grpc.newServerBuilderForPort(port, serverCredentials);
+        serverBuilder.addService(serviceImpl);
+        if (serverAuth != null) {
+            serverBuilder.intercept(serverAuth.interceptor());
+        }
+        this.server = serverBuilder.build();
+
+        // Create client with the outbound channel credentials
         this.client = new GhostServiceClient<>(
-            currentRank, contentSerializer, entityIdClass, serviceDiscovery);
-        
-        log.info("GhostCommunicationManager created for rank {} on {}:{}", 
+            currentRank, contentSerializer, entityIdClass, serviceDiscovery, channelCredentials);
+
+        log.info("GhostCommunicationManager created for rank {} on {}:{}",
                 currentRank, bindAddress, port);
     }
     

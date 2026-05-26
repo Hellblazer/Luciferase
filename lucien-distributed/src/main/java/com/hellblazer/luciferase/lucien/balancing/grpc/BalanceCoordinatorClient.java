@@ -17,10 +17,12 @@
 
 package com.hellblazer.luciferase.lucien.balancing.grpc;
 
+import com.hellblazer.luciferase.common.grpc.GrpcCredentialFactory;
 import com.hellblazer.luciferase.lucien.balancing.proto.*;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey;
+import io.grpc.ChannelCredentials;
+import io.grpc.Grpc;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
@@ -58,6 +60,7 @@ public class BalanceCoordinatorClient {
     private final ServiceDiscovery serviceDiscovery;
     private final int batchSize;
     private final long batchTimeoutMillis;
+    private final ChannelCredentials channelCredentials;
 
     // Virtual thread executor for concurrent operations
     private final ExecutorService virtualExecutor;
@@ -95,10 +98,29 @@ public class BalanceCoordinatorClient {
      */
     public BalanceCoordinatorClient(int currentRank, ServiceDiscovery serviceDiscovery,
                                    int batchSize, long batchTimeoutMillis) {
+        this(currentRank, serviceDiscovery, batchSize, batchTimeoutMillis,
+             GrpcCredentialFactory.insecureChannel());
+    }
+
+    /**
+     * Creates a new balance coordinator client with explicit outbound channel credentials (RDR-005).
+     *
+     * @param currentRank the rank of this process
+     * @param serviceDiscovery service discovery mechanism
+     * @param batchSize maximum batch size
+     * @param batchTimeoutMillis maximum time to wait before sending partial batch
+     * @param channelCredentials transport credentials for outbound channels —
+     *        {@code GrpcCredentialFactory.insecureChannel()} for plaintext (in-process/test) or
+     *        {@code GrpcCredentialFactory.mtlsChannel(...)} for mTLS
+     */
+    public BalanceCoordinatorClient(int currentRank, ServiceDiscovery serviceDiscovery,
+                                   int batchSize, long batchTimeoutMillis,
+                                   ChannelCredentials channelCredentials) {
         this.currentRank = currentRank;
         this.serviceDiscovery = serviceDiscovery;
         this.batchSize = batchSize;
         this.batchTimeoutMillis = batchTimeoutMillis;
+        this.channelCredentials = channelCredentials;
         this.channels = new ConcurrentHashMap<>();
         this.blockingStubs = new ConcurrentHashMap<>();
         this.asyncStubs = new ConcurrentHashMap<>();
@@ -457,8 +479,10 @@ public class BalanceCoordinatorClient {
             }
 
             log.debug("Creating channel to rank {} at {}", rank, endpoint);
-            return ManagedChannelBuilder.forTarget(endpoint)
-                .usePlaintext() // For development - use TLS in production
+            // RDR-005: credentials default to insecure (plaintext); mTLS is injected by the caller.
+            // endpoint is a host:port target — Grpc.newChannelBuilder resolves it as
+            // ManagedChannelBuilder.forTarget did (default name resolver).
+            return Grpc.newChannelBuilder(endpoint, channelCredentials)
                 .keepAliveTime(30, TimeUnit.SECONDS)
                 .keepAliveTimeout(5, TimeUnit.SECONDS)
                 .keepAliveWithoutCalls(true)
