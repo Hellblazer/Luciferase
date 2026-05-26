@@ -2,11 +2,12 @@
 title: "Prism Full-Cube Coverage via Two-Prism Cover"
 id: RDR-009
 type: Architecture
-status: draft
+status: accepted
 priority: medium
 author: hal.hildebrand
 reviewed-by: self
 created: 2026-05-26
+accepted_date: 2026-05-26
 related_issues: [Luciferase-fzm, Luciferase-4g6, RDR-001, RDR-002, RDR-003]
 ---
 
@@ -84,7 +85,13 @@ Single-prism behavior is *geometrically correct* (a triangular prism genuinely t
 
 ## Decision
 
-Pending gate. (Run `/conexus:rdr-research` to populate findings, then `/conexus:rdr-gate` and `/conexus:rdr-accept` before any implementation.)
+Accepted 2026-05-26 (gate PASSED, self-reviewed; finding 7 resolved). **Option A-full: two-prism cover *with* the SFC fix.** Locked:
+
+1. **Add the upper-triangle root S1** as a second prism family. Reconcile `Triangle.type` to the t8code/Bey orientation definition, and encode the root/half (S0 vs S1) in `PrismKey`/`Triangle` so the two prisms tile the full cube.
+2. **Adopt the real per-level TM-index** for the triangular SFC — update **both** `Triangle.consecutiveIndex` **and** `PrismKey.compareTo` (the `ConcurrentSkipListMap` storage order) to the interleaved order, as one change. This fixes the ancestor-grouping/locality defect and the level-11 `long` overflow together.
+3. **Accept the breaking key-format change:** version the `PrismKey` serialization and provide a migration path for any persisted lower-half (S0-only) index; the `consecutiveIndex`/`tmIndex` contracts change. Resolve `n`'s fate (derived `min(x,y)` → eliminate or cache) during planning.
+
+**Option B fallback trigger (retained):** if implementation forces changes *outside* `lucien/.../prism` — e.g. `AbstractSpatialIndex` query-path changes, or a persisted-index migration tool of non-trivial size — pause and re-weigh Option B (document Prism as a half-cube specialist + fail-fast) via an RDR revision before proceeding. The breaking-change scope raises Option A's proportionality bar.
 
 ## Consequences
 
