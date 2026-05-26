@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.lucien.distributed;
 
-import com.google.protobuf.ByteString;
 import com.hellblazer.luciferase.common.grpc.GrpcCredentialFactory;
 import com.hellblazer.luciferase.common.grpc.PeerAuthInterceptor;
 import com.hellblazer.luciferase.lucien.balancing.grpc.BalanceCoordinatorClient;
@@ -50,13 +49,13 @@ class CredentialPlumbingTest {
 
     private static final ContentSerializer<String> SERIALIZER = new ContentSerializer<>() {
         @Override
-        public ByteString serialize(String content) {
-            return ByteString.copyFrom(content, StandardCharsets.UTF_8);
+        public byte[] serialize(String content) {
+            return content.getBytes(StandardCharsets.UTF_8);
         }
 
         @Override
-        public String deserialize(ByteString bytes) {
-            return bytes.toString(StandardCharsets.UTF_8);
+        public String deserialize(byte[] bytes) {
+            return new String(bytes, StandardCharsets.UTF_8);
         }
 
         @Override

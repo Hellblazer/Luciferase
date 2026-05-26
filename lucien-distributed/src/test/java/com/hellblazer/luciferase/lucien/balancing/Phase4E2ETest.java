@@ -596,13 +596,13 @@ class Phase4E2ETest {
     /** Shared String content serializer for the GrpcBalanceExchange adapter (unused on the violation path). */
     private static final ContentSerializer<String> STRING_SERIALIZER = new ContentSerializer<>() {
         @Override
-        public com.google.protobuf.ByteString serialize(String content) {
-            return com.google.protobuf.ByteString.copyFromUtf8(content);
+        public byte[] serialize(String content) {
+            return content.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
 
         @Override
-        public String deserialize(com.google.protobuf.ByteString bytes) {
-            return bytes.toStringUtf8();
+        public String deserialize(byte[] bytes) {
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
         }
 
         @Override

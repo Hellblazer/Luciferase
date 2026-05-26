@@ -179,7 +179,7 @@ public final class ProtobufConverters {
         var builder = com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement.newBuilder()
             .setSpatialKey(spatialKeyToProtobuf(element.getSpatialKey()))
             .setEntityId(entityIdToString(element.getEntityId()))
-            .setContent(contentSerializer.serialize(element.getContent()))
+            .setContent(ByteString.copyFrom(contentSerializer.serialize(element.getContent())))
             .setPosition(point3fToProtobuf(element.getPosition()))
             .setOwnerRank(element.getOwnerRank())
             .setGlobalTreeId(element.getGlobalTreeId())
@@ -211,7 +211,7 @@ public final class ProtobufConverters {
 
         var spatialKey = (K) spatialKeyFromProtobuf(proto.getSpatialKey());
         var entityId = createEntityId(proto.getEntityId(), entityIdClass);
-        var content = contentSerializer.deserialize(proto.getContent());
+        var content = contentSerializer.deserialize(proto.getContent().toByteArray());
         var position = point3fFromProtobuf(proto.getPosition());
 
         return new GhostElement<>(spatialKey, entityId, content, position,
