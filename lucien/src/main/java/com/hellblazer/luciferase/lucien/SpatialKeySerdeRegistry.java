@@ -6,6 +6,7 @@
 package com.hellblazer.luciferase.lucien;
 
 import java.util.Objects;
+import java.util.ServiceLoader;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -14,13 +15,13 @@ import java.util.concurrent.ConcurrentMap;
  * strings and {@link SpatialKey} implementation classes to their serdes
  * (Luciferase-546).
  * <p>
- * <b>Built-in registrations.</b> The two ship-with-lucien serde classes
- * ({@code MortonKeySerde}, {@code TetreeKeySerde} in
- * {@code com.hellblazer.luciferase.lucien.forest.ghost.grpc}) register
- * themselves via class-initialisers on this registry. They are eagerly
- * triggered from this class's static initialiser so that any consumer that
- * touches the registry sees the built-ins without having to load each serde
- * class by name first.
+ * <b>Built-in registrations.</b> Serde providers are discovered via the
+ * {@link java.util.ServiceLoader} SPI ({@code META-INF/services/} the
+ * {@link SpatialKeySerde} service) from this class's static initialiser. The
+ * built-in {@code MortonKeySerde} / {@code TetreeKeySerde} ship as providers in
+ * the module that owns the gRPC/proto transport. When no providers are on the
+ * classpath the registry is simply empty — the spatial index works standalone;
+ * serdes are only needed for distributed ghost exchange.
  * <p>
  * <b>Extension registrations.</b> Other modules and tests can register
  * additional serdes by calling {@link #register(SpatialKeySerde)} once at
@@ -44,16 +45,11 @@ public final class SpatialKeySerdeRegistry {
     private static final ConcurrentMap<Class<?>, SpatialKeySerde<?>>   BY_KEY_CLASS = new ConcurrentHashMap<>();
 
     static {
-        // Trigger built-in serde class-init so their self-registration runs
-        // before any consumer queries the registry.
-        try {
-            Class.forName(
-                "com.hellblazer.luciferase.lucien.forest.ghost.grpc.MortonKeySerde");
-            Class.forName(
-                "com.hellblazer.luciferase.lucien.forest.ghost.grpc.TetreeKeySerde");
-        } catch (ClassNotFoundException e) {
-            throw new ExceptionInInitializerError("Built-in SpatialKeySerde class not on classpath: " + e.getMessage());
-        }
+        // Discover SpatialKeySerde providers via the ServiceLoader SPI. Built-ins ship as
+        // providers in the module owning the gRPC/proto transport (lucien-distributed after
+        // RDR-007 P1). Zero providers is a valid state — the registry stays empty and the
+        // spatial index works standalone (no ExceptionInInitializerError on absence).
+        ServiceLoader.load(SpatialKeySerde.class).forEach(SpatialKeySerdeRegistry::register);
     }
 
     private SpatialKeySerdeRegistry() {

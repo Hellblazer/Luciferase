@@ -7,7 +7,6 @@ package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.hellblazer.luciferase.lucien.SpatialKeySerde;
-import com.hellblazer.luciferase.lucien.SpatialKeySerdeRegistry;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 
 /**
@@ -16,21 +15,22 @@ import com.hellblazer.luciferase.lucien.octree.MortonKey;
  * Wire format: the existing {@code ghost.proto MortonKey} message
  * (morton_code + level) marshalled to bytes. Discriminator: {@code "morton"}.
  * <p>
- * Registers itself with {@link SpatialKeySerdeRegistry} via class-init; the
- * registry triggers this class-init from its own static initialiser.
+ * Discovered via {@link java.util.ServiceLoader} (declared in
+ * {@code META-INF/services/com.hellblazer.luciferase.lucien.SpatialKeySerde}) and
+ * registered by {@code SpatialKeySerdeRegistry} from its static initialiser.
  *
  * @author hal.hildebrand
  */
 public final class MortonKeySerde implements SpatialKeySerde<MortonKey> {
 
-    public static final  String          TYPE_ID  = "morton";
-    public static final  MortonKeySerde  INSTANCE = new MortonKeySerde();
+    public static final String TYPE_ID = "morton";
 
-    static {
-        SpatialKeySerdeRegistry.register(INSTANCE);
-    }
-
-    private MortonKeySerde() {
+    /**
+     * Public no-arg constructor required by {@link java.util.ServiceLoader} on the classpath
+     * (the {@code META-INF/services} mechanism instantiates each provider via its no-arg
+     * constructor). The serde is stateless.
+     */
+    public MortonKeySerde() {
     }
 
     @Override

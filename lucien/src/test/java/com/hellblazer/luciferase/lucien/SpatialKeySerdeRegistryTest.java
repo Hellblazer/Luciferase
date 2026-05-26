@@ -142,6 +142,18 @@ public class SpatialKeySerdeRegistryTest {
                      () -> SpatialKeySerdeRegistry.register(conflict));
     }
 
+    @Test
+    void serviceLoaderDiscoversBuiltInSerdes() {
+        // The registry's static initializer discovers providers via ServiceLoader
+        // (META-INF/services/...SpatialKeySerde) and registers the instances it creates.
+        var morton = SpatialKeySerdeRegistry.forTypeId("morton");
+        var tetree = SpatialKeySerdeRegistry.forTypeId("tetree");
+        assertInstanceOf(MortonKeySerde.class, morton, "ServiceLoader must register the built-in MortonKeySerde");
+        assertInstanceOf(TetreeKeySerde.class, tetree, "ServiceLoader must register the built-in TetreeKeySerde");
+        assertEquals("morton", morton.typeId());
+        assertEquals("tetree", tetree.typeId());
+    }
+
     // ============================================================
     // Test fixtures: a minimal SpatialKey + its serde
     // ============================================================
