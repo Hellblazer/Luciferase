@@ -212,10 +212,10 @@ public class DSOCEdgeCaseTest {
         if (indexType.equals("Prism")) {
             var prismId = new LongEntityID(200);
             index.insert(prismId, new Point3f(0.1f, 0.1f, 0.1f), (byte) 10, "PrismEntity");
-            
-            // Try to update to invalid position (x+y >= 1)
-            assertThrows(IllegalArgumentException.class, () -> 
-                index.updateEntity(prismId, new Point3f(0.6f, 0.6f, 0.1f), (byte) 10)
+
+            // Try to update to invalid position (y > x, upper-left half = S1, not yet supported)
+            assertThrows(IllegalArgumentException.class, () ->
+                index.updateEntity(prismId, new Point3f(0.3f, 0.6f, 0.1f), (byte) 10)
             );
         }
     }
@@ -532,11 +532,11 @@ public class DSOCEdgeCaseTest {
     
     private Point3f getValidPosition(int seed, String indexType) {
         Random rand = new Random(seed);
-        
+
         if (indexType.equals("Prism")) {
-            // Ensure x + y < 1 for Prism
-            float x = rand.nextFloat() * 0.4f;
-            float y = rand.nextFloat() * 0.4f;
+            // S0 domain: y <= x. Draw x first, then y as a fraction of x.
+            float x = 0.05f + rand.nextFloat() * 0.85f;
+            float y = rand.nextFloat() * x;
             float z = rand.nextFloat();
             return new Point3f(x, y, z);
         } else {

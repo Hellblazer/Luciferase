@@ -345,10 +345,11 @@ public class DSOCAutoDisableTest {
     
     private Point3f getValidPosition(int seed, String indexType) {
         Random rand = new Random(seed);
-        
+
         if (indexType.equals("Prism")) {
-            float x = rand.nextFloat() * 0.4f;
-            float y = rand.nextFloat() * 0.4f;
+            // S0 domain: y <= x. Draw x first, then y as a fraction of x.
+            float x = 0.05f + rand.nextFloat() * 0.85f;
+            float y = rand.nextFloat() * x;
             float z = rand.nextFloat() * 0.9f;
             return new Point3f(x, y, z);
         } else {
@@ -359,40 +360,38 @@ public class DSOCAutoDisableTest {
             );
         }
     }
-    
+
     private Point3f getScatteredPosition(int index, String indexType) {
         Random rand = new Random(index * 7);
-        
+
         float x = rand.nextFloat() * 0.99f;
         float y = rand.nextFloat() * 0.99f;
         float z = rand.nextFloat() * 0.99f;
-        
-        if (indexType.equals("Prism") && x + y >= 1.0f) {
-            float scale = 0.95f / (x + y);
-            x *= scale;
-            y *= scale;
+
+        if (indexType.equals("Prism") && y > x) {
+            // Swap so y <= x (preserves spatial coverage in lower triangle)
+            float tmp = x; x = y; y = tmp;
         }
-        
+
         return new Point3f(x, y, z);
     }
-    
+
     private Point3f getClusteredPosition(int index, String indexType) {
         int cluster = index / 20;
         float baseX = (cluster % 5) * 0.15f + 0.1f;
         float baseY = ((cluster / 5) % 5) * 0.15f + 0.1f;
         float baseZ = ((cluster / 25) % 4) * 0.2f + 0.1f;
-        
+
         Random rand = new Random(index);
         float x = baseX + rand.nextFloat() * 0.05f;
         float y = baseY + rand.nextFloat() * 0.05f;
         float z = baseZ + rand.nextFloat() * 0.05f;
-        
-        if (indexType.equals("Prism") && x + y >= 1.0f) {
-            float scale = 0.9f / (x + y);
-            x *= scale;
-            y *= scale;
+
+        if (indexType.equals("Prism") && y > x) {
+            // Swap so y <= x
+            float tmp = x; x = y; y = tmp;
         }
-        
+
         return new Point3f(x, y, z);
     }
     
