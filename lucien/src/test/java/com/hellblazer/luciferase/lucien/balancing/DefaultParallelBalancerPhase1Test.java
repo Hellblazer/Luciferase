@@ -502,10 +502,11 @@ public class DefaultParallelBalancerPhase1Test {
         }
 
         @SuppressWarnings("unchecked")
-        private static com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<MortonKey, LongEntityID, String> createMockGhostChannel() {
-            // Use Mockito to create a mock that satisfies the non-null requirement
-            return (com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<MortonKey, LongEntityID, String>)
-                mock(com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel.class);
+        private static com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel<MortonKey, LongEntityID, String> createMockGhostChannel() {
+            // De-grpc'd (RDR-007 P1-prep): mock the GhostChannel interface (was GrpcGhostChannel),
+            // so this fixture keeps its dependency when GrpcGhostChannel moves to lucien-distributed.
+            return (com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel<MortonKey, LongEntityID, String>)
+                mock(com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel.class);
         }
 
         @SuppressWarnings("unchecked")

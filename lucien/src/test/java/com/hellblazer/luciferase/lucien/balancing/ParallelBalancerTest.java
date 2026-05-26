@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * TDD tests for ParallelBalancer interface and implementations.
@@ -348,17 +349,17 @@ public class ParallelBalancerTest {
         }
 
         @SuppressWarnings("unchecked")
-        private static com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<MortonKey, LongEntityID, String> createMockGhostChannel() {
-            // Use Mockito to create a mock GhostCommunicationManager
-            var mockCommManager = mock(com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostCommunicationManager.class);
-
-            // Create GrpcGhostChannel with the mock
-            return new com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel<MortonKey, LongEntityID, String>(
-                mockCommManager,
-                0,    // currentRank
-                0L,   // treeId
-                com.hellblazer.luciferase.lucien.forest.ghost.GhostType.NONE
-            );
+        private static com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel<MortonKey, LongEntityID, String> createMockGhostChannel() {
+            // De-grpc'd (RDR-007 P1-prep): mock the GhostChannel interface instead of building a
+            // concrete GrpcGhostChannel, so this fixture keeps its dependency when GrpcGhostChannel
+            // moves to lucien-distributed. Getters stubbed to the prior concrete values
+            // (rank 0, treeId 0L, GhostType.NONE) so DistributedGhostManager construction is identical.
+            var channel = (com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel<MortonKey, LongEntityID, String>)
+                mock(com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel.class);
+            when(channel.getCurrentRank()).thenReturn(0);
+            when(channel.getTreeId()).thenReturn(0L);
+            when(channel.getGhostType()).thenReturn(com.hellblazer.luciferase.lucien.forest.ghost.GhostType.NONE);
+            return channel;
         }
 
         private static com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<MortonKey, LongEntityID, String> createMockGhostBoundaryDetector() {

@@ -27,7 +27,7 @@ import com.hellblazer.luciferase.lucien.forest.ForestConfig;
 import com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
-import com.hellblazer.luciferase.lucien.forest.ghost.GrpcGhostChannel;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostChannel;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import org.slf4j.Logger;
@@ -397,24 +397,24 @@ public class Phase44ForestIntegrationFixture {
     }
 
     /**
-     * Create a mock GrpcGhostChannel for testing (no network communication).
+     * Create a mock GhostChannel for testing (no network communication).
+     *
+     * <p>De-grpc'd (RDR-007 P1-prep): mocks the {@link GhostChannel} interface instead of building a
+     * concrete GrpcGhostChannel, so this shared fixture keeps its dependency when GrpcGhostChannel
+     * moves to lucien-distributed. Getters are stubbed to the prior concrete values (rank 0, treeId 1L,
+     * GhostType.FACES) so DistributedGhostManager construction is behavior-identical.
      */
     @SuppressWarnings("unchecked")
-    private GrpcGhostChannel<MortonKey, LongEntityID, TestEntity> createMockGhostChannel(
+    private GhostChannel<MortonKey, LongEntityID, TestEntity> createMockGhostChannel(
         Octree<LongEntityID, TestEntity> octree
     ) {
-        // Use Mockito to create a minimal mock GhostCommunicationManager
-        // The mock doesn't need to implement any methods for basic testing
-        var mockCommManager = org.mockito.Mockito.mock(
-            com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostCommunicationManager.class
-        );
-
-        return new GrpcGhostChannel<>(
-            mockCommManager,  // Mock GhostCommunicationManager
-            0,                // currentRank
-            1L,               // treeId
-            com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES
-        );
+        var channel = (GhostChannel<MortonKey, LongEntityID, TestEntity>)
+            org.mockito.Mockito.mock(GhostChannel.class);
+        org.mockito.Mockito.when(channel.getCurrentRank()).thenReturn(0);
+        org.mockito.Mockito.when(channel.getTreeId()).thenReturn(1L);
+        org.mockito.Mockito.when(channel.getGhostType()).thenReturn(
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES);
+        return channel;
     }
 
     /**
