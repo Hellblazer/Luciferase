@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
+import com.hellblazer.luciferase.common.grpc.GrpcCredentialFactory;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.UUIDEntityID;
@@ -30,8 +31,9 @@ import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.UUID;
+import io.grpc.ChannelCredentials;
+import io.grpc.Grpc;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
@@ -77,7 +79,8 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
     private final ContentSerializer<Content> contentSerializer;
     private final Class<ID> entityIdClass;
     private final ServiceDiscovery serviceDiscovery;
-    
+    private final ChannelCredentials channelCredentials;
+
     // Virtual thread executor for concurrent operations
     private final ExecutorService virtualExecutor;
     
@@ -102,10 +105,31 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
                              ContentSerializer<Content> contentSerializer,
                              Class<ID> entityIdClass,
                              ServiceDiscovery serviceDiscovery) {
+        this(currentRank, contentSerializer, entityIdClass, serviceDiscovery,
+             GrpcCredentialFactory.insecureChannel());
+    }
+
+    /**
+     * Creates a new ghost service client with explicit outbound channel credentials (RDR-005).
+     *
+     * @param currentRank the rank of this process
+     * @param contentSerializer serializer for content objects
+     * @param entityIdClass class for entity ID deserialization
+     * @param serviceDiscovery service discovery mechanism
+     * @param channelCredentials transport credentials for outbound channels —
+     *        {@code GrpcCredentialFactory.insecureChannel()} for plaintext (in-process/test) or
+     *        {@code GrpcCredentialFactory.mtlsChannel(...)} for mTLS
+     */
+    public GhostServiceClient(int currentRank,
+                             ContentSerializer<Content> contentSerializer,
+                             Class<ID> entityIdClass,
+                             ServiceDiscovery serviceDiscovery,
+                             ChannelCredentials channelCredentials) {
         this.currentRank = currentRank;
         this.contentSerializer = contentSerializer;
         this.entityIdClass = entityIdClass;
         this.serviceDiscovery = serviceDiscovery;
+        this.channelCredentials = channelCredentials;
         this.channels = new ConcurrentHashMap<>();
         this.blockingStubs = new ConcurrentHashMap<>();
         this.asyncStubs = new ConcurrentHashMap<>();
@@ -430,8 +454,8 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
             }
             
             log.debug("Creating channel to rank {} at {}", rank, endpoint);
-            return ManagedChannelBuilder.forTarget(endpoint)
-                .usePlaintext() // For development - use TLS in production
+            // RDR-005: credentials default to insecure (plaintext); mTLS is injected by the caller.
+            return Grpc.newChannelBuilder(endpoint, channelCredentials)
                 .keepAliveTime(30, TimeUnit.SECONDS)
                 .keepAliveTimeout(5, TimeUnit.SECONDS)
                 .keepAliveWithoutCalls(true)
