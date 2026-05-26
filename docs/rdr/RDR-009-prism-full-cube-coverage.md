@@ -1,0 +1,100 @@
+---
+title: "Prism Full-Cube Coverage via Two-Prism Cover"
+id: RDR-009
+type: Architecture
+status: accepted
+priority: medium
+author: hal.hildebrand
+reviewed-by: self
+created: 2026-05-26
+accepted_date: 2026-05-26
+related_issues: [Luciferase-fzm, Luciferase-4g6, RDR-001, RDR-002, RDR-003]
+---
+
+# RDR-009: Prism Full-Cube Coverage via Two-Prism Cover
+
+> Revise during planning; lock at implementation.
+> If wrong, abandon code and iterate RDR.
+
+## Problem Statement
+
+The `Prism` spatial index uses anisotropic subdivision: a triangular element in (x,y) crossed with a linear element in (z). The triangular component (`Triangle`) is a t8code-style triangular space-filling curve whose key space enforces a **global lower-triangle constraint** (`x + y < scale`). As a result, a single `Prism` index spans only the **lower-triangular half** of `[0,worldSize)³` — it cannot represent points in the upper triangle (`x + y >= scale`).
+
+This surfaced as a review-360 finding (T2 `luciferase/360-review-2026-05-23-summary`): users reasonably expect to insert anywhere in the cube, but a single Prism rejects/mishandles half of it. Two distinct behaviors exist in the current code, both unsatisfactory for full-cube use:
+
+- `Triangle.fromWorldCoordinates` (`lucien/.../prism/Triangle.java`) correctly classifies a point into the per-cell type-0 (lower-left) or type-1 (upper-right) sub-triangle, **but the global SFC key space still tiles a triangle, not a square** — there is no key for the upper half of the domain as a whole.
+- The integer-coordinate `Triangle` path **silently clamps** `x + y >= scale` points onto the diagonal (`x = x * total / (x + y)`), i.e. it relocates out-of-domain points rather than rejecting them — a latent data-relocation bug.
+
+Single-prism behavior is *geometrically correct* (a triangular prism genuinely tiles a half-cube), but it limits usability and hides a silent-relocation hazard. `Octree`/`Tetree` already provide full-cube coverage; the question is whether `Prism` — the specialized anisotropic index — should too.
+
+## Context
+
+### Background
+
+- **Decision to pursue this (not document-and-route):** brainstorming-gate, 2026-05-26. Two options were weighed:
+  - **Option A — two-prism cover** (this RDR): pair a lower-triangle and an upper-triangle prism family in a shared key space so the two together tile the full cube. Matches t8code convention; the right long-term answer.
+  - **Option B — document + fail-fast** (declined): document the half-cube domain and convert the silent clamp into an explicit `IllegalArgumentException` routing full-cube users to Octree/Tetree. Cheaper, but leaves Prism half-cube-only.
+  - Option A was chosen; Option B remains the fallback if research shows the two-prism cover is disproportionately costly.
+- **Prior deferral:** `Luciferase-4g6` (Tranche B) explicitly deferred this; tracking bead `Luciferase-fzm` (P2).
+
+### Technical Environment
+
+- **Module:** `lucien/src/main/java/com/hellblazer/luciferase/lucien/prism/` — `Prism`, `PrismKey`, `Triangle`, `Line`, `PrismSubdivisionStrategy`, `PrismNeighborFinder`, `PrismGeometry`, `PrismRayIntersector`, `PrismCollisionDetector`.
+- **Key type:** `PrismKey implements SpatialKey<PrismKey>` composes a `Triangle` (x,y) and a `Line` (z) at a synchronized level. Full-cube coverage requires `PrismKey` (or `Triangle`) to encode *which half* (lower/upper triangle) a key belongs to.
+- **Known adjacent bug (must be reconciled, not silently inherited):** review-360 found `Triangle.consecutiveIndex` overflows `long` at level 11+ (the `PrismKey` SFC comment at `PrismKey.java:~119` acknowledges this). A prism-half encoding consumes additional key bits — the RDR must determine whether it worsens the overflow, must coexist with a fix, or is independent.
+- **Geometry baseline:** the AABT/12-DOP exact-containment work (RDR-001/RDR-002) and the S0-S5 Kuhn subdivision (Tetree) are the in-repo precedents for "N simplices tile a cube"; the refuted rhombohedral-AABR approach is a cautionary precedent (a coordinate scheme that looked like it tiled but did not tighten bounds).
+
+## Approach
+
+> Candidate research/design directions below; to be resolved by research (see [Research Findings](#research-findings)) into a locked design at gate. These numbered items are the scope contract for phase-review at implementation time.
+
+1. **Prism-half encoding.** Extend `PrismKey`/`Triangle` to encode the lower vs upper triangle half of the cube cross-section. Determine the minimal encoding (a single discriminator bit vs a richer type field), where it lives (in `Triangle` alongside `type`, or in `PrismKey`), and its cost in the SFC key width.
+2. **SFC continuity / ordering across the two halves.** Decide how the two triangle families order within the space-filling curve — interleaved per cell, or lower-half-then-upper-half — and what that does to spatial locality and range-query contiguity. **Storage-order dependency (gate finding):** `PrismKey.compareTo` currently orders lexicographically by `(level, line.z, type, n, y, x)` (`PrismKey.java:288–311`, z-major) — *not* by `consecutiveIndex()` — so the `ConcurrentSkipListMap` storage order is independent of the SFC. Adopting the TM-index in `consecutiveIndex()` yields **no** range-query/ancestor-grouping benefit unless `compareTo` is updated to the same SFC order. Treat the two as one change.
+3. **Neighbor traversal across the shared diagonal.** Define neighbor-finding (`PrismNeighborFinder`) across the lower/upper boundary — the diagonal is now an interior face between the two prism families, not a domain edge.
+4. **Subdivision strategy.** Update `PrismSubdivisionStrategy` so refinement produces children covering both halves correctly, preserving the tiling at every level.
+5. **Query operations across both halves.** Ray intersection, collision detection, range queries, and kNN (`PrismRayIntersector`, `PrismCollisionDetector`, `PrismGeometry`, and the `AbstractSpatialIndex` query paths) must traverse both prism families without gaps or double-counting along the diagonal. Two concrete spots (gate findings): `Triangle.contains()` special-cases level 0 to the full `[0,1)²` square (`Triangle.java:317`), which violates the S0-only root invariant once two roots exist — remove or specialize per root; and `PrismGeometry`'s diagonal edge becomes an *interior* face between S0 and S1 rather than a domain boundary.
+6. **Reconcile with the `Triangle.consecutiveIndex` level-11 long-overflow.** Establish whether the half-encoding worsens the overflow, must land with an overflow fix, or is orthogonal — and at what max level the two-prism index is correct.
+7. **Backward compatibility / migration.** Define behavior for existing single-prism (lower-half-only) users and persisted indices: is the upper half opt-in, is the key format versioned, and does an existing lower-half index remain readable?
+
+## Research Findings
+
+> Investigation 2026-05-26. Sources: the mixedbread `spatial-index` store (id `0c35da08-…`, 38 PDFs) — Holke, *Scalable Algorithms for Parallel Tree-based AMR with General Element Types* (thesis); Burstedde & Holke, *A tetrahedral space-filling curve for non-conforming adaptive meshes* (the TM-SFC paper); Burstedde & Holke, *A tetrahedral space-filling curve via bitwise interleaving* (slides). In-repo: `lucien/.../prism/Triangle.java`. Full detail in T2 `luciferase_rdr/009-research-1`.
+
+1. **t8code's triangular SFC tiles the root TRIANGLE S0, not the square — and "type" is Bey *orientation*, not a half-discriminator.** The reference root is S0, the lower triangle of the square `[0,2^L]²` split along the diagonal `Y=X`; the upper triangle is a *second* root S1 ("We embed this triangle in the square… divided along its diagonal, obtaining a second triangle S1" — bitwise-interleaving slides). `Type(T)=i ⟺ T ≃ Sᵢ` (Bey's observation: refining S0 yields only triangles equivalent to S0 or S1). The two types are the two *orientations* that both appear **within S0's refinement** — they do **not** distinguish lower vs upper half of the domain. Detecting that a triangle lies *outside* the root S0 is a 4-case test (TM-SFC paper §4.4, Fig 10): `x ≥ 2^L`, `y < 0`, `x < y`, or (`x == y` ∧ `type == 1`).
+
+2. **Therefore the existing `Triangle.type` does NOT provide full-cube coverage (Open Q resolved: a new root/half is genuinely required).** The gap is structural, not cosmetic: the upper triangle S1 needs its own prism family/root — exactly the chosen two-prism cover. Compounding this, Luciferase assigns `type` in two inconsistent, non-Bey ways: `fromWorldCoordinates` sets `type = (localX+localY > 1.0)` (`Triangle.java:193`, "upper-right sub-triangle of a grid cell") while `fromWorldCoordinate` sets `type = (x+y)%2` (`:106`) and clamps `x+y ≥ scale` onto the diagonal (`:93–99`). Neither matches Bey type. Reconciling `type` to the t8code/Bey definition is in-scope.
+
+3. **The SFC must interleave the type digit per level; the current `consecutiveIndex` uses the form the literature explicitly rejects.** The TM-index is `m(T) = Σᵢ ((2yᵢ+xᵢ)·4^{2i+1} + bᵢ·4^{2i})` — coordinate bits **interleaved with** the type digit `bᵢ` at every level (TM-SFC paper §3.3, eq 15a). The paper explicitly rejects the alternative `(cube-Morton, type-at-top)` "semiquadcode" form because it **breaks ancestor-grouping**: children of a simplex are no longer traversed as a contiguous group (Theorem 16; Fig 5 counterexample). Luciferase's `Triangle.consecutiveIndex` (`Triangle.java:220–223`) is precisely the rejected form: `x + y·2^L + n·2^{2L} + type·2^{3L}` — `type` is a single top-of-word field, not interleaved. So the current Prism SFC is the locality-breaking variant; the two-prism cover should adopt the real TM-SFC interleaving.
+
+4. **Key-width / max-level: the level-11 overflow is an artifact of the wrong packing, not a fundamental limit.** The 2D TM-index needs `(d+1)=3` bits per level for triangles (2 coordinate bits + 1 type bit, since `d!=2` fits in 1 bit). At `MAX_LEVEL=21` that is 63 bits — fits a signed `long` with **correct ordering**, unlike the current scheme whose `type·2^{3L}` term sign-flips at `type=1` (breaking order) and whose prior `level*2`-per-field variant overflowed at level 11+ (review-360). The prism is `triangle × line` (t8code: "3D Prisms as a cross product of Lines and Triangles [81]", thesis App. A); the prism key must interleave the triangle TM-bits with the Line (z) Morton bits at synchronized level, replacing `PrismKey`'s current shift-combine packing (`PrismKey.java:106–127`, which the code comment already flags as a "proper-SFC TODO" that overflows past level ~15). **The `n` auxiliary coordinate** (`Triangle.java:54–58`) is derivable as `min(x,y)` (`fromWorldCoordinates:194`) and has no term in the TM-index; under TM-SFC it becomes derived-only — eliminable from the stored fields or kept as a computed cache. Approach item 1's "minimal encoding" must resolve `n`'s fate (this also resolves the current parent/child `n` round-trip inconsistency at `Triangle.java:238/276`).
+
+5. **Cross-diagonal neighbor traversal is well-defined in t8code.** Face-neighbor computation for simplices is constant-time (TM-SFC paper §4, Fig 4.9). The S0→S1 crossing is exactly the "outside the root triangle" condition from finding 1 (Fig 10): when a neighbor step yields `x < y` or (`x == y` ∧ `type == 1`), traversal has crossed the diagonal into the S1 family. `PrismNeighborFinder`'s current diagonal edge (`Triangle.neighbor(2)`, `Triangle.java:419–423`, the "simplified" `x-1,y-1` step) must be replaced with this crossing logic.
+
+6. **FCC/RD intersection: orthogonal.** RDR-003 (FCC-aligned spatial indexing) is **implemented** (accepted + implemented 2026-05-23) and its shipped Phase 0 operates exclusively on Tetree/VoN — it adds no Prism component. Two-prism cover therefore cannot conflict with what RDR-003 shipped: they touch disjoint indices. The broader FCC/rhombic-dodecahedral *lattice-overlay* exploration (T3 `architecture-luciferase-fcc-*`) remains an open research thread, but it is a distinct question that does not tie to the Prism tiling. (Gate correction: an earlier draft mis-described RDR-003 as "open"; orthogonality rests on RDR-003's actual Tetree-only scope.)
+
+7. **Backward compatibility splits into two changes of very different cost.** Adding the S1 family is *additive* (existing lower-triangle data is the S0 root; reserve the root/half discriminator so S0 keys are unchanged). But adopting the TM-SFC interleaving (findings 3–4) is a **breaking key-format change** for any persisted/serialized Prism index and for the `consecutiveIndex`/`tmIndex` contracts. The gate must decide whether to (a) fix the SFC and add S1 together (one breaking change, correct end state) or (b) add S1 atop the current flawed SFC (no break now, technical debt retained).
+
+## Open Questions
+
+- ~~Does the existing per-cell `type` (0/1) already provide the upper/lower discriminator, or is a new field required?~~ **Resolved (finding 1–2):** a new root/half is genuinely required; `type` is Bey *orientation* (T≃S0/S1), not a half-discriminator, and S1 is a separate root. The current `type` assignments are also non-Bey and must be reconciled.
+- ~~Interleaved vs sequential SFC ordering — which preserves locality?~~ **Resolved (finding 3):** interleave the type digit per level (the TM-SFC). The current `consecutiveIndex` uses the literature-rejected top-packed form that breaks ancestor-grouping; adopt the real TM-index.
+- ~~Is the level-11 `long` overflow a hard ceiling?~~ **Resolved (finding 4):** no — it is an artifact of the wrong packing. The correct 2D TM budget is 3 bits/level = 63 bits at level 21, ordered correctly in a `long`.
+- **KEY REMAINING DECISION (finding 7):** fix the SFC (adopt TM-interleaving) and add S1 together — one breaking key-format change, correct end state — **or** add S1 atop the current flawed SFC (no break now, debt retained)? This is the central gate question; it sets the blast radius (persisted-index migration, `consecutiveIndex`/`tmIndex` contract changes).
+- ~~Does pursuing two-prism pre-empt the FCC/RD direction?~~ **Resolved (finding 6):** RDR-003 is implemented and Tetree-only (no Prism) → orthogonal. The broader FCC lattice-overlay threads (T3) are a distinct, still-open question that does not tie to Prism tiling.
+- **Fallback trigger (decide at accept):** commit to Option A unconditionally, or define a concrete revert trigger. Proposed: if the TM-SFC fix requires changes outside `lucien/.../prism` (e.g. touches `AbstractSpatialIndex` query paths or forces a persisted-index migration tool), pause and reconsider Option B (document Prism as a half-cube specialist + fail-fast). The breaking-change finding (7) raises the bar for Option A's proportionality.
+
+## Decision
+
+Accepted 2026-05-26 (gate PASSED, self-reviewed; finding 7 resolved). **Option A-full: two-prism cover *with* the SFC fix.** Locked:
+
+1. **Add the upper-triangle root S1** as a second prism family. Reconcile `Triangle.type` to the t8code/Bey orientation definition, and encode the root/half (S0 vs S1) in `PrismKey`/`Triangle` so the two prisms tile the full cube.
+2. **Adopt the real per-level TM-index** for the triangular SFC — update **both** `Triangle.consecutiveIndex` **and** `PrismKey.compareTo` (the `ConcurrentSkipListMap` storage order) to the interleaved order, as one change. This fixes the ancestor-grouping/locality defect and the level-11 `long` overflow together.
+3. **Accept the breaking key-format change:** version the `PrismKey` serialization and provide a migration path for any persisted lower-half (S0-only) index; the `consecutiveIndex`/`tmIndex` contracts change. Resolve `n`'s fate (derived `min(x,y)` → eliminate or cache) during planning.
+
+**Option B fallback trigger (retained):** if implementation forces changes *outside* `lucien/.../prism` — e.g. `AbstractSpatialIndex` query-path changes, or a persisted-index migration tool of non-trivial size — pause and re-weigh Option B (document Prism as a half-cube specialist + fail-fast) via an RDR revision before proceeding. The breaking-change scope raises Option A's proportionality bar.
+
+## Consequences
+
+- **Positive:** Prism becomes a full-cube index, removing the silent upper-triangle relocation hazard and the usability cliff; aligns with t8code convention; preserves the anisotropic (triangular×linear) advantage that distinguishes Prism from Octree/Tetree.
+- **Cost / risk:** This is a key-format and traversal change, not a localized fix — it touches `PrismKey`, `Triangle`, subdivision, neighbor-finding, and every query path, and must be reconciled with the level-11 SFC overflow. Under-scoping the SFC-ordering or neighbor-across-diagonal work risks a subtly wrong (gappy or double-counting) index. Option B remains the documented fallback.
+- **Sequencing:** independent of the RDR-005/RDR-007 distributed arc; geometry-local. No external module impact expected beyond `lucien`.
