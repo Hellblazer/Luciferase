@@ -171,6 +171,15 @@ public class ButterflyViolationAggregator<Key extends SpatialKey<Key>> {
         // Exchange with partner using the provided exchanger function
         var receivedBatch = violationExchanger.apply(partner, batch);
 
+        // The BiFunction contract permits a null return. DistributedViolationAggregator's exchanger
+        // never returns null, but guard defensively so an alternative/future exchanger cannot NPE the
+        // aggregation; treat null as "no violations received from this partner" (Luciferase-xb5).
+        if (receivedBatch == null) {
+            log.warn("Violation exchanger returned null for partner {} in round {}; treating as empty batch",
+                     partner, round);
+            return new ViolationBatch<>(myRank, partner, round, List.of(), System.currentTimeMillis());
+        }
+
         log.debug("Received {} violations from partner {} in round {}",
                  receivedBatch.violations().size(), partner, round);
 
@@ -181,27 +190,29 @@ public class ButterflyViolationAggregator<Key extends SpatialKey<Key>> {
      * Composite key for violation deduplication.
      * Uses localKey and ghostKey to uniquely identify violations.
      */
-    private static class ViolationKey {
-        private final int localKeyHash;
-        private final int ghostKeyHash;
+    private static final class ViolationKey {
+        // Store the actual spatial keys, not just their hashCodes: two distinct violations whose
+        // keys merely collide on hashCode must NOT be deduplicated into one (which would silently
+        // drop a real violation). equals/hashCode delegate to the keys' own equals/hashCode, so
+        // a hash collision is resolved by a true key comparison (Luciferase-xb5).
+        private final Object localKey;
+        private final Object ghostKey;
 
         ViolationKey(TwoOneBalanceChecker.BalanceViolation<?> violation) {
-            // Use the full SpatialKey hashCode for uniqueness (handles MortonKey, TetreeKey, etc.)
-            this.localKeyHash = violation.localKey().hashCode();
-            this.ghostKeyHash = violation.ghostKey().hashCode();
+            this.localKey = violation.localKey();
+            this.ghostKey = violation.ghostKey();
         }
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            var that = (ViolationKey) o;
-            return localKeyHash == that.localKeyHash && ghostKeyHash == that.ghostKeyHash;
+            if (!(o instanceof ViolationKey that)) return false;
+            return Objects.equals(localKey, that.localKey) && Objects.equals(ghostKey, that.ghostKey);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(localKeyHash, ghostKeyHash);
+            return Objects.hash(localKey, ghostKey);
         }
     }
 }
