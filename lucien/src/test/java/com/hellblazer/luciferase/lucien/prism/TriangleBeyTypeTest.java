@@ -73,6 +73,34 @@ class TriangleBeyTypeTest {
         assertVertices(t1.getVertices(), new float[][] { { 0f, 0f }, { 0f, 0.5f }, { 0.5f, 0.5f } });
     }
 
+    @Test
+    @DisplayName("getCentroidWorldCoordinates is the mean of the 3 vertices (not the cell center) — both types and halves (Luciferase-1k9)")
+    void centroidIsVertexMeanNotCellCenter() {
+        for (int half = 0; half < 2; half++) {
+            for (int type = 0; type < Triangle.TYPES; type++) {
+                for (int level = 1; level <= 6; level++) {
+                    int max = 1 << level;
+                    // Anchor stored in the S0 frame (y <= x), valid at this level.
+                    var t = new Triangle(level, type, Math.min(3, max - 1), Math.min(2, max - 1), half);
+                    var v = t.getVertices();
+                    var c = t.getCentroidWorldCoordinates();
+                    float expX = (v[0][0] + v[1][0] + v[2][0]) / 3.0f;
+                    float expY = (v[0][1] + v[1][1] + v[2][1]) / 3.0f;
+                    assertEquals(expX, c[0], EPS, String.format("centroid x = vertex mean (half=%d type=%d L=%d)", half, type, level));
+                    assertEquals(expY, c[1], EPS, String.format("centroid y = vertex mean (half=%d type=%d L=%d)", half, type, level));
+                    // The true centroid is strictly interior; the old grid-cell center sat on the
+                    // hypotenuse (the cell's main diagonal), so this also pins the bug fix.
+                    assertTrue(t.contains(c[0], c[1]), String.format(
+                        "centroid must lie inside the triangle (half=%d type=%d L=%d)", half, type, level));
+                    float cellCx = t.getX() * (1.0f / max) + 0.5f / max;
+                    float cellCy = t.getY() * (1.0f / max) + 0.5f / max;
+                    assertTrue(Math.abs(c[0] - cellCx) > EPS || Math.abs(c[1] - cellCy) > EPS,
+                        "centroid must differ from the grid-cell center (the old buggy value)");
+                }
+            }
+        }
+    }
+
     // ── Point location matches orientation, and is consistent with contains() ─────────
 
     @Test

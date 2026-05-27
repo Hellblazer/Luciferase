@@ -556,11 +556,14 @@ public final class Triangle {
      * @return array of [centerX, centerY] coordinates in world space
      */
     public float[] getCentroidWorldCoordinates() {
-        var scale = 1.0f / (1 << level);
-        var centerX = x * scale + scale * 0.5f;
-        var centerY = y * scale + scale * 0.5f;
-        // Reflect across y = x for the S1 half (see getWorldBounds).
-        return (half == 1) ? new float[]{centerY, centerX} : new float[]{centerX, centerY};
+        // The true triangle centroid is the mean of the 3 vertices, NOT the grid-cell center
+        // (x*scale + scale/2): the cell center lies on the cell's main diagonal — the shared
+        // hypotenuse boundary of the two Kuhn half-cells — not in either triangle's interior
+        // (Luciferase-1k9; cf. the CUBE-vs-SIMPLEX center pitfall in CLAUDE.md). getVertices() is
+        // already type- and half-aware, so averaging it is correct for both types and both roots.
+        var v = getVertices();
+        return new float[] { (v[0][0] + v[1][0] + v[2][0]) / 3.0f,
+                             (v[0][1] + v[1][1] + v[2][1]) / 3.0f };
     }
     
     // Accessors
