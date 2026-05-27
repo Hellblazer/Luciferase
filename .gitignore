@@ -62,3 +62,7 @@ portal/logs/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+# IDE classpath artifacts
+.factorypath
+**/.factorypath

@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +32,7 @@ import java.util.concurrent.TimeoutException;
  * <p>Wraps a PartitionRegistry and monitors barrier operations for timeouts.
  * Reports failures to FaultHandler when barrier timeout thresholds are exceeded.
  *
- * <p><b>GAP-6 Fix</b>: Uses simulation.distributed.integration.Clock instead
+ * <p><b>GAP-6 Fix</b>: Uses common.time.Clock instead
  * of java.time.Clock for deterministic testing with TestClock.
  *
  * <p><b>Issue #4 Fix</b>: Uses direct barrier.await(timeout, unit) instead of
@@ -85,7 +85,7 @@ public class FaultAwarePartitionRegistry {
     /**
      * Set the clock for deterministic testing.
      *
-     * <p>Uses simulation.distributed.integration.Clock (GAP-6).
+     * <p>Uses common.time.Clock (GAP-6).
      *
      * @param clock the clock to use
      * @throws NullPointerException if clock is null

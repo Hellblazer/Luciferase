@@ -18,7 +18,7 @@ package com.hellblazer.luciferase.simulation.topology.metrics;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 
 import java.util.ArrayList;

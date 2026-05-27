@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.simulation.topology.metrics;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 
 import java.util.ArrayList;
 import java.util.Iterator;

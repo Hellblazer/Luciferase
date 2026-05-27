@@ -13,7 +13,7 @@ import com.hellblazer.luciferase.lucien.distributed.migration.proto.MigrationRes
 
 // Domain event classes
 import com.hellblazer.luciferase.simulation.causality.EntityMigrationState;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.events.EntityDepartureEvent;
 import com.hellblazer.luciferase.simulation.events.EntityRollbackEvent;
 import com.hellblazer.luciferase.simulation.events.ViewSynchronyAck;

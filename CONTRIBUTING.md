@@ -131,7 +131,7 @@ void testFailureRecovery() {
 For regular classes (non-record, non-static):
 
 ```java
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 
 public class MyService {
     private volatile Clock clock = Clock.system();

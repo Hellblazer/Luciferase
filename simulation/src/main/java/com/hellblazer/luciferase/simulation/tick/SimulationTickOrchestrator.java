@@ -15,7 +15,7 @@ import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.distributed.grid.BubbleCoordinate;
 import com.hellblazer.luciferase.simulation.distributed.grid.BubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.grid.GridConfiguration;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

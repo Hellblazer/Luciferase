@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
 import com.hellblazer.luciferase.lucien.balancing.fault.testinfra.IntegrationTestFixture;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

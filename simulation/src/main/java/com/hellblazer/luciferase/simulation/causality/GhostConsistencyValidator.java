@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.causality;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
 import com.hellblazer.luciferase.simulation.spatial.DeadReckoningEstimator;
 import org.slf4j.Logger;

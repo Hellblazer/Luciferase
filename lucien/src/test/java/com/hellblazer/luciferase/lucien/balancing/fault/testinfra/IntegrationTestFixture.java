@@ -3,7 +3,7 @@ package com.hellblazer.luciferase.lucien.balancing.fault.testinfra;
 import com.hellblazer.luciferase.lucien.balancing.fault.DefaultPartitionRecovery;
 import com.hellblazer.luciferase.lucien.balancing.fault.InMemoryPartitionTopology;
 import com.hellblazer.luciferase.lucien.balancing.fault.PartitionTopology;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 
 import java.util.*;

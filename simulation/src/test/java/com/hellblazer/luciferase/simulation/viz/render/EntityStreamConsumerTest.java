@@ -8,7 +8,7 @@
  */
 package com.hellblazer.luciferase.simulation.viz.render;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.viz.EntityVisualizationServer;
 import io.javalin.Javalin;
 import org.junit.jupiter.api.AfterEach;

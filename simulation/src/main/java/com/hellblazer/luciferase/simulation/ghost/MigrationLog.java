@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.distributed.migration.MigrationLogPersistence;
 import com.hellblazer.luciferase.simulation.distributed.migration.TransactionState;
 import com.hellblazer.luciferase.simulation.ghost.*;

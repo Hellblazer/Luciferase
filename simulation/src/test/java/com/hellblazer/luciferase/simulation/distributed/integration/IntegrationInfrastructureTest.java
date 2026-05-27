@@ -3,6 +3,8 @@
  */
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
+import com.hellblazer.luciferase.common.time.Clock;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

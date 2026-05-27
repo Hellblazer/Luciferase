@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.von.Event;
 import com.hellblazer.luciferase.simulation.von.Bubble;
 import com.hellblazer.luciferase.simulation.von.Message;

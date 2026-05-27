@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
+import com.hellblazer.luciferase.common.time.Clock;
+
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.util.List;

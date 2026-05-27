@@ -11,7 +11,7 @@ package com.hellblazer.luciferase.simulation.viz.render;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.websocket.WsContext;
