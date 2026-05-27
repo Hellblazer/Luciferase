@@ -43,7 +43,7 @@ Welcome to the Lucien spatial indexing module documentation.
 
 - **[FOREST_TEST_COVERAGE.md](FOREST_TEST_COVERAGE.md)** - Test coverage analysis
 - **[PERFORMANCE_TESTING_PROCESS.md](PERFORMANCE_TESTING_PROCESS.md)** - Performance testing workflow
-- **[T8CODE_TESTING_INFRASTRUCTURE_ANALYSIS.md](T8CODE_TESTING_INFRASTRUCTURE_ANALYSIS.md)** - T8code integration
+- **T8CODE_TESTING_INFRASTRUCTURE_ANALYSIS.md** - T8code integration
 - **[DSOC_TESTING_GUIDE.md](DSOC_TESTING_GUIDE.md)** - DSOC testing overview
 - **[DSOC_PERFORMANCE_TESTING_GUIDE.md](DSOC_PERFORMANCE_TESTING_GUIDE.md)** - DSOC performance testing
 - **[DSOC_TESTING_COMPREHENSIVE.md](DSOC_TESTING_COMPREHENSIVE.md)** - Comprehensive DSOC testing patterns

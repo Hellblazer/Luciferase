@@ -338,7 +338,7 @@ Why is this change needed?
 - Code review rejects PRs without design review link for Phase X Day 1 work
 - plan-auditor agent accessible via `/plan-audit` command
 
-**See**: [DESIGN_REVIEW_PROCESS.md](DESIGN_REVIEW_PROCESS.md) for complete design review guidelines and templates.
+**See**: DESIGN_REVIEW_PROCESS.md for complete design review guidelines and templates.
 
 **Example**: See `.pm/reviews/review-20260111-multibubble-decomposition.md` for completed design review of Sprint B B1 (MultiBubbleSimulation god class decomposition).
 
@@ -404,7 +404,7 @@ Document architecture decisions when:
 ## Questions or Issues?
 
 - **Documentation**: Check [lucien/doc/LUCIEN_ARCHITECTURE.md](lucien/doc/LUCIEN_ARCHITECTURE.md)
-- **Simulation**: Check [simulation/doc/CONSOLIDATION_MASTER_OVERVIEW.md](simulation/doc/CONSOLIDATION_MASTER_OVERVIEW.md)
+- **Simulation**: Check simulation/doc/CONSOLIDATION_MASTER_OVERVIEW.md
 - **Issues**: Open a GitHub issue with detailed description
 - **Contact**: hal.hildebrand@gmail.com
 

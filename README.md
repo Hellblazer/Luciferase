@@ -91,7 +91,7 @@ boolean intersects = tet.intersects12DOP(minX, minY, minZ, maxX, maxY, maxZ);  /
 | 12-DOP point containment | 4.2 ns (11 ops, exact) |
 | CI pipeline | 6 parallel batches, 9-12 minutes |
 
-See [performance metrics](lucien/doc/PERFORMANCE_METRICS_MASTER.md) and [benchmarking guide](lucien/doc/PERFORMANCE_CONSOLIDATION_REPORT.md).
+See [performance metrics](lucien/doc/PERFORMANCE_METRICS_MASTER.md) and benchmarking guide.
 
 ## Simulation
 
@@ -118,7 +118,7 @@ The simulation module provides distributed 3D simulation with:
 |----------|-----------|
 | Architecture | [Lucien Architecture](lucien/doc/LUCIEN_ARCHITECTURE.md), [Architecture Summary](lucien/doc/ARCHITECTURE_SUMMARY.md), [CLAUDE.md](CLAUDE.md) |
 | Spatial Indexing | [12-DOP Containment](lucien/doc/AABT_12DOP_EXACT_CONTAINMENT.md), [Slab Ranges](lucien/doc/12DOP_SLAB_RANGES.md), [S0-S5 Subdivision](lucien/doc/S0_S5_TETRAHEDRAL_SUBDIVISION.md) |
-| Performance | [Metrics Master](lucien/doc/PERFORMANCE_METRICS_MASTER.md), [Consolidation Report](lucien/doc/PERFORMANCE_CONSOLIDATION_REPORT.md) |
+| Performance | [Metrics Master](lucien/doc/PERFORMANCE_METRICS_MASTER.md), Consolidation Report |
 | Testing | [Test Framework Guide](TEST_FRAMEWORK_GUIDE.md), [H3 Determinism](simulation/doc/H3_DETERMINISM_EPIC.md) |
 | CI/CD | [Parallel CI](docs/MAVEN_PARALLEL_CI_OPTIMIZATION.md), [Dependencies](docs/DEPENDENCY_VERSIONS_CONSOLIDATED.md) |
 | Design Records | [RDR-001](docs/rdr/RDR-001-axis-aligned-bounding-tetrahedra.md), [RDR-002](docs/rdr/RDR-002-12dop-exact-containment.md) |

@@ -35,7 +35,7 @@ The Sentry module provides high-performance Delaunay tetrahedralization with ext
 
 ### Performance Analysis & Results
 
-- **[OPTIMIZATION_HISTORY.md](OPTIMIZATION_HISTORY.md)** - Complete optimization timeline
+- **OPTIMIZATION_HISTORY.md** - Complete optimization timeline
   - Original bottleneck analysis
   - Optimization roadmap
   - Phase-by-phase implementation progress
@@ -208,7 +208,7 @@ While most optimizations are complete, some areas remain for future enhancement:
 
 ## Support & Navigation
 
-- **Performance questions**: Consult [OPTIMIZATION_HISTORY.md](OPTIMIZATION_HISTORY.md)
+- **Performance questions**: Consult OPTIMIZATION_HISTORY.md
 - **Implementation details**: See [IMPLEMENTATION_DETAILS.md](IMPLEMENTATION_DETAILS.md)
 - **SIMD setup**: Check [SIMD_GUIDE.md](SIMD_GUIDE.md)
 - **Benchmarking**: Review [BENCHMARK_FRAMEWORK.md](BENCHMARK_FRAMEWORK.md)

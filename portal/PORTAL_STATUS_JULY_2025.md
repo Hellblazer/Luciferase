@@ -182,7 +182,7 @@ Memory usage varies by approach:
 
 The Portal module includes comprehensive technical documentation:
 
-1. **[SPATIAL_INDEX_VISUALIZATION_PLAN.md](doc/SPATIAL_INDEX_VISUALIZATION_PLAN.md)**
+1. **SPATIAL_INDEX_VISUALIZATION_PLAN.md**
     - Original architectural plan and design specifications
     - Visual design requirements and implementation phases
     - Performance targets and success metrics
