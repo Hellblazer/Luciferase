@@ -101,8 +101,9 @@ implements SpatialIndex<Key, ID, Content> {
     protected final ReadWriteLock                                    lock;
     protected final Set<Long>                                        deferredSubdivisionNodes = new HashSet<>();
     private final   TreeBalancer<Key, ID>                            treeBalancer;
-    // Entity data cache for performance
-    private final   EntityCache<ID>                                  entityCache;
+    // Entity data cache for performance. RDR-008: protected so all four structural-nucleus fields
+    // (spatialIndex, lock, entityManager, entityCache) share uniform visibility; reached by feature objects via core.
+    protected final EntityCache<ID>                                  entityCache;
     // Fine-grained locking strategy for high-concurrency operations
     protected       FineGrainedLockingStrategy<ID, Content>          lockingStrategy;
     // Bulk operation support
@@ -136,6 +137,10 @@ implements SpatialIndex<Key, ID, Content> {
     // k-NN caching (Phase 2: 20-30× speedup for cached hits)
     private final   java.util.concurrent.atomic.AtomicLong           spatialVersion = new java.util.concurrent.atomic.AtomicLong(0);
     private final   com.hellblazer.luciferase.lucien.cache.KNNCache<Key, ID> knnCache;
+    // RDR-008: shared storage+concurrency nucleus handed to feature-object collaborators. Additive view over the six
+    // nucleus fields (spatialIndex, lock, spatialVersion, knnCache, entityManager, entityCache), which remain the
+    // authoritative declarations on this façade; constructed once below after those fields are initialized.
+    protected final SpatialIndexCore<Key, ID, Content>                       core;
     // k-NN performance metrics
     private final   java.util.concurrent.atomic.AtomicLong           knnCacheHits = new java.util.concurrent.atomic.AtomicLong(0);
     private final   java.util.concurrent.atomic.AtomicLong           knnCacheMisses = new java.util.concurrent.atomic.AtomicLong(0);
@@ -177,7 +182,9 @@ implements SpatialIndex<Key, ID, Content> {
         this.treeBuilder = new StackBasedTreeBuilder<>(StackBasedTreeBuilder.defaultConfig());
         this.entityCache = new EntityCache<>(10000); // Cache up to 10k entities
         this.knnCache = new com.hellblazer.luciferase.lucien.cache.KNNCache<>(); // k-NN result caching
-        
+        // RDR-008: wrap the now-initialized six-field nucleus in a single shared view for feature-object collaborators
+        this.core = new SpatialIndexCore<>(spatialIndex, lock, spatialVersion, knnCache, entityManager, entityCache);
+
         // Initialize ghost components (neighbor detector and element manager set by subclasses)
         this.ghostLayer = new GhostLayer<>(GhostType.NONE);
         // ElementGhostManager initialized when neighbor detector is set
