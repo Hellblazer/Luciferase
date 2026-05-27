@@ -3,6 +3,7 @@
  */
 package com.hellblazer.luciferase.lucien.octree;
 
+import com.hellblazer.luciferase.lucien.PerfMeasure;
 import com.hellblazer.luciferase.lucien.Ray3D;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
@@ -201,27 +202,28 @@ public class OctreeRayPerformanceTest {
 
         Ray3D ray = new Ray3D(new Point3f(50, 50, 50), new Vector3f(1, 1, 1), 2000.0f);
 
-        // Test rayIntersectAll performance
-        long startTime = System.nanoTime();
-        for (int i = 0; i < 100; i++) {
-            List<SpatialIndex.RayIntersection<LongEntityID, String>> allIntersections = octree.rayIntersectAll(ray);
-        }
-        long allDuration = System.nanoTime() - startTime;
+        // Warm both ray paths so the comparison reflects steady state, not the first loop's JIT cost,
+        // and compare in nanos (ms rounding made the firstMs<=allMs*2 ratio unstable for sub-ms work).
+        // Luciferase-tlb.
+        PerfMeasure.warmup(20, () -> octree.rayIntersectAll(ray));
+        PerfMeasure.warmup(20, () -> octree.rayIntersectFirst(ray));
+        long allNanos = PerfMeasure.bestNanos(5, () -> {
+            for (int i = 0; i < 100; i++) {
+                octree.rayIntersectAll(ray);
+            }
+        });
+        long firstNanos = PerfMeasure.bestNanos(5, () -> {
+            for (int i = 0; i < 100; i++) {
+                octree.rayIntersectFirst(ray);
+            }
+        });
 
-        // Test rayIntersectFirst performance
-        startTime = System.nanoTime();
-        for (int i = 0; i < 100; i++) {
-            octree.rayIntersectFirst(ray);
-        }
-        long firstDuration = System.nanoTime() - startTime;
+        System.out.printf("rayIntersectAll: %.3f ms, rayIntersectFirst: %.3f ms (best-of-5 x100 iters)%n",
+                          allNanos / 1_000_000.0, firstNanos / 1_000_000.0);
 
-        long allMs = allDuration / 1_000_000;
-        long firstMs = firstDuration / 1_000_000;
-
-        System.out.printf("rayIntersectAll: %d ms, rayIntersectFirst: %d ms%n", allMs, firstMs);
-
-        // rayIntersectFirst should be faster or at least not significantly slower
-        assertTrue(firstMs <= allMs * 2, "rayIntersectFirst should not be significantly slower than rayIntersectAll");
+        // rayIntersectFirst (early-exit) should not be significantly slower than rayIntersectAll.
+        assertTrue(firstNanos <= allNanos * 2,
+                   "rayIntersectFirst should not be significantly slower than rayIntersectAll");
     }
 
     @Test

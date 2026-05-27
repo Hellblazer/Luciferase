@@ -11,6 +11,7 @@ import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.PerfMeasure;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 
 import javax.vecmath.Point3f;
@@ -130,14 +131,16 @@ public class PrismVsOctreeComparisonTest {
         var searchCube = new com.hellblazer.luciferase.lucien.Spatial.Cube(20.0f, 20.0f, 20.0f, 20.0f);
         
         // Test Prism range query performance
-        long prismStartTime = System.nanoTime();
+        // Warm both query paths (class-load + JIT), then take the steady-state best-of-N: a single cold
+        // entitiesInRegion call can spike past the 5ms bound under CI/benchmark load (Luciferase-tlb).
+        PerfMeasure.warmup(5, () -> prism.entitiesInRegion(searchCube));
+        PerfMeasure.warmup(5, () -> octree.entitiesInRegion(searchCube));
+        long prismRangeTime = PerfMeasure.bestNanos(3, () -> prism.entitiesInRegion(searchCube));
         var prismResults = prism.entitiesInRegion(searchCube);
-        long prismRangeTime = System.nanoTime() - prismStartTime;
         
         // Test Octree range query performance
-        long octreeStartTime = System.nanoTime();
+        long octreeRangeTime = PerfMeasure.bestNanos(3, () -> octree.entitiesInRegion(searchCube));
         var octreeResults = octree.entitiesInRegion(searchCube);
-        long octreeRangeTime = System.nanoTime() - octreeStartTime;
         
         // Log performance comparison
         double rangeRatio = (double)prismRangeTime / octreeRangeTime;

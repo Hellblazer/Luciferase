@@ -48,7 +48,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisabledIfEnvironmentVariable(
     named = "CI",
     matches = "true",
-    disabledReason = "Class-level gate: every test uses waitForSubdivision(., 2000ms) which polls for async subdivision to settle. 3 methods have failed across CI rounds (testGhostLayerWithBeySubdivision, testDistributedTwoServer, testEntityMovementAcrossSubdividedTrees) — the 2s deadline isn't reliable on GitHub Actions runners. Tracking: a follow-up bead should refactor these to either use a wait-with-large-bound (Awaitility) or move the perf-asserting parts to a dedicated PerformanceTest class. Local dev coverage retained.")
+    disabledReason = "Class-level gate retained. Luciferase-tlb hardened the subdivision waits: waitForSubdivision now also requires child tree ids to be registered (not just the isSubdivided() flag, which flips first), and the 3 methods that asserted exactly 6 children (testGhostLayerWithBeySubdivision, testDistributedTwoServer, testEntityMovementAcrossSubdividedTrees) wait on that terminal condition via waitForCondition(5000ms). Gate stays on until validated green across several CI rounds. Local dev coverage retained.")
 class TetrahedralForestE2ETest {
 
     /** Ghost zone width used in tests requiring ghost boundary detection. */
@@ -68,7 +68,11 @@ class TetrahedralForestE2ETest {
             try {
                 Thread.sleep(50);
                 waited += 50;
-                if (tree.isSubdivided()) {
+                // Require children registered, not just the flag: isSubdivided() flips before
+                // establishHierarchy() finishes adding child tree ids, so polling the flag alone races
+                // under load (Luciferase-tlb). This hardens all waitForSubdivision callers, not just the
+                // three that switched to the stricter waitForCondition(size==N) below.
+                if (tree.isSubdivided() && !tree.getChildTreeIds().isEmpty()) {
                     return waited;
                 }
             } catch (InterruptedException e) {
@@ -79,6 +83,28 @@ class TetrahedralForestE2ETest {
         fail(String.format("Tree %s did not subdivide within %dms (waited %dms)",
                           tree.getTreeId(), maxWaitMs, waited));
         return waited; // unreachable
+    }
+
+    /**
+     * Poll until {@code condition} holds or {@code maxWaitMs} elapses, failing with {@code desc} on timeout. Use this
+     * (rather than {@link #waitForSubdivision}) when the test depends on state that settles <i>after</i> the
+     * {@code isSubdivided()} flag flips — e.g. child-tree registration, which lags the flag under load (Luciferase-tlb).
+     */
+    private void waitForCondition(int maxWaitMs, String desc, java.util.function.BooleanSupplier condition) {
+        int waited = 0;
+        while (waited < maxWaitMs) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            try {
+                Thread.sleep(50);
+                waited += 50;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        fail(String.format("Condition not met within %dms: %s", maxWaitMs, desc));
     }
 
     /**
@@ -592,8 +618,10 @@ class TetrahedralForestE2ETest {
         // 3. Trigger subdivision
         forest.checkAndAdapt();
 
-        // Wait for subdivision to complete
-        waitForSubdivision(root, 2000);
+        // Wait for the terminal state, not the intermediate flag: isSubdivided() flips before the 6 child
+        // trees finish registering, so polling the flag alone races under load (Luciferase-tlb).
+        waitForCondition(5000, "root subdivided into 6 child trees",
+                         () -> root.isSubdivided() && root.getChildTreeIds().size() == 6);
 
         // 4. Verify subdivision occurred
         assertTrue(root.isSubdivided(), "Root should be subdivided");
@@ -697,8 +725,10 @@ class TetrahedralForestE2ETest {
         // 3. Trigger subdivision
         forest.checkAndAdapt();
 
-        // Wait for subdivision to complete
-        waitForSubdivision(root, 2000);
+        // Wait for the terminal state, not the intermediate flag: isSubdivided() flips before the 6 child
+        // trees finish registering, so polling the flag alone races under load (Luciferase-tlb).
+        waitForCondition(5000, "root subdivided into 6 child trees",
+                         () -> root.isSubdivided() && root.getChildTreeIds().size() == 6);
 
         // 4. Verify subdivision occurred
         assertTrue(root.isSubdivided(), "Root should be subdivided");
@@ -790,8 +820,10 @@ class TetrahedralForestE2ETest {
         // 3. Trigger subdivision
         forest.checkAndAdapt();
 
-        // Wait for subdivision to complete
-        waitForSubdivision(root, 2000);
+        // Wait for the terminal state, not the intermediate flag: isSubdivided() flips before the 6 child
+        // trees finish registering, so polling the flag alone races under load (Luciferase-tlb).
+        waitForCondition(5000, "root subdivided into 6 child trees",
+                         () -> root.isSubdivided() && root.getChildTreeIds().size() == 6);
 
         // 4. Verify subdivision occurred
         assertTrue(root.isSubdivided(), "Root should be subdivided");

@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
+import com.hellblazer.luciferase.lucien.PerfMeasure;
 import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
@@ -255,36 +256,31 @@ public class TetreeLocateMethodTest {
             );
         }
         
-        // Time the new locate() method
-        long startTime = System.nanoTime();
-        for (Point3f point : testPoints) {
-            tetree.locate(point, level);
-        }
-        long newMethodTime = System.nanoTime() - startTime;
-        
-        // Simulate old method (test all 6 tetrahedra until first match)
-        Tet[] testTets = new Tet[6];
-        for (byte type = 0; type < 6; type++) {
-            testTets[type] = new Tet(0, 0, 0, level, type);
-        }
-        
-        startTime = System.nanoTime();
-        for (Point3f point : testPoints) {
-            // Simulate old approach: test all until first match
-            for (byte type = 0; type < 6; type++) {
-                Tet tet = new Tet(
-                    (int)(Math.floor(point.x / cellSize) * cellSize),
-                    (int)(Math.floor(point.y / cellSize) * cellSize), 
-                    (int)(Math.floor(point.z / cellSize) * cellSize),
-                    level, type
-                );
-                if (tet.contains(point)) {
-                    break; // Found first match
+        // Warm both paths (class-load + JIT), then compare steady-state best-of-N: a single cold pair of
+        // timed loops makes the speedup ratio noisy and trips the 1.5x bound under load (Luciferase-tlb).
+        Runnable newMethod = () -> {
+            for (Point3f point : testPoints) {
+                tetree.locate(point, level);
+            }
+        };
+        Runnable oldMethod = () -> {
+            for (Point3f point : testPoints) {
+                // Simulate old approach: test all 6 tetrahedra until first match
+                for (byte type = 0; type < 6; type++) {
+                    Tet tet = new Tet((int) (Math.floor(point.x / cellSize) * cellSize),
+                                      (int) (Math.floor(point.y / cellSize) * cellSize),
+                                      (int) (Math.floor(point.z / cellSize) * cellSize), level, type);
+                    if (tet.contains(point)) {
+                        break; // Found first match
+                    }
                 }
             }
-        }
-        long oldMethodTime = System.nanoTime() - startTime;
-        
+        };
+        PerfMeasure.warmup(3, newMethod);
+        PerfMeasure.warmup(3, oldMethod);
+        long newMethodTime = PerfMeasure.bestNanos(3, newMethod);
+        long oldMethodTime = PerfMeasure.bestNanos(3, oldMethod);
+
         double speedup = (double) oldMethodTime / newMethodTime;
         
         System.out.printf("New method: %.2f ms\n", newMethodTime / 1_000_000.0);
