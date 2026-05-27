@@ -132,35 +132,26 @@ extends SubdivisionStrategy<PrismKey, ID, Content> {
         var needsHorizontalSubdiv = shouldSubdivideHorizontally(entityBounds, parentTriangle);
         var needsVerticalSubdiv = shouldSubdivideVertically(entityBounds, parentLine);
         
-        // Generate appropriate child prisms
-        if (needsHorizontalSubdiv && needsVerticalSubdiv) {
-            // Full subdivision: all 8 children
+        // Generate child prisms. A PrismKey requires its triangle and line to be at the SAME
+        // level (PrismKey enforces this), so a prism child always refines BOTH the (x,y) triangle
+        // and the (z) line together — there is no level-synchronized "refine only the triangle" or
+        // "refine only the line" child. The horizontal/vertical bias therefore does not change WHICH
+        // children exist (always the 8 level+1 children); it only signals that subdivision is
+        // warranted. The entity-intersection filter then selects the children the entity actually
+        // overlaps — a z-thin entity lands only in the children in its z-band, an (x,y)-thin entity
+        // only in those in its footprint — which realises the directional intent without producing
+        // level-mismatched keys. (The prior horizontal-only/vertical-only branches built
+        // PrismKey(triangle@level+1, line@level) and threw IllegalArgumentException at runtime;
+        // they were never exercised because the test fixtures all triggered the full branch.)
+        if (needsHorizontalSubdiv || needsVerticalSubdiv) {
             for (var i = 0; i < PRISM_CHILDREN; i++) {
                 var child = parentIndex.child(i);
                 if (entityIntersectsPrism(entityBounds, child)) {
                     targetNodes.add(child);
                 }
             }
-        } else if (needsHorizontalSubdiv) {
-            // Only horizontal subdivision: 4 children (same line, different triangles)
-            for (var triangleChild = 0; triangleChild < Triangle.CHILDREN; triangleChild++) {
-                var childTriangle = parentTriangle.child(triangleChild);
-                var child = new PrismKey(childTriangle, parentLine);
-                if (entityIntersectsPrism(entityBounds, child)) {
-                    targetNodes.add(child);
-                }
-            }
-        } else if (needsVerticalSubdiv) {
-            // Only vertical subdivision: 2 children (same triangle, different lines)
-            for (var lineChild = 0; lineChild < Line.CHILDREN; lineChild++) {
-                var childLine = parentLine.child(lineChild);
-                var child = new PrismKey(parentTriangle, childLine);
-                if (entityIntersectsPrism(entityBounds, child)) {
-                    targetNodes.add(child);
-                }
-            }
         }
-        
+
         return targetNodes;
     }
     

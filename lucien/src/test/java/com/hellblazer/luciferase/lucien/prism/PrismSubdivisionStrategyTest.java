@@ -58,6 +58,45 @@ class PrismSubdivisionStrategyTest {
         assertSubdivisionWellFormed(s1Parent, (byte) 3, 1);
     }
 
+    @Test
+    @DisplayName("horizontal-biased subdivision (entity thin in z) yields valid same-half children, no crash")
+    void horizontalBiasedSubdivisionDoesNotCrash() {
+        // Entity spans the full triangle (x,y) but only a thin z slice -> the horizontal-refinement
+        // path. Must produce valid level-synchronized children (regression: the old branch built
+        // PrismKey(triangle@level+1, line@level) which violates level sync and threw).
+        var parent = PrismKey.fromWorldCoordinates(0.8f, 0.3f, 0.5f, 3); // S0
+        var wb = parent.getWorldBounds();
+        float zThin = wb[2] + 0.1f * (wb[5] - wb[2]); // ~10% of the line height
+        var bounds = new EntityBounds(new Point3f(wb[0], wb[1], wb[2]), new Point3f(wb[3], wb[4], zThin));
+        assertChildrenValid(parent, (byte) 3, 0, bounds);
+    }
+
+    @Test
+    @DisplayName("vertical-biased subdivision (entity thin in x,y) yields valid same-half children, no crash")
+    void verticalBiasedSubdivisionDoesNotCrash() {
+        // Entity spans the full z range but a thin x,y footprint -> the vertical-refinement path.
+        var parent = PrismKey.fromWorldCoordinates(0.3f, 0.8f, 0.5f, 3); // S1
+        var wb = parent.getWorldBounds();
+        float xThin = wb[0] + 0.05f * (wb[3] - wb[0]);
+        float yThin = wb[1] + 0.05f * (wb[4] - wb[1]);
+        var bounds = new EntityBounds(new Point3f(wb[0], wb[1], wb[2]), new Point3f(xThin, yThin, wb[5]));
+        assertChildrenValid(parent, (byte) 3, 1, bounds);
+    }
+
+    /** Assert the strategy emits only valid, same-half, next-level children (any non-empty result). */
+    private void assertChildrenValid(PrismKey parent, byte parentLevel, int expectedHalf, EntityBounds bounds) {
+        var targets = strategy.calculateTargetNodes(parent, parentLevel, bounds, prism);
+        var validChildren = new HashSet<PrismKey>();
+        for (int i = 0; i < PrismKey.CHILDREN; i++) {
+            validChildren.add(parent.child(i));
+        }
+        for (var child : targets) {
+            assertTrue(validChildren.contains(child), "strategy emitted a non-child: " + child);
+            assertEquals(expectedHalf, child.getTriangle().getHalf(), "child must stay in the parent's half");
+            assertEquals(parentLevel + 1, child.getLevel(), "child must be level-synchronized at level+1");
+        }
+    }
+
     private void assertSubdivisionWellFormed(PrismKey parent, byte parentLevel, int expectedHalf) {
         assertEquals(expectedHalf, parent.getTriangle().getHalf());
 
@@ -67,7 +106,8 @@ class PrismSubdivisionStrategyTest {
         var bounds = new EntityBounds(new Point3f(wb[0], wb[1], wb[2]), new Point3f(wb[3], wb[4], wb[5]));
 
         var targets = strategy.calculateTargetNodes(parent, parentLevel, bounds, prism);
-        assertFalse(targets.isEmpty(), "full subdivision must yield children");
+        assertEquals(PrismKey.CHILDREN, targets.size(),
+            "an entity covering the whole parent must subdivide into all 8 children");
 
         // The valid children of this parent (the 8 PrismKey children).
         var validChildren = new HashSet<PrismKey>();
