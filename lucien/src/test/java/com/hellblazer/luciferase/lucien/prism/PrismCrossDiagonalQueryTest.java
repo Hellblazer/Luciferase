@@ -93,12 +93,9 @@ class PrismCrossDiagonalQueryTest {
         // level 2, S0 vs S1 — so the S0 node's hypotenuse face-neighbor is exactly the S1 node,
         // reached in one BFS hop iff addNeighboringNodes crosses the diagonal (RDR-009 P6).
         //
-        // NOTE: this uses adjacent cells deliberately. kNN over a SPARSE prism index (close
-        // neighbours several empty cells away) under-returns regardless of the diagonal — a
-        // pre-existing Prism/ASI coordinate-model gap (getCellSizeAtLevel int-truncates the
-        // normalized cell size to 0, stalling the expanding-radius fallback; findNodesIntersectingBounds
-        // is also a stub). That is orthogonal to family-crossing (same-half sparse kNN fails
-        // identically) and is tracked separately; fixing it needs an ASI signature change.
+        // NOTE: this uses adjacent cells deliberately, to isolate the addNeighboringNodes BFS hop.
+        // The orthogonal "sparse index" case (close neighbours several empty cells away) is covered
+        // by PrismSparseKnnCompletenessTest (Luciferase-h65).
         var s0 = prism.insert(new Point3f(0.45f, 0.30f, 0.50f), (byte) 2, "S0"); // y<x -> S0, cell (1,1)
         var s1 = prism.insert(new Point3f(0.30f, 0.45f, 0.50f), (byte) 2, "S1"); // y>x -> S1, mirror cell
 

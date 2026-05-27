@@ -1669,7 +1669,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
     }
 
     @Override
-    protected int getCellSizeAtLevel(byte level) {
+    protected float getCellSizeAtLevel(byte level) {
         return Constants.lengthAtLevel(level);
     }
 

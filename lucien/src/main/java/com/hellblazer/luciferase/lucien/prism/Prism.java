@@ -449,23 +449,55 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     
     @Override
     protected Set<PrismKey> findNodesIntersectingBounds(com.hellblazer.luciferase.lucien.VolumeBounds bounds) {
-        // For now, return empty set - would need spatial traversal implementation
-        return new HashSet<>();
+        // Map-scan over both prism families (the index holds S0 and S1 keys), collecting every node
+        // whose world AABB intersects the query bounds. Mirrors the entitiesInRegion / rayIntersectAll
+        // scan philosophy and is consistent with Prism's O(n) k-NN BFS.
+        //
+        // Luciferase-h65: previously a stub returning empty, which silently no-op'd its callers for
+        // Prism — most importantly the k-NN expanding-radius fallback (searchKNNInRadius), as well as
+        // bounded/region search (findCollisionsInRegion, bounded-spanning insert). Scanning both
+        // halves makes those find entities in either family.
+        var result = new HashSet<PrismKey>();
+        for (var key : spatialIndex.keySet()) {
+            var b = getBounds(key); // [minX, minY, minZ, maxX, maxY, maxZ] world AABB
+            var disjoint = b[3] < bounds.minX() || b[0] > bounds.maxX()
+                        || b[4] < bounds.minY() || b[1] > bounds.maxY()
+                        || b[5] < bounds.minZ() || b[2] > bounds.maxZ();
+            if (!disjoint) {
+                result.add(key);
+            }
+        }
+        return result;
     }
     
     @Override
-    protected int getCellSizeAtLevel(byte level) {
-        return (int)(worldSize / Math.pow(2, level));
+    protected float getCellSizeAtLevel(byte level) {
+        // Normalized [0,1) world: the cell size is fractional (worldSize / 2^level). Returning the
+        // true value (not an int truncation to 0) is required for the ASI k-NN search radius,
+        // level selection, and spanning comparisons to work in Prism's coordinate space (Luciferase-h65).
+        return (float) (worldSize / Math.pow(2, level));
     }
-    
+
+    @Override
+    protected boolean knnRequiresFullDomainSweep() {
+        // Prism's normalized [0,1) fractional coordinates defeat the ASI expanding-radius heuristic
+        // (sub-unit initial radius cannot span the world within the expansion cap), so a sparse k-NN
+        // needs the final full-domain sweep. Affordable here: findNodesIntersectingBounds is an O(n)
+        // map-scan, not an SFC interval walk. (Luciferase-h65)
+        return true;
+    }
+
     /**
      * Get the cell size at a specific level as a float.
-     * 
+     *
      * @param level the level (0-21)
      * @return the cell size as a float
+     * @deprecated {@link #getCellSizeAtLevel(byte)} now returns {@code float}; this delegates to it
+     *             and is retained for source compatibility.
      */
+    @Deprecated
     public float getCellSizeAtLevelFloat(byte level) {
-        return (float)(worldSize / Math.pow(2, level));
+        return getCellSizeAtLevel(level);
     }
     
     @Override
