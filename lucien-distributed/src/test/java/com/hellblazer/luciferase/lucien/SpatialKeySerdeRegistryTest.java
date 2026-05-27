@@ -6,6 +6,7 @@
 package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.forest.ghost.grpc.MortonKeySerde;
+import com.hellblazer.luciferase.lucien.forest.ghost.grpc.PrismKeySerde;
 import com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters;
 import com.hellblazer.luciferase.lucien.forest.ghost.grpc.TetreeKeySerde;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
@@ -148,10 +149,13 @@ public class SpatialKeySerdeRegistryTest {
         // (META-INF/services/...SpatialKeySerde) and registers the instances it creates.
         var morton = SpatialKeySerdeRegistry.forTypeId("morton");
         var tetree = SpatialKeySerdeRegistry.forTypeId("tetree");
+        var prism = SpatialKeySerdeRegistry.forTypeId("prism");
         assertInstanceOf(MortonKeySerde.class, morton, "ServiceLoader must register the built-in MortonKeySerde");
         assertInstanceOf(TetreeKeySerde.class, tetree, "ServiceLoader must register the built-in TetreeKeySerde");
+        assertInstanceOf(PrismKeySerde.class, prism, "ServiceLoader must register the built-in PrismKeySerde");
         assertEquals("morton", morton.typeId());
         assertEquals("tetree", tetree.typeId());
+        assertEquals("prism", prism.typeId());
     }
 
     // ============================================================

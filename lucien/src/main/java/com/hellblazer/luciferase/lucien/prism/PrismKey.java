@@ -35,7 +35,25 @@ import java.util.Objects;
  * Morton-order subdivision produces 8 children per prism:
  * - Children 0-3: Lower plane (line child 0) + triangle children 0-3
  * - Children 4-7: Upper plane (line child 1) + triangle children 0-3
- * 
+ *
+ * <p><b>RDR-009 two-prism shape (contract change — breaking vs. pre-RDR-009).</b> The key now
+ * covers the FULL cube via two prism families: S0 (lower-right half, {@code y <= x}) and S1
+ * (upper-left, {@code y >= x}, the reflection of S0 across {@code y = x}), distinguished by the
+ * {@link Triangle#getHalf() half} bit. Two contract changes followed:</p>
+ * <ul>
+ *   <li><b>P2:</b> {@link #consecutiveIndex()} is now a per-level tetrahedral-Morton value (not the
+ *       prior raw index), and is <em>per-half</em> — an S0 key and its S1 mirror share an index, so
+ *       {@link #compareTo(PrismKey)} is half-major (all S0 keys then all S1 keys: two contiguous SFC
+ *       blocks). A full-cube range query spans both blocks.</li>
+ *   <li><b>P3:</b> the {@code half} bit joined the triangle; the legacy index was S0-only.</li>
+ * </ul>
+ * <p><b>Serialization / migration.</b> Distributed (ghost) serialization is handled by
+ * {@code PrismKeySerde} (type-id {@code "prism"}) via the {@code SpatialKeySerde} SPI — PrismKey was
+ * not serializable before RDR-009 P7, so no persisted index predates the two-prism shape. The serde's
+ * wire format carries an explicit leading version byte (v1 = two-prism; v0 = the hypothetical legacy
+ * S0-only encoding, which a reader upgrades in place to {@code half == 0}). Migration is a read-time
+ * shim, not a bulk re-encoder.</p>
+ *
  * @author hal.hildebrand
  */
 public final class PrismKey implements SpatialKey<PrismKey> {
