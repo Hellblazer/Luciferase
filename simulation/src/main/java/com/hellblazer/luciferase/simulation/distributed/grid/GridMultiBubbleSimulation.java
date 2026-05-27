@@ -59,6 +59,15 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
 
     private final Map<String, javax.vecmath.Vector3f> velocities = new ConcurrentHashMap<>();
 
+    // Serializes the cross-bubble migration commit phase against cross-bubble entity snapshots
+    // (getAllEntities). A migration moves an entity between two bubbles (add to target, then remove
+    // from source); getAllEntities iterates the bubbles row-major and non-atomically, so without
+    // this lock a snapshot could read the target before the add and the source after the remove
+    // (transient under-count) — or both before either step (over-count). Holding this lock around
+    // the whole commit phase and around the snapshot makes the count a consistent, conserved
+    // observation (Luciferase-jar).
+    private final Object snapshotLock = new Object();
+
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicLong tickCount = new AtomicLong(0);
@@ -239,30 +248,35 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
     public List<EntitySnapshot> getAllEntities() {
         var entities = new ArrayList<EntitySnapshot>();
 
-        for (int row = 0; row < gridConfig.rows(); row++) {
-            for (int col = 0; col < gridConfig.columns(); col++) {
-                var coord = new BubbleCoordinate(row, col);
-                var bubble = bubbleGrid.getBubble(coord);
+        // Snapshot under snapshotLock so the cross-bubble read is atomic w.r.t. the migration commit
+        // phase — a migrating entity is seen in exactly one bubble (its source pre-commit or its
+        // target post-commit), never zero or two, so the entity count is conserved (Luciferase-jar).
+        synchronized (snapshotLock) {
+            for (int row = 0; row < gridConfig.rows(); row++) {
+                for (int col = 0; col < gridConfig.columns(); col++) {
+                    var coord = new BubbleCoordinate(row, col);
+                    var bubble = bubbleGrid.getBubble(coord);
 
-                // Add real entities
-                for (var record : bubble.getAllEntityRecords()) {
-                    entities.add(new EntitySnapshot(
-                        record.id(),
-                        record.position(),
-                        coord,
-                        false // Real entity
-                    ));
-                }
+                    // Add real entities
+                    for (var record : bubble.getAllEntityRecords()) {
+                        entities.add(new EntitySnapshot(
+                            record.id(),
+                            record.position(),
+                            coord,
+                            false // Real entity
+                        ));
+                    }
 
-                // Add ghost entities (Inc 5C)
-                var ghosts = ghostSyncAdapter.getGhostsForBubble(bubble.id());
-                for (var ghost : ghosts) {
-                    entities.add(new EntitySnapshot(
-                        ghost.entityId().toString(),
-                        ghost.position(),
-                        coord,
-                        true // Ghost entity
-                    ));
+                    // Add ghost entities (Inc 5C)
+                    var ghosts = ghostSyncAdapter.getGhostsForBubble(bubble.id());
+                    for (var ghost : ghosts) {
+                        entities.add(new EntitySnapshot(
+                            ghost.entityId().toString(),
+                            ghost.position(),
+                            coord,
+                            true // Ghost entity
+                        ));
+                    }
                 }
             }
         }
@@ -369,8 +383,12 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
                 }
             }
 
-            // Migration: check for entities crossing boundaries (Inc 5D)
-            migration.checkMigrations(tickCount.get());
+            // Migration: check for entities crossing boundaries (Inc 5D).
+            // Held under snapshotLock so a concurrent getAllEntities() never observes a migration
+            // mid-move across two bubbles (Luciferase-jar).
+            synchronized (snapshotLock) {
+                migration.checkMigrations(tickCount.get());
+            }
 
             // Ghost sync: detect boundary entities and create ghosts (Inc 5C)
             ghostSyncAdapter.processBoundaryEntities(bucket);
