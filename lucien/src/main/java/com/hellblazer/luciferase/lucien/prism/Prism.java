@@ -234,45 +234,44 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     
     @Override
     protected void addNeighboringNodes(PrismKey nodeIndex, Queue<PrismKey> toVisit, Set<PrismKey> visitedNodes) {
-        // Get triangle neighbors (3 edge neighbors)
+        // The 3x3 neighbor shell: every combination of {self, the 3 lateral neighbors} x
+        // {self, below, above}, minus self. This matches the Octree (26-neighbor) and Tetree
+        // (face+edge+grid-shell) collision/kNN neighbor contract; both single-hop collision passes
+        // (checkNeighborNodesForCollisions, findAdjacentNodeCollisions) and the kNN BFS rely on
+        // edge/vertex-adjacent (diagonal) cells being reachable directly, so a face-only set would
+        // miss collisions between entities in edge/vertex-adjacent prisms.
+        //
+        // RDR-009 P6: the lateral neighbors come from Triangle.faceNeighbor (the t8 cross-diagonal
+        // face-neighbor from P4), so a cell adjacent to the shared S0/S1 diagonal yields its
+        // neighbor in the OTHER prism family — letting these queries traverse both halves of the
+        // full cube. The legacy same-half triangle.neighbors() suppressed that crossing.
         var triangle = nodeIndex.getTriangle();
-        var triangleNeighbors = triangle.neighbors();
-        
-        // Get line neighbors (up to 2 neighbors)
         var line = nodeIndex.getLine();
-        var lineNeighbors = line.neighbors();
-        
-        // Add all combinations of triangle and line neighbors
-        // Same Z level, different triangles
-        for (var tNeighbor : triangleNeighbors) {
-            if (tNeighbor != null) {
-                var neighbor = new PrismKey(tNeighbor, line);
-                if (!visitedNodes.contains(neighbor) && spatialIndex.containsKey(neighbor)) {
-                    toVisit.add(neighbor);
-                }
+
+        var lateral = new ArrayList<Triangle>(4);
+        lateral.add(triangle);
+        for (var face = 0; face < 3; face++) {
+            var t = triangle.faceNeighbor(face);
+            if (t != null) {
+                lateral.add(t);
             }
         }
-        
-        // Same triangle, different Z levels
-        for (var lNeighbor : lineNeighbors) {
-            if (lNeighbor != null) {
-                var neighbor = new PrismKey(triangle, lNeighbor);
-                if (!visitedNodes.contains(neighbor) && spatialIndex.containsKey(neighbor)) {
-                    toVisit.add(neighbor);
-                }
+        var levels = new ArrayList<Line>(3);
+        levels.add(line);
+        for (var l : line.neighbors()) {
+            if (l != null) {
+                levels.add(l);
             }
         }
-        
-        // Diagonal neighbors (different triangle AND line)
-        for (var tNeighbor : triangleNeighbors) {
-            if (tNeighbor != null) {
-                for (var lNeighbor : lineNeighbors) {
-                    if (lNeighbor != null) {
-                        var neighbor = new PrismKey(tNeighbor, lNeighbor);
-                        if (!visitedNodes.contains(neighbor) && spatialIndex.containsKey(neighbor)) {
-                            toVisit.add(neighbor);
-                        }
-                    }
+
+        for (var t : lateral) {
+            for (var l : levels) {
+                if (t == triangle && l == line) {
+                    continue; // skip self
+                }
+                var neighbor = new PrismKey(t, l);
+                if (!visitedNodes.contains(neighbor) && spatialIndex.containsKey(neighbor)) {
+                    toVisit.add(neighbor);
                 }
             }
         }
