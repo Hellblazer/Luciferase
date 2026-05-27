@@ -311,7 +311,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     }
 
     @Override
-    protected int getCellSizeAtLevel(byte level) {
+    protected float getCellSizeAtLevel(byte level) {
         return Constants.lengthAtLevel(level);
     }
 

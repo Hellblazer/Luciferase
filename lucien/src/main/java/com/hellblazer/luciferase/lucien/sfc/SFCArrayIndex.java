@@ -392,7 +392,7 @@ public class SFCArrayIndex<ID extends EntityID, Content> extends AbstractSpatial
     }
 
     @Override
-    protected int getCellSizeAtLevel(byte level) {
+    protected float getCellSizeAtLevel(byte level) {
         return Constants.lengthAtLevel(level);
     }
 

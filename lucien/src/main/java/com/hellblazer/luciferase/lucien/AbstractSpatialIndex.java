@@ -2848,9 +2848,38 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Get the cell size at a given level (to be implemented by subclasses)
+     * Get the cell size at a given level, in the same (world) coordinate space as entity positions
+     * and query distances (to be implemented by subclasses).
+     *
+     * <p>Returns {@code float} rather than {@code int} so indices using normalized fractional
+     * coordinates (e.g. Prism's [0,1) world) report a meaningful sub-unit cell size instead of
+     * truncating it to 0. Integer-coordinate indices (Octree, Tetree, SFCArrayIndex) return their
+     * integer cell size widened to {@code float} — exact for all levels (cell sizes are powers of
+     * two below 2^24). Several distance/extent comparisons (k-NN search radius, level selection,
+     * spanning) depend on this being world-space, not a truncated integer.</p>
      */
-    protected abstract int getCellSizeAtLevel(byte level);
+    protected abstract float getCellSizeAtLevel(byte level);
+
+    /**
+     * Whether {@code kNearestNeighbors} must perform a final full-domain sweep when the
+     * expanding-radius fallback leaves it short of {@code k}.
+     *
+     * <p>Default {@code false}: the integer-coordinate indices (Octree, Tetree, SFCArrayIndex) reach
+     * completeness through their dedicated SFC range-pruning path ({@code performKNNSFCRangePruning}
+     * and its Morton/Tetree variants), which derives the Morton/TM interval of an AABB covering the
+     * whole {@code maxDistance} sphere and so already sees every in-range neighbor — the
+     * expanding-radius search is only a fallback there, not the guarantee. A domain-spanning sweep
+     * for them would be redundant, and worse: a large/unbounded search box drives their
+     * {@code findNodesIntersectingBounds} (LITMAX/BIGMIN interval walk) non-terminating. Indices whose
+     * coordinate space defeats the incremental expansion AND lack a fractional SFC-range path (e.g.
+     * Prism's normalized [0,1) coordinates route to the generic BFS + expanding-radius fallback, and
+     * a sub-unit initial radius cannot span the world within the cap) override this to {@code true};
+     * their {@code findNodesIntersectingBounds} is an O(n) scan, so the sweep is cheap and bounded.
+     * (Luciferase-h65)</p>
+     */
+    protected boolean knnRequiresFullDomainSweep() {
+        return false;
+    }
 
     /**
      * Get child nodes of a given node. Default implementation returns empty list. Subclasses should override to provide
@@ -4261,6 +4290,61 @@ implements SpatialIndex<Key, ID, Content> {
             // If we didn't find any new entities in this expansion, stop
             if (!foundNewEntities && searchExpansions > 1) {
                 break;
+            }
+        }
+
+        // Final safety sweep: the incremental expansion above can terminate before covering the
+        // index — its "no new entities" heuristic and fixed expansion cap assume entities are
+        // densely clustered near the query, and its initial radius is a fine-level cell size. Over a
+        // SPARSE index the true neighbors can sit beyond the last ring (this is what left Prism
+        // k-NN under-returning — the doublings from a sub-unit cell size never spanned the [0,1)
+        // world within the cap). If still short of k, do one pass whose radius spans the whole
+        // coordinate domain. The radius is bounded by the root-cell edge (getCellSizeAtLevel(0) =
+        // the domain extent), NOT by maxDistance: an unbounded maxDistance (e.g. Float.MAX_VALUE for
+        // "all within range") would otherwise build an overflowing search box that makes the
+        // integer-SFC findNodesIntersectingBounds (LITMAX/BIGMIN) non-terminating. (Luciferase-h65)
+        if (candidates.size() < k && knnRequiresFullDomainSweep()) {
+            // Full-domain safety sweep — gated to indices that need it (see
+            // knnRequiresFullDomainSweep). The incremental expansion above can terminate before
+            // covering the index when the coordinate space defeats its heuristics (Prism's
+            // normalized fractional coordinates: the doublings from a sub-unit initial radius never
+            // span the [0,1) world within the expansion cap, and the "no new entities" early-exit
+            // fires on the empty rings before the real neighbors). One pass over a domain-spanning
+            // box closes the gap. This is NOT run for the integer-SFC indices (Octree/Tetree/SFC):
+            // their SFC range-pruning path already covers the whole maxDistance sphere, so a
+            // domain-spanning findNodesIntersectingBounds there would be a costly LITMAX/BIGMIN no-op
+            // (and non-terminating for a large box). See knnRequiresFullDomainSweep. (Luciferase-h65)
+            //
+            // The box spans only the root-cell edge (getCellSizeAtLevel(0)): for any query inside the
+            // domain, query +/- edge already encloses the whole domain, so every node is a candidate.
+            // Acceptance uses the full maxDistance (decoupled from the box radius), so far-corner
+            // neighbors up to the domain diagonal are not wrongly rejected.
+            var edge = getCellSizeAtLevel((byte) 0);
+            var sweepBounds = new VolumeBounds(queryPoint.x - edge, queryPoint.y - edge, queryPoint.z - edge,
+                                               queryPoint.x + edge, queryPoint.y + edge, queryPoint.z + edge);
+            for (var nodeKey : findNodesIntersectingBounds(sweepBounds)) {
+                var node = spatialIndex.get(nodeKey);
+                if (node == null || node.isEmpty()) {
+                    continue;
+                }
+                for (var entityId : node.getEntityIds()) {
+                    if (addedToCandidates.contains(entityId)) {
+                        continue;
+                    }
+                    var entityPos = getCachedEntityPosition(entityId);
+                    if (entityPos == null) {
+                        continue;
+                    }
+                    var distance = queryPoint.distance(entityPos);
+                    if (distance <= maxDistance) {
+                        candidates.add(new EntityDistance<>(entityId, distance));
+                        addedToCandidates.add(entityId);
+                        if (candidates.size() > k) {
+                            var removed = candidates.poll();
+                            addedToCandidates.remove(removed.entityId());
+                        }
+                    }
+                }
             }
         }
 
