@@ -105,7 +105,7 @@ class PrismSubdivisionTilingTest {
     void childTypesFollowBeyBothHalves() {
         for (int half = 0; half < 2; half++) {
             for (int parentType = 0; parentType < Triangle.TYPES; parentType++) {
-                var t = new Triangle(2, parentType, 1, 1, Math.min(1, 1), half);
+                var t = new Triangle(2, parentType, 1, 1, half);
                 int[] counts = new int[Triangle.TYPES];
                 for (int i = 0; i < Triangle.CHILDREN; i++) {
                     counts[t.child(i).getType()]++;
@@ -122,7 +122,7 @@ class PrismSubdivisionTilingTest {
         // Every point in [0,1)^2 (off the exact diagonal) maps to exactly one half, and to a child
         // of that half's root after one refinement.
         var rnd = new Random(99L);
-        var s0Root = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        var s0Root = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         var s1Root = PrismKey.createRootS1();
         for (int s = 0; s < 2000; s++) {
             float x = 0.001f + 0.997f * rnd.nextFloat();
@@ -145,7 +145,7 @@ class PrismSubdivisionTilingTest {
         // it is contained by both (geometrically correct). This pins the documented overlap as a
         // specification rather than a bug; canonical single-half assignment is via
         // fromWorldCoordinates (which gives the diagonal to S0). See Triangle.contains javadoc.
-        var s0Root = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        var s0Root = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         var s1Root = PrismKey.createRootS1();
         for (float t = 0.1f; t < 1.0f; t += 0.1f) {
             assertTrue(countContaining(s0Root, t, t, 0.5f) >= 1 && countContaining(s1Root, t, t, 0.5f) >= 1,
@@ -167,7 +167,7 @@ class PrismSubdivisionTilingTest {
 
     /** A representative set of S0 and S1 parent prisms at several levels. */
     private static PrismKey[] sampleParents() {
-        var s0Root = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        var s0Root = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         var s1Root = PrismKey.createRootS1();
         // Descend a few levels in each half (child preserves half).
         var s0Mid = s0Root.child(0).child(3);

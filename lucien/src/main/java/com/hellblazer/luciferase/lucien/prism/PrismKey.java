@@ -120,7 +120,7 @@ public final class PrismKey implements SpatialKey<PrismKey> {
      * @return the S0 root prism key
      */
     public static PrismKey createRoot() {
-        return new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        return new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
     }
 
     /**

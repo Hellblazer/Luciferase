@@ -42,7 +42,7 @@ class PrismCrossDiagonalNeighborTest {
     @DisplayName("a diagonal-cell S0 triangle's hypotenuse neighbor is its S1 mirror (not null)")
     void crossDiagonalReturnsS1() {
         // Diagonal cell (x == y) at level 3, type 0 (lower-right), S0.
-        var s0 = new Triangle(3, 0, 3, 3, 3, 0);
+        var s0 = new Triangle(3, 0, 3, 3, 0);
         var neighbor = s0.faceNeighbor(DIAGONAL_FACE);
         assertNotNull(neighbor, "interior diagonal face must have a neighbor (S1), not null");
         assertEquals(1, neighbor.getHalf(), "cross-diagonal neighbor must be in the S1 half");
@@ -61,7 +61,7 @@ class PrismCrossDiagonalNeighborTest {
                 for (int half = 0; half < 2; half++) {
                     // A diagonal cell (x == y == d), type 0: its hypotenuse lies on the global
                     // diagonal, so its face-1 neighbor crosses into the other half.
-                    var t = new Triangle(level, 0, d, d, d, half);
+                    var t = new Triangle(level, 0, d, d, half);
                     var n = t.faceNeighbor(DIAGONAL_FACE);
                     assertNotNull(n, "diagonal-cell hypotenuse neighbor must not be null at " + t);
                     assertEquals(1 - half, n.getHalf(), "must cross to the other half");
@@ -77,7 +77,7 @@ class PrismCrossDiagonalNeighborTest {
     void interiorHypotenuseStaysSameHalf() {
         // Cell strictly below the diagonal (x > y): the hypotenuse neighbor is the same-cell
         // type-1 sub-triangle, still in S0.
-        var t = new Triangle(3, 0, 5, 2, 2, 0);
+        var t = new Triangle(3, 0, 5, 2, 0);
         var n = t.faceNeighbor(DIAGONAL_FACE);
         assertNotNull(n);
         assertEquals(0, n.getHalf(), "interior hypotenuse neighbor stays in S0");
@@ -103,7 +103,7 @@ class PrismCrossDiagonalNeighborTest {
                             continue;
                         }
                         for (int half = 0; half < 2; half++) {
-                            var t = new Triangle(level, type, x, y, Math.min(x, y), half);
+                            var t = new Triangle(level, type, x, y, half);
                             for (int f = 0; f < 3; f++) {
                                 var n = t.faceNeighbor(f);
                                 if (n == null) {
@@ -123,7 +123,7 @@ class PrismCrossDiagonalNeighborTest {
     @Test
     @DisplayName("PrismNeighborFinder crosses the diagonal: the quad face neighbor is an S1 prism")
     void prismNeighborFinderCrossesDiagonal() {
-        var s0Prism = new PrismKey(new Triangle(3, 0, 3, 3, 3, 0), new Line(3, 4));
+        var s0Prism = new PrismKey(new Triangle(3, 0, 3, 3, 0), new Line(3, 4));
         var neighbor = PrismNeighborFinder.findFaceNeighbor(s0Prism, DIAGONAL_FACE);
         assertNotNull(neighbor, "diagonal quad face must have an interior (S1) neighbor, not null");
         assertEquals(1, neighbor.getTriangle().getHalf(), "the cross-diagonal prism neighbor is in S1");

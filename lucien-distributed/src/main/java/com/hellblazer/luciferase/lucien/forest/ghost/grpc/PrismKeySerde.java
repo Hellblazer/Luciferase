@@ -109,7 +109,7 @@ public final class PrismKeySerde implements SpatialKeySerde<PrismKey> {
                     int x = bb.getInt();
                     int y = bb.getInt();
                     int z = bb.getInt();
-                    yield new PrismKey(new Triangle(level, type, x, y, Math.min(x, y), half), new Line(level, z));
+                    yield new PrismKey(new Triangle(level, type, x, y, half), new Line(level, z));
                 }
                 case VERSION_LEGACY_S0 -> {
                     // Lower-half (S0-only) legacy format: no half field — upgrade to half=0 (S0).
@@ -118,7 +118,7 @@ public final class PrismKeySerde implements SpatialKeySerde<PrismKey> {
                     int x = bb.getInt();
                     int y = bb.getInt();
                     int z = bb.getInt();
-                    yield new PrismKey(new Triangle(level, type, x, y, Math.min(x, y), 0), new Line(level, z));
+                    yield new PrismKey(new Triangle(level, type, x, y, 0), new Line(level, z));
                 }
                 default -> throw new IllegalArgumentException(
                     "PrismKeySerde: unrecognised format version " + (version & 0xFF)

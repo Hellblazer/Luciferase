@@ -39,6 +39,6 @@ class TriangleTest {
     void testRootIndexZero() {
         // Anchor for the SFC: the root triangle always indexes to 0. Used by PrismKey.createRoot
         // and asserted by PrismKeyTest.testCompositeSFC / PrismKeyTmSfcTest.
-        assertEquals(0L, new Triangle(0, 0, 0, 0, 0).consecutiveIndex());
+        assertEquals(0L, new Triangle(0, 0, 0, 0).consecutiveIndex());
     }
 }

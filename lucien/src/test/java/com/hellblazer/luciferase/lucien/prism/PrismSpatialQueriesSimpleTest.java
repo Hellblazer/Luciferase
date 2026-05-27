@@ -50,7 +50,7 @@ public class PrismSpatialQueriesSimpleTest {
         var id4 = prism.insert(new Point3f(0.2f, 0.1f, 5), (byte)5, "Entity4"); // was (0.1,0.2): flipped to y<=x
         
         // Create a search triangle in XY plane
-        Triangle searchTriangle = new Triangle(0, 0, 0, 0, 0);
+        Triangle searchTriangle = new Triangle(0, 0, 0, 0);
         searchTriangle.setBounds(0, 0, 0.5f, 0.5f);
         
         // Search in Z range 1-4
@@ -84,7 +84,7 @@ public class PrismSpatialQueriesSimpleTest {
         var id4 = prism.insert(new Point3f(0.3f, 0.3f, 3), (byte)5, "AlsoInside");
         
         // Create search triangular prism
-        Triangle searchTriangle = new Triangle(0, 0, 0, 0, 0);
+        Triangle searchTriangle = new Triangle(0, 0, 0, 0);
         searchTriangle.setBounds(0, 0, 0.5f, 0.5f);
         
         Set<LongEntityID> results = prism.findInTriangularPrism(searchTriangle, 1, 4);
@@ -97,7 +97,7 @@ public class PrismSpatialQueriesSimpleTest {
     public void testEmptyResults() {
         // Don't insert any entities
         
-        Triangle searchTriangle = new Triangle(0, 0, 0, 0, 0);
+        Triangle searchTriangle = new Triangle(0, 0, 0, 0);
         searchTriangle.setBounds(0, 0, 0.5f, 0.5f);
         
         Set<LongEntityID> results1 = prism.findInTriangularRegion(searchTriangle, 0, 10);

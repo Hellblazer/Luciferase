@@ -35,7 +35,7 @@ public class PrismRayIntersectorTest {
     @Test
     public void testRayPrismIntersectionHit() {
         // Create a prism at the origin
-        var triangle = new Triangle(0, 0, 0, 0, 0);
+        var triangle = new Triangle(0, 0, 0, 0);
         var line = new Line(0, 0);
         var prism = new PrismKey(triangle, line);
         
@@ -59,7 +59,7 @@ public class PrismRayIntersectorTest {
     @Test
     public void testRayPrismIntersectionMiss() {
         // Create a prism at the origin
-        var triangle = new Triangle(0, 0, 0, 0, 0);
+        var triangle = new Triangle(0, 0, 0, 0);
         var line = new Line(0, 0);
         var prism = new PrismKey(triangle, line);
         
@@ -77,7 +77,7 @@ public class PrismRayIntersectorTest {
     @Test
     public void testRayAABBIntersection() {
         // Create a prism
-        var triangle = new Triangle(0, 0, 0, 0, 0);
+        var triangle = new Triangle(0, 0, 0, 0);
         var line = new Line(0, 0);
         var prism = new PrismKey(triangle, line);
         
@@ -103,7 +103,7 @@ public class PrismRayIntersectorTest {
     @Test
     public void testFindEntryExitPoints() {
         // Create a prism
-        var triangle = new Triangle(0, 0, 0, 0, 0);
+        var triangle = new Triangle(0, 0, 0, 0);
         var line = new Line(0, 0);
         var prism = new PrismKey(triangle, line);
         
@@ -124,7 +124,7 @@ public class PrismRayIntersectorTest {
     @Test
     public void testRayFromInsidePrism() {
         // Create a prism
-        var triangle = new Triangle(0, 0, 0, 0, 0);
+        var triangle = new Triangle(0, 0, 0, 0);
         var line = new Line(0, 0);
         var prism = new PrismKey(triangle, line);
         
@@ -144,7 +144,7 @@ public class PrismRayIntersectorTest {
     @Test
     public void testRayThroughBottomTriangle() {
         // Create a prism
-        var triangle = new Triangle(0, 0, 0, 0, 0);
+        var triangle = new Triangle(0, 0, 0, 0);
         var line = new Line(0, 0);
         var prism = new PrismKey(triangle, line);
         
@@ -164,7 +164,7 @@ public class PrismRayIntersectorTest {
     @Test
     public void testRayThroughSideFace() {
         // Create a prism
-        var triangle = new Triangle(0, 0, 0, 0, 0);
+        var triangle = new Triangle(0, 0, 0, 0);
         var line = new Line(0, 0);
         var prism = new PrismKey(triangle, line);
         
@@ -184,7 +184,7 @@ public class PrismRayIntersectorTest {
     @Test
     public void testParallelRay() {
         // Create a prism
-        var triangle = new Triangle(0, 0, 0, 0, 0);
+        var triangle = new Triangle(0, 0, 0, 0);
         var line = new Line(0, 0);
         var prism = new PrismKey(triangle, line);
         
@@ -205,7 +205,7 @@ public class PrismRayIntersectorTest {
     @Test
     public void testGrazingRay() {
         // Create a prism
-        var triangle = new Triangle(0, 0, 0, 0, 0);
+        var triangle = new Triangle(0, 0, 0, 0);
         var line = new Line(0, 0);
         var prism = new PrismKey(triangle, line);
         
@@ -224,9 +224,9 @@ public class PrismRayIntersectorTest {
     @Test
     public void testMultiplePrismIntersections() {
         // Create multiple prisms at different positions
-        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
-        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0, 1), new Line(1, 0));
-        var prism3 = new PrismKey(new Triangle(2, 0, 0, 0, 2), new Line(2, 0));
+        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
+        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0), new Line(1, 0));
+        var prism3 = new PrismKey(new Triangle(2, 0, 0, 0), new Line(2, 0));
         
         // Ray through all prisms
         var origin = new Point3f(-0.5f, 0.25f, 0.5f);

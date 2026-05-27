@@ -62,14 +62,14 @@ class TriangleBeyTypeTest {
     @DisplayName("type-0 vertices are the lower-right Kuhn simplex (main-diagonal split)")
     void typeZeroIsLowerRight() {
         // Level-1 cell at anchor (0,0): world cell [0,0.5]×[0,0.5].
-        var t0 = new Triangle(1, 0, 0, 0, 0);
+        var t0 = new Triangle(1, 0, 0, 0);
         assertVertices(t0.getVertices(), new float[][] { { 0f, 0f }, { 0.5f, 0f }, { 0.5f, 0.5f } });
     }
 
     @Test
     @DisplayName("type-1 vertices are the upper-left Kuhn simplex (main-diagonal split)")
     void typeOneIsUpperLeft() {
-        var t1 = new Triangle(1, 1, 0, 0, 0);
+        var t1 = new Triangle(1, 1, 0, 0);
         assertVertices(t1.getVertices(), new float[][] { { 0f, 0f }, { 0f, 0.5f }, { 0.5f, 0.5f } });
     }
 
@@ -109,7 +109,7 @@ class TriangleBeyTypeTest {
     }
 
     @Test
-    @DisplayName("fromWorldCoordinate and fromWorldCoordinates agree on type, n, x, y")
+    @DisplayName("fromWorldCoordinate and fromWorldCoordinates agree on type, x, y")
     void bothConstructionPathsAgree() {
         for (int level = 1; level <= 8; level++) {
             for (int i = 1; i < 10; i++) {
@@ -122,7 +122,6 @@ class TriangleBeyTypeTest {
                     var a = Triangle.fromWorldCoordinate(wx, wy, level);
                     var b = Triangle.fromWorldCoordinates(wx, wy, level);
                     assertEquals(b.getType(), a.getType(), "type disagreement at " + wx + "," + wy + " L" + level);
-                    assertEquals(b.getN(), a.getN(), "n disagreement at " + wx + "," + wy + " L" + level);
                     assertEquals(b.getX(), a.getX(), "x disagreement at " + wx + "," + wy + " L" + level);
                     assertEquals(b.getY(), a.getY(), "y disagreement at " + wx + "," + wy + " L" + level);
                 }
@@ -142,7 +141,7 @@ class TriangleBeyTypeTest {
         // pre-commit a value P2 must change, so the test deliberately checks counts, not position.
         for (int parentType = 0; parentType < Triangle.TYPES; parentType++) {
             // Anchor (1,1) at level 2 → children at level 3 with coords ≤ 3 < 2^3.
-            var parent = new Triangle(2, parentType, 1, 1, Math.min(1, 1));
+            var parent = new Triangle(2, parentType, 1, 1);
             int[] counts = new int[Triangle.TYPES];
             for (int i = 0; i < Triangle.CHILDREN; i++) {
                 counts[parent.child(i).getType()]++;
@@ -165,7 +164,7 @@ class TriangleBeyTypeTest {
                     if (a[0] >= max || a[1] >= max) {
                         continue;
                     }
-                    var parent = new Triangle(level, type, a[0], a[1], Math.min(a[0], a[1]));
+                    var parent = new Triangle(level, type, a[0], a[1]);
                     for (int i = 0; i < Triangle.CHILDREN; i++) {
                         var child = parent.child(i);
                         assertEquals(i, child.getChildIndex(), "child index must round-trip");
@@ -179,47 +178,12 @@ class TriangleBeyTypeTest {
     }
 
     @Test
-    @DisplayName("n == min(x,y) for produced triangles, and child(i).parent() reproduces parent n")
-    void nIsSingleSourceOfTruthAndRoundTrips() {
-        for (int level = 1; level < Triangle.MAX_LEVEL; level++) {
-            int scale = 1 << level;
-            for (int i = 1; i < 8; i++) {
-                for (int j = 1; j < 8; j++) {
-                    float wx = i / 8.0f * 0.999f;
-                    float wy = j / 8.0f * 0.999f;
-                    if (wy > wx) {
-                        continue; // RDR-009 P2: only the S0 root (y <= x) is indexable until P3
-                    }
-                    var parent = Triangle.fromWorldCoordinates(wx, wy, level);
-                    assertEquals(Math.min(parent.getX(), parent.getY()), parent.getN(),
-                        "constructed triangle must satisfy n = min(x,y)");
-                    if (level + 1 > Triangle.MAX_LEVEL) {
-                        continue;
-                    }
-                    for (int c = 0; c < Triangle.CHILDREN; c++) {
-                        var child = parent.child(c);
-                        assertEquals(Math.min(child.getX(), child.getY()), child.getN(),
-                            "child must satisfy n = min(x,y)");
-                        assertEquals(parent.getN(), child.parent().getN(),
-                            "child(i).parent() must reproduce parent n");
-                    }
-                }
-            }
-        }
-    }
-
-    @Test
-    @DisplayName("n round-trip holds for the root and its descendants")
-    void nRoundTripFromRoot() {
-        var root = new Triangle(0, 0, 0, 0, 0);
-        assertEquals(0, root.getN());
-        // Descend an arbitrary child path and verify the invariant at each level.
-        var t = root;
+    @DisplayName("child(i).parent() reproduces the parent type along a refinement path")
+    void parentTypeRoundTripsFromRoot() {
+        var t = new Triangle(0, 0, 0, 0);
         int[] path = { 3, 1, 2, 0, 3, 2 };
         for (int step : path) {
             var child = t.child(step);
-            assertEquals(Math.min(child.getX(), child.getY()), child.getN(), "n=min(x,y) at each refinement");
-            assertEquals(t.getN(), child.parent().getN(), "parent n reproduced after child→parent");
             assertEquals(t.getType(), child.parent().getType(), "parent type reproduced after child→parent");
             t = child;
         }
@@ -235,7 +199,7 @@ class TriangleBeyTypeTest {
         // intersection / collision / nearest-neighbor disagreed with Triangle.getVertices().
         // It must delegate to the triangle's own (t8 main-diagonal) vertices for both types.
         for (int type = 0; type < Triangle.TYPES; type++) {
-            var triangle = new Triangle(2, type, 1, 1, Math.min(1, 1));
+            var triangle = new Triangle(2, type, 1, 1);
             var prism = new PrismKey(triangle, new Line(2, 1));
             var triVerts = triangle.getVertices();              // float[3][2]
             var prismVerts = PrismGeometry.getVertices(prism);  // 6 Point3f: bottom (minZ) then top
@@ -252,30 +216,6 @@ class TriangleBeyTypeTest {
     }
 
     // ── n=min(x,y) invariant under neighbor finding ───────────────────────────────────
-
-    @Test
-    @DisplayName("neighbors()/neighbor() preserve the n = min(x,y) invariant for both types")
-    void neighborNInvariant() {
-        // Guards the RDR-009 P1 change that recomputes n from each neighbor's coordinates
-        // (was: copied the source triangle's n). A P2 regression in neighbor n-derivation would
-        // otherwise have no trip-wire — neighbor traversal is correctness-critical for the TM-index.
-        for (int type = 0; type < Triangle.TYPES; type++) {
-            var t = new Triangle(3, type, 3, 2, Math.min(3, 2));
-            for (var nb : t.neighbors()) {
-                if (nb != null) {
-                    assertEquals(Math.min(nb.getX(), nb.getY()), nb.getN(),
-                        "neighbors()[*] must satisfy n = min(x,y), type " + type);
-                }
-            }
-            for (int e = 0; e < Triangle.EDGES; e++) {
-                var nb = t.neighbor(e);
-                if (nb != null) {
-                    assertEquals(Math.min(nb.getX(), nb.getY()), nb.getN(),
-                        "neighbor(" + e + ") must satisfy n = min(x,y), type " + type);
-                }
-            }
-        }
-    }
 
     // ── point-location boundary + clamp-removal conventions (RDR-009 P1) ───────────────
 
@@ -301,7 +241,6 @@ class TriangleBeyTypeTest {
         var tri = Triangle.fromWorldCoordinates(0.9f, 0.9f, 2);
         assertEquals(3, tri.getX(), "x must not be relocated off its quantized cell");
         assertEquals(3, tri.getY(), "y must not be relocated off its quantized cell");
-        assertEquals(Math.min(3, 3), tri.getN());
         assertTrue(tri.contains(0.9f, 0.9f), "the located triangle must still contain its own point");
         // fromWorldCoordinate (delegating) must agree — no residual clamp on that path either.
         var viaSingular = Triangle.fromWorldCoordinate(0.9f, 0.9f, 2);
@@ -313,7 +252,7 @@ class TriangleBeyTypeTest {
     void levelZeroRootIsPerHalf() {
         // RDR-009 P3 replaced the level-0 full-square placeholder with per-root containment: the
         // S0 root contains only its lower-right half {y <= x}; the upper-left half is the S1 root.
-        var s0Root = new Triangle(0, 0, 0, 0, 0);
+        var s0Root = new Triangle(0, 0, 0, 0);
         assertTrue(s0Root.contains(0.8f, 0.2f), "S0 root must contain lower-right (y < x) points");
         assertTrue(s0Root.contains(0.5f, 0.5f), "S0 root must contain on-diagonal points");
         assertTrue(!s0Root.contains(0.2f, 0.8f), "S0 root must NOT contain upper-left (y > x) points");

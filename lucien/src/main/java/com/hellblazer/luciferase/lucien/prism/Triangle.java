@@ -53,11 +53,9 @@ import java.util.Objects;
  * half first, so the two roots form contiguous SFC blocks.
  *
  * <p>The coordinate system stores {@code (level, type, x, y)} — the t8 Tet-id — which is the
- * identity used by {@link #equals(Object)}/{@link #hashCode()} and the SFC index. The legacy
- * {@code n} field is the derived auxiliary coordinate {@code min(x, y)}; it carries no term in the
- * consecutive index and is excluded from identity. It is retained only so the 5-arg constructor
- * signature is unchanged; {@link #getN()} is deprecated and the field is slated for removal in
- * RDR-009 Phase 7.
+ * identity used by {@link #equals(Object)}/{@link #hashCode()} and the SFC index. (The vestigial
+ * auxiliary coordinate {@code n = min(x, y)} carried no identity or consecutive-index term and was
+ * removed in RDR-009 Phase 7 along with the 5-arg constructor and {@code getN()}.)
  *
  * @author hal.hildebrand
  */
@@ -99,8 +97,7 @@ public final class Triangle {
     private final byte level;          // Hierarchical level (0-21)
     private final byte type;           // Triangle type (0 or 1)
     private final int x;               // X coordinate
-    private final int y;               // Y coordinate  
-    private final int n;               // Derived auxiliary coordinate, cached as min(x, y) (see class javadoc)
+    private final int y;               // Y coordinate
     private final byte half;           // Root half: 0 = S0 (lower-right y<=x), 1 = S1 (reflected upper-left) — RDR-009 P3
 
     // Lazily-computed cache of consecutiveIndex(). Triangle is immutable and the index is a
@@ -133,11 +130,10 @@ public final class Triangle {
      * @param type the triangle type (0 or 1)
      * @param x the x coordinate
      * @param y the y coordinate
-     * @param n the auxiliary n coordinate
      * @throws IllegalArgumentException if parameters are invalid
      */
-    public Triangle(int level, int type, int x, int y, int n) {
-        this(level, type, x, y, n, 0);
+    public Triangle(int level, int type, int x, int y) {
+        this(level, type, x, y, 0);
     }
 
     /**
@@ -147,11 +143,10 @@ public final class Triangle {
      * @param type the triangle type (0 or 1)
      * @param x the x coordinate (in the S0 frame — see {@link #getHalf()})
      * @param y the y coordinate (in the S0 frame)
-     * @param n the auxiliary n coordinate
      * @param half the root half: 0 = S0 (lower-right {@code y <= x}), 1 = S1 (reflected upper-left)
      * @throws IllegalArgumentException if parameters are invalid
      */
-    public Triangle(int level, int type, int x, int y, int n, int half) {
+    public Triangle(int level, int type, int x, int y, int half) {
         if (level < 0 || level > MAX_LEVEL) {
             throw new IllegalArgumentException("Level must be 0-" + MAX_LEVEL + ", got: " + level);
         }
@@ -167,42 +162,38 @@ public final class Triangle {
         if (y < 0 || y > MAX_COORDINATE) {
             throw new IllegalArgumentException("Y coordinate must be 0-" + MAX_COORDINATE + ", got: " + y);
         }
-        if (n < 0 || n > MAX_COORDINATE) {
-            throw new IllegalArgumentException("N coordinate must be 0-" + MAX_COORDINATE + ", got: " + n);
-        }
-        
+
         // For level 0, coordinates must be 0
         if (level == 0) {
-            if (x != 0 || y != 0 || n != 0) {
+            if (x != 0 || y != 0) {
                 throw new IllegalArgumentException("Level 0 coordinates must all be 0");
             }
         } else {
             // For other levels, validate coordinates are reasonable (relaxed validation)
             var maxCoordForLevel = 1 << level;
-            if (x >= maxCoordForLevel || y >= maxCoordForLevel || n >= maxCoordForLevel) {
+            if (x >= maxCoordForLevel || y >= maxCoordForLevel) {
                 throw new IllegalArgumentException(
-                    String.format("Coordinates (%d,%d,%d) exceed maximum %d for level %d", 
-                                x, y, n, maxCoordForLevel - 1, level));
+                    String.format("Coordinates (%d,%d) exceed maximum %d for level %d",
+                                x, y, maxCoordForLevel - 1, level));
             }
         }
-        
+
         this.level = (byte) level;
         this.type = (byte) type;
         this.x = x;
         this.y = y;
-        this.n = n;
         this.half = (byte) half;
     }
 
     /**
      * The level-0 root of the S1 family — the upper-left Kuhn triangle {@code y >= x}, the
-     * reflection of the S0 root across the main diagonal. Together with {@code new Triangle(0,...)}
+     * reflection of the S0 root across the main diagonal. Together with {@code new Triangle(0, ...)}
      * (the S0 root) the two roots tile the full square (RDR-009 P3).
      *
      * @return the S1 root triangle
      */
     public static Triangle rootS1() {
-        return new Triangle(0, 0, 0, 0, 0, 1);
+        return new Triangle(0, 0, 0, 0, 1);
     }
     
     /**
@@ -235,7 +226,7 @@ public final class Triangle {
 
         // For level 0, return the root triangle of the appropriate half.
         if (level == 0) {
-            return new Triangle(0, 0, 0, 0, 0, half);
+            return new Triangle(0, 0, 0, 0, half);
         }
 
         var scale = 1 << level;
@@ -248,10 +239,7 @@ public final class Triangle {
         float localY = (fy * scale) - quantY;
         var type = (localY > localX) ? 1 : 0;
 
-        // n is the derived auxiliary coordinate min(x, y) — the single source of truth.
-        var n = Math.min(quantX, quantY);
-
-        return new Triangle(level, type, quantX, quantY, n, half);
+        return new Triangle(level, type, quantX, quantY, half);
     }
     
     /**
@@ -318,9 +306,8 @@ public final class Triangle {
         var parentX = x >>> 1;
         var parentY = y >>> 1;
         var parentType = PARENT_TYPE[cubeId][type];
-        // n remains the derived auxiliary coordinate min(x,y) (vestigial; not in the SFC index).
         // half is preserved — refinement/ancestry stays within the same root (S0 or S1).
-        return new Triangle(level - 1, parentType, parentX, parentY, Math.min(parentX, parentY), half);
+        return new Triangle(level - 1, parentType, parentX, parentY, half);
     }
     
     /**
@@ -346,9 +333,8 @@ public final class Triangle {
         var childX = (x << 1) + offset[0];
         var childY = (y << 1) + offset[1];
         var childType = CHILD_TYPE[type][beyId];
-        // n remains the derived auxiliary coordinate min(x,y) (vestigial; not in the SFC index).
         // half is preserved — children stay within the same root (S0 or S1).
-        return new Triangle(level + 1, childType, childX, childY, Math.min(childX, childY), half);
+        return new Triangle(level + 1, childType, childX, childY, half);
     }
     
     /**
@@ -450,15 +436,15 @@ public final class Triangle {
         var max = 1 << level;
         // Edge 0: right neighbor (x+1, y) — stays in S0 since y <= x < x+1.
         if (x + 1 < max && y <= x + 1) {
-            neighbors[0] = new Triangle(level, type, x + 1, y, Math.min(x + 1, y), half);
+            neighbors[0] = new Triangle(level, type, x + 1, y, half);
         }
         // Edge 1: top neighbor (x, y+1) — only valid when y+1 <= x (else it crosses into S1).
         if (y + 1 < max && y + 1 <= x) {
-            neighbors[1] = new Triangle(level, type, x, y + 1, Math.min(x, y + 1), half);
+            neighbors[1] = new Triangle(level, type, x, y + 1, half);
         }
         // Edge 2: diagonal neighbor (x-1, y-1) — preserves y <= x.
         if (x > 0 && y > 0 && y - 1 <= x - 1) {
-            neighbors[2] = new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1), half);
+            neighbors[2] = new Triangle(level, type, x - 1, y - 1, half);
         }
 
         return neighbors;
@@ -482,17 +468,17 @@ public final class Triangle {
         switch (edge) {
             case 0: // right neighbor (x+1, y)
                 if (x + 1 < max && y <= x + 1) {
-                    return new Triangle(level, type, x + 1, y, Math.min(x + 1, y), half);
+                    return new Triangle(level, type, x + 1, y, half);
                 }
                 break;
             case 1: // top neighbor (x, y+1) — only valid when y+1 <= x
                 if (y + 1 < max && y + 1 <= x) {
-                    return new Triangle(level, type, x, y + 1, Math.min(x, y + 1), half);
+                    return new Triangle(level, type, x, y + 1, half);
                 }
                 break;
             case 2: // diagonal neighbor (x-1, y-1)
                 if (x > 0 && y > 0 && y - 1 <= x - 1) {
-                    return new Triangle(level, type, x - 1, y - 1, Math.min(x - 1, y - 1), half);
+                    return new Triangle(level, type, x - 1, y - 1, half);
                 }
                 break;
         }
@@ -541,10 +527,10 @@ public final class Triangle {
         // Crossed the main diagonal into the sibling root (S0 <-> S1): reflect across y = x — swap
         // coordinates, flip orientation (1 - neighborType == type) and the half.
         if (ny > nx || (ny == nx && neighborType == 1)) {
-            return new Triangle(level, 1 - neighborType, ny, nx, Math.min(ny, nx), 1 - half);
+            return new Triangle(level, 1 - neighborType, ny, nx, 1 - half);
         }
         // Same-half neighbor within this root.
-        return new Triangle(level, neighborType, nx, ny, Math.min(nx, ny), half);
+        return new Triangle(level, neighborType, nx, ny, half);
     }
 
     /**
@@ -607,17 +593,6 @@ public final class Triangle {
         return y;
     }
     
-    /**
-     * @deprecated The auxiliary coordinate {@code n} is the derived value {@code min(x, y)}; it
-     *     carries no identity or ordering information (RDR-009 P2 excluded it from
-     *     {@code equals}/{@code hashCode}/{@code consecutiveIndex}). The field and this accessor
-     *     are slated for removal with the 5-arg constructor in RDR-009 Phase 7.
-     */
-    @Deprecated
-    public int getN() {
-        return n;
-    }
-    
     // Object methods
     
     @Override
@@ -625,8 +600,6 @@ public final class Triangle {
         if (this == obj) return true;
         if (!(obj instanceof Triangle other)) return false;
         // Identity is (half, level, type, x, y) — the t8 Tet-id plus the root half (RDR-009 P3).
-        // n is the derived min(x,y) and carries no independent information, so it is excluded
-        // (including it would make equals inconsistent with consecutiveIndex()/PrismKey.compareTo).
         return half == other.half && level == other.level && type == other.type && x == other.x && y == other.y;
     }
 
@@ -638,8 +611,8 @@ public final class Triangle {
     @Override
     public String toString() {
         var centroid = getCentroidWorldCoordinates();
-        return String.format("Triangle(level=%d, type=%d, coords=(%d,%d,%d), center=(%.4f,%.4f))", 
-                           level, type, x, y, n, centroid[0], centroid[1]);
+        return String.format("Triangle(level=%d, type=%d, coords=(%d,%d), half=%d, center=(%.4f,%.4f))",
+                           level, type, x, y, half, centroid[0], centroid[1]);
     }
     
     /**
