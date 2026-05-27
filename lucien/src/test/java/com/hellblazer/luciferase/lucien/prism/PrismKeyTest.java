@@ -37,7 +37,7 @@ class PrismKeyTest {
     @Test
     @DisplayName("PrismKey construction validates components")
     void testPrismKeyConstruction() {
-        var triangle = new Triangle(3, 1, 4, 2, 1);
+        var triangle = new Triangle(3, 1, 4, 2);
         var line = new Line(3, 5);
         
         // Valid construction
@@ -102,7 +102,7 @@ class PrismKeyTest {
     void testLevelSynchronization() {
         // Create keys at various levels
         for (int level = 0; level <= 5; level++) {
-            var triangle = new Triangle(level, 0, 0, 0, 0);
+            var triangle = new Triangle(level, 0, 0, 0);
             var line = new Line(level, 0);
             var key = new PrismKey(triangle, line);
             
@@ -113,7 +113,7 @@ class PrismKeyTest {
         }
         
         // Test parent-child level consistency
-        var parent = new PrismKey(new Triangle(3, 0, 2, 1, 1), new Line(3, 4));
+        var parent = new PrismKey(new Triangle(3, 0, 2, 1), new Line(3, 4));
         for (int childIndex = 0; childIndex < PrismKey.CHILDREN; childIndex++) {
             var child = parent.child(childIndex);
             assertEquals(parent.getLevel() + 1, child.getLevel());
@@ -146,13 +146,13 @@ class PrismKeyTest {
         
         // Test monotonicity within a level
         for (int level = 1; level <= 3; level++) {
-            var triangleBase = new Triangle(level, 0, 0, 0, 0);
+            var triangleBase = new Triangle(level, 0, 0, 0);
             var lineBase = new Line(level, 0);
             var baseKey = new PrismKey(triangleBase, lineBase);
             var baseIndex = baseKey.consecutiveIndex();
             
             // Keys with higher coordinates should generally have higher indices
-            var triangleNext = new Triangle(level, 0, 1, 0, 0);
+            var triangleNext = new Triangle(level, 0, 1, 0);
             var nextKey = new PrismKey(triangleNext, lineBase);
             assertTrue(nextKey.consecutiveIndex() > baseIndex,
                      String.format("SFC not monotonic at level %d", level));
@@ -162,7 +162,7 @@ class PrismKeyTest {
     @Test
     @DisplayName("Morton-order child generation works correctly")
     void testMortonOrderChildren() {
-        var parent = new PrismKey(new Triangle(2, 1, 2, 1, 1), new Line(2, 3));
+        var parent = new PrismKey(new Triangle(2, 1, 2, 1), new Line(2, 3));
         
         // Test all 8 children
         var children = new PrismKey[PrismKey.CHILDREN];
@@ -212,7 +212,7 @@ class PrismKeyTest {
         // Test parent-child round trips. n = min(x,y) = min(5,3) = 3 (RDR-009 P1: n is the
         // derived auxiliary coordinate min(x,y); the parent()/child() round-trip recomputes it
         // from coordinates rather than bit-shifting, so the fixture uses the consistent value).
-        var key = new PrismKey(new Triangle(3, 1, 5, 3, 3), new Line(3, 6));
+        var key = new PrismKey(new Triangle(3, 1, 5, 3), new Line(3, 6));
         
         for (int childIndex = 0; childIndex < PrismKey.CHILDREN; childIndex++) {
             var child = key.child(childIndex);
@@ -228,7 +228,7 @@ class PrismKeyTest {
         }
         
         // Test multi-level hierarchy
-        var grandparent = new PrismKey(new Triangle(1, 0, 1, 0, 0), new Line(1, 1));
+        var grandparent = new PrismKey(new Triangle(1, 0, 1, 0), new Line(1, 1));
         var parent = grandparent.child(3);
         var child = parent.child(5);
         
@@ -266,7 +266,7 @@ class PrismKeyTest {
         }
         
         // Test that children partition parent space (simplified test)
-        var parent = new PrismKey(new Triangle(2, 0, 1, 1, 0), new Line(2, 2));
+        var parent = new PrismKey(new Triangle(2, 0, 1, 1), new Line(2, 2));
         var parentCentroid = parent.getCentroid();
         
         var containedByChild = false;
@@ -284,7 +284,7 @@ class PrismKeyTest {
     @Test
     @DisplayName("Geometric calculations are accurate")
     void testGeometricCalculations() {
-        var key = new PrismKey(new Triangle(2, 0, 1, 2, 1), new Line(2, 3));
+        var key = new PrismKey(new Triangle(2, 0, 1, 2), new Line(2, 3));
         
         // Test centroid
         var centroid = key.getCentroid();
@@ -327,7 +327,7 @@ class PrismKeyTest {
     @DisplayName("SpatialKey interface compliance")
     void testSpatialKeyInterface() {
         // Test that PrismKey properly implements SpatialKey
-        SpatialKey<PrismKey> spatialKey = new PrismKey(new Triangle(3, 1, 4, 2, 1), new Line(3, 5));
+        SpatialKey<PrismKey> spatialKey = new PrismKey(new Triangle(3, 1, 4, 2), new Line(3, 5));
         
         // Basic interface methods
         assertEquals(3, spatialKey.getLevel());
@@ -344,7 +344,7 @@ class PrismKeyTest {
         // Test that it works in collections (requires proper equals/hashCode/compareTo)
         var keys = new java.util.TreeSet<PrismKey>();
         for (int i = 0; i < 8; i++) { // Level 3 max coord is 7
-            var triangle = new Triangle(3, 0, i, i/2, i/3);
+            var triangle = new Triangle(3, 0, i, i/2);
             var line = new Line(3, i);
             keys.add(new PrismKey(triangle, line));
         }
@@ -354,9 +354,9 @@ class PrismKeyTest {
     @Test
     @DisplayName("Comparable interface works correctly")
     void testComparableInterface() {
-        var key1 = new PrismKey(new Triangle(2, 0, 0, 0, 0), new Line(2, 0));
-        var key2 = new PrismKey(new Triangle(2, 0, 1, 0, 0), new Line(2, 0));
-        var key3 = new PrismKey(new Triangle(2, 0, 0, 0, 0), new Line(2, 1));
+        var key1 = new PrismKey(new Triangle(2, 0, 0, 0), new Line(2, 0));
+        var key2 = new PrismKey(new Triangle(2, 0, 1, 0), new Line(2, 0));
+        var key3 = new PrismKey(new Triangle(2, 0, 0, 0), new Line(2, 1));
         
         // Test comparison based on SFC index
         assertTrue(key1.compareTo(key2) < 0 || key1.compareTo(key2) > 0); // Should be different
@@ -364,7 +364,7 @@ class PrismKeyTest {
         assertEquals(0, key1.compareTo(key1)); // Self comparison
         
         // Test consistency with equals
-        var key1Copy = new PrismKey(new Triangle(2, 0, 0, 0, 0), new Line(2, 0));
+        var key1Copy = new PrismKey(new Triangle(2, 0, 0, 0), new Line(2, 0));
         assertEquals(0, key1.compareTo(key1Copy));
         assertEquals(key1, key1Copy);
         
@@ -388,7 +388,7 @@ class PrismKeyTest {
     @DisplayName("Boundary conditions are handled correctly")
     void testBoundaryConditions() {
         // Maximum level
-        var maxTriangle = new Triangle(Triangle.MAX_LEVEL, 0, 0, 0, 0);
+        var maxTriangle = new Triangle(Triangle.MAX_LEVEL, 0, 0, 0);
         var maxLine = new Line(Line.MAX_LEVEL, 0);
         var maxLevelKey = new PrismKey(maxTriangle, maxLine);
         
@@ -399,7 +399,7 @@ class PrismKeyTest {
         // Edge coordinates
         for (int level = 0; level <= 3; level++) {
             var maxCoord = (1 << level) - 1;
-            var edgeTriangle = new Triangle(level, 1, maxCoord, maxCoord, maxCoord);
+            var edgeTriangle = new Triangle(level, 1, maxCoord, maxCoord);
             var edgeLine = new Line(level, maxCoord);
             var edgeKey = new PrismKey(edgeTriangle, edgeLine);
             
@@ -419,14 +419,14 @@ class PrismKeyTest {
     @Test
     @DisplayName("Equals and hashCode work correctly") 
     void testEqualsAndHashCode() {
-        var triangle1 = new Triangle(3, 1, 4, 2, 1);
+        var triangle1 = new Triangle(3, 1, 4, 2);
         var line1 = new Line(3, 5);
         var key1 = new PrismKey(triangle1, line1);
         var key2 = new PrismKey(triangle1, line1);
         
         // RDR-009 P2: n is no longer part of Triangle identity (it is the derived min(x,y)), so a
         // distinct key must differ in a real field. Use a different anchor x (still S0: y <= x).
-        var triangle2 = new Triangle(3, 1, 3, 2, 2);
+        var triangle2 = new Triangle(3, 1, 3, 2);
         var key3 = new PrismKey(triangle2, line1);
         
         var line2 = new Line(3, 4); // Different coordinate
@@ -450,14 +450,14 @@ class PrismKeyTest {
         assertEquals(key1, key1);
         assertEquals(key1.equals(key2), key2.equals(key1));
         
-        var key2Copy = new PrismKey(new Triangle(3, 1, 4, 2, 1), new Line(3, 5));
+        var key2Copy = new PrismKey(new Triangle(3, 1, 4, 2), new Line(3, 5));
         assertTrue(key1.equals(key2) && key2.equals(key2Copy) && key1.equals(key2Copy));
     }
     
     @Test
     @DisplayName("String representation is informative")
     void testToString() {
-        var key = new PrismKey(new Triangle(3, 1, 4, 2, 1), new Line(3, 5));
+        var key = new PrismKey(new Triangle(3, 1, 4, 2), new Line(3, 5));
         var str = key.toString();
         
         assertTrue(str.contains("PrismKey"));
@@ -518,7 +518,7 @@ class PrismKeyTest {
         // only in Line.z — the buggy long-packed encoding made these compare
         // equal because lineId << 64 reduces to lineId << 0.
         int maxLevel = Triangle.MAX_LEVEL;
-        var triangle = new Triangle(maxLevel, 0, 0, 0, 0);
+        var triangle = new Triangle(maxLevel, 0, 0, 0);
         var lineA = new Line(maxLevel, 0);
         var lineB = new Line(maxLevel, 1);
         var keyA = new PrismKey(triangle, lineA);

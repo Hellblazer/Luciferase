@@ -35,8 +35,8 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testPrismPrismCollisionOverlapping() {
         // Create two overlapping prisms
-        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
-        var prism2 = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
+        var prism2 = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         
         var result = PrismCollisionDetector.testPrismPrismCollision(prism1, prism2);
         
@@ -49,8 +49,8 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testPrismPrismCollisionSeparated() {
         // Create two separated prisms at the same level
-        var prism1 = new PrismKey(new Triangle(2, 0, 0, 0, 2), new Line(2, 0));
-        var prism2 = new PrismKey(new Triangle(2, 0, 3, 0, 2), new Line(2, 3));
+        var prism1 = new PrismKey(new Triangle(2, 0, 0, 0), new Line(2, 0));
+        var prism2 = new PrismKey(new Triangle(2, 0, 3, 0), new Line(2, 3));
         
         var result = PrismCollisionDetector.testPrismPrismCollision(prism1, prism2);
         
@@ -60,8 +60,8 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testPrismPrismCollisionTouching() {
         // Create two prisms that just touch
-        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
-        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0, 1), new Line(1, 0));
+        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
+        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0), new Line(1, 0));
         
         var result = PrismCollisionDetector.testPrismPrismCollision(prism1, prism2);
         
@@ -75,7 +75,7 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testPrismSphereCollisionInside() {
         // Create a prism and a sphere inside it
-        var prism = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        var prism = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         var sphereCenter = new Point3f(0.25f, 0.25f, 0.5f);
         float sphereRadius = 0.1f;
         
@@ -90,7 +90,7 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testPrismSphereCollisionOutside() {
         // Create a prism and a sphere outside it
-        var prism = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        var prism = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         var sphereCenter = new Point3f(5, 5, 5);
         float sphereRadius = 0.1f;
         
@@ -102,7 +102,7 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testPrismSphereCollisionOverlapping() {
         // Create a prism and a sphere that overlaps it
-        var prism = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        var prism = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         var sphereCenter = new Point3f(0.8f, 0.1f, 0.5f);
         float sphereRadius = 0.3f;
         
@@ -115,18 +115,18 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testFindCollidingPrisms() {
         // Create a test prism at level 2
-        var testPrism = new PrismKey(new Triangle(2, 0, 1, 1, 2), new Line(2, 1));
+        var testPrism = new PrismKey(new Triangle(2, 0, 1, 1), new Line(2, 1));
         
         // Create candidate prisms
         List<PrismKey> candidates = new ArrayList<>();
         // Overlapping prism (same position)
-        candidates.add(new PrismKey(new Triangle(2, 0, 1, 1, 2), new Line(2, 1)));
+        candidates.add(new PrismKey(new Triangle(2, 0, 1, 1), new Line(2, 1)));
         // Adjacent prism
-        candidates.add(new PrismKey(new Triangle(2, 0, 2, 1, 2), new Line(2, 1)));
+        candidates.add(new PrismKey(new Triangle(2, 0, 2, 1), new Line(2, 1)));
         // Far away prism (different Z layer)
-        candidates.add(new PrismKey(new Triangle(2, 0, 1, 1, 2), new Line(2, 3)));
+        candidates.add(new PrismKey(new Triangle(2, 0, 1, 1), new Line(2, 3)));
         // Another overlapping prism
-        candidates.add(new PrismKey(new Triangle(2, 0, 1, 1, 2), new Line(2, 1)));
+        candidates.add(new PrismKey(new Triangle(2, 0, 1, 1), new Line(2, 1)));
         
         Set<PrismKey> colliding = PrismCollisionDetector.findCollidingPrisms(testPrism, candidates);
         
@@ -138,8 +138,8 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testCollisionWithIdenticalPrisms() {
         // Create two identical prisms
-        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
-        var prism2 = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
+        var prism2 = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         
         var result = PrismCollisionDetector.testPrismPrismCollision(prism1, prism2);
         
@@ -150,8 +150,8 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testCollisionAtDifferentLevels() {
         // Create prisms at different subdivision levels
-        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
-        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0, 0), new Line(1, 0));
+        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
+        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0), new Line(1, 0));
         
         var result = PrismCollisionDetector.testPrismPrismCollision(prism1, prism2);
         
@@ -162,8 +162,8 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testEdgeOnCollision() {
         // Create prisms that share an edge
-        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
-        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0, 1), new Line(1, 0));
+        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
+        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0), new Line(1, 0));
         
         var result = PrismCollisionDetector.testPrismPrismCollision(prism1, prism2);
         
@@ -174,8 +174,8 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testVertexCollision() {
         // Create prisms that touch at a vertex
-        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
-        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0, 1), new Line(1, 0));
+        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
+        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0), new Line(1, 0));
         
         var result = PrismCollisionDetector.testPrismPrismCollision(prism1, prism2);
         
@@ -186,7 +186,7 @@ public class PrismCollisionDetectorTest {
     @Test
     public void testLargeSphereCollision() {
         // Test with a very large sphere that encompasses the prism
-        var prism = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        var prism = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         var sphereCenter = new Point3f(0.25f, 0.25f, 0.5f);
         float sphereRadius = 10.0f;
         
@@ -200,13 +200,13 @@ public class PrismCollisionDetectorTest {
     @Tag("performance")
     public void testCollisionPerformance() {
         // Test performance with many candidates
-        var testPrism = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
+        var testPrism = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         
         List<PrismKey> candidates = new ArrayList<>();
         for (int i = 0; i < 1000; i++) {
             float offset = i * 0.1f;
             candidates.add(new PrismKey(
-                new Triangle(i % 10, 0, 0, 0, 0), 
+                new Triangle(i % 10, 0, 0, 0), 
                 new Line(i % 10, 0)
             ));
         }

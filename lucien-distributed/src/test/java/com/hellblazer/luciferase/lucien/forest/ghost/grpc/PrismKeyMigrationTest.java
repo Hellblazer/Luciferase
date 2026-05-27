@@ -38,14 +38,14 @@ class PrismKeyMigrationTest {
     private static final PrismKeySerde SERDE = new PrismKeySerde();
 
     private static PrismKey key(int level, int type, int x, int y, int half, int z) {
-        return new PrismKey(new Triangle(level, type, x, y, Math.min(x, y), half), new Line(level, z));
+        return new PrismKey(new Triangle(level, type, x, y, half), new Line(level, z));
     }
 
     @Test
     @DisplayName("(round-trip) v1 serialize/deserialize is identity for S0 and S1 keys at several levels")
     void v1RoundTripIdentity() {
         var keys = new PrismKey[] {
-            new PrismKey(new Triangle(0, 0, 0, 0, 0, 0), new Line(0, 0)),       // S0 root
+            new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0)),       // S0 root
             PrismKey.createRootS1(),                                            // S1 root
             key(2, 0, 3, 1, 0, 2),                                             // S0, type 0
             key(2, 1, 3, 2, 0, 3),                                             // S0, type 1

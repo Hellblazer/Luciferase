@@ -35,7 +35,7 @@ class PrismNeighborFinderTest {
 
     // An interior prism: x in (0, max-1), 0 < y < x, line z in (0, max-1) — all 5 faces in-domain.
     private static PrismKey interiorPrism() {
-        return new PrismKey(new Triangle(4, 0, 8, 5, 5, 0), new Line(4, 7));
+        return new PrismKey(new Triangle(4, 0, 8, 5, 0), new Line(4, 7));
     }
 
     @Test
@@ -68,7 +68,7 @@ class PrismNeighborFinderTest {
     @Test
     @DisplayName("the diagonal quad face of a diagonal-cell prism reaches the S1 family")
     void diagonalQuadFaceReachesS1() {
-        var prism = new PrismKey(new Triangle(4, 0, 6, 6, 6, 0), new Line(4, 7)); // diagonal cell, S0
+        var prism = new PrismKey(new Triangle(4, 0, 6, 6, 0), new Line(4, 7)); // diagonal cell, S0
         var neighbor = PrismNeighborFinder.findFaceNeighbor(prism, 1); // hypotenuse
         assertNotNull(neighbor, "interior diagonal face must reach the S1 neighbor, not null");
         assertEquals(1, neighbor.getTriangle().getHalf(), "neighbor across the diagonal is in S1");

@@ -48,7 +48,7 @@ class TriangleTmSfcTest {
     @Test
     @DisplayName("root consecutive index is 0")
     void rootIndexZero() {
-        assertEquals(0L, new Triangle(0, 0, 0, 0, 0).consecutiveIndex());
+        assertEquals(0L, new Triangle(0, 0, 0, 0).consecutiveIndex());
     }
 
     @Test
@@ -57,7 +57,7 @@ class TriangleTmSfcTest {
         // S0 anchors (y <= x) at a few levels and both types.
         int[][] seeds = { { 1, 0, 0, 0 }, { 2, 0, 2, 1 }, { 2, 1, 3, 1 }, { 3, 0, 5, 2 }, { 4, 1, 9, 4 } };
         for (int[] s : seeds) {
-            var parent = new Triangle(s[0], s[1], s[2], s[3], Math.min(s[2], s[3]));
+            var parent = new Triangle(s[0], s[1], s[2], s[3]);
             long base = parent.consecutiveIndex();
             var seen = new HashSet<Long>();
             for (int i = 0; i < Triangle.CHILDREN; i++) {
@@ -78,7 +78,7 @@ class TriangleTmSfcTest {
             if (s[0] >= Triangle.MAX_LEVEL) {
                 continue;
             }
-            var parent = new Triangle(s[0], s[1], s[2], s[3], Math.min(s[2], s[3]));
+            var parent = new Triangle(s[0], s[1], s[2], s[3]);
             for (int i = 0; i < Triangle.CHILDREN; i++) {
                 var child = parent.child(i);
                 assertEquals(i, child.getChildIndex(), "TM child index must round-trip");
@@ -94,7 +94,7 @@ class TriangleTmSfcTest {
     @Test
     @DisplayName("all level-k descendants of a triangle form a contiguous index range")
     void descendantsFormContiguousRange() {
-        var t = new Triangle(1, 0, 0, 0, 0);
+        var t = new Triangle(1, 0, 0, 0);
         // Two levels down: 16 descendants occupying [I(t)*16, I(t)*16 + 16).
         long base = t.consecutiveIndex();
         var indices = new ArrayList<Long>();
@@ -114,7 +114,7 @@ class TriangleTmSfcTest {
     @Test
     @DisplayName("anchors stay in the S0 region y <= x under refinement")
     void anchorsStayInS0() {
-        var roots = new Triangle[] { new Triangle(0, 0, 0, 0, 0) };
+        var roots = new Triangle[] { new Triangle(0, 0, 0, 0) };
         var frontier = new ArrayList<Triangle>();
         frontier.add(roots[0]);
         for (int depth = 0; depth < 6; depth++) {
@@ -135,7 +135,7 @@ class TriangleTmSfcTest {
     void maxLevelOrdering() {
         // Build a handful of level-21 triangles by descending a fixed path, plus their siblings,
         // and assert indices are non-negative and strictly ordered by the consecutive index.
-        var t = new Triangle(0, 0, 0, 0, 0);
+        var t = new Triangle(0, 0, 0, 0);
         int[] path = { 0, 2, 1, 3, 0, 1, 2, 3, 1, 0, 2, 3, 1, 2, 0, 3, 1, 0, 2, 1, 3 }; // 21 steps
         for (int step : path) {
             t = t.child(step);
@@ -202,7 +202,7 @@ class TriangleTmSfcTest {
             for (int x = 0; x < max; x++) {
                 for (int y = 0; y <= x; y++) { // all S0 anchors
                     for (int type = 0; type < Triangle.TYPES; type++) {
-                        var t = new Triangle(level, type, x, y, Math.min(x, y));
+                        var t = new Triangle(level, type, x, y);
                         for (var nb : t.neighbors()) {
                             if (nb != null) {
                                 assertTrue(nb.getY() <= nb.getX(),
@@ -228,7 +228,7 @@ class TriangleTmSfcTest {
         // Enumerate all level-5 descendants of the root via refinement; indices must be the
         // dense contiguous range [0, 4^5).
         var frontier = new ArrayList<Triangle>();
-        frontier.add(new Triangle(0, 0, 0, 0, 0));
+        frontier.add(new Triangle(0, 0, 0, 0));
         for (int depth = 0; depth < 5; depth++) {
             var next = new ArrayList<Triangle>();
             for (var t : frontier) {

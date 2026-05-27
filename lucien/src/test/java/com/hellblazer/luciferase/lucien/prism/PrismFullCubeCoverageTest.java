@@ -64,8 +64,7 @@ class PrismFullCubeCoverageTest {
                     // two closed half-triangles share the edge, so both contain it — fromWorldCoordinates
                     // assigns it to S0 by convention; see Triangle.contains javadoc.)
                     if (Math.abs(wx - wy) > 1e-4f) {
-                        var opposite = new Triangle(tri.getLevel(), tri.getType(), tri.getX(), tri.getY(),
-                                                    Math.min(tri.getX(), tri.getY()), 1 - tri.getHalf());
+                        var opposite = new Triangle(tri.getLevel(), tri.getType(), tri.getX(), tri.getY(), 1 - tri.getHalf());
                         assertFalse(opposite.contains(wx, wy), String.format(
                             "opposite half must NOT contain (%.4f,%.4f) — no double count", wx, wy));
                         var prism = PrismKey.fromWorldCoordinates(wx, wy, 0.5f, level);
@@ -130,7 +129,7 @@ class PrismFullCubeCoverageTest {
         var tri = Triangle.fromWorldCoordinates(0.8f, 0.3f, 5); // y < x => S0
         assertEquals(0, tri.getHalf());
         // The 5-arg constructor (legacy) defaults to S0/half 0 and equals an S0 fromWorld* triangle.
-        var manual = new Triangle(tri.getLevel(), tri.getType(), tri.getX(), tri.getY(), tri.getN());
+        var manual = new Triangle(tri.getLevel(), tri.getType(), tri.getX(), tri.getY());
         assertEquals(0, manual.getHalf());
         assertEquals(manual, tri, "legacy 5-arg ctor must equal the S0 located triangle");
         assertEquals(manual.consecutiveIndex(), tri.consecutiveIndex());
@@ -139,7 +138,7 @@ class PrismFullCubeCoverageTest {
     @Test
     @DisplayName("level-0 roots are per-half: S0 root contains only y<=x, S1 root only y>=x")
     void levelZeroRootsArePerHalf() {
-        var s0Root = new Triangle(0, 0, 0, 0, 0);          // S0 (half 0)
+        var s0Root = new Triangle(0, 0, 0, 0);          // S0 (half 0)
         assertEquals(0, s0Root.getHalf());
         assertTrue(s0Root.contains(0.8f, 0.2f), "S0 root contains lower-right (y<x)");
         assertFalse(s0Root.contains(0.2f, 0.8f), "S0 root must NOT contain upper-left (y>x) — no full-square special case");

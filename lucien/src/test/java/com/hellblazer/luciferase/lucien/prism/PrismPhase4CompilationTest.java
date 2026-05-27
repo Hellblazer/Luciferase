@@ -29,7 +29,7 @@ public class PrismPhase4CompilationTest {
     @Test
     public void testPrismNeighborFinderCompiles() {
         // Test that PrismNeighborFinder can be instantiated and basic methods work
-        var triangle = new Triangle(0, 0, 0, 0, 0);
+        var triangle = new Triangle(0, 0, 0, 0);
         var line = new Line(0, 0);
         var prism = new PrismKey(triangle, line);
         
@@ -56,8 +56,8 @@ public class PrismPhase4CompilationTest {
     @Test
     public void testPrismCollisionDetectorCompiles() {
         // Test that PrismCollisionDetector compiles and basic methods work
-        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0, 0), new Line(0, 0));
-        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0, 1), new Line(1, 1));
+        var prism1 = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
+        var prism2 = new PrismKey(new Triangle(1, 0, 0, 0), new Line(1, 1));
         
         // Test prism-prism collision
         var result = PrismCollisionDetector.testPrismPrismCollision(prism1, prism2);
