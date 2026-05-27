@@ -314,33 +314,11 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
         
         return new PrismKey(parentTriangle, parentLine);
     }
-    
-    protected PrismKey getChildIndex(PrismKey parentKey, int childIdx) {
-        if (childIdx < 0 || childIdx >= 8) {
-            throw new IllegalArgumentException("Child index must be 0-7, got: " + childIdx);
-        }
-        
-        // Prisms have 8 children: 4 triangle children × 2 line children
-        // Decode Morton order: childIdx = triangleIdx * 2 + lineIdx
-        int triangleIdx = childIdx / 2;
-        int lineIdx = childIdx % 2;
-        
-        var childTriangle = parentKey.getTriangle().child(triangleIdx);
-        var childLine = parentKey.getLine().child(lineIdx);
-        
-        return new PrismKey(childTriangle, childLine);
-    }
-    
-    protected List<PrismKey> getAllChildren(PrismKey parentKey) {
-        var children = new ArrayList<PrismKey>(8);
-        
-        // Generate all 8 children in Morton order
-        for (int i = 0; i < 8; i++) {
-            children.add(getChildIndex(parentKey, i));
-        }
-        
-        return children;
-    }
+
+    // NOTE: child enumeration is PrismKey.child(i) — the canonical SFC-consistent ordering
+    // (triangle-major: triangleChild = i % 4, lineChild = i / 4, matching consecutiveIndex). Earlier
+    // dead getChildIndex/getAllChildren helpers here used an incompatible line-major order and were
+    // removed (RDR-009 GATE-B) so P7 serialization cannot accidentally traverse in the wrong order.
     
     protected TreeBalancer<PrismKey, ID> getTreeBalancer() {
         return balancer;
