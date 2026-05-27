@@ -314,7 +314,7 @@ try (var exporter = new FileMetricsExporter(
 
 - [DAG_INTEGRATION_GUIDE.md](DAG_INTEGRATION_GUIDE.md) - Integration guide
 - [DAG_API_REFERENCE.md](DAG_API_REFERENCE.md) - API reference
-- [PHASE2_DAGBUILDER_IMPLEMENTATION_SUMMARY.md](PHASE2_DAGBUILDER_IMPLEMENTATION_SUMMARY.md) - Implementation details
+- PHASE2_DAGBUILDER_IMPLEMENTATION_SUMMARY.md - Implementation details
 
 ### Research Papers
 

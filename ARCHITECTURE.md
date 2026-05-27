@@ -307,7 +307,7 @@ public class MyService {
 
 **Status**: Core algorithms complete, GPU integration validated
 
-**See**: [render/doc/ESVO_COMPLETION_SUMMARY.md](render/doc/ESVO_COMPLETION_SUMMARY.md) for implementation details.
+**See**: [render/doc/ESVO_COMPLETION_SUMMARY.md](render/src/test/java/com/hellblazer/luciferase/esvo/ESVO_COMPLETION_SUMMARY.md) for implementation details.
 
 ### JavaFX Visualization (Portal)
 
@@ -430,12 +430,12 @@ public class MyService {
 
 ### Core Architecture
 - [lucien/doc/LUCIEN_ARCHITECTURE.md](lucien/doc/LUCIEN_ARCHITECTURE.md) - Spatial indexing details
-- [simulation/doc/CONSOLIDATION_MASTER_OVERVIEW.md](simulation/doc/CONSOLIDATION_MASTER_OVERVIEW.md) - Simulation architecture
-- [render/doc/ESVO_COMPLETION_SUMMARY.md](render/doc/ESVO_COMPLETION_SUMMARY.md) - ESVO implementation
+- simulation/doc/CONSOLIDATION_MASTER_OVERVIEW.md - Simulation architecture
+- [render/doc/ESVO_COMPLETION_SUMMARY.md](render/src/test/java/com/hellblazer/luciferase/esvo/ESVO_COMPLETION_SUMMARY.md) - ESVO implementation
 
 ### Design Documentation
 - [simulation/doc/H3_DETERMINISM_EPIC.md](simulation/doc/H3_DETERMINISM_EPIC.md) - Clock interface architecture
-- [simulation/doc/SIMULATION_BUBBLES.md](simulation/doc/SIMULATION_BUBBLES.md) - Bubble-based simulation
+- simulation/doc/SIMULATION_BUBBLES.md - Bubble-based simulation
 - [lucien/doc/PERFORMANCE_METRICS_MASTER.md](lucien/doc/PERFORMANCE_METRICS_MASTER.md) - Performance characteristics
 
 ### Developer Documentation

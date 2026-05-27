@@ -102,9 +102,9 @@ var frame = renderer.render();
 - **[Phase 5 Technical Reference](doc/PHASE_5_TECHNICAL_REFERENCE.md)** - GPU acceleration API
 
 ### 🎯 By Phase
-- **[Phase 2: DAG Compression](doc/PHASE_2_COMPLETION_SUMMARY.md)** - Memory optimization
-- **[Phase 3: Serialization](doc/PHASE3_SERIALIZATION_COMPLETION.md)** - Binary format
-- **[Phase 5: GPU Acceleration](doc/PHASE_5_DOCUMENTATION_INDEX.md)** - Complete GPU pipeline
+- **Phase 2: DAG Compression** - Memory optimization
+- **Phase 3: Serialization** - Binary format
+- **Phase 5: GPU Acceleration** - Complete GPU pipeline
 
 ---
 
@@ -338,8 +338,8 @@ Shaders are loaded from `resources/shaders/`:
 
 ### Internal Documentation
 - [Complete Documentation Index](doc/INDEX.md)
-- [Phase 5 Documentation](doc/PHASE_5_DOCUMENTATION_INDEX.md)
-- [Archived Documentation](doc/archive/README.md)
+- Phase 5 Documentation
+- Archived Documentation
 
 ---
 

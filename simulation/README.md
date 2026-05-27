@@ -76,7 +76,7 @@ testClock.advance(500);  // Advance to T=1500ms
 **See Complete Documentation**:
 
 - [doc/ARCHITECTURE_DISTRIBUTED.md](doc/ARCHITECTURE_DISTRIBUTED.md) - Complete distributed architecture
-- [doc/SIMULATION_BUBBLES.md](doc/SIMULATION_BUBBLES.md) - Distributed simulation design
+- doc/SIMULATION_BUBBLES.md - Distributed simulation design
 - [doc/H3_DETERMINISM_EPIC.md](doc/H3_DETERMINISM_EPIC.md) - Deterministic testing architecture
 - [doc/TESTING_PATTERNS.md](doc/TESTING_PATTERNS.md) - Testing best practices
 

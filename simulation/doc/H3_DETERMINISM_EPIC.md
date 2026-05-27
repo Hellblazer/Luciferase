@@ -51,7 +51,7 @@ This epic's implementation is documented across several specialized documents:
 
 ### Implementation Details
 
-**[Clock.java](../src/main/java/com/hellblazer/luciferase/simulation/distributed/integration/Clock.java)**
+**[Clock.java](../../common/src/main/java/com/hellblazer/luciferase/simulation/distributed/integration/Clock.java)**
 - Production implementation
 - Factory methods: `system()`, `fixed(long)`, `TestClock`
 - Javadoc with usage examples

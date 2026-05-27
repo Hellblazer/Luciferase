@@ -397,6 +397,6 @@ DAG compression provides significant memory and performance improvements with mi
 **Next Steps**:
 - Read [DAG_API_REFERENCE.md](DAG_API_REFERENCE.md) for detailed API documentation
 - See [ESVO_DAG_COMPRESSION.md](ESVO_DAG_COMPRESSION.md) for architecture and implementation details
-- Check [PERFORMANCE_METRICS_MASTER.md](../lucien/doc/PERFORMANCE_METRICS_MASTER.md) for benchmark data
+- Check [PERFORMANCE_METRICS_MASTER.md](../../lucien/doc/PERFORMANCE_METRICS_MASTER.md) for benchmark data
 
 For questions or issues, file a GitHub issue with the `dag-compression` label.

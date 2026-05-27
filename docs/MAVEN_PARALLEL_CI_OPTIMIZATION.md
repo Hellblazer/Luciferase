@@ -609,7 +609,7 @@ Track per-job execution times:
 ### External Resources
 
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
-- [Maven Parallel Build Guide](https://maven.apache.org/guides/mini/guide-parallel-builds.html)
+- Maven parallel builds (`mvn -T`) — see the Maven CLI reference (`mvn --help`) for the `-T`/`--threads` option
 - [Docker GitHub Actions](https://docs.github.com/en/actions/publishing-packages/publishing-docker-images)
 
 ---

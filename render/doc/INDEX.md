@@ -33,7 +33,7 @@ Sparse Voxel DAG implementation with hash-based deduplication.
 
 | Document | Purpose | Lines | Audience |
 |----------|---------|-------|----------|
-| [PHASE_2_COMPLETION_SUMMARY.md](PHASE_2_COMPLETION_SUMMARY.md) | Executive summary + metrics | 252 | Stakeholders, leads |
+| PHASE_2_COMPLETION_SUMMARY.md | Executive summary + metrics | 252 | Stakeholders, leads |
 | [DAG_API_REFERENCE.md](DAG_API_REFERENCE.md) | API documentation | 475 | Developers |
 | [DAG_INTEGRATION_GUIDE.md](DAG_INTEGRATION_GUIDE.md) | Integration how-to | 402 | Developers |
 | [ESVO_DAG_COMPRESSION.md](ESVO_DAG_COMPRESSION.md) | Technical foundation | 348 | Architects |
@@ -59,7 +59,7 @@ Binary .dag file format with round-trip validation.
 
 | Document | Purpose | Lines | Audience |
 |----------|---------|-------|----------|
-| [PHASE3_SERIALIZATION_COMPLETION.md](PHASE3_SERIALIZATION_COMPLETION.md) | Completion report | 196 | All |
+| PHASE3_SERIALIZATION_COMPLETION.md | Completion report | 196 | All |
 
 ### Key Features
 - 32-byte fixed header
@@ -79,7 +79,7 @@ Complete GPU acceleration with 4 components (P1-P4).
 
 ### Master Documentation
 
-**Start Here**: [PHASE_5_DOCUMENTATION_INDEX.md](PHASE_5_DOCUMENTATION_INDEX.md)
+**Start Here**: PHASE_5_DOCUMENTATION_INDEX.md
 
 The Phase 5 index provides complete navigation for all GPU acceleration documentation with audience-specific entry points.
 
@@ -97,7 +97,7 @@ The Phase 5 index provides complete navigation for all GPU acceleration document
 | Component | Document | Lines | Purpose |
 |-----------|----------|-------|---------|
 | P1: Performance | [GPU_PERFORMANCE_MEASUREMENT_FRAMEWORK.md](GPU_PERFORMANCE_MEASUREMENT_FRAMEWORK.md) | 813 | Profiling & metrics |
-| P2: Activation | [STREAM_C_ACTIVATION_DECISION_GUIDE.md](STREAM_C_ACTIVATION_DECISION_GUIDE.md) | 365 | Beam optimization decision |
+| P2: Activation | STREAM_C_ACTIVATION_DECISION_GUIDE.md | 365 | Beam optimization decision |
 | P3: Multi-Vendor | [MULTI_VENDOR_GPU_TESTING_GUIDE.md](MULTI_VENDOR_GPU_TESTING_GUIDE.md) | 513 | Vendor testing |
 | P4: Recompilation | [P4_KERNEL_RECOMPILATION_FRAMEWORK.md](P4_KERNEL_RECOMPILATION_FRAMEWORK.md) | 330 | Build options |
 
@@ -107,7 +107,7 @@ The Phase 5 index provides complete navigation for all GPU acceleration document
 |----------|---------|-------|
 | [PHASE_5_GPU_ACCELERATION_COMPLETE_GUIDE.md](PHASE_5_GPU_ACCELERATION_COMPLETE_GUIDE.md) | Complete guide | 942 |
 | [PHASE_5_TECHNICAL_REFERENCE.md](PHASE_5_TECHNICAL_REFERENCE.md) | API reference | 607 |
-| [PHASE_5_DOCUMENTATION_INDEX.md](PHASE_5_DOCUMENTATION_INDEX.md) | Master index | 325 |
+| PHASE_5_DOCUMENTATION_INDEX.md | Master index | 325 |
 
 ### Key Achievements
 - **Performance**: 10x+ GPU speedup validated
@@ -125,7 +125,7 @@ Node reduction validation and integration testing.
 
 | Document | Purpose | Lines | Audience |
 |----------|---------|-------|----------|
-| [PHASE_5A5_RESULTS.md](PHASE_5A5_RESULTS.md) | Integration test results | 400 | All |
+| PHASE_5A5_RESULTS.md | Integration test results | 400 | All |
 
 ### Key Findings
 - **Node Reduction**: 30% validated for mixed scenes
@@ -179,7 +179,7 @@ GPU acceleration and performance documentation.
 
 | Document | Purpose | When to Use |
 |----------|---------|-------------|
-| [STREAM_C_ACTIVATION_DECISION_GUIDE.md](STREAM_C_ACTIVATION_DECISION_GUIDE.md) | Beam optimization decision | Enabling beam optimization |
+| STREAM_C_ACTIVATION_DECISION_GUIDE.md | Beam optimization decision | Enabling beam optimization |
 | [P4_KERNEL_RECOMPILATION_FRAMEWORK.md](P4_KERNEL_RECOMPILATION_FRAMEWORK.md) | Build option framework | Configuring kernel compilation |
 
 ---
@@ -207,7 +207,7 @@ archive/
 └── plans/           - Completed implementation plans
 ```
 
-See [archive/README.md](archive/README.md) for details on when to reference archived documentation.
+See archive/README.md for details on when to reference archived documentation.
 
 ---
 
@@ -232,7 +232,7 @@ See [archive/README.md](archive/README.md) for details on when to reference arch
 | Measure GPU performance | [GPU_PERFORMANCE_MEASUREMENT_FRAMEWORK.md](GPU_PERFORMANCE_MEASUREMENT_FRAMEWORK.md) |
 | Test on multiple GPUs | [MULTI_VENDOR_GPU_TESTING_GUIDE.md](MULTI_VENDOR_GPU_TESTING_GUIDE.md) |
 | Understand kernel architecture | [KERNEL_ARCHITECTURE_ANALYSIS.md](KERNEL_ARCHITECTURE_ANALYSIS.md) |
-| Configure beam optimization | [STREAM_C_ACTIVATION_DECISION_GUIDE.md](STREAM_C_ACTIVATION_DECISION_GUIDE.md) |
+| Configure beam optimization | STREAM_C_ACTIVATION_DECISION_GUIDE.md |
 | API reference | [DAG_API_REFERENCE.md](DAG_API_REFERENCE.md) or [PHASE_5_TECHNICAL_REFERENCE.md](PHASE_5_TECHNICAL_REFERENCE.md) |
 
 ### Test Metrics
