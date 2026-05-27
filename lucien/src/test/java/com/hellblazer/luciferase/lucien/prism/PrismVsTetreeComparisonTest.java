@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import com.hellblazer.luciferase.lucien.PerfMeasure;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
@@ -129,14 +130,16 @@ public class PrismVsTetreeComparisonTest {
         var searchCube = new com.hellblazer.luciferase.lucien.Spatial.Cube(20.0f, 20.0f, 20.0f, 20.0f);
         
         // Test Prism range query performance
-        long prismStartTime = System.nanoTime();
+        // Warm both query paths (class-load + JIT), then take the steady-state best-of-N: a single cold
+        // entitiesInRegion call can spike past the 5ms bound under CI/benchmark load (Luciferase-tlb).
+        PerfMeasure.warmup(5, () -> prism.entitiesInRegion(searchCube));
+        PerfMeasure.warmup(5, () -> tetree.entitiesInRegion(searchCube));
+        long prismRangeTime = PerfMeasure.bestNanos(3, () -> prism.entitiesInRegion(searchCube));
         var prismResults = prism.entitiesInRegion(searchCube);
-        long prismRangeTime = System.nanoTime() - prismStartTime;
         
         // Test Tetree range query performance
-        long tetreeStartTime = System.nanoTime();
+        long tetreeRangeTime = PerfMeasure.bestNanos(3, () -> tetree.entitiesInRegion(searchCube));
         var tetreeResults = tetree.entitiesInRegion(searchCube);
-        long tetreeRangeTime = System.nanoTime() - tetreeStartTime;
         
         // Log performance comparison
         double rangeRatio = (double)prismRangeTime / tetreeRangeTime;
