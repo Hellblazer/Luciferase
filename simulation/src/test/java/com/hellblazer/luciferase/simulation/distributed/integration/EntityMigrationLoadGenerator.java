@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.distributed.integration;
 
+import com.hellblazer.luciferase.common.time.Clock;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;

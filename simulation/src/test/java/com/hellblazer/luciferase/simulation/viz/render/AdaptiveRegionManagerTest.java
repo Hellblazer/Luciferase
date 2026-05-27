@@ -9,7 +9,7 @@
 package com.hellblazer.luciferase.simulation.viz.render;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

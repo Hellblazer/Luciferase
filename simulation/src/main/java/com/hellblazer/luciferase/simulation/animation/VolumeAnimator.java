@@ -25,7 +25,7 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.annotations.NonEvent;
 import com.hellblazer.primeMover.api.Kronos;

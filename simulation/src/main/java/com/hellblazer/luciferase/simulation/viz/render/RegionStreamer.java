@@ -10,7 +10,7 @@ package com.hellblazer.luciferase.simulation.viz.render;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import io.javalin.websocket.WsContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

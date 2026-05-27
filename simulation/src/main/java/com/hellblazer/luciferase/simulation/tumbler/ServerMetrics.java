@@ -8,7 +8,7 @@
  */
 package com.hellblazer.luciferase.simulation.tumbler;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;

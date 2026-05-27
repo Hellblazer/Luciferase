@@ -26,7 +26,7 @@ import com.hellblazer.luciferase.simulation.entity.StringEntityIDGenerator;
 import com.hellblazer.luciferase.simulation.ghost.DuplicateDetectionConfig;
 import com.hellblazer.luciferase.simulation.ghost.DuplicateEntityDetector;
 import com.hellblazer.luciferase.simulation.ghost.MigrationLog;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

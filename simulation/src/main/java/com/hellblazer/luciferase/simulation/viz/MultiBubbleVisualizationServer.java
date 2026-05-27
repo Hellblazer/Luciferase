@@ -9,7 +9,7 @@
 package com.hellblazer.luciferase.simulation.viz;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.entity.EntityType;
 import com.hellblazer.luciferase.simulation.topology.events.TopologyEventStream;
 import com.hellblazer.luciferase.simulation.topology.metrics.DensityMonitor;

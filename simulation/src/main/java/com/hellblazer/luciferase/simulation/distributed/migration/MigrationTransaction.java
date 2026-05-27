@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 
 import java.util.UUID;
 

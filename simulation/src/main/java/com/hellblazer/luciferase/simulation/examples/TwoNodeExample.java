@@ -7,7 +7,7 @@ package com.hellblazer.luciferase.simulation.examples;
 
 import com.hellblazer.luciferase.simulation.behavior.PreyBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.distributed.network.BubbleNetworkChannel;
 import com.hellblazer.luciferase.simulation.distributed.network.GrpcBubbleNetworkChannel;
 import com.hellblazer.luciferase.simulation.entity.EntityType;

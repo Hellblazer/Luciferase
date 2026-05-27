@@ -15,7 +15,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.simulation.distributed.integration;
+package com.hellblazer.luciferase.common.time;
 
 /**
  * Pluggable clock interface for testing with deterministic time control.

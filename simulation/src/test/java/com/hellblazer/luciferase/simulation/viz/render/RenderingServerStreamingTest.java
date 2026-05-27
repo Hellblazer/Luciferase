@@ -9,7 +9,7 @@
 package com.hellblazer.luciferase.simulation.viz.render;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

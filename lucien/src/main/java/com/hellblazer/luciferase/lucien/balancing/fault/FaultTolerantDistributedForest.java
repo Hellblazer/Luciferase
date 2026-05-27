@@ -6,7 +6,7 @@ import com.hellblazer.luciferase.lucien.balancing.ParallelBalancer;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
 import com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

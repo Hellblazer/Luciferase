@@ -9,7 +9,7 @@
 package com.hellblazer.luciferase.simulation.viz.render;
 
 import com.hellblazer.luciferase.lucien.Frustum3D;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -8,7 +8,7 @@
  */
 package com.hellblazer.luciferase.simulation.tumbler;
 
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.von.Bubble;
 import com.hellblazer.luciferase.simulation.von.Manager;
 import org.slf4j.Logger;

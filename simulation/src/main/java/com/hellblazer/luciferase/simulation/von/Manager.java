@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.SpatialLevelHeuristic;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.lifecycle.EnhancedBubbleAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.LifecycleCoordinator;
 import javafx.geometry.Point3D;

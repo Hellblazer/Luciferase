@@ -214,7 +214,7 @@ The simulation version has better semantics (returning a constant from nanoTime(
    - Keep the AGPL copyright header as-is
 
 2. **Add @see to lucien test Clock.java** (`/Users/hal.hildebrand/git/Luciferase/lucien/src/test/java/com/hellblazer/luciferase/simulation/distributed/integration/Clock.java`):
-   - Add to class Javadoc: `@see com.hellblazer.luciferase.simulation.distributed.integration.Clock` (canonical in common module)
+   - Add to class Javadoc: `@see com.hellblazer.luciferase.common.time.Clock` (canonical in common module)
    - Explain this copy exists to break lucien -> simulation circular dependency
 
 3. **Delete simulation/Clock.java**:

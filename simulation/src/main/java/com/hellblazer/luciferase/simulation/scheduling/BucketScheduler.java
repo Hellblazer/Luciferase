@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.simulation.scheduling;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.annotations.NonEvent;
 import com.hellblazer.primeMover.api.Kronos;

@@ -21,7 +21,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityData;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.events.EntityUpdateEvent;
 import com.hellblazer.luciferase.simulation.spatial.DeadReckoningEstimator;

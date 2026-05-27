@@ -18,7 +18,7 @@ package com.hellblazer.luciferase.simulation.topology;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
 import com.hellblazer.luciferase.simulation.topology.events.*;

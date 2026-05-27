@@ -14,7 +14,7 @@ import com.hellblazer.luciferase.simulation.behavior.RandomWalkBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.bubble.SimulationBubble;
 import io.javalin.Javalin;
 import io.javalin.websocket.WsContext;

@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;

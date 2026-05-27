@@ -20,7 +20,7 @@ import com.hellblazer.luciferase.lucien.balancing.fault.FaultHandler;
 import com.hellblazer.luciferase.lucien.balancing.fault.PartitionChangeEvent;
 import com.hellblazer.luciferase.lucien.balancing.fault.PartitionStatus;
 import com.hellblazer.luciferase.lucien.balancing.fault.PartitionTopology;
-import com.hellblazer.luciferase.simulation.distributed.integration.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
