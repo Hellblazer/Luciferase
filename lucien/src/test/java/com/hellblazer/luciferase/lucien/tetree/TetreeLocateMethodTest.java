@@ -5,6 +5,7 @@ import com.hellblazer.luciferase.lucien.PerfMeasure;
 import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import javax.vecmath.Point3f;
 import java.util.Random;
@@ -233,6 +234,9 @@ public class TetreeLocateMethodTest {
     }
 
     @Test
+    @Tag("performance")  // Luciferase-opw: pure-perf assertion (speedup ratio); flakes under load on fast hardware
+                         // even with warmup+best-of-N (Luciferase-tlb). Excluded from default `mvn test`; runs under
+                         // -Pperformance. The five functional tests in this class stay in the default suite.
     void testPerformanceImprovement() {
         // Skip if running in any CI environment
         assumeFalse(CIEnvironmentCheck.isRunningInCI(), CIEnvironmentCheck.getSkipMessage());

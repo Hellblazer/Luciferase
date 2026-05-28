@@ -111,6 +111,9 @@ public class PrismVsOctreeComparisonTest {
     }
     
     @Test
+    @Tag("performance")  // Luciferase-opw: 5ms perf threshold; excluded from default `mvn test`, runs under
+                         // -Pperformance. Kept @DisabledIfEnvironmentVariable for belt-and-suspenders coverage on
+                         // CI runners that selectively run perf-tagged tests.
     @DisabledIfEnvironmentVariable(
         named = "CI",
         matches = "true",
