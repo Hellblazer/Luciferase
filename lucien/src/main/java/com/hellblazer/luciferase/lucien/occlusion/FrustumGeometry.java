@@ -14,8 +14,11 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.occlusion;
 
+import com.hellblazer.luciferase.lucien.Frustum3D;
+import com.hellblazer.luciferase.lucien.FrustumIntersection;
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
@@ -24,29 +27,21 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * The unified callback seam through which RDR-008 feature objects reach their owning {@code AbstractSpatialIndex}
- * façade.
+ * Frustum/cull façade operations the DSOC feature object consumes.
  *
- * <p>RDR-008 §Decision names a single {@code SpatialGeometry<Key>} interface, implemented by the façade and handed to
- * each cohesive collaborator ({@code DsocController}, {@code GhostCoordinator}, {@code KnnSearcher}, …) alongside the
- * shared {@link SpatialIndexCore}. It carries the façade-resident operations a collaborator needs but does not own:
- * the subclass-overridden geometry template hooks (e.g. {@link #getFrustumTraversalOrder},
- * {@link #doesFrustumIntersectNode}) plus the concrete spatial helpers that remain on the façade or belong to a
- * not-yet-extracted cluster (e.g. {@link #frustumCullVisibleStandard}, which is the frustum/cull cluster's — P4).
- * The façade supplies the implementation through a private inner class, so the underlying methods keep their original
- * ({@code private}/{@code protected}/abstract) visibility — no public widening.
- *
- * <p>The interface grows by one phase's worth of operations as each feature object is extracted; collaborators call
- * only the subset they need. This is the deliberate "one named seam" the RDR chose over per-feature callbacks.
+ * <p>P3 (RDR-008) refined the seam architecture from a single unified callback (the P2 {@code SpatialGeometry}, now
+ * deleted) into per-cluster sub-interfaces. {@code DsocController} depends only on what it actually uses — the
+ * subclass-overridden frustum
+ * traversal/intersection hooks, the node-bounds helper, the cached entity-position lookup, and the standard non-DSOC
+ * cull fallback (which lives in the frustum/cull cluster and will be re-homed in P4). The façade implements this
+ * through a private inner class so the underlying methods keep their original visibility.
  *
  * @param <Key>     the spatial key type
  * @param <ID>      the entity identifier type
  * @param <Content> the entity content type
  * @author hal.hildebrand
  */
-public interface SpatialGeometry<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
-
-    // ---- Frustum / cull geometry (consumed by DsocController; P4 will re-home the providers) ---------------------
+public interface FrustumGeometry<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
 
     /** Spatial keys of nodes potentially intersecting the frustum, in front-to-back traversal order. */
     Stream<Key> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition);
@@ -62,9 +57,4 @@ public interface SpatialGeometry<Key extends SpatialKey<Key>, ID extends EntityI
 
     /** The standard (non-DSOC) frustum cull — the fallback when DSOC is skipped or its Z-buffer is inactive. */
     List<FrustumIntersection<ID, Content>> frustumCullVisibleStandard(Frustum3D frustum, Point3f cameraPosition);
-
-    // ---- k-nearest-neighbor query (consumed by GhostCoordinator; P3 will re-home the provider) -------------------
-
-    /** k-nearest entities to {@code queryPoint}, optionally bounded by {@code maxDistance}. */
-    List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance);
 }
