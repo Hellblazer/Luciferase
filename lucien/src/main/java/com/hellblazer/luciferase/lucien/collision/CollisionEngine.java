@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.lucien.collision;
 
-import com.hellblazer.luciferase.lucien.FineGrainedLockingStrategy;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.SpatialIndex.CollisionPair;
 import com.hellblazer.luciferase.lucien.SpatialIndexCore;
@@ -38,7 +37,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -55,9 +53,11 @@ import java.util.stream.Collectors;
  * {@link CollisionGeometry#addNeighboringNodes}), the façade-resident range-query
  * ({@link CollisionGeometry#spatialRangeQuery}), and the two cached entity accessors
  * ({@link CollisionGeometry#getCachedEntityPosition}, {@link CollisionGeometry#getCachedEntityBounds}) arrive
- * through the callback; the sorted node map, the read-write lock, and the entity manager arrive through
- * {@link SpatialIndexCore}; the fine-grained locking strategy arrives via a supplier so the late-bound mutable
- * façade field is read at call time, mirroring the {@code KnnSearcher} pattern.
+ * through the callback; the sorted node map, the read-write lock, the entity manager, and the
+ * fine-grained locking strategy all arrive through {@link SpatialIndexCore}. RDR-008 P6 relocated the strategy
+ * field into the core (discharging the P3 substantive-critic Significant#1), so the prior
+ * {@code Supplier<FineGrainedLockingStrategy>} constructor argument is gone; {@code findCollisionsFineGrained}
+ * reads the volatile reference at each call via {@link SpatialIndexCore#lockingStrategy()}.
  *
  * @param <Key>     the spatial key type
  * @param <ID>      the entity identifier type
@@ -66,15 +66,12 @@ import java.util.stream.Collectors;
  */
 public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
 
-    private final SpatialIndexCore<Key, ID, Content>             core;
-    private final CollisionGeometry<Key, ID, Content>            callback;
-    private final Supplier<FineGrainedLockingStrategy<ID, Content>> lockingStrategy;
+    private final SpatialIndexCore<Key, ID, Content>  core;
+    private final CollisionGeometry<Key, ID, Content> callback;
 
-    public CollisionEngine(SpatialIndexCore<Key, ID, Content> core, CollisionGeometry<Key, ID, Content> callback,
-                           Supplier<FineGrainedLockingStrategy<ID, Content>> lockingStrategy) {
+    public CollisionEngine(SpatialIndexCore<Key, ID, Content> core, CollisionGeometry<Key, ID, Content> callback) {
         this.core = core;
         this.callback = callback;
-        this.lockingStrategy = lockingStrategy;
     }
 
     // ===== Public API =====
@@ -187,8 +184,9 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
             return Collections.emptyList();
         }
 
-        // Use fine-grained locking for each node access
-        return lockingStrategy.get().executeRead(0L, () -> {
+        // Use fine-grained locking for each node access — re-read the volatile strategy reference at each call so
+        // a concurrent configureFineGrainedLocking is observed (mirrors KnnSearcher's pattern).
+        return core.lockingStrategy().executeRead(0L, () -> {
             var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
             var checkedEntities = ObjectPools.<ID>borrowHashSet();
             try {

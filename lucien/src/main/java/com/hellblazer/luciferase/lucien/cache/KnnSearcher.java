@@ -40,7 +40,6 @@ import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
 
 /**
  * The k-nearest-neighbors feature object for a spatial index (RDR-008 P3).
@@ -64,6 +63,11 @@ import java.util.function.Supplier;
  * monitor semantics), a concurrent {@code updateEntity} between the version-read and the cache-write cannot return
  * stale or torn results — at worst the next reader sees a cache miss for that key (the cache entry's version no
  * longer matches the current version) and recomputes.
+
+ * <p>The mutable fine-grained locking strategy ({@code configureFineGrainedLocking} replaces it at runtime) is
+ * read through {@link SpatialIndexCore#lockingStrategy()} at each call; RDR-008 P6 discharged the prior P3
+ * substantive-critic Significant#1 by relocating the field into the core, so this class no longer carries a
+ * {@code Supplier<FineGrainedLockingStrategy>} ctor argument.
  *
  * <h2>Subclass-coupled dispatch</h2>
  *
@@ -89,9 +93,8 @@ implements KnnProvider<Key, ID> {
 
     private static final Logger log = LoggerFactory.getLogger(KnnSearcher.class);
 
-    private final SpatialIndexCore<Key, ID, Content>             core;
-    private final KnnGeometry<Key, ID>                           geometry;
-    private final Supplier<FineGrainedLockingStrategy<ID, Content>> lockingStrategySupplier;
+    private final SpatialIndexCore<Key, ID, Content> core;
+    private final KnnGeometry<Key, ID>               geometry;
 
     // Performance counters (P3-main: moved from AbstractSpatialIndex; subclass-private — no external mutators).
     private final AtomicLong knnCacheHits           = new AtomicLong(0);
@@ -101,15 +104,12 @@ implements KnnProvider<Key, ID> {
 
     /**
      * Construct the k-NN searcher. References are stored only — the constructor does not invoke any method on
-     * {@code core}, {@code geometry}, or {@code lockingStrategySupplier}, so it is safe to construct from inside the
-     * façade ctor before the façade is fully initialized (the this-escape invariant documented on
-     * {@code AbstractSpatialIndex}).
+     * {@code core} or {@code geometry}, so it is safe to construct from inside the façade ctor before the façade
+     * is fully initialized (the this-escape invariant documented on {@code AbstractSpatialIndex}).
      */
-    public KnnSearcher(SpatialIndexCore<Key, ID, Content> core, KnnGeometry<Key, ID> geometry,
-                       Supplier<FineGrainedLockingStrategy<ID, Content>> lockingStrategySupplier) {
+    public KnnSearcher(SpatialIndexCore<Key, ID, Content> core, KnnGeometry<Key, ID> geometry) {
         this.core = core;
         this.geometry = geometry;
-        this.lockingStrategySupplier = lockingStrategySupplier;
     }
 
     /**
@@ -169,8 +169,9 @@ implements KnnProvider<Key, ID> {
         log.debug("k-NN cache miss: computing k-NN");
 
         // Cache miss: compute k-NN and store result
-        // Use fine-grained locking for read operations
-        return lockingStrategySupplier.get().executeRead(0L, () -> {
+        // Use fine-grained locking for read operations — re-read the volatile strategy reference at each call so
+        // a concurrent configureFineGrainedLocking is observed.
+        return core.lockingStrategy().executeRead(0L, () -> {
             // Priority queue to keep track of k nearest entities (max heap)
             var candidates = ObjectPools.borrowPriorityQueue(EntityDistance.<ID>maxHeapComparator());
             var addedToCandidates = ObjectPools.<ID>borrowHashSet();

@@ -107,12 +107,10 @@ implements SpatialIndex<Key, ID, Content> {
     // Entity data cache for performance. RDR-008: protected so all four structural-nucleus fields
     // (spatialIndex, lock, entityManager, entityCache) share uniform visibility; reached by feature objects via core.
     protected final EntityCache<ID>                                  entityCache;
-    // Fine-grained locking strategy for high-concurrency operations.
-    // volatile: configureFineGrainedLocking may replace this reference while concurrent kNearestNeighbors / other
-    // callers read it outside any lock (RDR-008 P3-main moved the k-NN read path into KnnSearcher, where the supplier
-    // `() -> this.lockingStrategy` reads the field from a different class — same JMM publication requirement as the
-    // pre-extraction direct field read, but now visible at the package seam). Matches the dsoc volatile pattern.
-    protected volatile FineGrainedLockingStrategy<ID, Content>       lockingStrategy;
+    // RDR-008 P6: the fine-grained locking strategy used to live here as a volatile field; it now lives inside
+    // SpatialIndexCore (the only nucleus field that is mutable), reachable via core.lockingStrategy() /
+    // core.setLockingStrategy(...). The migration discharged the P3 substantive-critic Significant#1; KnnSearcher
+    // and CollisionEngine no longer take a Supplier<FineGrainedLockingStrategy> ctor arg.
     // Bulk operation support
     protected       BulkOperationConfig                              bulkConfig               = new BulkOperationConfig();
     protected       boolean                                          bulkLoadingMode          = false;
@@ -146,9 +144,18 @@ implements SpatialIndex<Key, ID, Content> {
     // FrustumGeometry consumer surface stays narrow.
     protected final Culler<Key, ID, Content>                                 culler;
     // RDR-008 P5: collision-detection cluster, encapsulated in CollisionEngine (always present; eager init in
-    // ctor). Takes the lockingStrategy field via a supplier — findCollisionsFineGrained needs the late-bound
-    // mutable reference (configureFineGrainedLocking may replace it), mirroring the KnnSearcher pattern.
+    // ctor). RDR-008 P6 relocated the fine-grained locking strategy into SpatialIndexCore, so the prior
+    // Supplier<FineGrainedLockingStrategy> ctor arg is gone — findCollisionsFineGrained reads core.lockingStrategy()
+    // directly at call time, picking up any configureFineGrainedLocking replacement via the volatile field.
     protected final com.hellblazer.luciferase.lucien.collision.CollisionEngine<Key, ID, Content> collisions;
+    // RDR-008 P6: entity-lifecycle cluster, encapsulated in EntityLifecycleManager (always present; eager init in
+    // ctor). The broadest cluster in the decomposition — takes both an EntityLifecycleGeometry callback (subclass-
+    // overridden hooks + cached entity accessors) and an EntityLifecycleHost interface (facade-internal
+    // infrastructure: bulk config/processor/builder, parallel ops, node pool, deferred-subdivision manager,
+    // spanning policy, the DSOC controller for the P1 updateEntity seam, the ghost-update hook, the auto-balance
+    // hook). The host interface is the principled middle ground after P3 refinement; it's narrower than the
+    // concrete-facade back-reference GhostCoordinator carries from P2 (see GhostCoordinator's P2-concession note).
+    protected final com.hellblazer.luciferase.lucien.entity.EntityLifecycleManager<Key, ID, Content> entityLifecycle;
     // Tree balancing support
     private         TreeBalancingStrategy<ID>                        balancingStrategy;
     private         boolean                                          autoBalancingEnabled     = false;
@@ -172,18 +179,22 @@ implements SpatialIndex<Key, ID, Content> {
         this.nodePool = new SpatialNodePool<>(this::createNode);
         this.parallelOperations = new ParallelBulkOperations<>(this, bulkProcessor,
                                                                ParallelBulkOperations.defaultConfig());
-        this.lockingStrategy = new FineGrainedLockingStrategy<>(this, FineGrainedLockingStrategy.defaultConfig());
         this.subdivisionStrategy = createDefaultSubdivisionStrategy();
         this.treeBuilder = new StackBasedTreeBuilder<>(StackBasedTreeBuilder.defaultConfig());
         this.entityCache = new EntityCache<>(10000); // Cache up to 10k entities
         this.knnCache = new com.hellblazer.luciferase.lucien.cache.KNNCache<>(); // k-NN result caching
-        // RDR-008: wrap the now-initialized six-field nucleus in a single shared view for feature-object collaborators
-        this.core = new SpatialIndexCore<>(spatialIndex, lock, spatialVersion, knnCache, entityManager, entityCache);
+        // RDR-008 P0+P6: wrap the now-initialized seven-field nucleus (six immutable + the mutable
+        // lockingStrategy) in a single shared view for feature-object collaborators. The initial locking strategy
+        // is constructed inline; configureFineGrainedLocking later mutates the volatile field inside core.
+        var initialLockingStrategy = new FineGrainedLockingStrategy<ID, Content>(this,
+                                                                                 FineGrainedLockingStrategy.defaultConfig());
+        this.core = new SpatialIndexCore<>(spatialIndex, lock, spatialVersion, knnCache, entityManager, entityCache,
+                                           initialLockingStrategy);
 
         // RDR-008 P3: k-NN cluster lives in KnnSearcher (implements KnnProvider). Constructed before
-        // GhostCoordinator so the latter can take it directly as its KnnProvider.  The lockingStrategy supplier is
-        // late-bound because configureFineGrainedLocking can replace the field.
-        this.knn = new KnnSearcher<>(core, new KnnGeometryImpl(), () -> this.lockingStrategy);
+        // GhostCoordinator so the latter can take it directly as its KnnProvider. The mutable fine-grained
+        // locking strategy is read from core at call time, so no Supplier ctor arg is needed (P6 migration).
+        this.knn = new KnnSearcher<>(core, new KnnGeometryImpl());
 
         // RDR-008 P4: bundled frustum/plane/ray cull cluster lives in Culler (implements FrustumCullProvider).
         // Constructed before the ghost coordinator so DSOC's lazy construction (enableDSOC) can take it as the
@@ -192,23 +203,29 @@ implements SpatialIndex<Key, ID, Content> {
         this.culler = new Culler<>(core, new CullGeometryImpl());
 
         // RDR-008 P5: collision-detection cluster lives in CollisionEngine. The CollisionGeometryImpl callback
-        // stores `this` but the ctor doesn't dispatch through it (storage-only). The lockingStrategy supplier is
-        // late-bound — configureFineGrainedLocking can replace the field — and findCollisionsFineGrained reads it
-        // at call time, mirroring KnnSearcher.
+        // stores `this` but the ctor doesn't dispatch through it (storage-only). The fine-grained locking
+        // strategy is read from core at call time (P6 migration replaced the prior Supplier ctor arg).
         this.collisions = new com.hellblazer.luciferase.lucien.collision.CollisionEngine<>(core,
-                                                                                            new CollisionGeometryImpl(),
-                                                                                            () -> this.lockingStrategy);
+                                                                                            new CollisionGeometryImpl());
+
+        // RDR-008 P6: entity-lifecycle cluster lives in EntityLifecycleManager. The EntityLifecycleGeometryImpl
+        // callback and EntityLifecycleHostImpl host both store `this` but the ctor doesn't dispatch through them
+        // (storage-only) — the this-escape invariant.
+        this.entityLifecycle = new com.hellblazer.luciferase.lucien.entity.EntityLifecycleManager<>(core,
+                                                                                                    new EntityLifecycleGeometryImpl(),
+                                                                                                    new EntityLifecycleHostImpl());
 
         // RDR-008 P2: distributed-ghost cluster lives in GhostCoordinator; constructed eagerly so subclasses can
         // call setNeighborDetector during their own initialization.
         // INVARIANT for future phases: GhostCoordinator's ctor (and the ctors of any other feature object created
-        // here — including KnnSearcher, Culler, and CollisionEngine above) MUST NOT invoke any method on the
-        // supplied FrustumGeometryImpl / KnnGeometryImpl / CullGeometryImpl / CollisionGeometryImpl, on the
-        // KnnProvider / FrustumCullProvider, or on `this` directly — `this` is still partially constructed at this
-        // point, and any virtual dispatch into a not-yet-initialized subclass is a classic this-escape hazard.
-        // Storing the references is fine; calling through them is not.  (KnnSearcher's, Culler's, and
-        // CollisionEngine's ctors store only; the lockingStrategy supplier captures `this` but is invoked
-        // post-construction.)
+        // here — including KnnSearcher, Culler, CollisionEngine, and EntityLifecycleManager above) MUST NOT invoke
+        // any method on the supplied FrustumGeometryImpl / KnnGeometryImpl / CullGeometryImpl /
+        // CollisionGeometryImpl / EntityLifecycleGeometryImpl / EntityLifecycleHostImpl, on the KnnProvider /
+        // FrustumCullProvider, or on `this` directly — `this` is still partially constructed at this point, and
+        // any virtual dispatch into a not-yet-initialized subclass is a classic this-escape hazard. Storing the
+        // references is fine; calling through them is not.  (KnnSearcher's, Culler's, CollisionEngine's, and
+        // EntityLifecycleManager's ctors store only; P6 removed the lockingStrategy supplier that previously
+        // captured `this`.)
         // The `knn` argument below satisfies KnnProvider<Key,ID> (P3-main moved this role off the façade); the
         // second `this` is the façade back-reference the ghost subsystem (GhostBoundaryDetector +
         // DistributedGhostManager) needs in their ctors.
@@ -312,12 +329,14 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Configure fine-grained locking strategy
+     * Configure fine-grained locking strategy. RDR-008 P6: the strategy now lives inside {@link SpatialIndexCore}
+     * (the only mutable nucleus field), so the replacement goes through {@link SpatialIndexCore#setLockingStrategy};
+     * the surrounding write-lock acquisition is preserved to sequence the swap against pending mutations.
      */
     public void configureFineGrainedLocking(LockingConfig config) {
         lock.writeLock().lock();
         try {
-            this.lockingStrategy = new FineGrainedLockingStrategy<>(this, config);
+            core.setLockingStrategy(new FineGrainedLockingStrategy<>(this, config));
         } finally {
             lock.writeLock().unlock();
         }
@@ -354,27 +373,12 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Check if an entity exists in the spatial index.
-     *
-     * <p>This method delegates to the EntityManager but adds thread-safe locking to ensure
-     * consistency in concurrent environments. The read lock allows multiple threads to check entity existence
-     * simultaneously while preventing modifications during the check.</p>
-     *
-     * <p><b>Why locking is necessary:</b> Even though this is a simple delegation, the EntityManager's
-     * internal state could be modified by other threads during the check. The read lock ensures a consistent view of
-     * the entity state.</p>
-     *
-     * @param entityId the ID of the entity to check
-     * @return true if the entity exists in the spatial index
+     * Check if an entity exists in the spatial index. RDR-008 P6: delegates to
+     * {@link com.hellblazer.luciferase.lucien.entity.EntityLifecycleManager}.
      */
     @Override
     public boolean containsEntity(ID entityId) {
-        lock.readLock().lock();
-        try {
-            return entityManager.containsEntity(entityId);
-        } finally {
-            lock.readLock().unlock();
-        }
+        return entityLifecycle.containsEntity(entityId);
     }
 
     /**
@@ -480,43 +484,18 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Get the total number of entities in the spatial index.
-     *
-     * <p>This method provides thread-safe access to the entity count by acquiring a read lock.
-     * Multiple threads can read the count simultaneously, but modifications are blocked during the read to ensure
-     * accuracy.</p>
-     *
-     * <p><b>Thread safety rationale:</b> Without locking, the count could change between the
-     * method call and return, potentially causing issues in code that relies on accurate counts for resource allocation
-     * or iteration bounds.</p>
-     *
-     * @return the number of entities currently stored in the spatial index
+     * Get the total number of entities in the spatial index. RDR-008 P6: delegates to
+     * {@link com.hellblazer.luciferase.lucien.entity.EntityLifecycleManager}.
      */
     @Override
     public int entityCount() {
-        lock.readLock().lock();
-        try {
-            return entityManager.getEntityCount();
-        } finally {
-            lock.readLock().unlock();
-        }
+        return entityLifecycle.entityCount();
     }
 
+    /** Empty the entire index. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public void clear() {
-        lock.writeLock().lock();
-        try {
-            spatialIndex.clear();
-            entityManager.clear();
-            if (deferredSubdivisionNodes != null) {
-                deferredSubdivisionNodes.clear();
-            }
-            if (subdivisionManager != null) {
-                subdivisionManager.clear();
-            }
-        } finally {
-            lock.writeLock().unlock();
-        }
+        entityLifecycle.clear();
     }
 
     @Override
@@ -729,133 +708,44 @@ implements SpatialIndex<Key, ID, Content> {
         return collisions.getCollisionShape(entityId);
     }
 
-    /**
-     * Get content for multiple entities in a single operation.
-     *
-     * <p>Batch retrieval with thread-safe locking. The read lock ensures consistency across
-     * all entity retrievals, preventing partial updates where some entities might be modified during the batch
-     * operation.</p>
-     *
-     * <p><b>Atomicity guarantee:</b> All entities are retrieved under the same lock, ensuring
-     * a consistent snapshot of the entity state at a single point in time.</p>
-     *
-     * @param entityIds list of entity IDs to retrieve
-     * @return list of content objects corresponding to the entity IDs
-     */
+    /** Batch content retrieval. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public List<Content> getEntities(List<ID> entityIds) {
-        lock.readLock().lock();
-        try {
-            return entityManager.getEntitiesContent(entityIds);
-        } finally {
-            lock.readLock().unlock();
-        }
+        return entityLifecycle.getEntities(entityIds);
     }
 
     // ===== Common Update Operations =====
 
-    /**
-     * Get all entities with their current positions.
-     *
-     * <p>Returns a consistent snapshot of all entity positions. The read lock prevents
-     * entities from being added, removed, or moved during the operation, ensuring the returned map accurately
-     * represents the spatial state at a single moment.</p>
-     *
-     * <p><b>Use case:</b> This method is particularly useful for visualization, debugging,
-     * or algorithms that need a complete spatial snapshot without interference from concurrent modifications.</p>
-     *
-     * @return map of entity IDs to their current positions
-     */
+    /** Snapshot of every entity's current position. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public Map<ID, Point3f> getEntitiesWithPositions() {
-        lock.readLock().lock();
-        try {
-            return entityManager.getEntitiesWithPositions();
-        } finally {
-            lock.readLock().unlock();
-        }
+        return entityLifecycle.getEntitiesWithPositions();
     }
 
     // ===== Common Query Operations =====
 
-    /**
-     * Get the content associated with an entity.
-     *
-     * <p>Provides thread-safe access to entity content. The read lock ensures that the entity
-     * won't be removed or modified while retrieving its content, preventing null pointer exceptions or returning stale
-     * data.</p>
-     *
-     * <p><b>Concurrency consideration:</b> In a multi-threaded environment, an entity could be
-     * removed between checking its existence and retrieving its content. The read lock prevents this race
-     * condition.</p>
-     *
-     * @param entityId the ID of the entity
-     * @return the content associated with the entity, or null if not found
-     */
+    /** Content lookup by ID. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public Content getEntity(ID entityId) {
-        lock.readLock().lock();
-        try {
-            return entityManager.getEntityContent(entityId);
-        } finally {
-            lock.readLock().unlock();
-        }
+        return entityLifecycle.getEntity(entityId);
     }
 
+    /** Cached + read-locked bounds lookup. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public EntityBounds getEntityBounds(ID entityId) {
-        lock.readLock().lock();
-        try {
-            // Check cache first
-            var cachedBounds = entityCache.getBounds(entityId);
-            if (cachedBounds != null) {
-                return cachedBounds;
-            }
-
-            // Cache miss - get from entity manager
-            var bounds = entityManager.getEntityBounds(entityId);
-            if (bounds != null) {
-                // Update cache
-                var position = entityManager.getEntityPosition(entityId);
-                entityCache.put(entityId, position, bounds);
-            }
-            return bounds;
-        } finally {
-            lock.readLock().unlock();
-        }
+        return entityLifecycle.getEntityBounds(entityId);
     }
 
+    /** Cached + read-locked position lookup. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public Point3f getEntityPosition(ID entityId) {
-        lock.readLock().lock();
-        try {
-            // Check cache first
-            var cachedPosition = entityCache.getPosition(entityId);
-            if (cachedPosition != null) {
-                return cachedPosition;
-            }
-
-            // Cache miss - get from entity manager
-            var position = entityManager.getEntityPosition(entityId);
-            if (position != null) {
-                // Update cache
-                var bounds = entityManager.getEntityBounds(entityId);
-                entityCache.put(entityId, position, bounds);
-            }
-            return position;
-        } finally {
-            lock.readLock().unlock();
-        }
+        return entityLifecycle.getEntityPosition(entityId);
     }
 
+    /** Number of nodes the entity spans. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public int getEntitySpanCount(ID entityId) {
-        lock.readLock().lock();
-        try {
-            return entityManager.getEntitySpanCount(entityId);
-        } finally {
-            lock.readLock().unlock();
-        }
+        return entityLifecycle.getEntitySpanCount(entityId);
     }
 
     /**
@@ -940,234 +830,51 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
 
+    /** Auto-id insert (no bounds). RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public ID insert(Point3f position, byte level, Content content) {
-        lock.writeLock().lock();
-        try {
-            var entityId = entityManager.generateEntityId();
-            insert(entityId, position, level, content);
-            return entityId;
-        } finally {
-            lock.writeLock().unlock();
-        }
+        return entityLifecycle.insert(position, level, content);
     }
 
+    /** Explicit-id insert (no bounds). RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public void insert(ID entityId, Point3f position, byte level, Content content) {
-        lock.writeLock().lock();
-        try {
-            insert(entityId, position, level, content, null);
-        } finally {
-            lock.writeLock().unlock();
-        }
+        entityLifecycle.insert(entityId, position, level, content);
     }
 
+    /**
+     * Explicit-id insert with bounds — dispatches to spanning when both bounds and the spanning policy are present.
+     * RDR-008 P6: delegates to {@code EntityLifecycleManager}.
+     */
     @Override
     public void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds) {
-        lock.writeLock().lock();
-        try {
-            // Validate spatial constraints
-            validateSpatialConstraints(position);
-
-            // Create or update entity
-            entityManager.createOrUpdateEntity(entityId, content, position, bounds);
-
-            // If spanning is enabled and entity has bounds, check for spanning
-            if (spanningPolicy.isSpanningEnabled() && bounds != null) {
-                // Use advanced spanning logic
-                if (shouldSpanEntity(bounds, level)) {
-                    insertWithAdvancedSpanning(entityId, bounds, level);
-                } else {
-                    // Standard single-node insertion even with bounds
-                    insertAtPosition(entityId, position, level);
-                }
-            } else {
-                // Standard single-node insertion
-                insertAtPosition(entityId, position, level);
-            }
-            
-            // k-NN cache invalidation: increment version and invalidate affected cells
-            // Use level 15 for cache granularity (cell size = 64) to distinguish nearby queries
-            spatialVersion.incrementAndGet();
-            var spatialKey = calculateSpatialIndex(position, (byte) 15);
-            knnCache.invalidatePosition(spatialKey);
-        } finally {
-            lock.writeLock().unlock();
-        }
+        entityLifecycle.insert(entityId, position, level, content, bounds);
     }
 
     // ===== Common k-NN Search Implementation =====
 
-    /**
-     * Insert multiple entities at once with their data
-     *
-     * @param entities List of entity data to insert
-     */
+    /** Bulk insert with full {@link EntityData} records. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     public void insertAll(List<EntityData<ID, Content>> entities) {
-        if (entities == null || entities.isEmpty()) {
-            return;
-        }
-
-        // Use bulk mode if enough entities
-        if (entities.size() >= bulkConfig.getBatchSize()) {
-            enableBulkLoading();
-            try {
-                for (var data : entities) {
-                    if (data.bounds() != null) {
-                        insert(data.id(), data.position(), data.level(), data.content(), data.bounds());
-                    } else {
-                        insert(data.id(), data.position(), data.level(), data.content());
-                    }
-                }
-            } finally {
-                finalizeBulkLoading();
-            }
-        } else {
-            // Insert individually for small batches
-            for (var data : entities) {
-                if (data.bounds() != null) {
-                    insert(data.id(), data.position(), data.level(), data.content(), data.bounds());
-                } else {
-                    insert(data.id(), data.position(), data.level(), data.content());
-                }
-            }
-        }
+        entityLifecycle.insertAll(entities);
     }
 
+    /** Bulk position+content batch insert. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public List<ID> insertBatch(List<Point3f> positions, List<Content> contents, byte level) {
-        validateBatchInputs(positions, contents);
-        if (positions.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        var effectiveLevel = determineBatchInsertionLevel(positions, level);
-        var startTime = System.nanoTime();
-        var insertedIds = ObjectPools.<ID>borrowArrayList(positions.size());
-        try {
-
-            lock.writeLock().lock();
-            try {
-                // Check if we should use stack-based builder for this bulk operation
-                if (shouldUseStackBasedBuilder(positions.size())) {
-                    return performStackBasedBulkInsert(positions, contents, effectiveLevel);
-                }
-
-                // Enable bulk loading mode if configured
-                var wasInBulkMode = bulkLoadingMode;
-                if (bulkConfig.isDeferSubdivision() && !bulkLoadingMode) {
-                    enableBulkLoading();
-                }
-
-                // Preprocess entities with spatial optimization
-                var mortonEntities = preprocessBatchEntities(positions, contents, effectiveLevel);
-
-                // Insert entities using appropriate strategy
-                if (positions.size() > bulkConfig.getBatchSize()) {
-                    insertGroupedEntities(mortonEntities, effectiveLevel, insertedIds);
-                } else {
-                    insertDirectEntities(mortonEntities, level, insertedIds);
-                }
-
-                // Restore bulk mode state
-                if (!wasInBulkMode && bulkConfig.isDeferSubdivision()) {
-                    finalizeBulkLoading();
-                }
-
-            } finally {
-                lock.writeLock().unlock();
-            }
-
-            logBatchPerformance(positions.size(), startTime);
-            
-            // Trigger ghost updates after successful bulk insertion
-            triggerGhostUpdateAfterBulkInsert();
-            
-            // Return a copy to avoid returning pooled object
-            return new ArrayList<>(insertedIds);
-        } finally {
-            ObjectPools.returnArrayList(insertedIds);
-        }
+        return entityLifecycle.insertBatch(positions, contents, level);
     }
 
-    /**
-     * Perform parallel bulk insertion for large datasets
-     */
+    /** Parallel bulk insert. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     public ParallelBulkOperations.ParallelOperationResult<ID> insertBatchParallel(List<Point3f> positions,
                                                                                   List<Content> contents, byte level)
     throws InterruptedException {
-        return parallelOperations.insertBatchParallel(positions, contents, level);
+        return entityLifecycle.insertBatchParallel(positions, contents, level);
     }
 
+    /** Bulk insert with explicit bounds. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public List<ID> insertBatchWithSpanning(List<EntityBounds> bounds, List<Content> contents, byte level) {
-        if (bounds == null || contents == null) {
-            throw new IllegalArgumentException("Bounds and contents cannot be null");
-        }
-        if (bounds.size() != contents.size()) {
-            throw new IllegalArgumentException("Bounds and contents must have the same size");
-        }
-        if (bounds.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        var startTime = System.nanoTime();
-        List<ID> insertedIds = new ArrayList<>(bounds.size());
-
-        lock.writeLock().lock();
-        try {
-            // Enable bulk loading mode if configured
-            var wasInBulkMode = bulkLoadingMode;
-            if (bulkConfig.isDeferSubdivision() && !bulkLoadingMode) {
-                enableBulkLoading();
-            }
-
-            // Process each entity with bounds
-            for (int i = 0; i < bounds.size(); i++) {
-                var entityBounds = bounds.get(i);
-                var content = contents.get(i);
-
-                // Calculate center position
-                var center = new Point3f((entityBounds.getMinX() + entityBounds.getMaxX()) / 2,
-                                         (entityBounds.getMinY() + entityBounds.getMaxY()) / 2,
-                                         (entityBounds.getMinZ() + entityBounds.getMaxZ()) / 2);
-
-                // Generate ID and store entity
-                var entityId = entityManager.generateEntityId();
-                insertedIds.add(entityId);
-                entityManager.createOrUpdateEntity(entityId, content, center, entityBounds);
-
-                // Handle spanning if configured
-                var entitySize = Math.max(entityBounds.getMaxX() - entityBounds.getMinX(),
-                                          Math.max(entityBounds.getMaxY() - entityBounds.getMinY(),
-                                                   entityBounds.getMaxZ() - entityBounds.getMinZ()));
-                var nodeSize = getCellSizeAtLevel(level);
-                if (spanningPolicy.shouldSpan(entitySize, nodeSize)) {
-                    insertWithSpanning(entityId, entityBounds, level);
-                } else {
-                    insertAtPosition(entityId, center, level);
-                }
-            }
-
-            // Restore bulk mode state
-            if (!wasInBulkMode && bulkConfig.isDeferSubdivision()) {
-                finalizeBulkLoading();
-            }
-
-        } finally {
-            lock.writeLock().unlock();
-        }
-
-        var elapsedTime = System.nanoTime() - startTime;
-
-        // Log performance if significant batch
-        if (bounds.size() > 1000) {
-            double rate = bounds.size() * 1_000_000_000.0 / elapsedTime;
-            log.debug("Bulk inserted {} entities with spanning in {}ms ({} entities/sec)", bounds.size(),
-                      String.format("%.2f", elapsedTime / 1_000_000.0), String.format("%.0f", rate));
-        }
-
-        return insertedIds;
+        return entityLifecycle.insertBatchWithSpanning(bounds, contents, level);
     }
 
     /**
@@ -1236,31 +943,10 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
 
+    /** Point-precise + level-precise entity lookup. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public List<ID> lookup(Point3f position, byte level) {
-        validateSpatialConstraints(position);
-
-        lock.readLock().lock();
-        try {
-            var spatialIndex = calculateSpatialIndex(position, level);
-            var node = this.spatialIndex.get(spatialIndex);
-
-            if (node == null) {
-                return Collections.emptyList();
-            }
-
-            // If the node has been subdivided, look in child nodes
-            if (hasChildren(spatialIndex) || node.isEmpty()) {
-                var childLevel = (byte) (level + 1);
-                if (childLevel <= maxDepth) {
-                    return lookup(position, childLevel);
-                }
-            }
-
-            return new ArrayList<>(node.getEntityIds());
-        } finally {
-            lock.readLock().unlock();
-        }
+        return entityLifecycle.lookup(position, level);
     }
 
     public int nodeCount() {
@@ -1500,58 +1186,15 @@ implements SpatialIndex<Key, ID, Content> {
 
     // ===== Ray Intersection Implementation =====
 
-    /**
-     * Perform parallel batch removal
-     */
+    /** Parallel batch removal. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     public CompletableFuture<Integer> removeBatchParallel(List<ID> entityIds) {
-        return parallelOperations.removeBatchParallel(entityIds);
+        return entityLifecycle.removeBatchParallel(entityIds);
     }
 
+    /** Remove an entity by ID. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public boolean removeEntity(ID entityId) {
-        lock.writeLock().lock();
-        try {
-            // Get all locations where this entity appears
-            var locations = entityManager.getEntityLocations(entityId);
-
-            // Remove from entity storage
-            var removed = entityManager.removeEntity(entityId);
-            if (removed == null) {
-                return false;
-            }
-
-            // Invalidate cache
-            entityCache.remove(entityId);
-
-            if (!locations.isEmpty()) {
-                // Remove from each node
-                for (var spatialIndex : locations) {
-                    var node = getSpatialIndex().get(spatialIndex);
-                    if (node != null) {
-                        node.removeEntity(entityId);
-
-                        // Remove empty nodes
-                        cleanupEmptyNode(spatialIndex, node);
-                    }
-                }
-            }
-
-            // Check for auto-balancing after removal
-            checkAutoBalance();
-            
-            // k-NN cache invalidation: increment version and invalidate affected cells
-            // Use level 15 for cache granularity (cell size = 64) to distinguish nearby queries
-            spatialVersion.incrementAndGet();
-            var entityPosition = removed.getPosition();
-            if (entityPosition != null) {
-                var level15Key = calculateSpatialIndex(entityPosition, (byte) 15);
-                knnCache.invalidatePosition(level15Key);
-            }
-
-            return true;
-        } finally {
-            lock.writeLock().unlock();
-        }
+        return entityLifecycle.removeEntity(entityId);
     }
 
     /**
@@ -1721,97 +1364,19 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
 
-    /**
-     * Perform parallel batch updates
-     */
+    /** Parallel batch updates. RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     public CompletableFuture<List<ID>> updateBatchParallel(List<ID> entityIds, List<Point3f> newPositions, byte level) {
-        return parallelOperations.updateBatchParallel(entityIds, newPositions, level);
+        return entityLifecycle.updateBatchParallel(entityIds, newPositions, level);
     }
 
+    /**
+     * Update an entity's position. Preserves the P1 DSOC seam through {@code EntityLifecycleManager} (which reads
+     * the {@code dsoc} controller via {@code EntityLifecycleHostImpl} at each call). RDR-008 P6: delegates to
+     * {@code EntityLifecycleManager}.
+     */
     @Override
     public void updateEntity(ID entityId, Point3f newPosition, byte level) {
-        lock.writeLock().lock();
-        try {
-            validateSpatialConstraints(newPosition);
-            
-            // RDR-008 P1: DSOC may defer this move behind a still-valid temporal bounding volume.
-            if (dsoc != null && dsoc.tryDeferUpdate(entityId, newPosition)) {
-                return; // Skip normal update
-            }
-
-            // Get the old position to calculate movement delta
-            var oldPosition = entityManager.getEntityPosition(entityId);
-            if (oldPosition == null) {
-                throw new IllegalArgumentException("Entity not found: " + entityId);
-            }
-
-            // Calculate movement delta
-            var delta = new Vector3f();
-            delta.sub(newPosition, oldPosition);
-
-            // Update entity position
-            entityManager.updateEntityPosition(entityId, newPosition);
-
-            // Invalidate cache
-            entityCache.remove(entityId);
-
-            // Update collision shape position if present
-            var shape = entityManager.getEntityCollisionShape(entityId);
-            if (shape != null) {
-                shape.translate(delta);
-                // Update bounds from the translated collision shape
-                entityManager.setEntityCollisionShape(entityId, shape);
-            } else {
-                // Update entity bounds if no collision shape
-                var oldBounds = entityManager.getEntityBounds(entityId);
-                if (oldBounds != null) {
-                    // Translate the bounds
-                    var newMin = new Point3f(oldBounds.getMinX() + delta.x, oldBounds.getMinY() + delta.y,
-                                             oldBounds.getMinZ() + delta.z);
-                    var newMax = new Point3f(oldBounds.getMaxX() + delta.x, oldBounds.getMaxY() + delta.y,
-                                             oldBounds.getMaxZ() + delta.z);
-                    var newBounds = new EntityBounds(newMin, newMax);
-                    entityManager.setEntityBounds(entityId, newBounds);
-                }
-            }
-
-            // Remove from all current locations
-            var oldLocations = entityManager.getEntityLocations(entityId);
-            for (var spatialIndex : oldLocations) {
-                var node = getSpatialIndex().get(spatialIndex);
-                if (node != null) {
-                    node.removeEntity(entityId);
-
-                    // Remove empty nodes
-                    cleanupEmptyNode(spatialIndex, node);
-                }
-            }
-            entityManager.clearEntityLocations(entityId);
-
-            // Re-insert at new position
-            insertAtPosition(entityId, newPosition, level);
-            
-            // k-NN cache invalidation: increment version and invalidate affected cells
-            // Use level 15 for cache granularity (cell size = 64) to distinguish nearby queries
-            // Level 0 is too coarse (cell size = 2,097,152) and causes false cache hits
-            // The old position is already retrieved at line 2369, so we can use it directly
-            spatialVersion.incrementAndGet();
-            // Invalidate old position at level 15
-            if (oldPosition != null) {
-                var oldLevel15Key = calculateSpatialIndex(oldPosition, (byte) 15);
-                knnCache.invalidatePosition(oldLevel15Key);
-            }
-            // Invalidate new location at level 15
-            var newSpatialKey = calculateSpatialIndex(newPosition, (byte) 15);
-            knnCache.invalidatePosition(newSpatialKey);
-            
-            // Update visibility state if DSOC is enabled (RDR-008 P1).
-            if (dsoc != null) {
-                dsoc.markVisibleOnUpdate(entityId);
-            }
-        } finally {
-            lock.writeLock().unlock();
-        }
+        entityLifecycle.updateEntity(entityId, newPosition, level);
     }
 
     // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
@@ -2020,6 +1585,180 @@ implements SpatialIndex<Key, ID, Content> {
         @Override
         public EntityBounds getCachedEntityBounds(ID entityId) {
             return AbstractSpatialIndex.this.getCachedEntityBounds(entityId);
+        }
+    }
+
+    /**
+     * Façade implementation of the {@link com.hellblazer.luciferase.lucien.entity.EntityLifecycleGeometry} seam
+     * (RDR-008 P6): supplies {@code EntityLifecycleManager} the entity-lifecycle subclass-overridden hooks plus
+     * the cached entity accessors. Private inner class preserves the underlying methods' original visibility.
+     *
+     * <p>NOTE: this class duplicates signatures with sibling inner classes —
+     * {@code calculateSpatialIndex}, {@code getCellSizeAtLevel}, and {@code validateSpatialConstraints} are
+     * shared with {@link KnnGeometryImpl}. The entity-lifecycle-specific insertion hooks
+     * ({@code hasChildren}, {@code handleNodeSubdivision}, {@code onNodeRemoved}, {@code insertWithSpanning},
+     * {@code cleanupEmptyNode}) appear only here. Node creation is NOT on the {@link
+     * com.hellblazer.luciferase.lucien.entity.EntityLifecycleGeometry} interface — it reaches the facade through
+     * the {@link SpatialNodePool} factory captured at construction time ({@code this::createNode}, ctor),
+     * preserving the DSOC-aware {@link #createNode()} dispatch through the pool. Each cluster's sub-interface is
+     * intentionally independent (P3 refinement) and cannot share a base type without crossing package
+     * boundaries. Update sibling inner classes if any of these duplicated signatures changes — neither compiler
+     * nor IDE will warn of the asymmetry.
+     */
+    private final class EntityLifecycleGeometryImpl
+    implements com.hellblazer.luciferase.lucien.entity.EntityLifecycleGeometry<Key, ID, Content> {
+
+        @Override
+        public Key calculateSpatialIndex(Point3f position, byte level) {
+            return AbstractSpatialIndex.this.calculateSpatialIndex(position, level);
+        }
+
+        @Override
+        public float getCellSizeAtLevel(byte level) {
+            return AbstractSpatialIndex.this.getCellSizeAtLevel(level);
+        }
+
+        @Override
+        public void insertWithSpanning(ID entityId, EntityBounds bounds, byte level) {
+            AbstractSpatialIndex.this.insertWithSpanning(entityId, bounds, level);
+        }
+
+        @Override
+        public void validateSpatialConstraints(Point3f position) {
+            AbstractSpatialIndex.this.validateSpatialConstraints(position);
+        }
+
+        @Override
+        public boolean hasChildren(Key spatialIndex) {
+            return AbstractSpatialIndex.this.hasChildren(spatialIndex);
+        }
+
+        @Override
+        public void handleNodeSubdivision(Key spatialIndex, byte level, SpatialNodeImpl<ID> node) {
+            AbstractSpatialIndex.this.handleNodeSubdivision(spatialIndex, level, node);
+        }
+
+        @Override
+        public void onNodeRemoved(Key spatialIndex) {
+            AbstractSpatialIndex.this.onNodeRemoved(spatialIndex);
+        }
+
+        @Override
+        public void cleanupEmptyNode(Key spatialIndex, SpatialNodeImpl<ID> node) {
+            AbstractSpatialIndex.this.cleanupEmptyNode(spatialIndex, node);
+        }
+    }
+
+    /**
+     * Façade implementation of the {@link com.hellblazer.luciferase.lucien.entity.EntityLifecycleHost} seam
+     * (RDR-008 P6): exposes the facade-internal infrastructure {@code EntityLifecycleManager} needs (bulk
+     * config/processor/builder, parallel ops, node pool, deferred-subdivision manager, spanning policy, the DSOC
+     * controller for the P1 updateEntity seam, the ghost-update hook, the auto-balance hook). Private inner class
+     * preserves the underlying fields' original visibility. The accessors all return the latest reference at the
+     * time of the call so mutable facade state (bulkConfig, parallelOperations, treeBuilder, the dsoc volatile)
+     * is seen in real-time by the feature object.
+     */
+    private final class EntityLifecycleHostImpl
+    implements com.hellblazer.luciferase.lucien.entity.EntityLifecycleHost<Key, ID, Content> {
+
+        @Override
+        public int maxEntitiesPerNode() {
+            return AbstractSpatialIndex.this.maxEntitiesPerNode;
+        }
+
+        @Override
+        public byte maxDepth() {
+            return AbstractSpatialIndex.this.maxDepth;
+        }
+
+        @Override
+        public BulkOperationConfig bulkConfig() {
+            return AbstractSpatialIndex.this.bulkConfig;
+        }
+
+        @Override
+        public BulkOperationProcessor<Key, ID, Content> bulkProcessor() {
+            return AbstractSpatialIndex.this.bulkProcessor;
+        }
+
+        @Override
+        public DeferredSubdivisionManager<Key, ID> subdivisionManager() {
+            return AbstractSpatialIndex.this.subdivisionManager;
+        }
+
+        @Override
+        public SpatialNodePool<ID> nodePool() {
+            return AbstractSpatialIndex.this.nodePool;
+        }
+
+        @Override
+        public ParallelBulkOperations<Key, ID, Content> parallelOperations() {
+            return AbstractSpatialIndex.this.parallelOperations;
+        }
+
+        @Override
+        public StackBasedTreeBuilder<Key, ID, Content> treeBuilder() {
+            return AbstractSpatialIndex.this.treeBuilder;
+        }
+
+        @Override
+        public EntitySpanningPolicy spanningPolicy() {
+            return AbstractSpatialIndex.this.spanningPolicy;
+        }
+
+        @Override
+        public boolean bulkLoadingMode() {
+            return AbstractSpatialIndex.this.bulkLoadingMode;
+        }
+
+        @Override
+        public void setBulkLoadingMode(boolean value) {
+            AbstractSpatialIndex.this.bulkLoadingMode = value;
+        }
+
+        @Override
+        public java.util.Set<Long> deferredSubdivisionNodes() {
+            return AbstractSpatialIndex.this.deferredSubdivisionNodes;
+        }
+
+        @Override
+        public void enableBulkLoading() {
+            AbstractSpatialIndex.this.enableBulkLoading();
+        }
+
+        @Override
+        public void finalizeBulkLoading() {
+            AbstractSpatialIndex.this.finalizeBulkLoading();
+        }
+
+        @Override
+        public void configureTreeBuilder(StackBasedTreeBuilder.BuildConfig config) {
+            AbstractSpatialIndex.this.configureTreeBuilder(config);
+        }
+
+        @Override
+        public void triggerGhostUpdateAfterBulkInsert() {
+            AbstractSpatialIndex.this.triggerGhostUpdateAfterBulkInsert();
+        }
+
+        @Override
+        public void checkAutoBalance() {
+            AbstractSpatialIndex.this.checkAutoBalance();
+        }
+
+        @Override
+        public DsocController<Key, ID, Content> dsocController() {
+            return AbstractSpatialIndex.this.dsoc;
+        }
+
+        @Override
+        public void deferSubdivision(Key spatialIndex, SpatialNodeImpl<ID> node, int entityCount, byte level) {
+            AbstractSpatialIndex.this.subdivisionManager.deferSubdivision(spatialIndex, node, entityCount, level);
+        }
+
+        @Override
+        public AbstractSpatialIndex<Key, ID, Content> stackBuilderTarget() {
+            return AbstractSpatialIndex.this;
         }
     }
 
@@ -2362,141 +2101,18 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Insert entity at a single position (no spanning)
-     */
-    protected void insertAtPosition(ID entityId, Point3f position, byte level) {
-        var spatialIndex = calculateSpatialIndex(position, level);
-
-        // Get or create node directly - no need for ancestor nodes in SFC-based implementation
-        var node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> {
-            // spatialIndex key is already in the ConcurrentSkipListMap
-            return nodePool.acquire();
-        });
-
-        // If the node has been subdivided, we need to insert into the appropriate child
-        if (hasChildren(spatialIndex) && !node.isEmpty()) {
-            var childLevel = (byte) (level + 1);
-            if (childLevel <= maxDepth) {
-                insertAtPosition(entityId, position, childLevel);
-                return;
-            }
-        }
-
-        // Add entity to node
-        var shouldSplit = node.addEntity(entityId);
-
-        // Track entity location
-        entityManager.addEntityLocation(entityId, spatialIndex);
-
-        // Handle subdivision if needed
-        if (shouldSplit && level < maxDepth && !hasChildren(spatialIndex)) {
-            if (bulkLoadingMode) {
-                // Defer subdivision during bulk loading
-                subdivisionManager.deferSubdivision(spatialIndex, node, node.getEntityCount(), level);
-            } else {
-                // Immediate subdivision
-                handleNodeSubdivision(spatialIndex, level, node);
-            }
-        }
-
-        // Check for auto-balancing after insertion
-        checkAutoBalance();
-    }
-
-    /**
-     * Adaptive spanning implementation
-     */
-    protected void insertWithAdaptiveSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
-        // Adapt spanning strategy based on current system state
-        var currentNodeCount = spatialIndex.size();
-        var entityCount = entityManager.getEntityCount();
-
-        if (entityCount > 0) {
-            var avgNodesPerEntity = (float) currentNodeCount / entityCount;
-
-            if (avgNodesPerEntity > 100) {
-                // High memory usage - use conservative spanning
-                insertWithMemoryEfficientSpanning(entityId, bounds, level, maxSpanNodes / 2);
-            } else if (avgNodesPerEntity < 10) {
-                // Low memory usage - use aggressive spanning
-                insertWithPerformanceOptimizedSpanning(entityId, bounds, level, maxSpanNodes);
-            } else {
-                // Balanced spanning
-                insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
-            }
-        } else {
-            // First entity - use balanced approach
-            insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
-        }
-    }
-
-    /**
-     * Insert entity with advanced spanning strategies
-     */
-    protected void insertWithAdvancedSpanning(ID entityId, EntityBounds bounds, byte level) {
-        // Calculate entity size for policy decisions
-        var entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(), bounds.getMaxY() - bounds.getMinY()),
-                                  bounds.getMaxZ() - bounds.getMinZ());
-        var nodeSize = getCellSizeAtLevel(level);
-
-        // Calculate maximum span nodes based on policy
-        var maxSpanNodes = spanningPolicy.calculateMaxSpanNodes(entitySize, nodeSize, spatialIndex.size());
-
-        // Apply spanning optimization strategy
-        switch (spanningPolicy.getOptimization()) {
-            case MEMORY_EFFICIENT -> insertWithMemoryEfficientSpanning(entityId, bounds, level, maxSpanNodes);
-            case PERFORMANCE_FOCUSED -> insertWithPerformanceOptimizedSpanning(entityId, bounds, level, maxSpanNodes);
-            case ADAPTIVE -> insertWithAdaptiveSpanning(entityId, bounds, level, maxSpanNodes);
-            default -> insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
-        }
-    }
-
-    /**
-     * Balanced spanning implementation
-     */
-    protected void insertWithBalancedSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
-        // Use standard spanning implementation
-        insertWithSpanning(entityId, bounds, level);
-    }
-
-    /**
-     * Memory-efficient spanning implementation
-     */
-    protected void insertWithMemoryEfficientSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
-        // Use conservative spanning to minimize memory usage
-        var center = bounds.getCenter();
-
-        // Start with center node
-        insertAtPosition(entityId, center, level);
-
-        // Only span to immediately adjacent nodes if entity is very large
-        var entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(), bounds.getMaxY() - bounds.getMinY()),
-                                  bounds.getMaxZ() - bounds.getMinZ());
-        var nodeSize = getCellSizeAtLevel(level);
-
-        if (entitySize > nodeSize * 2.0f && maxSpanNodes > 1) {
-            // Delegate to subclass for specific spanning implementation
-            insertWithSpanning(entityId, bounds, level);
-        }
-    }
-
-    /**
-     * Performance-optimized spanning implementation
-     */
-    protected void insertWithPerformanceOptimizedSpanning(ID entityId, EntityBounds bounds, byte level,
-                                                          int maxSpanNodes) {
-        // Use aggressive spanning for better query performance
-        insertWithSpanning(entityId, bounds, level);
-    }
-
-    /**
-     * Hook for subclasses to handle entity spanning
+     * Hook for subclasses to handle entity spanning. RDR-008 P6: the surrounding spanning-dispatch logic
+     * (insertWithAdaptiveSpanning/AdvancedSpanning/BalancedSpanning/MemoryEfficientSpanning/PerformanceOptimizedSpanning)
+     * moved into {@code EntityLifecycleManager}; this protected method is kept as the subclass extension point —
+     * all four concrete spatial indices (Octree, Tetree, Prism, SFCArrayIndex) override it. The default
+     * implementation falls back to a single-node insertion via the entity manager's current position; the feature
+     * object reaches it through {@code EntityLifecycleGeometryImpl.insertWithSpanning} → virtual dispatch.
      */
     protected void insertWithSpanning(ID entityId, EntityBounds bounds, byte level) {
         // Default: single node insertion. Subclasses can override for spanning
         var position = entityManager.getEntityPosition(entityId);
         if (position != null) {
-            insertAtPosition(entityId, position, level);
+            entityLifecycle.insertAtPosition(entityId, position, level);
         }
     }
 
@@ -2557,25 +2173,7 @@ implements SpatialIndex<Key, ID, Content> {
     protected abstract boolean shouldContinueKNNSearch(Key nodeIndex, Point3f queryPoint,
                                                        PriorityQueue<EntityDistance<ID>> candidates);
 
-    /**
-     * Check if an entity should span multiple nodes using advanced policies
-     */
-    protected boolean shouldSpanEntity(EntityBounds bounds, byte level) {
-        if (bounds == null || !spanningPolicy.isSpanningEnabled()) {
-            return false;
-        }
-
-        // Calculate entity size
-        var entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(), bounds.getMaxY() - bounds.getMinY()),
-                                  bounds.getMaxZ() - bounds.getMinZ());
-
-        // Get node size at this level
-        var nodeSize = getCellSizeAtLevel(level);
-
-        // Use advanced spanning logic
-        return spanningPolicy.shouldSpanAdvanced(entitySize, nodeSize, spatialIndex.size(),
-                                                 entityManager.getEntityCount(), level);
-    }
+    // shouldSpanEntity moved into EntityLifecycleManager (RDR-008 P6). No subclass overrode it.
 
     /**
      * Perform spatial range query with optimization
@@ -2639,35 +2237,8 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     // ===== Bulk Operations Implementation =====
-
     // ===== Parallel Operations API =====
-
-    /**
-     * Determine the effective level for batch insertion
-     */
-    private byte determineBatchInsertionLevel(List<Point3f> positions, byte level) {
-        if (!bulkConfig.isUseDynamicLevelSelection()) {
-            return level;
-        }
-
-        var optimalLevel = LevelSelector.selectOptimalLevel(positions, maxEntitiesPerNode);
-        if (optimalLevel != level) {
-            log.debug("Dynamic level selection: changing from level {} to {} for {} entities", level, optimalLevel,
-                      positions.size());
-        }
-        return optimalLevel;
-    }
-
-    /**
-     * Determine if Morton sorting should be used
-     */
-    private boolean determineMortonSortStrategy(List<Point3f> positions, byte level) {
-        var shouldUseMortonSort = bulkConfig.isPreSortByMorton();
-        if (bulkConfig.isUseDynamicLevelSelection()) {
-            shouldUseMortonSort = shouldUseMortonSort && LevelSelector.shouldUseMortonSort(positions, level);
-        }
-        return shouldUseMortonSort;
-    }
+    // RDR-008 P6: determineBatchInsertionLevel + determineMortonSortStrategy moved into EntityLifecycleManager.
 
     // ===== Memory Pre-allocation Methods =====
 
@@ -2701,98 +2272,8 @@ implements SpatialIndex<Key, ID, Content> {
         return position;
     }
 
-    /**
-     * Insert entities directly without grouping
-     */
-    private void insertDirectEntities(List<BulkOperationProcessor.SfcEntity<Key, Content>> mortonEntities, byte level,
-                                      List<ID> insertedIds) {
-        for (var entity : mortonEntities) {
-            var entityId = entityManager.generateEntityId();
-            insertedIds.add(entityId);
-            entityManager.createOrUpdateEntity(entityId, entity.content, entity.position, null);
-            insertAtPosition(entityId, entity.position, level);
-        }
-    }
-
-    // K-NN Search Helper Methods
-
-    /**
-     * Insert entities grouped by spatial node
-     */
-    private void insertGroupedEntities(List<BulkOperationProcessor.SfcEntity<Key, Content>> mortonEntities, byte level,
-                                       List<ID> insertedIds) {
-        var grouped = bulkProcessor.groupByNode(mortonEntities, level);
-
-        // Pre-generate IDs for better performance
-        var idsNeeded = mortonEntities.size();
-        var preGeneratedIds = ObjectPools.<ID>borrowArrayList(idsNeeded);
-        try {
-            for (int i = 0; i < idsNeeded; i++) {
-                preGeneratedIds.add(entityManager.generateEntityId());
-            }
-
-            int idIndex = 0;
-            for (var entry : grouped.getGroups().entrySet()) {
-                for (var entity : entry.getValue()) {
-                    var entityId = preGeneratedIds.get(idIndex++);
-                    insertedIds.add(entityId);
-                    entityManager.createOrUpdateEntity(entityId, entity.content, entity.position, null);
-                    insertAtPosition(entityId, entity.position, level);
-                }
-            }
-        } finally {
-            ObjectPools.returnArrayList(preGeneratedIds);
-        }
-    }
-
-    /**
-     * Log batch insertion performance metrics
-     */
-    private void logBatchPerformance(int batchSize, long startTime) {
-        if (batchSize > 1000) {
-            var elapsedTime = System.nanoTime() - startTime;
-            var rate = batchSize * 1_000_000_000.0 / elapsedTime;
-            log.debug("Bulk inserted {} entities in {}ms ({} entities/sec)", batchSize,
-                      String.format("%.2f", elapsedTime / 1_000_000.0), String.format("%.0f", rate));
-        }
-    }
-
-    /**
-     * Perform bulk insert using stack-based builder
-     */
-    private List<ID> performStackBasedBulkInsert(List<Point3f> positions, List<Content> contents, byte level) {
-        configureTreeBuilder(bulkConfig.getStackBuilderConfig());
-
-        var buildResult = treeBuilder.buildTree(this, positions, contents, level);
-
-        log.debug("Stack-based bulk insertion completed: {} entities in {}ms, {} nodes created",
-                  buildResult.entitiesProcessed, buildResult.timeTaken, buildResult.nodesCreated);
-
-        if (buildResult.insertedIds.isEmpty() && buildResult.entitiesProcessed > 0) {
-            log.warn("StackBasedTreeBuilder was configured not to track IDs but caller expects ID list. "
-                     + "This can cause memory issues for large datasets. Consider using entityCount() instead of tracking individual IDs.");
-            return Collections.emptyList();
-        }
-        return buildResult.insertedIds;
-    }
-
-    /**
-     * Preprocess batch entities with spatial optimization
-     */
-    private List<BulkOperationProcessor.SfcEntity<Key, Content>> preprocessBatchEntities(List<Point3f> positions,
-                                                                                         List<Content> contents,
-                                                                                         byte level) {
-
-        var useParallel = bulkConfig.isEnableParallel() && positions.size() >= bulkConfig.getParallelThreshold();
-        var shouldUseMortonSort = determineMortonSortStrategy(positions, level);
-
-        if (useParallel) {
-            return bulkProcessor.preprocessBatchParallel(positions, contents, level, shouldUseMortonSort,
-                                                         bulkConfig.getParallelThreshold());
-        } else {
-            return bulkProcessor.preprocessBatch(positions, contents, level, shouldUseMortonSort);
-        }
-    }
+    // RDR-008 P6: insertDirectEntities, insertGroupedEntities, logBatchPerformance, performStackBasedBulkInsert,
+    // preprocessBatchEntities all moved into EntityLifecycleManager. K-NN search helpers continue below.
 
     /**
      * Process nodes in breadth-first order
@@ -2806,12 +2287,7 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
 
-    /**
-     * Check if stack-based builder should be used
-     */
-    private boolean shouldUseStackBasedBuilder(int batchSize) {
-        return bulkConfig.isUseStackBasedBuilder() && batchSize >= bulkConfig.getStackBuilderThreshold();
-    }
+    // RDR-008 P6: shouldUseStackBasedBuilder moved into EntityLifecycleManager.
 
     /**
      * Traverse a single node and its children recursively
@@ -2895,17 +2371,7 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
 
-    /**
-     * Validate batch insertion inputs
-     */
-    private void validateBatchInputs(List<Point3f> positions, List<Content> contents) {
-        if (positions == null || contents == null) {
-            throw new IllegalArgumentException("Positions and contents cannot be null");
-        }
-        if (positions.size() != contents.size()) {
-            throw new IllegalArgumentException("Positions and contents must have the same size");
-        }
-    }
+    // RDR-008 P6: validateBatchInputs moved into EntityLifecycleManager.
 
     /**
      * Memory usage statistics

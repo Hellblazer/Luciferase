@@ -48,6 +48,15 @@ import java.util.concurrent.locks.ReadWriteLock;
  * objects); this holder is an identity aggregate over them, not a value object — it deliberately does not override
  * {@code equals}/{@code hashCode}.
  *
+ * <p><b>P6 (RDR-008) lockingStrategy migration.</b> The fine-grained locking strategy lives here too (RDR-008 P3
+ * substantive-critic Significant#1, discharged at P6). It is the only nucleus field that is <i>mutable</i>:
+ * {@link AbstractSpatialIndex#configureFineGrainedLocking} replaces the reference at runtime (the
+ * conservative/high-concurrency presets and any caller-provided {@code LockingConfig}). The field is therefore
+ * {@code volatile} so concurrent readers (the k-NN cluster's {@code findCollisionsFineGrained}, the collision
+ * cluster's same-named entry) see a coherent reference, mirroring the pre-extraction façade volatile-supplier
+ * pattern. {@code KnnSearcher} and {@code CollisionEngine} consume {@link #lockingStrategy()} directly; the
+ * pre-P6 {@code Supplier<FineGrainedLockingStrategy>} constructor argument is gone.
+ *
  * @param <Key>     the spatial key type
  * @param <ID>      the entity identifier type
  * @param <Content> the entity content type
@@ -58,23 +67,31 @@ public final class SpatialIndexCore<Key extends SpatialKey<Key>, ID extends Enti
     private final ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>> spatialIndex;
     private final ReadWriteLock                                    lock;
     private final AtomicLong                                       spatialVersion;
-    private final KNNCache<Key, ID>                               knnCache;
-    private final EntityManager<Key, ID, Content>                 entityManager;
-    private final EntityCache<ID>                                 entityCache;
+    private final KNNCache<Key, ID>                                knnCache;
+    private final EntityManager<Key, ID, Content>                  entityManager;
+    private final EntityCache<ID>                                  entityCache;
+    // volatile: configureFineGrainedLocking replaces this reference; concurrent k-NN / collision callers read it
+    // outside the read-write lock (the strategy itself owns its own per-node locks), so the publication must be
+    // safe. Same publication contract as the pre-P6 façade volatile field + Supplier seam (RDR-008 P3
+    // substantive-critic Significant#1, discharged at P6 by relocating the field here).
+    private volatile FineGrainedLockingStrategy<ID, Content>       lockingStrategy;
 
     /**
-     * Wrap the six nucleus collaborators. All arguments are required; the references are shared with the owning
-     * {@link AbstractSpatialIndex} façade and must not be {@code null}.
+     * Wrap the seven nucleus collaborators (six immutable references + the mutable fine-grained locking strategy).
+     * All arguments are required; the references are shared with the owning {@link AbstractSpatialIndex} façade and
+     * must not be {@code null}.
      */
     public SpatialIndexCore(ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>> spatialIndex, ReadWriteLock lock,
                             AtomicLong spatialVersion, KNNCache<Key, ID> knnCache,
-                            EntityManager<Key, ID, Content> entityManager, EntityCache<ID> entityCache) {
+                            EntityManager<Key, ID, Content> entityManager, EntityCache<ID> entityCache,
+                            FineGrainedLockingStrategy<ID, Content> lockingStrategy) {
         this.spatialIndex = Objects.requireNonNull(spatialIndex, "spatialIndex");
         this.lock = Objects.requireNonNull(lock, "lock");
         this.spatialVersion = Objects.requireNonNull(spatialVersion, "spatialVersion");
         this.knnCache = Objects.requireNonNull(knnCache, "knnCache");
         this.entityManager = Objects.requireNonNull(entityManager, "entityManager");
         this.entityCache = Objects.requireNonNull(entityCache, "entityCache");
+        this.lockingStrategy = Objects.requireNonNull(lockingStrategy, "lockingStrategy");
     }
 
     /** The sorted spatial index: spatial key to the node holding the entity IDs at that key. */
@@ -105,5 +122,24 @@ public final class SpatialIndexCore<Key extends SpatialKey<Key>, ID extends Enti
     /** The entity data cache used to reduce repeated entity lookups. */
     public EntityCache<ID> entityCache() {
         return entityCache;
+    }
+
+    /**
+     * The current fine-grained locking strategy. {@code volatile}-read: callers that hold this reference past the
+     * single read point may observe stale state if {@link #setLockingStrategy} ran concurrently — re-read at each
+     * use point if that matters (the k-NN and collision feature objects re-read at the start of every fine-grained
+     * call, matching the pre-extraction façade idiom).
+     */
+    public FineGrainedLockingStrategy<ID, Content> lockingStrategy() {
+        return lockingStrategy;
+    }
+
+    /**
+     * Replace the fine-grained locking strategy. Called by {@code AbstractSpatialIndex.configureFineGrainedLocking}
+     * under the façade's write lock so the replacement is sequenced against pending mutations; the volatile write
+     * publishes the new reference to subsequent volatile reads from any thread.
+     */
+    public void setLockingStrategy(FineGrainedLockingStrategy<ID, Content> lockingStrategy) {
+        this.lockingStrategy = Objects.requireNonNull(lockingStrategy, "lockingStrategy");
     }
 }
