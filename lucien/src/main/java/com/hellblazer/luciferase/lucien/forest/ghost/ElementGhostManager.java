@@ -17,8 +17,8 @@
 
 package com.hellblazer.luciferase.lucien.forest.ghost;
 
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
-import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector;
 import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector.NeighborInfo;
@@ -47,7 +47,7 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
     
     private static final Logger log = LoggerFactory.getLogger(ElementGhostManager.class);
     
-    private final AbstractSpatialIndex<Key, ID, Content> spatialIndex;
+    private final SpatialIndex<Key, ID, Content> spatialIndex;
     private final NeighborDetector<Key> neighborDetector;
     private final GhostLayer<Key, ID, Content> ghostLayer;
     private final GhostAlgorithm ghostAlgorithm;
@@ -74,7 +74,7 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
      * @param neighborDetector the neighbor detector for this index type
      * @param ghostType the type of ghosts to create
      */
-    public ElementGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
+    public ElementGhostManager(SpatialIndex<Key, ID, Content> spatialIndex,
                               NeighborDetector<Key> neighborDetector,
                               GhostType ghostType) {
         this(spatialIndex, neighborDetector, ghostType, GhostAlgorithm.CONSERVATIVE, null, 0L);
@@ -89,7 +89,7 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
      * @param ghostExchange ghost exchange for remote ghost data fetching (null for local-only operation)
      * @param treeId tree identifier for distributed ghost requests
      */
-    public ElementGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
+    public ElementGhostManager(SpatialIndex<Key, ID, Content> spatialIndex,
                               NeighborDetector<Key> neighborDetector,
                               GhostType ghostType,
                               GhostExchange<Key, ID, Content> ghostExchange,
@@ -105,7 +105,7 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
      * @param ghostType the type of ghosts to create
      * @param ghostAlgorithm the ghost creation algorithm to use
      */
-    public ElementGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
+    public ElementGhostManager(SpatialIndex<Key, ID, Content> spatialIndex,
                               NeighborDetector<Key> neighborDetector,
                               GhostType ghostType,
                               GhostAlgorithm ghostAlgorithm) {
@@ -122,7 +122,7 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
      * @param ghostExchange ghost exchange for remote ghost data fetching (null for local-only operation)
      * @param treeId tree identifier for distributed ghost requests
      */
-    public ElementGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
+    public ElementGhostManager(SpatialIndex<Key, ID, Content> spatialIndex,
                               NeighborDetector<Key> neighborDetector,
                               GhostType ghostType,
                               GhostAlgorithm ghostAlgorithm,

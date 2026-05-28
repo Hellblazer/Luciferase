@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
-import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.balancing.fault.GhostSyncCallback;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector;
@@ -53,7 +53,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
 
     private static final Logger log = LoggerFactory.getLogger(DistributedGhostManager.class);
 
-    private final AbstractSpatialIndex<Key, ID, Content> spatialIndex;
+    private final SpatialIndex<Key, ID, Content> spatialIndex;
     private final GhostChannel<Key, ID, Content> ghostChannel;
     private final GhostBoundaryDetector<Key, ID, Content> localGhostManager;
 
@@ -80,7 +80,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
      * @param ghostChannel the ghost communication channel
      * @param localGhostManager the local ghost manager
      */
-    public DistributedGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
+    public DistributedGhostManager(SpatialIndex<Key, ID, Content> spatialIndex,
                                   GhostChannel<Key, ID, Content> ghostChannel,
                                   GhostBoundaryDetector<Key, ID, Content> localGhostManager) {
         this.spatialIndex = Objects.requireNonNull(spatialIndex);
