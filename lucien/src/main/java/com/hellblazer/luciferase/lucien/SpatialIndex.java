@@ -236,6 +236,26 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
     EntityStats getStats();
 
     /**
+     * All spatial keys currently in the index. Used by the ghost-boundary subsystem to iterate over local
+     * elements. RDR-008 P2 follow-up (bead Luciferase-703) — hoisted onto the public interface so
+     * {@link com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector} and
+     * {@link com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager} can speak this interface
+     * instead of the concrete {@code AbstractSpatialIndex}.
+     *
+     * @return set of all spatial keys (defensive copy — callers may mutate)
+     */
+    java.util.Set<Key> getSpatialKeys();
+
+    /**
+     * Whether the index currently contains the given spatial key. Used by the ghost-boundary subsystem to test
+     * element existence without materializing the full key set. RDR-008 P2 follow-up (bead Luciferase-703).
+     *
+     * @param key the spatial key to check
+     * @return true if the key is in the index
+     */
+    boolean containsSpatialKey(Key key);
+
+    /**
      * Check if a node exists at the given Morton index
      *
      * @param sfcIndex the sfc index to check

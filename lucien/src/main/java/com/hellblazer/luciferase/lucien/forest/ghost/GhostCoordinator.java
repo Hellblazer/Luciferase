@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialIndexCore;
 import com.hellblazer.luciferase.lucien.cache.KnnProvider;
 import com.hellblazer.luciferase.lucien.SpatialKey;
@@ -45,10 +46,12 @@ import java.util.Objects;
  * arrive via {@link SpatialIndexCore}; the one façade query the ghost cluster needs ({@code kNearestNeighbors},
  * extracted in P3) is reached through the {@link KnnProvider} sub-interface (RDR-008 P3 sub-interface split).
  *
- * <p><b>Concrete-façade back-reference.</b> {@code GhostBoundaryDetector} and {@code DistributedGhostManager} both
- * take the concrete {@code AbstractSpatialIndex} in their constructors, so the coordinator holds a façade reference
- * solely to pass to them. That's an honest deviation from the otherwise-clean feature-object decoupling, tracked as a
- * follow-up (interface-inversion of those collaborators is separable work into {@code forest.ghost}/{@code Forest}).
+ * <p><b>Façade back-reference.</b> {@code GhostBoundaryDetector} and {@code DistributedGhostManager} require a
+ * reference to the owning spatial index for {@code getSpatialKeys} / {@code containsSpatialKey} lookups, so the
+ * coordinator carries one to pass through. RDR-008 P2 follow-up (bead Luciferase-703) narrowed both collaborators
+ * + this back-reference from the concrete {@code AbstractSpatialIndex} to the public {@link SpatialIndex}
+ * interface — retiring the original P2 "concrete-façade back-reference concession". The reference still exists
+ * (the detector + manager need the spatial-index instance) but no longer leaks the god-class type.
  *
  * @param <Key>     the spatial key type
  * @param <ID>      the entity identifier type
@@ -59,9 +62,9 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
 
     private static final Logger log = LoggerFactory.getLogger(GhostCoordinator.class);
 
-    private final SpatialIndexCore<Key, ID, Content>     core;
-    private final KnnProvider<Key, ID>                   knnProvider;
-    private final AbstractSpatialIndex<Key, ID, Content> facade;
+    private final SpatialIndexCore<Key, ID, Content> core;
+    private final KnnProvider<Key, ID>               knnProvider;
+    private final SpatialIndex<Key, ID, Content>     facade;
 
     private GhostType                                            ghostType        = GhostType.NONE;
     private GhostAlgorithm                                       ghostAlgorithm   = GhostAlgorithm.CONSERVATIVE;
@@ -75,7 +78,7 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
      * {@link #setNeighborDetector} during their own initialization.
      */
     public GhostCoordinator(SpatialIndexCore<Key, ID, Content> core, KnnProvider<Key, ID> knnProvider,
-                            AbstractSpatialIndex<Key, ID, Content> facade) {
+                            SpatialIndex<Key, ID, Content> facade) {
         this.core = core;
         this.knnProvider = knnProvider;
         this.facade = facade;

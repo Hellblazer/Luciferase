@@ -17,8 +17,8 @@
 
 package com.hellblazer.luciferase.lucien.forest.ghost;
 
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
-import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
 import com.hellblazer.luciferase.lucien.entity.Entity;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
@@ -70,7 +70,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     // Element-Level Detection (from ElementGhostManager)
     // ========================================
 
-    private final AbstractSpatialIndex<Key, ID, Content> spatialIndex;
+    private final SpatialIndex<Key, ID, Content> spatialIndex;
     private final NeighborDetector<Key> neighborDetector;
     private final GhostLayer<Key, ID, Content> ghostLayer;
     private final GhostAlgorithm ghostAlgorithm;
@@ -204,7 +204,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
      * @param ghostType the type of ghosts to create
      * @param ghostAlgorithm the ghost creation algorithm
      */
-    public GhostBoundaryDetector(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
+    public GhostBoundaryDetector(SpatialIndex<Key, ID, Content> spatialIndex,
                                  NeighborDetector<Key> neighborDetector,
                                  GhostType ghostType,
                                  GhostAlgorithm ghostAlgorithm) {
@@ -232,7 +232,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
      * @param treeId tree identifier for distributed ghost requests
      * @param defaultGhostZoneWidth default ghost zone width for forest mode
      */
-    public GhostBoundaryDetector(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
+    public GhostBoundaryDetector(SpatialIndex<Key, ID, Content> spatialIndex,
                                  NeighborDetector<Key> neighborDetector,
                                  GhostType ghostType,
                                  GhostAlgorithm ghostAlgorithm,
