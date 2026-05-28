@@ -53,6 +53,12 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
 
     private static final Logger log = LoggerFactory.getLogger(DistributedGhostManager.class);
 
+    // Reserved: SpatialIndex back-reference retained for prospective incremental-sync paths (per-key existence
+    // checks during distributed reconciliation). Currently unused by any method on this class — the null-check
+    // in the constructor still serves as a contract guard. RDR-008 P2 follow-up (Luciferase-703) narrowed the
+    // type from AbstractSpatialIndex to SpatialIndex without removing the field, on the rationale that an
+    // upcoming distributed-ghost-sync arc will need it; flagged in code review and intentionally retained.
+    @SuppressWarnings("unused")
     private final SpatialIndex<Key, ID, Content> spatialIndex;
     private final GhostChannel<Key, ID, Content> ghostChannel;
     private final GhostBoundaryDetector<Key, ID, Content> localGhostManager;
