@@ -53,7 +53,7 @@ import java.util.stream.Collectors;
  * public DSOC API and three integration seams (frustum-cull entry, entity-update visibility/TBV, occlusion-aware
  * node creation) to it. Shared storage and concurrency come from {@link SpatialIndexCore}; the few façade operations
  * the cull still needs (frustum traversal order, the subclass frustum-node test, node bounds, cached entity position,
- * and the standard non-DSOC cull fallback) arrive through {@link DsocCallback}.
+ * and the standard non-DSOC cull fallback) arrive through {@link SpatialGeometry}.
  *
  * @param <Key>     the spatial key type
  * @param <ID>      the entity identifier type

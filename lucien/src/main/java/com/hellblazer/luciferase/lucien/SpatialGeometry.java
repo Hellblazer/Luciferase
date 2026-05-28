@@ -62,4 +62,9 @@ public interface SpatialGeometry<Key extends SpatialKey<Key>, ID extends EntityI
 
     /** The standard (non-DSOC) frustum cull — the fallback when DSOC is skipped or its Z-buffer is inactive. */
     List<FrustumIntersection<ID, Content>> frustumCullVisibleStandard(Frustum3D frustum, Point3f cameraPosition);
+
+    // ---- k-nearest-neighbor query (consumed by GhostCoordinator; P3 will re-home the provider) -------------------
+
+    /** k-nearest entities to {@code queryPoint}, optionally bounded by {@code maxDistance}. */
+    List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance);
 }
