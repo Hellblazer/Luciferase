@@ -45,7 +45,73 @@ A published, peer-reviewed, scale-validated fix exists: **Knapp/Holke/Spenke/Bur
 
 ### Cross-citation map (post-synthesis)
 
-The 28 foundation papers form a citation graph with **Knapp 2026 (1.12.7) as the hub**. Bey 1992 (Computing 55, BibTeX [4] in Knapp, NOT separately indexed in this collection) → Burstedde+Holke 2016 (`1.12.8`) → Holke 2018 PhD (`1.12.9`) → Knapp 2026 (`1.12.7`) → Holke+Knapp+Burstedde 2019 (`1.14.6`) is the **load-bearing algorithmic lineage**. The 28-paper synthesis (T3 `research-pyramid-sfc-foundation-cross-link-2026-05-28` + `-part2`) created 46 catalog cross-links grounded in actual paper text. Six topic clusters were identified: (A) Tetrahedral SFC Theory — hub 1.12.8; (B) Tetrahedral Refinement Primitives — hub 1.12.12; (C) Octree/Forest-of-Octrees Parallel — hub 1.12.10; (D) Ghost Layer & Distributed AMR — hub 1.14.6; (E) SFC Breadth Context — hub 1.12.17; (F) Adjacent/Specialized.
+The 28 foundation papers form a citation graph with **Knapp 2026 (1.12.7) as the hub**. Bey 1992 (Computing 55, BibTeX [4] in Knapp, NOT separately indexed in this collection) → Burstedde+Holke 2016 (`1.12.8`) → Holke 2018 PhD (`1.12.9`) → Knapp 2026 (`1.12.7`) → Holke+Knapp+Burstedde 2019 (`1.14.6`) is the **load-bearing algorithmic lineage**. The 28-paper synthesis (T3 `research-pyramid-sfc-foundation-cross-link-2026-05-28` + `-part2`) created 46 catalog cross-links grounded in actual paper text. Six topic clusters were identified.
+
+#### Topic clusters (with anchor claims)
+
+**Cluster A — Tetrahedral SFC Theory** (5 papers, hub `1.12.8`):
+
+| Tumbler | Anchor claim |
+|---|---|
+| 1.12.7 Knapp 2026 | 6D Morton embedding for pyramids; O(1) parent/child/face-neighbor with `min_tet_level` |
+| 1.12.8 Burstedde+Holke 2016 | TM-index: bitwise interleave (z,y,x,b); types 0-5; uniqueness proven |
+| 1.12.9 Holke 2018 PhD | Theorem 16 (TM-index bijection), Prop 4.17 (uniqueness) |
+| 1.12.18 Tet Morton ARM | Independent tet Morton index validation |
+| 1.12.19 Tet SFC bitwise interleaving | Same primitive, alternative derivation |
+
+**Cluster B — Tetrahedral Refinement Primitives** (9 papers, hub `1.12.12` Bey 1995): `1.12.12` Bey 1995, `1.12.29` Hebert 1994, `1.12.14`, `1.12.15` Liu-Joe, `1.12.16` Korotov, `1.12.30` Freudenthal, `1.12.31` bisection, `1.12.32` red congruent, `1.12.33` cubic tet refinement.
+
+**Cluster C — Octree / Forest-of-Octrees Parallel Algorithms** (5 papers, hub `1.12.10` p4est): `1.12.10` p4est, `1.12.11` t8code v1.0, `1.12.34` Recursive Forests, `1.12.35` bottom-up 2:1 balance, `1.12.36` low-cost 2:1 balance.
+
+**Cluster D — Ghost Layer & Distributed AMR** (2 papers):
+
+| Tumbler | Anchor claim |
+|---|---|
+| 1.14.6 Holke+Knapp+Burstedde 2019 | First ghost algorithm for hybrid forests (tet+hex+pyramid); supersedes 1.12.34 for hybrid case |
+| 1.12.26 Coarse mesh partitioning | Pre-step to ghost; cites p4est |
+
+**Cluster E — SFC Breadth Context** (5 papers, hub `1.12.17`):
+
+| Tumbler | Anchor claim |
+|---|---|
+| 1.12.17 | Constant-time neighbor finding hierarchical tet |
+| 1.12.23 | Pointerless hierarchical simplicial meshes — informs KnnSearcher |
+| 1.12.24 | Bounds on Morton-type SFC discontinuities |
+| 1.12.25 | Sixteen SFCs for d-dim cubes and simplices |
+| 1.12.28 | Parallel tet mesh generation at scale |
+
+**Cluster F — Adjacent / Specialized** (3 papers): `1.12.20` AMR textbook, `1.12.21` Omnitrees (anisotropic), `1.12.22` pentahedra SFC.
+
+#### Algorithmic lineage (detailed)
+
+- **Bey 1992/1995** (Knapp ref [4], NOT indexed) — 1:8 red tet refinement (4 corner tets + 4 from central octahedron). The geometric substrate. `1.12.12` is the later parallel multilevel paper, not the original Computing 55.
+- **Burstedde+Holke 2016 (`1.12.8`)** — TM-index: anchor coord + 4-bit type, bitwise-interleave `(z, y, x, b)` per level. O(1) parent, child, face-neighbor for tet types 0-5. Integrates with p4est forest.
+- **Holke 2018 PhD (`1.12.9`)** — Full theoretical framework: Theorem 16 (TM-index injectivity), Prop 4.17 (within-level uniqueness), total order = SFC.
+- **Knapp 2026 (`1.12.7`)** — Extends Holke 2018 framework to pyramids: (a) geometric decomposition (types 6+7, 10 children = 6 pyramid + 4 tet); (b) 6D Morton embedding `Θ: P→Q` with axes `(B², B¹, B⁰, x, y, z)`, inheriting SFC properties from 6D cube Morton; (c) O(1) algorithms via `min_tet_level` cached field; (d) forest partition via `N(ℓ) = 2·8^ℓ − 6^ℓ` per-shape weight.
+- **Holke+Knapp+Burstedde 2019 (`1.14.6`)** — Hybrid ghost algorithm extending `1.12.8` to multi-shape forests. Face extrusion in d-1 dimensions. Nearly perfect parallel efficiency.
+
+#### Citation adjacency (condensed)
+
+```
+1.12.7  Knapp  --cites+extends--> 1.12.8         (ref [8])
+1.12.7  Knapp  --cites--> 1.12.9                 (ref [19]: "Analogous to the tetrahedral Morton index [19]")
+1.12.7  Knapp  --cites--> 1.12.10                (ref [11])
+1.12.7  Knapp  --cites--> 1.12.11                (ref [20])
+1.12.7  Knapp  --cites--> 1.14.6                 (ref [21]: "Ghost algorithm [21]")
+1.12.7  Knapp  --cites--> 1.12.12                (Bey refinement basis)
+1.14.6  Ghost  --cites+extends--> 1.12.8         (ref [7] in ghost paper)
+1.14.6  Ghost  --cites--> 1.12.9                 (ref [1] in ghost paper)
+1.14.6  Ghost  --cites--> 1.12.10
+1.14.6  Ghost  --supersedes--> 1.12.34           (for hybrid-forest ghost use case)
+1.12.9  PhD    --extends--> 1.12.8
+1.12.9  PhD    --cites--> 1.12.10
+1.12.11 t8code --cites--> 1.12.8, 1.12.9, 1.12.10
+1.12.8  TetSFC --cites--> 1.12.10, 1.12.12, 1.12.30
+
+p4est (1.12.10) fan-in: cited by 1.12.7, 1.12.8, 1.12.9, 1.12.11, 1.14.6
+```
+
+Knapp 2026 has no `cites` edge to Hebert 1994 (`1.12.29`) — no `"Hebert"` or `"Symbolic Local Refinement"` in retrieved Knapp chunks.
 
 ### Technical Environment
 
@@ -151,6 +217,40 @@ The paper's pyramid encoding (6 bits/level) **matches Tetree's existing extended
     **Plus one connectivity table addition**: `TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE_TABLE` (commented "Parent type 0 ... Parent type 5" at `:62-72`) needs entries for parent types 6 and 7 (Knapp Table 3.2 — pyramid → 6 pyramid + 4 tet children with type-swap-at-center).
 
     **Architectural implication**: `Tet` needs a `min_tet_level` field (default −1) and all four entry points check it. With sentinel default, pure-Tetree code paths are unchanged. This confirms Finding #3's "Tet code in pure Tetree continues to work unchanged" — the guard is `if (min_tet_level == -1) <existing-code> else <Knapp §4-branch>` at each entry. Storage cost: ~1 byte/Tet (boundary `max_level = 21`).
+
+## Reuse-vs-Rewrite Analysis (from synthesis Part 2)
+
+### Code paths reused unchanged
+
+| Component | Location in Luciferase | Basis |
+|---|---|---|
+| S0-S5 tet types (types 0-5) | `Tet.java` `Tet.coordinates()` | Knapp 2026 §4: tet types 1, 2, 4, 5 use existing Burstedde+Holke 2016 algorithms unchanged |
+| 12-DOP exact containment | `contains12DOP()`, `intersects12DOP()` | Knapp 2026: tet children of pyramid roots reuse existing tet containment |
+| Bey 1:8 tet refinement | `Tetree` refinement paths | Knapp 2026 Algorithm 4.2: tet child computation delegates to Burstedde+Holke 2016 unchanged |
+| TM-index for tet children | `TetreeKey.consecutiveIndex()` | Knapp 2026: tet-descendent SFC unchanged |
+| `AbstractSpatialIndex` core | Post-RDR-008 close (concrete façade) | No abstract methods; subclass-and-initialize-collaborators pattern (same as Octree/Tetree) |
+| `Forest.addTree()` heterogeneous API | `forest` package | Already accepts heterogeneous trees — surprise finding from prior research |
+
+### Code paths requiring extension
+
+| Component | What changes | Basis |
+|---|---|---|
+| `PyramidKey` | New 128-bit key (6 bits/level × 21 levels = 126 bits; two `long`s) | Knapp 2026 §3, 6D Morton embedding |
+| Pyramid child tables | Table 3.1 (anchor shifts), Table 3.2 (child-type lookup) | Knapp 2026 §3 |
+| `min_tet_level` field | ~1 byte per element; sentinel `-1` for pyramids and pure-Tetree elements | Knapp 2026 Algorithm 4.1 — required for O(1) parent/face_neighbor |
+| Face-neighbor for tet types 0, 3 | Add pyramid-aware branches (see Research Finding #14 for call-site inventory) | Knapp 2026 §4.3-4.4 |
+| `Forest` partition weight | `N_shape(ℓ)` hook per shape | Knapp 2026 §5 Algorithm 5.1; pyramid: `N(ℓ) = 2·8^ℓ − 6^ℓ` |
+| `PyramidNeighborDetector` | New class; face types pyramid↔tet, Table 4.2 | Knapp 2026 §4.4 |
+| `TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE_TABLE` | Append parent types 6 and 7 entries | Knapp 2026 Table 3.2 |
+
+### Gaps in the foundation-paper corpus (follow-up research)
+
+1. **Bey 1992/1995 "Computing 55"** (Knapp ref [4]) — **NOT indexed**. J. Bey, *Tetrahedral grid refinement*, Computing 55 (1995), 355-378. The original Bey red-refinement paper defining the 1:8 subdivision geometry. The indexed paper at `1.12.12` is the later *parallel multilevel* paper. Required for vertex-labeling and orientation-convention verification against `Tet.java`. Action: locate and index from DEVONthink or publisher.
+2. **Sundar+Sampath+Biros 2008 "Dendro"** — **NOT indexed**. *Bottom-Up Construction and 2:1 Balance Refinement of Linear Octrees in Parallel*, SIAM J. Sci. Comput. 30(5), 2008. Referenced throughout corpus as benchmark comparison. The indexed `1.12.35` is related but earlier. Required for external performance baseline. Action: index from DEVONthink or arXiv.
+3. **Pyramid containment primitive** — open derivation. No paper in corpus derives a pyramid-specific containment test. Required for Approach §3a (precision-first pyramid-DOP); Approach §3b (decompose + reuse tet 12-DOP) avoids this gap.
+4. **Sparse t8code paper** (`1.12.11`, 19 chunks) — nearly unreadable from chunk extraction. All Luciferase implementation comparisons to t8code should cite Knapp 2026 (162 chunks, well-indexed) rather than the t8code paper for algorithmic and benchmark detail. Action: attempt re-extraction.
+5. **`N_prism(ℓ)` closed form** — not in corpus. Pentahedra paper (`1.12.22`, 2 chunks) insufficient. Required only if `PrismIndex` enters a hybrid forest. Likely derivable by analogy from Knapp 2026 §5 (prism refines to 4 prisms + 4 tets → `N_prism(ℓ) = 4·8^ℓ − ...`; derivation pending).
+6. **Large-scale HPC benchmark for Luciferase scale** — no corpus paper covers Luciferase-scale benchmarks directly. Scale projections for a PyramidIndex gate must use existing Octree/Tetree benchmarks as baselines, adjusted by the per-element branching overhead reported in Knapp 2026 §6.
 
 ## Open Questions
 
