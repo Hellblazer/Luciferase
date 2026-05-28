@@ -10,6 +10,7 @@ import com.hellblazer.luciferase.lucien.collision.physics.PhysicsMaterial;
 import com.hellblazer.luciferase.lucien.collision.physics.RigidBody;
 import javafx.scene.paint.Color;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -19,9 +20,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests for collision visualization system.
+ * <p>
+ * Tagged {@code javafx}: builds JavaFX scene-graph nodes (e.g. {@code javafx.scene.shape.Sphere})
+ * that fail to initialize without a graphics pipeline. CI excludes the {@code javafx} tag
+ * ({@code -Dportal.excludedGroups= | javafx}); see the {@code @Tag("javafx")} convention on
+ * {@code JavaFXTestBase}.
  *
  * @author hal.hildebrand
  */
+@Tag("javafx")
 public class CollisionVisualizationTest {
     
     private CollisionVisualizer visualizer;
