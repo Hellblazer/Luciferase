@@ -526,4 +526,29 @@ public final class MortonKey implements SpatialKey<MortonKey> {
 
         return new SFCRange(lowerBound, upperBound);
     }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@code MortonKey} returns one range per distinct storage level in {@code indexKeys}. Because
+     * {@link #compareTo} orders keys first by level then by Morton code, a {@code subMap} call whose bounds are at
+     * level L only returns keys at level L — entities can be inserted at different levels, so {@code KnnSearcher}
+     * issues one {@code subMap} query per unique level using bounds computed at that same level. RDR-008 P3
+     * follow-up (bead Luciferase-vpl).
+     */
+    @Override
+    public Iterable<com.hellblazer.luciferase.lucien.SpatialKey.SFCRange<MortonKey>> sfcRangesForKNN(
+        Point3f center, float radius, java.util.NavigableSet<MortonKey> indexKeys) {
+        var levels = new java.util.LinkedHashSet<Byte>();
+        for (var key : indexKeys) {
+            levels.add(key.getLevel());
+        }
+        var ranges = new java.util.ArrayList<com.hellblazer.luciferase.lucien.SpatialKey.SFCRange<MortonKey>>(
+            levels.size());
+        for (var level : levels) {
+            var range = estimateSFCRange(center, radius, level);
+            ranges.add(new com.hellblazer.luciferase.lucien.SpatialKey.SFCRange<>(range.lower(), range.upper()));
+        }
+        return ranges;
+    }
 }

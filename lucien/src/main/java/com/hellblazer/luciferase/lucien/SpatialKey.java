@@ -16,6 +16,10 @@
  */
 package com.hellblazer.luciferase.lucien;
 
+import javax.vecmath.Point3f;
+import java.util.List;
+import java.util.NavigableSet;
+
 /**
  * Base interface for all spatial index keys.
  *
@@ -29,6 +33,43 @@ package com.hellblazer.luciferase.lucien;
  * @author hal.hildebrand
  */
 public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
+
+    /**
+     * Generic SFC range covering a query region in the spatial-key total order. The {@code (lower, upper)} pair is
+     * fed directly into {@code ConcurrentSkipListMap.subMap(lower, upper)} to prune k-NN search to the candidate
+     * keys that could contain entities within the search radius. RDR-008 P3 follow-up (bead Luciferase-vpl).
+     *
+     * @param lower the lower bound (inclusive) of the SFC range
+     * @param upper the upper bound (exclusive) of the SFC range
+     * @param <K>   the spatial key type
+     */
+    record SFCRange<K extends SpatialKey<K>>(K lower, K upper) {}
+
+    /**
+     * Build the SFC ranges {@link KnnSearcher KnnSearcher} should scan for a k-NN query centered at {@code center}
+     * with search radius {@code radius}. RDR-008 P3 follow-up (bead Luciferase-vpl) — hoisted from the per-class
+     * static methods {@code MortonKey.estimateSFCRange} / {@code TetreeKey.estimateSFCRange} so {@code KnnSearcher}
+     * can dispatch through the interface instead of {@code instanceof}.
+     *
+     * <p>Implementations decide how many ranges to return:
+     * <ul>
+     *     <li>{@code MortonKey} returns one range per distinct storage level present in the index — required
+     *         because {@code MortonKey.compareTo} orders keys by level first, so a subMap query at level L only
+     *         returns keys at level L. The level set is collected from {@code indexKeys}.</li>
+     *     <li>{@code TetreeKey} returns a single range and ignores {@code indexKeys} — its ordering is not
+     *         level-scoped.</li>
+     *     <li>Implementations without an SFC range estimator (e.g. {@code PrismKey}) return the default empty
+     *         iterable, signaling {@code KnnSearcher} to fall back to the breadth-first search path.</li>
+     * </ul>
+     *
+     * @param center     k-NN query point
+     * @param radius     k-NN search radius
+     * @param indexKeys  current key set of the spatial index (used by {@code MortonKey} for level collection)
+     * @return iterable of SFC ranges, or empty iterable for "no SFC pruning support"
+     */
+    default Iterable<SFCRange<K>> sfcRangesForKNN(Point3f center, float radius, NavigableSet<K> indexKeys) {
+        return List.of();
+    }
 
     /**
      * Get the level of this key in the spatial hierarchy. Level 0 represents the root, with increasing levels
