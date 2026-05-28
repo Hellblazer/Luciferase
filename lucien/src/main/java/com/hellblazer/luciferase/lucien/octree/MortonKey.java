@@ -20,6 +20,10 @@ import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 
 import javax.vecmath.Point3f;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.NavigableSet;
 import java.util.Objects;
 
 /**
@@ -537,17 +541,16 @@ public final class MortonKey implements SpatialKey<MortonKey> {
      * follow-up (bead Luciferase-vpl).
      */
     @Override
-    public Iterable<com.hellblazer.luciferase.lucien.SpatialKey.SFCRange<MortonKey>> sfcRangesForKNN(
-        Point3f center, float radius, java.util.NavigableSet<MortonKey> indexKeys) {
-        var levels = new java.util.LinkedHashSet<Byte>();
+    public Iterable<SpatialKey.SFCRange<MortonKey>> sfcRangesForKNN(Point3f center, float radius,
+                                                                    NavigableSet<MortonKey> indexKeys) {
+        var levels = new LinkedHashSet<Byte>();
         for (var key : indexKeys) {
             levels.add(key.getLevel());
         }
-        var ranges = new java.util.ArrayList<com.hellblazer.luciferase.lucien.SpatialKey.SFCRange<MortonKey>>(
-            levels.size());
+        List<SpatialKey.SFCRange<MortonKey>> ranges = new ArrayList<>(levels.size());
         for (var level : levels) {
             var range = estimateSFCRange(center, radius, level);
-            ranges.add(new com.hellblazer.luciferase.lucien.SpatialKey.SFCRange<>(range.lower(), range.upper()));
+            ranges.add(new SpatialKey.SFCRange<>(range.lower(), range.upper()));
         }
         return ranges;
     }

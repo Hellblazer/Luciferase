@@ -21,6 +21,8 @@ import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 
 import javax.vecmath.Point3f;
+import java.util.List;
+import java.util.NavigableSet;
 import java.util.Objects;
 
 /**
@@ -583,12 +585,10 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
      * follow-up (bead Luciferase-vpl).
      */
     @Override
-    public Iterable<com.hellblazer.luciferase.lucien.SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>> sfcRangesForKNN(
-        Point3f center, float radius,
-        java.util.NavigableSet<TetreeKey<? extends TetreeKey<?>>> indexKeys) {
+    public Iterable<SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>> sfcRangesForKNN(
+        Point3f center, float radius, NavigableSet<TetreeKey<? extends TetreeKey<?>>> indexKeys) {
         var range = estimateSFCRange(center, radius);
-        return java.util.List.of(
-            new com.hellblazer.luciferase.lucien.SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>(range.lower(),
-                                                                                                       range.upper()));
+        return List.of(
+            new SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>(range.lower(), range.upper()));
     }
 }

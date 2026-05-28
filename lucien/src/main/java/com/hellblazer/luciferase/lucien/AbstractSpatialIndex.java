@@ -156,6 +156,10 @@ implements SpatialIndex<Key, ID, Content> {
     // hook). The host interface is the principled middle ground after P3 refinement; it's narrower than the
     // concrete-facade back-reference GhostCoordinator carries from P2 (see GhostCoordinator's P2-concession note).
     protected final com.hellblazer.luciferase.lucien.entity.EntityLifecycleManager<Key, ID, Content> entityLifecycle;
+    // RDR-008 P6 follow-up (Luciferase-ts8) review cleanup: cache the stack-builder host as a final field instead
+    // of allocating a fresh StackBuilderHostImpl at every call site (bulk-insert paths + EntityLifecycleHostImpl.
+    // stackBuilderTarget()). The wrapper is stateless and identity-stable, so a single instance suffices.
+    private final   StackBuilderHostImpl                                     stackBuilderHost         = new StackBuilderHostImpl();
     // Tree balancing support
     private         TreeBalancingStrategy<ID>                        balancingStrategy;
     private         boolean                                          autoBalancingEnabled     = false;
@@ -295,8 +299,9 @@ implements SpatialIndex<Key, ID, Content> {
             }
 
             // Build tree (RDR-008 P6 follow-up Luciferase-ts8: builder takes StackBuilderHost, not the concrete
-            // facade — protect against the god-class type leak)
-            return treeBuilder.buildTree(new StackBuilderHostImpl(), positions, contents, startLevel);
+            // facade — protect against the god-class type leak; cached stackBuilderHost field, not a per-call
+            // allocation, per the review-cleanup pass)
+            return treeBuilder.buildTree(stackBuilderHost, positions, contents, startLevel);
         } finally {
             lock.writeLock().unlock();
         }
@@ -1759,7 +1764,7 @@ implements SpatialIndex<Key, ID, Content> {
 
         @Override
         public com.hellblazer.luciferase.lucien.StackBuilderHost<Key, ID, Content> stackBuilderTarget() {
-            return new StackBuilderHostImpl();
+            return stackBuilderHost;
         }
     }
 

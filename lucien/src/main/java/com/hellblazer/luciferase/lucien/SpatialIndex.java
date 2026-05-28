@@ -242,18 +242,33 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
      * {@link com.hellblazer.luciferase.lucien.forest.ghost.DistributedGhostManager} can speak this interface
      * instead of the concrete {@code AbstractSpatialIndex}.
      *
+     * <p>Default throws {@link UnsupportedOperationException}; the in-tree {@code AbstractSpatialIndex} override
+     * returns a defensive {@code HashSet} copy of the underlying skip-list keyset. The default exists so external
+     * implementors of {@code SpatialIndex} that pre-date the P2 ghost extraction continue to compile; only code
+     * paths that actually invoke ghost operations through such an implementation hit the throw.
+     *
      * @return set of all spatial keys (defensive copy — callers may mutate)
      */
-    java.util.Set<Key> getSpatialKeys();
+    default java.util.Set<Key> getSpatialKeys() {
+        throw new UnsupportedOperationException(
+            "getSpatialKeys() is not implemented for " + getClass().getName()
+            + "; required for ghost-subsystem integration (RDR-008 P2 follow-up, bead Luciferase-703).");
+    }
 
     /**
      * Whether the index currently contains the given spatial key. Used by the ghost-boundary subsystem to test
      * element existence without materializing the full key set. RDR-008 P2 follow-up (bead Luciferase-703).
      *
+     * <p>Default delegates to {@link #getSpatialKeys()}: implementations that override either method get a
+     * correct {@code containsSpatialKey} for free, but should override both for efficiency (the default
+     * materialises the full key set per call).
+     *
      * @param key the spatial key to check
      * @return true if the key is in the index
      */
-    boolean containsSpatialKey(Key key);
+    default boolean containsSpatialKey(Key key) {
+        return getSpatialKeys().contains(key);
+    }
 
     /**
      * Check if a node exists at the given Morton index
