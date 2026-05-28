@@ -575,4 +575,20 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         return create(level, Long.MAX_VALUE, Long.MAX_VALUE);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@code TetreeKey} returns a single range and ignores {@code indexKeys}. The TM-index ordering is not
+     * level-scoped, so one {@code subMap} query suffices regardless of the storage levels present. RDR-008 P3
+     * follow-up (bead Luciferase-vpl).
+     */
+    @Override
+    public Iterable<com.hellblazer.luciferase.lucien.SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>> sfcRangesForKNN(
+        Point3f center, float radius,
+        java.util.NavigableSet<TetreeKey<? extends TetreeKey<?>>> indexKeys) {
+        var range = estimateSFCRange(center, radius);
+        return java.util.List.of(
+            new com.hellblazer.luciferase.lucien.SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>(range.lower(),
+                                                                                                       range.upper()));
+    }
 }

@@ -25,16 +25,12 @@ import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityDistance;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.internal.ObjectPools;
-import com.hellblazer.luciferase.lucien.octree.MortonKey;
-import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -69,15 +65,14 @@ import java.util.concurrent.atomic.AtomicLong;
  * substantive-critic Significant#1 by relocating the field into the core, so this class no longer carries a
  * {@code Supplier<FineGrainedLockingStrategy>} ctor argument.
  *
- * <h2>Subclass-coupled dispatch</h2>
+ * <h2>SFC-range pruning via the SpatialKey interface</h2>
  *
- * <p>{@link #performKNNSFCRangePruning} dispatches on the concrete spatial-key type via
- * {@code instanceof MortonKey / TetreeKey} to use each subclass's SFC range estimator. This couples
- * {@code lucien.cache} to {@code lucien.octree} and {@code lucien.tetree}; the dispatch was present before
- * extraction (in the façade) and the alternative — pushing the range estimator into a method on the key type —
- * is out of scope for the no-behavior-change extraction phase. The unknown-key-type branch and the catch-all
- * exception fallback both route to the legacy breadth-first {@link #performKNNSFCBasedSearch}, so the dispatch is
- * forward-compatible with future key types.
+ * <p>{@link #performKNNSFCRangePruning} delegates to {@link SpatialKey#sfcRangesForKNN} on the index's first key,
+ * which returns the iterable of SFC ranges this implementation should scan ({@code MortonKey} returns one range
+ * per distinct storage level; {@code TetreeKey} returns a single range; key types without an estimator return
+ * the default empty iterable, which signals a fall back to the legacy breadth-first
+ * {@link #performKNNSFCBasedSearch}). RDR-008 P3 follow-up (bead Luciferase-vpl) replaced the prior
+ * {@code instanceof MortonKey / TetreeKey} dispatch that coupled this class to the concrete key packages.
  *
  * @param <Key>     the spatial key type
  * @param <ID>      the entity identifier type
@@ -216,10 +211,15 @@ implements KnnProvider<Key, ID> {
     // ---- SFC range pruning (Paper 4: 4-6× speedup) ----------------------------------------------------------------
 
     /**
-     * Optimized SFC range-based k-NN search using range pruning. Dispatches on the concrete spatial-key type to use
-     * each subclass's SFC range estimator; unknown key types and any thrown exception fall back to the legacy
-     * breadth-first search.
+     * Optimized SFC range-based k-NN search using range pruning. RDR-008 P3 follow-up (bead Luciferase-vpl)
+     * removed the per-key-type {@code instanceof MortonKey / TetreeKey} dispatch by hoisting the per-key SFC range
+     * estimator to {@link SpatialKey#sfcRangesForKNN}. Each {@code SpatialKey} implementation returns the
+     * appropriate iterable of SFC ranges (Morton returns one per distinct storage level; Tetree returns a single
+     * range; PrismKey or any other implementation without an estimator returns the default empty iterable,
+     * signaling a fallback to the legacy breadth-first search). Any exception raised during range estimation also
+     * falls back.
      */
+    @SuppressWarnings("unchecked")
     private void performKNNSFCRangePruning(Point3f queryPoint, int k, float maxDistance,
                                            PriorityQueue<EntityDistance<ID>> candidates, Set<ID> addedToCandidates) {
         var spatialIndex = core.spatialIndex();
@@ -227,97 +227,40 @@ implements KnnProvider<Key, ID> {
             return;
         }
 
-        // Get the root key to determine key type
+        // When maxDistance is very large, SFC range pruning won't work properly because entities are stored at
+        // finer levels; fall back to a full scan that doesn't rely on bounding the search via subMap.
+        if (maxDistance >= Constants.MAX_COORD) {
+            performFullScanKNN(queryPoint, k, maxDistance, candidates, addedToCandidates);
+            return;
+        }
+
         var rootKey = spatialIndex.firstKey();
 
         try {
-            // Use appropriate SFC range estimation based on key type
-            if (rootKey instanceof MortonKey) {
-                performKNNSFCRangePruningMorton(queryPoint, k, maxDistance, candidates, addedToCandidates);
-            } else if (rootKey instanceof TetreeKey) {
-                performKNNSFCRangePruningTetree(queryPoint, k, maxDistance, candidates, addedToCandidates);
-            } else {
-                // Fallback to old breadth-first search for unknown key types
+            var sfcRanges = rootKey.sfcRangesForKNN(queryPoint, maxDistance, spatialIndex.navigableKeySet());
+            var iterator = sfcRanges.iterator();
+            if (!iterator.hasNext()) {
+                // Default empty iterable — no SFC pruning supported for this key type; fall back to legacy
+                // breadth-first search (matches the pre-extraction PrismKey path).
                 performKNNSFCBasedSearch(queryPoint, k, maxDistance, candidates, addedToCandidates);
+                return;
             }
+
+            do {
+                var sfcRange = iterator.next();
+                var rangeMap = spatialIndex.subMap((Key) sfcRange.lower(), (Key) sfcRange.upper());
+
+                for (var entry : rangeMap.entrySet()) {
+                    var node = entry.getValue();
+                    if (node == null) {
+                        continue;
+                    }
+                    collectCandidatesFromNode(node, queryPoint, k, maxDistance, candidates, addedToCandidates);
+                }
+            } while (iterator.hasNext());
         } catch (Exception e) {
             log.warn("SFC range pruning failed, falling back to breadth-first search: {}", e.getMessage());
             performKNNSFCBasedSearch(queryPoint, k, maxDistance, candidates, addedToCandidates);
-        }
-    }
-
-    /**
-     * SFC range-based k-NN search for MortonKey (Octree).
-     *
-     * <p>Because {@link MortonKey#compareTo} orders keys first by level then by Morton code, a {@code subMap} call
-     * whose bounds are at level L will only return keys that are also stored at level L. Entities can be inserted at
-     * different levels, so we collect the set of distinct storage levels present in the index and issue one
-     * {@code subMap} query per unique level, using bounds computed at that same level.
-     */
-    @SuppressWarnings("unchecked")
-    private void performKNNSFCRangePruningMorton(Point3f queryPoint, int k, float maxDistance,
-                                                 PriorityQueue<EntityDistance<ID>> candidates,
-                                                 Set<ID> addedToCandidates) {
-        var spatialIndex = core.spatialIndex();
-        // When maxDistance is very large, SFC range pruning at level 0 won't work properly
-        // because entities are stored at a finer level. Fall back to full scan.
-        if (maxDistance >= Constants.MAX_COORD) {
-            performFullScanKNN(queryPoint, k, maxDistance, candidates, addedToCandidates);
-            return;
-        }
-
-        // Collect the distinct levels at which keys are stored so we can issue a correctly-levelled
-        // subMap query for each one.  In the common single-level case this is a single pass.
-        var storageLevels = new LinkedHashSet<Byte>();
-        for (var key : spatialIndex.keySet()) {
-            storageLevels.add(((MortonKey) key).getLevel());
-        }
-
-        for (byte storageLevel : storageLevels) {
-            // Compute SFC range bounds at the same level as the stored keys so that
-            // subMap() returns the correct entries with level-aware compareTo.
-            var sfcRange = MortonKey.estimateSFCRange(queryPoint, maxDistance, storageLevel);
-
-            var rangeMap = spatialIndex.subMap((Key) sfcRange.lower(), (Key) sfcRange.upper());
-
-            for (var entry : rangeMap.entrySet()) {
-                var node = entry.getValue();
-                if (node == null) {
-                    continue;
-                }
-
-                collectCandidatesFromNode(node, queryPoint, k, maxDistance, candidates, addedToCandidates);
-            }
-        }
-    }
-
-    /** SFC range-based k-NN search for TetreeKey (Tetree). */
-    @SuppressWarnings("unchecked")
-    private void performKNNSFCRangePruningTetree(Point3f queryPoint, int k, float maxDistance,
-                                                 PriorityQueue<EntityDistance<ID>> candidates,
-                                                 Set<ID> addedToCandidates) {
-        var spatialIndex = core.spatialIndex();
-        // When maxDistance is very large, SFC range pruning at level 0 won't work properly
-        // because entities are stored at a finer level. Fall back to full scan.
-        if (maxDistance >= Constants.MAX_COORD) {
-            performFullScanKNN(queryPoint, k, maxDistance, candidates, addedToCandidates);
-            return;
-        }
-
-        // Estimate SFC range covering the search sphere
-        var sfcRange = TetreeKey.estimateSFCRange(queryPoint, maxDistance);
-
-        // Use subMap to iterate only over keys in the SFC range (this is the optimization!)
-        var rangeMap = spatialIndex.subMap((Key) sfcRange.lower(), (Key) sfcRange.upper());
-
-        // Process entities in nodes within the SFC range
-        for (var entry : rangeMap.entrySet()) {
-            var node = entry.getValue();
-            if (node == null) {
-                continue;
-            }
-
-            collectCandidatesFromNode(node, queryPoint, k, maxDistance, candidates, addedToCandidates);
         }
     }
 
