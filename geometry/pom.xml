@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.hellblazer.luciferase</groupId>
+        <artifactId>luciferase.app</artifactId>
+        <version>0.0.5-SNAPSHOT</version>
+    </parent>
+    <artifactId>geometry</artifactId>
+    <name>Geometry - UI-free spatial coordinate math</name>
+    <description>
+        Pure javax.vecmath coordinate math with NO JavaFX dependency. Holds the
+        rhombic-dodecahedron / FCC (RDGCS) coordinate kernel extracted from
+        portal.Tetrahedral so headless consumers (simulation, lucien FCC work)
+        can use the math without dragging the JavaFX toolkit onto their
+        classpath. See RDR-006.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>javax.vecmath</groupId>
+            <artifactId>vecmath</artifactId>
+        </dependency>
+
+        <!-- Test Only Dependencies Below This Line -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

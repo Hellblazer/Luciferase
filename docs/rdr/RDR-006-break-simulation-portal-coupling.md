@@ -101,3 +101,41 @@ Accepted 2026-05-25 (gate PASSED, self-reviewed). Locked:
 - **Positive:** removes JavaFX from the headless `simulation`/distributed classpath; puts the RD math where RDR-003's FCC work can reach it without UI coupling; corrects the `domain-primitive-in-wrong-module` smell (incl. Clock).
 - **Cost / risk:** an internal API ripple (`Point3D`→`Point3f`) across `BubbleBounds` and the `von` records; if a new module is chosen, one module of overhead. `portal` keeps a thin `Point3D`-typed rendering layer over the kernel.
 - **Watch:** `TransportNeighborInfo` Phase 6B will introduce a `BubbleBounds` wire dependency — at that point it must cross-reference RDR-004's deserialization hardening. **Follow-up:** `common`'s `javafx-graphics` dependency undermines it as a leaf module (separate cleanup).
+
+## Implementation Progress
+
+### Corrected blast radius (2026-05-28)
+
+A pre-implementation blast-radius sweep found the JavaFX coupling is **wider than the
+"`BubbleBounds` + `von`" scope this RDR documented**. `javafx.geometry.Point3D` is used across
+~21 `simulation/src/main` files: the `von` package (10), `distributed/migration` (5 records),
+`bubble` (4, incl. `BubbleBounds`), `ghost/GhostSyncVONIntegration`, and
+`delos/fireflies/TetreeKeyRouter`. The `dependency:tree`-shows-no-`javafx-*` acceptance criterion
+therefore requires migrating **all** of them, not just `BubbleBounds`/`von`.
+
+Two corrections to the locked Decision:
+- **Position type is `Point3d` (double), not `Point3f`.** The RDR text said `Point3f`; swapping the
+  distributed-simulation position type to float would silently drop precision on AOI/distance/
+  boundary math. The precision-preserving replacement for javafx `Point3D` is `javax.vecmath.Point3d`.
+- **`BubbleBounds` was the *only* `simulation` main file importing `portal`** — so breaking the
+  `simulation → portal` *module* dependency (the literal D5 goal) is separable from, and smaller
+  than, fully clearing `javafx-*`.
+
+### Phased delivery
+
+- **PR1 (this increment, bead Luciferase-jvs):** new `geometry` module (vecmath-only, no JavaFX);
+  extracted the UI-free RD-math kernel as standalone `geometry/.../rd/RDGCoordinates` (no
+  `Grid`/`RDGCS`/`javafx` inheritance — the inheritance chain is the JavaFX carrier);
+  `toCartesian` returns `Point3d`. Repointed `BubbleBounds` off `portal.Tetrahedral`;
+  **dropped the `portal` dependency from `simulation/pom.xml`** (`mvn dependency:tree -pl simulation`
+  confirms no `portal`). Added kernel coverage (`RDGCoordinatesTest`: round-trip identity, metric-
+  tensor dot, neighbor shells — guards the 7jk/6oa/xnf fixes). Two latent transitive couplings
+  surfaced and were made explicit: (a) `org.jetbrains:annotations` convergence pin (javalin 24.1.0
+  vs kotlin-stdlib 13.0, previously masked by portal's tree); (b) explicit `render` dependency
+  (simulation.viz.render.SerializationUtils uses render ESVT types, previously satisfied via
+  portal→render). `portal.Tetrahedral` retained unchanged as the JavaFX-typed rendering variant.
+- **PR2 (follow-up):** repo-wide `Point3D` → `Point3d` migration across the ~21 files so
+  `mvn dependency:tree -pl simulation` shows zero `javafx-*`; this is where the criterion is met.
+  JavaFX still reaches `simulation` transitively via `render` and `common` after PR1.
+- **Deferred:** Clock package rename (`Luciferase-7n1`) — kept out of PR1 to keep the diff
+  reviewable; it is an orthogonal ~26-file package move.

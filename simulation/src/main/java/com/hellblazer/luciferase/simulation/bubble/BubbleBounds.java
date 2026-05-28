@@ -2,9 +2,9 @@ package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
 
+import com.hellblazer.luciferase.geometry.rd.RDGCoordinates;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
-import com.hellblazer.luciferase.portal.Tetrahedral;
 import javafx.geometry.Point3D;
 
 import javax.vecmath.Point3f;
@@ -33,7 +33,6 @@ public final class BubbleBounds implements Serializable {
     private final TetreeKey<?> rootKey;
     private final Point3i rdgMin;
     private final Point3i rdgMax;
-    private transient Tetrahedral coordSystem;
 
     /**
      * Create BubbleBounds from tetrahedral and RDGCS coordinates.
@@ -46,7 +45,6 @@ public final class BubbleBounds implements Serializable {
         this.rootKey = rootKey;
         this.rdgMin = rdgMin;
         this.rdgMax = rdgMax;
-        this.coordSystem = new Tetrahedral();
     }
 
     /**
@@ -62,10 +60,9 @@ public final class BubbleBounds implements Serializable {
         var coords = tet.coordinates();
 
         // Compute RDGCS coordinates for all 4 vertices
-        var tetrahedral = new Tetrahedral();
         var rdgCoords = new Point3i[4];
         for (int i = 0; i < 4; i++) {
-            rdgCoords[i] = tetrahedral.toRDG(new Point3f(coords[i].x, coords[i].y, coords[i].z));
+            rdgCoords[i] = RDGCoordinates.toRDG(new Point3f(coords[i].x, coords[i].y, coords[i].z));
         }
 
         // Find min/max in RDGCS space
@@ -127,11 +124,9 @@ public final class BubbleBounds implements Serializable {
             throw new IllegalArgumentException("Cannot create bounds from empty position list");
         }
 
-        var tetrahedral = new Tetrahedral();
-
         // Convert all positions to RDGCS
         var rdgPositions = positions.stream()
-                                   .map(tetrahedral::toRDG)
+                                   .map(RDGCoordinates::toRDG)
                                    .toList();
 
         // Find RDGCS min/max
@@ -192,25 +187,13 @@ public final class BubbleBounds implements Serializable {
     }
 
     /**
-     * Ensure coordSystem is initialized (handles post-deserialization).
-     *
-     * @return coordSystem instance
-     */
-    private Tetrahedral getCoordSystem() {
-        if (coordSystem == null) {
-            coordSystem = new Tetrahedral();
-        }
-        return coordSystem;
-    }
-
-    /**
      * Convert Cartesian coordinates to RDGCS.
      *
      * @param cartesian Cartesian position
      * @return RDGCS coordinates
      */
     public Point3i toRDG(Tuple3f cartesian) {
-        return getCoordSystem().toRDG(cartesian);
+        return RDGCoordinates.toRDG(cartesian);
     }
 
     /**
@@ -220,7 +203,8 @@ public final class BubbleBounds implements Serializable {
      * @return Cartesian position
      */
     public Point3D toCartesian(Tuple3i rdg) {
-        return getCoordSystem().toCartesian(rdg);
+        var p = RDGCoordinates.toCartesian(rdg);
+        return new Point3D(p.x, p.y, p.z);
     }
 
     /**
