@@ -294,8 +294,9 @@ implements SpatialIndex<Key, ID, Content> {
                 entityManager.clear();
             }
 
-            // Build tree
-            return treeBuilder.buildTree(this, positions, contents, startLevel);
+            // Build tree (RDR-008 P6 follow-up Luciferase-ts8: builder takes StackBuilderHost, not the concrete
+            // facade — protect against the god-class type leak)
+            return treeBuilder.buildTree(new StackBuilderHostImpl(), positions, contents, startLevel);
         } finally {
             lock.writeLock().unlock();
         }
@@ -1757,8 +1758,48 @@ implements SpatialIndex<Key, ID, Content> {
         }
 
         @Override
-        public AbstractSpatialIndex<Key, ID, Content> stackBuilderTarget() {
-            return AbstractSpatialIndex.this;
+        public com.hellblazer.luciferase.lucien.StackBuilderHost<Key, ID, Content> stackBuilderTarget() {
+            return new StackBuilderHostImpl();
+        }
+    }
+
+    /**
+     * Façade implementation of the {@link com.hellblazer.luciferase.lucien.StackBuilderHost} seam (RDR-008 P6
+     * follow-up, bead {@code Luciferase-ts8}): supplies {@link StackBasedTreeBuilder} the six facade-internal
+     * methods it consumes ({@code calculateSpatialIndex}, {@code createNode}, {@code getEntityManager},
+     * {@code getSpatialIndex}, {@code getMaxDepth}, {@code getMaxEntitiesPerNode}). Private inner class preserves
+     * each underlying method's original visibility.
+     */
+    private final class StackBuilderHostImpl implements com.hellblazer.luciferase.lucien.StackBuilderHost<Key, ID, Content> {
+
+        @Override
+        public Key calculateSpatialIndex(Point3f position, byte level) {
+            return AbstractSpatialIndex.this.calculateSpatialIndex(position, level);
+        }
+
+        @Override
+        public SpatialNodeImpl<ID> createNode() {
+            return AbstractSpatialIndex.this.createNode();
+        }
+
+        @Override
+        public com.hellblazer.luciferase.lucien.entity.EntityManager<Key, ID, Content> getEntityManager() {
+            return AbstractSpatialIndex.this.getEntityManager();
+        }
+
+        @Override
+        public java.util.Map<Key, SpatialNodeImpl<ID>> getSpatialIndex() {
+            return AbstractSpatialIndex.this.getSpatialIndex();
+        }
+
+        @Override
+        public byte getMaxDepth() {
+            return AbstractSpatialIndex.this.getMaxDepth();
+        }
+
+        @Override
+        public int getMaxEntitiesPerNode() {
+            return AbstractSpatialIndex.this.getMaxEntitiesPerNode();
         }
     }
 
