@@ -9,6 +9,7 @@ reviewed-by: self
 created: 2026-05-26
 accepted_date: 2026-05-26
 implemented_date: 2026-05-27
+post_mortem: docs/rdr/post-mortem/009-prism-full-cube-coverage.md
 related_issues: [Luciferase-fzm, Luciferase-4g6, RDR-001, RDR-002, RDR-003]
 ---
 
