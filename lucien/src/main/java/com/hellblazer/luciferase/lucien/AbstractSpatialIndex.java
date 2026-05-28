@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.balancing.DefaultBalancingStrategy;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.cache.KnnGeometry;
+import com.hellblazer.luciferase.lucien.cache.KnnSearcher;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.forest.ghost.*;
@@ -81,7 +82,7 @@ import java.util.stream.Stream;
  * @author hal.hildebrand
  */
 public abstract class AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
-implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cache.KnnProvider<Key, ID> {
+implements SpatialIndex<Key, ID, Content> {
 
     /**
      * Record representing a neighbor search result with distance information.
@@ -104,8 +105,12 @@ implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cach
     // Entity data cache for performance. RDR-008: protected so all four structural-nucleus fields
     // (spatialIndex, lock, entityManager, entityCache) share uniform visibility; reached by feature objects via core.
     protected final EntityCache<ID>                                  entityCache;
-    // Fine-grained locking strategy for high-concurrency operations
-    protected       FineGrainedLockingStrategy<ID, Content>          lockingStrategy;
+    // Fine-grained locking strategy for high-concurrency operations.
+    // volatile: configureFineGrainedLocking may replace this reference while concurrent kNearestNeighbors / other
+    // callers read it outside any lock (RDR-008 P3-main moved the k-NN read path into KnnSearcher, where the supplier
+    // `() -> this.lockingStrategy` reads the field from a different class — same JMM publication requirement as the
+    // pre-extraction direct field read, but now visible at the package seam). Matches the dsoc volatile pattern.
+    protected volatile FineGrainedLockingStrategy<ID, Content>       lockingStrategy;
     // Bulk operation support
     protected       BulkOperationConfig                              bulkConfig               = new BulkOperationConfig();
     protected       boolean                                          bulkLoadingMode          = false;
@@ -130,11 +135,10 @@ implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cach
     private volatile DsocController<Key, ID, Content>                        dsoc;
     // RDR-008 P2: distributed-ghost cluster, encapsulated in GhostCoordinator (always present; eager init in ctor).
     protected final GhostCoordinator<Key, ID, Content>                       ghost;
-    // k-NN performance metrics
-    private final   java.util.concurrent.atomic.AtomicLong           knnCacheHits = new java.util.concurrent.atomic.AtomicLong(0);
-    private final   java.util.concurrent.atomic.AtomicLong           knnCacheMisses = new java.util.concurrent.atomic.AtomicLong(0);
-    private final   java.util.concurrent.atomic.AtomicLong           knnExpandingSearchUsed = new java.util.concurrent.atomic.AtomicLong(0);
-    private final   java.util.concurrent.atomic.AtomicLong           knnSFCPruningUsed = new java.util.concurrent.atomic.AtomicLong(0);
+    // RDR-008 P3: k-NN cluster, encapsulated in KnnSearcher (always present; eager init in ctor). KnnSearcher
+    // implements KnnProvider — the façade's public k-NN API now delegates to it, and other feature objects that
+    // consume k-NN (e.g. GhostCoordinator) take this directly as their KnnProvider.
+    protected final KnnSearcher<Key, ID, Content>                            knn;
     // Tree balancing support
     private         TreeBalancingStrategy<ID>                        balancingStrategy;
     private         boolean                                          autoBalancingEnabled     = false;
@@ -166,17 +170,23 @@ implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cach
         // RDR-008: wrap the now-initialized six-field nucleus in a single shared view for feature-object collaborators
         this.core = new SpatialIndexCore<>(spatialIndex, lock, spatialVersion, knnCache, entityManager, entityCache);
 
+        // RDR-008 P3: k-NN cluster lives in KnnSearcher (implements KnnProvider). Constructed before
+        // GhostCoordinator so the latter can take it directly as its KnnProvider.  The lockingStrategy supplier is
+        // late-bound because configureFineGrainedLocking can replace the field.
+        this.knn = new KnnSearcher<>(core, new KnnGeometryImpl(), () -> this.lockingStrategy);
+
         // RDR-008 P2: distributed-ghost cluster lives in GhostCoordinator; constructed eagerly so subclasses can
         // call setNeighborDetector during their own initialization.
         // INVARIANT for future phases: GhostCoordinator's ctor (and the ctors of any other feature object created
-        // here) MUST NOT invoke any method on the supplied FrustumGeometryImpl / KnnGeometryImpl, on the KnnProvider
-        // (`this`), or on `this` directly — `this` is still partially constructed at this point, and any virtual
-        // dispatch into a not-yet-initialized subclass is a classic this-escape hazard. Storing the references is
-        // fine; calling through them is not.
-        // The two `this` arguments below: first satisfies KnnProvider<Key,ID> (façade implements it; P3-main will
-        // pass the KnnSearcher instance instead and drop the `implements`); second is the façade back-reference the
-        // ghost subsystem (GhostBoundaryDetector + DistributedGhostManager) needs in their ctors.
-        this.ghost = new GhostCoordinator<>(core, this, this);
+        // here — including KnnSearcher above) MUST NOT invoke any method on the supplied FrustumGeometryImpl /
+        // KnnGeometryImpl, on the KnnProvider, or on `this` directly — `this` is still partially constructed at this
+        // point, and any virtual dispatch into a not-yet-initialized subclass is a classic this-escape hazard.
+        // Storing the references is fine; calling through them is not.  (KnnSearcher's ctor stores only; the
+        // lockingStrategy supplier captures `this` but is invoked post-construction.)
+        // The `knn` argument below satisfies KnnProvider<Key,ID> (P3-main moved this role off the façade); the
+        // second `this` is the façade back-reference the ghost subsystem (GhostBoundaryDetector +
+        // DistributedGhostManager) needs in their ctors.
+        this.ghost = new GhostCoordinator<>(core, knn, this);
     }
 
     @Override
@@ -896,31 +906,9 @@ implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cach
         return entityCache.getStats();
     }
 
-    /**
-     * Get k-NN performance metrics
-     */
-    public record KNNPerformanceMetrics(
-        long cacheHits,
-        long cacheMisses,
-        long expandingSearchUsed,
-        long sfcPruningUsed,
-        double cacheHitRate,
-        double sfcPruningRate
-    ) {}
-
-    public KNNPerformanceMetrics getKNNPerformanceMetrics() {
-        var hits = knnCacheHits.get();
-        var misses = knnCacheMisses.get();
-        var expanding = knnExpandingSearchUsed.get();
-        var sfc = knnSFCPruningUsed.get();
-        
-        var totalQueries = hits + misses;
-        var cacheHitRate = totalQueries > 0 ? (double) hits / totalQueries : 0.0;
-        
-        var totalSearches = expanding + sfc;
-        var sfcPruningRate = totalSearches > 0 ? (double) sfc / totalSearches : 0.0;
-        
-        return new KNNPerformanceMetrics(hits, misses, expanding, sfc, cacheHitRate, sfcPruningRate);
+    /** Get k-NN performance metrics. RDR-008 P3: delegates to {@link KnnSearcher}. */
+    public KnnSearcher.KNNPerformanceMetrics getKNNPerformanceMetrics() {
+        return knn.getKNNPerformanceMetrics();
     }
 
     @Override
@@ -1387,82 +1375,12 @@ implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cach
     }
 
     /**
-     * Find k nearest neighbors to a query point using spatial locality optimization
-     *
-     * @param queryPoint  the point to search from
-     * @param k           the number of neighbors to find
-     * @param maxDistance maximum search distance
-     * @return list of entity IDs sorted by distance (closest first)
+     * Find k nearest neighbors to a query point using spatial locality optimization.
+     * <p>RDR-008 P3: delegates to {@link KnnSearcher}; the cluster (cache, version pinning, SFC range pruning,
+     * expanding-radius fallback, full-domain sweep, legacy BFS fallback) lives there.
      */
     public List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance) {
-        validateSpatialConstraints(queryPoint);
-
-        if (k <= 0) {
-            return Collections.emptyList();
-        }
-
-        log.debug("k-NN search: queryPoint={}, k={}, maxDistance={}, spatialIndex.size()={}", 
-                  queryPoint, k, maxDistance, spatialIndex.size());
-
-        // k-NN cache: Check cache with composite key (position + k + maxDistance)
-        // Use level 15 for cache granularity (cell size = 64) to distinguish nearby queries
-        // Level 0 is too coarse (cell size = 2,097,152) and causes false cache hits
-        var spatialKey = calculateSpatialIndex(queryPoint, (byte) 15);
-        var queryKey = new com.hellblazer.luciferase.lucien.cache.KNNQueryKey<>(spatialKey, k, maxDistance);
-        var currentVersion = spatialVersion.get();
-        var cached = knnCache.get(queryKey, currentVersion);
-        if (cached != null) {
-            // Cache hit: return cached entity IDs (0.05-0.1ms vs 0.3-0.5ms)
-            knnCacheHits.incrementAndGet();
-            log.debug("k-NN cache hit: returning {} entities", cached.entityIds().size());
-            return cached.entityIds();
-        }
-
-        knnCacheMisses.incrementAndGet();
-        log.debug("k-NN cache miss: computing k-NN");
-
-        // Cache miss: compute k-NN and store result
-        // Use fine-grained locking for read operations
-        return lockingStrategy.executeRead(0L, () -> {
-            // Priority queue to keep track of k nearest entities (max heap)
-            var candidates = ObjectPools.borrowPriorityQueue(EntityDistance.<ID>maxHeapComparator());
-            var addedToCandidates = ObjectPools.<ID>borrowHashSet();
-            try {
-                // Use optimized SFC range pruning first (4-6× speedup from Paper 4)
-                knnSFCPruningUsed.incrementAndGet();
-                performKNNSFCRangePruning(queryPoint, k, maxDistance, candidates, addedToCandidates);
-                
-                // If SFC pruning didn't find enough entities, fall back to expanding radius search
-                if (candidates.size() < k) {
-                    knnExpandingSearchUsed.incrementAndGet();
-                    performKNNExpandingRadiusSearch(queryPoint, k, maxDistance, candidates, addedToCandidates);
-                }
-
-                // Convert to sorted list (closest first) and extract distances
-                var sorted = ObjectPools.<EntityDistance<ID>>borrowArrayList(candidates.size());
-                try {
-                    sorted.addAll(candidates);
-                    sorted.sort(EntityDistance.minHeapComparator());
-
-                    var entityIds = new ArrayList<ID>(sorted.size());
-                    var distances = new ArrayList<Float>(sorted.size());
-                    for (var entry : sorted) {
-                        entityIds.add(entry.entityId());
-                        distances.add(entry.distance());
-                    }
-
-                    // Store in cache for future queries
-                    knnCache.put(queryKey, entityIds, distances, currentVersion);
-
-                    return entityIds;
-                } finally {
-                    ObjectPools.returnArrayList(sorted);
-                }
-            } finally {
-                ObjectPools.returnPriorityQueue(candidates);
-                ObjectPools.returnHashSet(addedToCandidates);
-            }
-        });
+        return knn.kNearestNeighbors(queryPoint, k, maxDistance);
     }
 
     /**
@@ -2625,8 +2543,38 @@ implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cach
         }
 
         @Override
+        public float getCellSizeAtLevel(byte level) {
+            return AbstractSpatialIndex.this.getCellSizeAtLevel(level);
+        }
+
+        @Override
+        public java.util.Set<Key> findNodesIntersectingBounds(VolumeBounds bounds) {
+            return AbstractSpatialIndex.this.findNodesIntersectingBounds(bounds);
+        }
+
+        @Override
+        public boolean knnRequiresFullDomainSweep() {
+            return AbstractSpatialIndex.this.knnRequiresFullDomainSweep();
+        }
+
+        @Override
+        public void addNeighboringNodes(Key nodeIndex, java.util.Queue<Key> toVisit, java.util.Set<Key> visitedNodes) {
+            AbstractSpatialIndex.this.addNeighboringNodes(nodeIndex, toVisit, visitedNodes);
+        }
+
+        @Override
         public void validateSpatialConstraints(Point3f position) {
             AbstractSpatialIndex.this.validateSpatialConstraints(position);
+        }
+
+        @Override
+        public Point3f getCachedEntityPosition(ID entityId) {
+            return AbstractSpatialIndex.this.getCachedEntityPosition(entityId);
+        }
+
+        @Override
+        public byte maxDepth() {
+            return AbstractSpatialIndex.this.maxDepth;
         }
     }
 
@@ -3809,25 +3757,6 @@ implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cach
     }
 
     /**
-     * Convert k-NN candidates to sorted list
-     */
-    private List<ID> convertKNNCandidatesToList(PriorityQueue<EntityDistance<ID>> candidates) {
-        var sorted = ObjectPools.<EntityDistance<ID>>borrowArrayList(candidates.size());
-        try {
-            sorted.addAll(candidates);
-            sorted.sort(EntityDistance.minHeapComparator());
-
-            var result = new ArrayList<ID>(sorted.size());
-            for (var entry : sorted) {
-                result.add(entry.entityId());
-            }
-            return result;
-        } finally {
-            ObjectPools.returnArrayList(sorted);
-        }
-    }
-
-    /**
      * Determine the effective level for batch insertion
      */
     private byte determineBatchInsertionLevel(List<Point3f> positions, byte level) {
@@ -3971,35 +3900,6 @@ implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cach
                 }
             }
         }
-    }
-
-    /**
-     * Find the nearest node to a query point
-     */
-    private Key findNearestNodeToPoint(Point3f queryPoint) {
-        var bestDistance = Float.MAX_VALUE;
-        Key nearestNodeIndex = null;
-        var cellSize = getCellSizeAtLevel(maxDepth);
-
-        for (var nodeIndex : spatialIndex.keySet()) {
-            var node = spatialIndex.get(nodeIndex);
-            if (node == null || node.isEmpty()) {
-                continue;
-            }
-
-            var nodeDistance = estimateNodeDistance(nodeIndex, queryPoint);
-            if (nodeDistance < bestDistance) {
-                bestDistance = nodeDistance;
-                nearestNodeIndex = nodeIndex;
-            }
-
-            // Early termination
-            if (nodeDistance < cellSize) {
-                break;
-            }
-        }
-
-        return nearestNodeIndex;
     }
 
     /**
@@ -4279,342 +4179,6 @@ implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cach
     }
 
     /**
-     * Perform expanding radius search for k-NN
-     *
-     * @return true if enough candidates were found
-     */
-    private boolean performKNNExpandingRadiusSearch(Point3f queryPoint, int k, float maxDistance,
-                                                    PriorityQueue<EntityDistance<ID>> candidates,
-                                                    Set<ID> addedToCandidates) {
-        // Start with a reasonable initial radius - at least the cell size at a mid-level
-        var minInitialRadius = getCellSizeAtLevel((byte) Math.min(maxDepth, 15));
-        var searchRadius = Math.min(maxDistance, Math.max(minInitialRadius, getCellSizeAtLevel(maxDepth)));
-        var searchExpansions = 0;
-        final var maxExpansions = 10; // Allow more expansions to reach distant entities
-
-        log.debug("k-NN expanding search: initialRadius={}, maxDistance={}", searchRadius, maxDistance);
-
-        while (candidates.size() < k && searchRadius <= maxDistance && searchExpansions < maxExpansions) {
-            var foundNewEntities = searchKNNInRadius(queryPoint, searchRadius, maxDistance, k, candidates,
-                                                     addedToCandidates);
-
-            log.debug("k-NN expansion {}: radius={}, found={}, candidates={}", 
-                      searchExpansions, searchRadius, foundNewEntities, candidates.size());
-
-            if (candidates.size() < k && searchRadius < maxDistance) {
-                searchRadius *= 2.0f;
-                searchExpansions++;
-            } else {
-                break;
-            }
-
-            // If we didn't find any new entities in this expansion, stop
-            if (!foundNewEntities && searchExpansions > 1) {
-                break;
-            }
-        }
-
-        // Final safety sweep: the incremental expansion above can terminate before covering the
-        // index — its "no new entities" heuristic and fixed expansion cap assume entities are
-        // densely clustered near the query, and its initial radius is a fine-level cell size. Over a
-        // SPARSE index the true neighbors can sit beyond the last ring (this is what left Prism
-        // k-NN under-returning — the doublings from a sub-unit cell size never spanned the [0,1)
-        // world within the cap). If still short of k, do one pass whose radius spans the whole
-        // coordinate domain. The radius is bounded by the root-cell edge (getCellSizeAtLevel(0) =
-        // the domain extent), NOT by maxDistance: an unbounded maxDistance (e.g. Float.MAX_VALUE for
-        // "all within range") would otherwise build an overflowing search box that makes the
-        // integer-SFC findNodesIntersectingBounds (LITMAX/BIGMIN) non-terminating. (Luciferase-h65)
-        if (candidates.size() < k && knnRequiresFullDomainSweep()) {
-            // Full-domain safety sweep — gated to indices that need it (see
-            // knnRequiresFullDomainSweep). The incremental expansion above can terminate before
-            // covering the index when the coordinate space defeats its heuristics (Prism's
-            // normalized fractional coordinates: the doublings from a sub-unit initial radius never
-            // span the [0,1) world within the expansion cap, and the "no new entities" early-exit
-            // fires on the empty rings before the real neighbors). One pass over a domain-spanning
-            // box closes the gap. This is NOT run for the integer-SFC indices (Octree/Tetree/SFC):
-            // their SFC range-pruning path already covers the whole maxDistance sphere, so a
-            // domain-spanning findNodesIntersectingBounds there would be a costly LITMAX/BIGMIN no-op
-            // (and non-terminating for a large box). See knnRequiresFullDomainSweep. (Luciferase-h65)
-            //
-            // The box spans only the root-cell edge (getCellSizeAtLevel(0)): for any query inside the
-            // domain, query +/- edge already encloses the whole domain, so every node is a candidate.
-            // Acceptance uses the full maxDistance (decoupled from the box radius), so far-corner
-            // neighbors up to the domain diagonal are not wrongly rejected.
-            var edge = getCellSizeAtLevel((byte) 0);
-            var sweepBounds = new VolumeBounds(queryPoint.x - edge, queryPoint.y - edge, queryPoint.z - edge,
-                                               queryPoint.x + edge, queryPoint.y + edge, queryPoint.z + edge);
-            for (var nodeKey : findNodesIntersectingBounds(sweepBounds)) {
-                var node = spatialIndex.get(nodeKey);
-                if (node == null || node.isEmpty()) {
-                    continue;
-                }
-                for (var entityId : node.getEntityIds()) {
-                    if (addedToCandidates.contains(entityId)) {
-                        continue;
-                    }
-                    var entityPos = getCachedEntityPosition(entityId);
-                    if (entityPos == null) {
-                        continue;
-                    }
-                    var distance = queryPoint.distance(entityPos);
-                    if (distance <= maxDistance) {
-                        candidates.add(new EntityDistance<>(entityId, distance));
-                        addedToCandidates.add(entityId);
-                        if (candidates.size() > k) {
-                            var removed = candidates.poll();
-                            addedToCandidates.remove(removed.entityId());
-                        }
-                    }
-                }
-            }
-        }
-
-        log.debug("k-NN expanding search complete: found {} candidates", candidates.size());
-        return candidates.size() >= k;
-    }
-
-    /**
-     * Perform SFC-based search starting from the nearest node
-     */
-    private void performKNNSFCBasedSearch(Point3f queryPoint, int k, float maxDistance,
-                                          PriorityQueue<EntityDistance<ID>> candidates, Set<ID> addedToCandidates) {
-        if (spatialIndex.isEmpty()) {
-            return;
-        }
-
-        var nearestNodeIndex = findNearestNodeToPoint(queryPoint);
-        if (nearestNodeIndex == null) {
-            return;
-        }
-
-        // Breadth-first search from nearest node
-        var toVisit = new LinkedList<Key>();
-        var visitedNodes = ObjectPools.<Key>borrowHashSet();
-        try {
-            toVisit.add(nearestNodeIndex);
-
-            while (!toVisit.isEmpty() && candidates.size() < k) {
-                var current = toVisit.poll();
-                if (!visitedNodes.add(current)) {
-                    continue;
-                }
-
-                var node = spatialIndex.get(current);
-                if (node == null) {
-                    continue;
-                }
-
-                // Process entities in current node
-                for (var entityId : node.getEntityIds()) {
-                    if (!addedToCandidates.contains(entityId)) {
-                        var entityPos = getCachedEntityPosition(entityId);
-                        if (entityPos != null) {
-                            var distance = queryPoint.distance(entityPos);
-                            if (distance <= maxDistance) {
-                                candidates.add(new EntityDistance<>(entityId, distance));
-                                addedToCandidates.add(entityId);
-                                if (candidates.size() > k) {
-                                    var removed = candidates.poll();
-                                    addedToCandidates.remove(removed.entityId());
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Add neighboring nodes if we need more candidates
-                if (candidates.size() < k || shouldContinueKNNSearch(current, queryPoint, candidates)) {
-                    addNeighboringNodes(current, toVisit, visitedNodes);
-                }
-            }
-        } finally {
-            ObjectPools.returnHashSet(visitedNodes);
-        }
-    }
-
-    /**
-     * Perform optimized SFC range-based k-NN search using range pruning.
-     * 
-     * This implements the algorithm from Paper 4 (Space-Filling Trees for Motion Planning):
-     * 1. Estimate appropriate SFC depth for the search radius
-     * 2. Compute SFC key range covering the search sphere
-     * 3. Use subMap() to iterate only over relevant nodes (4-6× speedup vs breadth-first)
-     * 
-     * @param queryPoint the point to search from
-     * @param k the number of neighbors to find
-     * @param maxDistance maximum search distance
-     * @param candidates priority queue to store candidates
-     * @param addedToCandidates set of already-added entity IDs
-     */
-    private void performKNNSFCRangePruning(Point3f queryPoint, int k, float maxDistance,
-                                          PriorityQueue<EntityDistance<ID>> candidates, Set<ID> addedToCandidates) {
-        if (spatialIndex.isEmpty()) {
-            return;
-        }
-
-        // Get the root key to determine key type
-        var rootKey = spatialIndex.firstKey();
-        
-        try {
-            // Use appropriate SFC range estimation based on key type
-            if (rootKey instanceof com.hellblazer.luciferase.lucien.octree.MortonKey) {
-                performKNNSFCRangePruningMorton(queryPoint, k, maxDistance, candidates, addedToCandidates);
-            } else if (rootKey instanceof com.hellblazer.luciferase.lucien.tetree.TetreeKey) {
-                performKNNSFCRangePruningTetree(queryPoint, k, maxDistance, candidates, addedToCandidates);
-            } else {
-                // Fallback to old breadth-first search for unknown key types
-                performKNNSFCBasedSearch(queryPoint, k, maxDistance, candidates, addedToCandidates);
-            }
-        } catch (Exception e) {
-            log.warn("SFC range pruning failed, falling back to breadth-first search: {}", e.getMessage());
-            performKNNSFCBasedSearch(queryPoint, k, maxDistance, candidates, addedToCandidates);
-        }
-    }
-
-    /**
-     * SFC range-based k-NN search for MortonKey (Octree).
-     *
-     * <p>Because {@link com.hellblazer.luciferase.lucien.octree.MortonKey#compareTo} now orders keys
-     * first by level then by Morton code, a {@code subMap} call whose bounds are at level L will only
-     * return keys that are also stored at level L.  Entities can be inserted at different levels, so
-     * we collect the set of distinct storage levels present in the index and issue one {@code subMap}
-     * query per unique level, using bounds computed at that same level.</p>
-     */
-    @SuppressWarnings("unchecked")
-    private void performKNNSFCRangePruningMorton(Point3f queryPoint, int k, float maxDistance,
-                                                PriorityQueue<EntityDistance<ID>> candidates, Set<ID> addedToCandidates) {
-        // When maxDistance is very large, SFC range pruning at level 0 won't work properly
-        // because entities are stored at a finer level. Fall back to full scan.
-        if (maxDistance >= Constants.MAX_COORD) {
-            performFullScanKNN(queryPoint, k, maxDistance, candidates, addedToCandidates);
-            return;
-        }
-
-        // Collect the distinct levels at which keys are stored so we can issue a correctly-levelled
-        // subMap query for each one.  In the common single-level case this is a single pass.
-        var storageLevels = new LinkedHashSet<Byte>();
-        for (var key : spatialIndex.keySet()) {
-            storageLevels.add(((com.hellblazer.luciferase.lucien.octree.MortonKey) key).getLevel());
-        }
-
-        for (byte storageLevel : storageLevels) {
-            // Compute SFC range bounds at the same level as the stored keys so that
-            // subMap() returns the correct entries with level-aware compareTo.
-            var sfcRange = com.hellblazer.luciferase.lucien.octree.MortonKey.estimateSFCRange(
-                queryPoint, maxDistance, storageLevel);
-
-            var rangeMap = spatialIndex.subMap((Key) sfcRange.lower(), (Key) sfcRange.upper());
-
-            for (var entry : rangeMap.entrySet()) {
-                var node = entry.getValue();
-                if (node == null) {
-                    continue;
-                }
-
-                for (var entityId : node.getEntityIds()) {
-                    if (!addedToCandidates.contains(entityId)) {
-                        var entityPos = getCachedEntityPosition(entityId);
-                        if (entityPos != null) {
-                            var distance = queryPoint.distance(entityPos);
-                            if (distance <= maxDistance) {
-                                candidates.add(new EntityDistance<>(entityId, distance));
-                                addedToCandidates.add(entityId);
-
-                                // Maintain max heap of size k
-                                if (candidates.size() > k) {
-                                    var removed = candidates.poll();
-                                    addedToCandidates.remove(removed.entityId());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * SFC range-based k-NN search for TetreeKey (Tetree)
-     */
-    @SuppressWarnings("unchecked")
-    private void performKNNSFCRangePruningTetree(Point3f queryPoint, int k, float maxDistance,
-                                                PriorityQueue<EntityDistance<ID>> candidates, Set<ID> addedToCandidates) {
-        // When maxDistance is very large, SFC range pruning at level 0 won't work properly
-        // because entities are stored at a finer level. Fall back to full scan.
-        if (maxDistance >= Constants.MAX_COORD) {
-            performFullScanKNN(queryPoint, k, maxDistance, candidates, addedToCandidates);
-            return;
-        }
-
-        // Estimate SFC range covering the search sphere
-        var sfcRange = com.hellblazer.luciferase.lucien.tetree.TetreeKey.estimateSFCRange(queryPoint, maxDistance);
-
-        // Use subMap to iterate only over keys in the SFC range (this is the optimization!)
-        var rangeMap = spatialIndex.subMap((Key) sfcRange.lower(), (Key) sfcRange.upper());
-
-        // Process entities in nodes within the SFC range
-        for (var entry : rangeMap.entrySet()) {
-            var node = entry.getValue();
-            if (node == null) {
-                continue;
-            }
-
-            for (var entityId : node.getEntityIds()) {
-                if (!addedToCandidates.contains(entityId)) {
-                    var entityPos = getCachedEntityPosition(entityId);
-                    if (entityPos != null) {
-                        var distance = queryPoint.distance(entityPos);
-                        if (distance <= maxDistance) {
-                            candidates.add(new EntityDistance<>(entityId, distance));
-                            addedToCandidates.add(entityId);
-
-                            // Maintain max heap of size k
-                            if (candidates.size() > k) {
-                                var removed = candidates.poll();
-                                addedToCandidates.remove(removed.entityId());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Full scan k-NN search for unlimited distance queries.
-     * Used when maxDistance is so large that SFC range pruning won't work correctly.
-     */
-    private void performFullScanKNN(Point3f queryPoint, int k, float maxDistance,
-                                    PriorityQueue<EntityDistance<ID>> candidates, Set<ID> addedToCandidates) {
-        // Iterate through all nodes in the spatial index
-        for (var entry : spatialIndex.entrySet()) {
-            var node = entry.getValue();
-            if (node == null) {
-                continue;
-            }
-
-            for (var entityId : node.getEntityIds()) {
-                if (!addedToCandidates.contains(entityId)) {
-                    var entityPos = getCachedEntityPosition(entityId);
-                    if (entityPos != null) {
-                        var distance = queryPoint.distance(entityPos);
-                        if (distance <= maxDistance) {
-                            candidates.add(new EntityDistance<>(entityId, distance));
-                            addedToCandidates.add(entityId);
-
-                            // Maintain max heap of size k
-                            if (candidates.size() > k) {
-                                var removed = candidates.poll();
-                                addedToCandidates.remove(removed.entityId());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
      * Perform bulk insert using stack-based builder
      */
     private List<ID> performStackBasedBulkInsert(List<Point3f> positions, List<Content> contents, byte level) {
@@ -4660,59 +4224,6 @@ implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cach
         while ((nodeIndex = context.popNode()) != null) {
             var level = context.getNodeLevel(nodeIndex);
             traverseNode(nodeIndex, visitor, strategy, context, null, level);
-        }
-    }
-
-    /**
-     * Search for entities within a specific radius
-     */
-    private boolean searchKNNInRadius(Point3f queryPoint, float searchRadius, float maxDistance, int k,
-                                      PriorityQueue<EntityDistance<ID>> candidates, Set<ID> addedToCandidates) {
-        var visitedThisExpansion = ObjectPools.<ID>borrowHashSet();
-        try {
-            var searchBounds = new VolumeBounds(queryPoint.x - searchRadius, queryPoint.y - searchRadius,
-                                                queryPoint.z - searchRadius, queryPoint.x + searchRadius,
-                                                queryPoint.y + searchRadius, queryPoint.z + searchRadius);
-
-            var candidateNodes = findNodesIntersectingBounds(searchBounds);
-            log.debug("k-NN searchInRadius: radius={}, bounds={}, candidateNodes={}", 
-                      searchRadius, searchBounds, candidateNodes.size());
-            var foundNewEntities = false;
-
-            for (Key nodeKey : candidateNodes) {
-                var node = spatialIndex.get(nodeKey);
-                if (node == null || node.isEmpty()) {
-                    continue;
-                }
-
-                // Check all entities in this node
-                for (ID entityId : node.getEntityIds()) {
-                    if (visitedThisExpansion.add(entityId)) {
-                        var entityPos = getCachedEntityPosition(entityId);
-                        if (entityPos != null) {
-                            var distance = queryPoint.distance(entityPos);
-
-                            // Only consider entities within current search radius
-                            if (distance <= searchRadius && distance <= maxDistance && !addedToCandidates.contains(
-                            entityId)) {
-                                candidates.add(new EntityDistance<>(entityId, distance));
-                                addedToCandidates.add(entityId);
-                                foundNewEntities = true;
-
-                                // Keep only k elements
-                                if (candidates.size() > k) {
-                                    candidates.poll();
-                                    // Don't remove from addedToCandidates to prevent re-adding
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            return foundNewEntities;
-        } finally {
-            ObjectPools.returnHashSet(visitedThisExpansion);
         }
     }
 
