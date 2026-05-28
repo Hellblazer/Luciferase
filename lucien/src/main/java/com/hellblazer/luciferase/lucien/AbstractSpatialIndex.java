@@ -145,6 +145,10 @@ implements SpatialIndex<Key, ID, Content> {
     // ctor). Culler implements FrustumCullProvider — DsocController takes it as the standard-cull fallback so the
     // FrustumGeometry consumer surface stays narrow.
     protected final Culler<Key, ID, Content>                                 culler;
+    // RDR-008 P5: collision-detection cluster, encapsulated in CollisionEngine (always present; eager init in
+    // ctor). Takes the lockingStrategy field via a supplier — findCollisionsFineGrained needs the late-bound
+    // mutable reference (configureFineGrainedLocking may replace it), mirroring the KnnSearcher pattern.
+    protected final com.hellblazer.luciferase.lucien.collision.CollisionEngine<Key, ID, Content> collisions;
     // Tree balancing support
     private         TreeBalancingStrategy<ID>                        balancingStrategy;
     private         boolean                                          autoBalancingEnabled     = false;
@@ -187,15 +191,24 @@ implements SpatialIndex<Key, ID, Content> {
         // it (storage-only).
         this.culler = new Culler<>(core, new CullGeometryImpl());
 
+        // RDR-008 P5: collision-detection cluster lives in CollisionEngine. The CollisionGeometryImpl callback
+        // stores `this` but the ctor doesn't dispatch through it (storage-only). The lockingStrategy supplier is
+        // late-bound — configureFineGrainedLocking can replace the field — and findCollisionsFineGrained reads it
+        // at call time, mirroring KnnSearcher.
+        this.collisions = new com.hellblazer.luciferase.lucien.collision.CollisionEngine<>(core,
+                                                                                            new CollisionGeometryImpl(),
+                                                                                            () -> this.lockingStrategy);
+
         // RDR-008 P2: distributed-ghost cluster lives in GhostCoordinator; constructed eagerly so subclasses can
         // call setNeighborDetector during their own initialization.
         // INVARIANT for future phases: GhostCoordinator's ctor (and the ctors of any other feature object created
-        // here — including KnnSearcher above and Culler immediately above) MUST NOT invoke any method on the
-        // supplied FrustumGeometryImpl / KnnGeometryImpl / CullGeometryImpl, on the KnnProvider /
-        // FrustumCullProvider, or on `this` directly — `this` is still partially constructed at this point, and any
-        // virtual dispatch into a not-yet-initialized subclass is a classic this-escape hazard. Storing the
-        // references is fine; calling through them is not.  (KnnSearcher's and Culler's ctors store only; the
-        // lockingStrategy supplier captures `this` but is invoked post-construction.)
+        // here — including KnnSearcher, Culler, and CollisionEngine above) MUST NOT invoke any method on the
+        // supplied FrustumGeometryImpl / KnnGeometryImpl / CullGeometryImpl / CollisionGeometryImpl, on the
+        // KnnProvider / FrustumCullProvider, or on `this` directly — `this` is still partially constructed at this
+        // point, and any virtual dispatch into a not-yet-initialized subclass is a classic this-escape hazard.
+        // Storing the references is fine; calling through them is not.  (KnnSearcher's, Culler's, and
+        // CollisionEngine's ctors store only; the lockingStrategy supplier captures `this` but is invoked
+        // post-construction.)
         // The `knn` argument below satisfies KnnProvider<Key,ID> (P3-main moved this role off the façade); the
         // second `this` is the façade back-reference the ghost subsystem (GhostBoundaryDetector +
         // DistributedGhostManager) needs in their ctors.
@@ -275,42 +288,7 @@ implements SpatialIndex<Key, ID, Content> {
 
     @Override
     public Optional<CollisionPair<ID, Content>> checkCollision(ID entityId1, ID entityId2) {
-        if (entityId1.equals(entityId2)) {
-            return Optional.empty();
-        }
-
-        lock.readLock().lock();
-        try {
-            var bounds1 = getCachedEntityBounds(entityId1);
-            var bounds2 = getCachedEntityBounds(entityId2);
-
-            // Quick early rejection check
-            if (bounds1 != null && bounds2 != null) {
-                // Both have bounds - quick AABB check
-                if (!boundsIntersect(bounds1, bounds2)) {
-                    return Optional.empty();
-                }
-            } else if (bounds1 == null && bounds2 == null) {
-                // Both are points - check distance
-                var pos1 = getCachedEntityPosition(entityId1);
-                var pos2 = getCachedEntityPosition(entityId2);
-
-                if (pos1 == null || pos2 == null) {
-                    return Optional.empty();
-                }
-
-                var threshold = 0.1f; // Small threshold for point entities
-                if (pos1.distance(pos2) > threshold) {
-                    return Optional.empty();
-                }
-            }
-            // For mixed types (one bounded, one point), skip early rejection and go to detailed check
-
-            // Perform detailed collision check
-            return performDetailedCollisionCheck(entityId1, entityId2);
-        } finally {
-            lock.readLock().unlock();
-        }
+        return collisions.checkCollision(entityId1, entityId2);
     }
 
     /**
@@ -585,160 +563,27 @@ implements SpatialIndex<Key, ID, Content> {
 
     @Override
     public List<CollisionPair<ID, Content>> findAllCollisions() {
-        lock.readLock().lock();
-        try {
-            var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
-            var checkedPairs = ObjectPools.<UnorderedPair<ID>>borrowHashSet();
-            try {
-                // Perform four phases of collision detection
-                findIntraNodeCollisions(collisions, checkedPairs);
-                findBoundedEntityCollisions(collisions, checkedPairs);
-                findAdjacentNodeCollisions(collisions, checkedPairs);
-                findPointBoundedCollisions(collisions, checkedPairs);
-
-                // Sort by penetration depth (deepest first)
-                Collections.sort(collisions);
-
-                // Return a copy to avoid returning pooled object
-                return new ArrayList<>(collisions);
-            } finally {
-                ObjectPools.returnArrayList(collisions);
-                ObjectPools.returnHashSet(checkedPairs);
-            }
-        } finally {
-            lock.readLock().unlock();
-        }
+        return collisions.findAllCollisions();
     }
 
+    @Override
     public List<CollisionPair<ID, Content>> findCollisions(ID entityId) {
-        lock.readLock().lock();
-        try {
-            var locations = entityManager.getEntityLocations(entityId);
-            if (locations.isEmpty()) {
-                return Collections.emptyList();
-            }
-
-            var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
-            var checkedEntities = ObjectPools.<ID>borrowHashSet();
-            try {
-                checkedEntities.add(entityId);
-
-                var entityBounds = entityManager.getEntityBounds(entityId);
-                if (entityBounds != null) {
-                    findBoundedEntityCollisions(entityId, entityBounds, checkedEntities, collisions);
-                } else {
-                    findPointEntityCollisions(entityId, locations, checkedEntities, collisions);
-                }
-
-                Collections.sort(collisions);
-                // Return a copy to avoid returning pooled object
-                return new ArrayList<>(collisions);
-            } finally {
-                ObjectPools.returnArrayList(collisions);
-                ObjectPools.returnHashSet(checkedEntities);
-            }
-        } finally {
-            lock.readLock().unlock();
-        }
+        return collisions.findCollisions(entityId);
     }
 
     // ===== Common Insert Operations =====
 
     /**
-     * Find collisions using fine-grained locking for better concurrency This is an alternative to findCollisions that
-     * can be used when high read concurrency is needed
+     * Find collisions using fine-grained locking for better concurrency. Alternative to {@link #findCollisions}
+     * when high read concurrency is needed.
      */
     public List<CollisionPair<ID, Content>> findCollisionsFineGrained(ID entityId) {
-        var locations = entityManager.getEntityLocations(entityId);
-        if (locations.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        // Use fine-grained locking for each node access
-        return lockingStrategy.executeRead(0L, () -> {
-            var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
-            var checkedEntities = ObjectPools.<ID>borrowHashSet();
-            try {
-                checkedEntities.add(entityId);
-
-                var entityBounds = getCachedEntityBounds(entityId);
-                if (entityBounds != null) {
-                    findBoundedEntityCollisions(entityId, entityBounds, checkedEntities, collisions);
-                } else {
-                    findPointEntityCollisions(entityId, locations, checkedEntities, collisions);
-                }
-
-                Collections.sort(collisions);
-                return new ArrayList<>(collisions);
-            } finally {
-                ObjectPools.returnArrayList(collisions);
-                ObjectPools.returnHashSet(checkedEntities);
-            }
-        });
+        return collisions.findCollisionsFineGrained(entityId);
     }
 
     @Override
     public List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region) {
-        lock.readLock().lock();
-        try {
-            var collisions = new ArrayList<CollisionPair<ID, Content>>();
-            var checkedPairs = new HashSet<UnorderedPair<ID>>();
-
-            // Find all nodes intersecting the region
-            var bounds = getVolumeBounds(region);
-            if (bounds == null) {
-                return collisions;
-            }
-
-            var nodesInRegion = spatialRangeQuery(bounds, true);
-            var nodeList = nodesInRegion.collect(Collectors.toList());
-
-            // Check entities within and between nodes
-            for (int i = 0; i < nodeList.size(); i++) {
-                List<ID> nodeEntities = new ArrayList<>(nodeList.get(i).getValue().getEntityIds());
-
-                // Check within node
-                for (int j = 0; j < nodeEntities.size(); j++) {
-                    for (int k = j + 1; k < nodeEntities.size(); k++) {
-                        var id1 = nodeEntities.get(j);
-                        var id2 = nodeEntities.get(k);
-
-                        // Check if both entities are actually in the region
-                        if (isEntityInRegion(id1, region) && isEntityInRegion(id2, region)) {
-                            var pair = new UnorderedPair<>(id1, id2);
-                            if (checkedPairs.add(pair)) {
-                                checkAndAddCollision(id1, id2, collisions);
-                            }
-                        }
-                    }
-                }
-
-                // Check between nodes
-                for (int j = i + 1; j < nodeList.size(); j++) {
-                    for (ID id1 : nodeEntities) {
-                        if (!isEntityInRegion(id1, region)) {
-                            continue;
-                        }
-
-                        for (ID id2 : nodeList.get(j).getValue().getEntityIds()) {
-                            if (!isEntityInRegion(id2, region)) {
-                                continue;
-                            }
-
-                            var pair = new UnorderedPair<>(id1, id2);
-                            if (checkedPairs.add(pair)) {
-                                checkAndAddCollision(id1, id2, collisions);
-                            }
-                        }
-                    }
-                }
-            }
-
-            Collections.sort(collisions);
-            return collisions;
-        } finally {
-            lock.readLock().unlock();
-        }
+        return collisions.findCollisionsInRegion(region);
     }
 
     /**
@@ -881,12 +726,7 @@ implements SpatialIndex<Key, ID, Content> {
 
     @Override
     public CollisionShape getCollisionShape(ID entityId) {
-        lock.readLock().lock();
-        try {
-            return entityManager.getEntityCollisionShape(entityId);
-        } finally {
-            lock.readLock().unlock();
-        }
+        return collisions.getCollisionShape(entityId);
     }
 
     /**
@@ -1740,14 +1580,7 @@ implements SpatialIndex<Key, ID, Content> {
 
     @Override
     public void setCollisionShape(ID entityId, CollisionShape shape) {
-        lock.writeLock().lock();
-        try {
-            entityManager.setEntityCollisionShape(entityId, shape);
-            // Invalidate cache as bounds may have changed
-            entityCache.remove(entityId);
-        } finally {
-            lock.writeLock().unlock();
-        }
+        collisions.setCollisionShape(entityId, shape);
     }
 
     /**
@@ -2055,10 +1888,11 @@ implements SpatialIndex<Key, ID, Content> {
      * {@code FrustumCullProvider} seam.
      *
      * <p>NOTE: {@link CullGeometryImpl} mirrors three method signatures defined here — {@code getFrustumTraversalOrder},
-     * {@code doesFrustumIntersectNode}, {@code getCachedEntityPosition}. The two interfaces are intentionally
-     * independent (cluster-scoped) so they cannot share a base type without crossing the cull/occlusion package
-     * boundary. If any of these three signatures changes, BOTH inner classes need the same change — neither compiler
-     * nor IDE will warn of the asymmetry.
+     * {@code doesFrustumIntersectNode}, {@code getCachedEntityPosition}; {@link KnnGeometryImpl},
+     * {@link CollisionGeometryImpl}, and {@link CullGeometryImpl} additionally share {@code getCachedEntityPosition}.
+     * Each cluster's sub-interface is intentionally independent (cluster-scoped) so they cannot share a base type
+     * without crossing package boundaries. If any of these signatures changes, every mirroring inner class needs
+     * the same change — neither compiler nor IDE will warn of the asymmetry.
      */
     private final class FrustumGeometryImpl implements FrustumGeometry<Key, ID, Content> {
         @Override
@@ -2087,11 +1921,12 @@ implements SpatialIndex<Key, ID, Content> {
      * seven subclass-overridden traversal/intersect/distance hooks, the two cached entity accessors, and the
      * spanning-policy flag. Private inner class preserves the underlying methods' original visibility.
      *
-     * <p>NOTE: this class duplicates three method signatures from {@link FrustumGeometryImpl} —
-     * {@code getFrustumTraversalOrder}, {@code doesFrustumIntersectNode}, {@code getCachedEntityPosition} — because
-     * each cluster's sub-interface is intentionally independent (P3 refinement) and cannot share a base type without
-     * crossing the cull/occlusion package boundary. Update BOTH inner classes if any of these three signatures
-     * changes.
+     * <p>NOTE: this class duplicates method signatures with sibling inner classes — three with
+     * {@link FrustumGeometryImpl} ({@code getFrustumTraversalOrder}, {@code doesFrustumIntersectNode},
+     * {@code getCachedEntityPosition}) and one with {@link CollisionGeometryImpl}
+     * ({@code getCachedEntityBounds}). Each cluster's sub-interface is intentionally independent (P3 refinement)
+     * and cannot share a base type without crossing package boundaries. Update every mirroring inner class if any
+     * of these signatures changes.
      */
     private final class CullGeometryImpl implements CullGeometry<Key, ID, Content> {
         @Override
@@ -2142,6 +1977,49 @@ implements SpatialIndex<Key, ID, Content> {
         @Override
         public boolean isSpanningEnabled() {
             return AbstractSpatialIndex.this.spanningPolicy.isSpanningEnabled();
+        }
+    }
+
+    /**
+     * Façade implementation of the {@link com.hellblazer.luciferase.lucien.collision.CollisionGeometry} seam
+     * (RDR-008 P5): supplies {@code CollisionEngine} the collision-cluster façade operations it needs (two
+     * subclass-overridden traversal hooks + the façade-resident range query + the two cached entity accessors).
+     * Private inner class preserves the underlying methods' original visibility.
+     *
+     * <p>NOTE: this class duplicates the cached-entity accessor signatures with {@link FrustumGeometryImpl},
+     * {@link CullGeometryImpl}, and {@link KnnGeometryImpl}, and the {@code findNodesIntersectingBounds(VolumeBounds)}
+     * and {@code addNeighboringNodes} signatures with {@link KnnGeometryImpl}. Each cluster's sub-interface is
+     * intentionally independent (P3 refinement) and cannot share a base type without crossing package boundaries.
+     * Update sibling inner classes if any of these duplicated signatures changes — neither compiler nor IDE will
+     * warn of the asymmetry.
+     */
+    private final class CollisionGeometryImpl
+    implements com.hellblazer.luciferase.lucien.collision.CollisionGeometry<Key, ID, Content> {
+
+        @Override
+        public java.util.Set<Key> findNodesIntersectingBounds(VolumeBounds bounds) {
+            return AbstractSpatialIndex.this.findNodesIntersectingBounds(bounds);
+        }
+
+        @Override
+        public void addNeighboringNodes(Key nodeIndex, java.util.Queue<Key> toVisit, java.util.Set<Key> visitedNodes) {
+            AbstractSpatialIndex.this.addNeighboringNodes(nodeIndex, toVisit, visitedNodes);
+        }
+
+        @Override
+        public java.util.stream.Stream<java.util.Map.Entry<Key, SpatialNodeImpl<ID>>> spatialRangeQuery(
+        VolumeBounds bounds, boolean includeIntersecting) {
+            return AbstractSpatialIndex.this.spatialRangeQuery(bounds, includeIntersecting);
+        }
+
+        @Override
+        public Point3f getCachedEntityPosition(ID entityId) {
+            return AbstractSpatialIndex.this.getCachedEntityPosition(entityId);
+        }
+
+        @Override
+        public EntityBounds getCachedEntityBounds(ID entityId) {
+            return AbstractSpatialIndex.this.getCachedEntityBounds(entityId);
         }
     }
 
@@ -2762,277 +2640,7 @@ implements SpatialIndex<Key, ID, Content> {
 
     // ===== Bulk Operations Implementation =====
 
-    /**
-     * Check if two bounds intersect
-     */
-    private boolean boundsIntersect(EntityBounds b1, EntityBounds b2) {
-        return b1.getMaxX() >= b2.getMinX() && b1.getMinX() <= b2.getMaxX() && b1.getMaxY() >= b2.getMinY()
-        && b1.getMinY() <= b2.getMaxY() && b1.getMaxZ() >= b2.getMinZ() && b1.getMinZ() <= b2.getMaxZ();
-    }
-
-    /**
-     * Check if bounds intersect with a volume
-     */
-    private boolean boundsIntersectVolume(EntityBounds bounds, Spatial volume) {
-        return switch (volume) {
-            case Spatial.Cube cube ->
-            bounds.getMaxX() >= cube.originX() && bounds.getMinX() <= cube.originX() + cube.extent()
-            && bounds.getMaxY() >= cube.originY() && bounds.getMinY() <= cube.originY() + cube.extent()
-            && bounds.getMaxZ() >= cube.originZ() && bounds.getMinZ() <= cube.originZ() + cube.extent();
-
-            case Spatial.Sphere sphere -> {
-                // Find closest point on bounds to sphere center
-                var closestX = Math.max(bounds.getMinX(), Math.min(sphere.centerX(), bounds.getMaxX()));
-                var closestY = Math.max(bounds.getMinY(), Math.min(sphere.centerY(), bounds.getMaxY()));
-                var closestZ = Math.max(bounds.getMinZ(), Math.min(sphere.centerZ(), bounds.getMaxZ()));
-
-                var dx = closestX - sphere.centerX();
-                var dy = closestY - sphere.centerY();
-                var dz = closestZ - sphere.centerZ();
-                yield (dx * dx + dy * dy + dz * dz) <= (sphere.radius() * sphere.radius());
-            }
-
-            default -> true;
-        };
-    }
-
-    /**
-     * Calculate contact normal between two AABBs
-     */
-    private Vector3f calculateContactNormal(EntityBounds b1, EntityBounds b2) {
-        // Find the axis with minimum penetration
-        var penetrations = new float[6];
-        penetrations[0] = b1.getMaxX() - b2.getMinX(); // +X
-        penetrations[1] = b2.getMaxX() - b1.getMinX(); // -X
-        penetrations[2] = b1.getMaxY() - b2.getMinY(); // +Y
-        penetrations[3] = b2.getMaxY() - b1.getMinY(); // -Y
-        penetrations[4] = b1.getMaxZ() - b2.getMinZ(); // +Z
-        penetrations[5] = b2.getMaxZ() - b1.getMinZ(); // -Z
-
-        var minAxis = 0;
-        var minPenetration = penetrations[0];
-        for (int i = 1; i < 6; i++) {
-            if (penetrations[i] < minPenetration) {
-                minPenetration = penetrations[i];
-                minAxis = i;
-            }
-        }
-
-        // Return normal based on minimum penetration axis
-        return switch (minAxis) {
-            case 0 -> new Vector3f(1, 0, 0);   // +X
-            case 1 -> new Vector3f(-1, 0, 0);  // -X
-            case 2 -> new Vector3f(0, 1, 0);   // +Y
-            case 3 -> new Vector3f(0, -1, 0);  // -Y
-            case 4 -> new Vector3f(0, 0, 1);   // +Z
-            case 5 -> new Vector3f(0, 0, -1);  // -Z
-            default -> new Vector3f(1, 0, 0);
-        };
-    }
-
-    /**
-     * Calculate contact point between two AABBs
-     */
-    private Point3f calculateContactPoint(EntityBounds b1, EntityBounds b2) {
-        // Use the center of the intersection volume
-        var minX = Math.max(b1.getMinX(), b2.getMinX());
-        var minY = Math.max(b1.getMinY(), b2.getMinY());
-        var minZ = Math.max(b1.getMinZ(), b2.getMinZ());
-        var maxX = Math.min(b1.getMaxX(), b2.getMaxX());
-        var maxY = Math.min(b1.getMaxY(), b2.getMaxY());
-        var maxZ = Math.min(b1.getMaxZ(), b2.getMaxZ());
-
-        return new Point3f((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
-    }
-
-    /**
-     * Calculate penetration depth between two AABBs
-     */
-    private float calculatePenetrationDepth(EntityBounds b1, EntityBounds b2) {
-        var xPenetration = Math.min(b1.getMaxX() - b2.getMinX(), b2.getMaxX() - b1.getMinX());
-        var yPenetration = Math.min(b1.getMaxY() - b2.getMinY(), b2.getMaxY() - b1.getMinY());
-        var zPenetration = Math.min(b1.getMaxZ() - b2.getMinZ(), b2.getMaxZ() - b1.getMinZ());
-
-        return Math.min(Math.min(xPenetration, yPenetration), zPenetration);
-    }
-
-    /**
-     * Calculate contact normal between a point and bounds
-     */
-    private Vector3f calculatePointBoundsNormal(Point3f point, EntityBounds bounds) {
-        var boundsCenter = new Point3f((bounds.getMinX() + bounds.getMaxX()) / 2,
-                                       (bounds.getMinY() + bounds.getMaxY()) / 2,
-                                       (bounds.getMinZ() + bounds.getMaxZ()) / 2);
-
-        Vector3f contactNormal = new Vector3f();
-        contactNormal.sub(point, boundsCenter);
-        if (contactNormal.length() > 0) {
-            contactNormal.normalize();
-        } else {
-            contactNormal.set(1, 0, 0); // Default normal
-        }
-        return contactNormal;
-    }
-
-    /**
-     * Calculate penetration depth between a point and bounds
-     */
-    private float calculatePointBoundsPenetration(Point3f point, EntityBounds bounds, float threshold) {
-        if (bounds.getMinX() == bounds.getMaxX() && bounds.getMinY() == bounds.getMaxY()
-        && bounds.getMinZ() == bounds.getMaxZ()) {
-            // Zero-size bounds - use distance
-            Point3f boundsPoint = new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ());
-            float distance = point.distance(boundsPoint);
-            return (distance == 0) ? 0 : Math.max(0, threshold - distance);
-        } else {
-            // Regular bounds - distance from point to nearest surface
-            return Math.min(Math.min(point.x - bounds.getMinX(), bounds.getMaxX() - point.x),
-                            Math.min(Math.min(point.y - bounds.getMinY(), bounds.getMaxY() - point.y),
-                                     Math.min(point.z - bounds.getMinZ(), bounds.getMaxZ() - point.z)));
-        }
-    }
-
-    /**
-     * Check collision between two entities with AABB bounds
-     */
-    private Optional<CollisionPair<ID, Content>> checkAABBCollision(ID id1, Content content1, EntityBounds bounds1,
-                                                                    ID id2, Content content2, EntityBounds bounds2) {
-        if (boundsIntersect(bounds1, bounds2)) {
-            var contactPoint = calculateContactPoint(bounds1, bounds2);
-            var contactNormal = calculateContactNormal(bounds1, bounds2);
-            var penetrationDepth = calculatePenetrationDepth(bounds1, bounds2);
-
-            return Optional.of(
-            CollisionPair.create(id1, content1, bounds1, id2, content2, bounds2, contactPoint, contactNormal,
-                                 penetrationDepth));
-        }
-        return Optional.empty();
-    }
-
-    /**
-     * Check two entities for collision and add to list if colliding
-     */
-    private void checkAndAddCollision(ID id1, ID id2, List<CollisionPair<ID, Content>> collisions) {
-        if (id1.equals(id2)) {
-            return;
-        }
-
-        var collision = performDetailedCollisionCheck(id1, id2);
-        collision.ifPresent(collisions::add);
-    }
-
-    /**
-     * Check collision between a bounded entity and a point entity
-     */
-    private Optional<CollisionPair<ID, Content>> checkMixedCollision(ID id1, Content content1, EntityBounds bounds1,
-                                                                     ID id2, Content content2, EntityBounds bounds2) {
-        var bounds = bounds1 != null ? bounds1 : bounds2;
-        var pointEntityId = bounds1 != null ? id2 : id1;
-        var pointPos = entityManager.getEntityPosition(pointEntityId);
-
-        if (pointPos == null) {
-            return Optional.empty();
-        }
-
-        float threshold = 0.1f;
-        if (isPointInBoundsWithThreshold(pointPos, bounds, threshold)) {
-            var contactPoint = new Point3f(pointPos);
-            var contactNormal = calculatePointBoundsNormal(pointPos, bounds);
-            var penetrationDepth = calculatePointBoundsPenetration(pointPos, bounds, threshold);
-
-            return Optional.of(
-            CollisionPair.create(id1, content1, bounds1, id2, content2, bounds2, contactPoint, contactNormal,
-                                 penetrationDepth));
-        }
-        return Optional.empty();
-    }
-
-    /**
-     * Check neighboring nodes for collisions
-     */
-    private void checkNeighborNodesForCollisions(ID entityId, Key nodeIndex, Set<ID> checkedEntities,
-                                                 List<CollisionPair<ID, Content>> collisions) {
-        var neighbors = new LinkedList<Key>();
-        var visitedNeighbors = new HashSet<Key>();
-        addNeighboringNodes(nodeIndex, neighbors, visitedNeighbors);
-
-        while (!neighbors.isEmpty()) {
-            var neighborIndex = neighbors.poll();
-            checkNodeEntitiesForCollisions(entityId, neighborIndex, checkedEntities, collisions);
-        }
-    }
-
-    /**
-     * Check all entities in a node for collisions
-     */
-    private void checkNodeEntitiesForCollisions(ID entityId, Key nodeIndex, Set<ID> checkedEntities,
-                                                List<CollisionPair<ID, Content>> collisions) {
-        var node = spatialIndex.get(nodeIndex);
-        if (node == null || node.isEmpty()) {
-            return;
-        }
-
-        for (ID otherId : node.getEntityIds()) {
-            if (!checkedEntities.add(otherId)) {
-                continue;
-            }
-            checkAndAddCollision(entityId, otherId, collisions);
-        }
-    }
-
     // ===== Parallel Operations API =====
-
-    /**
-     * Check collision between two point entities
-     */
-    private Optional<CollisionPair<ID, Content>> checkPointCollision(ID id1, Content content1, EntityBounds bounds1,
-                                                                     ID id2, Content content2, EntityBounds bounds2) {
-        var pos1 = entityManager.getEntityPosition(id1);
-        var pos2 = entityManager.getEntityPosition(id2);
-
-        if (pos1 == null || pos2 == null) {
-            return Optional.empty();
-        }
-
-        var distance = pos1.distance(pos2);
-        var threshold = 0.1f;
-
-        if (distance <= threshold) {
-            var contactPoint = new Point3f();
-            contactPoint.interpolate(pos1, pos2, 0.5f);
-
-            Vector3f contactNormal = new Vector3f();
-            contactNormal.sub(pos2, pos1);
-            if (contactNormal.length() > 0) {
-                contactNormal.normalize();
-            } else {
-                contactNormal.set(1, 0, 0); // Default normal for identical positions
-            }
-
-            // For identical positions, penetration depth is 0
-            // Otherwise it's the overlap amount
-            var penetrationDepth = (distance == 0) ? 0 : Math.max(0, threshold - distance);
-
-            return Optional.of(
-            CollisionPair.create(id1, content1, bounds1, id2, content2, bounds2, contactPoint, contactNormal,
-                                 penetrationDepth));
-        }
-        return Optional.empty();
-    }
-
-    /**
-     * Check collision between two entities with custom collision shapes
-     */
-    private Optional<CollisionPair<ID, Content>> checkShapeCollision(ID id1, Content content1, EntityBounds bounds1,
-                                                                     CollisionShape shape1, ID id2, Content content2,
-                                                                     EntityBounds bounds2, CollisionShape shape2) {
-        var result = shape1.collidesWith(shape2);
-        if (result.collides) {
-            return Optional.of(CollisionPair.create(id1, content1, bounds1, id2, content2, bounds2, result.contactPoint,
-                                                    result.contactNormal, result.penetrationDepth));
-        }
-        return Optional.empty();
-    }
 
     /**
      * Determine the effective level for batch insertion
@@ -3061,191 +2669,7 @@ implements SpatialIndex<Key, ID, Content> {
         return shouldUseMortonSort;
     }
 
-    /**
-     * Phase 3: Find collisions between adjacent nodes
-     */
-    private void findAdjacentNodeCollisions(List<CollisionPair<ID, Content>> collisions,
-                                            Set<UnorderedPair<ID>> checkedPairs) {
-        for (var nodeIndex : spatialIndex.keySet()) {
-            var node = spatialIndex.get(nodeIndex);
-            if (node == null || node.isEmpty()) {
-                continue;
-            }
-
-            var nodeEntities = new ArrayList<>(node.getEntityIds());
-
-            // Find neighboring nodes
-            var neighbors = new LinkedList<Key>();
-            var visitedNeighbors = new HashSet<Key>();
-            addNeighboringNodes(nodeIndex, neighbors, visitedNeighbors);
-
-            // Check entities between this node and its neighbors
-            while (!neighbors.isEmpty()) {
-                var neighborIndex = neighbors.poll();
-
-                // Skip already processed nodes (SFC ordering optimization)
-                if (neighborIndex.compareTo(nodeIndex) < 0) {
-                    continue;
-                }
-
-                var neighborNode = spatialIndex.get(neighborIndex);
-                if (neighborNode == null || neighborNode.isEmpty()) {
-                    continue;
-                }
-
-                // Check entities between adjacent nodes
-                for (ID id1 : nodeEntities) {
-                    // Skip bounded entities (already handled)
-                    if (entityManager.getEntityBounds(id1) != null) {
-                        continue;
-                    }
-
-                    for (ID id2 : neighborNode.getEntityIds()) {
-                        var pair = new UnorderedPair<>(id1, id2);
-                        if (checkedPairs.add(pair)) {
-                            checkAndAddCollision(id1, id2, collisions);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     // ===== Memory Pre-allocation Methods =====
-
-    /**
-     * Find collisions for a bounded entity
-     */
-    private void findBoundedEntityCollisions(ID entityId, EntityBounds entityBounds, Set<ID> checkedEntities,
-                                             List<CollisionPair<ID, Content>> collisions) {
-        var nodesToCheck = findNodesIntersectingBounds(entityBounds);
-
-        for (var nodeIndex : nodesToCheck) {
-            checkNodeEntitiesForCollisions(entityId, nodeIndex, checkedEntities, collisions);
-        }
-    }
-
-    /**
-     * Phase 2: Find collisions for bounded entities that span multiple nodes
-     */
-    private void findBoundedEntityCollisions(List<CollisionPair<ID, Content>> collisions,
-                                             Set<UnorderedPair<ID>> checkedPairs) {
-        var boundedEntities = new ArrayList<ID>();
-        for (var entityId : entityManager.getAllEntityIds()) {
-            if (entityManager.getEntityBounds(entityId) != null) {
-                boundedEntities.add(entityId);
-            }
-        }
-
-        // Check bounded entities against each other
-        for (int i = 0; i < boundedEntities.size() - 1; i++) {
-            for (int j = i + 1; j < boundedEntities.size(); j++) {
-                var id1 = boundedEntities.get(i);
-                var id2 = boundedEntities.get(j);
-                var pair = new UnorderedPair<>(id1, id2);
-                if (checkedPairs.add(pair)) {
-                    checkAndAddCollision(id1, id2, collisions);
-                }
-            }
-        }
-    }
-
-    /**
-     * Phase 1: Find collisions between entities within the same node
-     */
-    private void findIntraNodeCollisions(List<CollisionPair<ID, Content>> collisions,
-                                         Set<UnorderedPair<ID>> checkedPairs) {
-        for (var nodeIndex : spatialIndex.keySet()) {
-            var node = spatialIndex.get(nodeIndex);
-            if (node == null || node.isEmpty()) {
-                continue;
-            }
-
-            var nodeEntities = new ArrayList<>(node.getEntityIds());
-            if (nodeEntities.size() < 2) {
-                continue;
-            }
-
-            // Check all pairs within this node
-            for (int i = 0; i < nodeEntities.size() - 1; i++) {
-                for (int j = i + 1; j < nodeEntities.size(); j++) {
-                    var id1 = nodeEntities.get(i);
-                    var id2 = nodeEntities.get(j);
-                    var pair = new UnorderedPair<>(id1, id2);
-                    if (checkedPairs.add(pair)) {
-                        checkAndAddCollision(id1, id2, collisions);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Phase 4: Find collisions between point entities and bounded entities
-     */
-    private void findPointBoundedCollisions(List<CollisionPair<ID, Content>> collisions,
-                                            Set<UnorderedPair<ID>> checkedPairs) {
-        // First, collect all bounded entities and their expanded search regions
-        var boundedEntitySearchNodes = new HashMap<ID, Set<Key>>();
-
-        for (var nodeIndex : spatialIndex.keySet()) {
-            var node = spatialIndex.get(nodeIndex);
-            if (node == null || node.isEmpty()) {
-                continue;
-            }
-
-            for (ID entityId : node.getEntityIds()) {
-                var bounds = entityManager.getEntityBounds(entityId);
-                if (bounds != null) {
-                    // Calculate nodes that could contain point entities that might collide
-                    var threshold = 0.1f; // Collision threshold for point entities
-                    var expandedBounds = new EntityBounds(
-                    new Point3f(bounds.getMinX() - threshold, bounds.getMinY() - threshold,
-                                bounds.getMinZ() - threshold),
-                    new Point3f(bounds.getMaxX() + threshold, bounds.getMaxY() + threshold,
-                                bounds.getMaxZ() + threshold));
-                    var searchNodes = findNodesIntersectingBounds(expandedBounds);
-                    boundedEntitySearchNodes.put(entityId, searchNodes);
-                }
-            }
-        }
-
-        // Now check point entities against bounded entities in their search regions
-        for (var entry : boundedEntitySearchNodes.entrySet()) {
-            var boundedId = entry.getKey();
-            var searchNodes = entry.getValue();
-
-            for (var searchNodeIndex : searchNodes) {
-                var searchNode = spatialIndex.get(searchNodeIndex);
-                if (searchNode == null || searchNode.isEmpty()) {
-                    continue;
-                }
-
-                for (ID pointId : searchNode.getEntityIds()) {
-                    if (entityManager.getEntityBounds(pointId) == null) { // Only check point entities
-                        var pair = new UnorderedPair<>(boundedId, pointId);
-                        if (checkedPairs.add(pair)) {
-                            checkAndAddCollision(boundedId, pointId, collisions);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Find collisions for a point entity
-     */
-    private void findPointEntityCollisions(ID entityId, Set<Key> locations, Set<ID> checkedEntities,
-                                           List<CollisionPair<ID, Content>> collisions) {
-        for (var nodeIndex : locations) {
-            // Check entities in the same node
-            checkNodeEntitiesForCollisions(entityId, nodeIndex, checkedEntities, collisions);
-
-            // Check entities in neighboring nodes
-            checkNeighborNodesForCollisions(entityId, nodeIndex, checkedEntities, collisions);
-        }
-    }
 
     /**
      * Internal method to get entity bounds with caching
@@ -3322,64 +2746,6 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Check if an entity is within a region
-     */
-    private boolean isEntityInRegion(ID entityId, Spatial region) {
-        var pos = entityManager.getEntityPosition(entityId);
-        if (pos == null) {
-            return false;
-        }
-
-        EntityBounds bounds = entityManager.getEntityBounds(entityId);
-        if (bounds != null) {
-            // Check if bounds intersect region
-            return boundsIntersectVolume(bounds, region);
-        } else {
-            // Check if point is in region
-            return isPointInVolume(pos, region);
-        }
-    }
-
-    /**
-     * Check if a point is inside bounds with a threshold
-     */
-    private boolean isPointInBoundsWithThreshold(Point3f point, EntityBounds bounds, float threshold) {
-        var inBounds = point.x >= bounds.getMinX() && point.x <= bounds.getMaxX() && point.y >= bounds.getMinY()
-        && point.y <= bounds.getMaxY() && point.z >= bounds.getMinZ() && point.z <= bounds.getMaxZ();
-
-        // For zero-size bounds, check distance to bounds center
-        if (!inBounds && bounds.getMinX() == bounds.getMaxX() && bounds.getMinY() == bounds.getMaxY()
-        && bounds.getMinZ() == bounds.getMaxZ()) {
-            Point3f boundsPoint = new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ());
-            float distance = point.distance(boundsPoint);
-            inBounds = distance <= threshold;
-        }
-
-        return inBounds;
-    }
-
-    /**
-     * Check if a point is inside a volume
-     */
-    private boolean isPointInVolume(Point3f point, Spatial volume) {
-        return switch (volume) {
-            case Spatial.Cube cube ->
-            point.x >= cube.originX() && point.x <= cube.originX() + cube.extent() && point.y >= cube.originY()
-            && point.y <= cube.originY() + cube.extent() && point.z >= cube.originZ()
-            && point.z <= cube.originZ() + cube.extent();
-
-            case Spatial.Sphere sphere -> {
-                var dx = point.x - sphere.centerX();
-                var dy = point.y - sphere.centerY();
-                var dz = point.z - sphere.centerZ();
-                yield (dx * dx + dy * dy + dz * dz) <= (sphere.radius() * sphere.radius());
-            }
-
-            default -> true; // Conservative for unknown types
-        };
-    }
-
-    /**
      * Log batch insertion performance metrics
      */
     private void logBatchPerformance(int batchSize, long startTime) {
@@ -3388,35 +2754,6 @@ implements SpatialIndex<Key, ID, Content> {
             var rate = batchSize * 1_000_000_000.0 / elapsedTime;
             log.debug("Bulk inserted {} entities in {}ms ({} entities/sec)", batchSize,
                       String.format("%.2f", elapsedTime / 1_000_000.0), String.format("%.0f", rate));
-        }
-    }
-
-    // Collision Detection Helper Methods
-
-    /**
-     * Perform detailed collision check between two entities
-     */
-    private Optional<CollisionPair<ID, Content>> performDetailedCollisionCheck(ID id1, ID id2) {
-        var bounds1 = entityManager.getEntityBounds(id1);
-        var bounds2 = entityManager.getEntityBounds(id2);
-        var content1 = entityManager.getEntityContent(id1);
-        var content2 = entityManager.getEntityContent(id2);
-
-        // Check if we have collision shapes for narrow-phase detection
-        var shape1 = entityManager.getEntityCollisionShape(id1);
-        var shape2 = entityManager.getEntityCollisionShape(id2);
-
-        if (shape1 != null && shape2 != null) {
-            return checkShapeCollision(id1, content1, bounds1, shape1, id2, content2, bounds2, shape2);
-        }
-
-        // Fall back to AABB collision detection
-        if (bounds1 != null && bounds2 != null) {
-            return checkAABBCollision(id1, content1, bounds1, id2, content2, bounds2);
-        } else if (bounds1 != null || bounds2 != null) {
-            return checkMixedCollision(id1, content1, bounds1, id2, content2, bounds2);
-        } else {
-            return checkPointCollision(id1, content1, bounds1, id2, content2, bounds2);
         }
     }
 
