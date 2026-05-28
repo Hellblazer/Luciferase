@@ -39,6 +39,7 @@ import java.util.stream.Stream;
 public class MockFirefliesView<M> implements MembershipView<M> {
 
     private final Set<M>                          members   = ConcurrentHashMap.newKeySet();
+    private final Set<M>                          inactive  = ConcurrentHashMap.newKeySet();
     private final List<Consumer<ViewChange<M>>>  listeners = new CopyOnWriteArrayList<>();
 
     /**
@@ -47,6 +48,7 @@ public class MockFirefliesView<M> implements MembershipView<M> {
      * @param member the member to add
      */
     public void addMember(M member) {
+        inactive.remove(member);
         if (members.add(member)) {
             notifyListeners(new ViewChange<>(List.of(member), List.of()));
         }
@@ -58,14 +60,37 @@ public class MockFirefliesView<M> implements MembershipView<M> {
      * @param member the member to remove
      */
     public void removeMember(M member) {
+        inactive.remove(member);
         if (members.remove(member)) {
             notifyListeners(new ViewChange<>(List.of(), List.of(member)));
         }
     }
 
+    /**
+     * Mark a member as inactive without removing it from the known-membership set, modelling the
+     * "evicted-but-not-yet-GC'd" state: the member is still returned by {@link #getMembers()} but
+     * excluded from {@link #activeMembers()}. Lets tests exercise the active-vs-all authorization
+     * distinction (RDR-005 / Luciferase-ah3). No listener notification — eviction signalling is the
+     * job of {@link #removeMember}.
+     *
+     * @param member the member to mark inactive (must already be known via {@link #addMember})
+     */
+    public void markInactive(M member) {
+        if (!members.contains(member)) {
+            throw new IllegalArgumentException(
+                "Cannot mark unknown member inactive (call addMember first): " + member);
+        }
+        inactive.add(member);
+    }
+
     @Override
     public Stream<M> getMembers() {
         return members.stream();
+    }
+
+    @Override
+    public Stream<M> activeMembers() {
+        return members.stream().filter(m -> !inactive.contains(m));
     }
 
     @Override

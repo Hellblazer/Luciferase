@@ -303,5 +303,10 @@ public class TwoNodeIntegrationTest {
         public Stream<Member> getMembers() {
             return Stream.empty();
         }
+
+        @Override
+        public Stream<Member> activeMembers() {
+            return Stream.empty();
+        }
     }
 }

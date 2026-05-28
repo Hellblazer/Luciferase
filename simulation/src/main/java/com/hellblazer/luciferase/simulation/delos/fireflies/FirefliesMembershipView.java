@@ -68,6 +68,16 @@ public class FirefliesMembershipView implements MembershipView<Member> {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
+    public Stream<Member> activeMembers() {
+        // active() excludes evicted-but-not-yet-GC'd members that allMembers() still returns.
+        // Authorization gates MUST use this set, not getMembers() — see MembershipView javadoc
+        // (RDR-005 / Luciferase-ah3). Same Participant-extends-Member cast as getMembers().
+        var context = view.getContext();
+        return (Stream<Member>) (Stream<? extends Member>) context.active();
+    }
+
+    @Override
     public void addListener(Consumer<ViewChange<Member>> listener) {
         listeners.add(listener);
     }
