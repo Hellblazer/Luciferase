@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.lucien.FineGrainedLockingStrategy.LockingConfig
 import com.hellblazer.luciferase.lucien.balancing.DefaultBalancingStrategy;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
+import com.hellblazer.luciferase.lucien.cache.KnnGeometry;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.forest.ghost.*;
@@ -80,7 +81,7 @@ import java.util.stream.Stream;
  * @author hal.hildebrand
  */
 public abstract class AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
-implements SpatialIndex<Key, ID, Content> {
+implements SpatialIndex<Key, ID, Content>, com.hellblazer.luciferase.lucien.cache.KnnProvider<Key, ID> {
 
     /**
      * Record representing a neighbor search result with distance information.
@@ -168,10 +169,14 @@ implements SpatialIndex<Key, ID, Content> {
         // RDR-008 P2: distributed-ghost cluster lives in GhostCoordinator; constructed eagerly so subclasses can
         // call setNeighborDetector during their own initialization.
         // INVARIANT for future phases: GhostCoordinator's ctor (and the ctors of any other feature object created
-        // here) MUST NOT invoke any method on the supplied SpatialGeometryImpl or on `this` — `this` is still
-        // partially constructed at this point, and any virtual dispatch into a not-yet-initialized subclass is a
-        // classic this-escape hazard. Storing the references is fine; calling through them is not.
-        this.ghost = new GhostCoordinator<>(core, new SpatialGeometryImpl(), this);
+        // here) MUST NOT invoke any method on the supplied FrustumGeometryImpl / KnnGeometryImpl, on the KnnProvider
+        // (`this`), or on `this` directly — `this` is still partially constructed at this point, and any virtual
+        // dispatch into a not-yet-initialized subclass is a classic this-escape hazard. Storing the references is
+        // fine; calling through them is not.
+        // The two `this` arguments below: first satisfies KnnProvider<Key,ID> (façade implements it; P3-main will
+        // pass the KnnSearcher instance instead and drop the `implements`); second is the façade back-reference the
+        // ghost subsystem (GhostBoundaryDetector + DistributedGhostManager) needs in their ctors.
+        this.ghost = new GhostCoordinator<>(core, this, this);
     }
 
     @Override
@@ -2564,12 +2569,12 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * The façade's implementation of the unified {@link SpatialGeometry} seam (RDR-008): supplies feature objects the
-     * façade-resident operations they consume — the subclass-overridden geometry template hooks plus concrete spatial
-     * helpers — without widening those methods' visibility (this is a private inner class, so the delegated methods
-     * keep their original {@code private}/{@code protected}/abstract access). Grows by one cluster's needs per phase.
+     * Façade implementation of the {@link FrustumGeometry} seam (RDR-008 P3, sub-interface split): supplies
+     * {@code DsocController} the frustum-cluster façade operations it needs (traversal hooks, node bounds, cached
+     * entity position, standard-cull fallback). Private inner class preserves the underlying methods' original
+     * visibility.
      */
-    private final class SpatialGeometryImpl implements SpatialGeometry<Key, ID, Content> {
+    private final class FrustumGeometryImpl implements FrustumGeometry<Key, ID, Content> {
         @Override
         public Stream<Key> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
             return AbstractSpatialIndex.this.getFrustumTraversalOrder(frustum, cameraPosition);
@@ -2595,10 +2600,33 @@ implements SpatialIndex<Key, ID, Content> {
                                                                                  Point3f cameraPosition) {
             return AbstractSpatialIndex.this.frustumCullVisibleStandard(frustum, cameraPosition);
         }
+    }
+
+    /**
+     * Façade implementation of the {@link KnnGeometry} seam (RDR-008 P3): supplies {@code KnnSearcher} the k-NN-
+     * cluster façade operations it needs (subclass geometry hooks + input validation). Private inner class preserves
+     * the underlying methods' original visibility.
+     */
+    private final class KnnGeometryImpl implements KnnGeometry<Key, ID> {
+        @Override
+        public Key calculateSpatialIndex(Point3f position, byte level) {
+            return AbstractSpatialIndex.this.calculateSpatialIndex(position, level);
+        }
 
         @Override
-        public List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance) {
-            return AbstractSpatialIndex.this.kNearestNeighbors(queryPoint, k, maxDistance);
+        public float estimateNodeDistance(Key nodeIndex, Point3f queryPoint) {
+            return AbstractSpatialIndex.this.estimateNodeDistance(nodeIndex, queryPoint);
+        }
+
+        @Override
+        public boolean shouldContinueKNNSearch(Key nodeIndex, Point3f queryPoint,
+                                               java.util.PriorityQueue<com.hellblazer.luciferase.lucien.entity.EntityDistance<ID>> candidates) {
+            return AbstractSpatialIndex.this.shouldContinueKNNSearch(nodeIndex, queryPoint, candidates);
+        }
+
+        @Override
+        public void validateSpatialConstraints(Point3f position) {
+            AbstractSpatialIndex.this.validateSpatialConstraints(position);
         }
     }
 
@@ -5239,7 +5267,7 @@ implements SpatialIndex<Key, ID, Content> {
      */
     public void enableDSOC(DSOCConfiguration config, int bufferWidth, int bufferHeight) {
         // RDR-008 P1: the DSOC cluster is encapsulated in DsocController.
-        this.dsoc = new DsocController<>(core, new SpatialGeometryImpl(), config, bufferWidth, bufferHeight);
+        this.dsoc = new DsocController<>(core, new FrustumGeometryImpl(), config, bufferWidth, bufferHeight);
     }
     
     /**

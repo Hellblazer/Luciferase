@@ -17,8 +17,8 @@
 package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
-import com.hellblazer.luciferase.lucien.SpatialGeometry;
 import com.hellblazer.luciferase.lucien.SpatialIndexCore;
+import com.hellblazer.luciferase.lucien.cache.KnnProvider;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector;
@@ -43,7 +43,7 @@ import java.util.Objects;
  * owning façade because the ghost state is always present (an empty {@code GhostLayer(NONE)} from construction, with
  * subclasses calling {@link #setNeighborDetector} during their own initialization). Shared storage and concurrency
  * arrive via {@link SpatialIndexCore}; the one façade query the ghost cluster needs ({@code kNearestNeighbors},
- * extracted in P3) is reached through the unified {@link SpatialGeometry} seam.
+ * extracted in P3) is reached through the {@link KnnProvider} sub-interface (RDR-008 P3 sub-interface split).
  *
  * <p><b>Concrete-façade back-reference.</b> {@code GhostBoundaryDetector} and {@code DistributedGhostManager} both
  * take the concrete {@code AbstractSpatialIndex} in their constructors, so the coordinator holds a façade reference
@@ -59,8 +59,8 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
 
     private static final Logger log = LoggerFactory.getLogger(GhostCoordinator.class);
 
-    private final SpatialIndexCore<Key, ID, Content>    core;
-    private final SpatialGeometry<Key, ID, Content>     geometry;
+    private final SpatialIndexCore<Key, ID, Content>     core;
+    private final KnnProvider<Key, ID>                   knnProvider;
     private final AbstractSpatialIndex<Key, ID, Content> facade;
 
     private GhostType                                            ghostType        = GhostType.NONE;
@@ -74,10 +74,10 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
      * Construct the ghost coordinator with an empty {@code GhostLayer(NONE)}. Subclasses subsequently call
      * {@link #setNeighborDetector} during their own initialization.
      */
-    public GhostCoordinator(SpatialIndexCore<Key, ID, Content> core, SpatialGeometry<Key, ID, Content> geometry,
+    public GhostCoordinator(SpatialIndexCore<Key, ID, Content> core, KnnProvider<Key, ID> knnProvider,
                             AbstractSpatialIndex<Key, ID, Content> facade) {
         this.core = core;
-        this.geometry = geometry;
+        this.knnProvider = knnProvider;
         this.facade = facade;
         this.ghostLayer = new GhostLayer<>(GhostType.NONE);
     }
@@ -206,7 +206,7 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
         core.lock().readLock().lock();
         try {
             // Local neighbors via the unified façade k-NN seam (P3 will own this provider).
-            var localNeighbors = geometry.kNearestNeighbors(position, Integer.MAX_VALUE, radius);
+            var localNeighbors = knnProvider.kNearestNeighbors(position, Integer.MAX_VALUE, radius);
             for (var entityId : localNeighbors) {
                 var entityContent = core.entityManager().getEntityContent(entityId);
                 var entityPosition = core.entityManager().getEntityPosition(entityId);
