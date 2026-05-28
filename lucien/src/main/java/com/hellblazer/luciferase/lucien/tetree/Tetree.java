@@ -150,24 +150,38 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
      */
     @Override
     public List<CollisionPair<ID, Content>> findAllCollisions() {
-        // Use the base class implementation but with additional logic
-        // for checking other tetrahedra in the same grid cell
-        var baseCollisions = super.findAllCollisions();
-
-        lock.readLock().lock();
+        // RDR-008 P5: nucleus access (lock, spatial index map) routes through the SpatialIndexCore protected
+        // re-exposure path. Verbatim behavioral preservation — the override still scans the five non-self
+        // characteristic tetrahedra of every populated cell and reports any cross-tet collisions the base
+        // four-phase sweep misses (the same-cell-different-type case is invisible to neighbor traversal).
+        //
+        // The read lock is acquired BEFORE super.findAllCollisions() and held through the cross-tet sweep
+        // (RDR-008 P5 substantive-critic S2): the base sweep acquires the same read lock internally, but
+        // ReentrantReadWriteLock permits re-entrant read acquisitions from the same thread, so we hold the
+        // lock continuously across both sections. Without this, a concurrent writer could mutate the index
+        // in the window between the base sweep releasing the lock and the override re-acquiring it, leading
+        // to semantically inconsistent results (pair-set seeded from stale base data, etc.).
+        //
+        // Pair deduplication uses HashSet<UnorderedPair<ID>> (P5 code-review-expert Important#2 / substantive-
+        // critic S1): the base sweep deduplicates via UnorderedPair (compareTo-based total order). The
+        // pre-P5 override used a String key built from hashCode-ordering of the two IDs, which can disagree
+        // with compareTo when hashCode collides — producing duplicate CollisionPair entries for those pairs.
+        // Switching to UnorderedPair aligns the override with the base's deduplication contract.
+        core.lock().readLock().lock();
         try {
+            var baseCollisions = super.findAllCollisions();
             var collisions = new ArrayList<>(baseCollisions);
-            var checkedPairs = new HashSet<String>(); // Use String for pair keys
+            var checkedPairs = new HashSet<UnorderedPair<ID>>();
 
-            // Add all base collision pairs to checked set
+            // Add all base collision pairs to checked set, keyed by UnorderedPair to match the base sweep's
+            // total-ordered pair deduplication.
             for (var collision : baseCollisions) {
-                var key = createPairKey(collision.entityId1(), collision.entityId2());
-                checkedPairs.add(key);
+                checkedPairs.add(new UnorderedPair<>(collision.entityId1(), collision.entityId2()));
             }
 
             // Check entities in different tetrahedra of the same grid cell
-            for (var nodeIndex : spatialIndex.keySet()) {
-                var node = spatialIndex.get(nodeIndex);
+            for (var nodeIndex : core.spatialIndex().keySet()) {
+                var node = core.spatialIndex().get(nodeIndex);
                 if (node == null || node.isEmpty()) {
                     continue;
                 }
@@ -184,12 +198,12 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
 
                         var sameCellTet = new Tet(currentTet.x(), currentTet.y(), currentTet.z(), currentTet.l(), type);
                         var sameCellIndex = sameCellTet.tmIndex();
-                        var sameCellNode = spatialIndex.get(sameCellIndex);
+                        var sameCellNode = core.spatialIndex().get(sameCellIndex);
 
                         if (sameCellNode != null && !sameCellNode.isEmpty()) {
                             for (ID otherId : sameCellNode.getEntityIds()) {
-                                var key = createPairKey(entityId, otherId);
-                                if (checkedPairs.add(key)) {
+                                var pair = new UnorderedPair<>(entityId, otherId);
+                                if (checkedPairs.add(pair)) {
                                     // Check if these entities actually collide
                                     var collision = checkCollision(entityId, otherId);
                                     if (collision.isPresent()) {
@@ -204,7 +218,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
 
             return collisions;
         } finally {
-            lock.readLock().unlock();
+            core.lock().readLock().unlock();
         }
     }
 
@@ -245,17 +259,21 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
      */
     @Override
     public List<CollisionPair<ID, Content>> findCollisions(ID entityId) {
-        lock.readLock().lock();
+        // RDR-008 P5: nucleus access (lock, entity manager, spatial index map) routes through the
+        // SpatialIndexCore protected re-exposure path. Façade-protected operations (findNodesIntersectingBounds,
+        // spatialRangeQuery) and the public checkCollision delegator stay called by name — they remain on the
+        // façade and are the sanctioned re-entry points for the override.
+        core.lock().readLock().lock();
         try {
             List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
 
             // Get entity position for spatial range query
-            Point3f entityPos = entityManager.getEntityPosition(entityId);
+            Point3f entityPos = core.entityManager().getEntityPosition(entityId);
             if (entityPos == null) {
                 return collisions;
             }
 
-            EntityBounds entityBounds = entityManager.getEntityBounds(entityId);
+            EntityBounds entityBounds = core.entityManager().getEntityBounds(entityId);
             float searchRadius = 0.1f; // Standard collision threshold for point entities
 
             if (entityBounds != null) {
@@ -265,7 +283,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
                 checkedEntities.add(entityId);
 
                 for (var nodeIndex : nodesToCheck) {
-                    SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
+                    SpatialNodeImpl<ID> node = core.spatialIndex().get(nodeIndex);
                     if (node == null || node.isEmpty()) {
                         continue;
                     }
@@ -308,7 +326,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
             Collections.sort(collisions);
             return collisions;
         } finally {
-            lock.readLock().unlock();
+            core.lock().readLock().unlock();
         }
     }
 
@@ -932,8 +950,9 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
             return super.findCollisionsInRegion(region);
         }
 
-        // Tet-shaped query: Phase 1 uses AABB+SAT post-filter to reduce candidate nodes
-        lock.readLock().lock();
+        // Tet-shaped query: Phase 1 uses AABB+SAT post-filter to reduce candidate nodes.
+        // RDR-008 P5: nucleus access (lock) routes through the SpatialIndexCore protected re-exposure path.
+        core.lock().readLock().lock();
         try {
             var collisions = new ArrayList<SpatialIndex.CollisionPair<ID, Content>>();
             var checkedPairs = new HashSet<UnorderedPair<ID>>();
@@ -979,7 +998,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
             Collections.sort(collisions);
             return collisions;
         } finally {
-            lock.readLock().unlock();
+            core.lock().readLock().unlock();
         }
     }
 
@@ -988,11 +1007,13 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
      * Used by {@link #findCollisionsInRegion(Spatial)} when the region is a {@link Spatial.aabt}.
      */
     private boolean isEntityInAabt(ID entityId, Spatial.aabt queryBound) {
-        var pos = entityManager.getEntityPosition(entityId);
+        // RDR-008 P5: nucleus access (entity manager) routes through the SpatialIndexCore protected
+        // re-exposure path for consistency with the findCollisions*/findAllCollisions overrides.
+        var pos = core.entityManager().getEntityPosition(entityId);
         if (pos == null) {
             return false;
         }
-        var bounds = entityManager.getEntityBounds(entityId);
+        var bounds = core.entityManager().getEntityBounds(entityId);
         if (bounds == null) {
             // Point entity: check containment
             return queryBound.contains(pos.x, pos.y, pos.z);
@@ -2347,18 +2368,6 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
         return candidates;
     }
 
-
-    /**
-     * Create a unique key for an entity pair (order-independent).
-     */
-    private String createPairKey(ID id1, ID id2) {
-        // Create order-independent key
-        if (id1.hashCode() < id2.hashCode()) {
-            return id1 + ":" + id2;
-        } else {
-            return id2 + ":" + id1;
-        }
-    }
 
     /**
      * Determine which of the 6 characteristic tetrahedra contains a point within a cube.
