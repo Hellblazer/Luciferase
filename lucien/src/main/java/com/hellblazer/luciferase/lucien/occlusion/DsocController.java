@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.lucien.FrustumIntersection;
 import com.hellblazer.luciferase.lucien.FrustumIntersection.VisibilityType;
 import com.hellblazer.luciferase.lucien.SpatialIndexCore;
 import com.hellblazer.luciferase.lucien.SpatialKey;
+import com.hellblazer.luciferase.lucien.cull.FrustumCullProvider;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.internal.ObjectPools;
@@ -50,9 +51,11 @@ import java.util.stream.Collectors;
  *
  * <p>The owning {@code AbstractSpatialIndex} façade constructs one of these when DSOC is enabled and delegates its
  * public DSOC API and three integration seams (frustum-cull entry, entity-update visibility/TBV, occlusion-aware
- * node creation) to it. Shared storage and concurrency come from {@link SpatialIndexCore}; the few façade operations
- * the cull still needs (frustum traversal order, the subclass frustum-node test, node bounds, cached entity position,
- * and the standard non-DSOC cull fallback) arrive through {@link FrustumGeometry}.
+ * node creation) to it. Shared storage and concurrency come from {@link SpatialIndexCore}; the four façade operations
+ * the DSOC machinery still needs (frustum traversal order, the subclass frustum-node test, node bounds, cached entity
+ * position) arrive through {@link FrustumGeometry}. The standard non-DSOC cull fallback — the path that runs when
+ * DSOC's Z-buffer is inactive or auto-disable engages — lives in the P4 cull cluster and arrives through a separate
+ * {@link FrustumCullProvider}, keeping the DSOC consumer surface narrow.
  *
  * @param <Key>     the spatial key type
  * @param <ID>      the entity identifier type
@@ -69,9 +72,10 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
     private static final int    EVALUATION_INTERVAL             = 50;   // Check every 50 frames
     private static final int    MIN_ENTITIES_FOR_DSOC           = 50;
 
-    private final SpatialIndexCore<Key, ID, Content> core;
-    private final FrustumGeometry<Key, ID, Content>     callback;
-    private final DSOCConfiguration                  config;
+    private final SpatialIndexCore<Key, ID, Content>     core;
+    private final FrustumGeometry<Key, ID, Content>      callback;
+    private final FrustumCullProvider<Key, ID, Content>  cullProvider;
+    private final DSOCConfiguration                      config;
 
     private final FrameManager                              frameManager;
     private final VisibilityStateManager<ID>                visibilityManager;
@@ -92,9 +96,11 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
      * Mirrors the former {@code AbstractSpatialIndex.enableDSOC(config, bufferWidth, bufferHeight)}.
      */
     public DsocController(SpatialIndexCore<Key, ID, Content> core, FrustumGeometry<Key, ID, Content> callback,
-                          DSOCConfiguration config, int bufferWidth, int bufferHeight) {
+                          FrustumCullProvider<Key, ID, Content> cullProvider, DSOCConfiguration config,
+                          int bufferWidth, int bufferHeight) {
         this.core = core;
         this.callback = callback;
+        this.cullProvider = cullProvider;
         this.config = config;
         if (config.isEnabled()) {
             this.frameManager = new FrameManager();
@@ -151,6 +157,8 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
         if (isEnabled()) {
             stats.put("dsocEnabled", true);
             stats.put("currentFrame", getCurrentFrame());
+            stats.put("dsocFrameCount", dsocFrameCount);
+            stats.put("standardFrameCount", standardFrameCount);
             if (visibilityManager != null) {
                 stats.putAll(visibilityManager.getStatistics());
             }
@@ -243,13 +251,13 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
         // Use DSOC only when still enabled and hierarchical occlusion is configured and worthwhile
         if (isEnabled() && config.isEnableHierarchicalOcclusion()) {
             if (shouldSkipDSOC()) {
-                return measureAndExecute(() -> callback.frustumCullVisibleStandard(frustum, cameraPosition), false);
+                return measureAndExecute(() -> cullProvider.frustumCullVisibleStandard(frustum, cameraPosition), false);
             }
             return measureAndExecute(() -> frustumCullVisibleWithDSOC(frustum, cameraPosition), true);
         }
 
         // Standard path, still measured so the perf comparison stays meaningful
-        return measureAndExecute(() -> callback.frustumCullVisibleStandard(frustum, cameraPosition), false);
+        return measureAndExecute(() -> cullProvider.frustumCullVisibleStandard(frustum, cameraPosition), false);
     }
 
     /** Perform frustum culling with occlusion testing. */
@@ -259,7 +267,7 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
         }
         // Early exit if Z-buffer is not activated (no occluders)
         if (!occlusionCuller.isActivated()) {
-            return callback.frustumCullVisibleStandard(frustum, cameraPosition);
+            return cullProvider.frustumCullVisibleStandard(frustum, cameraPosition);
         }
 
         core.lock().readLock().lock();

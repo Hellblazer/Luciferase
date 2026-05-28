@@ -23,6 +23,8 @@ import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.cache.KnnGeometry;
 import com.hellblazer.luciferase.lucien.cache.KnnSearcher;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
+import com.hellblazer.luciferase.lucien.cull.CullGeometry;
+import com.hellblazer.luciferase.lucien.cull.Culler;
 import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.forest.ghost.*;
 import com.hellblazer.luciferase.lucien.internal.EntityCache;
@@ -139,6 +141,10 @@ implements SpatialIndex<Key, ID, Content> {
     // implements KnnProvider — the façade's public k-NN API now delegates to it, and other feature objects that
     // consume k-NN (e.g. GhostCoordinator) take this directly as their KnnProvider.
     protected final KnnSearcher<Key, ID, Content>                            knn;
+    // RDR-008 P4: bundled frustum/plane/ray cull cluster, encapsulated in Culler (always present; eager init in
+    // ctor). Culler implements FrustumCullProvider — DsocController takes it as the standard-cull fallback so the
+    // FrustumGeometry consumer surface stays narrow.
+    protected final Culler<Key, ID, Content>                                 culler;
     // Tree balancing support
     private         TreeBalancingStrategy<ID>                        balancingStrategy;
     private         boolean                                          autoBalancingEnabled     = false;
@@ -175,13 +181,20 @@ implements SpatialIndex<Key, ID, Content> {
         // late-bound because configureFineGrainedLocking can replace the field.
         this.knn = new KnnSearcher<>(core, new KnnGeometryImpl(), () -> this.lockingStrategy);
 
+        // RDR-008 P4: bundled frustum/plane/ray cull cluster lives in Culler (implements FrustumCullProvider).
+        // Constructed before the ghost coordinator so DSOC's lazy construction (enableDSOC) can take it as the
+        // standard-cull fallback. The CullGeometryImpl callback stores `this` but the ctor doesn't dispatch through
+        // it (storage-only).
+        this.culler = new Culler<>(core, new CullGeometryImpl());
+
         // RDR-008 P2: distributed-ghost cluster lives in GhostCoordinator; constructed eagerly so subclasses can
         // call setNeighborDetector during their own initialization.
         // INVARIANT for future phases: GhostCoordinator's ctor (and the ctors of any other feature object created
-        // here — including KnnSearcher above) MUST NOT invoke any method on the supplied FrustumGeometryImpl /
-        // KnnGeometryImpl, on the KnnProvider, or on `this` directly — `this` is still partially constructed at this
-        // point, and any virtual dispatch into a not-yet-initialized subclass is a classic this-escape hazard.
-        // Storing the references is fine; calling through them is not.  (KnnSearcher's ctor stores only; the
+        // here — including KnnSearcher above and Culler immediately above) MUST NOT invoke any method on the
+        // supplied FrustumGeometryImpl / KnnGeometryImpl / CullGeometryImpl, on the KnnProvider /
+        // FrustumCullProvider, or on `this` directly — `this` is still partially constructed at this point, and any
+        // virtual dispatch into a not-yet-initialized subclass is a classic this-escape hazard. Storing the
+        // references is fine; calling through them is not.  (KnnSearcher's and Culler's ctors store only; the
         // lockingStrategy supplier captures `this` but is invoked post-construction.)
         // The `knn` argument below satisfies KnnProvider<Key,ID> (P3-main moved this role off the façade); the
         // second `this` is the façade back-reference the ghost subsystem (GhostBoundaryDetector +
@@ -729,11 +742,8 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Find all entities that are completely inside the frustum (not partially visible).
-     *
-     * @param frustum        the frustum to test
-     * @param cameraPosition the camera position for distance sorting
-     * @return list of entities completely inside the frustum, sorted by distance from camera
+     * Find all entities completely inside the frustum. Composes on top of {@link #frustumCullVisible} so the result
+     * inherits the DSOC routing (when enabled) — calling {@link Culler} directly would silently bypass DSOC.
      */
     public List<FrustumIntersection<ID, Content>> frustumCullInside(Frustum3D frustum, Point3f cameraPosition) {
         return frustumCullVisible(frustum, cameraPosition).stream()
@@ -742,11 +752,8 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Find all entities that intersect the frustum boundary (partially visible).
-     *
-     * @param frustum        the frustum to test
-     * @param cameraPosition the camera position for distance sorting
-     * @return list of entities intersecting frustum boundary, sorted by distance from camera
+     * Find all entities intersecting the frustum boundary. Composes on top of {@link #frustumCullVisible} so the
+     * result inherits the DSOC routing (when enabled).
      */
     public List<FrustumIntersection<ID, Content>> frustumCullIntersecting(Frustum3D frustum, Point3f cameraPosition) {
         return frustumCullVisible(frustum, cameraPosition).stream()
@@ -755,81 +762,42 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Find all entities that are visible within the given frustum. Returns entities that are either completely inside
-     * or intersecting the frustum.
-     *
-     * @param frustum        the frustum to test
-     * @param cameraPosition the camera position for distance sorting
-     * @return list of frustum intersections sorted by distance from camera
+     * Find all entities visible in the frustum. Preserves the P1 DSOC seam: when a {@link DsocController} is present
+     * the cull goes through DSOC (auto-disable, occlusion, perf measurement); otherwise it runs the standard cull
+     * directly via {@link Culler}. The composed entries below ({@link #frustumCullInside},
+     * {@link #frustumCullIntersecting}, {@link #frustumCullWithinDistance}) flow through this method, never through
+     * the {@code Culler} delegators, so they all inherit the DSOC routing decision.
      */
     public List<FrustumIntersection<ID, Content>> frustumCullVisible(Frustum3D frustum, Point3f cameraPosition) {
         if (frustum == null) {
             throw new NullPointerException("Frustum cannot be null");
         }
-        
-        // RDR-008 P1: the DSOC decision (auto-disable, skip heuristics) and perf measurement live in
-        // DsocController. When DSOC was never enabled, run the standard cull directly.
         if (dsoc != null) {
             return dsoc.frustumCullVisible(frustum, cameraPosition);
         }
-        return frustumCullVisibleStandard(frustum, cameraPosition);
-    }
-
-    @Override
-    public List<ID> frustumCullVisible(Frustum3D frustum) {
-        if (frustum == null) {
-            throw new NullPointerException("Frustum cannot be null");
-        }
-        
-        // For the simple ID-only version, we don't need camera position or distance sorting
-        // We just need to find which entities are visible
-        lock.readLock().lock();
-        try {
-            var visibleEntities = new ArrayList<ID>();
-            var visitedEntities = new HashSet<ID>();
-
-            // Traverse all nodes that could intersect with the frustum
-            spatialIndex.forEach((nodeIndex, node) -> {
-                if (node == null || node.isEmpty()) {
-                    return;
-                }
-
-                // Check if frustum intersects this node
-                if (!doesFrustumIntersectNode(nodeIndex, frustum)) {
-                    return;
-                }
-
-                // Add all entities in visible nodes
-                for (ID entityId : node.getEntityIds()) {
-                    // Skip if already processed (for spanning entities)
-                    if (visitedEntities.add(entityId)) {
-                        // For the simple version, we just check if the entity position is in the frustum
-                        var entityPos = getCachedEntityPosition(entityId);
-                        if (entityPos != null && frustum.containsPoint(entityPos)) {
-                            visibleEntities.add(entityId);
-                        }
-                    }
-                }
-            });
-
-            return visibleEntities;
-        } finally {
-            lock.readLock().unlock();
-        }
+        return culler.frustumCullVisibleStandard(frustum, cameraPosition);
     }
 
     /**
-     * Find all entities within the specified distance from the camera that are visible in the frustum.
-     *
-     * @param frustum        the frustum to test
-     * @param cameraPosition the camera position
-     * @param maxDistance    maximum distance from camera to include
-     * @return list of entities within distance, sorted by distance from camera
+     * Simple ID-only frustum visibility query. <strong>Intentionally bypasses DSOC</strong>: the pre-extraction
+     * single-arg form was always non-DSOC, and DSOC culling requires a camera position and {@code Content} retrieval
+     * that the ID-only contract deliberately excludes. For DSOC-aware culling use
+     * {@link #frustumCullVisible(Frustum3D, Point3f)}.
+     */
+    @Override
+    public List<ID> frustumCullVisible(Frustum3D frustum) {
+        return culler.frustumCullVisibleIds(frustum);
+    }
+
+    /**
+     * Find all entities within {@code maxDistance} of the camera visible in the frustum. Composes on top of
+     * {@link #frustumCullVisible} so the result inherits the DSOC routing (when enabled).
      */
     public List<FrustumIntersection<ID, Content>> frustumCullWithinDistance(Frustum3D frustum, Point3f cameraPosition,
                                                                             float maxDistance) {
-        return frustumCullVisible(frustum, cameraPosition).stream().filter(
-        intersection -> intersection.distanceFromCamera() <= maxDistance).collect(Collectors.toList());
+        return frustumCullVisible(frustum, cameraPosition).stream()
+                                                          .filter(i -> i.distanceFromCamera() <= maxDistance)
+                                                          .collect(Collectors.toList());
     }
 
     // ===== Common Remove Operations =====
@@ -1502,102 +1470,31 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
 
-    /**
-     * Find all entities that intersect with the given plane. Returns entities that either intersect the plane or are
-     * within the specified tolerance distance from it.
-     *
-     * @param plane     the plane to test intersection with
-     * @param tolerance maximum distance from plane to consider as intersection (use 0 for exact intersection)
-     * @return list of plane intersections sorted by distance from plane
-     */
+    /** Find all entities intersecting the plane within {@code tolerance}. RDR-008 P4: delegates to {@link Culler}. */
     public List<PlaneIntersection<ID, Content>> planeIntersectAll(Plane3D plane, float tolerance) {
-        lock.readLock().lock();
-        try {
-            var intersections = new ArrayList<PlaneIntersection<ID, Content>>();
-
-            // Traverse nodes that could intersect with the plane
-            getPlaneTraversalOrder(plane).forEach(nodeIndex -> {
-                var node = spatialIndex.get(nodeIndex);
-                if (node == null || node.isEmpty()) {
-                    return;
-                }
-
-                // Check if plane intersects this node
-                if (!doesPlaneIntersectNode(nodeIndex, plane)) {
-                    return;
-                }
-
-                // Check each entity in the node
-                for (ID entityId : node.getEntityIds()) {
-                    var content = entityManager.getEntityContent(entityId);
-                    if (content == null) {
-                        continue;
-                    }
-
-                    var entityPos = getCachedEntityPosition(entityId);
-                    var bounds = entityManager.getEntityBounds(entityId);
-
-                    // Calculate plane-entity intersection
-                    var intersection = calculatePlaneEntityIntersection(plane, entityId, content, entityPos, bounds,
-                                                                        tolerance);
-
-                    if (intersection != null) {
-                        intersections.add(intersection);
-                    }
-                }
-            });
-
-            Collections.sort(intersections);
-            return intersections;
-        } finally {
-            lock.readLock().unlock();
-        }
+        return culler.planeIntersectAll(plane, tolerance);
     }
 
     // ===== Common Spatial Query Base =====
 
-    /**
-     * Find all entities that intersect with the given plane (exact intersection only).
-     *
-     * @param plane the plane to test intersection with
-     * @return list of plane intersections sorted by distance from plane
-     */
+    /** Find all entities exactly intersecting the plane. RDR-008 P4: delegates to {@link Culler}. */
     public List<PlaneIntersection<ID, Content>> planeIntersectAll(Plane3D plane) {
-        return planeIntersectAll(plane, 0.0f);
+        return culler.planeIntersectAll(plane);
     }
 
-    /**
-     * Find all entities on the negative side of the plane (opposite to normal).
-     *
-     * @param plane the plane to test
-     * @return list of entities on negative side, sorted by distance from plane
-     */
+    /** Find all entities on the negative side of the plane. RDR-008 P4: delegates to {@link Culler}. */
     public List<PlaneIntersection<ID, Content>> planeIntersectNegativeSide(Plane3D plane) {
-        return planeIntersectAll(plane, Float.MAX_VALUE).stream().filter(PlaneIntersection::isOnNegativeSide).collect(
-        Collectors.toList());
+        return culler.planeIntersectNegativeSide(plane);
     }
 
-    /**
-     * Find all entities on the positive side of the plane (in direction of normal).
-     *
-     * @param plane the plane to test
-     * @return list of entities on positive side, sorted by distance from plane
-     */
+    /** Find all entities on the positive side of the plane. RDR-008 P4: delegates to {@link Culler}. */
     public List<PlaneIntersection<ID, Content>> planeIntersectPositiveSide(Plane3D plane) {
-        return planeIntersectAll(plane, Float.MAX_VALUE).stream().filter(PlaneIntersection::isOnPositiveSide).collect(
-        Collectors.toList());
+        return culler.planeIntersectPositiveSide(plane);
     }
 
-    /**
-     * Find all entities within the specified distance from the plane (on either side).
-     *
-     * @param plane       the plane to test
-     * @param maxDistance maximum distance from plane to include
-     * @return list of entities within distance, sorted by distance from plane
-     */
+    /** Find all entities within {@code maxDistance} of the plane. RDR-008 P4: delegates to {@link Culler}. */
     public List<PlaneIntersection<ID, Content>> planeIntersectWithinDistance(Plane3D plane, float maxDistance) {
-        return planeIntersectAll(plane, maxDistance).stream().filter(
-        intersection -> Math.abs(intersection.distanceFromPlane()) <= maxDistance).collect(Collectors.toList());
+        return culler.planeIntersectWithinDistance(plane, maxDistance);
     }
 
     /**
@@ -1732,104 +1629,7 @@ implements SpatialIndex<Key, ID, Content> {
     @Override
     public List<RayIntersection<ID, Content>> rayIntersectAll(Ray3D ray) {
         validateSpatialConstraints(ray.origin());
-
-        lock.readLock().lock();
-        try {
-            var intersections = new ArrayList<RayIntersection<ID, Content>>();
-            var visitedEntities = new HashSet<ID>();
-
-            // Get nodes in traversal order
-            getRayTraversalOrder(ray).forEach(nodeIndex -> {
-                var node = spatialIndex.get(nodeIndex);
-                if (node == null || node.isEmpty()) {
-                    return;
-                }
-
-                // Check if ray intersects this node
-                if (!doesRayIntersectNode(nodeIndex, ray)) {
-                    return;
-                }
-
-                // Check entities in this node
-                for (ID entityId : node.getEntityIds()) {
-                    // Skip if already processed (for spanning entities)
-                    if (!visitedEntities.add(entityId)) {
-                        continue;
-                    }
-
-                    // Get entity details
-                    var entityPos = getCachedEntityPosition(entityId);
-                    if (entityPos == null) {
-                        continue;
-                    }
-
-                    // Check ray-entity intersection
-                    var distance = getRayEntityDistance(ray, entityId, entityPos);
-                    if (distance >= 0 && ray.isWithinDistance(distance)) {
-                        var content = entityManager.getEntityContent(entityId);
-                        var bounds = getCachedEntityBounds(entityId);
-
-                        // Calculate intersection point
-                        var intersectionPoint = ray.pointAt(distance);
-
-                        // Calculate normal (simplified - towards ray origin)
-                        var normal = new Vector3f();
-                        normal.sub(ray.origin(), intersectionPoint);
-                        normal.normalize();
-
-                        intersections.add(
-                        new RayIntersection<>(entityId, content, distance, intersectionPoint, normal, bounds));
-                    }
-                }
-            });
-
-            // IMPORTANT: For spanning entities, we also need to check ALL entities that have bounds
-            // This is because a spanning entity might be stored in nodes outside the ray's path
-            // but still have bounds that intersect with the ray
-            if (spanningPolicy.isSpanningEnabled()) {
-                // Check all entities with bounds
-                for (var entry : spatialIndex.entrySet()) {
-                    for (var entityId : entry.getValue().getEntityIds()) {
-                        if (!visitedEntities.contains(entityId)) {
-                            var entityBounds = entityManager.getEntityBounds(entityId);
-                            if (entityBounds != null) {
-                                // Check if ray intersects the entity bounds
-                                var distance = SpatialDistanceCalculator.rayIntersectsAABB(ray, entityBounds.getMinX(),
-                                                                                           entityBounds.getMinY(),
-                                                                                           entityBounds.getMinZ(),
-                                                                                           entityBounds.getMaxX(),
-                                                                                           entityBounds.getMaxY(),
-                                                                                           entityBounds.getMaxZ());
-
-                                if (distance >= 0 && ray.isWithinDistance(distance)) {
-                                    visitedEntities.add(entityId);
-                                    var content = entityManager.getEntityContent(entityId);
-                                    var entityPos = getCachedEntityPosition(entityId);
-
-                                    // Calculate intersection point
-                                    var intersectionPoint = ray.pointAt(distance);
-
-                                    // Calculate normal (simplified - towards ray origin)
-                                    var normal = new Vector3f();
-                                    normal.sub(ray.origin(), intersectionPoint);
-                                    normal.normalize();
-
-                                    intersections.add(
-                                    new RayIntersection<>(entityId, content, distance, intersectionPoint, normal,
-                                                          entityBounds));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Sort by distance
-            Collections.sort(intersections);
-            return intersections;
-        } finally {
-            lock.readLock().unlock();
-        }
+        return culler.rayIntersectAll(ray);
     }
 
     // ===== Ray Intersection Abstract Methods =====
@@ -1837,205 +1637,13 @@ implements SpatialIndex<Key, ID, Content> {
     @Override
     public Optional<RayIntersection<ID, Content>> rayIntersectFirst(Ray3D ray) {
         validateSpatialConstraints(ray.origin());
-
-        lock.readLock().lock();
-        try {
-            var visitedEntities = new HashSet<ID>();
-            RayIntersection<ID, Content> closest = null;
-            var closestDistance = Float.MAX_VALUE;
-
-            // Traverse nodes in order until we find an intersection
-            var nodeIterator = getRayTraversalOrder(ray).iterator();
-            while (nodeIterator.hasNext()) {
-                var nodeIndex = nodeIterator.next();
-
-                // Early termination if node is beyond closest found
-                var nodeDistance = getRayNodeIntersectionDistance(nodeIndex, ray);
-                if (nodeDistance > closestDistance) {
-                    break;
-                }
-
-                var node = spatialIndex.get(nodeIndex);
-                if (node == null || node.isEmpty()) {
-                    continue;
-                }
-
-                // Check if ray intersects this node
-                if (!doesRayIntersectNode(nodeIndex, ray)) {
-                    continue;
-                }
-
-                // Check entities in this node
-                for (ID entityId : node.getEntityIds()) {
-                    if (!visitedEntities.add(entityId)) {
-                        continue;
-                    }
-
-                    var entityPos = getCachedEntityPosition(entityId);
-                    if (entityPos == null) {
-                        continue;
-                    }
-
-                    var distance = getRayEntityDistance(ray, entityId, entityPos);
-                    if (distance >= 0 && distance < closestDistance && ray.isWithinDistance(distance)) {
-                        var content = entityManager.getEntityContent(entityId);
-                        var bounds = getCachedEntityBounds(entityId);
-                        var intersectionPoint = ray.pointAt(distance);
-
-                        var normal = new Vector3f();
-                        normal.sub(ray.origin(), intersectionPoint);
-                        normal.normalize();
-
-                        closest = new RayIntersection<>(entityId, content, distance, intersectionPoint, normal, bounds);
-                        closestDistance = distance;
-                    }
-                }
-            }
-
-            // IMPORTANT: For spanning entities, we also need to check ALL entities that have bounds
-            // This is needed for finding spanning entities stored in nodes outside the ray's path
-            if (spanningPolicy.isSpanningEnabled()) {
-                // Check all entities with bounds to find potentially closer spanning entities
-                for (var entry : spatialIndex.entrySet()) {
-                    for (var entityId : entry.getValue().getEntityIds()) {
-                        if (!visitedEntities.contains(entityId)) {
-                            var entityBounds = entityManager.getEntityBounds(entityId);
-                            if (entityBounds != null) {
-                                // Check if ray intersects the entity bounds
-                                var distance = SpatialDistanceCalculator.rayIntersectsAABB(ray, entityBounds.getMinX(),
-                                                                                           entityBounds.getMinY(),
-                                                                                           entityBounds.getMinZ(),
-                                                                                           entityBounds.getMaxX(),
-                                                                                           entityBounds.getMaxY(),
-                                                                                           entityBounds.getMaxZ());
-
-                                if (distance >= 0 && distance < closestDistance && ray.isWithinDistance(distance)) {
-                                    visitedEntities.add(entityId);
-                                    var content = entityManager.getEntityContent(entityId);
-                                    var entityPos = getCachedEntityPosition(entityId);
-                                    var intersectionPoint = ray.pointAt(distance);
-
-                                    var normal = new Vector3f();
-                                    normal.sub(ray.origin(), intersectionPoint);
-                                    normal.normalize();
-
-                                    closest = new RayIntersection<>(entityId, content, distance, intersectionPoint,
-                                                                    normal, entityBounds);
-                                    closestDistance = distance;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            return Optional.ofNullable(closest);
-        } finally {
-            lock.readLock().unlock();
-        }
+        return culler.rayIntersectFirst(ray);
     }
 
     @Override
     public List<RayIntersection<ID, Content>> rayIntersectWithin(Ray3D ray, float maxDistance) {
         validateSpatialConstraints(ray.origin());
-
-        if (maxDistance <= 0) {
-            return Collections.emptyList();
-        }
-
-        // Create a bounded ray with the minimum of ray's max distance and provided max distance
-        var boundedRay = ray.withMaxDistance(Math.min(ray.maxDistance(), maxDistance));
-
-        lock.readLock().lock();
-        try {
-            var intersections = new ArrayList<RayIntersection<ID, Content>>();
-            var visitedEntities = new HashSet<ID>();
-
-            getRayTraversalOrder(boundedRay).forEach(nodeIndex -> {
-                // Early termination if node is beyond max distance
-                float nodeDistance = getRayNodeIntersectionDistance(nodeIndex, boundedRay);
-                if (nodeDistance > maxDistance) {
-                    return;
-                }
-
-                var node = spatialIndex.get(nodeIndex);
-                if (node == null || node.isEmpty()) {
-                    return;
-                }
-
-                if (!doesRayIntersectNode(nodeIndex, boundedRay)) {
-                    return;
-                }
-
-                for (ID entityId : node.getEntityIds()) {
-                    if (!visitedEntities.add(entityId)) {
-                        continue;
-                    }
-
-                    var entityPos = getCachedEntityPosition(entityId);
-                    if (entityPos == null) {
-                        continue;
-                    }
-
-                    float distance = getRayEntityDistance(boundedRay, entityId, entityPos);
-                    if (distance >= 0 && distance <= maxDistance) {
-                        var content = entityManager.getEntityContent(entityId);
-                        var bounds = getCachedEntityBounds(entityId);
-                        var intersectionPoint = boundedRay.pointAt(distance);
-
-                        var normal = new Vector3f();
-                        normal.sub(boundedRay.origin(), intersectionPoint);
-                        normal.normalize();
-
-                        intersections.add(
-                        new RayIntersection<>(entityId, content, distance, intersectionPoint, normal, bounds));
-                    }
-                }
-            });
-
-            // IMPORTANT: For spanning entities, we also need to check ALL entities that have bounds
-            // This is needed for finding spanning entities stored in nodes outside the ray's path
-            if (spanningPolicy.isSpanningEnabled()) {
-                // Check all entities with bounds that might be within max distance
-                for (var entry : spatialIndex.entrySet()) {
-                    for (var entityId : entry.getValue().getEntityIds()) {
-                        if (!visitedEntities.contains(entityId)) {
-                            var entityBounds = entityManager.getEntityBounds(entityId);
-                            if (entityBounds != null) {
-                                // Check if ray intersects the entity bounds
-                                var distance = SpatialDistanceCalculator.rayIntersectsAABB(boundedRay,
-                                                                                           entityBounds.getMinX(),
-                                                                                           entityBounds.getMinY(),
-                                                                                           entityBounds.getMinZ(),
-                                                                                           entityBounds.getMaxX(),
-                                                                                           entityBounds.getMaxY(),
-                                                                                           entityBounds.getMaxZ());
-
-                                if (distance >= 0 && distance <= maxDistance) {
-                                    visitedEntities.add(entityId);
-                                    var content = entityManager.getEntityContent(entityId);
-                                    var entityPos = getCachedEntityPosition(entityId);
-                                    var intersectionPoint = boundedRay.pointAt(distance);
-
-                                    var normal = new Vector3f();
-                                    normal.sub(boundedRay.origin(), intersectionPoint);
-                                    normal.normalize();
-
-                                    intersections.add(
-                                    new RayIntersection<>(entityId, content, distance, intersectionPoint, normal,
-                                                          entityBounds));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Collections.sort(intersections);
-            return intersections;
-        } finally {
-            lock.readLock().unlock();
-        }
+        return culler.rayIntersectWithin(ray, maxDistance);
     }
 
     /**
@@ -2385,53 +1993,6 @@ implements SpatialIndex<Key, ID, Content> {
     protected abstract void addNeighboringNodes(Key nodeIndex, Queue<Key> toVisit, Set<Key> visitedNodes);
 
     /**
-     * Calculate the intersection between a frustum and an entity.
-     *
-     * @param frustum        the frustum
-     * @param cameraPosition the camera position
-     * @param entityId       the entity ID
-     * @param content        the entity content
-     * @param entityPos      the entity position
-     * @param bounds         the entity bounds (null for point entities)
-     * @return frustum intersection result, or null if outside frustum
-     */
-    protected FrustumIntersection<ID, Content> calculateFrustumEntityIntersection(Frustum3D frustum,
-                                                                                  Point3f cameraPosition, ID entityId,
-                                                                                  Content content, Point3f entityPos,
-                                                                                  EntityBounds bounds) {
-        if (bounds != null) {
-            // For bounded entities, perform frustum-AABB intersection
-            return frustumAABBIntersection(frustum, cameraPosition, entityId, content, bounds);
-        } else {
-            // For point entities, test point containment
-            return frustumPointIntersection(frustum, cameraPosition, entityId, content, entityPos);
-        }
-    }
-
-    /**
-     * Calculate the intersection between a plane and an entity.
-     *
-     * @param plane     the plane
-     * @param entityId  the entity ID
-     * @param content   the entity content
-     * @param entityPos the entity position
-     * @param bounds    the entity bounds (null for point entities)
-     * @param tolerance tolerance for intersection detection
-     * @return plane intersection result, or null if no intersection within tolerance
-     */
-    protected PlaneIntersection<ID, Content> calculatePlaneEntityIntersection(Plane3D plane, ID entityId,
-                                                                              Content content, Point3f entityPos,
-                                                                              EntityBounds bounds, float tolerance) {
-        if (bounds != null) {
-            // For bounded entities, perform plane-AABB intersection
-            return planeAABBIntersection(plane, entityId, content, bounds, tolerance);
-        } else {
-            // For point entities, calculate distance to plane
-            return planePointIntersection(plane, entityId, content, entityPos, tolerance);
-        }
-    }
-
-    /**
      * Calculate the spatial index for a position at a given level
      */
     protected abstract Key calculateSpatialIndex(Point3f position, byte level);
@@ -2489,8 +2050,15 @@ implements SpatialIndex<Key, ID, Content> {
     /**
      * Façade implementation of the {@link FrustumGeometry} seam (RDR-008 P3, sub-interface split): supplies
      * {@code DsocController} the frustum-cluster façade operations it needs (traversal hooks, node bounds, cached
-     * entity position, standard-cull fallback). Private inner class preserves the underlying methods' original
-     * visibility.
+     * entity position). Private inner class preserves the underlying methods' original visibility. P4 re-homed the
+     * standard non-DSOC cull fallback into the {@code Culler} feature object, exposed to DSOC through a separate
+     * {@code FrustumCullProvider} seam.
+     *
+     * <p>NOTE: {@link CullGeometryImpl} mirrors three method signatures defined here — {@code getFrustumTraversalOrder},
+     * {@code doesFrustumIntersectNode}, {@code getCachedEntityPosition}. The two interfaces are intentionally
+     * independent (cluster-scoped) so they cannot share a base type without crossing the cull/occlusion package
+     * boundary. If any of these three signatures changes, BOTH inner classes need the same change — neither compiler
+     * nor IDE will warn of the asymmetry.
      */
     private final class FrustumGeometryImpl implements FrustumGeometry<Key, ID, Content> {
         @Override
@@ -2512,11 +2080,68 @@ implements SpatialIndex<Key, ID, Content> {
         public Point3f getCachedEntityPosition(ID entityId) {
             return AbstractSpatialIndex.this.getCachedEntityPosition(entityId);
         }
+    }
+
+    /**
+     * Façade implementation of the {@link CullGeometry} seam (RDR-008 P4): supplies {@code Culler} the cluster's
+     * seven subclass-overridden traversal/intersect/distance hooks, the two cached entity accessors, and the
+     * spanning-policy flag. Private inner class preserves the underlying methods' original visibility.
+     *
+     * <p>NOTE: this class duplicates three method signatures from {@link FrustumGeometryImpl} —
+     * {@code getFrustumTraversalOrder}, {@code doesFrustumIntersectNode}, {@code getCachedEntityPosition} — because
+     * each cluster's sub-interface is intentionally independent (P3 refinement) and cannot share a base type without
+     * crossing the cull/occlusion package boundary. Update BOTH inner classes if any of these three signatures
+     * changes.
+     */
+    private final class CullGeometryImpl implements CullGeometry<Key, ID, Content> {
+        @Override
+        public Stream<Key> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
+            return AbstractSpatialIndex.this.getFrustumTraversalOrder(frustum, cameraPosition);
+        }
 
         @Override
-        public List<FrustumIntersection<ID, Content>> frustumCullVisibleStandard(Frustum3D frustum,
-                                                                                 Point3f cameraPosition) {
-            return AbstractSpatialIndex.this.frustumCullVisibleStandard(frustum, cameraPosition);
+        public boolean doesFrustumIntersectNode(Key nodeIndex, Frustum3D frustum) {
+            return AbstractSpatialIndex.this.doesFrustumIntersectNode(nodeIndex, frustum);
+        }
+
+        @Override
+        public Stream<Key> getPlaneTraversalOrder(Plane3D plane) {
+            return AbstractSpatialIndex.this.getPlaneTraversalOrder(plane);
+        }
+
+        @Override
+        public boolean doesPlaneIntersectNode(Key nodeIndex, Plane3D plane) {
+            return AbstractSpatialIndex.this.doesPlaneIntersectNode(nodeIndex, plane);
+        }
+
+        @Override
+        public Stream<Key> getRayTraversalOrder(Ray3D ray) {
+            return AbstractSpatialIndex.this.getRayTraversalOrder(ray);
+        }
+
+        @Override
+        public boolean doesRayIntersectNode(Key nodeIndex, Ray3D ray) {
+            return AbstractSpatialIndex.this.doesRayIntersectNode(nodeIndex, ray);
+        }
+
+        @Override
+        public float getRayNodeIntersectionDistance(Key nodeIndex, Ray3D ray) {
+            return AbstractSpatialIndex.this.getRayNodeIntersectionDistance(nodeIndex, ray);
+        }
+
+        @Override
+        public Point3f getCachedEntityPosition(ID entityId) {
+            return AbstractSpatialIndex.this.getCachedEntityPosition(entityId);
+        }
+
+        @Override
+        public EntityBounds getCachedEntityBounds(ID entityId) {
+            return AbstractSpatialIndex.this.getCachedEntityBounds(entityId);
+        }
+
+        @Override
+        public boolean isSpanningEnabled() {
+            return AbstractSpatialIndex.this.spanningPolicy.isSpanningEnabled();
         }
     }
 
@@ -2660,40 +2285,6 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Find the closest point on an AABB to the camera
-     *
-     * @param cameraPosition the camera position
-     * @param bounds         the AABB bounds
-     * @return closest point on AABB surface to the camera
-     */
-    protected Point3f findClosestPointOnAABBToCamera(Point3f cameraPosition, EntityBounds bounds) {
-        // Clamp camera position to AABB bounds
-        var x = Math.max(bounds.getMinX(), Math.min(cameraPosition.x, bounds.getMaxX()));
-        var y = Math.max(bounds.getMinY(), Math.min(cameraPosition.y, bounds.getMaxY()));
-        var z = Math.max(bounds.getMinZ(), Math.min(cameraPosition.z, bounds.getMaxZ()));
-
-        return new Point3f(x, y, z);
-    }
-
-    /**
-     * Find the closest point on an AABB to a plane
-     *
-     * @param plane  the plane
-     * @param bounds the AABB bounds
-     * @return closest point on AABB surface to the plane
-     */
-    protected Point3f findClosestPointOnAABBToPlane(Plane3D plane, EntityBounds bounds) {
-        var normal = plane.getNormal();
-
-        // Find the point on the AABB closest to the plane
-        var x = (normal.x >= 0) ? bounds.getMinX() : bounds.getMaxX();
-        var y = (normal.y >= 0) ? bounds.getMinY() : bounds.getMaxY();
-        var z = (normal.z >= 0) ? bounds.getMinZ() : bounds.getMaxZ();
-
-        return new Point3f(x, y, z);
-    }
-
-    /**
      * Find minimum containing level for bounds
      */
     protected byte findMinimumContainingLevel(VolumeBounds bounds) {
@@ -2736,85 +2327,6 @@ implements SpatialIndex<Key, ID, Content> {
      * @return set of node keys that intersect with the bounds
      */
     protected abstract Set<Key> findNodesIntersectingBounds(VolumeBounds bounds);
-
-    /**
-     * Frustum-AABB intersection test
-     *
-     * @param frustum        the frustum
-     * @param cameraPosition the camera position
-     * @param entityId       the entity ID
-     * @param content        the entity content
-     * @param bounds         the AABB bounds
-     * @return frustum intersection result, or null if outside frustum
-     */
-    protected FrustumIntersection<ID, Content> frustumAABBIntersection(Frustum3D frustum, Point3f cameraPosition,
-                                                                       ID entityId, Content content,
-                                                                       EntityBounds bounds) {
-        var minX = bounds.getMinX();
-        var minY = bounds.getMinY();
-        var minZ = bounds.getMinZ();
-        var maxX = bounds.getMaxX();
-        var maxY = bounds.getMaxY();
-        var maxZ = bounds.getMaxZ();
-
-        // Check if AABB is completely inside frustum
-        var completelyInside = frustum.containsAABB(minX, minY, minZ, maxX, maxY, maxZ);
-
-        // Check if AABB intersects frustum
-        var intersects = frustum.intersectsAABB(minX, minY, minZ, maxX, maxY, maxZ);
-
-        if (!intersects) {
-            // Outside frustum
-            return null;
-        }
-
-        // Determine visibility type
-        var visibilityType = (completelyInside) ? FrustumIntersection.VisibilityType.INSIDE
-                                                : FrustumIntersection.VisibilityType.INTERSECTING;
-        if (completelyInside) {
-            visibilityType = FrustumIntersection.VisibilityType.INSIDE;
-        } else {
-            visibilityType = FrustumIntersection.VisibilityType.INTERSECTING;
-        }
-
-        // Calculate distance from camera to entity center
-        var entityCenter = bounds.getCenter();
-        var distanceFromCamera = cameraPosition.distance(entityCenter);
-
-        // Calculate closest point on AABB to camera
-        var closestPoint = findClosestPointOnAABBToCamera(cameraPosition, bounds);
-
-        return new FrustumIntersection<>(entityId, content, distanceFromCamera, closestPoint, visibilityType, bounds);
-    }
-
-    /**
-     * Frustum-point intersection test
-     *
-     * @param frustum        the frustum
-     * @param cameraPosition the camera position
-     * @param entityId       the entity ID
-     * @param content        the entity content
-     * @param point          the point position
-     * @return frustum intersection result, or null if outside frustum
-     */
-    protected FrustumIntersection<ID, Content> frustumPointIntersection(Frustum3D frustum, Point3f cameraPosition,
-                                                                        ID entityId, Content content, Point3f point) {
-        // Check if point is inside frustum
-        var isInside = frustum.containsPoint(point);
-
-        if (!isInside) {
-            return null;
-        }
-
-        // Calculate distance from camera to point
-        var distanceFromCamera = cameraPosition.distance(point);
-
-        // Point is always completely inside if it passes the containment test
-        var visibilityType = FrustumIntersection.VisibilityType.INSIDE;
-
-        return new FrustumIntersection<>(entityId, content, distanceFromCamera, new Point3f(point), visibilityType,
-                                         null);
-    }
 
     /**
      * Get the cell size at a given level, in the same (world) coordinate space as entity positions
@@ -2879,26 +2391,6 @@ implements SpatialIndex<Key, ID, Content> {
      * @return stream of node indices ordered by distance from plane
      */
     protected abstract Stream<Key> getPlaneTraversalOrder(Plane3D plane);
-
-    /**
-     * Calculate the distance from ray origin to entity
-     *
-     * @param ray       the ray to test
-     * @param entityId  the entity ID
-     * @param entityPos the entity position
-     * @return distance along ray, or -1 if no intersection
-     */
-    protected float getRayEntityDistance(Ray3D ray, ID entityId, Point3f entityPos) {
-        EntityBounds bounds = entityManager.getEntityBounds(entityId);
-
-        if (bounds != null) {
-            // For bounded entities, perform ray-AABB intersection
-            return rayAABBIntersection(ray, bounds);
-        } else {
-            // For point entities, perform ray-sphere intersection with small radius
-            return raySphereIntersection(ray, entityPos, 0.1f);
-        }
-    }
 
     /**
      * Get the distance from ray origin to node intersection
@@ -3145,118 +2637,6 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Plane-AABB intersection test
-     *
-     * @param plane     the plane
-     * @param entityId  the entity ID
-     * @param content   the entity content
-     * @param bounds    the AABB bounds
-     * @param tolerance tolerance for intersection
-     * @return plane intersection result, or null if outside tolerance
-     */
-    protected PlaneIntersection<ID, Content> planeAABBIntersection(Plane3D plane, ID entityId, Content content,
-                                                                   EntityBounds bounds, float tolerance) {
-        var minX = bounds.getMinX();
-        var minY = bounds.getMinY();
-        var minZ = bounds.getMinZ();
-        var maxX = bounds.getMaxX();
-        var maxY = bounds.getMaxY();
-        var maxZ = bounds.getMaxZ();
-
-        // Calculate distances to all 8 corners of the AABB
-        var corners = new Point3f[] { new Point3f(minX, minY, minZ), new Point3f(maxX, minY, minZ), new Point3f(minX,
-                                                                                                                maxY,
-                                                                                                                minZ),
-                                      new Point3f(maxX, maxY, minZ), new Point3f(minX, minY, maxZ), new Point3f(maxX,
-                                                                                                                minY,
-                                                                                                                maxZ),
-                                      new Point3f(minX, maxY, maxZ), new Point3f(maxX, maxY, maxZ) };
-
-        var minDistance = Float.POSITIVE_INFINITY;
-        var maxDistance = Float.NEGATIVE_INFINITY;
-        var closestPoint = new Point3f();
-
-        // Find min and max distances to plane
-        for (var corner : corners) {
-            var distance = plane.distanceToPoint(corner);
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestPoint.set(corner);
-            }
-            if (distance > maxDistance) {
-                maxDistance = distance;
-            }
-        }
-
-        // Determine intersection type
-        PlaneIntersection.IntersectionType intersectionType;
-        float resultDistance;
-
-        if (Math.abs(minDistance) <= tolerance && Math.abs(maxDistance) <= tolerance) {
-            // Box lies on plane
-            intersectionType = PlaneIntersection.IntersectionType.ON_PLANE;
-            resultDistance = (minDistance + maxDistance) / 2.0f;
-        } else if (minDistance * maxDistance <= 0) {
-            // Box spans plane
-            intersectionType = PlaneIntersection.IntersectionType.INTERSECTING;
-            resultDistance = Math.abs(minDistance) < Math.abs(maxDistance) ? minDistance : maxDistance;
-        } else if (minDistance > 0) {
-            // Box is on positive side
-            intersectionType = PlaneIntersection.IntersectionType.POSITIVE_SIDE;
-            resultDistance = minDistance;
-        } else {
-            // Box is on negative side
-            intersectionType = PlaneIntersection.IntersectionType.NEGATIVE_SIDE;
-            resultDistance = maxDistance;
-        }
-
-        // Check tolerance
-        if (tolerance > 0 && Math.abs(resultDistance) > tolerance) {
-            return null;
-        }
-
-        // Calculate closest point on AABB to plane
-        if (intersectionType == PlaneIntersection.IntersectionType.INTERSECTING) {
-            // For intersecting boxes, find actual closest point on box surface to plane
-            closestPoint = findClosestPointOnAABBToPlane(plane, bounds);
-        }
-
-        return new PlaneIntersection<>(entityId, content, resultDistance, closestPoint, intersectionType, bounds);
-    }
-
-    /**
-     * Plane-point intersection test
-     *
-     * @param plane     the plane
-     * @param entityId  the entity ID
-     * @param content   the entity content
-     * @param point     the point position
-     * @param tolerance tolerance for intersection
-     * @return plane intersection result, or null if outside tolerance
-     */
-    protected PlaneIntersection<ID, Content> planePointIntersection(Plane3D plane, ID entityId, Content content,
-                                                                    Point3f point, float tolerance) {
-        var distance = plane.distanceToPoint(point);
-
-        // Check tolerance
-        if (tolerance > 0 && Math.abs(distance) > tolerance) {
-            return null;
-        }
-
-        // Determine intersection type
-        PlaneIntersection.IntersectionType intersectionType;
-        if (Math.abs(distance) <= 1e-6f) {
-            intersectionType = PlaneIntersection.IntersectionType.ON_PLANE;
-        } else if (distance > 0) {
-            intersectionType = PlaneIntersection.IntersectionType.POSITIVE_SIDE;
-        } else {
-            intersectionType = PlaneIntersection.IntersectionType.NEGATIVE_SIDE;
-        }
-
-        return new PlaneIntersection<>(entityId, content, distance, new Point3f(point), intersectionType, null);
-    }
-
-    /**
      * Process all entities in SFC order with the given consumer. This utility method provides a convenient way to
      * iterate over all entities in spatial order for improved cache performance.
      *
@@ -3286,108 +2666,6 @@ implements SpatialIndex<Key, ID, Content> {
                 nodeProcessor.accept(nodeIndex, node);
             }
         }
-    }
-
-    /**
-     * Ray-AABB intersection test
-     *
-     * @param ray    the ray
-     * @param bounds the axis-aligned bounding box
-     * @return distance to intersection, or -1 if no intersection
-     */
-    protected float rayAABBIntersection(Ray3D ray, EntityBounds bounds) {
-        var tmin = 0.0f;
-        var tmax = ray.maxDistance();
-
-        // For each axis
-        for (int i = 0; i < 3; i++) {
-            var origin = getComponent(ray.origin(), i);
-            var direction = getComponent(ray.direction(), i);
-            var min = getComponent(bounds, i, true);
-            var max = getComponent(bounds, i, false);
-
-            if (Math.abs(direction) < 1e-6f) {
-                // Ray is parallel to slab
-                if (origin < min || origin > max) {
-                    return -1;
-                }
-            } else {
-                // Compute intersection distances
-                var t1 = (min - origin) / direction;
-                var t2 = (max - origin) / direction;
-
-                if (t1 > t2) {
-                    var temp = t1;
-                    t1 = t2;
-                    t2 = temp;
-                }
-
-                tmin = Math.max(tmin, t1);
-                tmax = Math.min(tmax, t2);
-
-                if (tmin > tmax) {
-                    return -1;
-                }
-            }
-        }
-
-        return tmin;
-    }
-
-    /**
-     * Ray-sphere intersection test
-     *
-     * @param ray    the ray
-     * @param center sphere center
-     * @param radius sphere radius
-     * @return distance to intersection, or -1 if no intersection
-     */
-    protected float raySphereIntersection(Ray3D ray, Point3f center, float radius) {
-        // Use geometric algorithm for better numerical stability with distant entities
-
-        // First check if ray origin is inside the sphere
-        var distFromOrigin = ray.origin().distance(center);
-        if (distFromOrigin <= radius) {
-            // Ray starts inside sphere, return 0
-            return 0.0f;
-        }
-
-        // Find the closest point on the ray to the sphere center
-        var toCenter = new Vector3f();
-        toCenter.sub(center, ray.origin());
-
-        var t = toCenter.dot(ray.direction());  // Parameter for closest point
-        if (t < 0) {
-            // Sphere is behind ray origin
-            return -1;
-        }
-
-        // Calculate closest point on ray
-        var closestPoint = new Point3f(ray.origin().x + t * ray.direction().x, ray.origin().y + t * ray.direction().y,
-                                       ray.origin().z + t * ray.direction().z);
-
-        var distToCenter = closestPoint.distance(center);
-
-        if (distToCenter > radius) {
-            // Ray misses sphere
-            return -1;
-        }
-
-        // Calculate intersection points
-        var halfChordLength = (float) Math.sqrt(radius * radius - distToCenter * distToCenter);
-
-        var t1 = t - halfChordLength;
-        var t2 = t + halfChordLength;
-
-        // Return the closest positive t value within max distance
-        if (t1 >= 0 && t1 <= ray.maxDistance()) {
-            return t1;
-        }
-        if (t2 >= 0 && t2 <= ray.maxDistance()) {
-            return t2;
-        }
-
-        return -1;
     }
 
     /**
@@ -3997,42 +3275,6 @@ implements SpatialIndex<Key, ID, Content> {
             }
         }
         return position;
-    }
-
-    /**
-     * Helper to get component from Point3f
-     */
-    private float getComponent(Point3f point, int axis) {
-        return switch (axis) {
-            case 0 -> point.x;
-            case 1 -> point.y;
-            case 2 -> point.z;
-            default -> throw new IllegalArgumentException("Invalid axis: " + axis);
-        };
-    }
-
-    /**
-     * Helper to get component from Vector3f
-     */
-    private float getComponent(Vector3f vector, int axis) {
-        return switch (axis) {
-            case 0 -> vector.x;
-            case 1 -> vector.y;
-            case 2 -> vector.z;
-            default -> throw new IllegalArgumentException("Invalid axis: " + axis);
-        };
-    }
-
-    /**
-     * Helper to get min/max component from EntityBounds
-     */
-    private float getComponent(EntityBounds bounds, int axis, boolean min) {
-        return switch (axis) {
-            case 0 -> min ? bounds.getMinX() : bounds.getMaxX();
-            case 1 -> min ? bounds.getMinY() : bounds.getMaxY();
-            case 2 -> min ? bounds.getMinZ() : bounds.getMaxZ();
-            default -> throw new IllegalArgumentException("Invalid axis: " + axis);
-        };
     }
 
     /**
@@ -4778,7 +4020,7 @@ implements SpatialIndex<Key, ID, Content> {
      */
     public void enableDSOC(DSOCConfiguration config, int bufferWidth, int bufferHeight) {
         // RDR-008 P1: the DSOC cluster is encapsulated in DsocController.
-        this.dsoc = new DsocController<>(core, new FrustumGeometryImpl(), config, bufferWidth, bufferHeight);
+        this.dsoc = new DsocController<>(core, new FrustumGeometryImpl(), culler, config, bufferWidth, bufferHeight);
     }
     
     /**
@@ -4856,64 +4098,6 @@ implements SpatialIndex<Key, ID, Content> {
     public void forceZBufferActivation() {
         if (dsoc != null) {
             dsoc.forceZBufferActivation();
-        }
-    }
-
-    /**
-     * Standard frustum culling without DSOC optimizations
-     */
-    protected List<FrustumIntersection<ID, Content>> frustumCullVisibleStandard(Frustum3D frustum, Point3f cameraPosition) {
-        lock.readLock().lock();
-        try {
-            var intersections = ObjectPools.<FrustumIntersection<ID, Content>>borrowArrayList();
-            var visitedEntities = ObjectPools.<ID>borrowHashSet();
-            try {
-                // Traverse nodes that could intersect with the frustum
-                getFrustumTraversalOrder(frustum, cameraPosition).forEach(nodeIndex -> {
-                    var node = spatialIndex.get(nodeIndex);
-                    if (node == null || node.isEmpty()) {
-                        return;
-                    }
-
-                    // Check if frustum intersects this node
-                    if (!doesFrustumIntersectNode(nodeIndex, frustum)) {
-                        return;
-                    }
-
-                    // Check each entity in the node
-                    for (ID entityId : node.getEntityIds()) {
-                        // Skip if already processed (for spanning entities)
-                        if (!visitedEntities.add(entityId)) {
-                            continue;
-                        }
-
-                        var content = entityManager.getEntityContent(entityId);
-                        if (content == null) {
-                            continue;
-                        }
-
-                        var entityPos = getCachedEntityPosition(entityId);
-                        var bounds = getCachedEntityBounds(entityId);
-
-                        // Calculate frustum-entity intersection
-                        var intersection = calculateFrustumEntityIntersection(frustum, cameraPosition, entityId,
-                                                                              content, entityPos, bounds);
-
-                        if (intersection != null && intersection.isVisible()) {
-                            intersections.add(intersection);
-                        }
-                    }
-                });
-
-                Collections.sort(intersections);
-                // Return a copy to avoid returning pooled object
-                return new ArrayList<>(intersections);
-            } finally {
-                ObjectPools.returnArrayList(intersections);
-                ObjectPools.returnHashSet(visitedEntities);
-            }
-        } finally {
-            lock.readLock().unlock();
         }
     }
 

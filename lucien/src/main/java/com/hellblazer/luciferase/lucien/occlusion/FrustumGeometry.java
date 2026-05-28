@@ -17,13 +17,11 @@
 package com.hellblazer.luciferase.lucien.occlusion;
 
 import com.hellblazer.luciferase.lucien.Frustum3D;
-import com.hellblazer.luciferase.lucien.FrustumIntersection;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import javax.vecmath.Point3f;
-import java.util.List;
 import java.util.stream.Stream;
 
 /**
@@ -31,10 +29,14 @@ import java.util.stream.Stream;
  *
  * <p>P3 (RDR-008) refined the seam architecture from a single unified callback (the P2 {@code SpatialGeometry}, now
  * deleted) into per-cluster sub-interfaces. {@code DsocController} depends only on what it actually uses — the
- * subclass-overridden frustum
- * traversal/intersection hooks, the node-bounds helper, the cached entity-position lookup, and the standard non-DSOC
- * cull fallback (which lives in the frustum/cull cluster and will be re-homed in P4). The façade implements this
- * through a private inner class so the underlying methods keep their original visibility.
+ * subclass-overridden frustum traversal/intersection hooks, the node-bounds helper, and the cached entity-position
+ * lookup. The façade implements this through a private inner class so the underlying methods keep their original
+ * visibility.
+ *
+ * <p>P4 (RDR-008) re-homed the standard non-DSOC cull fallback into the new {@code lucien.cull.Culler} feature object;
+ * {@code DsocController} consumes it through a separate
+ * {@link com.hellblazer.luciferase.lucien.cull.FrustumCullProvider} sub-interface so this DSOC consumer interface
+ * stays narrow.
  *
  * @param <Key>     the spatial key type
  * @param <ID>      the entity identifier type
@@ -54,7 +56,4 @@ public interface FrustumGeometry<Key extends SpatialKey<Key>, ID extends EntityI
 
     /** Cached world position of the entity, or {@code null} if unknown. */
     Point3f getCachedEntityPosition(ID entityId);
-
-    /** The standard (non-DSOC) frustum cull — the fallback when DSOC is skipped or its Z-buffer is inactive. */
-    List<FrustumIntersection<ID, Content>> frustumCullVisibleStandard(Frustum3D frustum, Point3f cameraPosition);
 }
