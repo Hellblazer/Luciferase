@@ -25,7 +25,6 @@ import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.forest.ghost.*;
 import com.hellblazer.luciferase.lucien.internal.EntityCache;
 import com.hellblazer.luciferase.lucien.occlusion.*;
-import com.hellblazer.luciferase.lucien.FrustumIntersection.VisibilityType;
 import com.hellblazer.luciferase.lucien.internal.ObjectPools;
 import com.hellblazer.luciferase.lucien.internal.UnorderedPair;
 import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector;
@@ -112,25 +111,9 @@ implements SpatialIndex<Key, ID, Content> {
     protected       BulkOperationProcessor<Key, ID, Content>         bulkProcessor;
     protected       DeferredSubdivisionManager<Key, ID>              subdivisionManager;
     protected       SpatialNodePool<ID>                              nodePool;
-    
-    // DSOC fields (optional)
-    protected DSOCConfiguration dsocConfig;
-    protected FrameManager frameManager;
-    protected VisibilityStateManager<ID> visibilityManager;
-    protected HierarchicalOcclusionCuller<Key, ID, Content> occlusionCuller;
+
     protected       ParallelBulkOperations<Key, ID, Content>         parallelOperations;
-    protected float[] currentViewMatrix;
-    protected float[] currentProjectionMatrix;
-    
-    // DSOC performance monitoring
-    private volatile long dsocFrameCount = 0;
-    private volatile long dsocTotalTime = 0;
-    private volatile long standardFrameCount = 0;
-    private volatile long standardTotalTime = 0;
-    private volatile boolean dsocAutoDisabled = false;
-    private static final int MIN_FRAMES_FOR_EVALUATION = 10;
-    private static final double PERFORMANCE_THRESHOLD_MULTIPLIER = 1.2; // 20% overhead tolerance
-    private static final int EVALUATION_INTERVAL = 50; // Check every 50 frames
+
     protected       SubdivisionStrategy<Key, ID, Content>            subdivisionStrategy;
     protected       StackBasedTreeBuilder<Key, ID, Content>          treeBuilder;
     
@@ -141,6 +124,9 @@ implements SpatialIndex<Key, ID, Content> {
     // nucleus fields (spatialIndex, lock, spatialVersion, knnCache, entityManager, entityCache), which remain the
     // authoritative declarations on this façade; constructed once below after those fields are initialized.
     protected final SpatialIndexCore<Key, ID, Content>                       core;
+    // RDR-008 P1: Dynamic Scene Occlusion Culling cluster, encapsulated in DsocController (null until enableDSOC).
+    // volatile: enableDSOC may run concurrently with frustumCullVisible/isDSOCEnabled; publish the reference safely.
+    private volatile DsocController<Key, ID, Content>                        dsoc;
     // k-NN performance metrics
     private final   java.util.concurrent.atomic.AtomicLong           knnCacheHits = new java.util.concurrent.atomic.AtomicLong(0);
     private final   java.util.concurrent.atomic.AtomicLong           knnCacheMisses = new java.util.concurrent.atomic.AtomicLong(0);
@@ -768,27 +754,12 @@ implements SpatialIndex<Key, ID, Content> {
             throw new NullPointerException("Frustum cannot be null");
         }
         
-        // Check if DSOC should be auto-disabled
-        if (isDSOCEnabled() && !dsocAutoDisabled && shouldEvaluatePerformance()) {
-            if (shouldAutoDisableDSOC()) {
-                log.warn("Auto-disabling DSOC due to performance degradation: {}x overhead", 
-                        getDSOCOverheadMultiplier());
-                dsocAutoDisabled = true;
-            }
+        // RDR-008 P1: the DSOC decision (auto-disable, skip heuristics) and perf measurement live in
+        // DsocController. When DSOC was never enabled, run the standard cull directly.
+        if (dsoc != null) {
+            return dsoc.frustumCullVisible(frustum, cameraPosition);
         }
-        
-        // Early exit checks for DSOC optimization
-        if (isDSOCEnabled() && !dsocAutoDisabled && dsocConfig.isEnableHierarchicalOcclusion()) {
-            // Check if DSOC is worth using for this scenario
-            if (shouldSkipDSOC()) {
-                return measureAndExecute(() -> frustumCullVisibleStandard(frustum, cameraPosition), false);
-            }
-            
-            return measureAndExecute(() -> frustumCullVisibleWithDSOC(frustum, cameraPosition), true);
-        }
-        
-        // Use standard frustum culling with performance measurement
-        return measureAndExecute(() -> frustumCullVisibleStandard(frustum, cameraPosition), false);
+        return frustumCullVisibleStandard(frustum, cameraPosition);
     }
 
     @Override
@@ -2401,31 +2372,9 @@ implements SpatialIndex<Key, ID, Content> {
         try {
             validateSpatialConstraints(newPosition);
             
-            // Handle DSOC deferred updates
-            if (isDSOCEnabled() && visibilityManager != null) {
-                long currentFrame = getCurrentFrame();
-                var state = visibilityManager.getState(entityId);
-                if (state == VisibilityStateManager.VisibilityState.HIDDEN_WITH_TBV) {
-                    var tbv = visibilityManager.getTBV(entityId);
-                    if (tbv != null && tbv.isValid((int) currentFrame)) {
-                        // Defer update - just update dynamics
-                        var dynamics = entityManager.getDynamics(entityId);
-                        if (dynamics != null) {
-                            dynamics.updatePosition(newPosition, currentFrame);
-                            
-                            // Check if TBV needs refresh
-                            float quality = tbv.getQuality((int) currentFrame);
-                            if (quality < dsocConfig.getTbvRefreshThreshold()) {
-                                var bounds = entityManager.getEntityBounds(entityId);
-                                if (bounds == null) {
-                                    bounds = new EntityBounds(newPosition, 0.1f);
-                                }
-                                visibilityManager.createTBV(entityId, dynamics, bounds, currentFrame);
-                            }
-                        }
-                        return; // Skip normal update
-                    }
-                }
+            // RDR-008 P1: DSOC may defer this move behind a still-valid temporal bounding volume.
+            if (dsoc != null && dsoc.tryDeferUpdate(entityId, newPosition)) {
+                return; // Skip normal update
             }
 
             // Get the old position to calculate movement delta
@@ -2494,9 +2443,9 @@ implements SpatialIndex<Key, ID, Content> {
             var newSpatialKey = calculateSpatialIndex(newPosition, (byte) 15);
             knnCache.invalidatePosition(newSpatialKey);
             
-            // Update visibility state if DSOC is enabled
-            if (isDSOCEnabled() && visibilityManager != null) {
-                visibilityManager.updateVisibility(entityId, true, (int) getCurrentFrame());
+            // Update visibility state if DSOC is enabled (RDR-008 P1).
+            if (dsoc != null) {
+                dsoc.markVisibleOnUpdate(entityId);
             }
         } finally {
             lock.writeLock().unlock();
@@ -2610,10 +2559,43 @@ implements SpatialIndex<Key, ID, Content> {
      * Create a new node instance
      */
     protected SpatialNodeImpl<ID> createNode() {
-        if (isDSOCEnabled()) {
+        if (dsoc != null && dsoc.isEnabled()) {
             return new OcclusionAwareSpatialNode<>(maxEntitiesPerNode);
         }
         return new SpatialNodeImpl<>(maxEntitiesPerNode);
+    }
+
+    /**
+     * Supplies {@link DsocController} the façade operations its cull still needs — the frustum traversal order and
+     * frustum-node test (subclass-overridden template hooks), node bounds, the cached entity position, and the
+     * standard non-DSOC cull fallback — without widening those methods' visibility. RDR-008 P1.
+     */
+    private final class DsocCallbackImpl implements DsocCallback<Key, ID, Content> {
+        @Override
+        public Stream<Key> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
+            return AbstractSpatialIndex.this.getFrustumTraversalOrder(frustum, cameraPosition);
+        }
+
+        @Override
+        public boolean doesFrustumIntersectNode(Key nodeIndex, Frustum3D frustum) {
+            return AbstractSpatialIndex.this.doesFrustumIntersectNode(nodeIndex, frustum);
+        }
+
+        @Override
+        public EntityBounds computeNodeBounds(Key nodeIndex) {
+            return AbstractSpatialIndex.this.computeNodeBounds(nodeIndex);
+        }
+
+        @Override
+        public Point3f getCachedEntityPosition(ID entityId) {
+            return AbstractSpatialIndex.this.getCachedEntityPosition(entityId);
+        }
+
+        @Override
+        public List<FrustumIntersection<ID, Content>> frustumCullVisibleStandard(Frustum3D frustum,
+                                                                                 Point3f cameraPosition) {
+            return AbstractSpatialIndex.this.frustumCullVisibleStandard(frustum, cameraPosition);
+        }
     }
 
     /**
@@ -5432,19 +5414,8 @@ implements SpatialIndex<Key, ID, Content> {
      * @param bufferHeight Z-buffer height
      */
     public void enableDSOC(DSOCConfiguration config, int bufferWidth, int bufferHeight) {
-        this.dsocConfig = config;
-        
-        if (config.isEnabled()) {
-            this.frameManager = new FrameManager();
-            this.visibilityManager = new VisibilityStateManager<>(config);
-            this.occlusionCuller = new HierarchicalOcclusionCuller<>(bufferWidth, bufferHeight, config);
-            
-            // Enable auto-dynamics if configured
-            if (config.isAutoDynamicsEnabled()) {
-                entityManager.setAutoDynamicsEnabled(true);
-                entityManager.setFrameManager(frameManager);
-            }
-        }
+        // RDR-008 P1: the DSOC cluster is encapsulated in DsocController.
+        this.dsoc = new DsocController<>(core, new DsocCallbackImpl(), config, bufferWidth, bufferHeight);
     }
     
     /**
@@ -5458,26 +5429,15 @@ implements SpatialIndex<Key, ID, Content> {
      * Check if DSOC is enabled and not auto-disabled
      */
     public boolean isDSOCEnabled() {
-        return dsocConfig != null && dsocConfig.isEnabled() && !dsocAutoDisabled;
+        return dsoc != null && dsoc.isEnabled();
     }
     
     /**
      * Update camera matrices for occlusion culling
      */
     public void updateCamera(float[] viewMatrix, float[] projectionMatrix, Point3f cameraPosition) {
-        if (isDSOCEnabled()) {
-            if (viewMatrix == null || projectionMatrix == null) {
-                throw new NullPointerException("View and projection matrices cannot be null when DSOC is enabled");
-            }
-            if (viewMatrix.length != 16) {
-                throw new IllegalArgumentException("View matrix must be 4x4 (16 elements), got " + viewMatrix.length);
-            }
-            if (projectionMatrix.length != 16) {
-                throw new IllegalArgumentException("Projection matrix must be 4x4 (16 elements), got " + projectionMatrix.length);
-            }
-            // Store the camera matrices for use in beginFrame
-            this.currentViewMatrix = viewMatrix.clone();
-            this.currentProjectionMatrix = projectionMatrix.clone();
+        if (dsoc != null) {
+            dsoc.updateCamera(viewMatrix, projectionMatrix, cameraPosition);
         }
     }
     
@@ -5485,20 +5445,14 @@ implements SpatialIndex<Key, ID, Content> {
      * Advance to next frame (for DSOC)
      */
     public long nextFrame() {
-        if (frameManager != null) {
-            return frameManager.incrementFrame();
-        }
-        return 0;
+        return dsoc != null ? dsoc.nextFrame() : 0;
     }
     
     /**
      * Get current frame number
      */
     public long getCurrentFrame() {
-        if (frameManager != null) {
-            return frameManager.getCurrentFrame();
-        }
-        return 0;
+        return dsoc != null ? dsoc.getCurrentFrame() : 0;
     }
     
     /**
@@ -5507,28 +5461,11 @@ implements SpatialIndex<Key, ID, Content> {
      * @return Map of statistics
      */
     public Map<String, Object> getDSOCStatistics() {
-        Map<String, Object> stats = new HashMap<>();
-        
-        if (isDSOCEnabled()) {
-            stats.put("dsocEnabled", true);
-            stats.put("currentFrame", getCurrentFrame());
-            
-            // Add visibility statistics
-            if (visibilityManager != null) {
-                stats.putAll(visibilityManager.getStatistics());
-            }
-            
-            // Add occlusion culler statistics
-            if (occlusionCuller != null) {
-                stats.putAll(occlusionCuller.getStatistics());
-            }
-            
-            // Override totalEntities with the actual entity count from entityManager
-            stats.put("totalEntities", (long) entityManager.getEntityCount());
-        } else {
-            stats.put("dsocEnabled", false);
+        if (dsoc != null) {
+            return dsoc.getStatistics();
         }
-        
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("dsocEnabled", false);
         return stats;
     }
     
@@ -5538,18 +5475,15 @@ implements SpatialIndex<Key, ID, Content> {
      * @return Set of entity IDs needing updates
      */
     public Set<ID> getEntitiesNeedingUpdate() {
-        if (occlusionCuller != null) {
-            return occlusionCuller.getEntitiesNeedingUpdate();
-        }
-        return new HashSet<>();
+        return dsoc != null ? dsoc.getEntitiesNeedingUpdate() : new HashSet<>();
     }
     
     /**
      * Reset DSOC statistics
      */
     public void resetDSOCStatistics() {
-        if (occlusionCuller != null) {
-            occlusionCuller.resetStatistics();
+        if (dsoc != null) {
+            dsoc.resetStatistics();
         }
     }
     
@@ -5557,164 +5491,11 @@ implements SpatialIndex<Key, ID, Content> {
      * Force Z-buffer activation for testing
      */
     public void forceZBufferActivation() {
-        if (occlusionCuller != null) {
-            occlusionCuller.forceActivate();
+        if (dsoc != null) {
+            dsoc.forceZBufferActivation();
         }
     }
-    
-    /**
-     * Creates a 4x4 identity matrix
-     */
-    private float[] createIdentityMatrix() {
-        float[] matrix = new float[16];
-        matrix[0] = 1.0f;
-        matrix[5] = 1.0f;
-        matrix[10] = 1.0f;
-        matrix[15] = 1.0f;
-        return matrix;
-    }
-    
-    /**
-     * Perform frustum culling with DSOC
-     */
-    protected List<FrustumIntersection<ID, Content>> frustumCullVisibleWithDSOC(Frustum3D frustum, Point3f cameraPosition) {
-        if (occlusionCuller == null) {
-            throw new IllegalStateException("DSOC not enabled");
-        }
-        
-        // Early exit if Z-buffer is not activated (no occluders)
-        if (!occlusionCuller.isActivated()) {
-            return frustumCullVisibleStandard(frustum, cameraPosition);
-        }
-        
-        lock.readLock().lock();
-        try {
-            var intersections = ObjectPools.<FrustumIntersection<ID, Content>>borrowArrayList();
-            var visitedEntities = ObjectPools.<ID>borrowHashSet();
-            
-            // Begin occlusion frame
-            // Use stored camera matrices from updateCamera or create identity matrices if not set
-            float[] viewMatrix = currentViewMatrix != null ? currentViewMatrix : createIdentityMatrix();
-            float[] projectionMatrix = currentProjectionMatrix != null ? currentProjectionMatrix : createIdentityMatrix();
-            occlusionCuller.beginFrame(viewMatrix, projectionMatrix, frustum);
-            
-            try {
-                // Get nodes in front-to-back order
-                var frustumNodes = getFrustumTraversalOrder(frustum, cameraPosition).collect(Collectors.toList());
-                
-                // Process nodes with occlusion testing
-                for (Key nodeIndex : frustumNodes) {
-                    var node = spatialIndex.get(nodeIndex);
-                    if (node == null || node.isEmpty()) {
-                        continue;
-                    }
-                    
-                    // Check if frustum intersects this node
-                    if (!doesFrustumIntersectNode(nodeIndex, frustum)) {
-                        continue;
-                    }
-                    
-                    // Test node-level occlusion
-                    EntityBounds nodeBounds = computeNodeBounds(nodeIndex);
-                    if (nodeBounds != null && occlusionCuller.isNodeOccluded(nodeBounds)) {
-                        // Still need to check TBVs even if node is occluded
-                        if (node instanceof OcclusionAwareSpatialNode) {
-                            OcclusionAwareSpatialNode<ID> occNode = (OcclusionAwareSpatialNode<ID>) node;
-                            occNode.markOccluded(getCurrentFrame());
-                            
-                            // Check TBVs
-                            for (var tbv : occNode.getTBVs()) {
-                                occlusionCuller.isTBVVisible(tbv, frustum, getCurrentFrame());
-                            }
-                        }
-                        continue;
-                    }
-                    
-                    // Node is visible - mark it if occlusion-aware
-                    if (node instanceof OcclusionAwareSpatialNode) {
-                        ((OcclusionAwareSpatialNode<ID>) node).markVisible(getCurrentFrame());
-                    }
-                    
-                    // Process entities in the node
-                    for (ID entityId : node.getEntityIds()) {
-                        // Skip if already processed
-                        if (!visitedEntities.add(entityId)) {
-                            continue;
-                        }
-                        
-                        var content = entityManager.getEntityContent(entityId);
-                        if (content == null) {
-                            continue;
-                        }
-                        
-                        var entityPos = getCachedEntityPosition(entityId);
-                        if (entityPos == null) {
-                            continue;
-                        }
-                        
-                        // Frustum test
-                        var entityBounds = entityManager.getEntityBounds(entityId);
-                        if (entityBounds == null) {
-                            entityBounds = new EntityBounds(entityPos, 0.1f);
-                        }
-                        
-                        if (!frustum.intersects(entityBounds)) {
-                            occlusionCuller.incrementFrustumCulled();
-                            // Update visibility state to hidden
-                            if (visibilityManager != null) {
-                                visibilityManager.updateVisibility(entityId, false, (int) getCurrentFrame());
-                            }
-                            continue;
-                        }
-                        
-                        // Occlusion test
-                        if (occlusionCuller.isEntityOccluded(entityBounds)) {
-                            // Update visibility state to hidden
-                            if (visibilityManager != null) {
-                                visibilityManager.updateVisibility(entityId, false, (int) getCurrentFrame());
-                            }
-                            continue;
-                        }
-                        
-                        // Entity is visible
-                        float distance = entityPos.distance(cameraPosition);
-                        var intersection = new FrustumIntersection<>(entityId, content, distance, 
-                                                                    entityPos, VisibilityType.INSIDE, entityBounds);
-                        intersections.add(intersection);
-                        occlusionCuller.incrementEntitiesVisible();
-                        
-                        // Update visibility state
-                        if (visibilityManager != null) {
-                            visibilityManager.updateVisibility(entityId, true, (int) getCurrentFrame());
-                        }
-                        
-                        // Render as occluder if configured
-                        if (dsocConfig.isRenderEntitiesAsOccluders()) {
-                            occlusionCuller.renderOccluder(entityBounds);
-                        }
-                    }
-                    
-                    // Render node as occluder if configured
-                    if (dsocConfig.isRenderNodesAsOccluders() && nodeBounds != null) {
-                        occlusionCuller.renderOccluder(nodeBounds);
-                    }
-                }
-                
-                // Sort by distance
-                intersections.sort(Comparator.comparingDouble(FrustumIntersection::distanceFromCamera));
-                
-                return new ArrayList<>(intersections);
-                
-            } finally {
-                occlusionCuller.endFrame();
-                ObjectPools.returnArrayList(intersections);
-                ObjectPools.returnHashSet(visitedEntities);
-            }
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-    
+
     /**
      * Standard frustum culling without DSOC optimizations
      */
@@ -5772,87 +5553,5 @@ implements SpatialIndex<Key, ID, Content> {
             lock.readLock().unlock();
         }
     }
-    
-    /**
-     * Performance monitoring wrapper for frustum culling operations
-     */
-    protected List<FrustumIntersection<ID, Content>> measureAndExecute(
-            java.util.function.Supplier<List<FrustumIntersection<ID, Content>>> operation, 
-            boolean isDSOC) {
-        long startTime = System.nanoTime();
-        try {
-            return operation.get();
-        } finally {
-            long duration = System.nanoTime() - startTime;
-            if (isDSOC) {
-                dsocFrameCount++;
-                dsocTotalTime += duration;
-            } else {
-                standardFrameCount++;
-                standardTotalTime += duration;
-            }
-        }
-    }
-    
-    /**
-     * Check if DSOC performance should be evaluated
-     */
-    protected boolean shouldEvaluatePerformance() {
-        return (dsocFrameCount + standardFrameCount) % EVALUATION_INTERVAL == 0;
-    }
-    
-    /**
-     * Determine if DSOC should be auto-disabled due to poor performance
-     */
-    protected boolean shouldAutoDisableDSOC() {
-        if (dsocFrameCount < MIN_FRAMES_FOR_EVALUATION || standardFrameCount < MIN_FRAMES_FOR_EVALUATION) {
-            return false;
-        }
-        
-        double dsocAvgTime = (double) dsocTotalTime / dsocFrameCount;
-        double standardAvgTime = (double) standardTotalTime / standardFrameCount;
-        
-        return dsocAvgTime > PERFORMANCE_THRESHOLD_MULTIPLIER * standardAvgTime;
-    }
-    
-    /**
-     * Get the current DSOC performance overhead multiplier
-     */
-    protected double getDSOCOverheadMultiplier() {
-        if (dsocFrameCount == 0 || standardFrameCount == 0) {
-            return 1.0;
-        }
-        
-        double dsocAvgTime = (double) dsocTotalTime / dsocFrameCount;
-        double standardAvgTime = (double) standardTotalTime / standardFrameCount;
-        
-        return dsocAvgTime / standardAvgTime;
-    }
-    
-    /**
-     * Determine if DSOC should be skipped for this frame due to poor conditions
-     */
-    protected boolean shouldSkipDSOC() {
-        // Skip if entity count is too low (DSOC overhead not worth it)
-        int entityCount = entityManager.getEntityCount();
-        if (entityCount < MIN_ENTITIES_FOR_DSOC) {
-            return true;
-        }
-        
-        // Skip if no meaningful occluders present
-        if (occlusionCuller != null && !occlusionCuller.isActivated()) {
-            return true;
-        }
-        
-        // Skip if recent performance was very poor
-        if (dsocFrameCount >= 5 && getDSOCOverheadMultiplier() > PERFORMANCE_THRESHOLD_MULTIPLIER * 2) {
-            return true;
-        }
-        
-        return false;
-    }
-    
-    // Early exit thresholds
-    private static final int MIN_ENTITIES_FOR_DSOC = 50;
 
 }
