@@ -41,7 +41,11 @@ A published, peer-reviewed, scale-validated fix exists: **Knapp/Holke/Spenke/Bur
 
 - **t8code v1.0 paper** (catalog `1.12.11`, 19 chunks) — the published reference implementation Luciferase is comparing against. The chunk count is sparse; cite Knapp 2026 for benchmark/algorithmic detail rather than this paper directly.
 
-- **Holke+Knapp+Burstedde 2019** (arXiv:1910.10641, NOT yet indexed in T3 — the foundation-papers run stopped at Tier 1/2 boundary) — "An optimized, parallel computation of the ghost layer for adaptive hybrid forest meshes." This is the published scalable ghost algorithm that `forest.ghost` would lift from if this RDR scopes ghost integration. Resume the index run via the T2 memory `dt-foundation-papers-indexed-2026-05-28` to make this paper searchable before the gate.
+- **Holke+Knapp+Burstedde 2019** (catalog `1.14.6`, 202 chunks, arXiv:1910.10641) — "An Optimized, Parallel Computation of the Ghost Layer for Adaptive Hybrid Forest Meshes." The published scalable ghost algorithm for hybrid forest meshes — and reference [21] in Knapp 2026's bibliography. Direct dependency for Direction B distributed pyramid scope.
+
+### Cross-citation map (post-synthesis)
+
+The 28 foundation papers form a citation graph with **Knapp 2026 (1.12.7) as the hub**. Bey 1992 (Computing 55, BibTeX [4] in Knapp, NOT separately indexed in this collection) → Burstedde+Holke 2016 (`1.12.8`) → Holke 2018 PhD (`1.12.9`) → Knapp 2026 (`1.12.7`) → Holke+Knapp+Burstedde 2019 (`1.14.6`) is the **load-bearing algorithmic lineage**. The 28-paper synthesis (T3 `research-pyramid-sfc-foundation-cross-link-2026-05-28` + `-part2`) created 46 catalog cross-links grounded in actual paper text. Six topic clusters were identified: (A) Tetrahedral SFC Theory — hub 1.12.8; (B) Tetrahedral Refinement Primitives — hub 1.12.12; (C) Octree/Forest-of-Octrees Parallel — hub 1.12.10; (D) Ghost Layer & Distributed AMR — hub 1.14.6; (E) SFC Breadth Context — hub 1.12.17; (F) Adjacent/Specialized.
 
 ### Technical Environment
 
@@ -77,7 +81,7 @@ The paper's pyramid encoding (6 bits/level) **matches Tetree's existing extended
 ### What this RDR does and does not do
 
 - **In scope**: propose the architectural shape of a `PyramidIndex` (key, primitive, index, forest integration, ghost integration). Decide which candidate direction to lock at gate. NOT implement.
-- **Out of scope**: pyramid 12-DOP containment derivation (open question, may be its own bead), Holke+Knapp+Burstedde 2019 ghost paper deep-dive (resume the foundation-paper index run first), prism N_shape(ℓ) formula derivation (separate research item).
+- **Out of scope**: pyramid 12-DOP containment derivation (open question, may be its own bead — see Approach §3), prism `N_shape(ℓ)` formula derivation (separate research item; not blocking unless prism is added to a hybrid forest scenario), Bey 1992 Computing 55 ground-truth verification of `Tet.java` vertex conventions (gap flagged in synthesis; resolve in implementation phase).
 
 ## Approach
 
@@ -99,18 +103,18 @@ The paper's pyramid encoding (6 bits/level) **matches Tetree's existing extended
    - 4c. Wire `Forest.routeQuery()` and `forest.balancing.*` to consult the per-shape weight for cumulative-offset partition (Knapp Algorithm 5.1) rather than treating every tree as 1:8.
    This change has no PyramidIndex prerequisite — it can land independently if there's appetite to fix the hex/tet weight asymmetry first.
 
-5. **Ghost-layer integration: `PyramidNeighborDetector`.** Implement `NeighborDetector` for pyramid topology (4-face quadrilateral base + 4 triangular side faces). Cross-shape neighbor finding (pyramid↔tet at the 6/7-boundary, hex↔pyramid at the cubic-tile boundary) follows Knapp §4.3-4.4 "Construct pyramid from face" + Table 4.2. Register with `GhostCoordinator.setNeighborDetector()`. **Holke+Knapp+Burstedde 2019** (the published parallel ghost-layer paper) is the proven distributed algorithm — pull it into `forest.ghost` here if the scope includes distributed pyramid; defer otherwise.
+5. **Ghost-layer integration: `PyramidNeighborDetector`.** Implement `NeighborDetector` for pyramid topology (4-face quadrilateral base + 4 triangular side faces). Cross-shape neighbor finding (pyramid↔tet at the 6/7-boundary, hex↔pyramid at the cubic-tile boundary) follows Knapp §4.3-4.4 "Construct pyramid from face" + Table 4.2. Register with `GhostCoordinator.setNeighborDetector()`. **Holke+Knapp+Burstedde 2019** (catalog `1.14.6`, 202 chunks) is the proven distributed ghost algorithm and is now searchable in T3 — Direction B can cite it directly. The prior-art at `1.12.34` (Recursive Distributed Forests of Octrees) is the pre-hybrid recursive ghost paper that Holke 2019 supersedes for hybrid meshes.
 
 6. **Three candidate directions (the gate question).** Pick one (or hybrid) at accept:
    - **Direction A — Full element-level integration only.** Items 1, 2, 3, 5 above. Add PyramidIndex as a peer of Octree/Tetree. No Forest changes. Pyramid trees can be added to a Forest but use the default 1:8 weight (slightly inaccurate for `Forest.balancing.*`, but workable). **Smallest change**, ~2-3 RDR-008-phase-sized arc.
-   - **Direction B — Element-level + Forest weight pluggability.** Direction A plus item 4. Closes Algorithm 5.1's "hybrid forest partition" loop. **Recommended end state.** ~4-5 RDR-008-phase-sized arc.
-   - **Direction C — Defer-and-document.** Update `CLAUDE.md` and `TETREE_T8CODE_PARTITION_ANALYSIS.md` to cite Knapp 2026 as the documented published fix; do not implement. Revisit when a concrete use case demands hex↔tet hybrid meshes. **Smallest action**, leaves the gap open as a documented known issue.
+   - **Direction B — Element-level + Forest weight pluggability.** Direction A plus item 4. Closes Algorithm 5.1's "hybrid forest partition" loop. **Confirmed at HIGH confidence by 28-paper synthesis (2026-05-28).** ~4-5 RDR-008-phase-sized arc.
+   - **Direction C — Defer-and-document.** Update `CLAUDE.md` and `TETREE_T8CODE_PARTITION_ANALYSIS.md` to cite Knapp 2026 as the documented published fix; do not implement. Revisit when a concrete use case demands hex↔tet hybrid meshes. **No longer warranted post-synthesis** — the fix is well-understood and the load-bearing references (including Holke 2019 ghost paper at 1.14.6) are now indexed.
 
-   Default lean (subject to research findings): **Direction B**, sequenced after RDR-008 close. Direction A is the fallback if Forest weight-pluggability turns out to be entangled with `Forest.balancing.fault`. Direction C is the safety net if implementation cost exceeds the strategic value of hex↔tet capability.
+   Recommendation post-synthesis: **Direction B**, sequenced after RDR-008 close. Direction A remains a valid fallback if `Forest.balancing.fault` audit reveals weight-pluggability is entangled. Direction C is no longer recommended given the corpus completeness.
 
 ## Research Findings
 
-> Investigation 2026-05-28. Mined sources: Knapp 2026 (catalog `1.12.7`), Burstedde+Holke 2016 (`1.12.8`), Holke 2018 PhD (`1.12.9`), p4est 2011 (`1.12.10`), t8code v1.0 (`1.12.11`). Architecture survey via Serena symbol navigation in worktree `/Users/hal.hildebrand/git/Luciferase-rdr-pyramid`. Full dossier in T1 scratch `b7c8bed9` and T2 `Luciferase/dt-foundation-papers-indexed-2026-05-28`.
+> Investigation 2026-05-28. Mined sources: 28 foundation papers in T3 collection `knowledge__dt-papers__voyage-context-3__v1` (catalog tumblers `1.12.7`-`1.12.11` Tier 1, `1.12.12`+`1.12.14`-`1.12.19`+`1.12.29` Tier 2, `1.12.20`-`1.12.36` Tier 3, plus `1.14.6` Holke 2019 ghost paper). Architecture survey via Serena symbol navigation. Full dossier in T1 scratch `b7c8bed9`. Post-synthesis cross-link report in T3 `research-pyramid-sfc-foundation-cross-link-2026-05-28` + `-part2`. Catalog map in T2 `Luciferase/dt-foundation-papers-indexed-2026-05-28`.
 
 1. **The pyramid SFC is a 6D Morton embedding, not a flat 6-bit-per-level concat.** Knapp Eq 3.5–3.7: the pyramid index `m_P(P)` is defined to equal the cube Morton index `m_Q(Θ(P))` of an embedding `Θ: P → Q` into a 6D cube whose axes are `(B², B¹, B⁰, x, y, z)` — three "type-representing tuple" axes + three spatial axes. Per-level layout at bit position `L−(l+1)`: 3 type bits ‖ 3 coord bits. Consequence: PyramidKey ≠ "TetreeKey + 1 extra bit." The encoding math is fundamentally different (6D bijection-with-cube-Morton vs 3D), even though the per-level bit budget happens to be the same.
 
@@ -126,15 +130,23 @@ The paper's pyramid encoding (6 bits/level) **matches Tetree's existing extended
 
 7. **Storage and comparison overhead at 128-bit keys.** PyramidKey at MAX_LEVEL=21 needs 126 bits → 128-bit (two `long`s) storage. Larger than MortonKey (64-bit) and compact TetreeKey (64-bit at ≤level 10). `ConcurrentSkipListMap<PyramidKey, ...>` comparisons are now 2-long comparisons + branching, vs single-long for Octree. At 40·10⁹ elements (Knapp's §7 demo scale) this matters; at Luciferase's typical workload (≤10⁵ elements) it does not. Worth a microbenchmark before locking representation. Alternative: `byte[]`-backed key (less locality, more GC) or `BigInteger` (heap allocation per key — likely too costly).
 
-8. **`forest.ghost` integration path.** Holke+Knapp+Burstedde 2019 (arXiv:1910.10641) is the published scalable algorithm for hybrid-forest ghost layers. **Not yet in T3** — the foundation-papers run stopped at the Tier 1 boundary. Resume the index run (resume command in T2 `Luciferase/dt-foundation-papers-indexed-2026-05-28`) before the gate if scope includes distributed pyramid; otherwise mark as future work.
+8. **`forest.ghost` integration path — RESOLVED.** Holke+Knapp+Burstedde 2019 (catalog `1.14.6`, 202 chunks, arXiv:1910.10641) is now indexed. The paper's `cites+extends 1.12.8` and `cites 1.14.6` edges in Knapp 2026's bibliography are confirmed by the post-synthesis catalog cross-links. Direction B distributed-pyramid scope can cite the algorithm directly.
 
-9. **`nx_answer` routing rough edge surfaced during paper mining.** Two specific analytical questions (Knapp §3 geometric definition; cross-paper delta) returned `inputs: [""]` envelopes from `nx_answer`, while other queries against the same scope worked. The paper-mining agent finished the dossier via direct `search(structured=true) → store_get_many(structured=true)`. Diagnostic note in T1 scratch `c5826c7d`. Not a Luciferase issue; file in nexus repo as a separate concern if it persists.
+9. **`nx_answer` routing rough edge — FILED.** Compare/extract plans selecting retrieval skeletons that don't hydrate content. Filed as `nexus-ncqhv` (P3). Workaround was direct `search(structured=true) → store_get_many(structured=true)`.
+
+10. **28-paper foundation corpus complete (post-synthesis 2026-05-28).** Full Tier 1+2+3 + Holke 2019 ghost indexed. **3,929 chunks** across `knowledge__dt-papers__voyage-context-3__v1`. **22 citation links auto-created by bib enrichment** (OpenAlex/Semantic Scholar match-and-link), **46 additional cross-links** created by the deep-research-synthesizer agent grounded in actual paper text (no fabricated citations — hard constraint honored). Topic clusters with named hubs in synthesis report.
+
+11. **Algorithmic lineage confirmed.** Bey 1992 (Computing 55, BibTeX [4] in Knapp 2026, NOT separately indexed) → Burstedde+Holke 2016 (`1.12.8`, 195 chunks) → Holke 2018 PhD (`1.12.9`, 216 chunks) → Knapp 2026 (`1.12.7`, 162 chunks) → Holke+Knapp+Burstedde 2019 (`1.14.6`, 202 chunks). Each step adds a strict capability: Bey introduces 1:8 tet refinement; Burstedde+Holke 2016 introduces the TM-index and proves uniqueness for tet types 0-5; Holke 2018 PhD generalizes the existence/uniqueness machinery (Theorem 16/Prop 4.17 in Chapter 4); Knapp 2026 introduces pyramid types 6+7 and the 6D Morton embedding; Holke 2019 introduces the parallel hybrid ghost algorithm.
+
+12. **Direction B confirmed at HIGH confidence by synthesis.** Two uncertainties at RDR drafting are now resolved: (a) Holke 2019 ghost paper IS indexed (no longer a future-work caveat); (b) Forest weight pluggability is bounded to a single `N_shape(ℓ)` callback per shape — not a structural Forest change. Direction A remains a valid fallback only if `Forest.balancing.fault` audit reveals weight-pluggability is entangled. Direction C (defer-and-document) is **no longer warranted**.
+
+13. **Pyramid containment derivation (Approach §3) is the ONLY remaining open question** the foundation-paper corpus cannot close. Synthesis explicitly identified this as a load-bearing gap with no paper in corpus deriving it. Implementer must make this call at gate time (default 3b decompose-and-reuse, escalate to 3a derive-from-scratch if DSOC/Culler profiling shows bottleneck).
 
 ## Open Questions
 
-- **Pyramid containment primitive — 3a, 3b, or 3c?** Decompose-and-reuse (3b) is the lowest-risk default; derive-from-scratch (3a) is correctness-optimal but high effort; AABB-then-decompose (3c) is the perf sweet spot but adds branching. Depends on whether DSOC / Culler / ray-intersect query workloads dominate. **Defer to gate; needs a workload assumption.**
+- **Pyramid containment primitive — 3a, 3b, or 3c?** Decompose-and-reuse (3b) is the lowest-risk default; derive-from-scratch (3a) is correctness-optimal but high effort; AABB-then-decompose (3c) is the perf sweet spot but adds branching. Depends on whether DSOC / Culler / ray-intersect query workloads dominate. **Defer to gate; needs a workload assumption. This is the ONLY load-bearing question the 28-paper corpus cannot close (Research Finding #13).**
 
-- **Direction A, B, or C?** The recommended lean is B (element + Forest weight pluggability), but the cost of Forest weight integration depends on how entangled `Forest.balancing.fault`'s redistribution algorithm is with the implicit-1:8-weight assumption. **Decide at gate after a targeted `Forest.balancing` audit.**
+- ~~**Direction A, B, or C?**~~ **RESOLVED post-synthesis (2026-05-28).** Direction B confirmed at HIGH confidence given (a) Holke 2019 ghost paper is indexed (`1.14.6`, Research Finding #8), (b) Forest weight pluggability is bounded to `N_shape(ℓ)` callback per shape (Research Finding #4 + #12). Gate may still require `Forest.balancing.fault` audit before locking — see updated Approach §6.
 
 - **`N_prism(ℓ)` closed form.** Not in retrieved chunks. Either derive from Knapp's hybrid mesh discussion (§7's 29,520-prism / 69,431-tet / 3,800-hex / 3,120-pyramid breakdown) or defer until prism enters a hybrid forest scenario. **Open; not blocking unless Direction B + prism-in-hybrid-Forest is in the same scope.**
 
@@ -146,7 +158,7 @@ The paper's pyramid encoding (6 bits/level) **matches Tetree's existing extended
 
 - **Sequencing with RDR-008 P6 (entity-lifecycle extraction).** PyramidIndex implementation must wait for the residual `AbstractSpatialIndex` surface to stabilize. **Hard constraint; mark in any implementation epic.**
 
-- **Sequencing with `forest.ghost` Holke+Knapp+Burstedde 2019 integration.** If Direction B includes distributed pyramid, the 2019 paper should be indexed and its algorithm specified before locking the ghost integration. **Open; depends on direction.**
+- ~~**Sequencing with `forest.ghost` Holke+Knapp+Burstedde 2019 integration.**~~ **RESOLVED — paper now at catalog 1.14.6 (202 chunks).** The algorithm can be cited directly during implementation. Specification work happens at gate or P1-phase planning.
 
 - **Scope of "hybrid forest" demo target.** Does the eventual implementation arc include a §7-style toy-airplane demo (hex + tet + pyramid + prism)? **Open; affects benchmark / acceptance criteria.**
 
