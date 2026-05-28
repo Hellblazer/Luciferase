@@ -76,7 +76,7 @@ The paper's pyramid encoding (6 bits/level) **matches Tetree's existing extended
 
 - **`NeighborDetector`** (`lucien/src/main/java/com/hellblazer/luciferase/lucien/neighbor/NeighborDetector.java:37-141`) is shape-generic at the interface level (keyed on `SpatialKey<Key>`), but concrete implementations (`TetreeNeighborFinder`, `TetreeNeighborDetector`) are tet-specific. Pyramid integration requires a `PyramidNeighborDetector`. `GhostCoordinator.setNeighborDetector()` is the wire-in point.
 
-- **In-flight constraint**: RDR-008 (god-class decomposition, epic `Luciferase-x5i`) is mid-execution. Cull extraction (P4, PR #136) merged 2026-05-28; collision extraction (P5+, branch `feature/Luciferase-x5i.10-collision-extraction`) is uncommitted in another worktree. **PyramidIndex must NOT land before RDR-008's final phase closes** — coordinate-ordering risk if the AbstractSpatialIndex surface is still moving.
+- **Sequencing dependency RESOLVED 2026-05-28**: RDR-008 (god-class decomposition, epic `Luciferase-x5i`) closed today. All six phases (P0 `SpatialIndexCore` → P1 `DsocController` → P2 `GhostCoordinator` → P3 `KnnSearcher` → P4 `Culler` → P5 `CollisionEngine` → P6 `EntityLifecycleManager`) shipped. Facade shrunk 5851 → 2916 LOC (50% reduction). Residual ~159 methods + 42 protected template hooks (the post-mortem `docs/rdr/post-mortem/008-decompose-abstractspatialindex.md` documents the realized-vs-predicted delta). **PyramidIndex implementation arc can now proceed** without further wait on RDR-008.
 
 ### What this RDR does and does not do
 
@@ -124,7 +124,7 @@ The paper's pyramid encoding (6 bits/level) **matches Tetree's existing extended
 
 4. **Luciferase's `Forest` is already heterogeneous in API.** Contrary to the handoff's framing of "Forest is homogeneous today," `Forest.addTree(AbstractSpatialIndex<Key, ID, Content>)` already accepts heterogeneous trees. The missing piece for Algorithm 5.1 is purely the `N_shape(ℓ)` weight hook — `TreeNode.java:76` tracks only `entityCount`, not shape-aware element-count. **This is a smaller fix than expected** and is a strong tailwind for Direction B (Element + Forest).
 
-5. **`AbstractSpatialIndex` is concrete post-RDR-008 P4.** No abstract methods to implement; subclass-and-initialize-collaborators is the extension pattern. PyramidIndex follows Octree/Tetree as a template. **However**: the residual surface is still mutating (RDR-008 P5+ in flight). PyramidIndex must wait for RDR-008 close to avoid coordinate-ordering risk.
+5. **`AbstractSpatialIndex` is stable post-RDR-008 close (2026-05-28).** Façade with ~159 public/protected methods + ~42 protected template hooks (the realized-vs-predicted delta from RDR-008's ~70-method estimate is documented in the post-mortem). Subclass-and-initialize-collaborators is the extension pattern: PyramidIndex initializes `SpatialIndexCore` + `DsocController` + `GhostCoordinator` + `KnnSearcher` + `Culler` + `CollisionEngine` + `EntityLifecycleManager`, then overrides the ~42 protected template hooks (which break down by cluster sub-interface: `occlusion.FrustumGeometry`, `cache.KnnProvider`, `cache.KnnGeometry`, `cull.CullGeometry`, `cull.FrustumCullProvider`, `collision.CollisionGeometry`, `entity.EntityLifecycleGeometry`, `entity.EntityLifecycleHost`). **Sequencing dependency on RDR-008 is satisfied** — PyramidIndex can start any time.
 
 6. **`N(ℓ) = 2·8^ℓ − 6^ℓ` for pyramid root** (Knapp Eq 5.1). Counts pyramids + tets descended from one root pyramid after ℓ uniform refinement levels. The `−6^ℓ` term corrects for the fact that pyramidal children refine to 10 (= 6 pyramid + 4 tet) while tet children refine to 8 — non-uniform mixing accumulates the correction. For `N_hex` and `N_tet` (both `= 8^ℓ`) the formula is trivial; `N_prism` is not in the retrieved chunks (the paper's hybrid mesh in §7 uses prism but the supplementary material SM1 deriving N(ℓ) for prism was not captured).
 
@@ -156,7 +156,7 @@ The paper's pyramid encoding (6 bits/level) **matches Tetree's existing extended
 
 - **Holke 2018 theorem number.** Handoff says "Theorem 3.5"; retrieved chunks show "Theorem 16 / Prop 4.17 in Chapter 4." Verify on the PDF before final citation. **Open; bibliographic only.**
 
-- **Sequencing with RDR-008 P6 (entity-lifecycle extraction).** PyramidIndex implementation must wait for the residual `AbstractSpatialIndex` surface to stabilize. **Hard constraint; mark in any implementation epic.**
+- ~~**Sequencing with RDR-008 P6 (entity-lifecycle extraction).**~~ **RESOLVED 2026-05-28.** RDR-008 closed today — all six phases shipped, post-mortem written. PyramidIndex implementation arc can proceed without further sequencing wait.
 
 - ~~**Sequencing with `forest.ghost` Holke+Knapp+Burstedde 2019 integration.**~~ **RESOLVED — paper now at catalog 1.14.6 (202 chunks).** The algorithm can be cited directly during implementation. Specification work happens at gate or P1-phase planning.
 
@@ -180,11 +180,11 @@ The paper's pyramid encoding (6 bits/level) **matches Tetree's existing extended
   - **`min_tet_level` field** adds per-element state. Mandatory for O(1) operations; without it parent/child/face_neighbor go O(level).
   - **Pyramid containment derivation (Approach §3)** is an unsolved problem in this RDR. The decompose-and-reuse-tet-12-DOP default is correct but slower than a derived pyramid-DOP. May need its own follow-up RDR if perf gates the choice.
   - **Per-element branching (types 6/7 + tet 0/3)** makes the pyramid the slowest shape per-element in Knapp 2026's benchmarks (§6). For Luciferase render workloads (DSOC, ray, frustum), this is a known cost-baked-in.
-  - **Sequencing dependency on RDR-008 P6** means PyramidIndex is *not* a near-term implementation candidate. Strategic capability, not patch work.
+  - ~~**Sequencing dependency on RDR-008 P6**~~ **RESOLVED 2026-05-28** — RDR-008 closed; PyramidIndex implementation arc can start any time once Direction A/B/C is locked at gate.
 
 - **Sequencing.**
-  - RDR-008 P5 (collision extraction) currently in flight in `feature/Luciferase-x5i.10-collision-extraction`. RDR-008 P6 (entity-lifecycle extraction) still to plan.
-  - PyramidIndex implementation arc: start after RDR-008 close.
+  - **RDR-008 closed 2026-05-28** (all six phases: SpatialIndexCore, DsocController, GhostCoordinator, KnnSearcher, Culler, CollisionEngine, EntityLifecycleManager). Sequencing dependency satisfied.
+  - PyramidIndex implementation arc: can start any time once Direction A/B/C is locked at gate.
   - Forest weight pluggability (Approach §4) can start independently — no PyramidIndex prerequisite, valuable even for current Octree/Tetree forests.
   - `forest.ghost` Holke+Knapp+Burstedde 2019 integration is a separate optional arc; depends on whether Direction B includes distributed pyramid.
 
