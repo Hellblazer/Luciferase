@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.lucien.FrameManager;
 import com.hellblazer.luciferase.lucien.Frustum3D;
 import com.hellblazer.luciferase.lucien.FrustumIntersection;
 import com.hellblazer.luciferase.lucien.FrustumIntersection.VisibilityType;
+import com.hellblazer.luciferase.lucien.SpatialGeometry;
 import com.hellblazer.luciferase.lucien.SpatialIndexCore;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
@@ -70,7 +71,7 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
     private static final int    MIN_ENTITIES_FOR_DSOC           = 50;
 
     private final SpatialIndexCore<Key, ID, Content> core;
-    private final DsocCallback<Key, ID, Content>     callback;
+    private final SpatialGeometry<Key, ID, Content>     callback;
     private final DSOCConfiguration                  config;
 
     private final FrameManager                              frameManager;
@@ -91,7 +92,7 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
      * Construct and, when the configuration is enabled, initialize the DSOC machinery and wire entity auto-dynamics.
      * Mirrors the former {@code AbstractSpatialIndex.enableDSOC(config, bufferWidth, bufferHeight)}.
      */
-    public DsocController(SpatialIndexCore<Key, ID, Content> core, DsocCallback<Key, ID, Content> callback,
+    public DsocController(SpatialIndexCore<Key, ID, Content> core, SpatialGeometry<Key, ID, Content> callback,
                           DSOCConfiguration config, int bufferWidth, int bufferHeight) {
         this.core = core;
         this.callback = callback;

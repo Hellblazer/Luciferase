@@ -2566,11 +2566,12 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Supplies {@link DsocController} the façade operations its cull still needs — the frustum traversal order and
-     * frustum-node test (subclass-overridden template hooks), node bounds, the cached entity position, and the
-     * standard non-DSOC cull fallback — without widening those methods' visibility. RDR-008 P1.
+     * The façade's implementation of the unified {@link SpatialGeometry} seam (RDR-008): supplies feature objects the
+     * façade-resident operations they consume — the subclass-overridden geometry template hooks plus concrete spatial
+     * helpers — without widening those methods' visibility (this is a private inner class, so the delegated methods
+     * keep their original {@code private}/{@code protected}/abstract access). Grows by one cluster's needs per phase.
      */
-    private final class DsocCallbackImpl implements DsocCallback<Key, ID, Content> {
+    private final class SpatialGeometryImpl implements SpatialGeometry<Key, ID, Content> {
         @Override
         public Stream<Key> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
             return AbstractSpatialIndex.this.getFrustumTraversalOrder(frustum, cameraPosition);
@@ -5415,7 +5416,7 @@ implements SpatialIndex<Key, ID, Content> {
      */
     public void enableDSOC(DSOCConfiguration config, int bufferWidth, int bufferHeight) {
         // RDR-008 P1: the DSOC cluster is encapsulated in DsocController.
-        this.dsoc = new DsocController<>(core, new DsocCallbackImpl(), config, bufferWidth, bufferHeight);
+        this.dsoc = new DsocController<>(core, new SpatialGeometryImpl(), config, bufferWidth, bufferHeight);
     }
     
     /**
