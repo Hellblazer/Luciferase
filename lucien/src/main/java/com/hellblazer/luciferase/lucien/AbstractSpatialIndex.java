@@ -127,6 +127,8 @@ implements SpatialIndex<Key, ID, Content> {
     // RDR-008 P1: Dynamic Scene Occlusion Culling cluster, encapsulated in DsocController (null until enableDSOC).
     // volatile: enableDSOC may run concurrently with frustumCullVisible/isDSOCEnabled; publish the reference safely.
     private volatile DsocController<Key, ID, Content>                        dsoc;
+    // RDR-008 P2: distributed-ghost cluster, encapsulated in GhostCoordinator (always present; eager init in ctor).
+    protected final GhostCoordinator<Key, ID, Content>                       ghost;
     // k-NN performance metrics
     private final   java.util.concurrent.atomic.AtomicLong           knnCacheHits = new java.util.concurrent.atomic.AtomicLong(0);
     private final   java.util.concurrent.atomic.AtomicLong           knnCacheMisses = new java.util.concurrent.atomic.AtomicLong(0);
@@ -136,14 +138,6 @@ implements SpatialIndex<Key, ID, Content> {
     private         TreeBalancingStrategy<ID>                        balancingStrategy;
     private         boolean                                          autoBalancingEnabled     = false;
     private         long                                             lastBalancingTime        = 0;
-    
-    // Ghost layer support
-    protected       GhostType                                        ghostType                = GhostType.NONE;
-    protected       GhostAlgorithm                                   ghostAlgorithm           = GhostAlgorithm.CONSERVATIVE;
-    protected       GhostLayer<Key, ID, Content>                     ghostLayer;
-    protected       com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<Key, ID, Content> ghostBoundaryDetector;
-    protected       DistributedGhostManager<Key, ID, Content>        distributedGhostManager;
-    protected       NeighborDetector<Key>                            neighborDetector;
 
     /**
      * Constructor with common parameters
@@ -171,9 +165,13 @@ implements SpatialIndex<Key, ID, Content> {
         // RDR-008: wrap the now-initialized six-field nucleus in a single shared view for feature-object collaborators
         this.core = new SpatialIndexCore<>(spatialIndex, lock, spatialVersion, knnCache, entityManager, entityCache);
 
-        // Initialize ghost components (neighbor detector and element manager set by subclasses)
-        this.ghostLayer = new GhostLayer<>(GhostType.NONE);
-        // ElementGhostManager initialized when neighbor detector is set
+        // RDR-008 P2: distributed-ghost cluster lives in GhostCoordinator; constructed eagerly so subclasses can
+        // call setNeighborDetector during their own initialization.
+        // INVARIANT for future phases: GhostCoordinator's ctor (and the ctors of any other feature object created
+        // here) MUST NOT invoke any method on the supplied SpatialGeometryImpl or on `this` — `this` is still
+        // partially constructed at this point, and any virtual dispatch into a not-yet-initialized subclass is a
+        // classic this-escape hazard. Storing the references is fine; calling through them is not.
+        this.ghost = new GhostCoordinator<>(core, new SpatialGeometryImpl(), this);
     }
 
     @Override
@@ -2566,11 +2564,12 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Supplies {@link DsocController} the façade operations its cull still needs — the frustum traversal order and
-     * frustum-node test (subclass-overridden template hooks), node bounds, the cached entity position, and the
-     * standard non-DSOC cull fallback — without widening those methods' visibility. RDR-008 P1.
+     * The façade's implementation of the unified {@link SpatialGeometry} seam (RDR-008): supplies feature objects the
+     * façade-resident operations they consume — the subclass-overridden geometry template hooks plus concrete spatial
+     * helpers — without widening those methods' visibility (this is a private inner class, so the delegated methods
+     * keep their original {@code private}/{@code protected}/abstract access). Grows by one cluster's needs per phase.
      */
-    private final class DsocCallbackImpl implements DsocCallback<Key, ID, Content> {
+    private final class SpatialGeometryImpl implements SpatialGeometry<Key, ID, Content> {
         @Override
         public Stream<Key> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
             return AbstractSpatialIndex.this.getFrustumTraversalOrder(frustum, cameraPosition);
@@ -2595,6 +2594,11 @@ implements SpatialIndex<Key, ID, Content> {
         public List<FrustumIntersection<ID, Content>> frustumCullVisibleStandard(Frustum3D frustum,
                                                                                  Point3f cameraPosition) {
             return AbstractSpatialIndex.this.frustumCullVisibleStandard(frustum, cameraPosition);
+        }
+
+        @Override
+        public List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance) {
+            return AbstractSpatialIndex.this.kNearestNeighbors(queryPoint, k, maxDistance);
         }
     }
 
@@ -4973,52 +4977,41 @@ implements SpatialIndex<Key, ID, Content> {
     // ========================================
     // Ghost Layer Configuration and Operations
     // ========================================
-    
-    /**
-     * Sets the ghost type for this spatial index.
-     * 
-     * @param type the ghost type to set
-     */
+    // RDR-008 P2: the ghost cluster lives in GhostCoordinator; the methods below are thin delegators that
+    // preserve the long-standing public API and the protected setNeighborDetector seam subclasses call.
+
+    /** Sets the ghost type. */
     public void setGhostType(GhostType type) {
-        lock.writeLock().lock();
-        try {
-            this.ghostType = Objects.requireNonNull(type);
-            this.ghostLayer = new GhostLayer<>(type);
-            // Recreate ElementGhostManager with new ghost type if we have a neighbor detector
-            if (this.neighborDetector != null) {
-                this.ghostBoundaryDetector = new com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<>(this, neighborDetector, type, ghostAlgorithm);
-            }
-        } finally {
-            lock.writeLock().unlock();
-        }
+        ghost.setGhostType(type);
     }
-    
-    /**
-     * Gets the current ghost type.
-     * 
-     * @return the current ghost type
-     */
+
+    /** Gets the current ghost type. */
     public GhostType getGhostType() {
-        return ghostType;
+        return ghost.getGhostType();
     }
-    
+
+    /** Gets the ghost layer for this spatial index. */
+    public GhostLayer<Key, ID, Content> getGhostLayer() {
+        return ghost.getGhostLayer();
+    }
+
+    /** Gets the neighbor detector for this spatial index. */
+    public NeighborDetector<Key> getNeighborDetector() {
+        return ghost.getNeighborDetector();
+    }
+
+    /** Subclasses call this during initialization to supply their tree-specific neighbor detector. */
+    protected void setNeighborDetector(NeighborDetector<Key> detector) {
+        ghost.setNeighborDetector(detector);
+    }
+
     /**
      * Sets the ghost creation algorithm for this spatial index.
-     * 
+     *
      * @param algorithm the ghost creation algorithm to use
      */
     public void setGhostCreationAlgorithm(GhostAlgorithm algorithm) {
-        lock.writeLock().lock();
-        try {
-            this.ghostAlgorithm = Objects.requireNonNull(algorithm);
-            // Recreate ElementGhostManager with new algorithm if we have one
-            if (this.ghostBoundaryDetector != null) {
-                this.ghostBoundaryDetector = new com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<>(this, neighborDetector, ghostType, algorithm);
-            }
-            log.debug("Set ghost creation algorithm to: {}", algorithm);
-        } finally {
-            lock.writeLock().unlock();
-        }
+        ghost.setGhostCreationAlgorithm(algorithm);
     }
     
     /**
@@ -5027,7 +5020,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @return the current ghost creation algorithm
      */
     public GhostAlgorithm getGhostCreationAlgorithm() {
-        return ghostAlgorithm;
+        return ghost.getGhostCreationAlgorithm();
     }
     
     /**
@@ -5036,17 +5029,7 @@ implements SpatialIndex<Key, ID, Content> {
      * for neighboring elements owned by other processes.
      */
     public void createGhostLayer() {
-        if (ghostType == GhostType.NONE || ghostBoundaryDetector == null) {
-            return;
-        }
-        
-        lock.writeLock().lock();
-        try {
-            log.debug("Creating ghost layer with type: {}", ghostType);
-            ghostBoundaryDetector.createGhostLayer();
-        } finally {
-            lock.writeLock().unlock();
-        }
+        ghost.createGhostLayer();
     }
     
     /**
@@ -5054,40 +5037,9 @@ implements SpatialIndex<Key, ID, Content> {
      * modifications to the spatial index.
      */
     public void updateGhostLayer() {
-        if (ghostType == GhostType.NONE || ghostBoundaryDetector == null) {
-            return;
-        }
-        
-        lock.writeLock().lock();
-        try {
-            log.debug("Updating ghost layer");
-            // For now, just recreate the entire ghost layer
-            // More sophisticated incremental updates could be implemented later
-            ghostBoundaryDetector.createGhostLayer();
-        } finally {
-            lock.writeLock().unlock();
-        }
+        ghost.updateGhostLayer();
     }
-    
-    /**
-     * Gets the ghost layer for this spatial index.
-     * 
-     * @return the ghost layer, or null if none exists
-     */
-    public GhostLayer<Key, ID, Content> getGhostLayer() {
-        return ghostLayer;
-    }
-    
-    /**
-     * Gets the neighbor detector for this spatial index.
-     * Implementation-specific, set by subclasses.
-     * 
-     * @return the neighbor detector, or null if not set
-     */
-    public NeighborDetector<Key> getNeighborDetector() {
-        return neighborDetector;
-    }
-    
+
     /**
      * Gets all spatial keys currently in the spatial index.
      * Used by ghost layer management to iterate through elements.
@@ -5113,21 +5065,7 @@ implements SpatialIndex<Key, ID, Content> {
     public boolean containsSpatialKey(Key key) {
         return spatialIndex.containsKey(key);
     }
-    
-    /**
-     * Sets the neighbor detector for this spatial index.
-     * Should be called by subclasses during initialization.
-     * 
-     * @param detector the neighbor detector to set
-     */
-    protected void setNeighborDetector(NeighborDetector<Key> detector) {
-        this.neighborDetector = detector;
-        // Initialize ElementGhostManager now that we have a neighbor detector
-        if (detector != null && this.ghostBoundaryDetector == null) {
-            this.ghostBoundaryDetector = new com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<>(this, detector, ghostType, ghostAlgorithm);
-        }
-    }
-    
+
     /**
      * Finds entities at the given spatial key, including ghost elements.
      * 
@@ -5135,39 +5073,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @return list of entity IDs including both local and ghost entities
      */
     public List<ID> findEntitiesIncludingGhosts(Key key) {
-        var result = new ArrayList<ID>();
-        
-        lock.readLock().lock();
-        try {
-            // Add local entities
-            var node = spatialIndex.get(key);
-            if (node != null) {
-                var entityIds = node.getEntityIds();
-                if (entityIds != null) {
-                    result.addAll(entityIds);
-                }
-            }
-            
-            // Add ghost entities if available
-            var currentGhostLayer = ghostLayer; // Capture reference to avoid race conditions
-            if (currentGhostLayer != null) {
-                var ghostElements = currentGhostLayer.getGhostElements(key);
-                if (ghostElements != null) {
-                    for (var ghost : ghostElements) {
-                        if (ghost != null) {
-                            var entityId = ghost.getEntityId();
-                            if (entityId != null) {
-                                result.add(entityId);
-                            }
-                        }
-                    }
-                }
-            }
-            
-            return result;
-        } finally {
-            lock.readLock().unlock();
-        }
+        return ghost.findEntitiesIncludingGhosts(key);
     }
     
     /**
@@ -5178,37 +5084,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @return list of neighbor results including both local and ghost neighbors
      */
     public List<NeighborResult<ID, Content>> findNeighborsIncludingGhosts(Point3f position, float radius) {
-        var result = new ArrayList<NeighborResult<ID, Content>>();
-        
-        lock.readLock().lock();
-        try {
-            // Find local neighbors using k-nearest approach with large k
-            var localNeighbors = kNearestNeighbors(position, Integer.MAX_VALUE, radius);
-            for (var entityId : localNeighbors) {
-                var entityContent = entityManager.getEntityContent(entityId);
-                var entityPosition = entityManager.getEntityPosition(entityId);
-                if (entityContent != null && entityPosition != null) {
-                    float distance = position.distance(entityPosition);
-                    result.add(new NeighborResult<>(entityId, entityContent, distance));
-                }
-            }
-            
-            // Add ghost neighbors if available
-            if (ghostLayer != null && ghostBoundaryDetector != null) {
-                // For now, iterate through all ghost elements to find those within range
-                // This could be optimized with spatial range queries later
-                for (var entry : ghostLayer.getAllGhostElements()) {
-                    float distance = position.distance(entry.getPosition());
-                    if (distance <= radius) {
-                        result.add(new NeighborResult<>(entry.getEntityId(), entry.getContent(), distance));
-                    }
-                }
-            }
-            
-            return result;
-        } finally {
-            lock.readLock().unlock();
-        }
+        return ghost.findNeighborsIncludingGhosts(position, radius);
     }
     
     // ========================================
@@ -5219,25 +5095,14 @@ implements SpatialIndex<Key, ID, Content> {
      * Called after bulk insertions to trigger ghost updates if enabled.
      */
     protected void triggerGhostUpdateAfterBulkInsert() {
-        if (ghostType != GhostType.NONE && ghostBoundaryDetector != null) {
-            log.debug("Triggering ghost update after bulk insertion");
-            updateGhostLayer();
-        }
+        ghost.triggerGhostUpdateAfterBulkInsert();
     }
     
     /**
      * Called after tree adaptation to trigger ghost updates if enabled.
      */
     protected void triggerGhostUpdateAfterAdaptation() {
-        if (ghostType != GhostType.NONE && ghostBoundaryDetector != null) {
-            log.debug("Triggering ghost update after tree adaptation");
-            updateGhostLayer();
-            
-            // Also trigger distributed ghost updates if enabled
-            if (distributedGhostManager != null) {
-                distributedGhostManager.updateDistributedGhostLayer();
-            }
-        }
+        ghost.triggerGhostUpdateAfterAdaptation();
     }
     
     // ========================================
@@ -5258,24 +5123,9 @@ implements SpatialIndex<Key, ID, Content> {
      * @param treeId the tree identifier
      */
     public void setupDistributedGhosts(GhostChannel<Key, ID, Content> ghostChannel,
-                                      ContentSerializer<Content> contentSerializer,
-                                      Class<ID> entityIdClass,
-                                      int currentRank,
-                                      long treeId) {
-        lock.writeLock().lock();
-        try {
-            if (ghostBoundaryDetector == null) {
-                log.warn("Cannot setup distributed ghosts - local ghost manager not initialized");
-                return;
-            }
-
-            this.distributedGhostManager = new DistributedGhostManager<>(
-                this, ghostChannel, ghostBoundaryDetector);
-
-            log.info("Distributed ghost management enabled for rank {} tree {}", currentRank, treeId);
-        } finally {
-            lock.writeLock().unlock();
-        }
+                                       ContentSerializer<Content> contentSerializer, Class<ID> entityIdClass,
+                                       int currentRank, long treeId) {
+        ghost.setupDistributedGhosts(ghostChannel, contentSerializer, entityIdClass, currentRank, treeId);
     }
 
     /**
@@ -5285,11 +5135,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @param serviceDiscovery the service discovery to find other processes
      */
     public void initializeDistributedGhosts(ServiceDiscovery serviceDiscovery) {
-        if (distributedGhostManager != null) {
-            distributedGhostManager.initialize(serviceDiscovery);
-        } else {
-            log.warn("Cannot initialize distributed ghosts - distributed ghost manager not set up");
-        }
+        ghost.initializeDistributedGhosts(serviceDiscovery);
     }
     
     /**
@@ -5297,12 +5143,7 @@ implements SpatialIndex<Key, ID, Content> {
      * This coordinates with other processes to exchange ghost elements.
      */
     public void createDistributedGhostLayer() {
-        if (distributedGhostManager != null) {
-            distributedGhostManager.createDistributedGhostLayer();
-        } else {
-            // Fall back to local ghost layer creation
-            createGhostLayer();
-        }
+        ghost.createDistributedGhostLayer();
     }
     
     /**
@@ -5311,9 +5152,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @param rank the process rank to add
      */
     public void addDistributedProcess(int rank) {
-        if (distributedGhostManager != null) {
-            distributedGhostManager.addKnownProcess(rank);
-        }
+        ghost.addDistributedProcess(rank);
     }
     
     /**
@@ -5322,9 +5161,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @param rank the process rank to remove
      */
     public void removeDistributedProcess(int rank) {
-        if (distributedGhostManager != null) {
-            distributedGhostManager.removeKnownProcess(rank);
-        }
+        ghost.removeDistributedProcess(rank);
     }
     
     /**
@@ -5334,18 +5171,14 @@ implements SpatialIndex<Key, ID, Content> {
      * @param ownerRank the rank of the process that owns this element
      */
     public void setElementOwner(Key key, int ownerRank) {
-        if (distributedGhostManager != null) {
-            distributedGhostManager.setElementOwner(key, ownerRank);
-        }
+        ghost.setElementOwner(key, ownerRank);
     }
     
     /**
      * Synchronize ghost elements with all known processes.
      */
     public void synchronizeDistributedGhosts() {
-        if (distributedGhostManager != null) {
-            distributedGhostManager.synchronizeWithAllProcesses();
-        }
+        ghost.synchronizeDistributedGhosts();
     }
     
     /**
@@ -5354,9 +5187,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @param enabled true to enable auto-sync, false to disable
      */
     public void setDistributedGhostAutoSync(boolean enabled) {
-        if (distributedGhostManager != null) {
-            distributedGhostManager.setAutoSyncEnabled(enabled);
-        }
+        ghost.setDistributedGhostAutoSync(enabled);
     }
     
     /**
@@ -5365,10 +5196,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @return map of statistics, or empty map if distributed ghosts not enabled
      */
     public Map<String, Object> getDistributedGhostStatistics() {
-        if (distributedGhostManager != null) {
-            return distributedGhostManager.getStatistics();
-        }
-        return Map.of();
+        return ghost.getDistributedGhostStatistics();
     }
     
     /**
@@ -5377,18 +5205,14 @@ implements SpatialIndex<Key, ID, Content> {
      * @return true if distributed ghosts are enabled
      */
     public boolean isDistributedGhostsEnabled() {
-        return distributedGhostManager != null;
+        return ghost.isDistributedGhostsEnabled();
     }
     
     /**
      * Shutdown distributed ghost management.
      */
     public void shutdownDistributedGhosts() {
-        if (distributedGhostManager != null) {
-            distributedGhostManager.shutdown();
-            distributedGhostManager = null;
-            log.info("Distributed ghost management shut down");
-        }
+        ghost.shutdownDistributedGhosts();
     }
     
     
@@ -5415,7 +5239,7 @@ implements SpatialIndex<Key, ID, Content> {
      */
     public void enableDSOC(DSOCConfiguration config, int bufferWidth, int bufferHeight) {
         // RDR-008 P1: the DSOC cluster is encapsulated in DsocController.
-        this.dsoc = new DsocController<>(core, new DsocCallbackImpl(), config, bufferWidth, bufferHeight);
+        this.dsoc = new DsocController<>(core, new SpatialGeometryImpl(), config, bufferWidth, bufferHeight);
     }
     
     /**
