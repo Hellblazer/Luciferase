@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.lucien.entity;
 
-import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
 import com.hellblazer.luciferase.lucien.BulkOperationConfig;
 import com.hellblazer.luciferase.lucien.BulkOperationProcessor;
 import com.hellblazer.luciferase.lucien.DeferredSubdivisionManager;
@@ -25,6 +24,7 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import com.hellblazer.luciferase.lucien.SpatialNodePool;
 import com.hellblazer.luciferase.lucien.StackBasedTreeBuilder;
+import com.hellblazer.luciferase.lucien.StackBuilderHost;
 import com.hellblazer.luciferase.lucien.occlusion.DsocController;
 
 import java.util.Set;
@@ -135,12 +135,11 @@ public interface EntityLifecycleHost<Key extends SpatialKey<Key>, ID extends Ent
     // ===== Stack-based tree builder target =====
 
     /**
-     * The {@link AbstractSpatialIndex} target the {@link StackBasedTreeBuilder} needs (the builder's
-     * {@code buildTree} signature takes the concrete abstract base, not the public {@code SpatialIndex} interface,
-     * because the builder relies on facade-internal helpers — auto-id generation through the entity manager and
-     * the protected lifecycle paths). The host exposes the facade through this accessor so
-     * {@code EntityLifecycleManager} avoids a direct {@code AbstractSpatialIndex} import — the coupling stays
-     * named and bounded here.
+     * The {@link StackBuilderHost} target the {@link StackBasedTreeBuilder} consumes. RDR-008 P6 follow-up (bead
+     * {@code Luciferase-ts8}): the builder's signature was previously {@code AbstractSpatialIndex<Key,ID,Content>}
+     * — the god-class concrete type leaking through this host interface. Narrowing the builder to take a
+     * {@link StackBuilderHost} (a small named seam exposing only the six facade-internal methods the builder
+     * actually uses) removes the {@code AbstractSpatialIndex} import from {@code lucien.entity}.
      */
-    AbstractSpatialIndex<Key, ID, Content> stackBuilderTarget();
+    StackBuilderHost<Key, ID, Content> stackBuilderTarget();
 }

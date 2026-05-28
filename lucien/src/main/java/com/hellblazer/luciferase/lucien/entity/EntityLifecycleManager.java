@@ -885,10 +885,10 @@ public final class EntityLifecycleManager<Key extends SpatialKey<Key>, ID extend
     private List<ID> performStackBasedBulkInsert(List<Point3f> positions, List<Content> contents, byte level) {
         host.configureTreeBuilder(host.bulkConfig().getStackBuilderConfig());
 
-        // The {@link StackBasedTreeBuilder#buildTree} signature requires the concrete {@link AbstractSpatialIndex}
-        // base; the host's {@link EntityLifecycleHost#stackBuilderTarget()} accessor returns it. Resolving the
-        // builder reference and the target through the host re-reads the current values, picking up any
-        // configureTreeBuilder swap that just happened above.
+        // RDR-008 P6 follow-up (Luciferase-ts8): the builder now takes a {@link
+        // com.hellblazer.luciferase.lucien.StackBuilderHost} (narrow named seam) instead of the concrete
+        // {@code AbstractSpatialIndex}. Resolving the builder reference and the target through the host re-reads
+        // the current values, picking up any configureTreeBuilder swap that just happened above.
         var buildResult = host.treeBuilder().buildTree(stackBasedBuilderTarget(), positions, contents, level);
 
         log.debug("Stack-based bulk insertion completed: {} entities in {}ms, {} nodes created",
@@ -903,11 +903,12 @@ public final class EntityLifecycleManager<Key extends SpatialKey<Key>, ID extend
     }
 
     /**
-     * Resolves the {@code AbstractSpatialIndex<Key,ID,Content>} target the stack-based builder needs (its
-     * {@code buildTree} signature requires the concrete abstract base). Routed through the host so this class
-     * doesn't import {@code AbstractSpatialIndex} directly.
+     * Resolves the {@link com.hellblazer.luciferase.lucien.StackBuilderHost} target the stack-based builder
+     * needs. RDR-008 P6 follow-up (bead Luciferase-ts8) narrowed the builder's signature from the concrete
+     * {@code AbstractSpatialIndex<Key,ID,Content>} to this named seam, removing the {@code AbstractSpatialIndex}
+     * import from the {@code lucien.entity} package.
      */
-    private com.hellblazer.luciferase.lucien.AbstractSpatialIndex<Key, ID, Content> stackBasedBuilderTarget() {
+    private com.hellblazer.luciferase.lucien.StackBuilderHost<Key, ID, Content> stackBasedBuilderTarget() {
         return host.stackBuilderTarget();
     }
 
