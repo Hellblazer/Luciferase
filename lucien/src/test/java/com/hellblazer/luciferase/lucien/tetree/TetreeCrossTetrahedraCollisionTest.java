@@ -111,17 +111,18 @@ public class TetreeCrossTetrahedraCollisionTest {
         var tetree = new Tetree<LongEntityID, String>(new SequentialLongIDGenerator());
 
         byte level = 21;
-        // Six positions inside the unit cell at (0,0,0,21). Each ordering hits exactly one S-type, derived from
-        // Tet.contains12DOP: S0=x>=y>=z, S1=y>=x>=z, S2=z>=x>=y, S3=z>=y>=x, S4=x>=z>=y, S5=y>=z>=x. We use
-        // (a, a+δ, a+2δ) permutations with a=0.5 and δ=0.02 so all six points stay inside the cell, hit the
-        // intended type, and lie within sqrt(2)·2δ ≈ 0.057 of each other (under the 0.1f threshold).
+        // Six positions inside the unit cell at (0,0,0,21). Each ordering hits exactly one type, derived from
+        // Tet.contains12DOP (t8code dtet labeling, RDR-010 Luciferase-4pd): t0=x>z>y, t1=x>y>z, t2=y>x>z,
+        // t3=y>z>x, t4=z>y>x, t5=z>x>y. We use (a, a+δ, a+2δ) permutations with a=0.5 and δ=0.02 so all six
+        // points stay inside the cell, hit the intended type, and lie within sqrt(2)·2δ ≈ 0.057 of each
+        // other (under the 0.1f threshold).
         float a = 0.5f, d = 0.02f;
-        var positions = new Point3f[]{ new Point3f(a + 2 * d, a + d, a),         // S0: x>y>z
-                                       new Point3f(a + d, a + 2 * d, a),         // S1: y>x>z
-                                       new Point3f(a + d, a, a + 2 * d),         // S2: z>x>y
-                                       new Point3f(a, a + d, a + 2 * d),         // S3: z>y>x
-                                       new Point3f(a + 2 * d, a, a + d),         // S4: x>z>y
-                                       new Point3f(a, a + 2 * d, a + d) };       // S5: y>z>x
+        var positions = new Point3f[]{ new Point3f(a + 2 * d, a, a + d),         // t0: x>z>y
+                                       new Point3f(a + 2 * d, a + d, a),         // t1: x>y>z
+                                       new Point3f(a + d, a + 2 * d, a),         // t2: y>x>z
+                                       new Point3f(a, a + 2 * d, a + d),         // t3: y>z>x
+                                       new Point3f(a, a + d, a + 2 * d),         // t4: z>y>x
+                                       new Point3f(a + d, a, a + 2 * d) };       // t5: z>x>y
 
         var ids = new LongEntityID[6];
         for (int i = 0; i < 6; i++) {

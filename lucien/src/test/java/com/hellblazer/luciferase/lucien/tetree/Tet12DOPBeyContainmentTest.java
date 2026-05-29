@@ -36,35 +36,16 @@ public class Tet12DOPBeyContainmentTest {
      * The result is guaranteed to satisfy child.contains12DOP(centroid).
      */
     private static float[] canonicalCentroid(Tet t) {
-        int h = t.length();
-        float ax = t.x(), ay = t.y(), az = t.z();
-        // S-type centroids are averages of the 4 Kuhn vertices from coordinates().
-        // For each type T, the ordering {u, v, w} follows: the 4 vertices are the
-        // ordered permutation path endpoints in [0,h]^3.
-        //
-        // Type 0 (u>=v>=w): vertices (0,0,0),(h,0,0),(h,h,0),(h,h,h) → centroid (3h/4, h/2, h/4)
-        // Type 1 (v>=u>=w): vertices (0,0,0),(0,h,0),(h,h,0),(h,h,h) → centroid (h/2, 3h/4, h/4)
-        // Type 2 (w>=u>=v): vertices (0,0,0),(0,0,h),(h,0,h),(h,h,h) → centroid (h/2, h/4, 3h/4) -- wait
-        //   Actually S2: case 2 -> w >= u && u >= v, so z>=x>=y.
-        //   coordinates() type 2: V0,V4,V5,V7: (0,0,0),(0,0,h),(h,0,h),(h,h,h)
-        //   centroid: (h/2, h/4, 3h/4)
-        // Type 3 (w>=v>=u): coordinates() type 3: V0,V4,V6,V7: (0,0,0),(0,0,h),(0,h,h),(h,h,h)
-        //   centroid: (h/4, h/2, 3h/4)
-        // Type 4 (u>=w>=v): coordinates() type 4: V0,V1,V5,V7: (0,0,0),(h,0,0),(h,0,h),(h,h,h)
-        //   centroid: (3h/4, h/4, h/2)
-        // Type 5 (v>=w>=u): coordinates() type 5: V0,V2,V6,V7: (0,0,0),(0,h,0),(0,h,h),(h,h,h)
-        //   centroid: (h/4, 3h/4, h/2)
-        float cx, cy, cz;
-        switch (t.type()) {
-            case 0: cx = ax + 3*h/4f; cy = ay + h/2f; cz = az + h/4f; break;
-            case 1: cx = ax + h/2f;   cy = ay + 3*h/4f; cz = az + h/4f; break;
-            case 2: cx = ax + h/2f;   cy = ay + h/4f;   cz = az + 3*h/4f; break;
-            case 3: cx = ax + h/4f;   cy = ay + h/2f;   cz = az + 3*h/4f; break;
-            case 4: cx = ax + 3*h/4f; cy = ay + h/4f;   cz = az + h/2f; break;
-            case 5: cx = ax + h/4f;   cy = ay + 3*h/4f; cz = az + h/2f; break;
-            default: throw new IllegalStateException("Invalid type: " + t.type());
+        // Labeling-agnostic: the centroid of the 4 actual tet vertices is strictly
+        // inside the (closed) simplex, so it always satisfies contains12DOP.
+        var v = t.coordinates();
+        float cx = 0, cy = 0, cz = 0;
+        for (var p : v) {
+            cx += p.x;
+            cy += p.y;
+            cz += p.z;
         }
-        return new float[]{ cx, cy, cz };
+        return new float[]{ cx / 4f, cy / 4f, cz / 4f };
     }
 
     /**

@@ -335,28 +335,9 @@ public class Tet implements Spatial.aabt, HybridElement {
         float uy = relY / cellSize;
         float uz = relZ / cellSize;
 
-        // Determine tetrahedron type based on coordinate ordering — must match
-        // the geometric convention used by contains12DOP() and coordinates().
-        // See: S0-S5 Kuhn simplex orderings in contains12DOP().
-        byte type;
-        if (ux >= uy) {
-            if (uy >= uz) {
-                type = 0; // S0: x >= y >= z
-            } else if (ux >= uz) {
-                type = 4; // S4: x >= z >= y
-            } else {
-                type = 2; // S2: z >= x >= y
-            }
-        } else {
-            // uy > ux
-            if (ux >= uz) {
-                type = 1; // S1: y >= x >= z
-            } else if (uy >= uz) {
-                type = 5; // S5: y >= z >= x
-            } else {
-                type = 3; // S3: z >= y >= x
-            }
-        }
+        // Determine tetrahedron type based on coordinate ordering — t8code dtet convention, shared with
+        // contains12DOP()/coordinates() (RDR-010 Luciferase-4pd: Tet type k IS t8code dtet type k).
+        byte type = typeForOrdering(ux, uy, uz);
 
         // Create starting tetrahedron
         Tet current = new Tet(anchorX, anchorY, anchorZ, startLevel, type);
@@ -421,39 +402,43 @@ public class Tet implements Spatial.aabt, HybridElement {
             return new Tet(0, 0, 0, (byte) 0, (byte) 0);
         }
 
-        // Top-down traversal through S0 Bey tree
-        byte currentType = 0;  // Root is always type 0
-
-        for (byte level = 1; level <= targetLevel; level++) {
-            // Cell size at parent level
-            int parentH = Constants.lengthAtLevel((byte) (level - 1));
-            int halfH = parentH / 2;
-
-            // Compute parent anchor at this level
-            int parentAnchorX = ((int) (px / parentH)) * parentH;
-            int parentAnchorY = ((int) (py / parentH)) * parentH;
-            int parentAnchorZ = ((int) (pz / parentH)) * parentH;
-
-            // Compute cube ID: which octant of the parent contains the point
-            int cubeId = 0;
-            if (px >= parentAnchorX + halfH) cubeId |= 1;
-            if (py >= parentAnchorY + halfH) cubeId |= 2;
-            if (pz >= parentAnchorZ + halfH) cubeId |= 4;
-
-            // Get Bey child ID from parent type and cube ID
-            byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[currentType][cubeId];
-
-            // Get child type from parent type and Bey child ID
-            currentType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[currentType][beyId];
-        }
-
-        // Compute final anchor at target level
+        // RDR-010 Luciferase-4pd: the type at any level is a function of the point's coordinate
+        // ordering within that level's grid cell (t8code/Kuhn partition), so classify directly at the
+        // target level — provably consistent with coordinates()/contains12DOP. (The old downward
+        // root-trace mis-indexed the bey table by parent type and was not t8code-consistent.)
         int targetH = Constants.lengthAtLevel(targetLevel);
         int anchorX = ((int) (px / targetH)) * targetH;
         int anchorY = ((int) (py / targetH)) * targetH;
         int anchorZ = ((int) (pz / targetH)) * targetH;
+        byte currentType = typeForOrdering(px - anchorX, py - anchorY, pz - anchorZ);
 
         return new Tet(anchorX, anchorY, anchorZ, targetLevel, currentType);
+    }
+
+    /**
+     * The t8code dtet type whose Kuhn-simplex region contains a point with the given LOCAL coordinates
+     * within a grid cell (RDR-010 Luciferase-4pd). Matches {@link #contains12DOP} and
+     * {@link #coordinates()}: t0 x&ge;z&ge;y, t1 x&ge;y&ge;z, t2 y&ge;x&ge;z, t3 y&ge;z&ge;x,
+     * t4 z&ge;y&ge;x, t5 z&ge;x&ge;y.
+     */
+    private static byte typeForOrdering(double ux, double uy, double uz) {
+        if (ux >= uy) {
+            if (uy >= uz) {
+                return 1; // x >= y >= z
+            } else if (ux >= uz) {
+                return 0; // x >= z >= y
+            } else {
+                return 5; // z >= x >= y
+            }
+        } else {
+            if (ux >= uz) {
+                return 2; // y >= x >= z
+            } else if (uy >= uz) {
+                return 3; // y >= z >= x
+            } else {
+                return 4; // z >= y >= x
+            }
+        }
     }
 
     public static double orientation(Tuple3f query, Tuple3i a, Tuple3i b, Tuple3i c) {
@@ -997,9 +982,9 @@ public class Tet implements Spatial.aabt, HybridElement {
     /**
      * Compute the type of this tetrahedron's ancestor at a given level.
      *
-     * <p>This method traces from root (type 0) down to the target level using
-     * S0 Bey tree traversal. This ensures consistency with locatePointS0Tree
-     * and parent() methods.</p>
+     * <p>This walks UP from this tet's type to the target level using t8code's
+     * {@code CID_TYPE_TO_PARENTTYPE} table (RDR-010 Luciferase-4pd), consistent with
+     * {@link #parent()}, {@link #consecutiveIndex()} and {@link #tmIndex()}.</p>
      *
      * @param level the target level (0 to this.l)
      * @return the type at that level
@@ -1022,31 +1007,17 @@ public class Tet implements Spatial.aabt, HybridElement {
             return type;
         }
         if (level == 0) {
-            return 0; // Root is always type 0 in S0 Bey tree
+            return 0; // Root is always type 0
         }
 
-        // Trace from root (type 0) down to target level
-        byte currentType = 0;
-
-        for (byte lvl = 1; lvl <= level; lvl++) {
-            // Cell size at parent level (lvl - 1)
-            int parentH = Constants.lengthAtLevel((byte) (lvl - 1));
-            int halfH = parentH / 2;
-
-            // Compute ancestor anchor at parent level
-            int ancestorAnchorX = (x / parentH) * parentH;
-            int ancestorAnchorY = (y / parentH) * parentH;
-            int ancestorAnchorZ = (z / parentH) * parentH;
-
-            // Compute cube ID: which octant
-            int cubeId = 0;
-            if (x >= ancestorAnchorX + halfH) cubeId |= 1;
-            if (y >= ancestorAnchorY + halfH) cubeId |= 2;
-            if (z >= ancestorAnchorZ + halfH) cubeId |= 4;
-
-            // Get Bey child ID and child type
-            byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[currentType][cubeId];
-            currentType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[currentType][beyId];
+        // RDR-010 Luciferase-4pd: walk UP from this tet's type using t8code's canonical
+        // cid_type_to_parenttype table (the downward root-trace mis-indexed the bey table by parent
+        // type and is not t8code-consistent). Ancestor type at `level` = repeated parent type.
+        byte currentType = type;
+        for (byte lvl = l; lvl > level; lvl--) {
+            int h = 1 << (getMaxRefinementLevel() - lvl);
+            int cubeId = ((x & h) != 0 ? 1 : 0) | ((y & h) != 0 ? 2 : 0) | ((z & h) != 0 ? 4 : 0);
+            currentType = TetreeConnectivity.CID_TYPE_TO_PARENTTYPE[cubeId][currentType];
         }
 
         return currentType;
@@ -1056,8 +1027,9 @@ public class Tet implements Spatial.aabt, HybridElement {
      * Compute the consecutive index of this tetrahedron at this level.
      *
      * <p><b>Algorithm Overview:</b></p>
-     * Encodes the path from root to this tetrahedron by computing types at each
-     * level using S0 Bey tree traversal, then converting cubeId to local index.
+     * Encodes the path from root to this tetrahedron by computing types at each level via the t8code
+     * upward {@code CID_TYPE_TO_PARENTTYPE} walk (RDR-010 Luciferase-4pd), then converting cubeId to
+     * local index.
      *
      * <p><b>CRITICAL:</b> The consecutive index encodes the complete path with NO level offset.</p>
      * Each level contributes exactly 3 bits to the final index.
@@ -1082,25 +1054,15 @@ public class Tet implements Spatial.aabt, HybridElement {
             return 0;
         }
 
-        // Pre-compute types at each level using S0 Bey tree traversal
+        // RDR-010 Luciferase-4pd: pre-compute types at each level by walking UP from this tet's type
+        // via t8code's cid_type_to_parenttype (canonical t8code typing; the old downward root-trace
+        // mis-indexed the bey table and is not t8code-consistent).
         byte[] typesAtLevel = new byte[l + 1];
-        typesAtLevel[0] = 0; // Root is always type 0
-
-        for (byte lvl = 1; lvl <= l; lvl++) {
-            int parentH = Constants.lengthAtLevel((byte) (lvl - 1));
-            int halfH = parentH / 2;
-
-            int ancestorAnchorX = (x / parentH) * parentH;
-            int ancestorAnchorY = (y / parentH) * parentH;
-            int ancestorAnchorZ = (z / parentH) * parentH;
-
-            int cubeId = 0;
-            if (x >= ancestorAnchorX + halfH) cubeId |= 1;
-            if (y >= ancestorAnchorY + halfH) cubeId |= 2;
-            if (z >= ancestorAnchorZ + halfH) cubeId |= 4;
-
-            byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[typesAtLevel[lvl - 1]][cubeId];
-            typesAtLevel[lvl] = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[typesAtLevel[lvl - 1]][beyId];
+        typesAtLevel[l] = type;
+        for (byte lvl = l; lvl > 0; lvl--) {
+            int h = 1 << (getMaxRefinementLevel() - lvl);
+            int cubeId = ((x & h) != 0 ? 1 : 0) | ((y & h) != 0 ? 2 : 0) | ((z & h) != 0 ? 4 : 0);
+            typesAtLevel[lvl - 1] = TetreeConnectivity.CID_TYPE_TO_PARENTTYPE[cubeId][typesAtLevel[lvl]];
         }
 
         // Now compute index by traversing from this level back to root
@@ -1145,14 +1107,16 @@ public class Tet implements Spatial.aabt, HybridElement {
             return false;
         // Local coordinates (3 subtractions)
         float u = px - x, v = py - y, w = pz - z;
-        // Ordering test (2 comparisons) — derived from vertex geometry (Kuhn simplex edge paths)
+        // Ordering test (2 comparisons) — t8code dtet vertex geometry (Kuhn simplex edge paths).
+        // RDR-010 Luciferase-4pd: type k IS t8code dtet type k; constants re-permuted from the old
+        // S0-S5 labeling via T8_TO_LUC={4,0,1,5,3,2} (same 6 Kuhn simplices, same 6 axes, same op count).
         return switch (type) {
-            case 0 -> u >= v && v >= w;  // S0: V0,V1,V3,V7 → x ≥ y ≥ z
-            case 1 -> v >= u && u >= w;  // S1: V0,V2,V3,V7 → y ≥ x ≥ z
-            case 2 -> w >= u && u >= v;  // S2: V0,V4,V5,V7 → z ≥ x ≥ y
-            case 3 -> w >= v && v >= u;  // S3: V0,V4,V6,V7 → z ≥ y ≥ x
-            case 4 -> u >= w && w >= v;  // S4: V0,V1,V5,V7 → x ≥ z ≥ y
-            case 5 -> v >= w && w >= u;  // S5: V0,V2,V6,V7 → y ≥ z ≥ x
+            case 0 -> u >= w && w >= v;  // x ≥ z ≥ y
+            case 1 -> u >= v && v >= w;  // x ≥ y ≥ z
+            case 2 -> v >= u && u >= w;  // y ≥ x ≥ z
+            case 3 -> v >= w && w >= u;  // y ≥ z ≥ x
+            case 4 -> w >= v && v >= u;  // z ≥ y ≥ x
+            case 5 -> w >= u && u >= v;  // z ≥ x ≥ y
             default -> throw new IllegalStateException("Invalid type: " + type);
         };
     }
@@ -1220,19 +1184,21 @@ public class Tet implements Spatial.aabt, HybridElement {
         final int dyz = ay - az;
         // sign encoding: 0 means slab [0,h] (lo=diff, hi=diff+h)
         //                1 means slab [-h,0] (lo=diff-h, hi=diff)
+        // RDR-010 Luciferase-4pd: t8code dtet typing; per-type signs re-permuted from old S0-S5 via
+        // T8_TO_LUC={4,0,1,5,3,2}.
         return switch (type) {
-            case 0 -> // d_xy=+, d_xz=+, d_yz=+
-                new int[]{ dxy,     dxy + h, dxz,     dxz + h, dyz,     dyz + h };
-            case 1 -> // d_xy=-, d_xz=+, d_yz=+
-                new int[]{ dxy - h, dxy,     dxz,     dxz + h, dyz,     dyz + h };
-            case 2 -> // d_xy=+, d_xz=-, d_yz=-
-                new int[]{ dxy,     dxy + h, dxz - h, dxz,     dyz - h, dyz     };
-            case 3 -> // d_xy=-, d_xz=-, d_yz=-
-                new int[]{ dxy - h, dxy,     dxz - h, dxz,     dyz - h, dyz     };
-            case 4 -> // d_xy=+, d_xz=+, d_yz=-
+            case 0 -> // d_xy=+, d_xz=+, d_yz=-
                 new int[]{ dxy,     dxy + h, dxz,     dxz + h, dyz - h, dyz     };
-            case 5 -> // d_xy=-, d_xz=-, d_yz=+
+            case 1 -> // d_xy=+, d_xz=+, d_yz=+
+                new int[]{ dxy,     dxy + h, dxz,     dxz + h, dyz,     dyz + h };
+            case 2 -> // d_xy=-, d_xz=+, d_yz=+
+                new int[]{ dxy - h, dxy,     dxz,     dxz + h, dyz,     dyz + h };
+            case 3 -> // d_xy=-, d_xz=-, d_yz=+
                 new int[]{ dxy - h, dxy,     dxz - h, dxz,     dyz,     dyz + h };
+            case 4 -> // d_xy=-, d_xz=-, d_yz=-
+                new int[]{ dxy - h, dxy,     dxz - h, dxz,     dyz - h, dyz     };
+            case 5 -> // d_xy=+, d_xz=-, d_yz=-
+                new int[]{ dxy,     dxy + h, dxz - h, dxz,     dyz - h, dyz     };
             default -> throw new IllegalStateException("Invalid type: " + type);
         };
     }
@@ -1263,25 +1229,27 @@ public class Tet implements Spatial.aabt, HybridElement {
         // Step 3: Compute tet's global slab ranges and check overlap (6 comparisons)
         // Local slab [0,h] or [-h,0] is shifted by anchor differences (axy = x-y, etc.)
         int axy = x - y, axz = x - z, ayz = y - z;
+        // RDR-010 Luciferase-4pd: t8code dtet typing; per-type slabs re-permuted from old S0-S5 via
+        // T8_TO_LUC={4,0,1,5,3,2}.
         return switch (type) {
             case 0 ->
-                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
-                && dyzMin <= ayz + h;
-            case 1 ->
-                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
-                && dyzMin <= ayz + h;
-            case 2 ->
-                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
-                && dyzMin <= ayz;
-            case 3 ->
-                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
-                && dyzMin <= ayz;
-            case 4 ->
                 dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz - h
                 && dyzMin <= ayz;
-            case 5 ->
+            case 1 ->
+                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
+                && dyzMin <= ayz + h;
+            case 2 ->
+                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
+                && dyzMin <= ayz + h;
+            case 3 ->
                 dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz
                 && dyzMin <= ayz + h;
+            case 4 ->
+                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
+                && dyzMin <= ayz;
+            case 5 ->
+                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
+                && dyzMin <= ayz;
             default -> throw new IllegalStateException("Invalid type: " + type);
         };
     }
@@ -1318,25 +1286,27 @@ public class Tet implements Spatial.aabt, HybridElement {
         float dyzMin = eyMin - ezMax, dyzMax = eyMax - ezMin;
         // Step 3: Compute tet's global slab ranges and check overlap (6 comparisons)
         int axy = x - y, axz = x - z, ayz = y - z;
+        // RDR-010 Luciferase-4pd: t8code dtet typing; per-type slabs re-permuted from old S0-S5 via
+        // T8_TO_LUC={4,0,1,5,3,2}.
         return switch (type) {
             case 0 ->
-                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
-                && dyzMin <= ayz + h;
-            case 1 ->
-                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
-                && dyzMin <= ayz + h;
-            case 2 ->
-                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
-                && dyzMin <= ayz;
-            case 3 ->
-                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
-                && dyzMin <= ayz;
-            case 4 ->
                 dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz - h
                 && dyzMin <= ayz;
-            case 5 ->
+            case 1 ->
+                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
+                && dyzMin <= ayz + h;
+            case 2 ->
+                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz
+                && dyzMin <= ayz + h;
+            case 3 ->
                 dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz
                 && dyzMin <= ayz + h;
+            case 4 ->
+                dxyMax >= axy - h && dxyMin <= axy && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
+                && dyzMin <= ayz;
+            case 5 ->
+                dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz - h && dxzMin <= axz && dyzMax >= ayz - h
+                && dyzMin <= ayz;
             default -> throw new IllegalStateException("Invalid type: " + type);
         };
     }
@@ -1354,48 +1324,18 @@ public class Tet implements Spatial.aabt, HybridElement {
         var coords = new Point3i[4];
         var h = length();
 
-        // Correct S0-S5 cube subdivision
-        // All 6 tetrahedra share vertices V0 (origin) and V7 (opposite corner)
-        switch (type) {
-            case 0: // S0: vertices 0, 1, 3, 7 of cube
-                coords[0] = new Point3i(x, y, z);              // V0
-                coords[1] = new Point3i(x + h, y, z);          // V1
-                coords[2] = new Point3i(x + h, y + h, z);      // V3
-                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
-                break;
-            case 1: // S1: vertices 0, 2, 3, 7 of cube
-                coords[0] = new Point3i(x, y, z);              // V0
-                coords[1] = new Point3i(x, y + h, z);          // V2
-                coords[2] = new Point3i(x + h, y + h, z);      // V3
-                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
-                break;
-            case 2: // S2: vertices 0, 4, 5, 7 of cube
-                coords[0] = new Point3i(x, y, z);              // V0
-                coords[1] = new Point3i(x, y, z + h);          // V4
-                coords[2] = new Point3i(x + h, y, z + h);      // V5
-                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
-                break;
-            case 3: // S3: vertices 0, 4, 6, 7 of cube
-                coords[0] = new Point3i(x, y, z);              // V0
-                coords[1] = new Point3i(x, y, z + h);          // V4
-                coords[2] = new Point3i(x, y + h, z + h);      // V6
-                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
-                break;
-            case 4: // S4: vertices 0, 1, 5, 7 of cube
-                coords[0] = new Point3i(x, y, z);              // V0
-                coords[1] = new Point3i(x + h, y, z);          // V1
-                coords[2] = new Point3i(x + h, y, z + h);      // V5
-                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
-                break;
-            case 5: // S5: vertices 0, 2, 6, 7 of cube
-                coords[0] = new Point3i(x, y, z);              // V0
-                coords[1] = new Point3i(x, y + h, z);          // V2
-                coords[2] = new Point3i(x, y + h, z + h);      // V6
-                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
-                break;
-            default:
-                throw new IllegalStateException("Invalid tetrahedron type: " + type);
-        }
+        // t8code dtet canonical Kuhn-simplex vertices (RDR-010 Luciferase-4pd alignment): type k IS
+        // t8code dtet type k. v0 = anchor, v3 = opposite cube corner (shared cube diagonal); v1, v2
+        // walk dimensions ei, ej. See t8_dtet_compute_coords (origin/main).
+        int ei = type / 2;
+        int ej = (ei + ((type % 2 == 0) ? 2 : 1)) % 3;
+
+        coords[0] = new Point3i(x, y, z);                  // v0: anchor
+        coords[1] = new Point3i(x, y, z);                  // v1: anchor + h@ei
+        addToDimension(coords[1], ei, h);
+        coords[2] = new Point3i(coords[1].x, coords[1].y, coords[1].z); // v2: v1 + h@ej
+        addToDimension(coords[2], ej, h);
+        coords[3] = new Point3i(x + h, y + h, z + h);      // v3: opposite cube corner
 
         return coords;
     }
@@ -1404,7 +1344,9 @@ public class Tet implements Spatial.aabt, HybridElement {
      * Legacy coordinate calculation using t8code algorithm. This method is preserved for reference and testing
      * compatibility.
      *
-     * @deprecated Use {@link #coordinates()} which implements correct S0-S5 subdivision
+     * @deprecated Use {@link #coordinates()} which implements the t8code dtet vertex formula
+     *             (RDR-010 Luciferase-4pd). Note: this legacy method's v3 differs from t8code's
+     *             (v3 = opposite cube corner) and is retained only for reference.
      */
     @Deprecated
     public Point3i[] coordinatesLegacy() {
@@ -1864,20 +1806,19 @@ public class Tet implements Spatial.aabt, HybridElement {
      */
     public HybridFaceNeighbor faceNeighborElement(int face) {
         assert 0 <= face && face < 4;
-        // The pyramid-boundary logic is t8code's, in t8code tet-type space; this.type is a Luciferase
-        // type, so translate (Finding #15). Only t8code types 0 and 3 ever touch a pyramid.
-        byte t8 = TetreeConnectivity.LUC_TO_T8[type];
+        // RDR-010 Luciferase-4pd: Tet type k IS t8code dtet type k, so the t8code pyramid-boundary
+        // logic applies directly with no type translation. Only types 0 and 3 ever touch a pyramid.
+        byte t8 = type;
         boolean pyramidCapable = minTetLevel != NO_TET_ANCESTOR && (t8 == 0 || t8 == 3);
         if (pyramidCapable && l > minTetLevel) {
-            // Deep pyramid-rooted tet: Luciferase's S0-S5 Bey subdivision diverges geometrically from
-            // t8code's dtet tree below the pyramid boundary (RDR-010 Finding #16), so the borrowed
-            // t8code boundary connectivity does not apply and the result would be silently wrong.
-            // Fail loud until the tet-tree convention is reconciled. The shallowest tet (l ==
-            // minTetLevel) is unaffected and validated.
+            // Deep pyramid-rooted tet: the deep pyramid-boundary connectivity (t8code's multi-level
+            // corner-walk tables) is not yet ported, so deep-tet pyramid face neighbors are not yet
+            // computed. Fail loud rather than return a wrong neighbor. The shallowest tet
+            // (l == minTetLevel) is fully supported. Deep enablement: RDR-010 q3p Phase E / pi1.5.
             throw new IllegalStateException(
             "Deep pyramid-rooted tetrahedron (level " + l + " > minTetLevel " + minTetLevel
-            + ") face neighbors are not supported: Luciferase's Bey subdivision diverges from t8code's "
-            + "dtet tree below the pyramid boundary. Blocked on RDR-010 tet-tree reconciliation.");
+            + ") face neighbors are not yet supported: deep pyramid-boundary connectivity not yet "
+            + "ported (RDR-010 q3p Phase E).");
         }
         // Pure-Tetree or a type that never touches a pyramid, or a face that does not: tet neighbor.
         if (!pyramidCapable || !tetTouchesPyramid(face)) {
@@ -1947,13 +1888,13 @@ public class Tet implements Spatial.aabt, HybridElement {
      * Whether this shallowest pyramid-rooted tet's {@code face} touches the bounding pyramid envelope
      * (t8code {@code t8_dpyramid_tet_pyra_face_connection}). Only valid for {@code l == minTetLevel}
      * (the pyramid's direct tet child); {@link #faceNeighborElement(int)} guards deeper tets, whose
-     * boundary detection is blocked on the RDR-010 tet-tree reconciliation (Finding #16). The receiver
-     * is a t8code type 0/3 tet (its {@code type} is translated to t8code at the call site).
+     * boundary detection is deferred (RDR-010 q3p Phase E). The receiver's {@code type} is already a
+     * t8code dtet type (Luciferase-4pd alignment), so no translation is needed.
      */
     private boolean tetTouchesPyramid(int face) {
         assert l == minTetLevel : "tetTouchesPyramid is only valid for the shallowest tet; deeper "
-                                  + "tets are guarded in faceNeighborElement (RDR-010 Finding #16)";
-        return tetPyraFaceConnection(TetreeConnectivity.LUC_TO_T8[type], cubeIdAt(l), face);
+                                  + "tets are guarded in faceNeighborElement (RDR-010 q3p Phase E)";
+        return tetPyraFaceConnection(type, cubeIdAt(l), face);
     }
 
     /**
@@ -2031,26 +1972,20 @@ public class Tet implements Spatial.aabt, HybridElement {
         int shiftedY = y;
         int shiftedZ = z;
 
-        // Compute ancestor types directly from coordinates — zero Tet allocations.
-        // Uses TYPE_CID_TO_BEYID + PARENT_TYPE_TO_CHILD_TYPE tables (same as computeParentType).
-        // types[i] = type at level i+1 in the ancestry. types[l-1] = this.type (leaf).
+        // Compute ancestor types directly from coordinates — zero Tet allocations. RDR-010
+        // Luciferase-4pd: walk UP from this leaf type via t8code's CID_TYPE_TO_PARENTTYPE, identical
+        // to computeType()/parent()/consecutiveIndex(). (The old downward root-trace mis-indexed the
+        // bey table by parent type and is not t8code-consistent.) types[i] = type at level i+1;
+        // types[l-1] = this.type (leaf).
         byte[] types = new byte[l];
-        byte ancestorType = 0; // root type
-        for (int lvl = 1; lvl < l; lvl++) {
-            int parentH = Constants.lengthAtLevel((byte) (lvl - 1));
-            int halfH = parentH >> 1;
-            int ancestorX = (x / parentH) * parentH;
-            int ancestorY = (y / parentH) * parentH;
-            int ancestorZ = (z / parentH) * parentH;
-            int cubeId = 0;
-            if (x >= ancestorX + halfH) cubeId |= 1;
-            if (y >= ancestorY + halfH) cubeId |= 2;
-            if (z >= ancestorZ + halfH) cubeId |= 4;
-            byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[ancestorType][cubeId];
-            ancestorType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[ancestorType][beyId];
-            types[lvl - 1] = ancestorType;
-        }
         types[l - 1] = type; // Leaf type is always this.type
+        byte ancestorType = type;
+        for (int lvl = l; lvl > 1; lvl--) {
+            int h = 1 << (getMaxRefinementLevel() - lvl);
+            int cubeId = ((x & h) != 0 ? 1 : 0) | ((y & h) != 0 ? 2 : 0) | ((z & h) != 0 ? 4 : 0);
+            ancestorType = TetreeConnectivity.CID_TYPE_TO_PARENTTYPE[cubeId][ancestorType];
+            types[lvl - 2] = ancestorType; // type at level lvl-1
+        }
 
         // Now build bits with types in correct order
         // We support up to level 21 with 128-bit representation
@@ -2321,36 +2256,15 @@ public class Tet implements Spatial.aabt, HybridElement {
      * <p>This is O(parentLevel) but ensures consistency with locatePointS0Tree.</p>
      */
     private byte computeParentType(int parentX, int parentY, int parentZ, byte parentLevel) {
-        // Special case: root tetrahedron must always have type 0
         if (parentLevel == 0) {
-            return 0;
+            return 0; // Root is always type 0
         }
-
-        // Trace from root (type 0) down to parentLevel
-        byte currentType = 0;
-
-        for (byte level = 1; level <= parentLevel; level++) {
-            // Cell size at parent level (level - 1)
-            int parentH = Constants.lengthAtLevel((byte) (level - 1));
-            int halfH = parentH / 2;
-
-            // Compute ancestor anchor at this parent level
-            int ancestorAnchorX = (parentX / parentH) * parentH;
-            int ancestorAnchorY = (parentY / parentH) * parentH;
-            int ancestorAnchorZ = (parentZ / parentH) * parentH;
-
-            // Compute cube ID: which octant of the ancestor
-            int cubeId = 0;
-            if (parentX >= ancestorAnchorX + halfH) cubeId |= 1;
-            if (parentY >= ancestorAnchorY + halfH) cubeId |= 2;
-            if (parentZ >= ancestorAnchorZ + halfH) cubeId |= 4;
-
-            // Get Bey child ID and child type
-            byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[currentType][cubeId];
-            currentType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[currentType][beyId];
-        }
-
-        return currentType;
+        // RDR-010 Luciferase-4pd: t8code's canonical O(1) parent-type lookup. The parent is exactly one
+        // level above this tet, so its type is cid_type_to_parenttype[childCubeId][childType] keyed by
+        // THIS tet's cube-id and type (t8_dtet_parent).
+        int h = length();
+        int cubeId = ((x & h) != 0 ? 1 : 0) | ((y & h) != 0 ? 2 : 0) | ((z & h) != 0 ? 4 : 0);
+        return TetreeConnectivity.CID_TYPE_TO_PARENTTYPE[cubeId][type];
     }
 
     // Optimized planar SFC range computation (2 dimensions vary)

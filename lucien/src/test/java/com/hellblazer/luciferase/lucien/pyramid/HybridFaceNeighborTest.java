@@ -69,12 +69,12 @@ class HybridFaceNeighborTest {
     void pyramidTriangularFacesNeighborTetsQuadBaseNeighborsPyramid() {
         var l = Constants.lengthAtLevel(LEVEL);
         var p = new Pyramid(4 * l, 4 * l, 4 * l, LEVEL, Pyramid.TYPE_6);
-        // f0,f1 -> tet (t8code type 3 -> Luciferase 5); f2,f3 -> tet (t8code 0 -> Luciferase 4);
-        // f4 -> opposite pyramid (Finding #15 translation).
-        assertEquals(5, p.faceNeighbor(0).element().type());
-        assertEquals(5, p.faceNeighbor(1).element().type());
-        assertEquals(4, p.faceNeighbor(2).element().type());
-        assertEquals(4, p.faceNeighbor(3).element().type());
+        // f0,f1 -> tet type 3; f2,f3 -> tet type 0; f4 -> opposite pyramid. Tet type k IS t8code dtet
+        // type k now (RDR-010 Luciferase-4pd), so no translation.
+        assertEquals(3, p.faceNeighbor(0).element().type());
+        assertEquals(3, p.faceNeighbor(1).element().type());
+        assertEquals(0, p.faceNeighbor(2).element().type());
+        assertEquals(0, p.faceNeighbor(3).element().type());
         var base = p.faceNeighbor(4);
         assertInstanceOf(Pyramid.class, base.element());
         assertEquals(Pyramid.TYPE_7, base.element().type());
@@ -185,9 +185,8 @@ class HybridFaceNeighborTest {
                 for (var k = 0; k < 8; k++) {
                     var deep = shallow.child(k); // minTetLevel == shallow.level < deep.level
                     assertTrue(deep.minTetLevel() < deep.l, "deep tet: minTetLevel < level");
-                    var t8 = com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity.LUC_TO_T8[deep.type];
-                    if (t8 != 0 && t8 != 3) {
-                        continue; // only pyramid-capable types hit the guard
+                    if (deep.type != 0 && deep.type != 3) {
+                        continue; // only pyramid-capable types (t8code 0/3 == Luciferase 0/3) hit the guard
                     }
                     var d = deep;
                     assertThrows(IllegalStateException.class, () -> d.faceNeighborElement(0),

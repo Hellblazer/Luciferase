@@ -2399,28 +2399,24 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
         
         // The logic below correctly maps the 6 regions to tetrahedron types
         // based on the SIMPLEX_STANDARD vertex definitions:
+        // RDR-010 Luciferase-4pd: t8code dtet labeling — t0 x>z>y, t1 x>y>z, t2 y>x>z, t3 y>z>x,
+        // t4 z>y>x, t5 z>x>y (matches Tet.contains12DOP / coordinates()).
         if (px <= py) {
             if (py <= pz) {
-                // x <= y <= z
-                return 3; // Type 3: c0, c7, c6, c2 (in SIMPLEX_STANDARD order)
+                return 4; // z >= y >= x
             } else if (px <= pz) {
-                // x <= z < y
-                return 2; // Type 2: c0, c2, c3, c7
+                return 3; // y > z >= x
             } else {
-                // z < x <= y
-                return 4; // Type 4: c0, c4, c6, c7
+                return 2; // y >= x > z
             }
         } else {
             // px > py
             if (px <= pz) {
-                // y < x <= z
-                return 5; // Type 5: c0, c7, c5, c4
+                return 5; // z >= x > y
             } else if (py <= pz) {
-                // y <= z < x
-                return 0; // Type 0: c0, c1, c5, c7
+                return 0; // x > z >= y
             } else {
-                // z < y < x
-                return 1; // Type 1: c0, c7, c3, c1
+                return 1; // x > y > z
             }
         }
     }

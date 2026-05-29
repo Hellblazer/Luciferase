@@ -216,10 +216,9 @@ public final class Pyramid implements HybridElement {
         if (childType >= TYPE_6) {
             return new Pyramid(cx, cy, cz, childLevel, childType);
         }
-        // Tetrahedral child: the table holds a t8code tet type; translate to Luciferase's Tet type
-        // (Finding #15). The tet branch starts here, so minTetLevel = childLevel.
-        var lucType = TetreeConnectivity.T8_TO_LUC[childType];
-        return new Tet(cx, cy, cz, childLevel, lucType, childLevel);
+        // Tetrahedral child: the table's t8code tet type is now directly a Luciferase Tet type
+        // (RDR-010 Luciferase-4pd alignment). The tet branch starts here, so minTetLevel = childLevel.
+        return new Tet(cx, cy, cz, childLevel, childType, childLevel);
     }
 
     /** Number of faces of a pyramid (4 triangular + 1 quadrilateral base). */
@@ -268,10 +267,10 @@ public final class Pyramid implements HybridElement {
             return null; // neighbor lies outside the domain
         }
         var nface = TetreeConnectivity.PYRAMID_TYPE_FACE_TO_NFACE[type - TYPE_6][f];
-        // neighborType for triangular faces is a t8code tet type; translate to Luciferase (Finding #15).
+        // neighborType for triangular faces is a t8code tet type == Luciferase Tet type (Luciferase-4pd).
         HybridElement neighbor = neighborType >= TYPE_6
                                  ? new Pyramid(nx, ny, nz, level, neighborType)
-                                 : new Tet(nx, ny, nz, level, TetreeConnectivity.T8_TO_LUC[neighborType], level);
+                                 : new Tet(nx, ny, nz, level, neighborType, level);
         return new HybridFaceNeighbor(nface, neighbor);
     }
 

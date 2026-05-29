@@ -58,11 +58,9 @@ class PyramidNavigationTest {
             var tetCount = 0;
             for (var i = 0; i < 10; i++) {
                 var c = p.child(i);
-                // EXPECTED_CHILD_TYPE holds t8code types; tet children are translated to Luciferase
-                // types (Finding #15), pyramid children (6/7) are unchanged.
-                var t8 = EXPECTED_CHILD_TYPE[row][i];
-                var expected = t8 >= Pyramid.TYPE_6 ? t8
-                                                    : com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity.T8_TO_LUC[t8];
+                // EXPECTED_CHILD_TYPE holds t8code types, which ARE Luciferase Tet/Pyramid types now
+                // (RDR-010 Luciferase-4pd alignment) — no translation.
+                var expected = EXPECTED_CHILD_TYPE[row][i];
                 assertEquals(expected, c.type(), "child " + i + " type (parent " + type + ")");
                 if (c.type() >= Pyramid.TYPE_6) {
                     assertInstanceOf(Pyramid.class, c, "pyramid child " + i);

@@ -52,25 +52,24 @@ public final class TetreeConnectivity {
      * Based on t8code's t8_dtet_type_to_child_type table. [parent_type][child_index] -> child_type
      */
     /**
-     * Child types for each parent type using the S0-S5 Kuhn coordinate convention
-     * (consistent with Tet.coordinates() and Tet.contains12DOP()).
-     * Corner children (0-3) always match parent type. Interior children (4-7) are
-     * derived from Bey midpoints under the S0-S5 vertex geometry.
-     * Matches BeySubdivision.CHILD_TYPES exactly.
+     * Child types for each parent type, Bey-indexed, IDENTICAL to t8code's {@code t8_dtet_type_of_child}
+     * (RDR-010 Luciferase-4pd: Tet type k IS t8code dtet type k, in geometry and connectivity).
+     * Corner children (0-3) match the parent type; interior children (4-7) follow t8code's
+     * interior-octahedron diagonal choice. Matches BeySubdivision.CHILD_TYPES exactly.
      */
     public static final byte[][] PARENT_TYPE_TO_CHILD_TYPE = {
-    // Parent type 0 — S0-S5 Kuhn convention
-    { 0, 0, 0, 0, 5, 1, 2, 4 },
+    // Parent type 0
+    { 0, 0, 0, 0, 4, 5, 2, 1 },
     // Parent type 1
-    { 1, 1, 1, 1, 4, 0, 3, 5 },
+    { 1, 1, 1, 1, 3, 2, 5, 0 },
     // Parent type 2
-    { 2, 2, 2, 2, 0, 4, 5, 3 },
+    { 2, 2, 2, 2, 0, 1, 4, 3 },
     // Parent type 3
-    { 3, 3, 3, 3, 1, 5, 4, 2 },
+    { 3, 3, 3, 3, 5, 4, 1, 2 },
     // Parent type 4
-    { 4, 4, 4, 4, 3, 2, 1, 0 },
+    { 4, 4, 4, 4, 2, 3, 0, 5 },
     // Parent type 5
-    { 5, 5, 5, 5, 2, 3, 0, 1 } };
+    { 5, 5, 5, 5, 1, 0, 3, 4 } };
 
     /**
      * Pyramid (types 6 and 7) child types by local index 0..9 (RDR-010, Knapp 2026 Table 3.2). Each
@@ -136,18 +135,33 @@ public final class TetreeConnectivity {
     // by the tet-tree reconciliation RDR before deep-tet pyramid face neighbors can be supported.
 
     /**
-     * t8code dtet tet-type &rarr; Luciferase {@code Tet} tet-type (RDR-010 Finding #15, derived
-     * 2026-05-29). The pyramid connectivity tables above are faithful t8code copies and so use
-     * t8code's dtet type numbering, which is a permutation of Luciferase's {@code Tet} type numbering.
-     * Index = t8code type, value = Luciferase type. Derived by matching vertex sets from
-     * {@code t8_dtri_compute_coords} against {@code Tet.coordinates()}; all six verified by exact
-     * vertex-set equality. Apply when constructing a Luciferase {@code Tet} from a t8code-typed table
-     * value. {@link #LUC_TO_T8} is the inverse.
+     * Parent type by (child cube-id, child type) — t8code's {@code t8_dtet_cid_type_to_parenttype}
+     * (origin/main), verbatim. {@code [cid][childType] -> parentType}. This is the canonical t8code
+     * parent-type walk: a tet's parent type is an O(1) function of the tet's own type and the cube-id
+     * (octant) it occupies within the parent. RDR-010 Luciferase-4pd.
      */
-    public static final byte[] T8_TO_LUC = { 4, 0, 1, 5, 3, 2 };
+    public static final byte[][] CID_TYPE_TO_PARENTTYPE = {
+    // cid 0
+    { 0, 1, 2, 3, 4, 5 },
+    // cid 1
+    { 0, 1, 1, 1, 0, 0 },
+    // cid 2
+    { 2, 2, 2, 3, 3, 3 },
+    // cid 3
+    { 1, 1, 2, 2, 2, 1 },
+    // cid 4
+    { 5, 5, 4, 4, 4, 5 },
+    // cid 5
+    { 0, 0, 0, 5, 5, 5 },
+    // cid 6
+    { 4, 3, 3, 3, 4, 4 },
+    // cid 7
+    { 0, 1, 2, 3, 4, 5 } };
 
-    /** Luciferase {@code Tet} tet-type &rarr; t8code dtet tet-type (inverse of {@link #T8_TO_LUC}). */
-    public static final byte[] LUC_TO_T8 = { 1, 2, 5, 4, 0, 3 };
+    // RDR-010 Luciferase-4pd: the T8_TO_LUC / LUC_TO_T8 type-translation arrays (Finding #15) were
+    // deleted. Luciferase Tet type k is now IDENTICAL to t8code dtet type k in both geometry and
+    // connectivity, so the pyramid connectivity tables above (faithful t8code copies) are consumed
+    // directly with no translation.
 
     /** Number of children of a pyramid (6 pyramids + 4 tetrahedra; Knapp 2026 §3). */
     public static final int CHILDREN_PER_PYRAMID = 10;

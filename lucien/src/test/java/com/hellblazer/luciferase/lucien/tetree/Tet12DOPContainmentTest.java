@@ -10,14 +10,14 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * TDD test for Tet.contains12DOP() — the 11-op ordering-based containment test for S0-S5 Kuhn tetrahedra.
  * <p>
- * Orderings derived from vertex geometry (Kuhn simplex edge paths in coordinates()):
+ * Orderings derived from vertex geometry (t8code dtet edge paths in coordinates()):
  * <ul>
- *   <li>S0: V0,V1,V3,V7 → x ≥ y ≥ z</li>
- *   <li>S1: V0,V2,V3,V7 → y ≥ x ≥ z</li>
- *   <li>S2: V0,V4,V5,V7 → z ≥ x ≥ y</li>
- *   <li>S3: V0,V4,V6,V7 → z ≥ y ≥ x</li>
- *   <li>S4: V0,V1,V5,V7 → x ≥ z ≥ y</li>
- *   <li>S5: V0,V2,V6,V7 → y ≥ z ≥ x</li>
+ *   <li>S0: x ≥ z ≥ y</li>
+ *   <li>S1: x ≥ y ≥ z</li>
+ *   <li>S2: y ≥ x ≥ z</li>
+ *   <li>S3: y ≥ z ≥ x</li>
+ *   <li>S4: z ≥ y ≥ x</li>
+ *   <li>S5: z ≥ x ≥ y</li>
  * </ul>
  * Tests verify: (1) interior points per S-type, (2) cross-type exclusion for strict interiors,
  * (3) consistency with contains12DOP, (4) gap-free coverage.
@@ -34,12 +34,12 @@ public class Tet12DOPContainmentTest {
      */
     @ParameterizedTest(name = "S{0}: interior point ({1},{2},{3})")
     @CsvSource({
-        "0, 1500, 1000, 500",  // S0: u > v > w  (x > y > z)
-        "1, 1000, 1500, 500",  // S1: v > u > w  (y > x > z)
-        "2, 700, 500, 1500",   // S2: w > u > v  (z > x > y)
-        "3, 500, 700, 1500",   // S3: w > v > u  (z > y > x)
-        "4, 1500, 500, 1000",  // S4: u > w > v  (x > z > y)
-        "5, 500, 1500, 1000",  // S5: v > w > u  (y > z > x)
+        "0, 1500, 500, 1000",  // S0: u > w > v  (x > z > y)
+        "1, 1500, 1000, 500",  // S1: u > v > w  (x > y > z)
+        "2, 1000, 1500, 500",  // S2: v > u > w  (y > x > z)
+        "3, 500, 1500, 1000",  // S3: v > w > u  (y > z > x)
+        "4, 500, 700, 1500",   // S4: w > v > u  (z > y > x)
+        "5, 700, 500, 1500",   // S5: w > u > v  (z > x > y)
     })
     void interiorPointContained(int type, float px, float py, float pz) {
         var tet = new Tet(0, 0, 0, LEVEL, (byte) type);
@@ -52,12 +52,12 @@ public class Tet12DOPContainmentTest {
      */
     @ParameterizedTest(name = "S{0}: interior point rejected by other types")
     @CsvSource({
-        "0, 1500, 1000, 500",
-        "1, 1000, 1500, 500",
-        "2, 700, 500, 1500",
-        "3, 500, 700, 1500",
-        "4, 1500, 500, 1000",
-        "5, 500, 1500, 1000",
+        "0, 1500, 500, 1000",
+        "1, 1500, 1000, 500",
+        "2, 1000, 1500, 500",
+        "3, 500, 1500, 1000",
+        "4, 500, 700, 1500",
+        "5, 700, 500, 1500",
     })
     void interiorPointExcludedByOtherTypes(int ownerType, float px, float py, float pz) {
         for (int otherType = 0; otherType < 6; otherType++) {
@@ -91,10 +91,10 @@ public class Tet12DOPContainmentTest {
     @Test
     void nonOriginAnchor() {
         int ax = H, ay = 0, az = 0;
-        // S0 interior: u > v > w → local (1500,1000,500) → global (3548, 1000, 500)
+        // S0 interior: u > w > v → local (1500,500,1000) → global (3548, 500, 1000)
         var tet = new Tet(ax, ay, az, LEVEL, (byte) 0);
-        assertTrue(tet.contains12DOP(ax + 1500, ay + 1000, az + 500));
-        assertFalse(tet.contains12DOP(ax - 1, ay + 1000, az + 500), "Outside AABB");
+        assertTrue(tet.contains12DOP(ax + 1500, ay + 500, az + 1000));
+        assertFalse(tet.contains12DOP(ax - 1, ay + 500, az + 1000), "Outside AABB");
     }
 
     /**
@@ -103,13 +103,13 @@ public class Tet12DOPContainmentTest {
      */
     @Test
     void boundaryPointsInMultipleTypes() {
-        // u == v, w < u: local (1000, 1000, 500) — shared face between S0 (u≥v≥w) and S1 (v≥u≥w)
+        // u == v, w < u: local (1000, 1000, 500) — shared face between S1 (u≥v≥w) and S2 (v≥u≥w)
         assertContains12DOPBetween(1000, 1000, 500, 1, 3);
 
-        // u == w, v < u: local (1000, 500, 1000) — shared face between S2 (w≥u≥v) and S4 (u≥w≥v)
+        // u == w, v < u: local (1000, 500, 1000) — shared face between S0 (u≥w≥v) and S5 (w≥u≥v)
         assertContains12DOPBetween(1000, 500, 1000, 1, 3);
 
-        // v == w, u < v: local (500, 1000, 1000) — shared face between S3 (w≥v≥u) and S5 (v≥w≥u)
+        // v == w, u < v: local (500, 1000, 1000) — shared face between S3 (v≥w≥u) and S4 (w≥v≥u)
         assertContains12DOPBetween(500, 1000, 1000, 1, 3);
 
         // Triple equality: u == v == w → in all 6 types
