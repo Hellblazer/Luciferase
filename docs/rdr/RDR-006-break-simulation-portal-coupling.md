@@ -163,3 +163,16 @@ Bead Luciferase-3pu. The `mvn dependency:tree -pl simulation` shows **zero `java
 **Remaining (separate, not blocking D5):** isolate `MeshLoader`'s javafx out of the
 `common` leaf module so common stops advertising `javafx-graphics` to all consumers
 (the original RDR follow-up). Clock package rename (Luciferase-7n1) still deferred.
+
+### common-leaf javafx cleanup done (2026-05-28, Luciferase-3pu)
+
+The "isolate MeshLoader's javafx out of common" follow-up is **done** (no longer deferred).
+`common.mesh.MeshLoader` — the sole javafx user in the `common` leaf module, used only by
+`render` (`esvo.app`) — was relocated `common.mesh → render.mesh`, and `javafx-graphics` was
+removed from `common/pom.xml`. `common` is now javafx-free, which clears JavaFX from the API of
+**all** consumers, not just simulation's excluded view; the simulation-side `common` javafx
+exclusion was accordingly dropped (the `render` exclusion remains — render legitimately carries
+JavaFX/LWJGL for its GPU/UI renderers). Verified common/portal/lucien/render/simulation compile;
+common + simulation dependency trees javafx-free.
+
+**Only remaining RDR-006 item:** Clock package rename (Luciferase-7n1), still deferred.
