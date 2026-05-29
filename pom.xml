@@ -54,6 +54,7 @@
         <module>grpc</module>
         <module>lucien</module>
         <module>lucien-distributed</module>
+        <module>geometry</module>
         <module>portal</module>
         <module>common</module>
         <module>simulation</module>
@@ -73,6 +74,11 @@
                 <groupId>${project.groupId}</groupId>
                 <version>${project.version}</version>
                 <artifactId>lucien</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>geometry</artifactId>
+                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
@@ -160,6 +166,14 @@
                 <groupId>com.github.ben-manes.caffeine</groupId>
                 <artifactId>caffeine</artifactId>
                 <version>3.1.8</version>
+            </dependency>
+            <dependency>
+                <!-- Convergence pin: javalin pulls annotations 24.1.0 directly while the
+                     kotlin-stdlib chain pulls 13.0. Previously masked by the portal dependency
+                     tree; surfaced when simulation dropped its portal dependency (RDR-006). -->
+                <groupId>org.jetbrains</groupId>
+                <artifactId>annotations</artifactId>
+                <version>24.1.0</version>
             </dependency>
             <dependency>
                 <groupId>org.jetbrains.kotlin</groupId>

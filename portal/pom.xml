@@ -25,6 +25,13 @@
             <artifactId>lucien</artifactId>
         </dependency>
         <dependency>
+            <!-- RDR-006: Tetrahedral delegates its UI-free RD math to the geometry kernel
+                 (RDGCoordinates) so there is a single source of truth for the 7jk/6oa/xnf
+                 fixes. geometry depends only on vecmath, so no dependency cycle. -->
+            <groupId>${project.groupId}</groupId>
+            <artifactId>geometry</artifactId>
+        </dependency>
+        <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>render</artifactId>
         </dependency>

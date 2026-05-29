@@ -6,6 +6,7 @@ package com.hellblazer.luciferase.portal.collision;
 import com.hellblazer.luciferase.lucien.collision.BoxShape;
 import com.hellblazer.luciferase.lucien.collision.SphereShape;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -16,9 +17,16 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Integration tests for the complete collision debug visualization system.
  * Tests Phase 6: Debug and Visualization Tools implementation.
+ * <p>
+ * Tagged {@code javafx}: the collision visualizers build JavaFX scene-graph nodes
+ * (e.g. {@code javafx.scene.shape.Sphere} via {@code CollisionShapeRenderer}), which fail to
+ * initialize without a graphics pipeline. CI excludes the {@code javafx} tag
+ * ({@code -Dportal.excludedGroups= | javafx}); see the {@code @Tag("javafx")} convention on
+ * {@code JavaFXTestBase}.
  *
  * @author hal.hildebrand
  */
+@Tag("javafx")
 public class CollisionDebugSystemTest {
     
     private CollisionVisualizer visualizer;

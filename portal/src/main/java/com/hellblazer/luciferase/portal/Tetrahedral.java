@@ -14,6 +14,7 @@
  */
 package com.hellblazer.luciferase.portal;
 
+import com.hellblazer.luciferase.geometry.rd.RDGCoordinates;
 import javafx.geometry.Point3D;
 import javafx.util.Pair;
 
@@ -61,7 +62,7 @@ public class Tetrahedral extends RDGCS {
      * @return the legth of the vector
      */
     public static float euclideanNorm(Vector3f rdg) {
-        return (float) Math.sqrt(rdg.x * (rdg.x + rdg.y + rdg.z) + rdg.y * (rdg.y + rdg.z) + rdg.z * rdg.z);
+        return RDGCoordinates.euclideanNorm(rdg);
     }
 
     /**
@@ -71,7 +72,7 @@ public class Tetrahedral extends RDGCS {
      * @return the manhatten distance to the vector
      */
     public static float l1(Vector3f rdg) {
-        return Math.abs(rdg.x) + Math.abs(rdg.y) + Math.abs(rdg.z);
+        return RDGCoordinates.l1(rdg);
     }
 
     public Point3f axisAngle(float radians, Vector3f u, Vector3f w) {
@@ -88,10 +89,7 @@ public class Tetrahedral extends RDGCS {
 
     @Override
     public Point3f cross(Tuple3f u, Tuple3f v) {
-        return new Point3f(
-        (-u.x * (v.y - v.z) + u.y * (3 * v.z + v.x) - u.z * (v.x + 3 * v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2),
-        (-u.x * (v.y + 3 * v.z) - u.y * (v.z - v.x) + u.z * (3 * v.x + v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2),
-        (u.x * (3 * v.y + v.z) - u.y * (v.z + 3 * v.x) - u.z * (v.x - v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2));
+        return RDGCoordinates.cross(u, v);
     }
 
     /**
@@ -107,56 +105,23 @@ public class Tetrahedral extends RDGCS {
      */
     @Override
     public float dot(Vector3f u, Vector3f v) {
-        return u.x * v.x + u.y * v.y + u.z * v.z
-             + (u.x * v.y + u.y * v.x + u.x * v.z + u.z * v.x + u.y * v.z + u.z * v.y) / 2f;
+        return RDGCoordinates.dot(u, v);
     }
 
     @Override
     public Point3i[] faceConnectedNeighbors(Point3i cell) {
-        var x = cell.x;
-        var y = cell.y;
-        var z = cell.z;
-        var neighbors = new Point3i[12];
-        neighbors[0] = new Point3i(x + 1, y, z);
-        neighbors[1] = new Point3i(x - 1, y, z);
-        neighbors[2] = new Point3i(x, y + 1, z);
-        neighbors[3] = new Point3i(x, y - 1, z);
-        neighbors[4] = new Point3i(x, y, z + 1);
-        neighbors[5] = new Point3i(x, y, z - 1);
-
-        neighbors[6] = new Point3i(x, y + 1, z - 1);
-        neighbors[7] = new Point3i(x, y - 1, z + 1);
-        neighbors[8] = new Point3i(x - 1, y, z + 1);
-        neighbors[9] = new Point3i(x + 1, y, z - 1);
-        neighbors[10] = new Point3i(x + 1, y - 1, z);
-        neighbors[11] = new Point3i(x - 1, y + 1, z);
-        return neighbors;
+        return RDGCoordinates.faceConnectedNeighbors(cell);
     }
 
     @Override
     public Vector3f rotateVectorCC(Vector3f vec, Vector3f axis, double theta) {
-        float x, y, z;
-        float u, v, w;
-        x = vec.getX();
-        y = vec.getY();
-        z = vec.getZ();
-        u = axis.getX();
-        v = axis.getY();
-        w = axis.getZ();
-        float C = u * x + v * y + w * z;
-        float xPrime = (float) (u * C * (1d - Math.cos(theta)) + x * Math.cos(theta) + (-w * y + v * z) * Math.sin(
-        theta));
-        float yPrime = (float) (v * C * (1d - Math.cos(theta)) + y * Math.cos(theta) + (w * x - u * z) * Math.sin(
-        theta));
-        float zPrime = (float) (w * C * (1d - Math.cos(theta)) + z * Math.cos(theta) + (-v * x + u * y) * Math.sin(
-        theta));
-        return new Vector3f(xPrime, yPrime, zPrime);
+        return RDGCoordinates.rotateVectorCC(vec, axis, theta);
     }
 
     @Override
     public Point3D toCartesian(Tuple3i rdg) {
-        return new Point3D((rdg.y + rdg.z) * DIVIDE_ROOT_2, (rdg.z + rdg.x) * DIVIDE_ROOT_2,
-                           (rdg.x + rdg.y) * DIVIDE_ROOT_2);
+        var p = RDGCoordinates.toCartesian(rdg);
+        return new Point3D(p.x, p.y, p.z);
     }
 
     @Override
@@ -179,9 +144,7 @@ public class Tetrahedral extends RDGCS {
      */
     @Override
     public Point3i toRDG(Tuple3f cartesian) {
-        return new Point3i(Math.round((-cartesian.x + cartesian.y + cartesian.z) * DIVIDE_ROOT_2),
-                           Math.round(( cartesian.x - cartesian.y + cartesian.z) * DIVIDE_ROOT_2),
-                           Math.round(( cartesian.x + cartesian.y - cartesian.z) * DIVIDE_ROOT_2));
+        return RDGCoordinates.toRDG(cartesian);
     }
 
     /**
@@ -199,20 +162,6 @@ public class Tetrahedral extends RDGCS {
      */
     @Override
     public Point3i[] vertexConnectedNeighbors(Point3i cell) {
-        var x = cell.x;
-        var y = cell.y;
-        var z = cell.z;
-        // Cartesian images via toCartesian((a,b,c)) = ((b+c), (a+c), (a+b)) / √2:
-        // (+1,+1,-1) → ( 0,  0,  √2)    (-1,-1,+1) → ( 0,  0, -√2)
-        // (+1,-1,+1) → ( 0,  √2, 0)     (-1,+1,-1) → ( 0, -√2, 0)
-        // (-1,+1,+1) → ( √2, 0,  0)     (+1,-1,-1) → (-√2, 0,  0)
-        var neighbors = new Point3i[6];
-        neighbors[0] = new Point3i(x + 1, y + 1, z - 1);
-        neighbors[1] = new Point3i(x - 1, y - 1, z + 1);
-        neighbors[2] = new Point3i(x + 1, y - 1, z + 1);
-        neighbors[3] = new Point3i(x - 1, y + 1, z - 1);
-        neighbors[4] = new Point3i(x - 1, y + 1, z + 1);
-        neighbors[5] = new Point3i(x + 1, y - 1, z - 1);
-        return neighbors;
+        return RDGCoordinates.vertexConnectedNeighbors(cell);
     }
 }
