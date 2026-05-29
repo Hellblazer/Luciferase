@@ -2,13 +2,15 @@
 title: "Break the simulation→portal Coupling (BubbleBounds JavaFX Pull-In)"
 id: RDR-006
 type: Architecture
-status: accepted
+status: closed
 priority: medium
 author: hal.hildebrand
 reviewed-by: self
 created: 2026-05-24
 accepted_date: 2026-05-25
-related_issues: [Luciferase-jvs, Luciferase-7n1, RDR-003]
+closed_date: 2026-05-28
+related_issues: [Luciferase-jvs, Luciferase-3pu, Luciferase-7n1, RDR-003]
+post_mortem: post-mortem/006-break-simulation-portal-coupling.md
 ---
 
 # RDR-006: Break the simulation→portal Coupling (BubbleBounds JavaFX Pull-In)
