@@ -327,3 +327,18 @@ Accepted 2026-05-28 (gate PASSED 2026-05-28, self-reviewed; T2 `Luciferase_rdr/0
   - `CLAUDE.md` partition-gap note — convert "documented limitation" to "closed via PyramidIndex (RDR-010)."
   - `lucien/doc/TETREE_T8CODE_PARTITION_ANALYSIS.md` — append the Pyramid fix.
   - `lucien/doc/LUCIEN_ARCHITECTURE.md` — add `PyramidKey`, `Pyramid`, `PyramidIndex`, `PyramidNeighborDetector` to the architecture map.
+
+## Addendum 2026-05-29 — Element-type unification (bead Luciferase-q3p); invariant #7 affirmed
+
+**Context.** Implementation revealed a Java type-system fork not resolved by the original Decision: Knapp Algorithm 4.1 / §4.4 require a tetrahedron's `parent()` / `faceNeighbor()` to return a **pyramid** at the tet↔pyramid boundary, but `Tet.parent()` returns `Tet`, `FaceNeighbor` wraps `Tet`, and `Pyramid` is a `final class` that does not implement `Spatial.aabt`. The boundary only arises inside a pyramidal tree (`minTetLevel != -1`); pure-Tetree never hits it. Phase pi1.2 (Finding #14) was therefore **narrowed** to the type-safe subset (the `minTetLevel` field + propagation + the `PYRAMID_PARENT_TO_CHILD_TYPE/_CID` tables), and the cross-type unification was split into bead **Luciferase-q3p** (depends on pi1.2; blocks pi1.3).
+
+**Decision (q3p design pass, 2026-05-29).** Adopt **Option 1: a sealed `HybridElement` interface** (`permits Tet, Pyramid`) exposing identity/navigation only (`x/y/z/level/type/minTetLevel/length`; *not* `coordinates()`, whose arity differs: Tet→4, Pyramid→5). Cross-shape navigation is added via **parallel methods** — `Tet.parentElement()` / `faceNeighborElement()` returning `HybridElement` / a new `HybridFaceNeighbor(byte, HybridElement)` record — while the existing `Tet.parent()` / `child()` / `faceNeighbor()` / `FaceNeighbor` are **frozen**. `Tet` is marked `final` to satisfy the permit.
+
+**Rationale.**
+- `AbstractSpatialIndex` never requires elements to be `Spatial.aabt` — its 17 abstract methods key on `Key` (`PyramidKey`), and `getNodeBounds` returns the broad `Spatial`. So **Option 2 (`Pyramid implements Spatial.aabt`) is gratuitous** and would force the §3-deferred pyramid-containment work prematurely.
+- A tet's children are always tets (Bey 1:8), so `Tet.child()→Tet` is correct and unchanged; cross-shape child production lives on a new `Pyramid.child(i)`.
+- Parallel methods (vs widening return types) leave all ~33 `.parent()` and 8 `.faceNeighbor(` call sites compiling unchanged — **pure-Tetree stays byte-for-byte identical**.
+
+**Invariant #7 affirmed, not revised.** Invariant #7 ("`Spatial.aabt` is non-sealed; `Tet` and `aabt.Box` implement it; §3b means no new `aabt` implementor is needed") remains literally true under Option 1: `HybridElement` is orthogonal to the `aabt` hierarchy; `Pyramid` is a `HybridElement`, **not** an `aabt`; `Tet` remains the sole tetrahedral `aabt`. This addendum is a clarification of how the element model unifies, not a change to invariant #7. (Option 2 *would* have revised #7 — a further argument against it.)
+
+**Plan.** 5-phase TDD (PRE: this addendum + pi1.1/pi1.2 co-resident on the q3p branch; A: `HybridElement` + Tet/Pyramid conformance; B: `Pyramid.parent()`/`child()`; C: `Tet.parentElement()` cross-type boundary; D: `faceNeighborElement()` + `Pyramid.faceNeighbor()` + `HybridFaceNeighbor`; E: pi1.3 readiness). Full design + per-phase test invariants: T2 `Luciferase/rdr-010-q3p-element-unification-design-2026-05-29`. Per-phase gate: full lucien suite + `-Pperformance` parity + dual review + `/conexus:phase-review-gate`.
