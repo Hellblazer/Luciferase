@@ -26,104 +26,101 @@ import javax.vecmath.Point3i;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test to verify that points are correctly contained within S0 tetrahedron bounds.
- * S0 has vertices at (0,0,0), (max,0,0), (max,0,max), (max,max,max) in scaled coordinates.
- * 
+ * Test to verify that points are correctly contained within Tet type-0 bounds (RDR-010 Luciferase-4pd:
+ * t8code dtet labeling — type 0 has vertices V0=(0,0,0), V1=(max,0,0), V5=(max,0,max), V7=(max,max,max);
+ * ordering x ≥ z ≥ y).
+ *
  * @author hal.hildebrand
  */
 public class S0ContainmentTest {
-    
+
     @Test
     public void testS0Vertices() {
-        // S0 at level 0 should have vertices at corners of the space
+        // Type 0 at level 0 should have vertices at corners of the space (t8code dtet)
         int maxCoord = 1 << MortonCurve.MAX_REFINEMENT_LEVEL;
-        
-        // According to Tet.coordinates() for S0: vertices 0, 1, 3, 7 of cube
-        // V0 = (0,0,0), V1 = (h,0,0), V3 = (h,h,0), V7 = (h,h,h)
+
+        // Tet.coordinates() for type 0: cube vertices 0, 1, 5, 7
+        // V0 = (0,0,0), V1 = (h,0,0), V5 = (h,0,h), V7 = (h,h,h)
         Point3i[] expectedVertices = new Point3i[] {
             new Point3i(0, 0, 0),                        // V0
-            new Point3i(maxCoord, 0, 0),                 // V1 
-            new Point3i(maxCoord, maxCoord, 0),          // V3
+            new Point3i(maxCoord, 0, 0),                 // V1
+            new Point3i(maxCoord, 0, maxCoord),          // V5
             new Point3i(maxCoord, maxCoord, maxCoord)    // V7
         };
-        
-        // Create S0 tet
+
         Tet s0 = new Tet(0, 0, 0, (byte) 0, (byte) 0);
         Point3i[] actualVertices = s0.coordinates();
-        
-        // Verify vertices match
+
         for (int i = 0; i < 4; i++) {
-            assertEquals(expectedVertices[i].x, actualVertices[i].x, 
+            assertEquals(expectedVertices[i].x, actualVertices[i].x,
                 String.format("Vertex %d X mismatch", i));
-            assertEquals(expectedVertices[i].y, actualVertices[i].y, 
+            assertEquals(expectedVertices[i].y, actualVertices[i].y,
                 String.format("Vertex %d Y mismatch", i));
-            assertEquals(expectedVertices[i].z, actualVertices[i].z, 
+            assertEquals(expectedVertices[i].z, actualVertices[i].z,
                 String.format("Vertex %d Z mismatch", i));
         }
     }
-    
+
     @Test
     public void testPointContainment() {
         int maxCoord = 1 << MortonCurve.MAX_REFINEMENT_LEVEL;
-        Tet s0 = new Tet(0, 0, 0, (byte) 0, (byte) 0);
-        
-        // Test points that should be inside S0
-        assertTrue(isPointInS0(new Point3f(0, 0, 0)), "Origin should be in S0");
-        assertTrue(isPointInS0(new Point3f(maxCoord / 4.0f, maxCoord / 4.0f, maxCoord / 4.0f)), 
-            "Center should be in S0");
-        assertTrue(isPointInS0(new Point3f(maxCoord * 0.9f, 0, 0)), "Point near c1 should be in S0");
-        assertTrue(isPointInS0(new Point3f(maxCoord * 0.9f, maxCoord * 0.9f, 0)), "Point near v3 should be in S0");
-        
-        // Test points that should be outside S0
-        assertFalse(isPointInS0(new Point3f(0, maxCoord, 0)), "(0,max,0) should be outside S0");
-        assertFalse(isPointInS0(new Point3f(0, 0, maxCoord)), "(0,0,max) should be outside S0");
-        assertFalse(isPointInS0(new Point3f(0, maxCoord, maxCoord)), "(0,max,max) should be outside S0");
-        
-        // Points in other tetrahedra should be outside S0
-        assertFalse(isPointInS0(new Point3f(maxCoord * 0.1f, maxCoord * 0.1f, maxCoord * 0.9f)), 
-            "Point in another tetrahedron should be outside S0");
-        assertFalse(isPointInS0(new Point3f(maxCoord * 0.1f, maxCoord * 0.9f, maxCoord * 0.1f)), 
-            "Point in another tetrahedron should be outside S0");
+
+        // Test points that should be inside type 0 (ordering x ≥ z ≥ y)
+        assertTrue(isPointInS0(new Point3f(0, 0, 0)), "Origin should be in type 0");
+        assertTrue(isPointInS0(new Point3f(maxCoord / 4.0f, maxCoord / 4.0f, maxCoord / 4.0f)),
+            "Diagonal point should be in type 0");
+        assertTrue(isPointInS0(new Point3f(maxCoord * 0.9f, 0, 0)), "Point near V1 should be in type 0");
+        assertTrue(isPointInS0(new Point3f(maxCoord * 0.9f, maxCoord * 0.9f, maxCoord * 0.9f)),
+            "Point near V7 should be in type 0");
+
+        // Test points that should be outside type 0
+        assertFalse(isPointInS0(new Point3f(0, maxCoord, 0)), "(0,max,0) should be outside type 0");
+        assertFalse(isPointInS0(new Point3f(0, 0, maxCoord)), "(0,0,max) should be outside type 0");
+        assertFalse(isPointInS0(new Point3f(0, maxCoord, maxCoord)), "(0,max,max) should be outside type 0");
+
+        // Points in other tetrahedra (ordering not x ≥ z ≥ y) should be outside type 0
+        assertFalse(isPointInS0(new Point3f(maxCoord * 0.1f, maxCoord * 0.9f, maxCoord * 0.1f)),
+            "Point in another tetrahedron should be outside type 0");
+        assertFalse(isPointInS0(new Point3f(maxCoord * 0.1f, maxCoord * 0.9f, maxCoord * 0.5f)),
+            "Point in another tetrahedron should be outside type 0");
     }
-    
+
     @Test
     public void testGenerationMethod() {
         int maxCoord = 1 << MortonCurve.MAX_REFINEMENT_LEVEL;
-        
+
         // Test the barycentric coordinate method
         for (int i = 0; i < 100; i++) {
             float t0 = (float) Math.random();
             float t1 = (float) Math.random() * (1 - t0);
             float t2 = (float) Math.random() * (1 - t0 - t1);
             float t3 = 1 - t0 - t1 - t2;
-            
-            // Generate point using barycentric coordinates of S0 vertices
-            // S0: V0=(0,0,0), V1=(max,0,0), V3=(max,max,0), V7=(max,max,max)
+
+            // Generate point using barycentric coordinates of type-0 vertices
+            // type 0: V0=(0,0,0), V1=(max,0,0), V5=(max,0,max), V7=(max,max,max)
             float x = t0 * 0 + t1 * maxCoord + t2 * maxCoord + t3 * maxCoord;
-            float y = t0 * 0 + t1 * 0 + t2 * maxCoord + t3 * maxCoord;
-            float z = t0 * 0 + t1 * 0 + t2 * 0 + t3 * maxCoord;
-            
+            float y = t0 * 0 + t1 * 0       + t2 * 0       + t3 * maxCoord;
+            float z = t0 * 0 + t1 * 0       + t2 * maxCoord + t3 * maxCoord;
+
             Point3f p = new Point3f(x, y, z);
-            assertTrue(isPointInS0(p), 
-                String.format("Barycentric point (%.2f,%.2f,%.2f) should be in S0", x, y, z));
+            assertTrue(isPointInS0(p),
+                String.format("Barycentric point (%.2f,%.2f,%.2f) should be in type 0", x, y, z));
         }
     }
-    
+
     /**
-     * Check if a point is inside the S0 tetrahedron.
-     * S0 vertices: V0=(0,0,0), V1=(max,0,0), V3=(max,max,0), V7=(max,max,max)
+     * Check if a point is inside Tet type 0 (t8code dtet labeling).
+     * Vertices: V0=(0,0,0), V1=(max,0,0), V5=(max,0,max), V7=(max,max,max).
      */
     private boolean isPointInS0(Point3f p) {
         int maxCoord = 1 << MortonCurve.MAX_REFINEMENT_LEVEL;
-        
-        // S0 vertices from cube vertices 0, 1, 3, 7
+
         Point3f v0 = new Point3f(0, 0, 0);
         Point3f v1 = new Point3f(maxCoord, 0, 0);
-        Point3f v3 = new Point3f(maxCoord, maxCoord, 0);
+        Point3f v5 = new Point3f(maxCoord, 0, maxCoord);
         Point3f v7 = new Point3f(maxCoord, maxCoord, maxCoord);
-        
-        // Use barycentric coordinates to check containment
-        return isPointInTetrahedron(p, v0, v1, v3, v7);
+
+        return isPointInTetrahedron(p, v0, v1, v5, v7);
     }
     
     private boolean isPointInTetrahedron(Point3f p, Point3f a, Point3f b, Point3f c, Point3f d) {
