@@ -2,13 +2,14 @@
 title: "Decompose the AbstractSpatialIndex God-Class"
 id: RDR-008
 type: Architecture
-status: implemented
+status: closed
 priority: medium
 author: hal.hildebrand
 reviewed-by: self
 created: 2026-05-24
 accepted_date: 2026-05-25
 implemented_date: 2026-05-28
+closed_date: 2026-05-28
 post_mortem: docs/rdr/post-mortem/008-decompose-abstractspatialindex.md
 related_issues: [Luciferase-x5i, RDR-002, RDR-003, RDR-007, Luciferase-aos]
 ---

@@ -2,13 +2,14 @@
 title: "Prism Full-Cube Coverage via Two-Prism Cover"
 id: RDR-009
 type: Architecture
-status: implemented
+status: closed
 priority: medium
 author: hal.hildebrand
 reviewed-by: self
 created: 2026-05-26
 accepted_date: 2026-05-26
 implemented_date: 2026-05-27
+closed_date: 2026-05-28
 post_mortem: docs/rdr/post-mortem/009-prism-full-cube-coverage.md
 related_issues: [Luciferase-fzm, Luciferase-4g6, RDR-001, RDR-002, RDR-003]
 ---
