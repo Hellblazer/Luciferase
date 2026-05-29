@@ -98,6 +98,20 @@ public final class TetreeConnectivity {
     // Parent type 7
     { 0, 4, 4, 4, 4, 5, 5, 6, 6, 7 } };
 
+    /**
+     * Pyramid parent type by (own type, cube-id) for the pyramid-of-pyramid step (RDR-010, Knapp
+     * 2026 Algorithm 4.1). A pyramid's parent is always a pyramid; its type is selected by this
+     * element's type and the cube-id it occupies within the parent's surrounding cube. Row index =
+     * {@code ownType - 6}; column = cube-id 0..7. The {@code -1} entries are cube-ids unreachable
+     * for a pyramid of that type. Verified against t8code {@code t8_dpyramid_type_cid_to_parenttype}
+     * (origin/main).
+     */
+    public static final byte[][] PYRAMID_TYPE_CID_TO_PARENT_TYPE = {
+    // Own type 6
+    { 6, 6, 6, 6, 7, -1, -1, 6 },
+    // Own type 7
+    { 7, -1, -1, 6, 7, 7, 7, 7 } };
+
     /** Number of children of a pyramid (6 pyramids + 4 tetrahedra; Knapp 2026 §3). */
     public static final int CHILDREN_PER_PYRAMID = 10;
 

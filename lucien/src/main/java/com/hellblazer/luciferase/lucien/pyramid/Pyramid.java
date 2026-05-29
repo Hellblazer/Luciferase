@@ -7,6 +7,8 @@ package com.hellblazer.luciferase.lucien.pyramid;
 
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.HybridElement;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
+import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -152,6 +154,71 @@ public final class Pyramid implements HybridElement {
         return new Point3f(sx / CORNERS, sy / CORNERS, sz / CORNERS);
     }
 
+    /**
+     * The parent of this pyramid, which is always a pyramid (possibly of the other type); RDR-010,
+     * Knapp 2026 Algorithm 4.1 (pyramid branch). The parent type is selected by this pyramid's type
+     * and the cube-id it occupies within the parent cube
+     * ({@link TetreeConnectivity#PYRAMID_TYPE_CID_TO_PARENT_TYPE}); its anchor clears this level's
+     * bit and its level is one less. Pure pyramids only, so the returned parent carries the
+     * {@link #NO_TET_ANCESTOR} sentinel.
+     *
+     * @return the parent pyramid
+     * @throws IllegalStateException if invoked on the root (level 0)
+     */
+    public Pyramid parent() {
+        if (level == 0) {
+            throw new IllegalStateException("Root pyramid (level 0) has no parent");
+        }
+        var h = length();
+        var cubeId = (x & h) != 0 ? 1 : 0;
+        cubeId |= (y & h) != 0 ? 2 : 0;
+        cubeId |= (z & h) != 0 ? 4 : 0;
+        var parentType = TetreeConnectivity.PYRAMID_TYPE_CID_TO_PARENT_TYPE[type - TYPE_6][cubeId];
+        if (parentType < 0) {
+            throw new IllegalStateException(
+            "Unreachable pyramid: type " + type + " cannot occupy cube-id " + cubeId);
+        }
+        return new Pyramid(x & ~h, y & ~h, z & ~h, (byte) (level - 1), parentType);
+    }
+
+    /**
+     * The {@code i}-th child of this pyramid (RDR-010, Knapp 2026 Algorithm 4.2; t8code
+     * {@code t8_dpyramid_child}). A pyramid refines into ten children: six pyramids (types 6/7,
+     * returned as {@link Pyramid} with {@link #NO_TET_ANCESTOR}) and four tetrahedra (types 0/3,
+     * returned as {@link Tet} carrying {@code minTetLevel = child.level}, the level at which the
+     * tetrahedral branch begins). Child type and cube-id come from
+     * {@link TetreeConnectivity#PYRAMID_PARENT_TO_CHILD_TYPE} /
+     * {@link TetreeConnectivity#PYRAMID_PARENT_TO_CHILD_CID}.
+     *
+     * @param i child local index, 0..9
+     * @return the child element (pyramid or tetrahedron)
+     * @throws IndexOutOfBoundsException if {@code i} is outside [0, 9]
+     */
+    public HybridElement child(int i) {
+        if (level >= Constants.getMaxRefinementLevel()) {
+            throw new IllegalStateException(
+            "Cannot refine pyramid at maximum level " + Constants.getMaxRefinementLevel());
+        }
+        if (i < 0 || i >= TetreeConnectivity.CHILDREN_PER_PYRAMID) {
+            throw new IndexOutOfBoundsException(
+            "Pyramid child index must be in [0, " + (TetreeConnectivity.CHILDREN_PER_PYRAMID - 1)
+            + "], got: " + i);
+        }
+        var row = type - TYPE_6;
+        var childType = TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i];
+        var cubeId = TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i];
+        var childLevel = (byte) (level + 1);
+        var ch = Constants.lengthAtLevel(childLevel);
+        var cx = x + ((cubeId & 1) != 0 ? ch : 0);
+        var cy = y + ((cubeId & 2) != 0 ? ch : 0);
+        var cz = z + ((cubeId & 4) != 0 ? ch : 0);
+        if (childType >= TYPE_6) {
+            return new Pyramid(cx, cy, cz, childLevel, childType);
+        }
+        // Tetrahedral child: the tet branch starts here, so minTetLevel = childLevel.
+        return new Tet(cx, cy, cz, childLevel, childType, childLevel);
+    }
+
     public int x() {
         return x;
     }
@@ -184,13 +251,13 @@ public final class Pyramid implements HybridElement {
         if (!(o instanceof Pyramid p)) {
             return false;
         }
-        return x == p.x && y == p.y && z == p.z && level == p.level && type == p.type
-        && minTetLevel == p.minTetLevel;
+        // minTetLevel is contextual tree metadata, excluded from geometric identity (mirrors Tet).
+        return x == p.x && y == p.y && z == p.z && level == p.level && type == p.type;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(x, y, z, level, type, minTetLevel);
+        return Objects.hash(x, y, z, level, type);
     }
 
     @Override
