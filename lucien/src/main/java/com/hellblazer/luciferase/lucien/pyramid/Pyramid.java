@@ -6,6 +6,7 @@
 package com.hellblazer.luciferase.lucien.pyramid;
 
 import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.HybridElement;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -39,7 +40,7 @@ import java.util.Objects;
  *
  * @author hal.hildebrand
  */
-public final class Pyramid {
+public final class Pyramid implements HybridElement {
 
     /** Pyramid type 6 (t8code FIRST_TYPE): base on bottom face, apex at the far cube corner. */
     public static final byte TYPE_6 = 6;

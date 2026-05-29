@@ -3,6 +3,7 @@ package com.hellblazer.luciferase.lucien.tetree;
 import com.hellblazer.luciferase.geometry.Geometry;
 import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.HybridElement;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
 
@@ -43,7 +44,7 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
  *
  * @author hal.hildebrand
  **/
-public class Tet implements Spatial.aabt {
+public class Tet implements Spatial.aabt, HybridElement {
     public static final  TetreeKey<?> ROOT_TET      = TetreeKey.getRoot();
     /**
      * Default root tetrahedron type (follows t8code standard)
@@ -1951,6 +1952,11 @@ public class Tet implements Spatial.aabt {
 
     public byte type() {
         return type;
+    }
+
+    /** Refinement level (0 = root); {@link HybridElement} accessor for the {@code l} field. */
+    public byte level() {
+        return l;
     }
 
     public Point3i[] vertexPoints() {
