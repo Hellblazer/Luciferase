@@ -5,6 +5,7 @@ import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.HybridElement;
 import com.hellblazer.luciferase.lucien.Spatial;
+import com.hellblazer.luciferase.lucien.pyramid.Pyramid;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
 
 import javax.vecmath.Point3f;
@@ -1811,6 +1812,40 @@ public class Tet implements Spatial.aabt, HybridElement {
         TetreeLevelCache.cacheParent(x, y, z, l, type, parent);
 
         return parent;
+    }
+
+    /**
+     * The parent of this tetrahedron as a {@link HybridElement}, handling the tet/pyramid boundary
+     * that {@link #parent()} cannot represent (RDR-010 q3p, Knapp 2026 Algorithm 4.1). Three cases:
+     * <ul>
+     *   <li><b>{@code minTetLevel == NO_TET_ANCESTOR}</b> (pure-Tetree): delegates to {@link #parent()},
+     *       returning a {@code Tet}.</li>
+     *   <li><b>{@code minTetLevel} in {@code [0, l)}</b>: the parent is a shallower tetrahedron (nearer
+     *       the root) that still descends from a pyramid; returns a {@code Tet} with {@code minTetLevel}
+     *       propagated unchanged (same result as {@link #parent()}).</li>
+     *   <li><b>{@code minTetLevel == l}</b> (the shallowest tet of a pyramidal branch): the parent is
+     *       the {@link Pyramid} that birthed this tet. Its type is recovered from the z-bit at this
+     *       level (t8code {@code t8_dpyramid_tetparent_type}: {@code (z &amp; length) == 0} &rarr; type 6,
+     *       else type 7), and it is a pure pyramid ({@link Pyramid#NO_TET_ANCESTOR}).</li>
+     * </ul>
+     * {@link #parent()} retains its boundary throw because its return type cannot hold a pyramid;
+     * hybrid consumers (pi1.3 PyramidIndex) call this method instead.
+     *
+     * @return the parent element (tetrahedron or pyramid)
+     * @throws IllegalStateException if invoked on the root (level 0)
+     */
+    public HybridElement parentElement() {
+        if (l == 0) {
+            throw new IllegalStateException("Root tetrahedron has no parent");
+        }
+        if (minTetLevel == l) {
+            // Boundary: the shallowest tet's parent is the pyramid that birthed it.
+            int h = length();
+            byte pyramidType = (z & h) == 0 ? Pyramid.TYPE_6 : Pyramid.TYPE_7;
+            return new Pyramid(x & ~h, y & ~h, z & ~h, (byte) (l - 1), pyramidType);
+        }
+        // Pure-Tetree or interior pyramid-rooted tet: parent is a tetrahedron.
+        return parent();
     }
 
     /**
