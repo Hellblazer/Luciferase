@@ -214,6 +214,23 @@ Historical reference:
 - **tmIndex()**: Returns TetreeKey, O(level) due to parent chain walk, globally unique across all levels
 - **Performance Impact**: tmIndex() is O(level), cannot be fixed (required for global uniqueness)
 
+### Tet type numbering: aligned to t8code dtet (RDR-010 Luciferase-4pd, supersedes Findings #15/#16)
+
+**Luciferase `Tet` type k IS t8code dtet type k** — identical in geometry (`coordinates()` uses the t8code ei/ej Kuhn formula, v3 = opposite cube corner) AND connectivity (`PARENT_TYPE_TO_CHILD_TYPE` = t8code `type_of_child`, `CID_TYPE_TO_PARENTTYPE` = t8code `t8_dtet_cid_type_to_parenttype`). The old S0-S5 labeling and the `T8_TO_LUC`/`LUC_TO_T8` translation arrays were **DELETED** (commit 59bce4a3). When porting t8code pyramid/dtet tables, consume their typed values **directly — no translation**.
+
+- Per-type interior ordering (matches `contains12DOP`/`coordinates()`): t0 x≥z≥y, t1 x≥y≥z, t2 y≥x≥z, t3 y≥z≥x, t4 z≥y≥x, t5 z≥x≥y.
+- **Type is computed by an UPWARD walk** via `TetreeConnectivity.CID_TYPE_TO_PARENTTYPE[cubeId][type]` (in `computeType`, `computeParentType`, `consecutiveIndex`, `tmIndex`). Do **NOT** reintroduce the old downward root-trace (`TYPE_CID_TO_BEYID[parentType][cubeId]` → `PARENT_TYPE_TO_CHILD_TYPE`): it mis-indexed the bey table by parent type and was not t8code-consistent (it produced wrong types at depth ≥ 2 in `tmIndex`/`locatePointS0Tree` — caught by review, now fixed).
+- Finding #16's Bey-subdivision divergence is **RESOLVED**: the subdivision now matches t8code exactly (verified by `T8codeDtetOracleTest`, an independent t8code port checking coords/child/parent over a DFS). Multi-level t8code tables now apply directly.
+- **Remaining gap:** deep pyramid-rooted tet `faceNeighborElement` (`l > minTetLevel`) still guards fail-loud — the deep pyramid-boundary connectivity tables are not yet ported. Deep enablement is bead `Luciferase-pi1.5` / q3p Phase E. Shallowest (`l == minTetLevel`) cross-type face neighbors are supported.
+
+### Face-neighbor testing caveat (non-conforming SFC)
+
+`Tet.faceNeighbor()` returns the **non-conforming Bey-SFC face neighbor**, which shares **0–3 vertices** with the tet (e.g. pure type 0: face 0 shares 1 vertex, face 3 shares 0). It is NOT a conforming shared-triangle neighbor.
+
+- **Never** validate tet face neighbors with a "shares ≥3 vertices" geometric assertion — even pure-Tetree tets violate it. (This produced a false "confirmed bug" during RDR-010 q3p Phase D.)
+- **Pyramid** faces ARE conforming (each shared by exactly two cells in the hybrid partition), so the ≥3-shared / ≥4-for-quad-base check IS valid for `Pyramid.faceNeighbor`.
+- The correct validation for face neighbors (tet or cross-shape) is **reciprocity / involution**: `neighbor(neighbor(e, f).dualFace) == e`, exercised by DFS over a refined tree — this is the pattern t8code's own `t8_gtest_face_neigh.cxx` uses.
+
 ### Concurrent Architecture
 
 - **Storage**: Single ConcurrentSkipListMap for thread-safe operations

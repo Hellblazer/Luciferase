@@ -18,12 +18,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * Slab ranges per S-type (global, after anchor shift):
  * <ul>
- *   <li>S0: x≥y≥z — d_xy∈[axy, axy+h], d_xz∈[axz, axz+h], d_yz∈[ayz, ayz+h]</li>
- *   <li>S1: y≥x≥z — d_xy∈[axy-h, axy], d_xz∈[axz, axz+h], d_yz∈[ayz, ayz+h]</li>
- *   <li>S2: z≥x≥y — d_xy∈[axy, axy+h], d_xz∈[axz-h, axz], d_yz∈[ayz-h, ayz]</li>
- *   <li>S3: z≥y≥x — d_xy∈[axy-h, axy], d_xz∈[axz-h, axz], d_yz∈[ayz-h, ayz]</li>
- *   <li>S4: x≥z≥y — d_xy∈[axy, axy+h], d_xz∈[axz, axz+h], d_yz∈[ayz-h, ayz]</li>
- *   <li>S5: y≥z≥x — d_xy∈[axy-h, axy], d_xz∈[axz-h, axz], d_yz∈[ayz, ayz+h]</li>
+ *   <li>S0: x≥z≥y — d_xy∈[axy, axy+h], d_xz∈[axz, axz+h], d_yz∈[ayz, ayz+h]</li>
+ *   <li>S1: x≥y≥z — d_xy∈[axy-h, axy], d_xz∈[axz, axz+h], d_yz∈[ayz, ayz+h]</li>
+ *   <li>S2: y≥x≥z — d_xy∈[axy, axy+h], d_xz∈[axz-h, axz], d_yz∈[ayz-h, ayz]</li>
+ *   <li>S3: y≥z≥x — d_xy∈[axy-h, axy], d_xz∈[axz-h, axz], d_yz∈[ayz-h, ayz]</li>
+ *   <li>S4: z≥y≥x — d_xy∈[axy, axy+h], d_xz∈[axz, axz+h], d_yz∈[ayz-h, ayz]</li>
+ *   <li>S5: z≥x≥y — d_xy∈[axy-h, axy], d_xz∈[axz-h, axz], d_yz∈[ayz, ayz+h]</li>
  * </ul>
  * <p>
  * The 12-DOP is exact (no false positives, no false negatives) for Kuhn tetrahedra.
@@ -41,12 +41,12 @@ public class Tet12DOPIntersectionTest {
      */
     @ParameterizedTest(name = "S{0}: small AABB fully inside tet")
     @CsvSource({
-        "0, 1400, 900, 400,  1600, 1100, 600",   // inside S0 (x>y>z region)
-        "1,  900, 1400, 400, 1100, 1600, 600",   // inside S1 (y>x>z region)
-        "2,  600, 400, 1400,  800,  600, 1600",  // inside S2 (z>x>y region)
-        "3,  400, 600, 1400,  600,  800, 1600",  // inside S3 (z>y>x region)
-        "4, 1400, 400, 900,  1600,  600, 1100",  // inside S4 (x>z>y region)
-        "5,  400, 1400, 900,  600, 1600, 1100",  // inside S5 (y>z>x region)
+        "0, 1450, 450, 950,  1550, 550, 1050",   // inside S0 (x>z>y region), center (1500,500,1000)
+        "1, 1450, 950, 450,  1550, 1050, 550",   // inside S1 (x>y>z region), center (1500,1000,500)
+        "2,  950, 1450, 450, 1050, 1550, 550",   // inside S2 (y>x>z region), center (1000,1500,500)
+        "3,  450, 1450, 950,  550, 1550, 1050",  // inside S3 (y>z>x region), center (500,1500,1000)
+        "4,  450, 650, 1450,  550,  750, 1550",  // inside S4 (z>y>x region), center (500,700,1500)
+        "5,  650, 450, 1450,  750,  550, 1550",  // inside S5 (z>x>y region), center (700,500,1500)
     })
     void aabbFullyInsideTet(int type, float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
         var tet = new Tet(0, 0, 0, LEVEL, (byte) type);
@@ -83,24 +83,22 @@ public class Tet12DOPIntersectionTest {
      */
     @Test
     void passesAabbFailsDifferenceAxis_S0() {
-        // S0 expects x≥y≥z. Use a box where z>y>x: x∈[200,400], y∈[600,800], z∈[1200,1400]
+        // S0 expects x≥z≥y. Use a box centered (1500,1000,500) where y>z (violates z≥y).
         // AABB overlap with [0,H]^3: YES (all coords positive and < H=2048)
-        // d_xy_max = 400-600 = -200 < axy=0 → fails S0's slab [0, H] → false
         var tet = new Tet(0, 0, 0, LEVEL, (byte) 0); // S0
-        assertFalse(tet.intersects12DOP(200, 600, 1200, 400, 800, 1400),
-                    "S0: box in z>y>x corner passes 6-face AABB but must fail difference-axis slabs");
+        assertFalse(tet.intersects12DOP(1400, 900, 400, 1600, 1100, 600),
+                    "S0: box in y>z corner passes 6-face AABB but must fail difference-axis slabs");
     }
 
     /**
-     * For S3 (z≥y≥x): use a box where x>y>z.
+     * For S3 (y≥z≥x): use a box where x>y (violates y≥x).
      */
     @Test
     void passesAabbFailsDifferenceAxis_S3() {
-        // S3 expects z≥y≥x. Use a box where x>y>z: x∈[1200,1400], y∈[600,800], z∈[200,400]
-        // d_xy_min = 1200-800 = 400 > axy=0 → fails S3's slab [-H, 0] → false
+        // S3 expects y≥z≥x. Use a box centered (1500,500,1000) where x>y (violates y≥x).
         var tet = new Tet(0, 0, 0, LEVEL, (byte) 3); // S3
-        assertFalse(tet.intersects12DOP(1200, 600, 200, 1400, 800, 400),
-                    "S3: box in x>y>z corner passes 6-face AABB but must fail difference-axis slabs");
+        assertFalse(tet.intersects12DOP(1400, 400, 900, 1600, 600, 1100),
+                    "S3: box in x>y corner passes 6-face AABB but must fail difference-axis slabs");
     }
 
     /**
@@ -110,18 +108,18 @@ public class Tet12DOPIntersectionTest {
     @ParameterizedTest(name = "S{0}: passes AABB, fails difference-axis")
     @CsvSource({
         // type, minX,minY,minZ, maxX,maxY,maxZ
-        // S0 (x≥y≥z) — use z>y>x region (S3 territory)
-        "0,  200, 600, 1200,  400, 800, 1400",
-        // S1 (y≥x≥z) — use x>z>y region (S4 territory) — x>y contradicts y≥x
-        "1, 1200, 200, 600,  1400, 400, 800",
-        // S2 (z≥x≥y) — use y>x>z region (S1 territory) — z<x contradicts z≥x
-        "2,  600, 1200, 200,  800, 1400, 400",
-        // S3 (z≥y≥x) — use x>y>z region (S0 territory)
-        "3, 1200, 600, 200,  1400, 800, 400",
-        // S4 (x≥z≥y) — use y>z>x region (S5 territory) — x<y contradicts x≥z≥y
-        "4,  200, 1200, 600,  400, 1400, 800",
-        // S5 (y≥z≥x) — use z>x>y region (S2 territory) — y<z contradicts y≥z
-        "5,  600, 200, 1200,  800, 400, 1400",
+        // S0 (x≥z≥y) — box centered (1500,1000,500) violates ordering
+        "0, 1400, 900, 400,  1600, 1100, 600",
+        // S1 (x≥y≥z) — box centered (1500,500,1000) violates ordering
+        "1, 1400, 400, 900,  1600, 600, 1100",
+        // S2 (y≥x≥z) — box centered (1500,500,1000) violates ordering
+        "2, 1400, 400, 900,  1600, 600, 1100",
+        // S3 (y≥z≥x) — box centered (1500,500,1000) violates ordering
+        "3, 1400, 400, 900,  1600, 600, 1100",
+        // S4 (z≥y≥x) — box centered (1500,500,1000) violates ordering
+        "4, 1400, 400, 900,  1600, 600, 1100",
+        // S5 (z≥x≥y) — box centered (1500,500,1000) violates ordering
+        "5, 1400, 400, 900,  1600, 600, 1100",
     })
     void passesAabbFailsDifferenceAxisAllTypes(int type, float minX, float minY, float minZ,
                                                float maxX, float maxY, float maxZ) {
@@ -166,20 +164,20 @@ public class Tet12DOPIntersectionTest {
      */
     @Test
     void aabbStraddlingBoundaryExplicit() {
-        // S0: box centered at (1400,900,400) extending beyond +x
+        // S0 (x>z>y): interior near (1500,500,1000) extending beyond +x
         var s0 = new Tet(0, 0, 0, LEVEL, (byte) 0);
-        assertTrue(s0.intersects12DOP(1400, 900, 400, H + 100, 1100, 600),
+        assertTrue(s0.intersects12DOP(1400, 450, 950, H + 100, 550, 1050),
                    "S0: straddling +x boundary should intersect (interior region is inside S0)");
 
-        // S1: box centered at (900,1400,400) extending beyond +y
+        // S1 (x>y>z): interior near (1500,1000,500) extending beyond +x
         var s1 = new Tet(0, 0, 0, LEVEL, (byte) 1);
-        assertTrue(s1.intersects12DOP(900, 1400, 400, 1100, H + 100, 600),
-                   "S1: straddling +y boundary should intersect");
+        assertTrue(s1.intersects12DOP(1400, 950, 450, H + 100, 1050, 550),
+                   "S1: straddling +x boundary should intersect");
 
-        // S3: box centered at (400,600,1400) extending beyond +z
+        // S3 (y>z>x): interior near (500,1500,1000) extending beyond +y
         var s3 = new Tet(0, 0, 0, LEVEL, (byte) 3);
-        assertTrue(s3.intersects12DOP(400, 600, 1400, 600, 800, H + 100),
-                   "S3: straddling +z boundary should intersect");
+        assertTrue(s3.intersects12DOP(450, 1400, 950, 550, H + 100, 1050),
+                   "S3: straddling +y boundary should intersect");
     }
 
     // --- No false positives: if intersects12DOP=true, SAT-based reference must also say true ---
@@ -247,12 +245,12 @@ public class Tet12DOPIntersectionTest {
                 // hi>mid>lo → we want the ordering for this S-type
                 float px, py, pz;
                 switch (type) {
-                    case 0 -> { px = hi; py = mid; pz = lo; }  // x≥y≥z
-                    case 1 -> { px = mid; py = hi; pz = lo; }  // y≥x≥z
-                    case 2 -> { px = mid; py = lo; pz = hi; }  // z≥x≥y
-                    case 3 -> { px = lo; py = mid; pz = hi; }  // z≥y≥x
-                    case 4 -> { px = hi; py = lo; pz = mid; }  // x≥z≥y
-                    default -> { px = lo; py = hi; pz = mid; } // y≥z≥x (S5)
+                    case 0 -> { px = hi; py = lo; pz = mid; }  // x≥z≥y
+                    case 1 -> { px = hi; py = mid; pz = lo; }  // x≥y≥z
+                    case 2 -> { px = mid; py = hi; pz = lo; }  // y≥x≥z
+                    case 3 -> { px = lo; py = hi; pz = mid; }  // y≥z≥x
+                    case 4 -> { px = lo; py = mid; pz = hi; }  // z≥y≥x
+                    default -> { px = mid; py = lo; pz = hi; } // z≥x≥y (S5)
                 }
 
                 // Verify the point is genuinely inside the tet
@@ -274,12 +272,12 @@ public class Tet12DOPIntersectionTest {
      */
     @ParameterizedTest(name = "S{0}: center-inside box must intersect")
     @CsvSource({
-        "0, 1500, 1000, 500",
-        "1, 1000, 1500, 500",
-        "2,  700,  500, 1500",
-        "3,  500,  700, 1500",
-        "4, 1500,  500, 1000",
-        "5,  500, 1500, 1000",
+        "0, 1500, 500, 1000",
+        "1, 1500, 1000, 500",
+        "2, 1000, 1500, 500",
+        "3,  500, 1500, 1000",
+        "4,  500,  700, 1500",
+        "5,  700,  500, 1500",
     })
     void centerInsideBoxMustIntersect(int type, float cx, float cy, float cz) {
         var tet = new Tet(0, 0, 0, LEVEL, (byte) type);
@@ -304,15 +302,15 @@ public class Tet12DOPIntersectionTest {
         int h = 1 << (21 - level); // 1024
         var tet = new Tet(h, h, h, level, (byte) 0); // S0, anchor=(h,h,h)
 
-        // Box strictly inside: center at (h + 3*h/4, h + h/2, h + h/4) — local (3h/4, h/2, h/4) satisfies x≥y≥z
-        float cx = h + 3f * h / 4, cy = h + h / 2f, cz = h + h / 4f;
+        // Box strictly inside: local (u,v,w)=(3h/4, h/4, h/2) satisfies S0 x>z>y
+        float cx = h + 3f * h / 4, cy = h + h / 4f, cz = h + h / 2f;
         float d = 10;
         assertTrue(tet.intersects12DOP(cx - d, cy - d, cz - d, cx + d, cy + d, cz + d),
                    "S0 non-origin: center inside should intersect");
 
-        // Box in wrong-ordering region (local z>y>x): global center at (h+h/4, h+h/2, h+3h/4)
-        float wx = h + h / 4f, wy = h + h / 2f, wz = h + 3f * h / 4;
+        // Box in wrong-ordering region (local v top, y>z>x): global center at (h+h/4, h+3h/4, h+h/2)
+        float wx = h + h / 4f, wy = h + 3f * h / 4, wz = h + h / 2f;
         assertFalse(tet.intersects12DOP(wx - d, wy - d, wz - d, wx + d, wy + d, wz + d),
-                    "S0 non-origin: box in z>y>x region (wrong ordering) should not intersect");
+                    "S0 non-origin: box in y>z region (wrong ordering) should not intersect");
     }
 }

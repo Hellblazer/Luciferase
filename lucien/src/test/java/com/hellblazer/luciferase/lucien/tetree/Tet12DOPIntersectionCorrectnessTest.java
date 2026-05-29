@@ -226,12 +226,12 @@ public class Tet12DOPIntersectionCorrectnessTest {
         float mid = h * 0.45f;
         float hi  = h * 0.70f;
         return switch (type) {
-            case 0 -> new float[] { hi, mid, lo };   // S0: x >= y >= z
-            case 1 -> new float[] { mid, hi, lo };   // S1: y >= x >= z
-            case 2 -> new float[] { mid, lo, hi };   // S2: z >= x >= y  (z=hi, x=mid, y=lo)
-            case 3 -> new float[] { lo, mid, hi };   // S3: z >= y >= x  (z=hi, y=mid, x=lo)
-            case 4 -> new float[] { hi, lo, mid };   // S4: x >= z >= y  (x=hi, z=mid, y=lo)
-            case 5 -> new float[] { lo, hi, mid };   // S5: y >= z >= x  (y=hi, z=mid, x=lo)
+            case 0 -> new float[] { hi, lo, mid };   // S0: x >= z >= y  (x=hi, z=mid, y=lo)
+            case 1 -> new float[] { hi, mid, lo };   // S1: x >= y >= z
+            case 2 -> new float[] { mid, hi, lo };   // S2: y >= x >= z
+            case 3 -> new float[] { lo, hi, mid };   // S3: y >= z >= x  (y=hi, z=mid, x=lo)
+            case 4 -> new float[] { lo, mid, hi };   // S4: z >= y >= x  (z=hi, y=mid, x=lo)
+            case 5 -> new float[] { mid, lo, hi };   // S5: z >= x >= y  (z=hi, x=mid, y=lo)
             default -> throw new IllegalArgumentException("Invalid type: " + type);
         };
     }

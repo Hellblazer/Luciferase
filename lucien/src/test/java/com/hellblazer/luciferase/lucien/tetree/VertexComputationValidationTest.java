@@ -204,39 +204,40 @@ public class VertexComputationValidationTest {
         assertEquals(y, vertices[0].y);
         assertEquals(z, vertices[0].z);
 
-        // S0-S5 subdivision: Expected vertices for each type
+        // t8code dtet labeling: Expected vertices for each type (Tet type k == t8code type k).
+        // Vertex order from Tet.coordinates(): V0=anchor, then v1,v2,v3 per type.
         Point3i expectedV1, expectedV2, expectedV3;
 
         switch (type) {
-            case 0: // S0: vertices 0, 1, 3, 7
-                expectedV1 = new Point3i(x + h, y, z);          // V1
-                expectedV2 = new Point3i(x + h, y + h, z);      // V3
-                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+            case 0: // (h,0,0),(h,0,h),(h,h,h)
+                expectedV1 = new Point3i(x + h, y, z);
+                expectedV2 = new Point3i(x + h, y, z + h);
+                expectedV3 = new Point3i(x + h, y + h, z + h);
                 break;
-            case 1: // S1: vertices 0, 2, 3, 7
-                expectedV1 = new Point3i(x, y + h, z);          // V2
-                expectedV2 = new Point3i(x + h, y + h, z);      // V3
-                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+            case 1: // (h,0,0),(h,h,0),(h,h,h)
+                expectedV1 = new Point3i(x + h, y, z);
+                expectedV2 = new Point3i(x + h, y + h, z);
+                expectedV3 = new Point3i(x + h, y + h, z + h);
                 break;
-            case 2: // S2: vertices 0, 4, 5, 7
-                expectedV1 = new Point3i(x, y, z + h);          // V4
-                expectedV2 = new Point3i(x + h, y, z + h);      // V5
-                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+            case 2: // (0,h,0),(h,h,0),(h,h,h)
+                expectedV1 = new Point3i(x, y + h, z);
+                expectedV2 = new Point3i(x + h, y + h, z);
+                expectedV3 = new Point3i(x + h, y + h, z + h);
                 break;
-            case 3: // S3: vertices 0, 4, 6, 7
-                expectedV1 = new Point3i(x, y, z + h);          // V4
-                expectedV2 = new Point3i(x, y + h, z + h);      // V6
-                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+            case 3: // (0,h,0),(0,h,h),(h,h,h)
+                expectedV1 = new Point3i(x, y + h, z);
+                expectedV2 = new Point3i(x, y + h, z + h);
+                expectedV3 = new Point3i(x + h, y + h, z + h);
                 break;
-            case 4: // S4: vertices 0, 1, 5, 7
-                expectedV1 = new Point3i(x + h, y, z);          // V1
-                expectedV2 = new Point3i(x + h, y, z + h);      // V5
-                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+            case 4: // (0,0,h),(0,h,h),(h,h,h)
+                expectedV1 = new Point3i(x, y, z + h);
+                expectedV2 = new Point3i(x, y + h, z + h);
+                expectedV3 = new Point3i(x + h, y + h, z + h);
                 break;
-            case 5: // S5: vertices 0, 2, 6, 7
-                expectedV1 = new Point3i(x, y + h, z);          // V2
-                expectedV2 = new Point3i(x, y + h, z + h);      // V6
-                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+            case 5: // (0,0,h),(h,0,h),(h,h,h)
+                expectedV1 = new Point3i(x, y, z + h);
+                expectedV2 = new Point3i(x + h, y, z + h);
+                expectedV3 = new Point3i(x + h, y + h, z + h);
                 break;
             default:
                 throw new IllegalArgumentException("Invalid type: " + type);

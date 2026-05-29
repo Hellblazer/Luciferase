@@ -74,16 +74,16 @@ public class TetreeConnectivityTest {
             }
         }
 
-        // Test specific known relationships — S0-S5 Kuhn convention (coordinates() geometry).
-        // Type 0 parent: corners (0-3) are type 0; interior (4-7) are {5,1,2,4}.
+        // Test specific known relationships — t8code dtet convention (Tet type k IS t8code type k).
+        // Type 0 parent: corners (0-3) are type 0; interior (4-7) are t8code type_of_child {4,5,2,1}.
         assertEquals(0, TetreeConnectivity.getChildType((byte) 0, 0));
         assertEquals(0, TetreeConnectivity.getChildType((byte) 0, 1));
         assertEquals(0, TetreeConnectivity.getChildType((byte) 0, 2));
         assertEquals(0, TetreeConnectivity.getChildType((byte) 0, 3));
-        assertEquals(5, TetreeConnectivity.getChildType((byte) 0, 4));
-        assertEquals(1, TetreeConnectivity.getChildType((byte) 0, 5));
+        assertEquals(4, TetreeConnectivity.getChildType((byte) 0, 4));
+        assertEquals(5, TetreeConnectivity.getChildType((byte) 0, 5));
         assertEquals(2, TetreeConnectivity.getChildType((byte) 0, 6));
-        assertEquals(4, TetreeConnectivity.getChildType((byte) 0, 7));
+        assertEquals(1, TetreeConnectivity.getChildType((byte) 0, 7));
     }
 
     @Test

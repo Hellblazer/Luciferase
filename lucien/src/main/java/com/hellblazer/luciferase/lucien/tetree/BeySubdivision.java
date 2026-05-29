@@ -40,17 +40,17 @@ public class BeySubdivision {
      * types of T's children T0,...,T7 The corner-children T0, T1, T2, T3 always have the same type as T
      */
     /**
-     * Child types for each parent type using the S0-S5 Kuhn (coordinates()) vertex convention.
-     * Corner children (0-3) always have the same type as the parent.
-     * Interior children (4-7) are derived from Bey midpoints with coordinates() vertices.
-     * These match TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE.
+     * Child types for each parent type, Bey-indexed, IDENTICAL to t8code's {@code t8_dtet_type_of_child}
+     * (RDR-010 Luciferase-4pd: Tet type k IS t8code dtet type k). Corner children (0-3) keep the parent
+     * type; interior children (4-7) follow t8code's interior-octahedron diagonal choice. Matches
+     * TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE.
      */
-    private static final byte[][] CHILD_TYPES = { { 0, 0, 0, 0, 5, 1, 2, 4 },  // Parent type 0
-                                                  { 1, 1, 1, 1, 4, 0, 3, 5 },  // Parent type 1
-                                                  { 2, 2, 2, 2, 0, 4, 5, 3 },  // Parent type 2
-                                                  { 3, 3, 3, 3, 1, 5, 4, 2 },  // Parent type 3
-                                                  { 4, 4, 4, 4, 3, 2, 1, 0 },  // Parent type 4
-                                                  { 5, 5, 5, 5, 2, 3, 0, 1 }   // Parent type 5
+    private static final byte[][] CHILD_TYPES = { { 0, 0, 0, 0, 4, 5, 2, 1 },  // Parent type 0
+                                                  { 1, 1, 1, 1, 3, 2, 5, 0 },  // Parent type 1
+                                                  { 2, 2, 2, 2, 0, 1, 4, 3 },  // Parent type 2
+                                                  { 3, 3, 3, 3, 5, 4, 1, 2 },  // Parent type 3
+                                                  { 4, 4, 4, 4, 2, 3, 0, 5 },  // Parent type 4
+                                                  { 5, 5, 5, 5, 1, 0, 3, 4 }   // Parent type 5
     };
 
     /**

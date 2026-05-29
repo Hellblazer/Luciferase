@@ -45,18 +45,19 @@ public class TetIntersectsVolumeBoundsTest {
     /**
      * Sanity check: an AABB that genuinely overlaps the tet's interior must still return true.
      *
-     * The S0 tet centroid is approximately ((0+h+h+h)/4, (0+0+h+h)/4, (0+0+0+h)/4)
-     * = (3h/4, h/2, h/4). A small AABB centred there is inside the tet.
+     * The type-0 tet (vertices (0,0,0),(h,0,0),(h,0,h),(h,h,h)) centroid is
+     * ((0+h+h+h)/4, (0+0+0+h)/4, (0+0+h+h)/4) = (3h/4, h/4, h/2). A small AABB
+     * centred there is inside the tet.
      */
     @Test
     void truePositive_aabbInsideTet_shouldReturnTrue() {
         var tet = new Tet(0, 0, 0, (byte) 10, (byte) 0);
         int h = Constants.lengthAtLevel((byte) 10);
 
-        // Place AABB at the tet centroid ≈ (3h/4, h/2, h/4) with small extent
+        // Place AABB at the tet centroid ≈ (3h/4, h/4, h/2) with small extent
         float cx = 3f * h / 4f;
-        float cy = h / 2f;
-        float cz = h / 4f;
+        float cy = h / 4f;
+        float cz = h / 2f;
         float half = h / 20f;  // small extent relative to tet size
         var bounds = new VolumeBounds(cx - half, cy - half, cz - half, cx + half, cy + half, cz + half);
 

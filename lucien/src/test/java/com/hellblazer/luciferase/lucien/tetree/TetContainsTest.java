@@ -95,15 +95,15 @@ public class TetContainsTest {
         var tet = new Tet(0, 0, 0, (byte) 10, (byte) 3);
         var vertices = tet.coordinates();
 
-        // For type 3 (S3): vertices 0, 4, 6, 7 of cube
-        // V0: (0, 0, 0), V1: (0, 0, h), V2: (0, h, h), V3: (h, h, h)
+        // For type 3 (t8code dtet labeling): V0=anchor,(0,h,0),(0,h,h),(h,h,h)
+        // V0: (0, 0, 0), V1: (0, h, 0), V2: (0, h, h), V3: (h, h, h)
         assertEquals(0, vertices[0].x);
         assertEquals(0, vertices[0].y);
         assertEquals(0, vertices[0].z);
 
         assertEquals(0, vertices[1].x);
-        assertEquals(0, vertices[1].y);
-        assertEquals(2048, vertices[1].z);
+        assertEquals(2048, vertices[1].y);
+        assertEquals(0, vertices[1].z);
 
         assertEquals(0, vertices[2].x);
         assertEquals(2048, vertices[2].y);
@@ -113,8 +113,8 @@ public class TetContainsTest {
         assertEquals(2048, vertices[3].y);
         assertEquals(2048, vertices[3].z);
 
-        // Test specific points for type 3
-        assertTrue(tet.contains(new Point3f(150, 150, 150)), "Should contain interior point");
+        // Test specific points for type 3 (interior ordering y>z>x)
+        assertTrue(tet.contains(new Point3f(500, 1500, 1000)), "Should contain interior point");
         assertTrue(tet.contains(new Point3f(0, 0, 0)), "Should contain vertex 0");
         assertFalse(tet.contains(new Point3f(5000, 5000, 5000)), "Should not contain outside point");
     }

@@ -71,16 +71,16 @@ class TetrahedralSubdivisionForestTest {
         // S0 at level 5 should have h = 1 << (21 - 5) = 1 << 16 = 65536
         int h = 1 << (21 - 5);
 
-        // Expected coords for S0: V0=(0,0,0), V1=(h,0,0), V2=(h,h,0), V3=(h,h,h)
+        // t8code type 0: V0=(0,0,0), V1=(h,0,0), V2=(h,0,h), V3=(h,h,h)
         assertEquals(0, coords[0].x);
         assertEquals(h, coords[1].x);
         assertEquals(h, coords[2].x);
         assertEquals(h, coords[3].x);
 
-        // Test containment - point at centroid should be inside
-        float cx = (0 + h + h + h) / 4.0f;
-        float cy = (0 + 0 + h + h) / 4.0f;
-        float cz = (0 + 0 + 0 + h) / 4.0f;
+        // Test containment - point at centroid should be inside (derived from actual vertices)
+        float cx = (coords[0].x + coords[1].x + coords[2].x + coords[3].x) / 4.0f;
+        float cy = (coords[0].y + coords[1].y + coords[2].y + coords[3].y) / 4.0f;
+        float cz = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4.0f;
         assertTrue(tetBounds.containsPoint(cx, cy, cz), "Centroid should be inside tet");
 
         // Test point clearly outside
