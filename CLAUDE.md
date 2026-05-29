@@ -214,23 +214,14 @@ Historical reference:
 - **tmIndex()**: Returns TetreeKey, O(level) due to parent chain walk, globally unique across all levels
 - **Performance Impact**: tmIndex() is O(level), cannot be fixed (required for global uniqueness)
 
-### Tet type numbering: Luciferase vs t8code (RDR-010 Finding #15)
+### Tet type numbering: aligned to t8code dtet (RDR-010 Luciferase-4pd, supersedes Findings #15/#16)
 
-Luciferase `Tet` tet-type numbering is a **permutation of t8code's dtet type numbering**. When porting any t8code pyramid/dtet code or copying t8code connectivity tables verbatim, you MUST translate types at the boundary. Derived from first principles (vertex-set equality between `t8_dtri_compute_coords` and `Tet.coordinates()`; all six verified):
+**Luciferase `Tet` type k IS t8code dtet type k** — identical in geometry (`coordinates()` uses the t8code ei/ej Kuhn formula, v3 = opposite cube corner) AND connectivity (`PARENT_TYPE_TO_CHILD_TYPE` = t8code `type_of_child`, `CID_TYPE_TO_PARENTTYPE` = t8code `t8_dtet_cid_type_to_parenttype`). The old S0-S5 labeling and the `T8_TO_LUC`/`LUC_TO_T8` translation arrays were **DELETED** (commit 59bce4a3). When porting t8code pyramid/dtet tables, consume their typed values **directly — no translation**.
 
-| t8code type | vertex path | Luciferase type |
-| ----------- | ----------- | --------------- |
-| 0 | x,z,y | 4 |
-| 1 | x,y,z | 0 |
-| 2 | y,x,z | 1 |
-| 3 | y,z,x | 5 |
-| 4 | z,y,x | 3 |
-| 5 | z,x,y | 2 |
-
-- Arrays live in `TetreeConnectivity`: `T8_TO_LUC = {4,0,1,5,3,2}` (t8code→Luciferase), `LUC_TO_T8 = {1,2,5,4,0,3}` (inverse, bijective).
-- The pyramid connectivity tables (`PYRAMID_PARENT_TO_CHILD_TYPE`, `PYRAMID_TYPE_CID_TO_PARENT_TYPE`, etc.) are **faithful t8code copies** and therefore hold t8code-typed values; translate via `T8_TO_LUC` when constructing a Luciferase `Tet` from them, and via `LUC_TO_T8` before feeding `this.type` into t8code-semantics code (e.g. logic that checks `type==0||type==3`).
-- The permutation does **not** trivially commute with the parent operation, so do not assume a t8code-space type walk equals a Luciferase-space one — see the live RDR-010 q3p work. Full detail: T2 `rdr-010-t8code-luciferase-tet-type-permutation-DERIVED-2026-05-29` and RDR-010 Finding #15.
-- **Deeper than a relabeling (RDR-010 Finding #16):** Luciferase's Bey subdivision (`BeySubdivision.getMortonChild`) enumerates geometrically *different* tetrahedra than t8code's `t8_dtet_child` at refinement depth ≥ 2 (the 1:8 interior-octahedron diagonal split is a free choice the two make differently). Both trees are self-consistent and valid; they share level-0/1 structure but diverge below. **Consequence:** t8code connectivity tables that walk *multiple* refinement levels (e.g. the pyramid deep-boundary corner-walk tables) do **not** apply to Luciferase deep tets — only single-level/shallow uses transfer. Deep-tet pyramid face neighbors are guarded fail-loud in `Tet.faceNeighborElement` pending the tet-tree reconciliation (bead `Luciferase-4pd`).
+- Per-type interior ordering (matches `contains12DOP`/`coordinates()`): t0 x≥z≥y, t1 x≥y≥z, t2 y≥x≥z, t3 y≥z≥x, t4 z≥y≥x, t5 z≥x≥y.
+- **Type is computed by an UPWARD walk** via `TetreeConnectivity.CID_TYPE_TO_PARENTTYPE[cubeId][type]` (in `computeType`, `computeParentType`, `consecutiveIndex`, `tmIndex`). Do **NOT** reintroduce the old downward root-trace (`TYPE_CID_TO_BEYID[parentType][cubeId]` → `PARENT_TYPE_TO_CHILD_TYPE`): it mis-indexed the bey table by parent type and was not t8code-consistent (it produced wrong types at depth ≥ 2 in `tmIndex`/`locatePointS0Tree` — caught by review, now fixed).
+- Finding #16's Bey-subdivision divergence is **RESOLVED**: the subdivision now matches t8code exactly (verified by `T8codeDtetOracleTest`, an independent t8code port checking coords/child/parent over a DFS). Multi-level t8code tables now apply directly.
+- **Remaining gap:** deep pyramid-rooted tet `faceNeighborElement` (`l > minTetLevel`) still guards fail-loud — the deep pyramid-boundary connectivity tables are not yet ported. Deep enablement is bead `Luciferase-pi1.5` / q3p Phase E. Shallowest (`l == minTetLevel`) cross-type face neighbors are supported.
 
 ### Face-neighbor testing caveat (non-conforming SFC)
 
