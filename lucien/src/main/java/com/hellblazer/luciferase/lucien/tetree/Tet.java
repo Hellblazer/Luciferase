@@ -76,13 +76,39 @@ public class Tet implements Spatial.aabt {
                                                         { 0, 3, 5, 7, 1, 2, 4, 6 }, // Parent type 4
                                                         { 0, 3, 6, 7, 2, 1, 4, 5 }  // Parent type 5
     };
+    /**
+     * Sentinel for {@link #minTetLevel}: this tetrahedron has no pyramidal ancestor (pure-Tetree, or
+     * a tet whose whole ancestor chain is tetrahedral). RDR-010 pi1.2 / Knapp 2026 Algorithm 4.1.
+     */
+    public static final  byte         NO_TET_ANCESTOR = -1;
     public final         int          x;
     public final         int          y;
     public final         int          z;
     public final         byte         l;
     public final         byte         type;
+    /**
+     * Smallest level at which an ancestor is a tetrahedron; {@link #NO_TET_ANCESTOR} (-1) for
+     * pure-Tetree elements. Contextual tree metadata for the hybrid pyramid/tet SFC (RDR-010);
+     * excluded from geometric identity ({@link #equals}/{@link #hashCode}).
+     */
+    public final         byte         minTetLevel;
 
     public Tet(int x, int y, int z, byte l, byte type) {
+        this(x, y, z, l, type, NO_TET_ANCESTOR);
+    }
+
+    /**
+     * Create a Tet carrying an explicit {@code minTetLevel} (RDR-010 pi1.2, Knapp 2026
+     * Algorithm 4.1). {@code minTetLevel} is the smallest level at which an ancestor is a
+     * tetrahedron; it is {@link #NO_TET_ANCESTOR} (-1) for tetrahedra in a pure-Tetree tree and for
+     * any tet whose entire ancestor chain is tetrahedral. It is non-negative only for tetrahedra
+     * descending from a pyramidal root, where it marks the tet/pyramid boundary level. This is
+     * contextual tree metadata: it is intentionally excluded from {@link #equals}/{@link #hashCode},
+     * which identify a tetrahedron by its geometry {@code (x,y,z,l,type)} alone.
+     *
+     * @param minTetLevel {@link #NO_TET_ANCESTOR} (-1), or a level in {@code [0, l]}
+     */
+    public Tet(int x, int y, int z, byte l, byte type, byte minTetLevel) {
         // Validate level range first
         assert l >= 0 && l <= MortonCurve.MAX_REFINEMENT_LEVEL : "Level " + l + " must be between 0 and "
         + MortonCurve.MAX_REFINEMENT_LEVEL;
@@ -92,11 +118,14 @@ public class Tet implements Spatial.aabt {
         assert x >= 0 && y >= 0 && z >= 0 : "Coordinates must be non-negative: (" + x + ", " + y + ", " + z + ")";
         // Validate that coordinates are correct anchor coordinates for the level and type
         assert validateAnchorCoordinates(x, y, z, l, type);
+        assert minTetLevel == NO_TET_ANCESTOR || (minTetLevel >= 0 && minTetLevel <= l)
+        : "minTetLevel must be -1 (NO_TET_ANCESTOR) or in [0, " + l + "], got: " + minTetLevel;
         this.x = x;
         this.y = y;
         this.z = z;
         this.l = l;
         this.type = type;
+        this.minTetLevel = minTetLevel;
     }
 
     /**
@@ -925,7 +954,25 @@ public class Tet implements Spatial.aabt {
 
         // Use the efficient BeySubdivision method which produces identical results
         // This is ~3x faster than the previous implementation when computing single children
-        return BeySubdivision.getMortonChild(this, childIndex);
+        var child = BeySubdivision.getMortonChild(this, childIndex);
+        // RDR-010 (Knapp Algorithm 4.2b): a tetrahedral child of a tetrahedron inherits its
+        // minTetLevel. Pure-Tetree (NO_TET_ANCESTOR) returns the child unchanged.
+        return minTetLevel == NO_TET_ANCESTOR ? child : child.withMinTetLevel(minTetLevel);
+    }
+
+    /**
+     * The smallest level at which an ancestor is a tetrahedron, or {@link #NO_TET_ANCESTOR} (-1) for
+     * pure-Tetree elements (RDR-010, Knapp Algorithm 4.1).
+     */
+    public byte minTetLevel() {
+        return minTetLevel;
+    }
+
+    /**
+     * This tetrahedron with a different {@code minTetLevel} (same geometry). RDR-010 metadata carrier.
+     */
+    public Tet withMinTetLevel(byte newMinTetLevel) {
+        return newMinTetLevel == minTetLevel ? this : new Tet(x, y, z, l, type, newMinTetLevel);
     }
 
     /**
@@ -956,6 +1003,17 @@ public class Tet implements Spatial.aabt {
      */
     public byte computeType(byte level) {
         assert (0 <= level && level <= l);
+
+        // RDR-010: for a tetrahedron descending from a pyramidal root the "trace from root type 0"
+        // assumption below is wrong above the tet/pyramid boundary (ancestor types are pyramid 6/7,
+        // determined via Knapp 2026 §4.1). Computing those requires the pyramid ancestor-type
+        // machinery deferred to the element-type unification (Luciferase-q3p). Fail loud rather than
+        // return a wrong Bey-path type. Pure-Tetree (NO_TET_ANCESTOR) is unaffected.
+        if (minTetLevel != NO_TET_ANCESTOR) {
+            throw new IllegalStateException(
+            "computeType on a pyramid-rooted tetrahedron (minTetLevel != -1) requires pyramid "
+            + "ancestor-type resolution; deferred to Luciferase-q3p");
+        }
 
         if (level == l) {
             return type;
@@ -1534,7 +1592,16 @@ public class Tet implements Spatial.aabt {
 
         // Use BeySubdivision which internally uses subdivisionCoordinates()
         // This provides subdivision-compatible vertices without changing the global coordinate system
-        return BeySubdivision.subdivide(this);
+        var children = BeySubdivision.subdivide(this);
+        // RDR-010 (Knapp Algorithm 4.2b): tetrahedral children inherit the parent's minTetLevel.
+        // BeySubdivision uses the 5-arg constructor (NO_TET_ANCESTOR), so re-apply for hybrid tets.
+        // Pure-Tetree (NO_TET_ANCESTOR) returns BeySubdivision's children unchanged.
+        if (minTetLevel != NO_TET_ANCESTOR) {
+            for (int i = 0; i < children.length; i++) {
+                children[i] = children[i].withMinTetLevel(minTetLevel);
+            }
+        }
+        return children;
     }
 
     @Override
@@ -1691,6 +1758,27 @@ public class Tet implements Spatial.aabt {
     public Tet parent() {
         if (l == 0) {
             throw new IllegalStateException("Root tetrahedron has no parent");
+        }
+
+        // RDR-010 (Knapp Algorithm 4.1): a tetrahedron descending from a pyramidal root.
+        if (minTetLevel != NO_TET_ANCESTOR) {
+            if (minTetLevel == l) {
+                // This is the shallowest tetrahedron; its parent is the pyramid that birthed it.
+                // Cross-type return (Tet -> Pyramid) is deferred to the element-type unification
+                // (Luciferase-q3p); pure-Tetree pi1.2 cannot construct or traverse such an element.
+                throw new IllegalStateException(
+                "Tet at the tet/pyramid boundary (minTetLevel == level): its parent is a pyramid; "
+                + "cross-type parent return is deferred to Luciferase-q3p");
+            }
+            // Parent is a tetrahedron; compute it directly (the TetreeLevelCache is keyed without
+            // minTetLevel, so it is bypassed here) and propagate minTetLevel unchanged.
+            int h = length(); // this tet's cell size; clearing its bit yields the parent anchor
+            int parentX = x & ~h;
+            int parentY = y & ~h;
+            int parentZ = z & ~h;
+            byte parentLevel = (byte) (l - 1);
+            byte parentType = computeParentType(parentX, parentY, parentZ, parentLevel);
+            return new Tet(parentX, parentY, parentZ, parentLevel, parentType, minTetLevel);
         }
 
         // Check if we have cached the parent of this Tet

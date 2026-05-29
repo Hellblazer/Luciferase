@@ -73,6 +73,35 @@ public final class TetreeConnectivity {
     { 5, 5, 5, 5, 2, 3, 0, 1 } };
 
     /**
+     * Pyramid (types 6 and 7) child types by local index 0..9 (RDR-010, Knapp 2026 Table 3.2). Each
+     * pyramid refines into 10 children: 6 pyramids (types 6/7) and 4 tetrahedra (types 0/3). Held
+     * separately from {@link #PARENT_TYPE_TO_CHILD_TYPE} because pyramids have 10 children (not the
+     * Bey 8) and a parent type outside the tet 0-5 range. Row index = {@code parentType - 6}; values
+     * verified against t8code {@code t8_dpyramid_parenttype_Iloc_to_type} rows 6,7 (origin/main).
+     */
+    public static final byte[][] PYRAMID_PARENT_TO_CHILD_TYPE = {
+    // Parent type 6
+    { 6, 3, 6, 0, 6, 0, 3, 6, 7, 6 },
+    // Parent type 7
+    { 7, 0, 3, 6, 7, 3, 7, 0, 7, 7 } };
+
+    /**
+     * Pyramid (types 6 and 7) child cube-ids by local index 0..9 (RDR-010, Knapp Table 3.1). The
+     * cube-id selects the child anchor shift within the parent's surrounding cube (bit 0 -&gt; +x,
+     * bit 1 -&gt; +y, bit 2 -&gt; +z, each by half the parent edge length). Row index =
+     * {@code parentType - 6}; verified against t8code {@code t8_dpyramid_parenttype_Iloc_to_cid}
+     * rows 6,7 (origin/main).
+     */
+    public static final byte[][] PYRAMID_PARENT_TO_CHILD_CID = {
+    // Parent type 6
+    { 0, 1, 1, 2, 2, 3, 3, 3, 3, 7 },
+    // Parent type 7
+    { 0, 4, 4, 4, 4, 5, 5, 6, 6, 7 } };
+
+    /** Number of children of a pyramid (6 pyramids + 4 tetrahedra; Knapp 2026 §3). */
+    public static final int CHILDREN_PER_PYRAMID = 10;
+
+    /**
      * Face corner indices for each tetrahedron type. Given a tetrahedron type (0-5) and face index (0-3), returns the
      * vertex indices that form that face.
      *
