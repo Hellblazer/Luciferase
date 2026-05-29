@@ -4,6 +4,7 @@ import com.hellblazer.luciferase.geometry.Geometry;
 import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.HybridElement;
+import com.hellblazer.luciferase.lucien.HybridFaceNeighbor;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.pyramid.Pyramid;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
@@ -1846,6 +1847,113 @@ public class Tet implements Spatial.aabt, HybridElement {
         }
         // Pure-Tetree or interior pyramid-rooted tet: parent is a tetrahedron.
         return parent();
+    }
+
+    /**
+     * The face-neighbor of this tetrahedron across {@code face} as a {@link HybridFaceNeighbor},
+     * handling the cross-shape case that {@link #faceNeighbor(int)} cannot represent (RDR-010 q3p,
+     * Knapp 2026 §4.4; t8code {@code t8_dpyramid_face_neighbour}). For a pure-Tetree tetrahedron
+     * ({@code minTetLevel == NO_TET_ANCESTOR}) this is exactly {@link #faceNeighbor(int)} wrapped. For a
+     * pyramid-rooted tetrahedron of type 0 or 3, a face that touches the pyramid envelope yields a
+     * {@link Pyramid} neighbor; all other faces (and all faces of types 1,2,4,5) yield a tetrahedral
+     * neighbor with {@code minTetLevel} propagated.
+     *
+     * @param face face index, 0..3
+     * @return the face neighbor (tetrahedron or pyramid) with its reciprocal face, or {@code null} if
+     *         the neighbor lies outside the domain
+     */
+    public HybridFaceNeighbor faceNeighborElement(int face) {
+        assert 0 <= face && face < 4;
+        // The pyramid-boundary logic is t8code's, in t8code tet-type space; this.type is a Luciferase
+        // type, so translate (Finding #15). Only t8code types 0 and 3 ever touch a pyramid.
+        byte t8 = TetreeConnectivity.LUC_TO_T8[type];
+        boolean pyramidCapable = minTetLevel != NO_TET_ANCESTOR && (t8 == 0 || t8 == 3);
+        if (pyramidCapable && l > minTetLevel) {
+            // Deep pyramid-rooted tet: Luciferase's S0-S5 Bey subdivision diverges geometrically from
+            // t8code's dtet tree below the pyramid boundary (RDR-010 Finding #16), so the borrowed
+            // t8code boundary connectivity does not apply and the result would be silently wrong.
+            // Fail loud until the tet-tree convention is reconciled. The shallowest tet (l ==
+            // minTetLevel) is unaffected and validated.
+            throw new IllegalStateException(
+            "Deep pyramid-rooted tetrahedron (level " + l + " > minTetLevel " + minTetLevel
+            + ") face neighbors are not supported: Luciferase's Bey subdivision diverges from t8code's "
+            + "dtet tree below the pyramid boundary. Blocked on RDR-010 tet-tree reconciliation.");
+        }
+        // Pure-Tetree or a type that never touches a pyramid, or a face that does not: tet neighbor.
+        if (!pyramidCapable || !tetTouchesPyramid(face)) {
+            var fn = faceNeighbor(face);
+            if (fn == null) {
+                return null;
+            }
+            // Hybrid context: the same-level tet neighbor stays in the same pyramidal subtree.
+            var nbr = minTetLevel == NO_TET_ANCESTOR ? fn.tet() : fn.tet().withMinTetLevel(minTetLevel);
+            return new HybridFaceNeighbor(fn.face(), nbr);
+        }
+        // Cross-type: the neighbor across this face is the pyramid that bounds the tet (t8code switch,
+        // keyed on the t8code tet type).
+        int len = length();
+        int nx = x, ny = y, nz = z;
+        byte pyramidType;
+        byte reciprocal;
+        if (t8 == 0) {
+            switch (face) {
+                case 0 -> { nx += len; pyramidType = Pyramid.TYPE_7; reciprocal = 3; }
+                case 1 -> { pyramidType = Pyramid.TYPE_7; reciprocal = 2; }
+                case 2 -> { pyramidType = Pyramid.TYPE_6; reciprocal = 2; }
+                default -> { ny -= len; pyramidType = Pyramid.TYPE_6; reciprocal = 3; } // face 3
+            }
+        } else { // t8 == 3
+            switch (face) {
+                case 0 -> { ny += len; pyramidType = Pyramid.TYPE_7; reciprocal = 1; }
+                case 1 -> { pyramidType = Pyramid.TYPE_7; reciprocal = 0; }
+                case 2 -> { pyramidType = Pyramid.TYPE_6; reciprocal = 0; }
+                default -> { nx -= len; pyramidType = Pyramid.TYPE_6; reciprocal = 1; } // face 3
+            }
+        }
+        if (nx < 0 || ny < 0 || nz < 0 || nx > Constants.MAX_COORD || ny > Constants.MAX_COORD
+        || nz > Constants.MAX_COORD) {
+            return null;
+        }
+        return new HybridFaceNeighbor(reciprocal, new Pyramid(nx, ny, nz, l, pyramidType));
+    }
+
+    /** The cube-id (0..7) of this tetrahedron's anchor at the given refinement level. */
+    private int cubeIdAt(byte level) {
+        int h = Constants.lengthAtLevel(level);
+        int cid = (x & h) != 0 ? 1 : 0;
+        cid |= (y & h) != 0 ? 2 : 0;
+        cid |= (z & h) != 0 ? 4 : 0;
+        return cid;
+    }
+
+    /**
+     * Whether a type-0/3 tet's {@code face} connects to a pyramid rather than a tet, given the tet's
+     * cube-id at its own level (t8code {@code t8_dpyramid_tet_pyra_face_connection}).
+     */
+    private static boolean tetPyraFaceConnection(byte tetType, int cubeId, int face) {
+        if ((cubeId == 2 && face != 1) || (cubeId == 6 && face != 2)) {
+            return tetType == 0;
+        } else if ((cubeId == 1 && face != 1) || (cubeId == 5 && face != 2)) {
+            return tetType == 3;
+        } else if (cubeId == 3) {
+            return face != 0;
+        } else if (cubeId == 4) {
+            return face != 3;
+        }
+        return false;
+    }
+
+    /**
+     * Whether this shallowest pyramid-rooted tet's {@code face} touches the bounding pyramid envelope
+     * (t8code {@code t8_dpyramid_tet_pyra_face_connection}). Only valid for {@code l == minTetLevel}
+     * (the pyramid's direct tet child); {@link #faceNeighborElement(int)} guards deeper tets, whose
+     * boundary detection is blocked on the RDR-010 tet-tree reconciliation (Finding #16). The receiver
+     * is a t8code type 0/3 tet (its {@code type} is translated to t8code at the call site).
+     */
+    private boolean tetTouchesPyramid(int face) {
+        assert l == minTetLevel : "tetTouchesPyramid is only valid for the shallowest tet; deeper "
+                                  + "tets are guarded in faceNeighborElement (RDR-010 Finding #16)";
+        return tetPyraFaceConnection(TetreeConnectivity.LUC_TO_T8[type], cubeIdAt(l), face);
     }
 
     /**

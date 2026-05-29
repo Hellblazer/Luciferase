@@ -7,6 +7,7 @@ package com.hellblazer.luciferase.lucien.pyramid;
 
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.HybridElement;
+import com.hellblazer.luciferase.lucien.HybridFaceNeighbor;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 
@@ -215,8 +216,63 @@ public final class Pyramid implements HybridElement {
         if (childType >= TYPE_6) {
             return new Pyramid(cx, cy, cz, childLevel, childType);
         }
-        // Tetrahedral child: the tet branch starts here, so minTetLevel = childLevel.
-        return new Tet(cx, cy, cz, childLevel, childType, childLevel);
+        // Tetrahedral child: the table holds a t8code tet type; translate to Luciferase's Tet type
+        // (Finding #15). The tet branch starts here, so minTetLevel = childLevel.
+        var lucType = TetreeConnectivity.T8_TO_LUC[childType];
+        return new Tet(cx, cy, cz, childLevel, lucType, childLevel);
+    }
+
+    /** Number of faces of a pyramid (4 triangular + 1 quadrilateral base). */
+    public static final int FACES = 5;
+
+    /**
+     * The face-neighbor of this pyramid across face {@code f} (RDR-010 q3p, Knapp 2026 §4.4; t8code
+     * {@code t8_dpyramid_face_neighbour}). A pyramid has five faces: f0&ndash;f3 triangular, f4 the
+     * quadrilateral base. Triangular faces neighbor a tetrahedron (f0/f1 &rarr; type 3, f2/f3 &rarr;
+     * type 0); the quad base neighbors the opposite-type pyramid (6&harr;7). The neighbor is a
+     * same-level element; tetrahedral neighbors carry {@code minTetLevel = level} (a shallowest tet of
+     * the hybrid partition), pyramid neighbors carry {@link #NO_TET_ANCESTOR}.
+     *
+     * @param f face index, 0..4
+     * @return the face neighbor wrapped with its reciprocal face index, or {@code null} if the
+     *         neighbor would lie outside the domain
+     * @throws IndexOutOfBoundsException if {@code f} is outside [0, 4]
+     */
+    public HybridFaceNeighbor faceNeighbor(int f) {
+        if (f < 0 || f >= FACES) {
+            throw new IndexOutOfBoundsException("Pyramid face must be in [0, 4], got: " + f);
+        }
+        var len = length();
+        var nx = x;
+        var ny = y;
+        var nz = z;
+        byte neighborType;
+        if (f == 0 || f == 1) {
+            neighborType = 0x3; // tetrahedron type 3
+        } else if (f == 2 || f == 3) {
+            neighborType = 0; // tetrahedron type 0
+        } else { // f == 4, quad base
+            neighborType = type == TYPE_6 ? TYPE_7 : TYPE_6;
+        }
+        if (f == 1) {
+            nx += type == TYPE_6 ? len : 0;
+            ny += type == TYPE_6 ? 0 : -len;
+        } else if (f == 3) {
+            nx += type == TYPE_6 ? 0 : -len;
+            ny += type == TYPE_6 ? len : 0;
+        } else if (f == 4) {
+            nz += type == TYPE_6 ? -len : len;
+        }
+        if (nx < 0 || ny < 0 || nz < 0 || nx > Constants.MAX_COORD || ny > Constants.MAX_COORD
+        || nz > Constants.MAX_COORD) {
+            return null; // neighbor lies outside the domain
+        }
+        var nface = TetreeConnectivity.PYRAMID_TYPE_FACE_TO_NFACE[type - TYPE_6][f];
+        // neighborType for triangular faces is a t8code tet type; translate to Luciferase (Finding #15).
+        HybridElement neighbor = neighborType >= TYPE_6
+                                 ? new Pyramid(nx, ny, nz, level, neighborType)
+                                 : new Tet(nx, ny, nz, level, TetreeConnectivity.T8_TO_LUC[neighborType], level);
+        return new HybridFaceNeighbor(nface, neighbor);
     }
 
     public int x() {

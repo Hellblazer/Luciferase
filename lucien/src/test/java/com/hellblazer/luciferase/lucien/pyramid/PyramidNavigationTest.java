@@ -10,6 +10,8 @@ import com.hellblazer.luciferase.lucien.HybridElement;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import org.junit.jupiter.api.Test;
 
+import javax.vecmath.Point3i;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -56,7 +58,12 @@ class PyramidNavigationTest {
             var tetCount = 0;
             for (var i = 0; i < 10; i++) {
                 var c = p.child(i);
-                assertEquals(EXPECTED_CHILD_TYPE[row][i], c.type(), "child " + i + " type (parent " + type + ")");
+                // EXPECTED_CHILD_TYPE holds t8code types; tet children are translated to Luciferase
+                // types (Finding #15), pyramid children (6/7) are unchanged.
+                var t8 = EXPECTED_CHILD_TYPE[row][i];
+                var expected = t8 >= Pyramid.TYPE_6 ? t8
+                                                    : com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity.T8_TO_LUC[t8];
+                assertEquals(expected, c.type(), "child " + i + " type (parent " + type + ")");
                 if (c.type() >= Pyramid.TYPE_6) {
                     assertInstanceOf(Pyramid.class, c, "pyramid child " + i);
                     assertEquals(Pyramid.NO_TET_ANCESTOR, c.minTetLevel(), "pyramid child minTetLevel");
@@ -86,6 +93,41 @@ class PyramidNavigationTest {
                 assertEquals((cid & 4) != 0 ? ch : 0, c.z(), "child " + i + " z");
             }
         }
+    }
+
+    @Test
+    void tenChildrenTileTheParentByVolume() {
+        // Decisive check that the t8code->Luciferase tet-type translation (Finding #15) produces
+        // geometrically-correct children: the 10 children (6 pyramids + 4 tets) must partition the
+        // parent pyramid, so their volumes sum to the parent's. A wrong tet type would change a tet
+        // child's shape and break conservation. Table-independent geometric ground truth.
+        var l = Constants.lengthAtLevel(LEVEL);
+        for (var type : new byte[] { Pyramid.TYPE_6, Pyramid.TYPE_7 }) {
+            var p = new Pyramid(3 * l, 5 * l, 7 * l, LEVEL, type);
+            double childSum = 0;
+            for (var i = 0; i < 10; i++) {
+                var c = p.child(i);
+                childSum += (c instanceof Pyramid py) ? pyramidVolume(py.coordinates())
+                                                       : tetVolume(((Tet) c).coordinates());
+            }
+            assertEquals(pyramidVolume(p.coordinates()), childSum, 1e-6 * pyramidVolume(p.coordinates()),
+                         "10 children must tile the parent pyramid (type " + type + ")");
+        }
+    }
+
+    private static double tetVolume(Point3i[] v) {
+        double[] a = { v[1].x - v[0].x, v[1].y - v[0].y, v[1].z - v[0].z };
+        double[] b = { v[2].x - v[0].x, v[2].y - v[0].y, v[2].z - v[0].z };
+        double[] c = { v[3].x - v[0].x, v[3].y - v[0].y, v[3].z - v[0].z };
+        double det = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                     + a[2] * (b[0] * c[1] - b[1] * c[0]);
+        return Math.abs(det) / 6.0;
+    }
+
+    private static double pyramidVolume(Point3i[] v) {
+        // Square base v0,v1,v3,v2 + apex v4: split the base diagonally into two tets.
+        return tetVolume(new Point3i[] { v[0], v[1], v[3], v[4] })
+               + tetVolume(new Point3i[] { v[0], v[3], v[2], v[4] });
     }
 
     @Test

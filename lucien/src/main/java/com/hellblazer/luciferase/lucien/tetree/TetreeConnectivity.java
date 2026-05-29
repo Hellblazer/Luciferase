@@ -112,6 +112,43 @@ public final class TetreeConnectivity {
     // Own type 7
     { 7, -1, -1, 6, 7, 7, 7, 7 } };
 
+    /**
+     * Reciprocal face index for a pyramid's face neighbor, by (pyramid type, face) (RDR-010 q3p,
+     * Knapp 2026 §4.4). Row index = {@code pyramidType - 6}; column = face 0..4. Verified against
+     * t8code {@code t8_dpyramid_type_face_to_nface} (origin/main).
+     */
+    public static final byte[][] PYRAMID_TYPE_FACE_TO_NFACE = {
+    // Type 6
+    { 2, 3, 2, 3, 4 },
+    // Type 7
+    { 1, 0, 1, 0, 4 } };
+
+    /**
+     * Tetrahedral parent type by (cube-id, own type) — the inverse of {@link #PARENT_TYPE_TO_CHILD_TYPE}
+     * used to walk a tet's type up the refinement tree (RDR-010 q3p face-neighbor ancestor walk).
+     * {@code [cubeId][type]}. Verified against t8code {@code t8_dtet_cid_type_to_parenttype}.
+     */
+    // The deep-tet face-boundary walk tables (t8code t8_dtet_cid_type_to_parenttype and
+    // t8_dpyramid_face_childid_to_is_inside) were removed in RDR-010 q3p Phase D: Luciferase's S0-S5
+    // Bey subdivision diverges from t8code's dtet tree below the pyramid boundary (Finding #16), so
+    // those t8code-tree tables do not apply to Luciferase's deep tets; faceNeighborElement guards the
+    // deep case fail-loud. They must be re-derived (or t8code dtet subdivision adopted under pyramids)
+    // by the tet-tree reconciliation RDR before deep-tet pyramid face neighbors can be supported.
+
+    /**
+     * t8code dtet tet-type &rarr; Luciferase {@code Tet} tet-type (RDR-010 Finding #15, derived
+     * 2026-05-29). The pyramid connectivity tables above are faithful t8code copies and so use
+     * t8code's dtet type numbering, which is a permutation of Luciferase's {@code Tet} type numbering.
+     * Index = t8code type, value = Luciferase type. Derived by matching vertex sets from
+     * {@code t8_dtri_compute_coords} against {@code Tet.coordinates()}; all six verified by exact
+     * vertex-set equality. Apply when constructing a Luciferase {@code Tet} from a t8code-typed table
+     * value. {@link #LUC_TO_T8} is the inverse.
+     */
+    public static final byte[] T8_TO_LUC = { 4, 0, 1, 5, 3, 2 };
+
+    /** Luciferase {@code Tet} tet-type &rarr; t8code dtet tet-type (inverse of {@link #T8_TO_LUC}). */
+    public static final byte[] LUC_TO_T8 = { 1, 2, 5, 4, 0, 3 };
+
     /** Number of children of a pyramid (6 pyramids + 4 tetrahedra; Knapp 2026 §3). */
     public static final int CHILDREN_PER_PYRAMID = 10;
 
