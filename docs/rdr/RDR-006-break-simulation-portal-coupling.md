@@ -176,3 +176,18 @@ JavaFX/LWJGL for its GPU/UI renderers). Verified common/portal/lucien/render/sim
 common + simulation dependency trees javafx-free.
 
 **Only remaining RDR-006 item:** Clock package rename (Luciferase-7n1), still deferred.
+
+### Correction: Clock rename already done; RDR-006 complete (2026-05-28)
+
+Earlier notes listed the Clock package rename (Luciferase-7n1) as a remaining
+deferred item. That is **stale** — 7n1 was already CLOSED via PR #128 (2026-05-27):
+`Clock` was moved from the split `simulation.distributed.integration` package to
+the common-owned `com.hellblazer.luciferase.common.time`, eliminating the split
+package (81 imports rewritten). The research note predated that merge.
+
+**RDR-006 is therefore functionally complete:** sim→portal module coupling broken
+(PR #149), javafx/lwjgl fully cleared from the simulation classpath including the
+common-leaf cleanup (PR #153), and the Clock rename done (PR #128). No outstanding
+items. (The residual `simulation/src/test/.../distributed/integration/` files —
+TestClock, InjectableClock, ClockTest — are simulation's own test utilities and
+correctly placed.)
