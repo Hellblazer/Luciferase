@@ -2,7 +2,7 @@ package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import javax.vecmath.Point3f;
 import java.util.*;
@@ -206,10 +206,10 @@ public class AdaptiveSplitPolicy {
 
         // Initialize centroids randomly
         var random = new Random(42); // Fixed seed for reproducibility
-        var centroids = new ArrayList<Point3D>();
+        var centroids = new ArrayList<Point3d>();
         for (int i = 0; i < k; i++) {
             var pos = positions.get(random.nextInt(n));
-            centroids.add(new Point3D(pos.x, pos.y, pos.z));
+            centroids.add(new Point3d(pos.x, pos.y, pos.z));
         }
 
         // Assignment and update (simplified - just 5 iterations)
@@ -251,7 +251,7 @@ public class AdaptiveSplitPolicy {
                 }
 
                 if (count > 0) {
-                    centroids.set(j, new Point3D(sumX / count, sumY / count, sumZ / count));
+                    centroids.set(j, new Point3d(sumX / count, sumY / count, sumZ / count));
                 }
             }
         }
@@ -307,7 +307,7 @@ public class AdaptiveSplitPolicy {
             }
 
             int totalSize = mergedIds.size();
-            var centroid = new Point3D(sumX / totalSize, sumY / totalSize, sumZ / totalSize);
+            var centroid = new Point3d(sumX / totalSize, sumY / totalSize, sumZ / totalSize);
 
             // Note: We can't easily get positions from IDs here, so we use a placeholder bounds
             // In a real implementation, we'd need to fetch positions from the bubble
@@ -352,13 +352,13 @@ public class AdaptiveSplitPolicy {
         var clusters = new ArrayList<EntityCluster>();
 
         if (!leftIds.isEmpty()) {
-            var leftCentroid = new Point3D(centroid.getX() - 10, centroid.getY(), centroid.getZ());
+            var leftCentroid = new Point3d(centroid.getX() - 10, centroid.getY(), centroid.getZ());
             // Use bubble's bounds for geometric clusters
             clusters.add(new EntityCluster(leftCentroid, null, leftIds, leftIds.size()));
         }
 
         if (!rightIds.isEmpty()) {
-            var rightCentroid = new Point3D(centroid.getX() + 10, centroid.getY(), centroid.getZ());
+            var rightCentroid = new Point3d(centroid.getX() + 10, centroid.getY(), centroid.getZ());
             // Use bubble's bounds for geometric clusters
             clusters.add(new EntityCluster(rightCentroid, null, rightIds, rightIds.size()));
         }
@@ -370,7 +370,7 @@ public class AdaptiveSplitPolicy {
      * Entity cluster record for split analysis.
      */
     public record EntityCluster(
-        Point3D centroid,
+        Point3d centroid,
         BubbleBounds bounds,
         List<String> entityIds,
         int size

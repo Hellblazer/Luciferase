@@ -33,7 +33,7 @@ import java.util.UUID;
  * Used by MigrationLogPersistence to record transactions in WAL.
  * On process restart, incomplete transactions are recovered and resolved.
  * <p>
- * Note: The snapshot is stored in a Jackson-serializable form (without Point3D).
+ * Note: The snapshot is stored in a Jackson-serializable form (without Point3d).
  * For full entity restoration, recovery reads from source bubble state.
  *
  * @param transactionId    Unique transaction identifier (UUID)
@@ -72,7 +72,7 @@ public record TransactionState(
     /**
      * Jackson-serializable snapshot of essential entity state for WAL storage.
      * <p>
-     * Stores only fields that Jackson can serialize (no Point3D).
+     * Stores only fields that Jackson can serialize (no Point3d).
      * Position is not persisted - recovery restores entity from source bubble state.
      *
      * @param entityId          Entity identifier

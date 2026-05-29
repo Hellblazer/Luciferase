@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -128,7 +128,7 @@ class BubbleTest {
         });
 
         // When: Bubble2 sends JOIN request to Bubble1
-        var joinRequest = factory.createJoinRequest(id2, new Point3D(0.6, 0.6, 0.6), bubble2.bounds());
+        var joinRequest = factory.createJoinRequest(id2, new Point3d(0.6, 0.6, 0.6), bubble2.bounds());
         transport2.sendToNeighbor(id1, joinRequest);
 
         // Then: Bubble1 should respond with JoinResponse
@@ -150,7 +150,7 @@ class BubbleTest {
         var neighborId = UUID.randomUUID();
         var neighborInfo = new Message.NeighborInfo(
             neighborId,
-            new Point3D(0.3, 0.3, 0.3),
+            new Point3d(0.3, 0.3, 0.3),
             null
         );
         var response = factory.createJoinResponse(
@@ -190,7 +190,7 @@ class BubbleTest {
         });
 
         // When: Bubble2 sends MOVE message
-        var newPosition = new Point3D(0.7, 0.7, 0.7);
+        var newPosition = new Point3d(0.7, 0.7, 0.7);
         var moveMsg = factory.createMove(id2, newPosition, null);
         transport2.sendToNeighbor(id1, moveMsg);
 
@@ -334,7 +334,7 @@ class BubbleTest {
 
         // When: Neighbor joins
         var neighborId = UUID.randomUUID();
-        bubble1.notifyJoin(new SimpleNode(neighborId, new Point3D(0.5, 0.5, 0.5)));
+        bubble1.notifyJoin(new SimpleNode(neighborId, new Point3d(0.5, 0.5, 0.5)));
 
         // Then: Event listener receives Join event
         assertThat(events).hasSize(1);
@@ -408,7 +408,7 @@ class BubbleTest {
 
         // When: Bubble2 sends JOIN request to Bubble1
         var startTime = System.currentTimeMillis();
-        var joinRequest = factory.createJoinRequest(id2, new Point3D(0.6, 0.6, 0.6), bubble2.bounds());
+        var joinRequest = factory.createJoinRequest(id2, new Point3d(0.6, 0.6, 0.6), bubble2.bounds());
 
         // Send in background thread to allow retry mechanism to work
         new Thread(() -> {
@@ -464,7 +464,7 @@ class BubbleTest {
 
         // When: Bubble2 sends JOIN request to Bubble1
         var startTime = System.currentTimeMillis();
-        var joinRequest = factory.createJoinRequest(id2, new Point3D(0.6, 0.6, 0.6), bubble2.bounds());
+        var joinRequest = factory.createJoinRequest(id2, new Point3d(0.6, 0.6, 0.6), bubble2.bounds());
         transport2.sendToNeighbor(id1, joinRequest);
 
         // Wait for all retries to complete (total: 50+100+200+400+800 = 1550ms)
@@ -557,8 +557,8 @@ class BubbleTest {
         bubble3.addEventListener(e -> { if (e instanceof Event.Move) moveCReceived.countDown(); });
 
         // Then: Send MOVE messages from A to B and C
-        var moveToB = factory.createMove(idA, new Point3D(0.35, 0.35, 0.35), bubble1.bounds());
-        var moveToC = factory.createMove(idA, new Point3D(0.75, 0.75, 0.75), bubble1.bounds());
+        var moveToB = factory.createMove(idA, new Point3d(0.35, 0.35, 0.35), bubble1.bounds());
+        var moveToC = factory.createMove(idA, new Point3d(0.75, 0.75, 0.75), bubble1.bounds());
 
         transportA.sendToNeighbor(idB, moveToB);
         transportA.sendToNeighbor(idC, moveToC);
@@ -586,12 +586,12 @@ class BubbleTest {
     /**
      * Simple Node implementation for testing.
      */
-    private record SimpleNode(UUID id, Point3D position) implements Node {
+    private record SimpleNode(UUID id, Point3d position) implements Node {
         @Override
         public UUID id() { return id; }
 
         @Override
-        public Point3D position() { return position; }
+        public Point3d position() { return position; }
 
         @Override
         public BubbleBounds bounds() { return null; }

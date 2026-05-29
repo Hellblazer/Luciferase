@@ -20,7 +20,7 @@ package com.hellblazer.luciferase.simulation.distributed.migration;
 import com.hellblazer.luciferase.simulation.von.transport.ProcessAddress;
 import com.hellblazer.luciferase.simulation.von.transport.SocketTransport;
 import com.hellblazer.luciferase.simulation.von.Bubble;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

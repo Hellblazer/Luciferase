@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -83,7 +83,7 @@ public class NodeTest {
             bubble.addEntity("entity-" + i, new Point3f(x, y, z), content);
         }
 
-        Point3D position = vonNode.position();
+        Point3d position = vonNode.position();
 
         assertNotNull(position, "VON node position should not be null");
         assertEquals(bubble.centroid(), position, "Position should match bubble centroid");

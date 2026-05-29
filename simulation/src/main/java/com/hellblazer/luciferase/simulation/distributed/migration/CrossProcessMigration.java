@@ -22,7 +22,7 @@ import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.api.Kronos;
 import com.hellblazer.primeMover.controllers.RealTimeController;
 import com.hellblazer.primeMover.runtime.Kairos;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -803,7 +803,7 @@ public class CrossProcessMigration {
         private static EntitySnapshot createEntitySnapshot(String entityId, BubbleReference source, long timestamp) {
             // In actual implementation, would query source bubble for entity state
             // For now, create synthetic snapshot
-            return new EntitySnapshot(entityId, new Point3D(0, 0, 0), "MockContent", source.getBubbleId(), 1L, 1L,
+            return new EntitySnapshot(entityId, new Point3d(0, 0, 0), "MockContent", source.getBubbleId(), 1L, 1L,
                                       timestamp);
         }
     }

@@ -20,7 +20,7 @@ package com.hellblazer.luciferase.simulation.von;
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.common.time.Clock;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -160,9 +160,9 @@ public class Bubble extends EnhancedBubble implements Node {
     }
 
     @Override
-    public Point3D position() {
+    public Point3d position() {
         var centroid = centroid();
-        return centroid != null ? centroid : new Point3D(0, 0, 0);
+        return centroid != null ? centroid : new Point3d(0, 0, 0);
     }
 
     @Override
@@ -220,7 +220,7 @@ public class Bubble extends EnhancedBubble implements Node {
             var ctx = clockContext;  // Single volatile read
             neighborStates.put(neighborId, new NeighborState(
                 neighborId,
-                new Point3D(0, 0, 0),
+                new Point3d(0, 0, 0),
                 null,
                 ctx.clock.currentTimeMillis()
             ));
@@ -288,7 +288,7 @@ public class Bubble extends EnhancedBubble implements Node {
      * @param targetPosition Desired position in the network
      * @return true if JOIN was accepted, false otherwise
      */
-    public boolean initiateJoin(Point3D targetPosition) {
+    public boolean initiateJoin(Point3d targetPosition) {
         try {
             // Find the acceptor for this position
             var acceptor = findAcceptorForPosition(targetPosition);
@@ -665,7 +665,7 @@ public class Bubble extends EnhancedBubble implements Node {
         }
     }
 
-    private Transport.MemberInfo findAcceptorForPosition(Point3D position) {
+    private Transport.MemberInfo findAcceptorForPosition(Point3d position) {
         // Use transport's routing to find the member responsible for this position
         // For now, use a simple approach: get any available member
         // In production, this would use TetreeKey routing
@@ -690,7 +690,7 @@ public class Bubble extends EnhancedBubble implements Node {
      * @param bounds       Last known bounds
      * @param lastUpdateMs Timestamp of last update
      */
-    public record NeighborState(UUID nodeId, Point3D position, BubbleBounds bounds, long lastUpdateMs) {
+    public record NeighborState(UUID nodeId, Point3d position, BubbleBounds bounds, long lastUpdateMs) {
     }
 
     /**

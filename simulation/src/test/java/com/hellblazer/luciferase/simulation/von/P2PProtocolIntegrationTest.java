@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -169,7 +169,7 @@ class P2PProtocolIntegrationTest {
         });
 
         // When: Bubble2 moves
-        manager.move(bubble2, new Point3D(57.0, 57.0, 50.0));
+        manager.move(bubble2, new Point3d(57.0, 57.0, 50.0));
 
         // Then: All neighbors receive move notification
         Thread.sleep(200);
@@ -189,7 +189,7 @@ class P2PProtocolIntegrationTest {
         var initialState = bubble1.getNeighborState(bubble2.id());
 
         // When: Bubble2 moves
-        var newPosition = new Point3D(60.0, 60.0, 50.0);
+        var newPosition = new Point3d(60.0, 60.0, 50.0);
         manager.move(bubble2, newPosition);
         Thread.sleep(200);
 
@@ -296,7 +296,7 @@ class P2PProtocolIntegrationTest {
 
         // When: Measure move notification latency
         long startNs = System.nanoTime();
-        manager.move(bubble2, new Point3D(60.0, 60.0, 50.0));
+        manager.move(bubble2, new Point3d(60.0, 60.0, 50.0));
         long latencyNs = System.nanoTime() - startNs;
 
         double latencyMs = latencyNs / 1_000_000.0;

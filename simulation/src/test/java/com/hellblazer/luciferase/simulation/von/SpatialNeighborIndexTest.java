@@ -2,7 +2,7 @@ package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -100,7 +100,7 @@ public class SpatialNeighborIndexTest {
         index.insert(wrapBubble(bubble5));
 
         // Query point at origin
-        Point3D queryPoint = new Point3D(0.0, 0.0, 0.0);
+        Point3d queryPoint = new Point3d(0.0, 0.0, 0.0);
         Node closest = index.findClosestTo(queryPoint);
 
         assertNotNull(closest, "Should find closest bubble");
@@ -122,7 +122,7 @@ public class SpatialNeighborIndexTest {
         }
 
         // Query for 3 nearest to origin
-        Point3D queryPoint = new Point3D(0.0, 0.0, 0.0);
+        Point3d queryPoint = new Point3d(0.0, 0.0, 0.0);
         List<Node> nearest = index.findKNearest(queryPoint, 3);
 
         assertEquals(3, nearest.size(), "Should return exactly 3 neighbors");
@@ -233,7 +233,7 @@ public class SpatialNeighborIndexTest {
         index.insert(wrapBubble(bubble2));
         index.insert(wrapBubble(bubble3));
 
-        Point3D center = new Point3D(0.0, 0.0, 0.0);
+        Point3d center = new Point3d(0.0, 0.0, 0.0);
         var inRange = index.findWithinRadius(center, AOI_RADIUS);
 
         assertTrue(inRange.stream().anyMatch(n -> n.id().equals(bubble1.id())),
@@ -256,11 +256,11 @@ public class SpatialNeighborIndexTest {
 
         index.insert(node);
 
-        Point3D oldPosition = node.position();
+        Point3d oldPosition = node.position();
         assertNotNull(oldPosition, "Initial position should exist");
 
         // Simulate bubble moving by updating position
-        Point3D newPosition = new Point3D(50.0, 50.0, 50.0);
+        Point3d newPosition = new Point3d(50.0, 50.0, 50.0);
         index.updatePosition(node.id(), newPosition);
 
         // Note: updatePosition might be a no-op if position is tracked via node reference
@@ -274,7 +274,7 @@ public class SpatialNeighborIndexTest {
      */
     @Test
     public void testEmptyIndex() {
-        Point3D queryPoint = new Point3D(0.0, 0.0, 0.0);
+        Point3d queryPoint = new Point3d(0.0, 0.0, 0.0);
 
         // findClosestTo on empty index
         Node closest = index.findClosestTo(queryPoint);

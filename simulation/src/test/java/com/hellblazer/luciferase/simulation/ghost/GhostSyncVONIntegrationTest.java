@@ -10,7 +10,7 @@ import com.hellblazer.luciferase.simulation.ghost.GhostLayerHealth;
 import com.hellblazer.luciferase.simulation.von.BubbleNode;
 import com.hellblazer.luciferase.simulation.von.SpatialNeighborIndex;
 import com.hellblazer.luciferase.simulation.von.Event;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
@@ -191,7 +191,8 @@ class GhostSyncVONIntegrationTest {
         int initialNeighborCount = vonNode.neighbors().size();
 
         // Simulate MOVE to new position (near neighbor)
-        var newPosition = neighborNode.position().add(1.0, 1.0, 1.0);
+        var np = neighborNode.position();
+        var newPosition = new javax.vecmath.Point3d(np.x + 1.0, np.y + 1.0, np.z + 1.0);
         integration.onVONMove(newPosition);
 
         // Verify: MOVE may discover new neighbors if bounds overlap

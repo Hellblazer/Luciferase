@@ -33,7 +33,7 @@ import java.io.ObjectInputFilter;
  * ({@code PriorityQueue}, {@code TreeMap}, {@code LinkedList}) that appear in published ysoserial chains.
  * The actual wire payload is records of {@code String}/{@code float}/{@code double}/{@code long}/{@code Long}
  * plus {@code List} fields whose concrete type is {@code java.util.ArrayList}; there is no
- * {@code javax.vecmath} or JavaFX type on the wire (the {@code Point3f}/{@code Point3D} in the transport
+ * {@code javax.vecmath} or JavaFX type on the wire (the {@code Point3f}/{@code Point3d} in the transport
  * records are conversion-only, never serialized).
  *
  * @author hal.hildebrand

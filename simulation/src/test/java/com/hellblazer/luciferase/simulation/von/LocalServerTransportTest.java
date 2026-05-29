@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -256,7 +256,7 @@ public class LocalServerTransportTest {
             }
         });
 
-        var position = new Point3D(1.0, 2.0, 3.0);
+        var position = new Point3d(1.0, 2.0, 3.0);
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(1.0f, 2.0f, 3.0f)));
         var request = factory.createJoinRequest(id1, position, bounds);
 
@@ -293,7 +293,7 @@ public class LocalServerTransportTest {
         // Send messages with sequence numbers encoded in position.x
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(0.5f, 0.5f, 0.5f)));
         for (int i = 0; i < messageCount; i++) {
-            var position = new Point3D(i, 0, 0);  // Sequence number in x coordinate
+            var position = new Point3d(i, 0, 0);  // Sequence number in x coordinate
             var request = factory.createJoinRequest(id1, position, bounds);
             transport1.sendToNeighborAsync(id2, request);
         }
@@ -349,8 +349,8 @@ public class LocalServerTransportTest {
         // Both senders send messages concurrently
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(0.5f, 0.5f, 0.5f)));
         for (int i = 0; i < messagesPerSender; i++) {
-            var position1 = new Point3D(i, 0, 0);
-            var position2 = new Point3D(i, 0, 0);
+            var position1 = new Point3d(i, 0, 0);
+            var position2 = new Point3d(i, 0, 0);
 
             var request1 = factory.createJoinRequest(sender1, position1, bounds);
             var request2 = factory.createJoinRequest(sender2, position2, bounds);

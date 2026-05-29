@@ -9,7 +9,7 @@ import com.hellblazer.luciferase.lucien.entity.UUIDEntityID;
 import com.hellblazer.luciferase.lucien.entity.UUIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -116,7 +116,7 @@ public class TetreeKNearestColdCacheBenchmark {
                                 positionRng.nextFloat() * WORLD_EXTENT,
                                 positionRng.nextFloat() * WORLD_EXTENT);
             tetree.insert(new UUIDEntityID(UUID.randomUUID()), p, spatialLevel,
-                          new StubNode(UUID.randomUUID(), new Point3D(p.x, p.y, p.z)));
+                          new StubNode(UUID.randomUUID(), new Point3d(p.x, p.y, p.z)));
         }
 
         var centerRng = new Random(0xC11C7E7L);
@@ -174,7 +174,7 @@ public class TetreeKNearestColdCacheBenchmark {
      * Mirrors {@code SpatialNeighborIndexBaselineBenchmark.StubNode} for
      * cross-benchmark consistency.
      */
-    private record StubNode(UUID id, Point3D position) implements Node {
+    private record StubNode(UUID id, Point3d position) implements Node {
         @Override
         public BubbleBounds bounds() {
             throw new UnsupportedOperationException("bounds() not exercised by k-NN benchmark");

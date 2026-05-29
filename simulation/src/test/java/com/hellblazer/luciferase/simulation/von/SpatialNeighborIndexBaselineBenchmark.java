@@ -6,7 +6,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit;
  * <b>Empirical observation justifying the single-harness design:</b>
  * {@link SpatialNeighborIndex#findWithinRadius} and {@link SpatialNeighborIndex#findKNearest}
  * iterate a flat {@code ConcurrentHashMap} computing Euclidean distance between
- * {@code Point3D} positions — the spatial level never enters the query path. So
+ * {@code Point3d} positions — the spatial level never enters the query path. So
  * the {@code spatialLevel} {@code @Param} produces no expected difference in query
  * timings; identical numbers across the two levels are the empirical confirmation
  * that, for the current linear-scan implementation, the level fix in Step 0
@@ -94,7 +94,7 @@ public class SpatialNeighborIndexBaselineBenchmark {
     public float queryRadius;
 
     private SpatialNeighborIndex index;
-    private List<Point3D> queryCenters;
+    private List<Point3d> queryCenters;
     private int queryCursor;
 
     @Setup(Level.Trial)
@@ -108,7 +108,7 @@ public class SpatialNeighborIndexBaselineBenchmark {
         index = new SpatialNeighborIndex(queryRadius, BOUNDARY_BUFFER);
 
         for (int i = 0; i < entityCount; i++) {
-            var position = new Point3D(
+            var position = new Point3d(
                 positionRng.nextFloat() * WORLD_EXTENT,
                 positionRng.nextFloat() * WORLD_EXTENT,
                 positionRng.nextFloat() * WORLD_EXTENT
@@ -119,7 +119,7 @@ public class SpatialNeighborIndexBaselineBenchmark {
         var centerRng = new Random(0xC11C7E7L);
         queryCenters = new ArrayList<>(QUERY_CENTER_COUNT);
         for (int i = 0; i < QUERY_CENTER_COUNT; i++) {
-            queryCenters.add(new Point3D(
+            queryCenters.add(new Point3d(
                 centerRng.nextFloat() * WORLD_EXTENT,
                 centerRng.nextFloat() * WORLD_EXTENT,
                 centerRng.nextFloat() * WORLD_EXTENT
@@ -192,7 +192,7 @@ public class SpatialNeighborIndexBaselineBenchmark {
      * Lightweight stub Node returning only {@code id()} and {@code position()}.
      * Unused methods throw or return empty to surface accidental misuse.
      */
-    private record StubNode(UUID id, Point3D position) implements Node {
+    private record StubNode(UUID id, Point3d position) implements Node {
 
         @Override
         public BubbleBounds bounds() {

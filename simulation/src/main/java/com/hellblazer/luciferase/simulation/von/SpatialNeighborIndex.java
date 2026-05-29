@@ -10,7 +10,7 @@ import com.hellblazer.luciferase.lucien.entity.UUIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.simulation.bubble.SpatialLevelHeuristic;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import javax.vecmath.Point3f;
 import java.util.*;
@@ -75,7 +75,7 @@ import java.util.stream.Collectors;
  * A three-argument constructor lets deployments pin an explicit level.
  * <p>
  * <b>Behavioral contract change vs the pre-mj7 implementation.</b>
- * {@link #updatePosition(UUID, Point3D)} is no longer a no-op — it propagates
+ * {@link #updatePosition(UUID, Point3d)} is no longer a no-op — it propagates
  * the new centroid to the {@code Tetree} so the {@link #findKNearest} /
  * {@link #findClosestTo} path sees correct spatial bucketing. The flat map's
  * stored {@link Node} reference is unchanged since the {@link Node} reads
@@ -180,7 +180,7 @@ public class SpatialNeighborIndex {
      * @param nodeId      Node UUID
      * @param newPosition New centroid position (must have non-negative coordinates)
      */
-    public void updatePosition(UUID nodeId, Point3D newPosition) {
+    public void updatePosition(UUID nodeId, Point3d newPosition) {
         tetree.updateEntity(new UUIDEntityID(nodeId), toPoint3f(newPosition), spatialLevel);
     }
 
@@ -198,7 +198,7 @@ public class SpatialNeighborIndex {
      * @param position Query position
      * @return Closest Node or null if index is empty
      */
-    public Node findClosestTo(Point3D position) {
+    public Node findClosestTo(Point3d position) {
         if (nodes.isEmpty()) {
             return null;
         }
@@ -233,7 +233,7 @@ public class SpatialNeighborIndex {
      * @param k        Number of neighbors (must be {@code > 0})
      * @return List of up to k nearest nodes, sorted by ascending distance
      */
-    public List<Node> findKNearest(Point3D position, int k) {
+    public List<Node> findKNearest(Point3d position, int k) {
         if (k <= 0 || nodes.isEmpty()) {
             return List.of();
         }
@@ -299,7 +299,7 @@ public class SpatialNeighborIndex {
      * @param radius Search radius (non-negative)
      * @return List of nodes whose centroid lies within {@code radius} of {@code center}
      */
-    public List<Node> findWithinRadius(Point3D center, float radius) {
+    public List<Node> findWithinRadius(Point3d center, float radius) {
         var radiusSq = (double) radius * radius;
         var cx = center.getX();
         var cy = center.getY();
@@ -366,11 +366,11 @@ public class SpatialNeighborIndex {
     // ==================== private helpers ====================
 
     /**
-     * Convert a JavaFX double-precision {@link Point3D} to a vecmath single-precision
+     * Convert a JavaFX double-precision {@link Point3d} to a vecmath single-precision
      * {@link Point3f} for Tetree consumption. Float-mantissa precision (~7 decimal
      * digits) is sufficient for VoN's 200-unit world.
      */
-    private static Point3f toPoint3f(Point3D p) {
+    private static Point3f toPoint3f(Point3d p) {
         return new Point3f((float) p.getX(), (float) p.getY(), (float) p.getZ());
     }
 

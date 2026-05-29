@@ -34,7 +34,7 @@ import java.util.UUID;
  * <b>Algorithm</b>:
  * <ul>
  *   <li>Use AdaptiveSplitPolicy.detectClusters() for K-means (k=2)</li>
- *   <li>Convert javafx.geometry.Point3D to javax.vecmath.Point3f</li>
+ *   <li>Convert javax.vecmath.Point3d to javax.vecmath.Point3f</li>
  *   <li>Calculate coherence based on intra-cluster distance</li>
  *   <li>Filter clusters below minimum size threshold</li>
  * </ul>
@@ -102,7 +102,7 @@ public class ClusteringDetector {
         // Convert AdaptiveSplitPolicy.EntityCluster to EntityClusterInfo
         var clusters = new ArrayList<EntityClusterInfo>();
         for (var raw : rawClusters) {
-            // Convert Point3D to Point3f
+            // Convert Point3d to Point3f
             var centroid = new Point3f(
                 (float) raw.centroid().getX(),
                 (float) raw.centroid().getY(),

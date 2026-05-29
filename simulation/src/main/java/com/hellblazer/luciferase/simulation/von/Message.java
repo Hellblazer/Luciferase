@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import javax.vecmath.Point3f;
 import java.util.List;
@@ -64,7 +64,7 @@ public sealed interface Message
      * @param bounds    Initial spatial bounds
      * @param timestamp Message creation time
      */
-    record JoinRequest(UUID joinerId, Point3D position, BubbleBounds bounds, long timestamp) implements Message {
+    record JoinRequest(UUID joinerId, Point3d position, BubbleBounds bounds, long timestamp) implements Message {
         // Compact constructor removed - use MessageFactory instead
     }
 
@@ -91,7 +91,7 @@ public sealed interface Message
      * @param newBounds   New bounds after movement
      * @param timestamp   Message creation time
      */
-    record Move(UUID nodeId, Point3D newPosition, BubbleBounds newBounds, long timestamp) implements Message {
+    record Move(UUID nodeId, Point3d newPosition, BubbleBounds newBounds, long timestamp) implements Message {
         // Compact constructor removed - use MessageFactory instead
     }
 
@@ -247,6 +247,6 @@ public sealed interface Message
      * @param position Neighbor's current position
      * @param bounds   Neighbor's current bounds
      */
-    record NeighborInfo(UUID nodeId, Point3D position, BubbleBounds bounds) {
+    record NeighborInfo(UUID nodeId, Point3d position, BubbleBounds bounds) {
     }
 }

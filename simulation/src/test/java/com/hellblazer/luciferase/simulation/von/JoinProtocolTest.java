@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

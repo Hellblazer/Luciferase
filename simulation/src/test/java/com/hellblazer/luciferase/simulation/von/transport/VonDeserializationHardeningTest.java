@@ -22,7 +22,7 @@ import com.hellblazer.luciferase.simulation.von.MessageConverter;
 import com.hellblazer.luciferase.simulation.von.TransportGhostData;
 import com.hellblazer.luciferase.simulation.von.TransportNeighborInfo;
 import com.hellblazer.luciferase.simulation.von.TransportVonMessage;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import javax.vecmath.Point3f;
 import org.junit.jupiter.api.Test;
 
@@ -127,11 +127,11 @@ class VonDeserializationHardeningTest {
     @Test
     void filterAcceptsEveryConverterProducedMessageType() throws IOException {
         var ghost = new Message.TransportGhost("e1", new Point3f(1, 2, 3), "java.lang.String", "v", "tree-1", 1L, 2L, 3L);
-        var neighbor = new Message.NeighborInfo(UUID.randomUUID(), new Point3D(1, 2, 3), null);
+        var neighbor = new Message.NeighborInfo(UUID.randomUUID(), new Point3d(1, 2, 3), null);
         List<Message> messages = List.of(
-            new Message.JoinRequest(UUID.randomUUID(), new Point3D(1, 2, 3), null, 1L),
+            new Message.JoinRequest(UUID.randomUUID(), new Point3d(1, 2, 3), null, 1L),
             new Message.JoinResponse(UUID.randomUUID(), Set.of(neighbor), 2L),
-            new Message.Move(UUID.randomUUID(), new Point3D(4, 5, 6), null, 3L),
+            new Message.Move(UUID.randomUUID(), new Point3d(4, 5, 6), null, 3L),
             new Message.Leave(UUID.randomUUID(), 4L),
             new Message.GhostSync(UUID.randomUUID(), List.of(ghost), 9L, 5L),
             new Message.Ack(UUID.randomUUID(), UUID.randomUUID(), 6L),

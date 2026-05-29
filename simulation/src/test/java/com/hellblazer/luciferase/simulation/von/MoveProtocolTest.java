@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -79,7 +79,7 @@ public class MoveProtocolTest {
         capturedEvents.clear();
 
         // Move to new position
-        Point3D newPosition = new Point3D(55.0, 55.0, 55.0);
+        Point3d newPosition = new Point3d(55.0, 55.0, 55.0);
         moveProtocol.move(moverNode, newPosition);
 
         // Verify MOVE event was emitted
@@ -109,7 +109,7 @@ public class MoveProtocolTest {
         int initialNeighborCount = moverNode.neighbors().size();
 
         // Move mover closer to distant bubble (crossing boundary)
-        Point3D newPosition = new Point3D(80.0, 80.0, 80.0);
+        Point3d newPosition = new Point3d(80.0, 80.0, 80.0);
         moveProtocol.move(moverNode, newPosition);
 
         // Verify neighbor discovery may have occurred
@@ -137,7 +137,7 @@ public class MoveProtocolTest {
         assertEquals(0, moverNode.neighbors().size(), "Should start with no neighbors");
 
         // Move mover closer to nearby bubble (within AOI)
-        Point3D newPosition = new Point3D(35.0, 35.0, 35.0);
+        Point3d newPosition = new Point3d(35.0, 35.0, 35.0);
         moveProtocol.move(moverNode, newPosition);
 
         // Verify new neighbor discovered
@@ -169,7 +169,7 @@ public class MoveProtocolTest {
         assertEquals(1, moverNode.neighbors().size(), "Should have 1 neighbor");
 
         // Move mover far away (beyond AOI + buffer)
-        Point3D farPosition = new Point3D(200.0, 200.0, 200.0);
+        Point3d farPosition = new Point3d(200.0, 200.0, 200.0);
         moveProtocol.move(moverNode, farPosition);
 
         // Verify out-of-range neighbor was removed
@@ -203,7 +203,7 @@ public class MoveProtocolTest {
         }
 
         // Measure MOVE latency
-        Point3D newPosition = new Point3D(55.0, 55.0, 55.0);
+        Point3d newPosition = new Point3d(55.0, 55.0, 55.0);
 
         long start = System.nanoTime();
         moveProtocol.move(moverNode, newPosition);
@@ -230,7 +230,7 @@ public class MoveProtocolTest {
 
         // Perform 10 sequential moves
         for (int i = 1; i <= 10; i++) {
-            Point3D newPos = new Point3D(50.0 + i, 50.0 + i, 50.0);
+            Point3d newPos = new Point3d(50.0 + i, 50.0 + i, 50.0);
             moveProtocol.move(moverNode, newPos);
         }
 
@@ -253,13 +253,13 @@ public class MoveProtocolTest {
         var moverNode = wrapBubble(mover);
         index.insert(moverNode);
 
-        Point3D initialCentroid = moverNode.position();
+        Point3d initialCentroid = moverNode.position();
         assertNotNull(initialCentroid, "Initial centroid should exist");
 
         // Simulate entity movement causing centroid shift
         // Note: In real scenario, entities move within bubble
         // For this test, we validate the move protocol accepts position changes
-        Point3D newCentroid = new Point3D(55.0, 55.0, 55.0);
+        Point3d newCentroid = new Point3d(55.0, 55.0, 55.0);
         moveProtocol.move(moverNode, newCentroid);
 
         // Verify MOVE event contains new position
@@ -306,7 +306,7 @@ public class MoveProtocolTest {
         Node mover = cluster.get(0);
         int initialNeighborCount = mover.neighbors().size();
 
-        Point3D newPosition = new Point3D(52.0, 52.0, 50.0);
+        Point3d newPosition = new Point3d(52.0, 52.0, 50.0);
         moveProtocol.move(mover, newPosition);
 
         // Verify neighbor consistency preserved

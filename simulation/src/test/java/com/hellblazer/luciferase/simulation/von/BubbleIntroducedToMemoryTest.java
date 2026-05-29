@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

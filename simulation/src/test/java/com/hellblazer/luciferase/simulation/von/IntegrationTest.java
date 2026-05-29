@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
@@ -129,7 +129,7 @@ public class IntegrationTest {
         capturedEvents.clear();
 
         // Move bubble significantly but within AOI of some neighbors
-        Point3D newPosition = new Point3D(75.0, 75.0, 50.0);
+        Point3d newPosition = new Point3d(75.0, 75.0, 50.0);
         moveProtocol.move(mover, newPosition);
 
         // Verify MOVE event emitted
@@ -225,7 +225,7 @@ public class IntegrationTest {
         // Perform movements
         for (int i = 0; i < 3; i++) {
             Node mover = bubbles.get(i);
-            Point3D newPos = new Point3D(
+            Point3d newPos = new Point3d(
                 mover.position().getX() + 5.0,
                 mover.position().getY() + 5.0,
                 50.0

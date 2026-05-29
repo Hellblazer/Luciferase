@@ -25,7 +25,7 @@ import java.util.Objects;
 /**
  * Serializable wrapper for Message for network transport.
  * <p>
- * Problem: Message contains JavaFX types (Point3D) and javax.vecmath types (Point3f)
+ * Problem: Message contains JavaFX types (Point3d) and javax.vecmath types (Point3f)
  * that are not Serializable or have problematic serialization.
  * <p>
  * Solution: Decompose Point3f into 3x float (posX, posY, posZ) to ensure reliable

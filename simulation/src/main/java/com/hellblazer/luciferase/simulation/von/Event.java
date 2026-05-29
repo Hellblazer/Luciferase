@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import java.util.List;
 import java.util.UUID;
@@ -57,7 +57,7 @@ public sealed interface Event {
      */
     record Move(
         UUID nodeId,
-        Point3D newPosition,
+        Point3d newPosition,
         BubbleBounds newBounds
     ) implements Event {
 
@@ -67,7 +67,7 @@ public sealed interface Event {
          * @param oldPosition Previous position
          * @return Distance moved
          */
-        public double distance(Point3D oldPosition) {
+        public double distance(Point3d oldPosition) {
             return newPosition.distance(oldPosition);
         }
     }
@@ -90,7 +90,7 @@ public sealed interface Event {
      */
     record Join(
         UUID nodeId,
-        Point3D position
+        Point3d position
     ) implements Event {
     }
 
@@ -112,7 +112,7 @@ public sealed interface Event {
      */
     record Leave(
         UUID nodeId,
-        Point3D position
+        Point3d position
     ) implements Event {
     }
 

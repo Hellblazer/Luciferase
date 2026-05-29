@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import java.util.UUID;
 
@@ -55,7 +55,7 @@ import java.util.UUID;
  */
 public record EntitySnapshot(
     String entityId,
-    Point3D position,
+    Point3d position,
     Object content,
     UUID authorityBubbleId,
     long epoch,

@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -307,8 +307,8 @@ class CrossProcessMigrationTest {
             }
 
             @Override
-            public Point3D getPosition() {
-                return new Point3D(0, 0, 0);
+            public Point3d getPosition() {
+                return new Point3d(0, 0, 0);
             }
 
             @Override
@@ -542,8 +542,8 @@ class CrossProcessMigrationTest {
         }
 
         @Override
-        public Point3D getPosition() {
-            return new Point3D(0, 0, 0);
+        public Point3d getPosition() {
+            return new Point3d(0, 0, 0);
         }
 
         @Override
@@ -602,8 +602,8 @@ class CrossProcessMigrationTest {
         }
 
         @Override
-        public Point3D getPosition() {
-            return new Point3D(0, 0, 0);
+        public Point3d getPosition() {
+            return new Point3d(0, 0, 0);
         }
 
         @Override

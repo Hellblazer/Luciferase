@@ -2,7 +2,7 @@ package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import java.util.Objects;
 import java.util.Set;
@@ -27,7 +27,7 @@ import java.util.function.Consumer;
  * - Enclosing neighbors via bounds overlap
  * - Performance target: JOIN latency < 100ms
  * <p>
- * Thread-safe: {@link #join(Node, Point3D)} runs under a per-protocol lock so
+ * Thread-safe: {@link #join(Node, Point3d)} runs under a per-protocol lock so
  * concurrent join attempts see a consistent view of the index between the
  * neighbor-discovery and self-insertion steps. Without this serialisation,
  * two joiners landing simultaneously could each call
@@ -72,7 +72,7 @@ public class JoinProtocol {
      * @param joiner   Bubble joining the overlay
      * @param position Join position (bubble centroid)
      */
-    public void join(Node joiner, Point3D position) {
+    public void join(Node joiner, Point3d position) {
         Objects.requireNonNull(joiner, "joiner cannot be null");
         Objects.requireNonNull(position, "position cannot be null");
 
@@ -123,7 +123,7 @@ public class JoinProtocol {
      * @param position Join position
      * @return Acceptor bubble (closest to position) or joiner if solo
      */
-    private Node findAcceptor(Node joiner, Point3D position) {
+    private Node findAcceptor(Node joiner, Point3d position) {
         // Find closest bubble to join position
         Node closest = index.findClosestTo(position);
 

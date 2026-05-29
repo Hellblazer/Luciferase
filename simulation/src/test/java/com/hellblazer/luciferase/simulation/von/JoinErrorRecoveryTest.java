@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -228,7 +228,7 @@ class JoinErrorRecoveryTest {
         });
 
         // When: A moves and broadcasts to neighbors
-        manager.move(bubbleA, new Point3D(52.0, 52.0, 50.0));
+        manager.move(bubbleA, new Point3d(52.0, 52.0, 50.0));
         Thread.sleep(300);
         testClock.advance(100);
 

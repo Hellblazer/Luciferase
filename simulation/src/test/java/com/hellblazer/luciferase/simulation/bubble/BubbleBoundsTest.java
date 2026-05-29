@@ -4,7 +4,7 @@ import com.hellblazer.luciferase.simulation.bubble.*;
 
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;

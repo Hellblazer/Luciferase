@@ -7,7 +7,7 @@ import com.hellblazer.luciferase.simulation.bubble.*;
 
 import com.hellblazer.luciferase.simulation.von.Node;
 import com.hellblazer.luciferase.simulation.von.SpatialNeighborIndex;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -136,7 +136,7 @@ public class GhostSyncVONIntegration {
      *
      * @param newPosition New bubble position
      */
-    public void onVONMove(Point3D newPosition) {
+    public void onVONMove(Point3d newPosition) {
         Objects.requireNonNull(newPosition, "newPosition must not be null");
 
         log.debug("VON MOVE: Bubble moved to {}", newPosition);

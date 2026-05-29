@@ -5,7 +5,7 @@ import com.hellblazer.luciferase.simulation.bubble.*;
 import com.hellblazer.luciferase.geometry.rd.RDGCoordinates;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -202,9 +202,8 @@ public final class BubbleBounds implements Serializable {
      * @param rdg RDGCS coordinates
      * @return Cartesian position
      */
-    public Point3D toCartesian(Tuple3i rdg) {
-        var p = RDGCoordinates.toCartesian(rdg);
-        return new Point3D(p.x, p.y, p.z);
+    public Point3d toCartesian(Tuple3i rdg) {
+        return RDGCoordinates.toCartesian(rdg);
     }
 
     /**
@@ -289,7 +288,7 @@ public final class BubbleBounds implements Serializable {
      *
      * @return Centroid of the tetrahedron
      */
-    public Point3D centroid() {
+    public Point3d centroid() {
         var tet = rootKey.toTet();
         var coords = tet.coordinates();
 
@@ -298,7 +297,7 @@ public final class BubbleBounds implements Serializable {
         double cy = (coords[0].y + coords[1].y + coords[2].y + coords[3].y) / 4.0;
         double cz = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4.0;
 
-        return new Point3D(cx, cy, cz);
+        return new Point3d(cx, cy, cz);
     }
 
     /**

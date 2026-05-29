@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -184,7 +184,7 @@ class ManagerTest {
         });
 
         // When: Bubble2 moves
-        manager.move(bubble2, new Point3D(60.0, 60.0, 50.0));
+        manager.move(bubble2, new Point3d(60.0, 60.0, 50.0));
 
         // Then: Bubble1 receives move notification
         assertThat(moveReceived.await(2, TimeUnit.SECONDS)).isTrue();
@@ -492,8 +492,8 @@ class ManagerTest {
         assertThat(bubble5.neighbors()).isNotNull();
 
         // And: Can still move remaining bubbles
-        manager.move(bubble4, new Point3D(85.0, 50.0, 50.0));
-        manager.move(bubble5, new Point3D(95.0, 50.0, 50.0));
+        manager.move(bubble4, new Point3d(85.0, 50.0, 50.0));
+        manager.move(bubble5, new Point3d(95.0, 50.0, 50.0));
 
         // And: Can create new bubble after leaves
         var newBubble = manager.createBubble();

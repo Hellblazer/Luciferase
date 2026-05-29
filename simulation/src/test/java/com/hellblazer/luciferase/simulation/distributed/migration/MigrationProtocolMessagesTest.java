@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import com.hellblazer.luciferase.simulation.von.MigrationProtocolMessages;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -47,7 +47,7 @@ class MigrationProtocolMessagesTest {
         var txnId = UUID.randomUUID();
         var token = new IdempotencyToken("entity-1", UUID.randomUUID(), UUID.randomUUID(),
                                          testClock.currentTimeMillis(), UUID.randomUUID());
-        var snapshot = new EntitySnapshot("entity-1", new Point3D(0, 0, 0), "Content", UUID.randomUUID(), 1L, 1L,
+        var snapshot = new EntitySnapshot("entity-1", new Point3d(0, 0, 0), "Content", UUID.randomUUID(), 1L, 1L,
                                           testClock.currentTimeMillis());
 
         // Create request
