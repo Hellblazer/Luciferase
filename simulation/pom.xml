@@ -27,18 +27,8 @@
             <artifactId>runtime</artifactId>
         </dependency>
         <dependency>
-            <!-- common pulls javafx-graphics for a single UI class (common.mesh.MeshLoader) that
-                 simulation never references. Exclude it so the headless simulation/distributed
-                 classpath carries no JavaFX (RDR-006 D5). Isolating MeshLoader's javafx out of the
-                 common leaf module proper is tracked separately. -->
             <groupId>${project.groupId}</groupId>
             <artifactId>common</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.openjfx</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
