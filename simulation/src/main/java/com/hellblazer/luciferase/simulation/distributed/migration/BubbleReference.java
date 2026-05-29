@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import java.util.Set;
 import java.util.UUID;
@@ -67,9 +67,9 @@ public interface BubbleReference {
     /**
      * Get the bubble's current position.
      *
-     * @return Point3D position
+     * @return Point3d position
      */
-    Point3D getPosition();
+    Point3d getPosition();
 
     /**
      * Get the bubble's current neighbors.

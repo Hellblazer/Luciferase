@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -40,7 +40,7 @@ public class MessageTest {
     @Test
     void testJoinRequest_createsWithTimestamp() {
         var joinerId = UUID.randomUUID();
-        var position = new Point3D(1.0, 2.0, 3.0);
+        var position = new Point3d(1.0, 2.0, 3.0);
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(1.0f, 2.0f, 3.0f)));
 
         var request = factory.createJoinRequest(joinerId, position, bounds);
@@ -55,7 +55,7 @@ public class MessageTest {
     void testJoinResponse_withNeighbors() {
         var acceptorId = UUID.randomUUID();
         var neighborId = UUID.randomUUID();
-        var position = new Point3D(1.0, 2.0, 3.0);
+        var position = new Point3d(1.0, 2.0, 3.0);
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(1.0f, 2.0f, 3.0f)));
 
         var neighborInfo = new Message.NeighborInfo(neighborId, position, bounds);
@@ -70,7 +70,7 @@ public class MessageTest {
     @Test
     void testMove_withNewPositionAndBounds() {
         var nodeId = UUID.randomUUID();
-        var newPosition = new Point3D(4.0, 5.0, 6.0);
+        var newPosition = new Point3d(4.0, 5.0, 6.0);
         var newBounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(4.0f, 5.0f, 6.0f)));
 
         var move = factory.createMove(nodeId, newPosition, newBounds);
@@ -119,7 +119,7 @@ public class MessageTest {
     @Test
     void testNeighborInfo_record() {
         var nodeId = UUID.randomUUID();
-        var position = new Point3D(1.0, 2.0, 3.0);
+        var position = new Point3d(1.0, 2.0, 3.0);
         var bounds = BubbleBounds.fromEntityPositions(List.of(new Point3f(1.0f, 2.0f, 3.0f)));
 
         var info = new Message.NeighborInfo(nodeId, position, bounds);

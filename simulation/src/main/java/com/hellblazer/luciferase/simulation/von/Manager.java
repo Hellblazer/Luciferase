@@ -22,7 +22,7 @@ import com.hellblazer.luciferase.simulation.bubble.SpatialLevelHeuristic;
 import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.lifecycle.EnhancedBubbleAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.LifecycleCoordinator;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -243,7 +243,7 @@ public class Manager {
      * @param position Target position in the VON
      * @return true if join succeeded, false otherwise
      */
-    public boolean joinAt(Bubble bubble, Point3D position) {
+    public boolean joinAt(Bubble bubble, Point3d position) {
         Objects.requireNonNull(bubble, "bubble cannot be null");
         Objects.requireNonNull(position, "position cannot be null");
 
@@ -280,7 +280,7 @@ public class Manager {
      * @param timeoutMs      Maximum time to wait for join completion
      * @return true if join completed with at least one neighbor, false otherwise
      */
-    public boolean joinAndWait(Bubble bubble, Point3D position, long timeoutMs) {
+    public boolean joinAndWait(Bubble bubble, Point3d position, long timeoutMs) {
         if (bubbles.size() == 1 && bubbles.containsKey(bubble.id())) {
             // Solo join - immediate success
             return true;
@@ -318,7 +318,7 @@ public class Manager {
      * @param bubble      The bubble to move
      * @param newPosition New position
      */
-    public void move(Bubble bubble, Point3D newPosition) {
+    public void move(Bubble bubble, Point3d newPosition) {
         Objects.requireNonNull(bubble, "bubble cannot be null");
         Objects.requireNonNull(newPosition, "newPosition cannot be null");
 

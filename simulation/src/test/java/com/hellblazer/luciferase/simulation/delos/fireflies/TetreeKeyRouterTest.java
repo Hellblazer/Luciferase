@@ -22,7 +22,7 @@ import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.membership.Member;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -108,7 +108,7 @@ class TetreeKeyRouterTest {
         // Given: A specific position
         when(mockContext.size()).thenReturn(3);
 
-        var position = new Point3D(0.5f, 0.5f, 0.5f);
+        var position = new Point3d(0.5f, 0.5f, 0.5f);
         var cubeSizeMeters = 10.0f;
         var maxLevel = 5;
 

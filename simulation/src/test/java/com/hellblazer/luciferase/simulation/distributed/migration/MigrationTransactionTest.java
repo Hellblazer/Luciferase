@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
@@ -63,7 +63,7 @@ class MigrationTransactionTest {
 
         var snapshot = new EntitySnapshot(
             "entity-1",
-            new Point3D(10, 20, 30),
+            new Point3d(10, 20, 30),
             "TestContent",
             mockSource.getBubbleId(),
             42L, // epoch
@@ -93,7 +93,7 @@ class MigrationTransactionTest {
                                          testClock.currentTimeMillis(), UUID.randomUUID());
         var mockSource = createMockBubbleReference(UUID.randomUUID());
         var mockDest = createMockBubbleReference(UUID.randomUUID());
-        var snapshot = new EntitySnapshot("entity-1", new Point3D(0, 0, 0), "Content",
+        var snapshot = new EntitySnapshot("entity-1", new Point3d(0, 0, 0), "Content",
                                           mockSource.getBubbleId(), 1L, 1L, testClock.currentTimeMillis());
 
         var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest, testClock);
@@ -119,7 +119,7 @@ class MigrationTransactionTest {
                                          testClock.currentTimeMillis(), UUID.randomUUID());
         var mockSource = createMockBubbleReference(UUID.randomUUID());
         var mockDest = createMockBubbleReference(UUID.randomUUID());
-        var snapshot = new EntitySnapshot("entity-1", new Point3D(0, 0, 0), "Content",
+        var snapshot = new EntitySnapshot("entity-1", new Point3d(0, 0, 0), "Content",
                                           mockSource.getBubbleId(), 1L, 1L, testClock.currentTimeMillis());
 
         var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest, testClock);
@@ -139,7 +139,7 @@ class MigrationTransactionTest {
                                          testClock.currentTimeMillis(), UUID.randomUUID());
         var mockSource = createMockBubbleReference(UUID.randomUUID());
         var mockDest = createMockBubbleReference(UUID.randomUUID());
-        var snapshot = new EntitySnapshot("entity-1", new Point3D(0, 0, 0), "Content",
+        var snapshot = new EntitySnapshot("entity-1", new Point3d(0, 0, 0), "Content",
                                           mockSource.getBubbleId(), 1L, 1L, testClock.currentTimeMillis());
 
         var txn = new MigrationTransaction(txnId, token, snapshot, mockSource, mockDest, testClock);
@@ -159,7 +159,7 @@ class MigrationTransactionTest {
         var testClock = new TestClock();
         testClock.setTime(1000L);
 
-        var position = new Point3D(10, 20, 30);
+        var position = new Point3d(10, 20, 30);
         var snapshot = new EntitySnapshot(
             "entity-1",
             position,
@@ -268,8 +268,8 @@ class MigrationTransactionTest {
             }
 
             @Override
-            public Point3D getPosition() {
-                return new Point3D(0, 0, 0);
+            public Point3d getPosition() {
+                return new Point3d(0, 0, 0);
             }
 
             @Override

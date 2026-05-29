@@ -38,17 +38,26 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>geometry</artifactId>
         </dependency>
-        <!-- Pre-existing coupling, now declared honestly: simulation.viz.render.SerializationUtils
-             uses render's ESVT types (esvt.core.ESVTData/ESVTNodeUnified). This was always a real
-             simulation->render dependency; it was merely satisfied transitively via portal->render
-             before RDR-006 dropped portal. This is NOT a net JavaFX reduction — render carries
-             JavaFX/LWJGL, so dropping portal alone does not clear javafx-* from the simulation tree.
-             Two genuinely separate follow-ups: (1) PR2 migrates the ~21 javafx Point3D usages off
-             javafx; (2) relocating simulation.viz.render.* into the render module would remove this
-             coupling entirely (these classes are arguably misplaced in simulation). -->
+        <!-- simulation.viz.render uses ONLY render's pure-data ESVT types
+             (esvt.core.ESVTData/ESVTNodeUnified, esvt.builder.ESVTBuilder — none of which import
+             javafx or lwjgl). render itself declares javafx-controls + lwjgl for its GPU/UI
+             renderers, which simulation's code path never touches. RDR-006 PR2 excludes those so
+             the headless simulation/distributed classpath carries no JavaFX/LWJGL via render.
+             (The remaining javafx-graphics on the compile classpath comes from common -> MeshLoader,
+             tracked separately; simulation does not use MeshLoader.) -->
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>render</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.openjfx</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.lwjgl</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.javalin</groupId>

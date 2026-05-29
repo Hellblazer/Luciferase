@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import java.io.Serializable;
 import java.util.UUID;
@@ -26,7 +26,7 @@ import java.util.UUID;
 /**
  * Serializable transport representation of a neighbor's information.
  * <p>
- * Decomposes Point3D into individual components for reliable
+ * Decomposes Point3d into individual components for reliable
  * Java Serialization over network sockets. This is the wire format used in
  * TransportVonMessage for neighbor set transmission in JoinResponse messages.
  * <p>
@@ -65,12 +65,12 @@ public record TransportNeighborInfo(
      * <p>
      * Phase 6A: BubbleBounds set to null (not transmitted in wire format)
      *
-     * @return NeighborInfo with reconstructed Point3D, null bounds
+     * @return NeighborInfo with reconstructed Point3d, null bounds
      */
     public Message.NeighborInfo toNeighborInfo() {
         return new Message.NeighborInfo(
             UUID.fromString(nodeId),
-            new Point3D(posX, posY, posZ),
+            new Point3d(posX, posY, posZ),
             null  // BubbleBounds not transmitted in Phase 6A
         );
     }

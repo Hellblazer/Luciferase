@@ -25,7 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -85,8 +85,8 @@ class RecoveryIntegrationTest {
         var partitionB = UUID.randomUUID();
 
         // Create bubbles for each partition
-        var bubbleA = createMockBubble(UUID.randomUUID(), new Point3D(0, 0, 0));
-        var bubbleB = createMockBubble(UUID.randomUUID(), new Point3D(10, 10, 10));
+        var bubbleA = createMockBubble(UUID.randomUUID(), new Point3d(0, 0, 0));
+        var bubbleB = createMockBubble(UUID.randomUUID(), new Point3d(10, 10, 10));
 
         // Register bubbles
         integration.registerBubble(bubbleA.id(), partitionA);
@@ -147,7 +147,7 @@ class RecoveryIntegrationTest {
 
         for (int i = 0; i < 15; i++) {
             var partition = UUID.randomUUID();
-            var bubble = createMockBubble(UUID.randomUUID(), new Point3D(i * 10, 0, 0));
+            var bubble = createMockBubble(UUID.randomUUID(), new Point3d(i * 10, 0, 0));
 
             partitions.add(partition);
             bubbles.add(bubble);
@@ -194,7 +194,7 @@ class RecoveryIntegrationTest {
     void testRecoveryCooldownPreventsRapidRetrigger() throws InterruptedException {
         // Arrange: Create partition with bubble
         var partition = UUID.randomUUID();
-        var bubble = createMockBubble(UUID.randomUUID(), new Point3D(0, 0, 0));
+        var bubble = createMockBubble(UUID.randomUUID(), new Point3d(0, 0, 0));
 
         integration.registerBubble(bubble.id(), partition);
         when(vonManager.getBubble(bubble.id())).thenReturn(bubble);
@@ -258,7 +258,7 @@ class RecoveryIntegrationTest {
     /**
      * Create a mock Bubble with specified ID and position.
      */
-    private Bubble createMockBubble(UUID id, Point3D position) {
+    private Bubble createMockBubble(UUID id, Point3d position) {
         var bubble = mock(Bubble.class);
         when(bubble.id()).thenReturn(id);
         when(bubble.position()).thenReturn(position);

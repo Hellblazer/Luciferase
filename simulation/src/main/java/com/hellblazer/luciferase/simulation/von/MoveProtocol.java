@@ -2,7 +2,7 @@ package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.*;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -66,7 +66,7 @@ public class MoveProtocol {
      * @param mover       Bubble that is moving
      * @param newPosition New position (centroid)
      */
-    public void move(Node mover, Point3D newPosition) {
+    public void move(Node mover, Point3d newPosition) {
         Objects.requireNonNull(mover, "mover cannot be null");
         Objects.requireNonNull(newPosition, "newPosition cannot be null");
 
@@ -140,7 +140,7 @@ public class MoveProtocol {
      * @param target Target position
      * @return true if within AOI
      */
-    private boolean isInAOI(Point3D source, Point3D target) {
+    private boolean isInAOI(Point3d source, Point3d target) {
         return distance(source, target) <= aoiRadius;
     }
 
@@ -151,7 +151,7 @@ public class MoveProtocol {
      * @param target Target position
      * @return true if in boundary zone
      */
-    private boolean isBoundaryNeighbor(Point3D source, Point3D target) {
+    private boolean isBoundaryNeighbor(Point3d source, Point3d target) {
         double dist = distance(source, target);
         return dist > aoiRadius && dist <= (aoiRadius + 10.0f); // 10.0f = BOUNDARY_BUFFER from test
     }
@@ -163,7 +163,7 @@ public class MoveProtocol {
      * @param p2 Second point
      * @return Distance
      */
-    private double distance(Point3D p1, Point3D p2) {
+    private double distance(Point3d p1, Point3d p2) {
         return p1.distance(p2);
     }
 

@@ -5,7 +5,7 @@ import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.ghost.GhostChannel;
 import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
 import com.hellblazer.luciferase.simulation.ghost.InMemoryGhostChannel;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
@@ -313,7 +313,7 @@ public class EnhancedBubble {
      *
      * @return Centroid point or null if no bounds
      */
-    public Point3D centroid() {
+    public Point3d centroid() {
         return boundsTracker.centroid();
     }
 

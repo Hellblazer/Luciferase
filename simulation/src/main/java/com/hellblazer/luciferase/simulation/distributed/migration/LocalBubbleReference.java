@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 import com.hellblazer.luciferase.simulation.von.Bubble;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import java.util.Objects;
 import java.util.Set;
@@ -69,7 +69,7 @@ public class LocalBubbleReference implements BubbleReference {
     }
 
     @Override
-    public Point3D getPosition() {
+    public Point3d getPosition() {
         return bubble.position();
     }
 

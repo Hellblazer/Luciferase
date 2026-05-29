@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import java.util.Set;
 import java.util.UUID;
@@ -39,7 +39,7 @@ public interface Node {
      *
      * @return Current position (bubble centroid)
      */
-    Point3D position();
+    Point3d position();
 
     /**
      * Get the spatial bounds of this node.

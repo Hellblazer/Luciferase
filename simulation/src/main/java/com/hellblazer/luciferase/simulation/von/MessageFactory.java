@@ -20,7 +20,7 @@ package com.hellblazer.luciferase.simulation.von;
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.von.Message.*;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import java.util.List;
 import java.util.Objects;
@@ -80,7 +80,7 @@ public class MessageFactory {
      * @param bounds   initial spatial bounds
      * @return new JoinRequest with current timestamp
      */
-    public JoinRequest createJoinRequest(UUID joinerId, Point3D position, BubbleBounds bounds) {
+    public JoinRequest createJoinRequest(UUID joinerId, Point3d position, BubbleBounds bounds) {
         return new JoinRequest(joinerId, position, bounds, clock.currentTimeMillis());
     }
 
@@ -103,7 +103,7 @@ public class MessageFactory {
      * @param newBounds   new bounds after movement
      * @return new Move with current timestamp
      */
-    public Move createMove(UUID nodeId, Point3D newPosition, BubbleBounds newBounds) {
+    public Move createMove(UUID nodeId, Point3d newPosition, BubbleBounds newBounds) {
         return new Move(nodeId, newPosition, newBounds, clock.currentTimeMillis());
     }
 

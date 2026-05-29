@@ -359,9 +359,9 @@ public class PredatorPreyGridDemo {
     }
 
     /**
-     * Helper to convert JavaFX Point3D to vecmath Point3f.
+     * Helper to convert JavaFX Point3d to vecmath Point3f.
      */
-    private static Point3f toPoint3f(javafx.geometry.Point3D point) {
+    private static Point3f toPoint3f(javax.vecmath.Point3d point) {
         return new Point3f((float) point.getX(), (float) point.getY(), (float) point.getZ());
     }
 

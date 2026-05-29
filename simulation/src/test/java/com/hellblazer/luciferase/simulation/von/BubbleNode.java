@@ -2,7 +2,7 @@ package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import java.util.Objects;
 import java.util.Set;
@@ -51,7 +51,7 @@ public class BubbleNode implements Node {
     }
 
     @Override
-    public Point3D position() {
+    public Point3d position() {
         return bubble.centroid();
     }
 

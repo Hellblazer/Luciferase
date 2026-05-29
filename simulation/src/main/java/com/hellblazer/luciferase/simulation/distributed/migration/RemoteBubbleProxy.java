@@ -21,7 +21,7 @@ import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.von.Message;
 import com.hellblazer.luciferase.simulation.von.MessageFactory;
 import com.hellblazer.luciferase.simulation.von.Transport;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -139,8 +139,8 @@ public class RemoteBubbleProxy implements BubbleReference {
     }
 
     @Override
-    public Point3D getPosition() {
-        return getCachedOrFetch("position", this::fetchPosition, new Point3D(0, 0, 0));
+    public Point3d getPosition() {
+        return getCachedOrFetch("position", this::fetchPosition, new Point3d(0, 0, 0));
     }
 
     @Override
@@ -188,10 +188,10 @@ public class RemoteBubbleProxy implements BubbleReference {
     /**
      * Fetch position from remote bubble.
      *
-     * @return Point3D position
+     * @return Point3d position
      * @throws RuntimeException on timeout or connection failure
      */
-    private Point3D fetchPosition() {
+    private Point3d fetchPosition() {
         // Send query message
         var query = factory.createQuery(transport.getLocalId(), bubbleId, "position");
         var future = new CompletableFuture<Message.QueryResponse>();
@@ -205,7 +205,7 @@ public class RemoteBubbleProxy implements BubbleReference {
 
             // Parse position from response data (JSON format: "x,y,z")
             var parts = response.responseData().split(",");
-            return new Point3D(
+            return new Point3d(
                 Double.parseDouble(parts[0]),
                 Double.parseDouble(parts[1]),
                 Double.parseDouble(parts[2])

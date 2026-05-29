@@ -21,7 +21,7 @@ import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.membership.Member;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 /**
  * Routes spatial queries to cluster members based on TetreeKey hashing.
@@ -87,7 +87,7 @@ public class TetreeKeyRouter {
      * @param maxLevel        the refinement level to use for key generation
      * @return the member index (0 to context.size()-1)
      */
-    public int routeToPosition(Point3D position, float cubeSizeMeters, int maxLevel) {
+    public int routeToPosition(Point3d position, float cubeSizeMeters, int maxLevel) {
         // Normalize position to [0, 1) coordinates
         var normalizedX = (float) (position.getX() / cubeSizeMeters);
         var normalizedY = (float) (position.getY() / cubeSizeMeters);

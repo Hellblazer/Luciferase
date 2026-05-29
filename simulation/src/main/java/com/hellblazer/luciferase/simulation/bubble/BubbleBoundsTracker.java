@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
@@ -49,7 +49,7 @@ public class BubbleBoundsTracker implements EntityChangeListener {
      *
      * @return Centroid point or null if no bounds
      */
-    public Point3D centroid() {
+    public Point3d centroid() {
         if (bounds == null) {
             return null;
         }
@@ -67,7 +67,7 @@ public class BubbleBoundsTracker implements EntityChangeListener {
             }
 
             if (count > 0) {
-                return new Point3D(sumX / count, sumY / count, sumZ / count);
+                return new Point3d(sumX / count, sumY / count, sumZ / count);
             }
         }
 

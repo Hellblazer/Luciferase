@@ -139,3 +139,55 @@ Two corrections to the locked Decision:
   JavaFX still reaches `simulation` transitively via `render` and `common` after PR1.
 - **Deferred:** Clock package rename (`Luciferase-7n1`) — kept out of PR1 to keep the diff
   reviewable; it is an orthogonal ~26-file package move.
+
+### PR2 complete — D5 javafx-free criterion met (2026-05-28)
+
+Bead Luciferase-3pu. The `mvn dependency:tree -pl simulation` shows **zero `javafx-*` and zero `lwjgl`** — the headless simulation/distributed classpath no longer carries the JavaFX toolkit. Delivered in two steps:
+
+1. **Point3D → Point3d migration** (58 files, main + test): replaced all
+   `javafx.geometry.Point3D` with `javax.vecmath.Point3d`. Mechanically safe —
+   the immutable-vs-mutable hazard (`.add`/`.subtract`/`.normalize`) never applied
+   (those calls were all on `Vector3f`, already vecmath); accessors (`getX/Y/Z`),
+   `.distance()`, and the `(double,double,double)` ctor are signature-identical;
+   wire format already decomposed to `posX/Y/Z` primitives. `BubbleBounds.toCartesian`
+   now returns the kernel's `Point3d` directly (dropped the PR1 javafx wrapper).
+
+2. **Transitive-carrier exclusions** (simulation/pom.xml): after the migration,
+   javafx/lwjgl still reached simulation's compile classpath via two deps whose
+   javafx-using classes simulation never links —
+   - `render` → javafx-controls + lwjgl (simulation.viz.render uses only render's
+     pure-data ESVT types); 65 viz.render runtime tests pass with it excluded.
+   - `common` → javafx-graphics (for `common.mesh.MeshLoader`, unused by simulation).
+   Both excluded at simulation's dependency declarations.
+
+**Remaining (separate, not blocking D5):** isolate `MeshLoader`'s javafx out of the
+`common` leaf module so common stops advertising `javafx-graphics` to all consumers
+(the original RDR follow-up). Clock package rename (Luciferase-7n1) still deferred.
+
+### common-leaf javafx cleanup done (2026-05-28, Luciferase-3pu)
+
+The "isolate MeshLoader's javafx out of common" follow-up is **done** (no longer deferred).
+`common.mesh.MeshLoader` — the sole javafx user in the `common` leaf module, used only by
+`render` (`esvo.app`) — was relocated `common.mesh → render.mesh`, and `javafx-graphics` was
+removed from `common/pom.xml`. `common` is now javafx-free, which clears JavaFX from the API of
+**all** consumers, not just simulation's excluded view; the simulation-side `common` javafx
+exclusion was accordingly dropped (the `render` exclusion remains — render legitimately carries
+JavaFX/LWJGL for its GPU/UI renderers). Verified common/portal/lucien/render/simulation compile;
+common + simulation dependency trees javafx-free.
+
+**Only remaining RDR-006 item:** Clock package rename (Luciferase-7n1), still deferred.
+
+### Correction: Clock rename already done; RDR-006 complete (2026-05-28)
+
+Earlier notes listed the Clock package rename (Luciferase-7n1) as a remaining
+deferred item. That is **stale** — 7n1 was already CLOSED via PR #128 (2026-05-27):
+`Clock` was moved from the split `simulation.distributed.integration` package to
+the common-owned `com.hellblazer.luciferase.common.time`, eliminating the split
+package (81 imports rewritten). The research note predated that merge.
+
+**RDR-006 is therefore functionally complete:** sim→portal module coupling broken
+(PR #149), javafx/lwjgl fully cleared from the simulation classpath including the
+common-leaf cleanup (PR #153), and the Clock rename done (PR #128). No outstanding
+items. (The residual `simulation/src/test/.../distributed/integration/` files —
+TestClock, InjectableClock, ClockTest — are simulation's own test utilities and
+correctly placed.)

@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
-import javafx.geometry.Point3D;
+import javax.vecmath.Point3d;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -62,7 +62,7 @@ class MessageConverterTest {
     @Test
     void testMoveRoundTrip() {
         var nodeId = UUID.randomUUID();
-        var newPosition = new Point3D(10.5, 20.25, 30.75);
+        var newPosition = new Point3d(10.5, 20.25, 30.75);
         var originalMove = factory.createMove(nodeId, newPosition, null);
 
         // Convert to transport
@@ -107,7 +107,7 @@ class MessageConverterTest {
     @Test
     void testJoinRequestRoundTrip() {
         var joinerId = UUID.randomUUID();
-        var position = new Point3D(5.0, 10.0, 15.0);
+        var position = new Point3d(5.0, 10.0, 15.0);
         var originalJoinReq = factory.createJoinRequest(joinerId, position, null);
 
         // Convert to transport
@@ -152,17 +152,17 @@ class MessageConverterTest {
         var neighbors = java.util.Set.of(
             new Message.NeighborInfo(
                 UUID.randomUUID(),
-                new Point3D(1.5, 2.5, 3.5),
+                new Point3d(1.5, 2.5, 3.5),
                 null  // Phase 6A: bounds not transmitted
             ),
             new Message.NeighborInfo(
                 UUID.randomUUID(),
-                new Point3D(10.0, 20.0, 30.0),
+                new Point3d(10.0, 20.0, 30.0),
                 null  // Phase 6A: bounds not transmitted
             ),
             new Message.NeighborInfo(
                 UUID.randomUUID(),
-                new Point3D(100.25, 200.5, 300.75),
+                new Point3d(100.25, 200.5, 300.75),
                 null  // Phase 6A: bounds not transmitted
             )
         );

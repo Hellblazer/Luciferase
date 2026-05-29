@@ -158,7 +158,7 @@ public class MessageConverter {
 
     private static Message joinRequestFromTransport(TransportVonMessage transport) {
         var joinerId = UUID.fromString(transport.sourceBubbleId());
-        var position = new javafx.geometry.Point3D(transport.posX(), transport.posY(), transport.posZ());
+        var position = new javax.vecmath.Point3d(transport.posX(), transport.posY(), transport.posZ());
 
         return new Message.JoinRequest(
             joinerId,
@@ -226,7 +226,7 @@ public class MessageConverter {
 
     private static Message moveFromTransport(TransportVonMessage transport) {
         var nodeId = UUID.fromString(transport.sourceBubbleId());
-        var newPosition = new javafx.geometry.Point3D(transport.posX(), transport.posY(), transport.posZ());
+        var newPosition = new javax.vecmath.Point3d(transport.posX(), transport.posY(), transport.posZ());
 
         return new Message.Move(
             nodeId,
