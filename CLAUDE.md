@@ -214,6 +214,31 @@ Historical reference:
 - **tmIndex()**: Returns TetreeKey, O(level) due to parent chain walk, globally unique across all levels
 - **Performance Impact**: tmIndex() is O(level), cannot be fixed (required for global uniqueness)
 
+### Tet type numbering: Luciferase vs t8code (RDR-010 Finding #15)
+
+Luciferase `Tet` tet-type numbering is a **permutation of t8code's dtet type numbering**. When porting any t8code pyramid/dtet code or copying t8code connectivity tables verbatim, you MUST translate types at the boundary. Derived from first principles (vertex-set equality between `t8_dtri_compute_coords` and `Tet.coordinates()`; all six verified):
+
+| t8code type | vertex path | Luciferase type |
+| ----------- | ----------- | --------------- |
+| 0 | x,z,y | 4 |
+| 1 | x,y,z | 0 |
+| 2 | y,x,z | 1 |
+| 3 | y,z,x | 5 |
+| 4 | z,y,x | 3 |
+| 5 | z,x,y | 2 |
+
+- Arrays live in `TetreeConnectivity`: `T8_TO_LUC = {4,0,1,5,3,2}` (t8code→Luciferase), `LUC_TO_T8 = {1,2,5,4,0,3}` (inverse, bijective).
+- The pyramid connectivity tables (`PYRAMID_PARENT_TO_CHILD_TYPE`, `PYRAMID_TYPE_CID_TO_PARENT_TYPE`, etc.) are **faithful t8code copies** and therefore hold t8code-typed values; translate via `T8_TO_LUC` when constructing a Luciferase `Tet` from them, and via `LUC_TO_T8` before feeding `this.type` into t8code-semantics code (e.g. logic that checks `type==0||type==3`).
+- The permutation does **not** trivially commute with the parent operation, so do not assume a t8code-space type walk equals a Luciferase-space one — see the live RDR-010 q3p work. Full detail: T2 `rdr-010-t8code-luciferase-tet-type-permutation-DERIVED-2026-05-29` and RDR-010 Finding #15.
+
+### Face-neighbor testing caveat (non-conforming SFC)
+
+`Tet.faceNeighbor()` returns the **non-conforming Bey-SFC face neighbor**, which shares **0–3 vertices** with the tet (e.g. pure type 0: face 0 shares 1 vertex, face 3 shares 0). It is NOT a conforming shared-triangle neighbor.
+
+- **Never** validate tet face neighbors with a "shares ≥3 vertices" geometric assertion — even pure-Tetree tets violate it. (This produced a false "confirmed bug" during RDR-010 q3p Phase D.)
+- **Pyramid** faces ARE conforming (each shared by exactly two cells in the hybrid partition), so the ≥3-shared / ≥4-for-quad-base check IS valid for `Pyramid.faceNeighbor`.
+- The correct validation for face neighbors (tet or cross-shape) is **reciprocity / involution**: `neighbor(neighbor(e, f).dualFace) == e`, exercised by DFS over a refined tree — this is the pattern t8code's own `t8_gtest_face_neigh.cxx` uses.
+
 ### Concurrent Architecture
 
 - **Storage**: Single ConcurrentSkipListMap for thread-safe operations
