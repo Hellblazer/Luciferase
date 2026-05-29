@@ -83,6 +83,40 @@ class MockFirefliesViewTest {
     }
 
     @Test
+    void testActiveMembersExcludesInactive() {
+        var active  = UUID.randomUUID();
+        var evicted = UUID.randomUUID();
+
+        view.addMember(active);
+        view.addMember(evicted);
+        view.markInactive(evicted);
+
+        // getMembers() still returns the evicted-but-not-GC'd member...
+        assertThat(view.getMembers().collect(Collectors.toList()))
+            .as("getMembers() returns all known members including inactive")
+            .containsExactlyInAnyOrder(active, evicted);
+
+        // ...but activeMembers() excludes it (RDR-005 / Luciferase-ah3 distinction).
+        assertThat(view.activeMembers().collect(Collectors.toList()))
+            .as("activeMembers() excludes inactive members")
+            .containsExactly(active)
+            .doesNotContain(evicted);
+    }
+
+    @Test
+    void testReAddingClearsInactive() {
+        var member = UUID.randomUUID();
+
+        view.addMember(member);
+        view.markInactive(member);
+        assertThat(view.activeMembers().collect(Collectors.toList())).isEmpty();
+
+        // Re-adding a previously-inactive member restores it to active.
+        view.addMember(member);
+        assertThat(view.activeMembers().collect(Collectors.toList())).containsExactly(member);
+    }
+
+    @Test
     void testListenerNotifications() throws InterruptedException {
         var latch = new CountDownLatch(2);
         var changes = new ArrayList<MembershipView.ViewChange<UUID>>();

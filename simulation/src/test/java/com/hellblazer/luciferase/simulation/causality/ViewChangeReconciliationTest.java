@@ -471,6 +471,12 @@ class ViewChangeReconciliationTest {
         }
 
         @Override
+        public java.util.stream.Stream<Object> activeMembers() {
+            // active==all intentionally: this test does not exercise the active/all auth distinction.
+            return new HashSet<>(members).stream();
+        }
+
+        @Override
         public void addListener(java.util.function.Consumer<ViewChange<Object>> listener) {
             listeners.add(listener);
         }

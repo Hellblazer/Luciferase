@@ -346,5 +346,10 @@ public class CommitteeP2PIntegrationTest {
         public java.util.stream.Stream<com.hellblazer.delos.membership.Member> getMembers() {
             return java.util.stream.Stream.empty();
         }
+
+        @Override
+        public java.util.stream.Stream<com.hellblazer.delos.membership.Member> activeMembers() {
+            return java.util.stream.Stream.empty();
+        }
     }
 }

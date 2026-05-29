@@ -32,11 +32,36 @@ import java.util.stream.Stream;
 public interface MembershipView<M> {
 
     /**
-     * Get a stream of current cluster members.
+     * Get a stream of all known cluster members.
+     * <p>
+     * Backed by the view's full membership (e.g. {@code DynamicContext.allMembers()}), which may
+     * include members that have been evicted from the active view but not yet garbage-collected.
+     *
+     * @return stream of all known members
+     */
+    Stream<M> getMembers();
+
+    /**
+     * Get a stream of the <em>active</em> cluster members only.
+     * <p>
+     * Distinct from {@link #getMembers()}: this excludes members that are present in the view's
+     * full membership set but no longer active (e.g. evicted-but-not-yet-GC'd). Backed by
+     * {@code DynamicContext.active()} in the Fireflies implementation.
+     * <p>
+     * <b>Security-critical (RDR-005 / Luciferase-ah3).</b> Peer-identity authorization — e.g. the
+     * {@code inCurrentView} predicate that gates gRPC mTLS peer verification — MUST be built from
+     * this active-only set, never from {@link #getMembers()}. An evicted-but-not-GC'd node still
+     * holds a cryptographically valid, KERL-committed certificate; admitting it via the full
+     * membership set would let a node the view has already removed continue to authenticate.
+     * <p>
+     * <b>Production implementations backed by a real view MUST NOT delegate this to
+     * {@link #getMembers()}</b> — they must consult the view's active-only set. Test doubles that
+     * do not exercise the active/all distinction may return the same set as {@link #getMembers()},
+     * but MUST document that the equivalence is intentional.
      *
      * @return stream of active members
      */
-    Stream<M> getMembers();
+    Stream<M> activeMembers();
 
     /**
      * Register a listener for membership change events.

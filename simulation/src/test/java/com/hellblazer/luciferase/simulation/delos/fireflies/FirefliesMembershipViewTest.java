@@ -91,6 +91,36 @@ class FirefliesMembershipViewTest {
     }
 
     /**
+     * Test 1b: Verify activeMembers() is backed by context.active(), NOT allMembers().
+     * <p>
+     * Security-critical (RDR-005 / Luciferase-ah3): an evicted-but-not-yet-GC'd member is still
+     * returned by allMembers() but excluded from active(). activeMembers() must reflect active().
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void testActiveMembersUsesActiveNotAllMembers() {
+        var active1  = mock(Member.class);
+        var active2  = mock(Member.class);
+        var evicted  = mock(Member.class);
+
+        // allMembers() includes the evicted node; active() does not.
+        when(mockContext.allMembers()).thenReturn(Stream.of(active1, active2, evicted));
+        when(mockContext.active()).thenReturn(Stream.of(active1, active2));
+
+        adapter = new FirefliesMembershipView(mockView);
+
+        var activeList = adapter.activeMembers().collect(Collectors.toList());
+
+        assertThat(activeList)
+            .as("activeMembers() must exclude the evicted-but-not-GC'd member")
+            .containsExactly(active1, active2)
+            .doesNotContain(evicted);
+
+        verify(mockContext).active();
+        verify(mockContext, never()).allMembers();
+    }
+
+    /**
      * Test 2: Verify listener receives notifications when members join/leave
      */
     @Test
