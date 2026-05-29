@@ -2,11 +2,12 @@
 title: "Pyramid Spatial Index — Close the Hybrid Hex↔Tet Partition Gap"
 id: RDR-010
 type: Architecture
-status: draft
+status: accepted
 priority: medium
 author: hal.hildebrand
-reviewed-by: pending
+reviewed-by: self
 created: 2026-05-28
+accepted_date: 2026-05-28
 related_issues: [Luciferase-pi1, RDR-001, RDR-002, RDR-008, RDR-009]
 ---
 
@@ -280,7 +281,23 @@ The paper's pyramid encoding (6 bits/level) **matches Tetree's existing extended
 
 ## Decision
 
-> NOT LOCKED. This RDR is in `draft` status. Per the authoring constraint (don't lock at create-time), the decision will be filled at gate by `/conexus:rdr-gate`. Candidate directions are enumerated in Approach §6.
+Accepted 2026-05-28 (gate PASSED 2026-05-28, self-reviewed; T2 `Luciferase_rdr/010-gate-latest`). **Direction B — element-level integration + Forest weight pluggability + balance-checker shape-router.** Locked:
+
+1. **Element-level (`PyramidKey` + `Pyramid`).** Add `PyramidKey implements SpatialKey<PyramidKey>` with 128-bit (two-`long`, 16-byte) storage encoding the 6D Morton embedding (Knapp Eq 3.5–3.7); inherit the `sfcRangesForKNN` default and add a static `PyramidKey.estimateSFCRange`; register a `PyramidKeySerde`. Add a `Pyramid` primitive (analogous to `Tet`) carrying the **mandatory `min_tet_level` field** (Knapp Algorithm 4.1; required for O(1) parent/child/face_neighbor). Subclass the post-RDR-008 `AbstractSpatialIndex`, initialize the 7 collaborators, and **implement all 17 `protected abstract` geometry methods** (enumerated in §Technical Environment) with pyramid-specific logic.
+
+2. **Reuse tet machinery unchanged.** Tet types 1, 2, 4, 5 reuse Burstedde+Holke 2016 verbatim; only tet types 0, 3 get pyramid-aware branches at the four `Tet.java` call sites (Finding #14: `child` `:918`, `faceNeighbor` `:1442`, `parent` `:1691`, `computeType` `:957`), guarded by `min_tet_level == -1`. Extend `TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE_TABLE` with parent types 6/7. `Tet.coordinates()`/`contains12DOP()`/S0-S5 subdivision are untouched for pure-Tetree contexts.
+
+3. **Pyramid containment = Approach §3b (decompose-and-reuse), default.** Each pyramid → 6 sub-pyramids + 4 sub-tets; apply tet 12-DOP at the leaves. Keeps the `aabt` path clean (sees only `Tet`). **Escalation clause**: if DSOC/Culler/ray profiling shows containment is a bottleneck, promote to §3a (derive a pyramid-DOP) in a follow-on bead — this requires indexing the Bey 1992 Computing 55 paper first (Gap #1). Test invariant: `Tet.contains12DOP()` must never be called on a type-6/7 element (`PyramidContainmentTest`).
+
+4. **Forest + balancing integration.** Add a per-shape `N_shape(ℓ)` weight hook (`N_pyramid(ℓ) = 2·8^ℓ − 6^ℓ`, Knapp Eq 5.1) and extend `balancing.TwoOneBalanceChecker:127` (currently MortonKey-only) with TetreeKey + PyramidKey shape-routing. The `N_shape` hook + the TetreeKey portion of the balance-checker may land independently (value for current Octree/Tetree forests).
+
+5. **Ghost integration via the inverted seam.** Implement `PyramidNeighborDetector` for the 4-quad-base + 4-triangular-face topology; cross-shape neighbor finding per Knapp §4.3-4.4 + Table 4.2; cite Holke+Knapp+Burstedde 2019 (`1.14.6`) for the distributed algorithm. Scope generously per RDR-009's cross-root-neighbor lesson.
+
+**Sequencing**: RDR-008 closed (2026-05-28), so the implementation arc can begin. **F14 `Tet.java` changes are a hard prerequisite for Forest-level item 4** (BFS over pyramid-rooted trees calls the F14 sites). Estimated arc: ~5-7 RDR-008-phase-sized phases.
+
+**Fallbacks retained**: Direction A (element-level only, accepting the documented balance-detection-skip gap) if Forest+balancing work is deprioritized; Direction C (defer-and-document) only as a capacity/opportunity-cost call — algorithmically unnecessary given the complete corpus.
+
+> Implementation phases to be decomposed into beads under epic `Luciferase-pi1` via the planning chain.
 
 ## Consequences
 
