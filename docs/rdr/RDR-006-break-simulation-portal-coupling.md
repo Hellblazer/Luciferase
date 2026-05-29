@@ -139,3 +139,27 @@ Two corrections to the locked Decision:
   JavaFX still reaches `simulation` transitively via `render` and `common` after PR1.
 - **Deferred:** Clock package rename (`Luciferase-7n1`) — kept out of PR1 to keep the diff
   reviewable; it is an orthogonal ~26-file package move.
+
+### PR2 complete — D5 javafx-free criterion met (2026-05-28)
+
+Bead Luciferase-3pu. The `mvn dependency:tree -pl simulation` shows **zero `javafx-*` and zero `lwjgl`** — the headless simulation/distributed classpath no longer carries the JavaFX toolkit. Delivered in two steps:
+
+1. **Point3D → Point3d migration** (58 files, main + test): replaced all
+   `javafx.geometry.Point3D` with `javax.vecmath.Point3d`. Mechanically safe —
+   the immutable-vs-mutable hazard (`.add`/`.subtract`/`.normalize`) never applied
+   (those calls were all on `Vector3f`, already vecmath); accessors (`getX/Y/Z`),
+   `.distance()`, and the `(double,double,double)` ctor are signature-identical;
+   wire format already decomposed to `posX/Y/Z` primitives. `BubbleBounds.toCartesian`
+   now returns the kernel's `Point3d` directly (dropped the PR1 javafx wrapper).
+
+2. **Transitive-carrier exclusions** (simulation/pom.xml): after the migration,
+   javafx/lwjgl still reached simulation's compile classpath via two deps whose
+   javafx-using classes simulation never links —
+   - `render` → javafx-controls + lwjgl (simulation.viz.render uses only render's
+     pure-data ESVT types); 65 viz.render runtime tests pass with it excluded.
+   - `common` → javafx-graphics (for `common.mesh.MeshLoader`, unused by simulation).
+   Both excluded at simulation's dependency declarations.
+
+**Remaining (separate, not blocking D5):** isolate `MeshLoader`'s javafx out of the
+`common` leaf module so common stops advertising `javafx-graphics` to all consumers
+(the original RDR follow-up). Clock package rename (Luciferase-7n1) still deferred.
