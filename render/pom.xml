@@ -21,6 +21,14 @@
         <render.surefire.argLine></render.surefire.argLine>
         <!-- Default: no excluded groups. CI sets this to exclude memory-intensive tests. -->
         <render.excludedGroups></render.excludedGroups>
+        <!-- Cap concurrent surefire forks for render specifically (Luciferase-ftz). The root pom
+             defaults test.forks=15; render's per-fork argLine reserves -Xms1G and allows -Xmx4G, so
+             15 concurrent forks under xvfb+Mesa+LWJGL/FFM native allocations over-commit memory on a
+             ~7GB CI runner — the OOM-killer reaps a fork ("terminated without properly saying
+             goodbye") and the next fork fails to launch ("Error occurred in starting fork"). 2 forks
+             keeps committed memory bounded while preserving some parallelism. Overridable on the
+             command line (-Drender.forkCount=N) for memory-rich local machines. -->
+        <render.forkCount>2</render.forkCount>
     </properties>
 
     <dependencies>
@@ -156,6 +164,10 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <!-- Cap concurrent forks (Luciferase-ftz) — see render.forkCount property above.
+                         Overrides the inherited root forkCount=${test.forks} (15), which over-commits
+                         memory for render's 4G-capable forks and OOM-kills the CI batch. -->
+                    <forkCount>${render.forkCount}</forkCount>
                     <systemPropertyVariables>
                         <java.awt.headless>true</java.awt.headless>
                         <lwjgl.opencl.explicitInit>true</lwjgl.opencl.explicitInit>
