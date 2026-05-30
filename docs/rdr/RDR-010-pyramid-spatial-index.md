@@ -394,3 +394,20 @@ pi1.5 deliverable arc (cross-shape neighbor finding + distributed ghost wiring) 
 - **`N_prism(ℓ)`** — not in the Knapp corpus (Gap #5); Prism uses the default `8^ℓ` (slight partition inaccuracy if a prism tree enters a hybrid partition). Flagged, not blocking.
 
 Remaining RDR-010 work: **pi1.7** (hybrid-mesh demo + 128-bit-key/branching microbenchmarks + §4c consumer-wiring). RDR-010 stays `accepted` until pi1.7 closes.
+
+## Addendum 2026-05-30 — pi1.7 close / Phase-7 gate PASSED + RDR close-readiness
+
+`/conexus:phase-review-gate RDR-010 --phase 7` PASSED (bead `Luciferase-pi1.7`, Item6 — the gate-question Direction B validated end-to-end). Delivered:
+
+- **Hybrid-mesh demo** (`HybridMeshIntegrationDemoTest`, 7 tests): per-shape Forests (hex/tet/pyramid/prism) exercised through insert/kNN/neighbor; the pyramid↔tet cross-shape seam; the **pyramid ghost-layer build leg**; and the shape-aware partition. `Forest` is single-key-typed, so the realistic hybrid surface is multi-forest + cross-shape element coupling (not one four-shape Forest) — a deliberate, documented adaptation of the bead's "one Forest" wording.
+- **Microbenchmark** (`PyramidKeyVsMortonKeyBenchmark`, JMH, authoritative forked run): PyramidKey (128-bit) vs MortonKey (64-bit) — `compareTo` ≈ 1.72×, `ConcurrentSkipListMap.get` ≈ 1.21×. Modest constant factors; **the two-`long` representation is validated** (Finding #7 closed) at current workloads. Recorded in `PERFORMANCE_METRICS_MASTER.md`.
+- **JMH build wiring**: `jmh-generator-annprocess` wired into `lucien` `default-testCompile` (repo JMH benchmarks were previously un-runnable — no `BenchmarkList`).
+- **Docs**: CLAUDE.md partition-gap → "closed via PyramidIndex" (shallow-boundary scope note); LUCIEN_ARCHITECTURE.md Pyramid package; `TETREE_T8CODE_PARTITION_ANALYSIS.md` **retired** (the bead named it for update; it no longer exists — RDR-010 is the authoritative record).
+
+**Scope-accounting (substantive-critic, explicit — not silent):**
+- The demo's **ghost** leg (`ghostLayerWiresForThePyramidShape`) is a smoke-level build check; substantive cross-shape / distributed-ghost-exchange correctness (multi-rank fan-out via the inverted seam) is covered by `PyramidCrossShapeGhostTest` (pi1.5 / `Luciferase-azwr`).
+- **§4c consumer-wiring (`Luciferase-d3z3`)** — pi1.6's addendum named pi1.7 as its "natural home"; it is **re-deferred** to the standalone bead. `ShapeWeightPartitioner` is delivered + tested (pi1.6); populating `PartitionRegistry`/`Forest.routeQuery` from the weighted partition is the remaining work.
+
+**RDR-010 close-readiness.** Decision items 1–5 delivered; the Direction-B gate question (item 6) validated. RDR-010 may close with these EXPLICIT, live follow-on beads OPEN (they are registered deferrals, not silent reductions, and must NOT be closed alongside the RDR):
+- `Luciferase-d3z3` (§4c consumer-wiring) · `Luciferase-0utt` (exhaustive cross-shape edge/vertex) · deep-tet (`l > minTetLevel`) cross-shape (Finding #16, fail-loud guarded — pending a future tree-divergence RDR) · `Luciferase-3y1` (PyramidKeyDecoder dedup) · `Luciferase-7eb` (insertWithSpanning).
+- The deep-tet fail-loud guard (Finding #16) remains in place; no silent enablement.
