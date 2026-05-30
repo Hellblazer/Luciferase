@@ -154,14 +154,51 @@ class PyramidNeighborParityTest {
         var selfKey = PyramidKeyCodec.encode(pair[0]);
         var neighborKey = PyramidKeyCodec.encode(pair[1]);
 
-        // Effective wiring: a call THROUGH the seam returns a real same-shape neighbor (the Phase-A
-        // stub would have thrown UnsupportedOperationException here).
+        // Effective wiring: a call THROUGH the seam returns the real cross-shape neighbor set.
         var faces = wired.findFaceNeighbors(selfKey);
-        assertEquals(List.of(neighborKey), faces, "seam must yield the real f4 neighbor, not a stub");
+        assertTrue(faces.contains(neighborKey), "seam must yield the real f4 pyramid neighbor");
 
-        // Pin the pi1.4 limitation: only the quad base is same-shape, so GhostType.FACES yields exactly
-        // ONE neighbor per interior pyramid. The four triangular (tet) faces produce no ghost entries
-        // until pi1.5 — this assertion makes that scope boundary visible in test output.
-        assertEquals(1, wired.findNeighbors(selfKey, GhostType.FACES).size());
+        // pi1.5 (honesty-trap pin rewrite): the four triangular faces now contribute cross-shape tet
+        // neighbors, so GhostType.FACES yields MORE than one neighbor for a pyramid whose triangular
+        // faces are in-domain SFC tets. This pins the cross-shape graduation in test output (was: == 1).
+        var ghostFaces = wired.findNeighbors(selfKey, GhostType.FACES);
+        assertTrue(ghostFaces.size() > 1,
+                   "cross-shape: a pyramid's triangular faces now add tet ghost entries (was 1 in pi1.4)");
+        // At least one ghost-face neighbor must be a tet (the cross-shape contribution).
+        assertTrue(ghostFaces.stream().anyMatch(k -> PyramidIndex.elementFromKey(k) instanceof com.hellblazer.luciferase.lucien.tetree.Tet),
+                   "GhostType.FACES must include at least one cross-shape tet neighbor");
+    }
+
+    @Test
+    void crossShapeFaceNeighborReciprocityAcrossTheRefinedTree() {
+        // BFS-symmetry guard (pi1.4 critic forward-flag): a pyramid's triangular-face tet neighbor must
+        // list the pyramid back, and vice versa — a one-sided union would silently miss ghost entities.
+        int checkedPyrToTet = 0;
+        int checkedTetToPyr = 0;
+        for (var p : validPyramids(5)) {
+            var pk = PyramidKeyCodec.encode(p);
+            if (pk == null) {
+                continue;
+            }
+            for (int f = 0; f < 4; f++) {
+                var fn = p.faceNeighbor(f);
+                if (fn == null || !(fn.element() instanceof com.hellblazer.luciferase.lucien.tetree.Tet t)) {
+                    continue;
+                }
+                var tk = PyramidKeyCodec.encode(t);
+                if (tk == null) {
+                    continue;
+                }
+                // pyramid -> tet present, and reciprocally tet -> pyramid present.
+                assertTrue(detector.findFaceNeighbors(pk).contains(tk),
+                           "pyramid " + p + " must report its triangular-face tet neighbor " + t);
+                assertTrue(detector.findFaceNeighbors(tk).contains(pk),
+                           "tet " + t + " must report its pyramid back (BFS symmetry) for " + p);
+                checkedPyrToTet++;
+                checkedTetToPyr++;
+            }
+        }
+        assertTrue(checkedPyrToTet >= 5, "expected a broad cross-shape sweep, only checked " + checkedPyrToTet);
+        assertTrue(checkedTetToPyr >= 5, "cross-shape reciprocity must be exercised both directions");
     }
 }
