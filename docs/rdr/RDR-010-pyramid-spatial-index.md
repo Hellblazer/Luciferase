@@ -357,3 +357,18 @@ Accepted 2026-05-28 (gate PASSED 2026-05-28, self-reviewed; T2 `Luciferase_rdr/0
 **Invariant #7 affirmed, not revised.** Invariant #7 ("`Spatial.aabt` is non-sealed; `Tet` and `aabt.Box` implement it; §3b means no new `aabt` implementor is needed") remains literally true under Option 1: `HybridElement` is orthogonal to the `aabt` hierarchy; `Pyramid` is a `HybridElement`, **not** an `aabt`; `Tet` remains the sole tetrahedral `aabt`. This addendum is a clarification of how the element model unifies, not a change to invariant #7. (Option 2 *would* have revised #7 — a further argument against it.)
 
 **Plan.** 5-phase TDD (PRE: this addendum + pi1.1/pi1.2 co-resident on the q3p branch; A: `HybridElement` + Tet/Pyramid conformance; B: `Pyramid.parent()`/`child()`; C: `Tet.parentElement()` cross-type boundary; D: `faceNeighborElement()` + `Pyramid.faceNeighbor()` + `HybridFaceNeighbor`; E: pi1.3 readiness). Full design + per-phase test invariants: T2 `Luciferase/rdr-010-q3p-element-unification-design-2026-05-29`. Per-phase gate: full lucien suite + `-Pperformance` parity + dual review + `/conexus:phase-review-gate`.
+
+## Addendum 2026-05-30 — pi1.5 close / Phase-5 §Approach cross-walk gate PASSED
+
+`/conexus:phase-review-gate RDR-010 --phase 5` PASSED 2026-05-30. §Approach cross-walk (no silent scope reduction):
+
+- **Item1** (PyramidKey + Pyramid primitive) → `Luciferase-kto` (pi1.3 Phase A skeleton; standalone primitive beads pi1.1/pi1.2 compacted).
+- **Item2** (reuse tet machinery; only tet types 0/3 pyramid-aware) → `Luciferase-9e3a` (pi1.5.B consumes `Tet.faceNeighborElement` cross-type; element-unification q3p shipped, see 2026-05-29 addendum). Per the 4pd alignment, Luciferase `Tet` type k IS t8code dtet type k — Finding #15's translation arrays were DELETED; Finding #16's deep-tet divergence is RESOLVED at the shallow boundary.
+- **Item3** (pyramid containment §3b decompose-and-reuse) → `Luciferase-ssu` (pi1.3 Phase B §3b containment + `PyramidContainmentTest`).
+- **Item4** (Forest `ShapeWeightProvider` + `TwoOneBalanceChecker` shape-router) → **DEFERRED, explicit (not silent): bead `Luciferase-pi1.6`** (RDR-010 P5). `N_pyramid(ℓ)=2·8^ℓ−6^ℓ` weight hook + PyramidKey/TetreeKey balance-router. Out of pi1.5 scope by design.
+- **Item5** (`PyramidNeighborDetector` ghost-layer integration) → `Luciferase-azwr` (pi1.5.C, this close). Built on pi1.4 same-shape (`Luciferase-8zv`/`mu9`/`3zs`) + pi1.5 cross-shape A/B/C (`uqik`/`9e3a`/`azwr`). Cross-shape face neighbors exact via element navigation; edge/vertex bounded supersets (exhaustive cross-shape edge/vertex → bead `Luciferase-0utt`); full distributed cross-rank ghost via the inverted seam with externally-assigned owners.
+- **Item6** (the gate question — three candidate directions) → **resolved at accept (2026-05-28): Direction B.** No implementation bead.
+
+**Additional registered deferrals (explicit, not silent):** deep-tet (`l > minTetLevel`) cross-shape face neighbors stay fail-loud guarded (Finding #16) → q3p Phase E / future RDR-scoped tet-tree reconciliation; exhaustive cross-shape edge/vertex topology → `Luciferase-0utt`. Both surfaced, not silently dropped.
+
+pi1.5 deliverable arc (cross-shape neighbor finding + distributed ghost wiring) is COMPLETE. Remaining RDR-010 work: pi1.6 (Forest weight + balance-router, Item4) and pi1.7 (hybrid-mesh demo + 128-bit-key/branching microbenchmarks). RDR-010 stays `accepted` (not closed) until pi1.6 + pi1.7 land.
