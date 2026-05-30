@@ -100,6 +100,14 @@ public final class PyramidContainment {
             return false;
         }
 
+        // Max-level guard: a pyramid at the maximum refinement level cannot be subdivided
+        // (Pyramid.child() throws). The surrounding-cube AABB (already passed above) is the finest
+        // available bound at max refinement, so report containment conservatively — consistent with
+        // the §3b "never under-report a true interior point" contract.
+        if (p.level() >= PyramidKey.MAX_PYRAMID_LEVEL) {
+            return true;
+        }
+
         // Decompose into 10 children and test each
         for (int i = 0; i < 10; i++) {
             var child = p.child(i);

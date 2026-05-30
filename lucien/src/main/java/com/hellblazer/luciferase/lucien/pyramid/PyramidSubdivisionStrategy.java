@@ -208,6 +208,11 @@ extends SubdivisionStrategy<PyramidKey, ID, Content> {
      * Reconstruct the Pyramid element for a key by descending from root. Package-private mirror of
      * PyramidIndex.pyramidFromKey — needed here since SubdivisionStrategy has no back-reference
      * to the index.
+     *
+     * <p>TODO(Luciferase-3y1): this descent is duplicated verbatim with
+     * {@code PyramidIndex.pyramidFromKey} (~50 lines). Extract to a shared package-private
+     * {@code PyramidKeyDecoder} so the two cannot silently diverge. Deferred out of pi1.3 Phase F
+     * (close-out, no new production code beyond the max-level fix-back); pure refactor, tracked.
      */
     static Pyramid pyramidFromKey(PyramidKey key) {
         byte level = key.getLevel();
