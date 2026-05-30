@@ -9,6 +9,7 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -137,5 +138,36 @@ public final class ShapeWeightPartitioner {
             assignment.put(trees.get(i).getTreeId(), ranks[i]);
         }
         return assignment;
+    }
+
+    /**
+     * Bootstrap-facing inverse of {@link #assign(long[], int)} for a distributed partition: given the
+     * SFC-ordered trees, their per-shape weights, and the partition count, return which trees each rank
+     * owns (RDR-010 §4c, bead Luciferase-uzyd). This is the shape-weighted tree→rank assignment a
+     * distributed partition bootstrap consumes — heterogeneous (hex/tet/pyramid) weights are supported
+     * because the caller supplies the weight array directly (unlike {@link #partitionForest}, which a
+     * single-key {@link Forest} constrains to one shape).
+     *
+     * @param treeIds        SFC-ordered tree identifiers
+     * @param weights        per-tree shape weights ({@code N_shape(level)}), aligned with {@code treeIds}
+     * @param partitionCount number of ranks
+     * @return rank → list of tree ids owned by that rank (every rank {@code 0..P-1} present, possibly empty)
+     * @throws IllegalArgumentException if {@code treeIds.size() != weights.length}
+     */
+    public static Map<Integer, List<String>> assignTreesToRanks(List<String> treeIds, long[] weights,
+                                                                int partitionCount) {
+        if (treeIds.size() != weights.length) {
+            throw new IllegalArgumentException(
+                "treeIds (" + treeIds.size() + ") and weights (" + weights.length + ") must align");
+        }
+        int[] ranks = assign(weights, partitionCount);
+        var byRank = new LinkedHashMap<Integer, List<String>>();
+        for (int r = 0; r < partitionCount; r++) {
+            byRank.put(r, new ArrayList<>());
+        }
+        for (int i = 0; i < treeIds.size(); i++) {
+            byRank.get(ranks[i]).add(treeIds.get(i));
+        }
+        return byRank;
     }
 }
