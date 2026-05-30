@@ -11,7 +11,11 @@ import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3i;
+import javax.vecmath.Vector3f;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.PriorityQueue;
 import java.util.Queue;
@@ -388,34 +392,327 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
 
     // ===== Abstract geometry methods — Phase-D ray/plane traversal cluster =====
 
+    // Möller-Trumbore epsilon (matches TetrahedralGeometry.EPSILON)
+    private static final float MT_EPSILON = 1e-6f;
+
+    /**
+     * Test whether {@code ray} intersects the pyramid node identified by {@code nodeIndex}.
+     *
+     * <p>The pyramid has 5 faces: f0–f3 are triangular, f4 is the quadrilateral base.
+     * <ul>
+     *   <li>f0–f3: tested individually via Möller-Trumbore ray-triangle intersection.</li>
+     *   <li>f4 (quad base): split along the <em>fixed diagonal c[0]→c[3]</em> into two triangles
+     *       (c[0],c[1],c[3]) and (c[0],c[2],c[3]).  This split is consistent with
+     *       {@link Pyramid#coordinates()} corner ordering for both TYPE-6 and TYPE-7:
+     *       c[0] is the (low-x,low-y) base corner and c[3] is the (high-x,high-y) base corner
+     *       in both types, so the diagonal is geometrically well-defined and cannot leave a gap
+     *       or produce an overlap between the two triangles.</li>
+     * </ul>
+     *
+     * <p>A naïve single-triangle test for f4 would miss a ray entering through the half of the
+     * quad not covered by that triangle (the known-hard f4 case from the bead spec).
+     *
+     * @param nodeIndex the PyramidKey of the node to test
+     * @param ray       the query ray
+     * @return {@code true} if the ray intersects any face of the pyramid
+     */
     @Override
     protected boolean doesRayIntersectNode(PyramidKey nodeIndex, Ray3D ray) {
-        throw new UnsupportedOperationException(
-        "RDR-010 pi1.3 Phase D: doesRayIntersectNode — bead Luciferase-jm6");
+        var pyramid = pyramidFromKey(nodeIndex);
+        if (pyramid == null) {
+            return false;
+        }
+        Point3i[] c = pyramid.coordinates();
+        // Convert to float for MT arithmetic
+        var v0 = new Point3f(c[0].x, c[0].y, c[0].z);
+        var v1 = new Point3f(c[1].x, c[1].y, c[1].z);
+        var v2 = new Point3f(c[2].x, c[2].y, c[2].z);
+        var v3 = new Point3f(c[3].x, c[3].y, c[3].z);
+        var v4 = new Point3f(c[4].x, c[4].y, c[4].z); // apex
+
+        // 4 triangular faces (f0–f3). For a TYPE-6 pyramid with base c[0..3] and apex c[4]:
+        //   f0: c[0], c[1], c[4]
+        //   f1: c[1], c[3], c[4]
+        //   f2: c[3], c[2], c[4]
+        //   f3: c[2], c[0], c[4]
+        if (rayTriangleIntersects(ray, v0, v1, v4)) return true;
+        if (rayTriangleIntersects(ray, v1, v3, v4)) return true;
+        if (rayTriangleIntersects(ray, v3, v2, v4)) return true;
+        if (rayTriangleIntersects(ray, v2, v0, v4)) return true;
+
+        // f4: quad base split along fixed diagonal c[0]→c[3].
+        // Triangle 1: (c[0], c[1], c[3])
+        // Triangle 2: (c[0], c[2], c[3])
+        // Diagonal c[0]→c[3] is the same geometric seam for both TYPE-6 and TYPE-7.
+        if (rayTriangleIntersects(ray, v0, v1, v3)) return true;
+        if (rayTriangleIntersects(ray, v0, v2, v3)) return true;
+
+        return false;
     }
 
+    /**
+     * Return the entry parameter {@code t} along {@code ray} at which the ray first enters
+     * the pyramid node, or {@code Float.MAX_VALUE} if the ray does not intersect.
+     *
+     * <p>Scans all 6 triangle faces (including both f4 triangles from the fixed-diagonal split),
+     * and returns the minimum positive {@code t} among face hits.
+     *
+     * @param nodeIndex the PyramidKey of the node
+     * @param ray       the query ray
+     * @return minimum entry {@code t}, or {@link Float#MAX_VALUE} if no intersection
+     */
     @Override
     protected float getRayNodeIntersectionDistance(PyramidKey nodeIndex, Ray3D ray) {
-        throw new UnsupportedOperationException(
-        "RDR-010 pi1.3 Phase D: getRayNodeIntersectionDistance — bead Luciferase-jm6");
+        var pyramid = pyramidFromKey(nodeIndex);
+        if (pyramid == null) {
+            return Float.MAX_VALUE;
+        }
+        Point3i[] c = pyramid.coordinates();
+        var v0 = new Point3f(c[0].x, c[0].y, c[0].z);
+        var v1 = new Point3f(c[1].x, c[1].y, c[1].z);
+        var v2 = new Point3f(c[2].x, c[2].y, c[2].z);
+        var v3 = new Point3f(c[3].x, c[3].y, c[3].z);
+        var v4 = new Point3f(c[4].x, c[4].y, c[4].z);
+
+        float minT = Float.MAX_VALUE;
+        float t;
+        t = rayTriangleT(ray, v0, v1, v4); if (t >= 0 && t < minT) minT = t;
+        t = rayTriangleT(ray, v1, v3, v4); if (t >= 0 && t < minT) minT = t;
+        t = rayTriangleT(ray, v3, v2, v4); if (t >= 0 && t < minT) minT = t;
+        t = rayTriangleT(ray, v2, v0, v4); if (t >= 0 && t < minT) minT = t;
+        // f4 quad base — fixed diagonal c[0]→c[3]
+        t = rayTriangleT(ray, v0, v1, v3); if (t >= 0 && t < minT) minT = t;
+        t = rayTriangleT(ray, v0, v2, v3); if (t >= 0 && t < minT) minT = t;
+
+        return minT;
     }
 
+    /**
+     * Stream all non-empty pyramid nodes in the spatial index ordered by ascending ray-entry
+     * parameter (front-to-back). Only nodes that the ray actually intersects are included.
+     *
+     * <p>Implementation mirrors {@code Octree.getRayTraversalOrder}: iterate all populated nodes,
+     * test ray intersection, record entry distance, sort ascending. SFC ordering (PyramidKey natural
+     * order) is used as a stable tiebreak.
+     *
+     * @param ray the query ray
+     * @return stream of {@link PyramidKey} values ordered by entry distance
+     */
     @Override
     protected Stream<PyramidKey> getRayTraversalOrder(Ray3D ray) {
-        throw new UnsupportedOperationException(
-        "RDR-010 pi1.3 Phase D: getRayTraversalOrder — bead Luciferase-jm6");
+        record NodeDist(PyramidKey key, float dist) implements Comparable<NodeDist> {
+            @Override
+            public int compareTo(NodeDist o) {
+                int c = Float.compare(dist, o.dist);
+                return c != 0 ? c : key.compareTo(o.key);
+            }
+        }
+        var entries = new ArrayList<NodeDist>();
+        for (var entry : spatialIndex.entrySet()) {
+            var node = entry.getValue();
+            if (node == null || node.isEmpty()) continue;
+            var key = entry.getKey();
+            if (doesRayIntersectNode(key, ray)) {
+                float dist = getRayNodeIntersectionDistance(key, ray);
+                if (dist <= ray.maxDistance()) {
+                    entries.add(new NodeDist(key, dist));
+                }
+            }
+        }
+        Collections.sort(entries);
+        return entries.stream().map(NodeDist::key);
     }
 
+    /**
+     * Test whether the given {@code plane} intersects the pyramid node identified by {@code nodeIndex}.
+     *
+     * <p>Classifies all 5 vertices of the pyramid against the plane using the signed-distance formula
+     * {@code a*x + b*y + c*z + d}. If there exist at least one vertex with strictly positive distance
+     * and at least one with strictly negative distance, the plane intersects the pyramid interior.
+     * Vertices exactly on the plane (signed distance within {@link #MT_EPSILON}) are treated as
+     * coplanar and do not by themselves constitute a mixed-sign pair; they do not prevent detection
+     * when the remaining vertices are split.
+     *
+     * <p>This is the 5-vertex extension of the standard 4-vertex tet approach used by
+     * {@code TetrahedralGeometry.planeIntersectsTetrahedron}.
+     *
+     * @param nodeIndex the PyramidKey of the node to test
+     * @param plane     the query plane
+     * @return {@code true} if the plane cuts through the pyramid interior
+     */
     @Override
     protected boolean doesPlaneIntersectNode(PyramidKey nodeIndex, Plane3D plane) {
-        throw new UnsupportedOperationException(
-        "RDR-010 pi1.3 Phase D: doesPlaneIntersectNode — bead Luciferase-jm6");
+        var pyramid = pyramidFromKey(nodeIndex);
+        if (pyramid == null) {
+            return false;
+        }
+        Point3i[] c = pyramid.coordinates();
+        boolean hasPositive = false;
+        boolean hasNegative = false;
+        for (var vi : c) {
+            float dist = plane.distanceToPoint(new Point3f(vi.x, vi.y, vi.z));
+            if (dist > MT_EPSILON) {
+                hasPositive = true;
+            } else if (dist < -MT_EPSILON) {
+                hasNegative = true;
+            }
+            if (hasPositive && hasNegative) return true; // early exit
+        }
+        return false;
     }
 
+    /**
+     * Stream all non-empty pyramid nodes in the spatial index in front-to-back order relative to
+     * {@code plane}, ordered by ascending absolute signed-distance from node centroid to the plane.
+     *
+     * <p>Mirrors {@code Octree.getPlaneTraversalOrder} and {@code Tetree.getPlaneTraversalOrder}:
+     * all populated nodes are streamed, sorted by {@code |plane.distanceToPoint(centroid)|}.
+     * Nodes straddling the plane (smallest absolute distance) come first.
+     *
+     * @param plane the query plane
+     * @return stream of {@link PyramidKey} values ordered by ascending |plane-signed-distance|
+     */
     @Override
     protected Stream<PyramidKey> getPlaneTraversalOrder(Plane3D plane) {
-        throw new UnsupportedOperationException(
-        "RDR-010 pi1.3 Phase D: getPlaneTraversalOrder — bead Luciferase-jm6");
+        return spatialIndex.entrySet().stream().filter(e -> {
+            var node = e.getValue();
+            return node != null && !node.isEmpty();
+        }).sorted((e1, e2) -> {
+            float d1 = Math.abs(planeNodeDistance(e1.getKey(), plane));
+            float d2 = Math.abs(planeNodeDistance(e2.getKey(), plane));
+            return Float.compare(d1, d2);
+        }).map(java.util.Map.Entry::getKey);
+    }
+
+    // ===== Phase-D private helpers =====
+
+    /**
+     * Reconstruct the {@link Pyramid} element for a given {@code key} by descending the
+     * pyramid tree from the root following the coordinate/type bits encoded in the key.
+     *
+     * <p><b>Tet-child keys:</b> for a <em>level-1</em> tet-child key this returns {@code null}
+     * (no pyramid at that key). For a <em>deeper</em> (level &gt; 1) tet-child key it returns the
+     * nearest enclosing parent pyramid (a strictly larger bounding volume) rather than null — a
+     * conservative over-approximation. Ray/plane callers therefore may report a false-positive
+     * intersection for deep tet keys, never a false negative. This is safe for Phase D (the
+     * pyramid bound encloses the tet); exact tet-geometry ray/plane tests are deferred to Phase E.
+     */
+    private Pyramid pyramidFromKey(PyramidKey key) {
+        byte level = key.getLevel();
+        if (level == 0) {
+            // Virtual root — return the type-6 root cover pyramid
+            return new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6);
+        }
+        // Step 1: find the type-6 or type-7 root child at level 1
+        var type6Root = new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6);
+        var type7Root = new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_7);
+
+        // Identify the level-1 child by matching coordBits[1]/typeBits[1]
+        int coordBits1 = key.getCoordBitsAtLevel(1);
+        int typeBits1  = key.getTypeAtLevel(1);
+
+        Pyramid current = null;
+        outer:
+        for (var root : new Pyramid[] { type6Root, type7Root }) {
+            int row = root.type() - Pyramid.TYPE_6;
+            for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+                if (TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i]  == coordBits1
+                    && TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i] == typeBits1) {
+                    var child = root.child(i);
+                    if (child instanceof Pyramid pc) {
+                        current = pc;
+                    }
+                    // If it's a tet child at level 1 and level==1, fall through → return null below
+                    break outer;
+                }
+            }
+        }
+
+        if (current == null || level == 1) {
+            // level-1 element is a tet (or not found) — not a pyramid
+            return level == 1 && current != null ? current : null;
+        }
+
+        // Descend levels 2..level
+        for (int l = 2; l <= level; l++) {
+            int cb = key.getCoordBitsAtLevel(l);
+            int tb = key.getTypeAtLevel(l);
+            Pyramid next = null;
+            int row = current.type() - Pyramid.TYPE_6;
+            for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+                if (TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i]  == cb
+                    && TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i] == tb) {
+                    var child = current.child(i);
+                    if (child instanceof Pyramid pc) {
+                        next = pc;
+                    }
+                    break;
+                }
+            }
+            if (next == null) return current; // key ends in a tet at level l; return parent pyramid
+            current = next;
+        }
+        return current;
+    }
+
+    /**
+     * Möller-Trumbore ray-triangle intersection: returns {@code true} if the ray hits the
+     * triangle (v0, v1, v2) within (MT_EPSILON, ray.maxDistance()].
+     */
+    private static boolean rayTriangleIntersects(Ray3D ray, Point3f v0, Point3f v1, Point3f v2) {
+        return rayTriangleT(ray, v0, v1, v2) >= 0f;
+    }
+
+    /**
+     * Möller-Trumbore ray-triangle intersection: returns the parameter {@code t} at which the ray
+     * hits the triangle (v0, v1, v2), or {@code -1} if there is no intersection within
+     * (MT_EPSILON, ray.maxDistance()].
+     */
+    private static float rayTriangleT(Ray3D ray, Point3f v0, Point3f v1, Point3f v2) {
+        float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
+        float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
+
+        // h = direction × edge2
+        float hx = ray.direction().y * e2z - ray.direction().z * e2y;
+        float hy = ray.direction().z * e2x - ray.direction().x * e2z;
+        float hz = ray.direction().x * e2y - ray.direction().y * e2x;
+
+        float a = e1x * hx + e1y * hy + e1z * hz;
+        if (a > -MT_EPSILON && a < MT_EPSILON) return -1f; // parallel
+
+        float f = 1.0f / a;
+        float sx = ray.origin().x - v0.x, sy = ray.origin().y - v0.y, sz = ray.origin().z - v0.z;
+        float u = f * (sx * hx + sy * hy + sz * hz);
+        if (u < 0f || u > 1f) return -1f;
+
+        // q = s × edge1
+        float qx = sy * e1z - sz * e1y;
+        float qy = sz * e1x - sx * e1z;
+        float qz = sx * e1y - sy * e1x;
+        float v = f * (ray.direction().x * qx + ray.direction().y * qy + ray.direction().z * qz);
+        if (v < 0f || u + v > 1f) return -1f;
+
+        float t = f * (e2x * qx + e2y * qy + e2z * qz);
+        if (t > MT_EPSILON && t <= ray.maxDistance()) return t;
+        return -1f;
+    }
+
+    /**
+     * Signed distance from the centroid of the surrounding cube of {@code key} to {@code plane}.
+     * Used by {@link #getPlaneTraversalOrder}.
+     */
+    private float planeNodeDistance(PyramidKey key, Plane3D plane) {
+        float px = 0, py = 0, pz = 0;
+        byte level = key.getLevel();
+        for (int l = 1; l <= level; l++) {
+            float childSize = Constants.lengthAtLevel((byte) l);
+            int cubeId = key.getCoordBitsAtLevel(l);
+            if ((cubeId & 1) != 0) px += childSize;
+            if ((cubeId & 2) != 0) py += childSize;
+            if ((cubeId & 4) != 0) pz += childSize;
+        }
+        float half = Constants.lengthAtLevel(level) / 2f;
+        return plane.distanceToPoint(new Point3f(px + half, py + half, pz + half));
     }
 
     // ===== Abstract geometry methods — Phase-E frustum/knn/collision/neighbor cluster =====

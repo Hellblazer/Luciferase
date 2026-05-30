@@ -114,6 +114,12 @@ class PyramidIndexConstructionTest {
     // IMPLEMENTED (bead Luciferase-2l0). Their Phase-A stub tests have been removed.
     // Phase-C acceptance tests live in PyramidIndexSpatialMappingTest, PyramidNodeBoundsTest,
     // PyramidVolumeQueryTest, and MinTetLevelReinjectionTest.
+    //
+    // NOTE: Phase-D methods (doesRayIntersectNode, getRayNodeIntersectionDistance,
+    // getRayTraversalOrder, doesPlaneIntersectNode, getPlaneTraversalOrder) are now
+    // IMPLEMENTED (bead Luciferase-jm6). Their Phase-A stub tests have been removed.
+    // Phase-D acceptance tests live in PyramidRayIntersectionTest, PyramidRayTraversalOrderTest,
+    // PyramidPlaneIntersectionTest, and PyramidPlaneTraversalOrderTest.
 
     @Test
     void calculateSpatialIndex_level0_returnsRoot() {
@@ -153,39 +159,6 @@ class PyramidIndexConstructionTest {
         float edge = (float) com.hellblazer.luciferase.lucien.Constants.lengthAtLevel((byte) 0);
         var huge = new Spatial.Cube(-1f, -1f, -1f, edge + 2f);
         assertTrue(index.isNodeContainedInVolume(PyramidKey.getRoot(), huge));
-    }
-
-    @Test
-    void doesRayIntersectNodeThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.doesRayIntersectNode(PyramidKey.getRoot(),
-                                                         new Ray3D(new Point3f(0, 0, 0),
-                                                                   new Vector3f(1, 0, 0), 100)));
-    }
-
-    @Test
-    void getRayNodeIntersectionDistanceThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.getRayNodeIntersectionDistance(PyramidKey.getRoot(),
-                                                                   new Ray3D(new Point3f(0, 0, 0),
-                                                                             new Vector3f(1, 0, 0), 100)));
-    }
-
-    @Test
-    void getRayTraversalOrderThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.getRayTraversalOrder(new Ray3D(new Point3f(0, 0, 0),
-                                                                   new Vector3f(1, 0, 0), 100)));
-    }
-
-    @Test
-    void doesPlaneIntersectNodeThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.doesPlaneIntersectNode(PyramidKey.getRoot(),
-                                                           Plane3D.fromPointAndNormal(
-                                                           new Point3f(0, 1, 0), new Vector3f(0, 1, 0))));
-    }
-
-    @Test
-    void getPlaneTraversalOrderThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.getPlaneTraversalOrder(Plane3D.fromPointAndNormal(
-        new Point3f(0, 1, 0), new Vector3f(0, 1, 0))));
     }
 
     @Test
