@@ -162,47 +162,60 @@ class PyramidIndexConstructionTest {
     }
 
     @Test
-    void doesFrustumIntersectNodeThrowsWithBeadRef() throws Exception {
+    void doesFrustumIntersectNode_phaseE_implemented() {
+        // Phase E: doesFrustumIntersectNode must not throw (real implementation active)
         var frustum = minimalFrustum();
-        assertPhaseBead(() -> index.doesFrustumIntersectNode(PyramidKey.getRoot(), frustum));
+        assertDoesNotThrow(() -> index.doesFrustumIntersectNode(PyramidKey.getRoot(), frustum),
+                           "Phase E: doesFrustumIntersectNode must not throw");
     }
 
     @Test
-    void getFrustumTraversalOrderThrowsWithBeadRef() throws Exception {
+    void getFrustumTraversalOrder_phaseE_implemented() {
+        // Phase E: getFrustumTraversalOrder must not throw (real implementation active)
         var frustum = minimalFrustum();
-        assertPhaseBead(() -> index.getFrustumTraversalOrder(frustum, new Point3f(0, 0, 0)));
+        assertDoesNotThrow(() -> index.getFrustumTraversalOrder(frustum, new Point3f(0, 0, 0)),
+                           "Phase E: getFrustumTraversalOrder must not throw");
     }
 
     @Test
-    void estimateNodeDistanceThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.estimateNodeDistance(PyramidKey.getRoot(), new Point3f(0, 0, 0)));
+    void estimateNodeDistance_phaseE_returnsFiniteValue() {
+        // Phase E: estimateNodeDistance must return a finite non-negative value
+        float dist = index.estimateNodeDistance(PyramidKey.getRoot(), new Point3f(0, 0, 0));
+        assertTrue(Float.isFinite(dist), "Phase E: estimateNodeDistance must return a finite value");
+        assertTrue(dist >= 0, "Phase E: estimateNodeDistance must return a non-negative value");
     }
 
     @Test
-    void shouldContinueKNNSearchThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.shouldContinueKNNSearch(PyramidKey.getRoot(), new Point3f(0, 0, 0),
-                                                            new PriorityQueue<>()));
+    void shouldContinueKNNSearch_phaseE_trueWhenEmpty() {
+        // Phase E: shouldContinueKNNSearch must return true for empty candidates (nothing to prune)
+        boolean cont = index.shouldContinueKNNSearch(PyramidKey.getRoot(), new Point3f(0, 0, 0),
+                                                     new PriorityQueue<>());
+        assertTrue(cont, "Phase E: shouldContinueKNNSearch must return true when candidates empty");
     }
 
     @Test
-    void createDefaultSubdivisionStrategyReturnsPlaceholder() {
-        // createDefaultSubdivisionStrategy() is called during AbstractSpatialIndex construction and
-        // therefore cannot throw. Phase A returns a non-null defer-all placeholder; the real
-        // implementation arrives in Phase E (bead Luciferase-ioz). The placeholder's decision must
-        // carry the phase-bead tag so a regression that drops the message is caught.
+    void createDefaultSubdivisionStrategy_phaseE_isRealStrategy() {
+        // Phase E: createDefaultSubdivisionStrategy must return the real PyramidSubdivisionStrategy,
+        // not the Phase-A defer-all placeholder.  The real strategy must NOT unconditionally defer.
         var strategy = index.createDefaultSubdivisionStrategy();
-        assertNotNull(strategy, "Phase A must return a non-null placeholder strategy");
-        var result = strategy.determineStrategy(null);
-        assertNotNull(result, "placeholder strategy must return a non-null SubdivisionResult");
-        assertNotNull(result.reason, "placeholder strategy result must carry a reason");
-        assertTrue(result.reason.contains("Luciferase-"),
-                   "placeholder strategy reason must carry phase-bead tag (got: " + result.reason + ")");
+        assertNotNull(strategy, "Phase E: createDefaultSubdivisionStrategy must return non-null");
+        // A critically-overloaded context should get FORCE_SUBDIVISION, not DEFER_SUBDIVISION
+        var ctx = new com.hellblazer.luciferase.lucien.SubdivisionStrategy.SubdivisionContext<PyramidKey, com.hellblazer.luciferase.lucien.entity.LongEntityID>(
+            PyramidKey.getRoot(), (byte) 0, 25, 10, false, null, java.util.List.of(),
+            PyramidKey.MAX_PYRAMID_LEVEL);
+        var result = strategy.determineStrategy(ctx);
+        assertNotNull(result, "Phase E strategy must return non-null result");
+        assertNotEquals(com.hellblazer.luciferase.lucien.SubdivisionStrategy.ControlFlow.DEFER_SUBDIVISION,
+                        result.decision,
+                        "Phase E strategy must not unconditionally defer (was: " + result.decision + ")");
     }
 
     @Test
-    void addNeighboringNodesThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.addNeighboringNodes(PyramidKey.getRoot(), new java.util.LinkedList<>(),
-                                                        new java.util.HashSet<>()));
+    void addNeighboringNodes_phaseE_doesNotThrow() {
+        // Phase E: addNeighboringNodes must not throw (real implementation active)
+        assertDoesNotThrow(() -> index.addNeighboringNodes(PyramidKey.getRoot(), new java.util.LinkedList<>(),
+                                                           new java.util.HashSet<>()),
+                           "Phase E: addNeighboringNodes must not throw");
     }
 
     // ===== 4. Sub-interface compile-time conformance (cast checks — no runtime assertion needed) =====

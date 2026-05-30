@@ -717,67 +717,210 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
 
     // ===== Abstract geometry methods — Phase-E frustum/knn/collision/neighbor cluster =====
 
+    /**
+     * Test whether a frustum intersects the pyramid at {@code nodeIndex}.
+     *
+     * <p>Uses the standard convex-hull separating-plane test: if all five pyramid vertices
+     * lie on the outside (negative-distance) half of any single frustum plane, the pyramid
+     * and frustum are separated on that axis, so there is no intersection. Because the
+     * pyramid is convex, this sufficient (no false negatives).
+     */
     @Override
     protected boolean doesFrustumIntersectNode(PyramidKey nodeIndex, Frustum3D frustum) {
-        throw new UnsupportedOperationException(
-        "RDR-010 pi1.3 Phase E: doesFrustumIntersectNode — bead Luciferase-ioz");
-    }
-
-    @Override
-    protected Stream<PyramidKey> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
-        throw new UnsupportedOperationException(
-        "RDR-010 pi1.3 Phase E: getFrustumTraversalOrder — bead Luciferase-ioz");
-    }
-
-    @Override
-    protected float estimateNodeDistance(PyramidKey nodeIndex, Point3f queryPoint) {
-        throw new UnsupportedOperationException(
-        "RDR-010 pi1.3 Phase E: estimateNodeDistance — bead Luciferase-ioz");
-    }
-
-    @Override
-    protected boolean shouldContinueKNNSearch(PyramidKey nodeIndex, Point3f queryPoint,
-                                              PriorityQueue<EntityDistance<ID>> candidates) {
-        throw new UnsupportedOperationException(
-        "RDR-010 pi1.3 Phase E: shouldContinueKNNSearch — bead Luciferase-ioz");
+        var pyramid = pyramidFromKey(nodeIndex);
+        if (pyramid == null) {
+            return false;
+        }
+        var vertices = pyramid.coordinates();
+        for (var plane : frustum.getPlanes()) {
+            // If ALL vertices are on the outside (negative distance) of this plane, no intersection.
+            boolean allOutside = true;
+            for (var v : vertices) {
+                if (plane.distanceToPoint(new Point3f(v.x, v.y, v.z)) >= 0) {
+                    allOutside = false;
+                    break;
+                }
+            }
+            if (allOutside) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
-     * Phase A placeholder strategy: defers all subdivision decisions. No geometry is available until
-     * Phase E (bead Luciferase-ioz) provides the real implementation.
+     * Return a stream of populated PyramidKeys ordered by ascending centroid-to-camera distance.
+     * Mirrors Octree's getFrustumTraversalOrder (distance-sorted stream of non-empty nodes).
+     */
+    @Override
+    protected Stream<PyramidKey> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
+        return spatialIndex.keySet().stream()
+                           .filter(k -> {
+                               var node = spatialIndex.get(k);
+                               return node != null && !node.isEmpty();
+                           })
+                           .sorted((k1, k2) -> {
+                               float d1 = estimateNodeDistance(k1, cameraPosition);
+                               float d2 = estimateNodeDistance(k2, cameraPosition);
+                               return Float.compare(d1, d2);
+                           });
+    }
+
+    /**
+     * Estimate the distance from a query point to the pyramid node using the pyramid's vertex centroid.
+     * This is a coarse distance measure used for traversal ordering; see {@link #shouldContinueKNNSearch}
+     * for the provably-correct lower bound used in kNN pruning.
+     */
+    @Override
+    protected float estimateNodeDistance(PyramidKey nodeIndex, Point3f queryPoint) {
+        var pyramid = pyramidFromKey(nodeIndex);
+        if (pyramid == null) {
+            return Float.MAX_VALUE;
+        }
+        return pyramid.centroid().distance(queryPoint);
+    }
+
+    /**
+     * Determine whether the kNN search should continue into the node at {@code nodeIndex}.
      *
-     * <p>This method must return a non-null value because {@code AbstractSpatialIndex} stores the
-     * result during construction (before any entity insertion occurs). The placeholder never
-     * actually subdivides, so construction and insert-free usage is safe. Any code path that
-     * triggers subdivision will get a DEFER_SUBDIVISION decision (insert goes into the parent node).
+     * <p><b>Correctness-critical lower bound</b>: we use the bounding-sphere lower bound
+     * <pre>
+     *   lowerBound = max(0, centroidDistance − maxVertexRadius)
+     * </pre>
+     * where {@code centroidDistance} = distance from {@code queryPoint} to the pyramid's
+     * vertex centroid, and {@code maxVertexRadius} = maximum distance from the centroid to
+     * any of the 5 pyramid vertices. The bounding sphere centred at the centroid with radius
+     * {@code maxVertexRadius} encloses the entire pyramid; therefore any point inside the
+     * pyramid is within {@code maxVertexRadius} of the centroid. Consequently
+     * {@code lowerBound ≤ trueClosestPointDistance}, so kNN never prunes a real neighbor.
+     *
+     * <p>A naive centroid distance alone is NOT a valid lower bound: when the query point
+     * lies near a vertex that is far from the centroid, the centroid distance exceeds the
+     * true closest-point distance (= 0 at a vertex).
+     */
+    @Override
+    protected boolean shouldContinueKNNSearch(PyramidKey nodeIndex, Point3f queryPoint,
+                                              PriorityQueue<EntityDistance<ID>> candidates) {
+        if (candidates.isEmpty()) {
+            return true;
+        }
+        var furthest = candidates.peek();
+        if (furthest == null) {
+            return true;
+        }
+
+        var pyramid = pyramidFromKey(nodeIndex);
+        if (pyramid == null) {
+            return true; // Cannot prune — be conservative
+        }
+
+        var centroid = pyramid.centroid();
+        float centroidDistance = centroid.distance(queryPoint);
+
+        // Compute maxVertexRadius: max distance from centroid to any vertex
+        float maxVertexRadius = 0f;
+        for (var v : pyramid.coordinates()) {
+            float r = centroid.distance(new Point3f(v.x, v.y, v.z));
+            if (r > maxVertexRadius) {
+                maxVertexRadius = r;
+            }
+        }
+
+        // Bounding-sphere lower bound on true closest-point distance
+        float lowerBound = Math.max(0f, centroidDistance - maxVertexRadius);
+
+        // Continue searching if the lower bound does not exceed the furthest candidate's distance
+        return lowerBound <= furthest.distance();
+    }
+
+    /**
+     * Return the default subdivision strategy: entity-count threshold + {@code Pyramid.child(0..9)}
+     * descent (mirroring Octree's {@code OctreeSubdivisionStrategy.balanced()}).
+     *
+     * <p>This method is called from the {@code AbstractSpatialIndex} super-constructor; it must
+     * not throw and must return a non-null value at construction time (before any entity insertion).
      */
     @Override
     protected SubdivisionStrategy<PyramidKey, ID, Content> createDefaultSubdivisionStrategy() {
-        return new SubdivisionStrategy<>() {
-            @Override
-            public Set<PyramidKey> calculateTargetNodes(PyramidKey parentIndex, byte parentLevel,
-                                                        EntityBounds entityBounds,
-                                                        AbstractSpatialIndex<PyramidKey, ID, Content> index) {
-                return Set.of();
-            }
-
-            @Override
-            public SubdivisionResult determineStrategy(SubdivisionContext<PyramidKey, ID> context) {
-                return SubdivisionResult.deferSubdivision(
-                "RDR-010 pi1.3 Phase E: createDefaultSubdivisionStrategy — bead Luciferase-ioz");
-            }
-
-            @Override
-            protected double estimateEntitySizeFactor(SubdivisionContext<PyramidKey, ID> context) {
-                return 1.0;
-            }
-        };
+        return PyramidSubdivisionStrategy.balanced();
     }
 
+    /**
+     * Emit at least the SFC-adjacent same-level PyramidKeys into {@code toVisit}.
+     *
+     * <p><b>Pi1.3 minimum contract</b>: this implementation emits the sibling pyramid children
+     * of the parent (i.e., the other level-N PyramidKeys that share the same parent), which
+     * are the SFC-adjacent same-level nodes. Full same/cross-shape topology (including
+     * cross-pyramid face neighbours and tet-pyramid boundaries) is deferred to pi1.4
+     * ({@link PyramidNeighborDetector}) and is explicitly out of scope for this phase.
+     *
+     * <p><em>Registered deferral — not silent scope reduction.</em> See bead Luciferase-pi1.4.
+     */
     @Override
     protected void addNeighboringNodes(PyramidKey nodeIndex, Queue<PyramidKey> toVisit,
                                        Set<PyramidKey> visitedNodes) {
-        throw new UnsupportedOperationException(
-        "RDR-010 pi1.3 Phase E: addNeighboringNodes — bead Luciferase-ioz");
+        byte level = nodeIndex.getLevel();
+
+        if (level == 0) {
+            // Root: emit the two level-1 pyramid roots (type-6 and type-7 children of each root)
+            var roots = new Pyramid[]{ new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6),
+                                       new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_7) };
+            for (var root : roots) {
+                int row = root.type() - Pyramid.TYPE_6;
+                for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+                    var child = root.child(i);
+                    if (!(child instanceof Pyramid)) continue;
+                    int cb = TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i];
+                    int tb = TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i];
+                    var childKey = PyramidKey.fromLevels((byte) 1, new int[]{ 0, cb }, new int[]{ 0, tb });
+                    if (!visitedNodes.contains(childKey)) {
+                        toVisit.add(childKey);
+                    }
+                }
+            }
+            return;
+        }
+
+        // For level ≥ 1: emit the siblings (other pyramid children of the same parent).
+        // A sibling shares the same parent key (== nodeIndex with the last level stripped).
+        var parentKey = nodeIndex.parent();
+        if (parentKey == null) {
+            return;
+        }
+        var parentPyramid = pyramidFromKey(parentKey);
+        if (parentPyramid == null) {
+            return;
+        }
+
+        int row = parentPyramid.type() - Pyramid.TYPE_6;
+        for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+            var child = parentPyramid.child(i);
+            if (!(child instanceof Pyramid)) continue;
+            int cb = TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i];
+            int tb = TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i];
+            var siblingKey = appendBitsToKey(parentKey, (byte) (level - 1), cb, tb);
+            if (!visitedNodes.contains(siblingKey) && !siblingKey.equals(nodeIndex)) {
+                toVisit.add(siblingKey);
+            }
+        }
+    }
+
+    // ===== Phase-E private helpers =====
+
+    /**
+     * Append one child level's coord/type bits to a parent key, producing a child key at
+     * {@code parentLevel + 1}.
+     */
+    private static PyramidKey appendBitsToKey(PyramidKey parent, byte parentLevel, int coordBits, int typeBits) {
+        byte childLevel = (byte) (parentLevel + 1);
+        int[] cbArr = new int[childLevel + 1];
+        int[] tbArr = new int[childLevel + 1];
+        for (int l = 1; l <= parentLevel; l++) {
+            cbArr[l] = parent.getCoordBitsAtLevel(l);
+            tbArr[l] = parent.getTypeAtLevel(l);
+        }
+        cbArr[childLevel] = coordBits;
+        tbArr[childLevel] = typeBits;
+        return PyramidKey.fromLevels(childLevel, cbArr, tbArr);
     }
 }
