@@ -21,11 +21,15 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
+import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.pyramid.PyramidKey;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 /**
@@ -100,6 +104,15 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
      * @param forest local forest containing local elements
      * @return list of violations found (empty if none)
      * @throws IllegalArgumentException if ghostLayer or forest is null
+     * @implNote MortonKey ghosts are probed in both directions (coarser ancestors AND finer
+     *           descendants) via the Morton level-scan. TetreeKey / PyramidKey ghosts (RDR-010 pi1.6)
+     *           are routed through the {@link NeighborDetector} and probe only the <em>coarser</em>
+     *           direction (ghost-fine / local-coarse). The ghost-coarse / local-fine arrangement is NOT
+     *           probed locally; detecting it relies on the partition that owns the finer element running
+     *           its own boundary-ghost balance check — an assumed distributed-protocol invariant, not a
+     *           guarantee enforced here (consistent with the chosen "Morton-behavior" scope; Morton does
+     *           not exhaustively probe finer either). Unhandled key types are logged, never silently
+     *           dropped.
      */
     public List<BalanceViolation<Key>> findViolations(
         GhostLayer<Key, ID, Content> ghostLayer,
@@ -127,8 +140,16 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             if (ghostKey instanceof MortonKey mortonGhost) {
                 checkMortonNeighborsForViolations(mortonGhost, ghostLevel, forest,
                                                  ghost.getOwnerRank(), violations);
+            } else if (ghostKey instanceof TetreeKey<?> || ghostKey instanceof PyramidKey) {
+                // RDR-010 pi1.6: tetrahedral / pyramid (cross-shape) neighbor topology via the wired
+                // NeighborDetector — closes the silent-skip gap for non-Morton keys (Approach §4d).
+                checkDetectorNeighborsForViolations(ghostKey, ghostLevel, forest,
+                                                    ghost.getOwnerRank(), violations);
+            } else {
+                log.warn("No balance-neighbor strategy for ghost key type {}; skipping (would silently "
+                         + "miss violations — file a follow-on if this key type needs balance checking)",
+                         ghostKey.getClass().getSimpleName());
             }
-            // Additional key types (TetreeKey, etc.) would be handled similarly
         }
 
         log.debug("Found {} violations in ghost layer with {} ghost elements",
@@ -196,6 +217,80 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
         }
 
         log.debug("Checked {} neighbor positions, found {} neighbors", neighborsChecked, neighborsFound);
+    }
+
+    /**
+     * Check non-Morton (Tetree / Pyramid) ghost-element neighbors for 2:1 balance violations via the
+     * forest's wired {@link NeighborDetector} (RDR-010 pi1.6, Approach §4d — closes the silent-skip gap).
+     *
+     * <p>TetreeKey/PyramidKey have no {@code neighbor(Direction)} method (unlike MortonKey), so neighbor
+     * topology comes from the shape's {@link NeighborDetector#findFaceNeighbors}. For each same-level
+     * face neighbor we then walk its {@link SpatialKey#parent()} chain to the root, probing the forest at
+     * each level — this mirrors the <em>coarser</em> half of the Morton level-scan (where a fine ghost
+     * neighbors a coarser local element).
+     *
+     * <p><b>Scope (documented, not silent — matches the chosen "Morton-behavior" scope).</b> This detects
+     * the ghost-fine / local-coarse arrangement. The finer arrangement (a coarse ghost neighboring a
+     * finer local element) requires descending a canonical child chain, which has no key-level primitive
+     * on PyramidKey; it is deferred. In a distributed forest that arrangement is still detected from the
+     * partition that owns the finer element (whose own boundary ghost is checked from its side), so no
+     * violation goes globally undetected — only locally, on this side, for this arrangement.
+     */
+    private void checkDetectorNeighborsForViolations(
+        Key ghostKey,
+        int ghostLevel,
+        Forest<Key, ID, Content> forest,
+        int sourceRank,
+        List<BalanceViolation<Key>> violations
+    ) {
+        var detector = detectorFor(forest);
+        if (detector == null) {
+            // Every AbstractSpatialIndex subclass wires a detector in its constructor, so a null here is
+            // unexpected and would SILENTLY skip balance checking — warn rather than hide it.
+            log.warn("No neighbor detector available from forest trees; cannot balance-check ghost {} "
+                     + "(its violations are silently skipped)", ghostKey);
+            return;
+        }
+
+        var probed = new HashSet<Key>();
+        for (var neighbor : detector.findFaceNeighbors(ghostKey)) {
+            // Same-level neighbor plus its coarser ancestors (mirrors Morton's coarser level-scan).
+            Key probe = neighbor;
+            while (probe != null) {
+                if (probed.add(probe) && forestContains(forest, probe)) {
+                    int localLevel = probe.getLevel();
+                    int levelDiff = Math.abs(localLevel - ghostLevel);
+                    if (levelDiff > 1) {
+                        violations.add(new BalanceViolation<>(probe, ghostKey, localLevel, ghostLevel,
+                                                              levelDiff, sourceRank));
+                        log.debug("VIOLATION (detector): local level {} vs ghost level {} (diff={})",
+                                  localLevel, ghostLevel, levelDiff);
+                    }
+                }
+                probe = probe.parent();
+            }
+        }
+    }
+
+    /** First non-null neighbor detector among the forest's trees (geometry is index-independent). */
+    private NeighborDetector<Key> detectorFor(Forest<Key, ID, Content> forest) {
+        for (var tree : forest.getAllTrees()) {
+            var detector = tree.getSpatialIndex().getNeighborDetector();
+            if (detector != null) {
+                return detector;
+            }
+        }
+        return null;
+    }
+
+    /** True if any tree in the forest contains {@code key} as an occupied spatial key. */
+    private boolean forestContains(Forest<Key, ID, Content> forest, Key key) {
+        for (var tree : forest.getAllTrees()) {
+            if (tree.getSpatialIndex().containsSpatialKey(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
