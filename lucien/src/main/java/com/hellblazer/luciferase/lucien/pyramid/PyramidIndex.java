@@ -921,21 +921,32 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
     /**
      * Emit at least the SFC-adjacent same-level PyramidKeys into {@code toVisit}.
      *
-     * <p><b>Pi1.4 Phase C (Luciferase-3zs)</b>: emits the sibling pyramid children of the parent
-     * (the SFC-adjacent same-level nodes) <em>unioned</em> with the same-shape (quad-base, f4)
-     * face neighbour from the wired {@link PyramidNeighborDetector} — a cross-parent neighbour the
-     * sibling walk alone misses. Cross-shape topology (the four triangular tet faces, pyramid↔tet↔hex
-     * boundaries) is deferred to pi1.5; for a tet-leaf node the detector contributes nothing.
+     * <p><b>Pi1.5 Phase C (Luciferase-azwr) — cross-shape graduation.</b> Emits the sibling pyramid
+     * children of the parent (the SFC-adjacent same-level nodes) <em>unioned</em> with the full
+     * cross-shape face-neighbour set from the wired {@link PyramidNeighborDetector}. Because the detector
+     * now resolves faces by element navigation, this union includes the four triangular tet faces
+     * (pyramid→tet) as well as the quad base (f4, pyramid↔pyramid) — cross-parent neighbours the sibling
+     * walk alone misses. A <em>tet-leaf</em> {@code nodeIndex} (first-class since pi1.5) likewise emits
+     * its cross-shape face neighbours here.
      *
-     * <p><em>Registered deferral — not silent scope reduction.</em> Cross-shape: bead Luciferase-pi1.5.
+     * <p><b>Tet-sibling bound (documented, not silent).</b> The sibling walk below enqueues only the
+     * <em>Pyramid</em> children of the enclosing parent; non-face-adjacent tet siblings are intentionally
+     * not enqueued. BFS connectivity (kNN / range / collision) traverses face-adjacent cells, and every
+     * face-adjacent neighbour — including cross-shape tets — is emitted via {@code findFaceNeighbors}, so
+     * the omission cannot disconnect the BFS. Exhaustive cross-shape edge/vertex adjacency is a registered
+     * deferral (bead Luciferase-0utt).
+     *
+     * <p>Occupancy-blind: the detector emits geometric neighbours regardless of index occupancy; BFS
+     * callers null-check the node map and skip absent keys. Do NOT add occupancy filtering here.
      */
     @Override
     protected void addNeighboringNodes(PyramidKey nodeIndex, Queue<PyramidKey> toVisit,
                                        Set<PyramidKey> visitedNodes) {
         byte level = nodeIndex.getLevel();
 
-        // Same-shape face neighbour(s) from the wired detector (the cross-parent f4 quad base the
-        // sibling walk below cannot reach). Empty for root / tet-leaf nodes. Cross-shape → pi1.5.
+        // Cross-shape face neighbours from the wired detector: the f4 quad base (pyramid↔pyramid) plus
+        // the four triangular tet faces (pyramid→tet), all cross-parent neighbours the sibling walk
+        // below cannot reach. Empty for the root; for a tet-leaf node this is its cross-shape face set.
         // The detector emits geometric neighbours regardless of index occupancy; the BFS callers
         // null-check the node map and skip absent keys (see KnnSearcher / CollisionEngine). Do NOT
         // add occupancy filtering here — it would break BFS connectivity through empty cells.

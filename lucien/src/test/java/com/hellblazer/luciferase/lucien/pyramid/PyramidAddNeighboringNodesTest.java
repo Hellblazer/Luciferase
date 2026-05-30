@@ -200,6 +200,173 @@ class PyramidAddNeighboringNodesTest {
                    "addNeighboringNodes(f4) must emit self back (BFS symmetry)");
     }
 
+    // ===== pi1.5 Phase C (Luciferase-azwr): cross-shape graduation =====
+
+    @Test
+    void addNeighboringNodes_unionsCrossShapeTetFaceNeighbor() {
+        // pi1.5 Phase C graduation (Luciferase-azwr): addNeighboringNodes consumes the now-cross-shape
+        // detector.findFaceNeighbors, so a pyramid's triangular-face TET neighbor (a tet-leaf key) must
+        // enter the BFS frontier. Non-vacuous: empty / same-shape-only would fail this.
+        var pyr = firstPyramidWithCrossShapeTetFace();
+        assertNotNull(pyr, "expected an SFC pyramid with an in-domain triangular-face tet neighbor");
+        var selfKey = PyramidKeyCodec.encode(pyr);
+        assertNotNull(selfKey);
+
+        // The cross-shape tet face neighbors surfaced by the wired detector.
+        var detector = index.getNeighborDetector();
+        var tetFaceKeys = new HashSet<PyramidKey>();
+        for (var fk : detector.findFaceNeighbors(selfKey)) {
+            if (PyramidIndex.elementFromKey(fk) instanceof com.hellblazer.luciferase.lucien.tetree.Tet) {
+                tetFaceKeys.add(fk);
+            }
+        }
+        assertFalse(tetFaceKeys.isEmpty(), "precondition: detector surfaces >=1 cross-shape tet face");
+
+        var toVisit = new LinkedList<PyramidKey>();
+        var visited = new HashSet<PyramidKey>();
+        visited.add(selfKey);
+        index.addNeighboringNodes(selfKey, toVisit, visited);
+
+        var frontier = new HashSet<>(toVisit);
+        for (var tk : tetFaceKeys) {
+            assertTrue(frontier.contains(tk),
+                       "graduated addNeighboringNodes must union the cross-shape tet face neighbor " + tk);
+        }
+    }
+
+    @Test
+    void addNeighboringNodes_tetLeafNodeIndex_emitsItsCrossShapeNeighbors() {
+        // Red-guard #1 (Phase B substantive-critic): a TET-LEAF nodeIndex was contributing nothing in
+        // pi1.4 (detector returned empty for tet-leaf keys). pi1.5 makes tet-leaf keys first-class BFS
+        // entries: addNeighboringNodes(tetLeafKey) must emit the tet's cross-shape face neighbors.
+        //
+        // Bound (documented, not silent): the sibling walk enqueues only the Pyramid children of the
+        // enclosing parent — non-face-adjacent tet siblings are intentionally NOT enqueued. BFS
+        // connectivity (kNN / range / collision) only traverses face-adjacent cells, and every
+        // face-adjacent neighbor IS emitted via findFaceNeighbors, so the omission is safe.
+        var tetLeafKey = firstCrossShapeTetLeafKey();
+        assertNotNull(tetLeafKey, "expected an in-domain shallow tet-leaf key with face neighbors");
+
+        var detector = index.getNeighborDetector();
+        var faceNeighbors = new HashSet<>(detector.findFaceNeighbors(tetLeafKey));
+        assertFalse(faceNeighbors.isEmpty(), "precondition: tet-leaf key has cross-shape face neighbors");
+
+        var toVisit = new LinkedList<PyramidKey>();
+        var visited = new HashSet<PyramidKey>();
+        visited.add(tetLeafKey);
+        index.addNeighboringNodes(tetLeafKey, toVisit, visited);
+
+        var frontier = new HashSet<>(toVisit);
+        for (var fn : faceNeighbors) {
+            assertTrue(frontier.contains(fn),
+                       "tet-leaf nodeIndex must emit its cross-shape face neighbor " + fn);
+        }
+    }
+
+    @Test
+    void addNeighboringNodes_crossShapeUnionIsReciprocal() {
+        // BFS symmetry across the cross-shape (pyramid <-> tet) seam: if addNeighboringNodes(pyramid)
+        // emits a tet face neighbor, addNeighboringNodes(tet) must emit the pyramid back — else a
+        // kNN/range BFS could reach a cell from one side but not the other and silently miss entities.
+        var pyr = firstPyramidWithCrossShapeTetFace();
+        assertNotNull(pyr);
+        var pyrKey = PyramidKeyCodec.encode(pyr);
+        var detector = index.getNeighborDetector();
+
+        PyramidKey tetKey = null;
+        for (var fk : detector.findFaceNeighbors(pyrKey)) {
+            if (PyramidIndex.elementFromKey(fk) instanceof com.hellblazer.luciferase.lucien.tetree.Tet) {
+                tetKey = fk;
+                break;
+            }
+        }
+        assertNotNull(tetKey, "precondition: pyramid has a cross-shape tet face neighbor");
+
+        // Forward: pyramid emits the tet.
+        var fwd = new LinkedList<PyramidKey>();
+        var vf = new HashSet<PyramidKey>();
+        vf.add(pyrKey);
+        index.addNeighboringNodes(pyrKey, fwd, vf);
+        assertTrue(new HashSet<>(fwd).contains(tetKey), "pyramid must emit its tet face neighbor");
+
+        // Reverse: tet emits the pyramid back.
+        var rev = new LinkedList<PyramidKey>();
+        var vr = new HashSet<PyramidKey>();
+        vr.add(tetKey);
+        index.addNeighboringNodes(tetKey, rev, vr);
+        assertTrue(new HashSet<>(rev).contains(pyrKey),
+                   "addNeighboringNodes(tet) must emit the pyramid back (cross-shape BFS symmetry)");
+    }
+
+    /** First SFC pyramid (level 2..5) whose triangular faces yield an in-domain cross-shape tet neighbor. */
+    private Pyramid firstPyramidWithCrossShapeTetFace() {
+        var detector = index.getNeighborDetector();
+        var roots = new Pyramid[] { new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6),
+                                    new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_7) };
+        var stack = new java.util.ArrayDeque<Pyramid>();
+        for (var r : roots) {
+            stack.push(r);
+        }
+        while (!stack.isEmpty()) {
+            var p = stack.pop();
+            if (p.level() >= 2) {
+                var pk = PyramidKeyCodec.encode(p);
+                if (pk != null) {
+                    for (var fk : detector.findFaceNeighbors(pk)) {
+                        if (PyramidIndex.elementFromKey(fk) instanceof com.hellblazer.luciferase.lucien.tetree.Tet) {
+                            return p;
+                        }
+                    }
+                }
+            }
+            if (p.level() < 5) {
+                for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+                    if (p.child(i) instanceof Pyramid pc) {
+                        stack.push(pc);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * First in-domain shallow tet-leaf key (level 2..5) that has at least one cross-shape face neighbor.
+     * Sourced from a pyramid's triangular-face neighbor — that tet is guaranteed to report the pyramid
+     * back (reciprocity), so its face-neighbor set is non-empty (mirrors PyramidNeighborParityTest).
+     */
+    private PyramidKey firstCrossShapeTetLeafKey() {
+        var detector = index.getNeighborDetector();
+        var roots = new Pyramid[] { new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6),
+                                    new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_7) };
+        var stack = new java.util.ArrayDeque<Pyramid>();
+        for (var r : roots) {
+            stack.push(r);
+        }
+        while (!stack.isEmpty()) {
+            var p = stack.pop();
+            if (p.level() >= 2) {
+                for (int f = 0; f < 4; f++) {
+                    var fn = p.faceNeighbor(f);
+                    if (fn != null && fn.element() instanceof com.hellblazer.luciferase.lucien.tetree.Tet t) {
+                        var tk = PyramidKeyCodec.encode(t);
+                        if (tk != null && !detector.findFaceNeighbors(tk).isEmpty()) {
+                            return tk;
+                        }
+                    }
+                }
+            }
+            if (p.level() < 5) {
+                for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+                    if (p.child(i) instanceof Pyramid pc) {
+                        stack.push(pc);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     private Pyramid[] firstPyramidWithSfcQuadBaseNeighbor() {
         var roots = new Pyramid[] { new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6),
                                     new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_7) };
