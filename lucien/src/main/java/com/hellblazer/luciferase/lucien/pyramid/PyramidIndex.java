@@ -620,61 +620,9 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
      * @see #elementFromKey(PyramidKey)
      */
     static Pyramid pyramidFromKey(PyramidKey key) {
-        byte level = key.getLevel();
-        if (level == 0) {
-            // Virtual root — return the type-6 root cover pyramid
-            return new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6);
-        }
-        // Step 1: find the type-6 or type-7 root child at level 1
-        var type6Root = new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6);
-        var type7Root = new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_7);
-
-        // Identify the level-1 child by matching coordBits[1]/typeBits[1]
-        int coordBits1 = key.getCoordBitsAtLevel(1);
-        int typeBits1  = key.getTypeAtLevel(1);
-
-        Pyramid current = null;
-        outer:
-        for (var root : new Pyramid[] { type6Root, type7Root }) {
-            int row = root.type() - Pyramid.TYPE_6;
-            for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
-                if (TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i]  == coordBits1
-                    && TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i] == typeBits1) {
-                    var child = root.child(i);
-                    if (child instanceof Pyramid pc) {
-                        current = pc;
-                    }
-                    // If it's a tet child at level 1 and level==1, fall through → return null below
-                    break outer;
-                }
-            }
-        }
-
-        if (current == null || level == 1) {
-            // level-1 element is a tet (or not found) — not a pyramid
-            return level == 1 && current != null ? current : null;
-        }
-
-        // Descend levels 2..level
-        for (int l = 2; l <= level; l++) {
-            int cb = key.getCoordBitsAtLevel(l);
-            int tb = key.getTypeAtLevel(l);
-            Pyramid next = null;
-            int row = current.type() - Pyramid.TYPE_6;
-            for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
-                if (TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i]  == cb
-                    && TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i] == tb) {
-                    var child = current.child(i);
-                    if (child instanceof Pyramid pc) {
-                        next = pc;
-                    }
-                    break;
-                }
-            }
-            if (next == null) return current; // key ends in a tet at level l; return parent pyramid
-            current = next;
-        }
-        return current;
+        // Shared descent (RDR-010 Luciferase-3y1): delegate to PyramidKeyDecoder so this and
+        // PyramidSubdivisionStrategy.pyramidFromKey cannot silently diverge.
+        return PyramidKeyDecoder.pyramidFromKey(key);
     }
 
     /**

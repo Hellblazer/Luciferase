@@ -205,57 +205,12 @@ extends SubdivisionStrategy<PyramidKey, ID, Content> {
     }
 
     /**
-     * Reconstruct the Pyramid element for a key by descending from root. Package-private mirror of
-     * PyramidIndex.pyramidFromKey — needed here since SubdivisionStrategy has no back-reference
-     * to the index.
-     *
-     * <p>TODO(Luciferase-3y1): this descent is duplicated verbatim with
-     * {@code PyramidIndex.pyramidFromKey} (~50 lines). Extract to a shared package-private
-     * {@code PyramidKeyDecoder} so the two cannot silently diverge. Deferred out of pi1.3 Phase F
-     * (close-out, no new production code beyond the max-level fix-back); pure refactor, tracked.
+     * Reconstruct the Pyramid element for a key by descending from root. Delegates to the shared
+     * {@link PyramidKeyDecoder} (RDR-010 Luciferase-3y1) — the strategy has no back-reference to the
+     * index, and sharing the descent keeps it from diverging from {@code PyramidIndex.pyramidFromKey}.
      */
     static Pyramid pyramidFromKey(PyramidKey key) {
-        byte level = key.getLevel();
-        if (level == 0) {
-            return new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6);
-        }
-        var type6Root = new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6);
-        var type7Root = new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_7);
-        int cb1 = key.getCoordBitsAtLevel(1);
-        int tb1 = key.getTypeAtLevel(1);
-        Pyramid current = null;
-        outer:
-        for (var root : new Pyramid[]{ type6Root, type7Root }) {
-            int row = root.type() - Pyramid.TYPE_6;
-            for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
-                if (TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i] == cb1
-                    && TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i] == tb1) {
-                    var child = root.child(i);
-                    if (child instanceof Pyramid pc) current = pc;
-                    break outer;
-                }
-            }
-        }
-        if (current == null || level == 1) {
-            return (level == 1 && current != null) ? current : null;
-        }
-        for (int l = 2; l <= level; l++) {
-            int cb = key.getCoordBitsAtLevel(l);
-            int tb = key.getTypeAtLevel(l);
-            int row = current.type() - Pyramid.TYPE_6;
-            Pyramid next = null;
-            for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
-                if (TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i] == cb
-                    && TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i] == tb) {
-                    var child = current.child(i);
-                    if (child instanceof Pyramid pc) next = pc;
-                    break;
-                }
-            }
-            if (next == null) return current;
-            current = next;
-        }
-        return current;
+        return PyramidKeyDecoder.pyramidFromKey(key);
     }
 
     /**
