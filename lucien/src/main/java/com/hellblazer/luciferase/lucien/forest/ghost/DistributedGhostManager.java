@@ -244,6 +244,16 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
     /**
      * Set element ownership information for distributed ghost detection.
      *
+     * <p><b>Owner-map split (RDR-010 pi1.5 Phase C — Luciferase-azwr).</b> This populates the manager's
+     * own {@link #elementOwners} map, which is <em>separate</em> from
+     * {@link GhostBoundaryDetector#setElementOwner}'s map. The local boundary scan
+     * ({@link GhostBoundaryDetector#createGhostLayer}) — the path that decides which remote-owned
+     * neighbors become ghosts — reads the <em>detector's</em> map, not this one. To drive local
+     * cross-shape ghost creation from external (Forest-partition) ownership, set owners on the
+     * {@link GhostBoundaryDetector} (the inverted-seam owner store). This map currently backs only
+     * {@link #getElementOwner} for manager-level routing; do not assume setting it here feeds the local
+     * ghost scan.
+     *
      * @param key the spatial key
      * @param ownerRank the rank of the process that owns this element
      */

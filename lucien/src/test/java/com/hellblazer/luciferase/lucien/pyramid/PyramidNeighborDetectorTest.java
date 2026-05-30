@@ -28,11 +28,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Same-shape (pyramid↔pyramid) topology for {@link PyramidNeighborDetector} (RDR-010 pi1.4 Phase B,
- * bead Luciferase-mu9). A pyramid's only same-shape face is the quadrilateral base (f4, type 6↔7);
- * the four triangular faces neighbor tetrahedra (cross-shape, deferred to pi1.5). Validation follows
- * the CLAUDE.md face-neighbor caveat: reciprocity/involution, plus the shared-vertex-count assertion
- * which is valid ONLY for the conforming pyramid quad base (invariant #5).
+ * Cross-shape (pyramid↔tet) topology for {@link PyramidNeighborDetector} (RDR-010 pi1.4 same-shape /
+ * pi1.5 cross-shape, beads Luciferase-mu9 / Luciferase-9e3a). A pyramid's only same-shape face is the
+ * quadrilateral base (f4, type 6↔7); the four triangular faces neighbor tetrahedra (cross-shape, now
+ * surfaced as tet-leaf keys). Validation follows the CLAUDE.md face-neighbor caveat: reciprocity/
+ * involution for cross-shape tet neighbors, and the shared-vertex-count assertion ONLY for the
+ * conforming pyramid quad base (invariant #5).
  *
  * @author hal.hildebrand
  */
@@ -70,6 +71,28 @@ class PyramidNeighborDetectorTest {
                 descend(pc, maxLevel, out);
             }
         }
+    }
+
+    /** The pyramid-typed (same-shape) subset of a neighbor-key list. */
+    private static List<PyramidKey> pyramidSubset(List<PyramidKey> keys) {
+        var out = new ArrayList<PyramidKey>();
+        for (var k : keys) {
+            if (PyramidIndex.elementFromKey(k) instanceof Pyramid) {
+                out.add(k);
+            }
+        }
+        return out;
+    }
+
+    /** The tet-typed (cross-shape) subset of a neighbor-key list. */
+    private static List<PyramidKey> tetSubset(List<PyramidKey> keys) {
+        var out = new ArrayList<PyramidKey>();
+        for (var k : keys) {
+            if (PyramidIndex.elementFromKey(k) instanceof Tet) {
+                out.add(k);
+            }
+        }
+        return out;
     }
 
     private static int sharedVertexCount(Pyramid a, Pyramid b) {
@@ -113,8 +136,11 @@ class PyramidNeighborDetectorTest {
         var neighborKey = PyramidKeyCodec.encode(neighbor);
 
         var faces = detector.findFaceNeighbors(selfKey);
-        assertEquals(1, faces.size(), "a pyramid has exactly one same-shape (quad-base) face neighbor");
-        assertEquals(neighborKey, faces.get(0));
+        // pi1.5: a pyramid has exactly ONE same-shape (quad-base) face neighbor; the rest of the face
+        // result is cross-shape tets. Filter to the pyramid subset to assert the same-shape contract.
+        var pyramidFaces = pyramidSubset(faces);
+        assertEquals(1, pyramidFaces.size(), "a pyramid has exactly one same-shape (quad-base) face neighbor");
+        assertEquals(neighborKey, pyramidFaces.get(0));
         // The quad base is a conforming face shared by exactly two pyramids → exactly 4 shared vertices
         // (invariant #5; this assertion is valid ONLY for the conforming pyramid quad base).
         assertEquals(4, sharedVertexCount(self, neighbor));
@@ -127,8 +153,9 @@ class PyramidNeighborDetectorTest {
         var self = pair[0];
         var selfKey = PyramidKeyCodec.encode(self);
         var expected = PyramidKeyCodec.encode((Pyramid) self.faceNeighbor(4).element());
-        assertEquals(List.of(expected), detector.findFaceNeighbors(selfKey),
-                     "unified-enum face result must agree with Pyramid.faceNeighbor(4)");
+        // The single pyramid-typed face neighbor must agree with Pyramid.faceNeighbor(4).
+        assertEquals(List.of(expected), pyramidSubset(detector.findFaceNeighbors(selfKey)),
+                     "the same-shape face result must agree with Pyramid.faceNeighbor(4)");
     }
 
     @Test
@@ -142,23 +169,87 @@ class PyramidNeighborDetectorTest {
                    "face-neighbor relation must be reciprocal (neighbor(neighbor)==self)");
     }
 
+    /**
+     * pi1.5 cross-shape (honesty-trap pin rewrite): the four triangular faces neighbor tetrahedra, and
+     * those in-domain, in-SFC tet neighbors are now PRESENT in the face result as tet-leaf keys (no
+     * longer absent). The same-shape f4 pyramid neighbor is also present. This is RED against the pi1.4
+     * same-shape-only detector (which returned only the f4 pyramid).
+     */
     @Test
-    void triangularFacesNeighborTetsAndAreAbsentFromSameShapeResult() {
-        var pair = selfAndQuadBaseNeighbor();
-        assertNotNull(pair);
-        var self = pair[0];
-        var selfKey = PyramidKeyCodec.encode(self);
-        // The four triangular faces neighbor tetrahedra (cross-shape, pi1.5) — documented here so the
-        // single-element same-shape face result is a deliberate deferral, not silent scope reduction.
-        for (int f = 0; f < 4; f++) {
-            var fn = self.faceNeighbor(f);
-            if (fn != null) {
-                assertInstanceOf(Tet.class, fn.element(),
-                                 "triangular face " + f + " must neighbor a tetrahedron");
+    void triangularFacesNeighborTetsAndArePresentInTheFaceResult() {
+        // A pyramid all four of whose triangular-face tet neighbors are in-domain SFC elements.
+        Pyramid self = null;
+        for (var p : validPyramids(5)) {
+            if (PyramidKeyCodec.encode(p) == null) {
+                continue;
+            }
+            int encodableTets = 0;
+            for (int f = 0; f < 4; f++) {
+                var fn = p.faceNeighbor(f);
+                if (fn != null && fn.element() instanceof Tet t && PyramidKeyCodec.encode(t) != null) {
+                    encodableTets++;
+                }
+            }
+            if (encodableTets >= 1) {
+                self = p;
+                break;
             }
         }
-        assertEquals(1, detector.findFaceNeighbors(selfKey).size(),
-                     "same-shape face result must exclude all four triangular (tet) faces");
+        assertNotNull(self, "expected an SFC pyramid with at least one in-SFC triangular tet neighbor");
+        var selfKey = PyramidKeyCodec.encode(self);
+        var faces = detector.findFaceNeighbors(selfKey);
+
+        // Every in-domain, in-SFC triangular-face tet neighbor must appear as a tet-leaf key.
+        int expectedTets = 0;
+        for (int f = 0; f < 4; f++) {
+            var fn = self.faceNeighbor(f);
+            if (fn != null && fn.element() instanceof Tet t) {
+                assertInstanceOf(Tet.class, fn.element(), "triangular face " + f + " neighbors a tet");
+                var tk = PyramidKeyCodec.encode(t);
+                if (tk != null) {
+                    expectedTets++;
+                    assertTrue(faces.contains(tk),
+                               "cross-shape tet face neighbor (face " + f + ") must be present: " + t);
+                    assertInstanceOf(Tet.class, PyramidIndex.elementFromKey(tk), "tet-leaf key decodes to a Tet");
+                }
+            }
+        }
+        assertTrue(expectedTets >= 1, "fixture must contribute >= 1 cross-shape tet face neighbor");
+        // Completeness (not just presence): the tet-typed subset of the face result equals exactly the
+        // count of encodable triangular-face tets — no legitimate neighbor dropped, no duplicate added.
+        assertEquals(expectedTets, tetSubset(faces).size(),
+                     "tet-leaf subset of face result must equal the count of encodable triangular-face tets");
+    }
+
+    /**
+     * Completeness count-oracle (substantive-critic Phase B finding): for a pyramid whose ALL FOUR
+     * triangular faces neighbor in-domain SFC tets, the detector must surface exactly four tet-leaf
+     * keys — the encode-filter must not silently drop a legitimate cross-shape neighbor (ghost hole).
+     * Reciprocity sweeps prove soundness of survivors; this proves coverage.
+     */
+    @Test
+    void allFourTriangularFaceTetsArePresentWhenInDomain() {
+        Pyramid self = null;
+        for (var p : validPyramids(5)) {
+            if (PyramidKeyCodec.encode(p) == null) {
+                continue;
+            }
+            int encodableTets = 0;
+            for (int f = 0; f < 4; f++) {
+                var fn = p.faceNeighbor(f);
+                if (fn != null && fn.element() instanceof Tet t && PyramidKeyCodec.encode(t) != null) {
+                    encodableTets++;
+                }
+            }
+            if (encodableTets == 4) {
+                self = p;
+                break;
+            }
+        }
+        assertNotNull(self, "expected an interior pyramid whose four triangular faces are all in-SFC tets");
+        var faces = detector.findFaceNeighbors(PyramidKeyCodec.encode(self));
+        assertEquals(4, tetSubset(faces).size(),
+                     "all four in-domain triangular-face tets must be surfaced (no encode-filter drop)");
     }
 
     @Test
@@ -184,16 +275,17 @@ class PyramidNeighborDetectorTest {
 
     @Test
     void everyEnumeratedNeighborSharesAtLeastTheBucketThreshold() {
-        // Non-vacuous: each returned vertex/edge/face neighbor genuinely shares ≥1/≥2/≥4 vertices
-        // with self, and is a pyramid (same-shape), and decodes back to the level-matched element.
+        // Non-vacuous: each returned SAME-SHAPE (pyramid) vertex/edge/face neighbor genuinely shares
+        // ≥1/≥2/≥4 vertices with self, and decodes back to the level-matched pyramid. (Cross-shape tet
+        // neighbors are validated by reciprocity, not shared-vertex — CLAUDE.md caveat.)
         var pair = selfAndQuadBaseNeighbor();
         assertNotNull(pair);
         var self = pair[0];
         var selfKey = PyramidKeyCodec.encode(self);
 
-        assertThresholds(self, detector.findVertexNeighbors(selfKey), 1);
-        assertThresholds(self, detector.findEdgeNeighbors(selfKey), 2);
-        assertThresholds(self, detector.findFaceNeighbors(selfKey), 4);
+        assertThresholds(self, pyramidSubset(detector.findVertexNeighbors(selfKey)), 1);
+        assertThresholds(self, pyramidSubset(detector.findEdgeNeighbors(selfKey)), 2);
+        assertThresholds(self, pyramidSubset(detector.findFaceNeighbors(selfKey)), 4);
     }
 
     private static void assertThresholds(Pyramid self, List<PyramidKey> neighbors, int min) {
@@ -219,9 +311,15 @@ class PyramidNeighborDetectorTest {
         var selfKey = PyramidKeyCodec.encode(self);
         var universe = validPyramids(5);
 
-        assertEquals(expectedNeighborKeys(self, universe, 4), setOf(detector.findFaceNeighbors(selfKey)));
-        assertEquals(expectedNeighborKeys(self, universe, 2), setOf(detector.findEdgeNeighbors(selfKey)));
-        assertEquals(expectedNeighborKeys(self, universe, 1), setOf(detector.findVertexNeighbors(selfKey)));
+        // The SAME-SHAPE (pyramid) subset of each bucket must match the brute-force same-shape oracle.
+        // Cross-shape tet neighbors are validated separately (navigation + reciprocity); they are not
+        // part of this shared-vertex pyramid oracle.
+        assertEquals(expectedNeighborKeys(self, universe, 4),
+                     setOf(pyramidSubset(detector.findFaceNeighbors(selfKey))));
+        assertEquals(expectedNeighborKeys(self, universe, 2),
+                     setOf(pyramidSubset(detector.findEdgeNeighbors(selfKey))));
+        assertEquals(expectedNeighborKeys(self, universe, 1),
+                     setOf(pyramidSubset(detector.findVertexNeighbors(selfKey))));
         // And the universe genuinely contains MORE than the single face neighbor at the edge/vertex
         // thresholds, so the oracle is not trivially equal to the 1-element face set.
         assertTrue(expectedNeighborKeys(self, universe, 2).size() > 1,
@@ -266,15 +364,41 @@ class PyramidNeighborDetectorTest {
     }
 
     @Test
-    void tetLeafKeyDefersToEmpty() {
-        // root6 child index 1 is a tetrahedron (cid 1, type 3). A tet-leaf PyramidKey is cross-shape
-        // territory (pi1.5): the same-shape detector returns empty, never throws.
+    void tetLeafKeyReportsCrossShapeNeighbors() {
+        // pi1.5 (was tetLeafKeyDefersToEmpty): root6.child(1) is a shallowest tet (cid 1, type 3). A
+        // tet-leaf PyramidKey now reports its cross-shape face neighbors (its bounding pyramid + tet
+        // neighbors at the shallow boundary) instead of deferring to empty.
         var tetLeafKey = PyramidKey.fromLevels((byte) 1, new int[] { 0, 1 }, new int[] { 0, 3 });
         assertEquals((byte) 3, tetLeafKey.getTypeAtLevel(1), "precondition: leaf type is a tet");
-        assertTrue(detector.findFaceNeighbors(tetLeafKey).isEmpty());
-        assertTrue(detector.findEdgeNeighbors(tetLeafKey).isEmpty());
-        assertTrue(detector.findVertexNeighbors(tetLeafKey).isEmpty());
-        assertTrue(detector.findNeighborsWithOwners(tetLeafKey, GhostType.FACES).isEmpty());
+        assertInstanceOf(Tet.class, PyramidIndex.elementFromKey(tetLeafKey), "precondition: decodes to a Tet");
+
+        var faces = detector.findFaceNeighbors(tetLeafKey);
+        assertFalse(faces.isEmpty(), "a shallow tet leaf must report cross-shape face neighbors");
+        // Reciprocity: the tet leaf appears in each of its neighbors' face results.
+        for (var nk : faces) {
+            assertTrue(detector.findFaceNeighbors(nk).contains(tetLeafKey),
+                       "cross-shape face-neighbor relation must be reciprocal: " + tetLeafKey + " <-> " + nk);
+        }
+        // Edge/vertex are bounded supersets of the face set (face ⊆ edge ⊆ vertex).
+        var edges = detector.findEdgeNeighbors(tetLeafKey);
+        var verts = detector.findVertexNeighbors(tetLeafKey);
+        assertTrue(edges.containsAll(faces), "edge set ⊇ face set");
+        assertTrue(verts.containsAll(edges), "vertex set ⊇ edge set");
+    }
+
+    @Test
+    void detectorNeverThrowsForAnyTetLeafKey() {
+        // The detector must never propagate an exception (a throw would break KnnSearcher/CollisionEngine
+        // BFS). A level-2 shallow tet leaf exercises the tet-leaf navigation path. Note: a DEEP tet
+        // (l > minTetLevel) is unreachable as a key by construction — encode(Tet) returns null for it
+        // and elementFromKey cannot reconstruct it — so Tet.faceNeighborElement's fail-loud guard is
+        // never actually reached through a key; the detector's catch is defensive against future change.
+        var p1 = new Pyramid(0, 0, 0, (byte) 1, Pyramid.TYPE_6);
+        var tet2 = (Tet) p1.child(1);               // shallow level-2 tet (minTetLevel == level == 2)
+        var tetKey = PyramidKeyCodec.encode(tet2);
+        assertNotNull(tetKey);
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> detector.findFaceNeighbors(tetKey));
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> detector.findVertexNeighbors(tetKey));
     }
 
     @Test
@@ -301,11 +425,15 @@ class PyramidNeighborDetectorTest {
         assertNotNull(pair);
         var selfKey = PyramidKeyCodec.encode(pair[0]);
         var neighborKey = PyramidKeyCodec.encode(pair[1]);
+        var faces = detector.findFaceNeighbors(selfKey);
         var owners = detector.findNeighborsWithOwners(selfKey, GhostType.FACES);
-        assertEquals(1, owners.size());
-        var info = owners.get(0);
-        assertEquals(neighborKey, info.neighborKey());
-        assertEquals(0, info.ownerRank());
-        assertTrue(info.isLocal());
+        // One NeighborInfo per face neighbor (the f4 pyramid + the cross-shape tets), all wrapped local.
+        assertEquals(faces.size(), owners.size());
+        var ownerKeys = owners.stream().map(NeighborDetector.NeighborInfo::neighborKey).toList();
+        assertTrue(ownerKeys.contains(neighborKey), "the f4 pyramid neighbor must be wrapped");
+        for (var info : owners) {
+            assertEquals(0, info.ownerRank(), "Phase B: ownership is local-only (distributed → Phase C)");
+            assertTrue(info.isLocal());
+        }
     }
 }

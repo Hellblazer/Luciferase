@@ -7,6 +7,7 @@ package com.hellblazer.luciferase.lucien.pyramid;
 
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.HybridElement;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -20,14 +21,17 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Validates {@link PyramidKeyCodec#encode(Pyramid)} — the fail-safe, round-trip-verified inverse of
- * {@link PyramidIndex#pyramidFromKey(PyramidKey)} (RDR-010 pi1.4 Phase A, bead Luciferase-8zv).
+ * Validates the fail-safe, round-trip-verified {@link PyramidKeyCodec} encoders: {@code encode(Pyramid)}
+ * (RDR-010 pi1.4 Phase A, bead Luciferase-8zv) and {@code encode(Tet)} + {@code elementFromKey} for a
+ * shallowest tet leaf (RDR-010 pi1.5 Phase A, bead Luciferase-uqik).
  *
- * <p>Three contracts:
+ * <p>Contracts:
  * <ul>
  *   <li><b>decode∘encode == identity</b> for every valid SFC pyramid (types 6 and 7, multiple levels).</li>
  *   <li><b>encode∘decode == identity</b> (key-side bijection).</li>
  *   <li><b>non-SFC / unreachable candidate → null</b> with no exception on the hot path.</li>
+ *   <li><b>shallowest tet leaf round-trips</b> via {@code encode(Tet)} / {@code elementFromKey}; deeper
+ *       or pure-Tetree tets → null (deep-tet cross-shape deferred to q3p Phase E).</li>
  * </ul>
  *
  * @author hal.hildebrand
@@ -149,6 +153,108 @@ class PyramidKeyCodecTest {
         assertDoesNotThrow(() -> holder[0] = PyramidKeyCodec.encode(nonSfc),
                            "encode must be fail-safe on the hot path (no throw)");
         assertNull(holder[0], "non-SFC unreachable pyramid must encode to null");
+    }
+
+    // ===== pi1.5 Phase A (Luciferase-uqik): Tet->PyramidKey codec + leaf-aware decode =====
+
+    /**
+     * A shallowest tet leaf (minTetLevel == level) — the four triangular-face neighbors of a pyramid —
+     * round-trips: {@code encode(Tet)} yields a non-null key whose {@code elementFromKey} recovers the
+     * same Tet geometry (x,y,z,level,type). This is the bridge Phase B's detector needs to surface
+     * cross-shape neighbors as tet-leaf PyramidKeys.
+     */
+    @Test
+    void shallowTetLeafRoundTrips() {
+        // root6.child(1) = tet type 3 at cubeId 1 (anchor x-bit set), level 1, minTetLevel 1.
+        int h = Constants.lengthAtLevel((byte) 1);
+        var tet = new Tet(h, 0, 0, (byte) 1, (byte) 3, (byte) 1);
+        var key = PyramidKeyCodec.encode(tet);
+        assertNotNull(key, "a shallowest tet leaf must encode to a tet-leaf PyramidKey");
+        assertEquals((byte) 1, key.getLevel());
+        var decoded = PyramidIndex.elementFromKey(key);
+        assertTrue(decoded instanceof Tet, () -> "leaf must decode to a Tet, got " + decoded);
+        var dt = (Tet) decoded;
+        assertEquals(tet.x(), dt.x());
+        assertEquals(tet.y(), dt.y());
+        assertEquals(tet.z(), dt.z());
+        assertEquals(tet.level(), dt.level());
+        assertEquals(tet.type(), dt.type(), "leaf tet type must survive the round trip");
+    }
+
+    /**
+     * Level-2 round-trip — the path Phase B actually exercises (a pyramid at level &gt;= 1 whose
+     * triangular faces / children are shallowest tets at level &gt;= 2). This drives the {@code encode}
+     * pyramid-parent walk loop and the {@code elementFromKey} descent loop, both dead at level 1.
+     */
+    @Test
+    void shallowTetLeafRoundTripsAtLevel2() {
+        // root6.child(0) = type-6 pyramid at level 1; its child(1) = tet type 3 at level 2 (shallowest).
+        var p1 = new Pyramid(0, 0, 0, (byte) 1, Pyramid.TYPE_6);
+        var child = p1.child(1);
+        assertTrue(child instanceof Tet, () -> "precondition: level-1 pyramid child(1) is a tet, got " + child);
+        var tet2 = (Tet) child;
+        assertEquals((byte) 2, tet2.level());
+        assertEquals(tet2.level(), tet2.minTetLevel(), "precondition: shallowest tet (minTetLevel==level)");
+        var key = PyramidKeyCodec.encode(tet2);
+        assertNotNull(key, "a level-2 shallowest tet leaf must encode");
+        assertEquals((byte) 2, key.getLevel());
+        var decoded = PyramidIndex.elementFromKey(key);
+        assertTrue(decoded instanceof Tet, () -> "level-2 tet-leaf key must decode to a Tet, got " + decoded);
+        var dt = (Tet) decoded;
+        assertEquals(tet2.x(), dt.x());
+        assertEquals(tet2.y(), dt.y());
+        assertEquals(tet2.z(), dt.z());
+        assertEquals(tet2.level(), dt.level());
+        assertEquals(tet2.type(), dt.type());
+    }
+
+    /**
+     * Only the SHALLOWEST tet of a pyramidal branch (minTetLevel == level) is in pi1.5 scope. A deeper
+     * pyramid-rooted tet (minTetLevel &lt; level) and a pure-Tetree tet (minTetLevel == -1) both encode
+     * to null — fail-safe, never a throw, never a bogus key. Deep-tet cross-shape is deferred (q3p
+     * Phase E, fail-loud guarded).
+     */
+    @Test
+    void deepOrPureTetEncodesToNull() {
+        int h2 = Constants.lengthAtLevel((byte) 2);
+        // Deep pyramid-rooted tet: level 2 but the tet branch began at level 1.
+        var deep = new Tet(h2, 0, 0, (byte) 2, (byte) 3, (byte) 1);
+        assertNull(PyramidKeyCodec.encode(deep), "deeper-than-shallowest tet must encode to null");
+        // Pure-Tetree tet (no pyramid ancestor).
+        var pure = new Tet(h2, 0, 0, (byte) 2, (byte) 0, (byte) -1); // minTetLevel -1 = pure-Tetree
+        assertNull(PyramidKeyCodec.encode(pure), "pure-Tetree tet must encode to null");
+    }
+
+    /**
+     * Independent bit-value oracle for a tet-leaf key (defends against a co-consistent error in
+     * encode + elementFromKey). The level-1 tet root6.child(1) has cubeId 1, type 3, so its single
+     * 6-bit group = (coordBits &lt;&lt; 3) | typeBits = (1 &lt;&lt; 3) | 3 = 11.
+     */
+    @Test
+    void goldenTetLeafKeyIndependentOfFromLevels() {
+        int h = Constants.lengthAtLevel((byte) 1);
+        var tet = new Tet(h, 0, 0, (byte) 1, (byte) 3, (byte) 1);
+        var key = PyramidKeyCodec.encode(tet);
+        assertNotNull(key);
+        assertEquals((byte) 1, key.getLevel());
+        assertEquals(11L, key.getLowBits(), "golden tet-leaf lowBits = (1<<3)|3");
+        assertEquals(0L, key.getHighBits());
+    }
+
+    /**
+     * {@code elementFromKey} discriminates leaf shape by the leaf type bits: a tet-leaf key decodes to
+     * a {@link Tet}, a pyramid key to a {@link Pyramid}.
+     */
+    @Test
+    void elementFromKeyDiscriminatesLeafShape() {
+        int h = Constants.lengthAtLevel((byte) 1);
+        var tetKey = PyramidKeyCodec.encode(new Tet(h, 0, 0, (byte) 1, (byte) 3, (byte) 1));
+        assertNotNull(tetKey);
+        assertTrue(PyramidIndex.elementFromKey(tetKey) instanceof Tet, "tet-leaf key -> Tet");
+
+        var pyrKey = PyramidKeyCodec.encode(new Pyramid(0, 0, 0, (byte) 2, Pyramid.TYPE_6));
+        assertNotNull(pyrKey);
+        assertTrue(PyramidIndex.elementFromKey(pyrKey) instanceof Pyramid, "pyramid key -> Pyramid");
     }
 
     @Test

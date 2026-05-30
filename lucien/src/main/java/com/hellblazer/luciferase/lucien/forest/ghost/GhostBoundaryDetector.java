@@ -719,7 +719,19 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
         return neighbors;
     }
 
-    private void createGhostElement(Key neighborKey, int ownerRank) {
+    /**
+     * Create a ghost element for a remote-owned neighbor that is absent from the local index.
+     *
+     * <p>Placeholder hook: the actual ghost entity data arrives asynchronously via gRPC
+     * ({@link DistributedGhostManager}). This method is the single point where the local boundary scan
+     * decides "this neighbor key, owned by {@code ownerRank}, is a ghost" — {@code protected} so an
+     * integration test can observe the firing (RDR-010 pi1.5 Phase C, Luciferase-azwr), which is the
+     * only way to assert the cross-shape ghost path end-to-end given the placeholder body.
+     *
+     * @param neighborKey the spatial key of the remote-owned neighbor
+     * @param ownerRank    the owning process rank (always non-zero here)
+     */
+    protected void createGhostElement(Key neighborKey, int ownerRank) {
         // Placeholder ghost creation - actual data would come via gRPC
         log.trace("Creating placeholder ghost for key {} owned by rank {}", neighborKey, ownerRank);
     }
