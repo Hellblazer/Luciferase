@@ -36,6 +36,8 @@ import java.util.stream.Stream;
  */
 public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialIndex<PyramidKey, ID, Content> {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PyramidIndex.class);
+
     /** Default maximum entities per node, mirroring Octree. */
     private static final int DEFAULT_MAX_ENTITIES_PER_NODE = 10;
 
@@ -331,6 +333,91 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
     @Override
     protected float getCellSizeAtLevel(byte level) {
         return Constants.lengthAtLevel(level);
+    }
+
+    /** Defensive cap on the spanning cube-grid enumeration to avoid pathological memory blow-up. */
+    private static final int MAX_SPANNING_CELLS = 1_000_000;
+
+    /**
+     * Distribute a bounded entity across the pyramid-SFC elements its bounds overlap (RDR-010, bead
+     * Luciferase-7eb), so {@code getEntitySpanCount > 1} for space-spanning bounds. Enumerates the cube
+     * grid at {@code level} clamped to {@code [0, MAX_COORD]}, and for each cube cell registers the entity
+     * in the one element returned by {@link #calculateSpatialIndex} for the cell <em>centre</em>.
+     *
+     * <p><b>Coverage is cube-granular and conservative — NOT element-granular (weaker than {@code Tetree},
+     * looser than {@code Octree}).</b> Two consequences callers (range query, kNN, ghost/forest spanning)
+     * must account for:
+     * <ul>
+     *   <li><b>Under-coverage within a cube:</b> a cube cell holds several pyramid/tet elements, but only
+     *       the element containing the cell centre is registered. An entity overlapping a <em>different</em>
+     *       element of that cube is not registered there — unlike {@code Tetree.findIntersectingTetrahedra}
+     *       (element-level) or {@code Octree} (one node per cube). Element-level coverage is a registered
+     *       follow-on (bead Luciferase-401t).</li>
+     *   <li><b>Over-inclusion across cubes:</b> no per-cell geometric intersection test is applied (unlike
+     *       Octree's {@code bounds.intersectsCube} filter); the entity is registered in every cube whose
+     *       origin falls in the clamped bounding box — a conservative superset (possible false-positive
+     *       range membership, never a false negative at cube granularity).</li>
+     *   <li><b>Mixed-level keys:</b> when a cell centre falls in a tet sub-region, {@link #calculateSpatialIndex}
+     *       returns a key at a <em>shallower</em> level than {@code level} (its documented caveat), so the
+     *       entity is registered at coarser granularity for that cell.</li>
+     * </ul>
+     *
+     * <p>Spanning does not trigger subdivision (avoids cascading subdivisions across many cells). Inverted
+     * or empty clamped ranges (bounds entirely outside the domain) and grids exceeding
+     * {@link #MAX_SPANNING_CELLS} fall back to single-node insertion at the entity position (with a warning
+     * for the cap case) — never leaving the entity registered in zero nodes.
+     */
+    @Override
+    protected void insertWithSpanning(ID entityId, EntityBounds bounds, byte level) {
+        if (bounds == null) {
+            super.insertWithSpanning(entityId, bounds, level);
+            return;
+        }
+        int cellSize = Constants.lengthAtLevel(level);
+        int max = Constants.MAX_COORD;
+        // Clamp the bounds to the domain and snap to the cube grid at this level.
+        int minX = Math.max(0, (int) Math.floor(bounds.getMinX() / cellSize) * cellSize);
+        int minY = Math.max(0, (int) Math.floor(bounds.getMinY() / cellSize) * cellSize);
+        int minZ = Math.max(0, (int) Math.floor(bounds.getMinZ() / cellSize) * cellSize);
+        int maxX = Math.min(max, (int) Math.floor(bounds.getMaxX() / cellSize) * cellSize);
+        int maxY = Math.min(max, (int) Math.floor(bounds.getMaxY() / cellSize) * cellSize);
+        int maxZ = Math.min(max, (int) Math.floor(bounds.getMaxZ() / cellSize) * cellSize);
+
+        // Inverted/empty range after clamping ⇒ the bounds lie entirely outside the domain in some axis.
+        // Fall back to single-node insertion so the entity is still registered (a negative cell count
+        // would otherwise slip past the cap guard and leave the entity in zero spatial nodes — invisible).
+        if (maxX < minX || maxY < minY || maxZ < minZ) {
+            super.insertWithSpanning(entityId, bounds, level);
+            return;
+        }
+
+        long cellsX = (long) (maxX - minX) / cellSize + 1;
+        long cellsY = (long) (maxY - minY) / cellSize + 1;
+        long cellsZ = (long) (maxZ - minZ) / cellSize + 1;
+        if (cellsX * cellsY * cellsZ > MAX_SPANNING_CELLS) {
+            log.warn("Spanning grid {}x{}x{} exceeds cap {} at level {} — falling back to single-node insert",
+                     cellsX, cellsY, cellsZ, MAX_SPANNING_CELLS, level);
+            super.insertWithSpanning(entityId, bounds, level);
+            return;
+        }
+
+        var keys = new HashSet<PyramidKey>();
+        float half = cellSize / 2f;
+        for (int x = minX; x <= maxX; x += cellSize) {
+            for (int y = minY; y <= maxY; y += cellSize) {
+                for (int z = minZ; z <= maxZ; z += cellSize) {
+                    // Resolve the pyramid/tet element containing this cube cell's centre.
+                    var key = calculateSpatialIndex(new Point3f(x + half, y + half, z + half), level);
+                    keys.add(key);
+                }
+            }
+        }
+
+        for (var key : keys) {
+            var node = spatialIndex.computeIfAbsent(key, k -> createNode());
+            node.addEntity(entityId);
+            entityManager.addEntityLocation(entityId, key);
+        }
     }
 
     /**

@@ -8,6 +8,8 @@ package com.hellblazer.luciferase.lucien.pyramid;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.Ray3D;
 import com.hellblazer.luciferase.lucien.Spatial;
+import com.hellblazer.luciferase.lucien.entity.EntityBounds;
+import com.hellblazer.luciferase.lucien.entity.EntitySpanningPolicy;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
@@ -34,9 +36,9 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <p><b>Explicitly deferred (NOT pi1.3 scope, surfaced as follow-on beads — not silent reduction):</b>
  * <ul>
- *   <li>Multi-node entity spanning ({@code insertWithSpanning} override): pi1.3 inherits the
- *       single-node default. Octree/Tetree override it; Prism (the most recent peer) does NOT —
- *       so this is an optional cross-index feature. Tracked by bead <b>Luciferase-7eb</b>.</li>
+ *   <li>Multi-node entity spanning ({@code insertWithSpanning} override): <b>SHIPPED</b> (bead
+ *       Luciferase-7eb) — see {@link #spanningEntityCoversMultipleNodes()}. PyramidIndex now overrides
+ *       {@code insertWithSpanning} (one pyramid/tet element per intersected cube cell at the level).</li>
  *   <li>Full same/cross-shape neighbor topology ({@code addNeighboringNodes} beyond the minimum
  *       SFC-adjacent contract): deferred to pi1.4 (PyramidNeighborDetector). Cross-node kNN that
  *       must hop through non-adjacent subtrees is therefore out of scope here.</li>
@@ -51,6 +53,62 @@ class PyramidIndexParityTest {
     @BeforeEach
     void setUp() {
         pyramid = new PyramidIndex<>(new SequentialLongIDGenerator());
+    }
+
+    @Test
+    void spanningEntityCoversMultipleNodes() {
+        // RDR-010 Luciferase-7eb: a bounded entity spanning the domain must be distributed across
+        // multiple pyramid nodes (getEntitySpanCount > 1), mirroring the shared Octree/Tetree spanning
+        // contract (SpatialIndexEdgeCaseTest.testLargeSpanningEntity). PyramidIndex is a dedicated peer
+        // suite (project convention) rather than a member of the shared parameterized provider.
+        var spanning = new PyramidIndex<LongEntityID, String>(new SequentialLongIDGenerator(), 1000,
+                                                              (byte) 20, EntitySpanningPolicy.withSpanning());
+        int maxCoord = Constants.MAX_COORD;
+        var bounds = new EntityBounds(new Point3f(0, 0, 0), new Point3f(maxCoord, maxCoord, maxCoord));
+        var position = new Point3f(maxCoord / 2f, maxCoord / 2f, maxCoord / 2f);
+        var id = new LongEntityID(1);
+
+        spanning.insert(id, position, (byte) 5, "huge", bounds);
+
+        assertTrue(spanning.getEntitySpanCount(id) > 1,
+                   "a domain-spanning entity must span > 1 pyramid node, got " + spanning.getEntitySpanCount(id));
+        // Findable in range queries at opposite ends of its bounds.
+        assertTrue(spanning.entitiesInRegion(new Spatial.Cube(0, 0, 0, 100)).contains(id),
+                   "spanning entity must be found near the origin corner");
+        assertTrue(spanning.entitiesInRegion(
+                       new Spatial.Cube(maxCoord - 100f, maxCoord - 100f, maxCoord - 100f, 100)).contains(id),
+                   "spanning entity must be found near the opposite corner");
+    }
+
+    @Test
+    void outOfDomainBoundsFallBackToSingleNodeNotSilentLoss() {
+        // RDR-010 Luciferase-7eb edge guard: bounds entirely outside [0, MAX_COORD] clamp to an inverted
+        // range. The spanning override must fall back to single-node insertion (at the in-domain
+        // position) rather than leave the entity registered in zero nodes (silently unfindable).
+        var spanning = new PyramidIndex<LongEntityID, String>(new SequentialLongIDGenerator(), 1000,
+                                                              (byte) 20, EntitySpanningPolicy.withSpanning());
+        int maxCoord = Constants.MAX_COORD;
+        var inDomainPos = new Point3f(1000, 1000, 1000);
+        var outOfDomainBounds = new EntityBounds(new Point3f(maxCoord * 2f, maxCoord * 2f, maxCoord * 2f),
+                                                 new Point3f(maxCoord * 3f, maxCoord * 3f, maxCoord * 3f));
+        var id = new LongEntityID(7);
+
+        spanning.insert(id, inDomainPos, (byte) 5, "oob", outOfDomainBounds);
+
+        assertTrue(spanning.containsEntity(id), "entity must remain registered (no silent loss)");
+        // The discriminating assertion: without the inverted-range guard the spanning loop registers the
+        // entity in ZERO nodes (span 0, unfindable); the guard's single-node fallback yields span >= 1.
+        assertTrue(spanning.getEntitySpanCount(id) >= 1, "entity must occupy at least one node");
+        assertEquals(inDomainPos, spanning.getEntityPosition(id), "position preserved at the in-domain point");
+    }
+
+    @Test
+    void singleEntityDoesNotSpan() {
+        // A point entity (no bounds) stays single-node even with spanning enabled.
+        var spanning = new PyramidIndex<LongEntityID, String>(new SequentialLongIDGenerator(), 1000,
+                                                              (byte) 20, EntitySpanningPolicy.withSpanning());
+        var id = spanning.insert(new Point3f(100, 100, 100), (byte) 10, "point");
+        assertEquals(1, spanning.getEntitySpanCount(id), "a point entity must occupy exactly one node");
     }
 
     @Test
