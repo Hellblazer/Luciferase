@@ -1,0 +1,95 @@
+/*
+ * Copyright (C) 2026 Hal Hildebrand. All rights reserved.
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+package com.hellblazer.luciferase.lucien.pyramid;
+
+import com.hellblazer.luciferase.lucien.Constants;
+
+/**
+ * Encoder from a {@link Pyramid} element to its {@link PyramidKey} — the inverse of
+ * {@link PyramidIndex#pyramidFromKey(PyramidKey)} (RDR-010 pi1.4 Phase A, bead Luciferase-8zv).
+ *
+ * <p>The encoder walks the pyramid's {@link Pyramid#parent()} chain to the root, collecting at each
+ * refinement step the cube-id (from the anchor's level bit) and the element type, then assembles the
+ * key via {@link PyramidKey#fromLevels(byte, int[], int[])}. It is the same coarse-dominant bit layout
+ * the decoder consumes, so {@code pyramidFromKey(encode(p)).equals(p)} for every valid SFC pyramid.
+ *
+ * <p><b>Fail-safe contract.</b> Not every {@code (anchor, level, type)} triple is a reachable element
+ * of the pyramid SFC tree (unlike Morton, where every cube cell is valid — pyramid coverage is
+ * {@code N(ℓ) = 2·8^ℓ − 6^ℓ}). A non-SFC candidate either trips the {@code "Unreachable pyramid"}
+ * {@link IllegalStateException} in {@link Pyramid#parent()} during the walk, or assembles a key that
+ * does not decode back to the original. Both outcomes return {@code null} rather than throwing or
+ * emitting a bogus key: the internal round-trip self-check ({@code decode(key).equals(p)}) is the
+ * safety net. Callers (the neighbor enumerator, {@code addNeighboringNodes}) rely on {@code null} to
+ * filter geometric candidates down to genuine SFC elements.
+ *
+ * <p>Encoder only — this class deliberately does <em>not</em> re-home the decoder
+ * ({@code pyramidFromKey} stays on {@link PyramidIndex}); the decoder dedup is tracked separately as
+ * bead Luciferase-3y1.
+ *
+ * @author hal.hildebrand
+ */
+final class PyramidKeyCodec {
+
+    private PyramidKeyCodec() {
+    }
+
+    /**
+     * Encode a pyramid to its key, or {@code null} if the pyramid is not a reachable SFC element.
+     *
+     * @param p the pyramid element (the level-0 type-6 root encodes to {@link PyramidKey#getRoot()};
+     *          a level-0 type-7 pyramid is not a distinct SFC element and encodes to {@code null})
+     * @return the round-trip-verified key, or {@code null} for a non-SFC / unreachable pyramid
+     */
+    static PyramidKey encode(Pyramid p) {
+        if (p.minTetLevel() != Pyramid.NO_TET_ANCESTOR) {
+            // The encoder is defined only for pure-pyramid SFC elements. A hybrid-path pyramid
+            // (reached via a tet ancestor) can share geometric identity (x,y,z,level,type) with a
+            // pure-pyramid cell — and Pyramid.equals is minTetLevel-blind — so the round-trip
+            // self-check would pass against the pure-pyramid reconstruction and silently emit the
+            // wrong element's key. Reject up front rather than returning a wrong key.
+            return null;
+        }
+        byte level = p.level();
+        if (level == 0) {
+            // The SFC root is the virtual type-6 cover (pyramidFromKey returns type 6 at level 0).
+            // Route through the same round-trip guard so a type-7 level-0 pyramid — not a distinct
+            // SFC element — fails to null rather than aliasing onto the root key.
+            PyramidKey rootKey = PyramidKey.getRoot();
+            Pyramid decodedRoot = PyramidIndex.pyramidFromKey(rootKey);
+            return (decodedRoot != null && decodedRoot.equals(p)) ? rootKey : null;
+        }
+        // coordBits/typeBits are indexed by refinement step 1..level (index 0 unused; root has no bits).
+        int[] coordBits = new int[level + 1];
+        int[] typeBits = new int[level + 1];
+        Pyramid cur = p;
+        try {
+            for (int l = level; l >= 1; l--) {
+                int h = Constants.lengthAtLevel((byte) l);
+                int cubeId = ((cur.x() & h) != 0 ? 1 : 0)
+                           | ((cur.y() & h) != 0 ? 2 : 0)
+                           | ((cur.z() & h) != 0 ? 4 : 0);
+                coordBits[l] = cubeId;
+                typeBits[l] = cur.type();
+                if (l > 1) {
+                    // Stop at l == 1: cur is then the level-1 element whose bits we just took, and
+                    // its parent is the bit-less root. May throw "Unreachable pyramid" for a non-SFC
+                    // candidate, which the surrounding catch converts to null.
+                    cur = cur.parent();
+                }
+            }
+            PyramidKey key = PyramidKey.fromLevels(level, coordBits, typeBits);
+            // Round-trip self-check: the decoder is the single source of truth for SFC validity.
+            Pyramid decoded = PyramidIndex.pyramidFromKey(key);
+            if (decoded == null || !decoded.equals(p)) {
+                return null;
+            }
+            return key;
+        } catch (IllegalStateException | IllegalArgumentException | IndexOutOfBoundsException e) {
+            // Non-SFC candidate (unreachable parent step, or malformed level/bits). Fail-safe to null.
+            return null;
+        }
+    }
+}

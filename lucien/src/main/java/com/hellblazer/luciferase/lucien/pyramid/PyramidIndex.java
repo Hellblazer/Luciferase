@@ -597,7 +597,7 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
      * intersection for deep tet keys, never a false negative. This is safe for Phase D (the
      * pyramid bound encloses the tet); exact tet-geometry ray/plane tests are deferred to Phase E.
      */
-    private Pyramid pyramidFromKey(PyramidKey key) {
+    static Pyramid pyramidFromKey(PyramidKey key) {
         byte level = key.getLevel();
         if (level == 0) {
             // Virtual root — return the type-6 root cover pyramid
