@@ -75,6 +75,21 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
     // createTreeBalancer() is inherited from AbstractSpatialIndex; default returns DefaultTreeBalancer.
     // No pyramid-specific balancer in Phase A.
 
+    /**
+     * Per-shape partition weight {@code N_pyramid(level) = 2·8^level − 6^level} (RDR-010 pi1.6,
+     * Knapp 2026 Eq 5.1). A pyramid root refines into 6 pyramids + 4 tets; the {@code −6^level} term
+     * corrects the non-uniform pyramid/tet mixing across levels. Overrides the default {@code 8^level}
+     * so a hybrid-forest weighted partition ({@link com.hellblazer.luciferase.lucien.balancing.ShapeWeightPartitioner})
+     * counts pyramid trees by their true element load rather than as 1:8 trees.
+     *
+     * <p>{@code N_pyramid(0)=1}, {@code N_pyramid(1)=10} (= {@link TetreeConnectivity#CHILDREN_PER_PYRAMID}).
+     */
+    @Override
+    public long elementCount(int level) {
+        return 2L * com.hellblazer.luciferase.lucien.balancing.ShapeWeightProvider.eightToThe(level)
+               - com.hellblazer.luciferase.lucien.balancing.ShapeWeightProvider.sixToThe(level);
+    }
+
     // ===== SpatialIndex interface: enclosing methods (Phase C) =====
 
     @Override

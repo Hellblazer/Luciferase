@@ -84,7 +84,8 @@ import java.util.stream.Stream;
  * @author hal.hildebrand
  */
 public abstract class AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
-implements SpatialIndex<Key, ID, Content> {
+implements SpatialIndex<Key, ID, Content>,
+           com.hellblazer.luciferase.lucien.balancing.ShapeWeightProvider {
 
     /**
      * Record representing a neighbor search result with distance information.
@@ -2628,6 +2629,19 @@ implements SpatialIndex<Key, ID, Content> {
     /** Gets the neighbor detector for this spatial index. */
     public NeighborDetector<Key> getNeighborDetector() {
         return ghost.getNeighborDetector();
+    }
+
+    /**
+     * Per-shape partition weight {@code N_shape(level)} (RDR-010 pi1.6, Knapp Eq 5.1). Default is the
+     * 1:8-refinement count {@code 8^level} shared by the hexahedral ({@link com.hellblazer.luciferase.lucien.octree.Octree})
+     * and tetrahedral ({@link com.hellblazer.luciferase.lucien.tetree.Tetree}) shapes. {@link com.hellblazer.luciferase.lucien.pyramid.PyramidIndex}
+     * overrides this with {@code 2·8^level − 6^level}.
+     *
+     * @see com.hellblazer.luciferase.lucien.balancing.ShapeWeightProvider
+     */
+    @Override
+    public long elementCount(int level) {
+        return com.hellblazer.luciferase.lucien.balancing.ShapeWeightProvider.eightToThe(level);
     }
 
     /** Subclasses call this during initialization to supply their tree-specific neighbor detector. */
