@@ -372,3 +372,25 @@ Accepted 2026-05-28 (gate PASSED 2026-05-28, self-reviewed; T2 `Luciferase_rdr/0
 **Additional registered deferrals (explicit, not silent):** deep-tet (`l > minTetLevel`) cross-shape face neighbors stay fail-loud guarded (Finding #16) → q3p Phase E / future RDR-scoped tet-tree reconciliation; exhaustive cross-shape edge/vertex topology → `Luciferase-0utt`. Both surfaced, not silently dropped.
 
 pi1.5 deliverable arc (cross-shape neighbor finding + distributed ghost wiring) is COMPLETE. Remaining RDR-010 work: pi1.6 (Forest weight + balance-router, Item4) and pi1.7 (hybrid-mesh demo + 128-bit-key/branching microbenchmarks). RDR-010 stays `accepted` (not closed) until pi1.6 + pi1.7 land.
+
+## Addendum 2026-05-30 — pi1.6 close / Phase-6 §Approach cross-walk gate PASSED
+
+`/conexus:phase-review-gate RDR-010 --phase 6` PASSED 2026-05-30 (bead `Luciferase-pi1.6`). §Approach cross-walk:
+
+- **Item1** PyramidKey + Pyramid primitive → `Luciferase-kto` (pi1.3; primitive beads pi1.1/pi1.2 compacted).
+- **Item2** reuse tet machinery → `Luciferase-9e3a` (q3p element-unification shipped; Tet type k IS t8code dtet type k).
+- **Item3** pyramid containment §3b → `Luciferase-ssu` (pi1.3 Phase B).
+- **Item4** Forest `ShapeWeightProvider` + balance-checker shape-router → **`Luciferase-pi1.6` (this close)**. Delivered:
+  - §4a/§4b — `ShapeWeightProvider.elementCount(level)`: `N_hex = N_tet = 8^ℓ` (AbstractSpatialIndex default), `N_pyramid = 2·8^ℓ − 6^ℓ` (PyramidIndex override, Knapp Eq 5.1), overflow-guarded (ℓ ≤ 20).
+  - §4c — `ShapeWeightPartitioner`: weighted-SFC cumulative-offset partition (Knapp Alg 5.1), `assign`/`weightsAtLevel`/`partitionForest`.
+  - §4d — `TwoOneBalanceChecker` TetreeKey + PyramidKey shape-router via the wired `NeighborDetector` (closes the silent-skip gap; was MortonKey-only).
+- **Item5** `PyramidNeighborDetector` → `Luciferase-azwr` (pi1.5).
+- **Item6** the gate question → resolved at accept (Direction B). No bead.
+
+**Explicit deferrals registered at this gate (not silent reduction):**
+- **§4c consumer-wiring** — the `ShapeWeightPartitioner` and the per-shape weight hook are delivered and tested, but wiring a *live consumer* (populating a `PartitionRegistry` / `Forest` partition assignment from the weighted partition) is **deferred**. Rationale: no clean seam exists today — `Forest.routeQuery` is a spatial AABB query (wrong home for partition weight), and partition assignment is held in `ParallelBalancer.PartitionRegistry`, populated externally. The weighted-partition computation itself is complete; its consumption lands with **pi1.7** (hybrid-mesh demo, where a real partition consumer exists) or a dedicated follow-on bead (`Luciferase-d3z3`). Surfaced by the pi1.6 substantive-critic, recorded here rather than left implicit.
+- **`partitionForest` hybrid limitation** — `Forest<Key>` is single-key-typed, so `partitionForest` only spans a homogeneous forest; genuine hex+pyramid partition uses `assign`/`weightsAtLevel` directly (documented `@apiNote`).
+- **Balance-router finer-direction** — the TetreeKey/PyramidKey router probes the coarser direction only (ghost-fine/local-coarse), matching Morton's coarser-half; the ghost-coarse/local-fine arrangement is an assumed distributed-protocol invariant (documented, scope-pinned by test).
+- **`N_prism(ℓ)`** — not in the Knapp corpus (Gap #5); Prism uses the default `8^ℓ` (slight partition inaccuracy if a prism tree enters a hybrid partition). Flagged, not blocking.
+
+Remaining RDR-010 work: **pi1.7** (hybrid-mesh demo + 128-bit-key/branching microbenchmarks + §4c consumer-wiring). RDR-010 stays `accepted` until pi1.7 closes.
