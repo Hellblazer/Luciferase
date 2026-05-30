@@ -61,8 +61,9 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
      * <p>Collaborator initialisation order mirrors Octree (and therefore AbstractSpatialIndex):
      * EntityManager nucleus → SpatialIndexCore → KnnSearcher → Culler → CollisionEngine →
      * EntityLifecycleManager → GhostCoordinator. After the super-constructor the neighbor detector is
-     * wired (mirroring {@code Octree}); see {@link PyramidNeighborDetector} — a Phase-A stub that fails
-     * loud against {@code Luciferase-pi1.4}.
+     * wired (mirroring {@code Octree}); see {@link PyramidNeighborDetector} — same-shape topology
+     * (RDR-010 pi1.4 Phase B, Luciferase-mu9). Cross-shape (pyramid&harr;tet&harr;hex) ghost wiring
+     * is deferred to pi1.5.
      */
     public PyramidIndex(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                         EntitySpanningPolicy spanningPolicy) {
@@ -597,7 +598,7 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
      * intersection for deep tet keys, never a false negative. This is safe for Phase D (the
      * pyramid bound encloses the tet); exact tet-geometry ray/plane tests are deferred to Phase E.
      */
-    private Pyramid pyramidFromKey(PyramidKey key) {
+    static Pyramid pyramidFromKey(PyramidKey key) {
         byte level = key.getLevel();
         if (level == 0) {
             // Virtual root — return the type-6 root cover pyramid
@@ -848,18 +849,32 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
     /**
      * Emit at least the SFC-adjacent same-level PyramidKeys into {@code toVisit}.
      *
-     * <p><b>Pi1.3 minimum contract</b>: this implementation emits the sibling pyramid children
-     * of the parent (i.e., the other level-N PyramidKeys that share the same parent), which
-     * are the SFC-adjacent same-level nodes. Full same/cross-shape topology (including
-     * cross-pyramid face neighbours and tet-pyramid boundaries) is deferred to pi1.4
-     * ({@link PyramidNeighborDetector}) and is explicitly out of scope for this phase.
+     * <p><b>Pi1.4 Phase C (Luciferase-3zs)</b>: emits the sibling pyramid children of the parent
+     * (the SFC-adjacent same-level nodes) <em>unioned</em> with the same-shape (quad-base, f4)
+     * face neighbour from the wired {@link PyramidNeighborDetector} — a cross-parent neighbour the
+     * sibling walk alone misses. Cross-shape topology (the four triangular tet faces, pyramid↔tet↔hex
+     * boundaries) is deferred to pi1.5; for a tet-leaf node the detector contributes nothing.
      *
-     * <p><em>Registered deferral — not silent scope reduction.</em> See bead Luciferase-pi1.4.
+     * <p><em>Registered deferral — not silent scope reduction.</em> Cross-shape: bead Luciferase-pi1.5.
      */
     @Override
     protected void addNeighboringNodes(PyramidKey nodeIndex, Queue<PyramidKey> toVisit,
                                        Set<PyramidKey> visitedNodes) {
         byte level = nodeIndex.getLevel();
+
+        // Same-shape face neighbour(s) from the wired detector (the cross-parent f4 quad base the
+        // sibling walk below cannot reach). Empty for root / tet-leaf nodes. Cross-shape → pi1.5.
+        // The detector emits geometric neighbours regardless of index occupancy; the BFS callers
+        // null-check the node map and skip absent keys (see KnnSearcher / CollisionEngine). Do NOT
+        // add occupancy filtering here — it would break BFS connectivity through empty cells.
+        var detector = getNeighborDetector();
+        if (detector != null) {
+            for (var faceKey : detector.findFaceNeighbors(nodeIndex)) {
+                if (!visitedNodes.contains(faceKey) && !faceKey.equals(nodeIndex)) {
+                    toVisit.add(faceKey);
+                }
+            }
+        }
 
         if (level == 0) {
             // Root: emit the two level-1 pyramid roots (type-6 and type-7 children of each root)
