@@ -239,12 +239,11 @@ Historical reference:
 - **Lock-Free**: Optimistic concurrency control for entity updates
 - **ObjectPool**: Used for k-NN, collision, ray intersection, frustum culling to reduce GC pressure
 
-### T8code Partition Limitation
+### T8code Partition Limitation — CLOSED via PyramidIndex (RDR-010)
 
-- **t8code tetrahedra fundamentally don't partition the cube**: ~48% gaps and ~32% overlaps
-- **This is a fundamental limitation**, not a bug in our implementation
-- **Affected Tests**: Disabled tests expecting proper cube partitioning
-- **Documentation**: See `lucien/doc/TETREE_T8CODE_PARTITION_ANALYSIS.md` for details
+- **Historical**: plain t8code tetrahedra do not tile a cube on their own (~48% gaps / ~32% overlaps); long treated as a fundamental limitation.
+- **Closed (RDR-010, 2026-05-30)**: the hex↔tet partition gap is closed by the **hybrid pyramid construction** (Knapp 2026). `PyramidIndex` (pyramid SFC, `PyramidKey`) is the hex↔tet transition primitive, with cross-shape pyramid↔tet neighbor finding + distributed ghost wiring (pi1.5) and shape-aware Forest partition weights `N_pyramid(ℓ)=2·8^ℓ−6^ℓ` (pi1.6). See `docs/rdr/RDR-010-pyramid-spatial-index.md`.
+- **Scope note**: cross-shape support is at the shallow pyramid↔tet boundary (`l == minTetLevel`); deep-tet cross-shape stays fail-loud guarded (Finding #16, deferred). The standalone `TETREE_T8CODE_PARTITION_ANALYSIS.md` is retired — RDR-010 is the authoritative record.
 
 ### DSOC (Dynamic Spatial Occlusion Culling)
 

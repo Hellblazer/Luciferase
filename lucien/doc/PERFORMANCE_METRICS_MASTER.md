@@ -9,6 +9,31 @@
 
 > **NEW**: SFCArrayIndex benchmarks added (December 25, 2025). LITMAX/BIGMIN optimization complete for Octree, Tetree, and SFCArrayIndex. k-NN unlimited distance fix deployed.
 
+## RDR-010 pi1.7: PyramidKey (128-bit) vs MortonKey (64-bit) Microbenchmark (2026-05-30)
+
+**Benchmark**: `PyramidKeyVsMortonKeyBenchmark.java` (JMH, Throughput). Quantifies the cost of the 128-bit
+two-`long` `PyramidKey` relative to the 64-bit one-`long` `MortonKey` — RDR-010 Finding #7 / Cost-risk §312
+(validate the representation before any at-scale hybrid deployment).
+
+**Authoritative numbers** (forked `-f 1 -wi 3 -i 5 × 1s`, `keyCount=10000`, JDK 25 GraalVM):
+
+| Benchmark | Morton (1-long) | Pyramid (2-long) | Ratio |
+|-----------|-----------------|------------------|-------|
+| `compareTo` | 190.5 ± 10.0 ops/ms | 110.6 ± 3.7 ops/ms | **Pyramid ≈ 1.72× the compare cost** |
+| `skipListGet` | 1.131 ± 0.25 ops/ms | 0.938 ± 0.04 ops/ms | **Pyramid ≈ 1.21× slower at scale** |
+
+**Conclusion**: the 128-bit key's per-comparison overhead is ~1.7× (a two-`long` lexicographic compare vs
+one), and `ConcurrentSkipListMap` lookup — comparison-dominated, O(log n) compares per get — is ~1.2×
+slower. Both are modest constant factors. At Luciferase's typical workload (≤10⁵ elements) the storage
+delta is ~1 MB (16 vs 8 bytes/key) and the lookup penalty is sub-millisecond — **the two-`long`
+representation is validated** (RDR-010 Finding #7). The 640 GB-vs-320 GB key-storage figure (Knapp §7
+40·10⁹-element scale) remains a future at-scale caveat, not a concern at current workloads.
+
+**JMH wiring note**: pi1.7 added the `jmh-generator-annprocess` annotation processor to `lucien/pom.xml`
+(test compile) so `@Benchmark` classes generate their `META-INF/BenchmarkList` — this makes all of the
+repo's JMH benchmarks runnable. Run in-process via `mvn -pl lucien exec:java
+-Dexec.mainClass=...PyramidKeyVsMortonKeyBenchmark -Dexec.classpathScope=test -Dexec.args="-f 0 ..."`.
+
 ## Epic 0: Baseline Measurements (Bead 0.1 - December 8, 2025)
 
 Four JMH benchmarks established to measure pre-optimization baselines for Epic 1-4:

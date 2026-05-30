@@ -131,6 +131,35 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <!-- Wire the JMH annotation processor into the TEST compile only (default-testCompile) so
+                 @Benchmark classes generate their META-INF/BenchmarkList (required to run JMH benchmarks;
+                 RDR-010 pi1.7). Scoped to test compilation so it never displaces a future main-source
+                 annotation processor (setting annotationProcessorPaths disables classpath APT discovery
+                 for the execution it applies to). Merges with the root maven-compiler-plugin config
+                 (release, preview flags, incubator.vector). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-testCompile</id>
+                        <configuration>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.openjdk.jmh</groupId>
+                                    <artifactId>jmh-generator-annprocess</artifactId>
+                                    <version>${jmh.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
     <profiles>
         <!-- Performance Testing Profile -->
         <profile>

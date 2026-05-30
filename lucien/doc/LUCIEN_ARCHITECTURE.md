@@ -139,7 +139,8 @@ SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interfa
             ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
             ├── SFCArrayIndex<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
             ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
-            └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
+            ├── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
+            └── PyramidIndex<ID, Content> extends AbstractSpatialIndex<PyramidKey, ID, Content>  (RDR-010)
 ```
 
 ### Node Storage (Phase 6.2 Update)
@@ -601,6 +602,17 @@ Specialized operations:
 - **PrismCollisionDetector** - Collision detection optimized for anisotropic geometry
 - **PrismRayIntersector** - Ray intersection with triangular/linear space partitioning
 - **PrismNeighborFinder** - Neighbor traversal across triangular and linear boundaries
+
+### Pyramid Package (RDR-010)
+
+Hybrid hex↔tet transition shape (Knapp 2026); closes the t8code cube-partition gap.
+
+- **PyramidIndex** - Pyramid-SFC spatial index; each pyramid refines into 6 pyramid + 4 tet children (`N_pyramid(ℓ)=2·8^ℓ−6^ℓ`); subclass of `AbstractSpatialIndex<PyramidKey>`
+- **PyramidKey** - 128-bit (two-`long`) pyramid SFC key encoding the 6D Morton embedding; carries the hybrid pyramid/tet path
+- **Pyramid** - Pyramid element primitive (analogous to `Tet`); cross-shape navigation via `HybridElement` / `Pyramid.faceNeighbor` (f0–f3 → tets, f4 → pyramid)
+- **PyramidNeighborDetector** - Cross-shape (pyramid↔tet) neighbor detector wired into the ghost layer (same-shape pi1.4, cross-shape pi1.5)
+- **PyramidKeyCodec** - Element↔`PyramidKey` encoder (pyramid + shallowest tet-leaf); **PyramidContainment** - §3b decompose-and-reuse containment
+- Forest integration: `balancing.ShapeWeightProvider` (`N_pyramid(ℓ)=2·8^ℓ−6^ℓ`) + `ShapeWeightPartitioner` (weighted-SFC partition) + `TwoOneBalanceChecker` pyramid/tet shape-router (pi1.6)
 
 ### Tetree Package (34)
 
