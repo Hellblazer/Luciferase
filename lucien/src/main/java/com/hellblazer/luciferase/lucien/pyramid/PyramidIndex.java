@@ -849,18 +849,32 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
     /**
      * Emit at least the SFC-adjacent same-level PyramidKeys into {@code toVisit}.
      *
-     * <p><b>Pi1.3 minimum contract</b>: this implementation emits the sibling pyramid children
-     * of the parent (i.e., the other level-N PyramidKeys that share the same parent), which
-     * are the SFC-adjacent same-level nodes. Full same/cross-shape topology (including
-     * cross-pyramid face neighbours and tet-pyramid boundaries) is deferred to pi1.4
-     * ({@link PyramidNeighborDetector}) and is explicitly out of scope for this phase.
+     * <p><b>Pi1.4 Phase C (Luciferase-3zs)</b>: emits the sibling pyramid children of the parent
+     * (the SFC-adjacent same-level nodes) <em>unioned</em> with the same-shape (quad-base, f4)
+     * face neighbour from the wired {@link PyramidNeighborDetector} — a cross-parent neighbour the
+     * sibling walk alone misses. Cross-shape topology (the four triangular tet faces, pyramid↔tet↔hex
+     * boundaries) is deferred to pi1.5; for a tet-leaf node the detector contributes nothing.
      *
-     * <p><em>Registered deferral — not silent scope reduction.</em> See bead Luciferase-pi1.4.
+     * <p><em>Registered deferral — not silent scope reduction.</em> Cross-shape: bead Luciferase-pi1.5.
      */
     @Override
     protected void addNeighboringNodes(PyramidKey nodeIndex, Queue<PyramidKey> toVisit,
                                        Set<PyramidKey> visitedNodes) {
         byte level = nodeIndex.getLevel();
+
+        // Same-shape face neighbour(s) from the wired detector (the cross-parent f4 quad base the
+        // sibling walk below cannot reach). Empty for root / tet-leaf nodes. Cross-shape → pi1.5.
+        // The detector emits geometric neighbours regardless of index occupancy; the BFS callers
+        // null-check the node map and skip absent keys (see KnnSearcher / CollisionEngine). Do NOT
+        // add occupancy filtering here — it would break BFS connectivity through empty cells.
+        var detector = getNeighborDetector();
+        if (detector != null) {
+            for (var faceKey : detector.findFaceNeighbors(nodeIndex)) {
+                if (!visitedNodes.contains(faceKey) && !faceKey.equals(nodeIndex)) {
+                    toVisit.add(faceKey);
+                }
+            }
+        }
 
         if (level == 0) {
             // Root: emit the two level-1 pyramid roots (type-6 and type-7 children of each root)
