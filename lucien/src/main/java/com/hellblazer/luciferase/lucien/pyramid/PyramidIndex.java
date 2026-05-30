@@ -597,6 +597,12 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
      * conservative over-approximation. Ray/plane callers therefore may report a false-positive
      * intersection for deep tet keys, never a false negative. This is safe for Phase D (the
      * pyramid bound encloses the tet); exact tet-geometry ray/plane tests are deferred to Phase E.
+     *
+     * <p><b>Tet-leaf callers:</b> when the <em>actual</em> leaf element is needed (e.g. to call
+     * cross-shape navigation on a tet leaf), use {@link #elementFromKey(PyramidKey)} instead — it
+     * returns the tet itself rather than this over-approximating enclosing pyramid.
+     *
+     * @see #elementFromKey(PyramidKey)
      */
     static Pyramid pyramidFromKey(PyramidKey key) {
         byte level = key.getLevel();
@@ -654,6 +660,72 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
             current = next;
         }
         return current;
+    }
+
+    /**
+     * Decode {@code key} to its actual leaf {@link HybridElement} — a {@link Pyramid} for a pyramid
+     * key, a {@link Tet} for a <em>shallowest</em> tet-leaf key (RDR-010 pi1.5 Phase A, bead
+     * Luciferase-uqik). Unlike {@link #pyramidFromKey(PyramidKey)} (which over-approximates a tet-leaf
+     * key to its enclosing parent pyramid), this returns the tet itself, so it is the validating
+     * inverse of {@link PyramidKeyCodec#encode(Tet)}.
+     *
+     * <p><b>Shallow boundary only.</b> The descent follows {@link Pyramid#child(int)} edges, so it can
+     * reconstruct a tet only at the leaf level (a tet born directly from a pyramid, {@code minTetLevel
+     * == level}). A key whose bits select a tet at a non-leaf level — a <em>deep</em> pyramid-rooted
+     * tet ({@code l > minTetLevel}) — is not reconstructible here (the tet-of-tet refinement is the
+     * q3p Phase E deferral, fail-loud elsewhere) and returns {@code null}. A key with no matching
+     * child at some level also returns {@code null}.
+     *
+     * @param key the SFC key
+     * @return the leaf element (Pyramid or Tet), or {@code null} for a non-reconstructible key
+     */
+    static HybridElement elementFromKey(PyramidKey key) {
+        byte level = key.getLevel();
+        if (level == 0) {
+            return new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6); // virtual root cover
+        }
+        // Level-1 child of one of the two roots.
+        int coordBits1 = key.getCoordBitsAtLevel(1);
+        int typeBits1 = key.getTypeAtLevel(1);
+        HybridElement currentEl = null;
+        outer:
+        for (var root : new Pyramid[] { new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6),
+                                        new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_7) }) {
+            int row = root.type() - Pyramid.TYPE_6;
+            for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+                if (TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i] == coordBits1
+                    && TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i] == typeBits1) {
+                    currentEl = root.child(i);
+                    break outer;
+                }
+            }
+        }
+        if (currentEl == null || level == 1) {
+            return currentEl; // level-1 leaf (Tet or Pyramid), or no match
+        }
+        // Descend levels 2..level via pyramid children. A tet at a non-leaf level cannot parent the
+        // next level here (deep-tet, out of pi1.5 scope) → null.
+        for (int l = 2; l <= level; l++) {
+            if (!(currentEl instanceof Pyramid cp)) {
+                return null; // deep tet-of-tet path: not reconstructible at the shallow boundary
+            }
+            int cb = key.getCoordBitsAtLevel(l);
+            int tb = key.getTypeAtLevel(l);
+            HybridElement next = null;
+            int row = cp.type() - Pyramid.TYPE_6;
+            for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+                if (TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i] == cb
+                    && TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i] == tb) {
+                    next = cp.child(i);
+                    break;
+                }
+            }
+            if (next == null) {
+                return null; // no matching child: not an SFC element
+            }
+            currentEl = next;
+        }
+        return currentEl;
     }
 
     /**
