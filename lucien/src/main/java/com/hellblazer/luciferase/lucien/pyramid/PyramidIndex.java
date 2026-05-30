@@ -61,8 +61,9 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
      * <p>Collaborator initialisation order mirrors Octree (and therefore AbstractSpatialIndex):
      * EntityManager nucleus → SpatialIndexCore → KnnSearcher → Culler → CollisionEngine →
      * EntityLifecycleManager → GhostCoordinator. After the super-constructor the neighbor detector is
-     * wired (mirroring {@code Octree}); see {@link PyramidNeighborDetector} — a Phase-A stub that fails
-     * loud against {@code Luciferase-pi1.4}.
+     * wired (mirroring {@code Octree}); see {@link PyramidNeighborDetector} — same-shape topology
+     * (RDR-010 pi1.4 Phase B, Luciferase-mu9). Cross-shape (pyramid&harr;tet&harr;hex) ghost wiring
+     * is deferred to pi1.5.
      */
     public PyramidIndex(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                         EntitySpanningPolicy spanningPolicy) {
