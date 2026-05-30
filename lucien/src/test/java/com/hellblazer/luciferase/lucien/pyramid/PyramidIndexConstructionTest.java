@@ -109,37 +109,50 @@ class PyramidIndexConstructionTest {
     }
 
     // ===== 3. Phase-bead routing: each stub throws UnsupportedOperationException("...Luciferase-...") =====
+    // NOTE: Phase-C methods (calculateSpatialIndex, getNodeBounds, getCellSizeAtLevel,
+    // findNodesIntersectingBounds, doesNodeIntersectVolume, isNodeContainedInVolume) are now
+    // IMPLEMENTED (bead Luciferase-2l0). Their Phase-A stub tests have been removed.
+    // Phase-C acceptance tests live in PyramidIndexSpatialMappingTest, PyramidNodeBoundsTest,
+    // PyramidVolumeQueryTest, and MinTetLevelReinjectionTest.
 
     @Test
-    void calculateSpatialIndexThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.calculateSpatialIndex(new Point3f(0, 0, 0), (byte) 1));
+    void calculateSpatialIndex_level0_returnsRoot() {
+        var root = index.calculateSpatialIndex(new Point3f(0.1f, 0.1f, 0.1f), (byte) 0);
+        assertEquals(PyramidKey.getRoot(), root);
     }
 
     @Test
-    void getNodeBoundsThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.getNodeBounds(PyramidKey.getRoot()));
+    void getNodeBounds_rootKey_nonNull() {
+        var bounds = index.getNodeBounds(PyramidKey.getRoot());
+        assertNotNull(bounds);
+        assertFalse(bounds instanceof Spatial.aabt, "must not be aabt (invariant #7)");
     }
 
     @Test
-    void getCellSizeAtLevelThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.getCellSizeAtLevel((byte) 1));
+    void getCellSizeAtLevel_returnsPositive() {
+        assertTrue(index.getCellSizeAtLevel((byte) 1) > 0);
     }
 
     @Test
-    void findNodesIntersectingBoundsThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.findNodesIntersectingBounds(new VolumeBounds(0, 0, 0, 1, 1, 1)));
+    void findNodesIntersectingBounds_emptyIndex_returnsEmpty() {
+        var found = index.findNodesIntersectingBounds(new VolumeBounds(0, 0, 0, 1, 1, 1));
+        assertNotNull(found);
+        assertTrue(found.isEmpty());
     }
 
     @Test
-    void doesNodeIntersectVolumeThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.doesNodeIntersectVolume(PyramidKey.getRoot(),
-                                                            new Spatial.Cube(0, 0, 0, 1)));
+    void doesNodeIntersectVolume_rootKeyAndLargeCube_returnsTrue() {
+        // root cube covers entire domain — any small cube inside should intersect
+        var large = new Spatial.Cube(0, 0, 0, (float) com.hellblazer.luciferase.lucien.Constants.MAX_COORD);
+        assertTrue(index.doesNodeIntersectVolume(PyramidKey.getRoot(), large));
     }
 
     @Test
-    void isNodeContainedInVolumeThrowsWithBeadRef() {
-        assertPhaseBead(() -> index.isNodeContainedInVolume(PyramidKey.getRoot(),
-                                                            new Spatial.Cube(0, 0, 0, 1)));
+    void isNodeContainedInVolume_rootKeyContainedInHuge_returnsTrue() {
+        // A cube slightly larger than the root cube must contain it
+        float edge = (float) com.hellblazer.luciferase.lucien.Constants.lengthAtLevel((byte) 0);
+        var huge = new Spatial.Cube(-1f, -1f, -1f, edge + 2f);
+        assertTrue(index.isNodeContainedInVolume(PyramidKey.getRoot(), huge));
     }
 
     @Test
