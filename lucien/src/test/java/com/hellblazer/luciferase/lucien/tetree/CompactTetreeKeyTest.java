@@ -141,22 +141,22 @@ public class CompactTetreeKeyTest {
 
     @Test
     void testTypeAndCoordExtraction() {
-        // Create a key with known bit pattern
+        // Create a key with known bit pattern. Coarsest-at-MSB layout (Luciferase-tkvb): step 0 is
+        // the shallowest and lives in the more-significant group; the leaf (step level-1) lives at
+        // bits 0-5.
         // Level 2: two 6-bit groups
-        // Group 0: coords=101 (5), type=011 (3) -> 101011 = 43
-        // Group 1: coords=110 (6), type=010 (2) -> 110010 = 50
+        //   bits 0-5  (leaf, step 1):      coords=101 (5), type=011 (3) -> 101011 = 43
+        //   bits 6-11 (shallowest, step 0): coords=110 (6), type=010 (2) -> 110010 = 50
         long tmIndex = (50L << 6) | 43L;
         CompactTetreeKey key = new CompactTetreeKey((byte) 2, tmIndex);
 
-        // Extract type at level 0
-        assertEquals(3, key.getTypeAtLevel(0));
-        // Extract coords at level 0
-        assertEquals(5, key.getCoordBitsAtLevel(0));
+        // Step 0 (shallowest) reads the more-significant group (50).
+        assertEquals(2, key.getTypeAtLevel(0));
+        assertEquals(6, key.getCoordBitsAtLevel(0));
 
-        // Extract type at level 1
-        assertEquals(2, key.getTypeAtLevel(1));
-        // Extract coords at level 1
-        assertEquals(6, key.getCoordBitsAtLevel(1));
+        // Step 1 (leaf) reads the least-significant group (43).
+        assertEquals(3, key.getTypeAtLevel(1));
+        assertEquals(5, key.getCoordBitsAtLevel(1));
     }
 
     @Test

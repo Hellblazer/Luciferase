@@ -567,13 +567,21 @@ public class Tet implements Spatial.aabt, HybridElement {
             throw new IllegalArgumentException("Level " + level + " exceeds maximum supported level 21");
         }
 
-        // Extract 6-bit chunks from least significant to most significant
+        // Extract 6-bit chunks. Coarsest-at-MSB layout (Luciferase-tkvb): step i (i=0 shallowest)
+        // sits at bit offset 6*(level-1-i) from the LSB across the 128-bit (highBits, lowBits) value,
+        // and may straddle the 64-bit boundary.
         for (int i = 0; i < maxBits; i++) {
+            int bit = (maxBits - 1 - i) * 6; // offset from LSB
             int sixBits;
-            if (i < 10) {
-                sixBits = (int) ((lowBits >> (6 * i)) & 0x3F);
+            if (bit >= 64) {
+                sixBits = (int) ((highBits >>> (bit - 64)) & 0x3F);
+            } else if (bit + 6 <= 64) {
+                sixBits = (int) ((lowBits >>> bit) & 0x3F);
             } else {
-                sixBits = (int) ((highBits >> (6 * (i - 10))) & 0x3F);
+                // Straddles the low/high boundary.
+                long lowPart = lowBits >>> bit;
+                long highPart = highBits << (64 - bit);
+                sixBits = (int) ((lowPart | highPart) & 0x3F);
             }
 
             // Lower 3 bits are type
@@ -2025,11 +2033,14 @@ public class Tet implements Spatial.aabt, HybridElement {
             throw new IllegalStateException("Level " + l + " exceeds maximum supported level 21 for 128-bit TM-index");
         }
 
-        // Use 128-bit representation
+        // Use 128-bit representation, coarsest-at-MSB consecutive layout (matches PyramidKey,
+        // Luciferase-tkvb). Each refinement step's 6-bit group is appended at the least-significant
+        // end: the shallowest step (i=0) migrates to the most significant bits, the leaf (i=l-1)
+        // lands at bits 0-5. compareTo on (highBits, lowBits) unsigned then reproduces the
+        // coarse-dominant SFC order. No level-21 split: 21 * 6 = 126 bits fit two longs.
         long lowBits = 0L;
         long highBits = 0L;
 
-        // Process each level in order with cached types
         for (int i = 0; i < l; i++) {
             int bitPos = Constants.getMaxRefinementLevel() - 1 - i;
             int xBit = (shiftedX >> bitPos) & 1;
@@ -2039,11 +2050,9 @@ public class Tet implements Spatial.aabt, HybridElement {
             int coordBits = (zBit << 2) | (yBit << 1) | xBit;
             int sixBits = (coordBits << 3) | types[i];
 
-            if (i < 10) {
-                lowBits |= ((long) sixBits) << (6 * i);
-            } else {
-                highBits |= ((long) sixBits) << (6 * (i - 10));
-            }
+            // Shift the running 128-bit value left by one group and OR the new group into the LSB.
+            highBits = (highBits << 6) | (lowBits >>> 58);
+            lowBits = (lowBits << 6) | sixBits;
         }
 
         // Use compact key for levels <= 10 for better performance
