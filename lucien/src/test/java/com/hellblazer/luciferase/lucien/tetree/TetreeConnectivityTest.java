@@ -18,6 +18,8 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import org.junit.jupiter.api.Test;
 
+import javax.vecmath.Point3i;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -38,12 +40,15 @@ public class TetreeConnectivityTest {
         // 2. Each tetrahedron has exactly 4 faces
         assertEquals(4, TetreeConnectivity.FACES_PER_TET);
 
-        // 3. Interior child (0) touches no parent faces
+        // 3. Every child index in the t8code per-type CHILDREN_AT_FACE table is a valid Morton index (0-7).
+        //    NOTE: in the verbatim t8code t8_dtet_face_child_id_by_type table, child 0 (the corner child
+        //    sharing parent vertex 0) DOES lie on parent faces 1,2,3 — it is opposite face 0 only. The prior
+        //    "child 0 is interior, touches no face" assertion was a made-up Bey artifact, not t8code (koaw).
         for (byte parentType = 0; parentType < 6; parentType++) {
             for (int face = 0; face < 4; face++) {
                 byte[] childrenAtFace = TetreeConnectivity.getChildrenAtFace(parentType, face);
                 for (byte child : childrenAtFace) {
-                    assertNotEquals(0, child, "Interior child should not be at any face");
+                    assertTrue(child >= 0 && child < 8, "Child index must be a valid Morton index 0-7: " + child);
                 }
             }
         }
@@ -140,11 +145,9 @@ public class TetreeConnectivityTest {
                 }
             }
 
-            // Child 0 is interior, so it shouldn't be at any face
-            assertFalse(childAtSomeFace[0], "Child 0 should be interior");
-
-            // All other children should be at some face
-            for (int i = 1; i < 8; i++) {
+            // Every child (including child 0, the corner child opposite face 0) appears on some parent face
+            // in the t8code per-type table. No child is fully interior in t8_dtet_face_child_id_by_type.
+            for (int i = 0; i < 8; i++) {
                 assertTrue(childAtSomeFace[i], "Child " + i + " should be at some face");
             }
         }
@@ -178,13 +181,66 @@ public class TetreeConnectivityTest {
             }
         }
 
-        // Test interior child (index 0) has no face mappings
+        // Bidirectional consistency: a child appears in CHILDREN_AT_FACE[type][pf] IFF getChildFace != -1.
+        // (Reverse direction of the forward check above — closes the FACE_CHILD_FACE / CHILDREN_AT_FACE loop.)
         for (byte parentType = 0; parentType < 6; parentType++) {
             for (int parentFace = 0; parentFace < 4; parentFace++) {
-                assertEquals(-1, TetreeConnectivity.getChildFace(parentType, 0, parentFace),
-                             "Interior child should not touch any parent face");
+                var atFace = new boolean[8];
+                for (byte child : TetreeConnectivity.getChildrenAtFace(parentType, parentFace)) {
+                    atFace[child] = true;
+                }
+                for (int childIndex = 0; childIndex < 8; childIndex++) {
+                    byte childFace = TetreeConnectivity.getChildFace(parentType, childIndex, parentFace);
+                    assertEquals(atFace[childIndex], childFace != -1,
+                                 "FACE_CHILD_FACE/CHILDREN_AT_FACE disagree: type=" + parentType + " child="
+                                 + childIndex + " parentFace=" + parentFace);
+                }
             }
         }
+    }
+
+    /**
+     * Independent geometric validation of FACE_CHILD_FACE (Luciferase-koaw). The table is a frozen,
+     * offline-derived lookup; this re-derives every (parentType, childMortonIndex, parentFace) entry live
+     * from the verified {@code Tet.coordinates()} — the child-local face whose 3 vertices all lie on the
+     * parent face plane, or -1 — and asserts equality. This removes the maintenance hazard of an
+     * unverifiable frozen table (t8code has no equivalent static table to transcribe against).
+     */
+    @Test
+    public void faceChildFaceMatchesGeometry() {
+        // child-local face f = the 3 vertices != f (t8code: face opposite vertex f)
+        final int[][] faceVerts = { { 1, 2, 3 }, { 0, 2, 3 }, { 0, 1, 3 }, { 0, 1, 2 } };
+        final byte level = 5;
+        for (byte ptype = 0; ptype < 6; ptype++) {
+            var parent = new Tet(0, 0, 0, level, ptype);
+            Point3i[] pv = parent.coordinates();
+            for (int child = 0; child < 8; child++) {
+                Point3i[] cv = parent.child(child).coordinates();
+                for (int pf = 0; pf < 4; pf++) {
+                    Point3i pa = pv[faceVerts[pf][0]], pb = pv[faceVerts[pf][1]], pc = pv[faceVerts[pf][2]];
+                    int expected = -1;
+                    for (int cf = 0; cf < 4; cf++) {
+                        boolean all = true;
+                        for (int k = 0; k < 3 && all; k++) {
+                            all = coplanar(pa, pb, pc, cv[faceVerts[cf][k]]);
+                        }
+                        if (all) {
+                            expected = cf;
+                            break;
+                        }
+                    }
+                    assertEquals(expected, TetreeConnectivity.getChildFace(ptype, child, pf),
+                                 "FACE_CHILD_FACE geometry mismatch type=" + ptype + " child=" + child + " face=" + pf);
+                }
+            }
+        }
+    }
+
+    private static boolean coplanar(Point3i a, Point3i b, Point3i c, Point3i p) {
+        long ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+        long vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+        long nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        return nx * (p.x - a.x) + ny * (p.y - a.y) + nz * (p.z - a.z) == 0;
     }
 
     @Test

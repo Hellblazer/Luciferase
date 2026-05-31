@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.lucien.neighbor;
 
+import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
@@ -26,6 +28,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashSet;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -53,6 +58,66 @@ class TetreeNeighborDetectorTest {
         }
     }
     
+    /**
+     * Regression for Luciferase-koaw: the detector's face-neighbor path must return the GEOMETRIC face
+     * neighbor (Tet.faceNeighbor, oracle-gated by Luciferase-4bmd), not child[neighborType]. The old impl
+     * passed a neighbor TYPE (0-5) into parentTet.child() as a Morton index, silently returning a wrong tet.
+     * This asserts EXACT set-equality between the detector output and the in-domain geometric neighbors —
+     * a non-vacuous check the prior size<=4 / no-duplicate tests could not catch. It WOULD have failed
+     * against the old child[neighborType] impl.
+     *
+     * <p>Scope: the detector now delegates to Tet.faceNeighbor, so this pins the detector plumbing (key
+     * round-trip, domain filter, self-exclusion) but is circular w.r.t. Tet.faceNeighbor's own correctness.
+     * The latter is independently validated against t8code by T8codeDtetFaceNeighborOracleTest
+     * (Luciferase-4bmd), on which this PR stacks.
+     */
+    @Test
+    void faceNeighborsMatchGeometricGroundTruth() {
+        int maxCoord = Constants.lengthAtLevel((byte) 0);
+        int checkedTets = 0;
+        int matchedNeighbors = 0;
+
+        // DFS a refined tree; every node is a genuinely valid Tet (no fabricated anchors/types).
+        Deque<Tet> work = new ArrayDeque<>();
+        work.push(new Tet(0, 0, 0, (byte) 0, (byte) 0));
+        while (!work.isEmpty()) {
+            var tet = work.pop();
+            if (tet.l() >= 1) {
+                var key = tet.tmIndex();
+                // Expected = in-domain geometric face neighbors, minus self (mirrors detector filtering).
+                var expected = new HashSet<TetreeKey<?>>();
+                for (int face = 0; face < 4; face++) {
+                    var fn = tet.faceNeighbor(face);
+                    if (fn == null) {
+                        continue;
+                    }
+                    var n = fn.tet();
+                    if (n.x() < 0 || n.y() < 0 || n.z() < 0 || n.x() >= maxCoord || n.y() >= maxCoord
+                    || n.z() >= maxCoord) {
+                        continue;
+                    }
+                    var nKey = n.tmIndex();
+                    if (!nKey.equals(key)) {
+                        expected.add(nKey);
+                    }
+                }
+
+                var actual = new HashSet<>(detector.findFaceNeighbors(key));
+                assertEquals(expected, actual,
+                             "detector face neighbors must equal geometric ground truth for " + tet);
+                checkedTets++;
+                matchedNeighbors += actual.size();
+            }
+            if (tet.l() < 4) {
+                for (int m = 0; m < 8; m++) {
+                    work.push(tet.child(m));
+                }
+            }
+        }
+        assertTrue(checkedTets > 1000, "expected broad tet coverage, got " + checkedTets);
+        assertTrue(matchedNeighbors > 0, "expected non-empty neighbor sets, got " + matchedNeighbors);
+    }
+
     @Test
     void testFaceNeighbors() {
         // Get a key from the tree
