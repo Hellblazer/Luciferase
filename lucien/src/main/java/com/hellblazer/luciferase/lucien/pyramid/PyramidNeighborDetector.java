@@ -52,12 +52,13 @@ import java.util.Set;
  * the detector <em>catches and skips</em> that face rather than propagating — a thrown exception would
  * break the BFS in {@code KnnSearcher}/{@code CollisionEngine}.
  *
- * <p><b>Edge/vertex — bounded cumulative supersets (pi1.5).</b> Edge and vertex add the same-shape
- * (pyramid↔pyramid) geometric neighbors at shared-vertex thresholds 2 and 1 (the 27-cube enumeration
- * below) on top of the cross-shape face set, preserving face ⊆ edge ⊆ vertex. <em>Exhaustive
- * cross-shape edge/vertex adjacency</em> (tet-tet edge sharing, pyramid-tet vertex fans) is a
- * registered deferral — bead Luciferase-0utt — not silent scope reduction: ghost {@code FACES}
- * exchange needs only the face set, which is exact here.
+ * <p><b>Edge/vertex — exhaustive cross-shape cumulative supersets (RDR-010 Luciferase-0utt).</b> Edge
+ * and vertex enumerate ALL same-level SFC elements — pyramid (6/7) <em>and</em> shallowest tet (0-5) —
+ * in the 27-cube neighbourhood, classified by shared-vertex count (≥ 2 edge, ≥ 1 vertex) and unioned
+ * with the cross-shape face set, preserving face ⊆ edge ⊆ vertex. This surfaces tet↔tet edge sharing and
+ * pyramid↔tet vertex fans (the pi1.5 superset enumerated same-shape pyramids only). Deep pyramid-rooted
+ * tets (l &gt; minTetLevel) remain out of scope — {@link PyramidKeyCodec#encode} rejects them
+ * (Finding #16 / q3p Phase E). ghost {@code FACES} exchange still needs only the (exact) face set.
  *
  * <p><b>Same-shape enumeration (edge/vertex contribution).</b> For each of the 27 cube offsets
  * {@code (dx,dy,dz) ∈ {-1,0,+1}³} and each pyramid type {@code {6,7}}, a candidate same-level pyramid is
@@ -90,25 +91,25 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
 
     @Override
     public List<PyramidKey> findEdgeNeighbors(PyramidKey element) {
-        // Bounded superset: cross-shape faces ∪ same-shape edge neighbors (shared ≥ 2). Exhaustive
-        // cross-shape edge adjacency is deferred (bead Luciferase-0utt).
-        return unionFaceWithSameShape(element, EDGE_SHARED_VERTICES);
+        // Exhaustive cross-shape edge adjacency (RDR-010 Luciferase-0utt): cross-shape faces ∪ all-shape
+        // (pyramid+tet) elements sharing ≥ 2 vertices. Deep-tet (l > minTetLevel) stays out of scope.
+        return unionFaceWithAllShape(element, EDGE_SHARED_VERTICES);
     }
 
     @Override
     public List<PyramidKey> findVertexNeighbors(PyramidKey element) {
-        // Bounded superset: cross-shape faces ∪ same-shape vertex neighbors (shared ≥ 1). Exhaustive
-        // cross-shape vertex adjacency is deferred (bead Luciferase-0utt).
-        return unionFaceWithSameShape(element, VERTEX_SHARED_VERTICES);
+        // Exhaustive cross-shape vertex adjacency (RDR-010 Luciferase-0utt): cross-shape faces ∪ all-shape
+        // (pyramid+tet) elements sharing ≥ 1 vertex. Deep-tet (l > minTetLevel) stays out of scope.
+        return unionFaceWithAllShape(element, VERTEX_SHARED_VERTICES);
     }
 
     /**
-     * Cross-shape face set unioned with the same-shape neighbors at {@code minSharedVertices},
-     * insertion-ordered and de-duplicated, preserving face ⊆ edge ⊆ vertex.
+     * Cross-shape face set unioned with the all-shape (pyramid+tet) edge/vertex neighbors at
+     * {@code minSharedVertices}, insertion-ordered and de-duplicated, preserving face ⊆ edge ⊆ vertex.
      */
-    private List<PyramidKey> unionFaceWithSameShape(PyramidKey element, int minSharedVertices) {
+    private List<PyramidKey> unionFaceWithAllShape(PyramidKey element, int minSharedVertices) {
         var union = new LinkedHashSet<>(crossShapeFaceNeighbors(element));
-        union.addAll(sameShapeNeighbors(element, minSharedVertices));
+        union.addAll(allShapeNeighbors(element, minSharedVertices));
         return new ArrayList<>(union);
     }
 
@@ -209,27 +210,45 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
         var neighbors = findNeighbors(element, type);
         var result = new ArrayList<NeighborInfo<PyramidKey>>(neighbors.size());
         for (var neighbor : neighbors) {
-            // Same-shape, single-tree scope: all neighbors are local. Distributed ownership resolution
-            // (cross-rank, cross-tree) lands with the ghost wiring in pi1.5.
+            // Local-only for ALL ghost types (FACES, EDGES, VERTEXES) by design — the detector is purely
+            // geometric. Distributed cross-rank ownership is assigned externally via the inverted seam
+            // (GhostBoundaryDetector.setElementOwner), NOT resolved here (RDR-010 pi1.5, Luciferase-703).
+            // So edge/vertex ghost exchange (Luciferase-0utt) follows the same external-ownership model as
+            // faces: the geometric neighbour set is correct; rank resolution is the seam's job.
             result.add(new NeighborInfo<>(neighbor, 0, 0, true));
         }
         return result;
     }
 
     /**
-     * Same-shape (pyramid↔pyramid) geometric enumeration for the edge/vertex superset contribution.
-     * Returns the same-level pyramid keys that share at least {@code minSharedVertices} vertices with
-     * the query element. A tet-leaf or non-decodable key yields an empty list (so for a tet-leaf key the
-     * edge/vertex sets equal the cross-shape face set — exhaustive cross-shape edge/vertex topology is
-     * deferred to bead Luciferase-0utt); never throws.
+     * Exhaustive cross-shape (pyramid↔pyramid, pyramid↔tet, tet↔tet) edge/vertex enumeration (RDR-010,
+     * bead Luciferase-0utt). Returns every same-level SFC element — pyramid (type 6/7) <em>or</em>
+     * shallowest tet (type 0-5, {@code minTetLevel == level}) — in the 27-cube neighbourhood that shares
+     * at least {@code minSharedVertices} vertices with the query element's leaf.
+     *
+     * <p>Shared-vertex count is a <em>conservative superset</em> classifier for edge (≥ 2 shared
+     * vertices) and vertex (≥ 1) adjacency, honouring the {@link NeighborDetector} cumulative-superset
+     * contract. It is not exact for edges: a pyramid's two base-diagonal corners share no pyramid edge,
+     * so two elements sharing exactly that diagonal pair are counted as edge neighbours without a shared
+     * geometric edge. Over-inclusion is safe for the BFS/ghost consumers (they tolerate extra neighbours;
+     * never a false negative). Faces are NOT classified this way (Bey-SFC tet faces share 0-3 vertices) —
+     * they are handled separately by {@link #crossShapeFaceNeighbors} and unioned in. Candidates are filtered to genuine
+     * SFC elements via {@link PyramidKeyCodec#encode} (a non-SFC anchor/type, or a deep pyramid-rooted tet
+     * with {@code minTetLevel < level}, encodes to {@code null} — so deep-tet cross-shape adjacency below
+     * the shallow boundary remains out of scope, RDR-010 Finding #16 / q3p Phase E). Works for a pyramid
+     * <em>or</em> a tet-leaf query (vertices taken from the decoded leaf). Never throws.
      */
-    private List<PyramidKey> sameShapeNeighbors(PyramidKey element, int minSharedVertices) {
-        Pyramid self = resolvePyramid(element);
-        if (self == null) {
-            return List.of(); // tet-leaf key: same-shape edge/vertex N/A (exhaustive → bead Luciferase-0utt)
+    private List<PyramidKey> allShapeNeighbors(PyramidKey element, int minSharedVertices) {
+        HybridElement self = PyramidIndex.elementFromKey(element);
+        Point3i[] selfVerts;
+        if (self instanceof Pyramid p) {
+            selfVerts = p.coordinates();
+        } else if (self instanceof Tet t) {
+            selfVerts = t.coordinates();
+        } else {
+            return List.of(); // root / non-decodable — no same-level neighbours
         }
         int len = self.length();
-        Point3i[] selfVerts = self.coordinates();
         byte level = self.level();
         var neighbors = new ArrayList<PyramidKey>();
         for (int dx = -1; dx <= 1; dx++) {
@@ -242,18 +261,16 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
                         || nz > Constants.MAX_COORD) {
                         continue;
                     }
+                    // Pyramid candidates (type 6/7).
                     for (byte candType = Pyramid.TYPE_6; candType <= Pyramid.TYPE_7; candType++) {
-                        var cand = new Pyramid(nx, ny, nz, level, candType);
-                        if (cand.equals(self)) {
-                            continue; // self
-                        }
-                        if (sharedVertexCount(selfVerts, cand.coordinates()) < minSharedVertices) {
-                            continue;
-                        }
-                        var key = PyramidKeyCodec.encode(cand);
-                        if (key != null) { // null ⇒ not a genuine SFC element
-                            neighbors.add(key);
-                        }
+                        addCandidate(new Pyramid(nx, ny, nz, level, candType), selfVerts, minSharedVertices,
+                                     element, neighbors);
+                    }
+                    // Shallow-tet candidates (type 0-5, minTetLevel == level). encode() drops non-SFC and
+                    // deep tets, so only genuine shallow SFC tets at this cube survive.
+                    for (byte tetType = 0; tetType < 6; tetType++) {
+                        addCandidate(new Tet(nx, ny, nz, level, tetType, level), selfVerts, minSharedVertices,
+                                     element, neighbors);
                     }
                 }
             }
@@ -261,29 +278,20 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
         return neighbors;
     }
 
-    /**
-     * Decode {@code element} to its pyramid, or {@code null} if it is a tet leaf (cross-shape, pi1.5)
-     * or the root (no same-level neighbors). The key's leaf type bit is authoritative for shape —
-     * {@link PyramidIndex#pyramidFromKey} returns the enclosing parent pyramid for a deep tet-leaf
-     * key, so a {@code null} from it is not a reliable tet-leaf signal on its own.
-     */
-    private static Pyramid resolvePyramid(PyramidKey element) {
-        byte level = element.getLevel();
-        if (level == 0) {
-            return null; // root spans the domain; no same-level neighbors
+    /** Add {@code cand}'s key if it is a genuine SFC element, not the query, and shares ≥ min vertices. */
+    private static void addCandidate(HybridElement cand, Point3i[] selfVerts, int minSharedVertices,
+                                     PyramidKey selfKey, List<PyramidKey> out) {
+        Point3i[] candVerts = cand instanceof Pyramid p ? p.coordinates() : ((Tet) cand).coordinates();
+        if (sharedVertexCount(selfVerts, candVerts) < minSharedVertices) {
+            return;
         }
-        byte leafType = element.getTypeAtLevel(level);
-        if (leafType != Pyramid.TYPE_6 && leafType != Pyramid.TYPE_7) {
-            return null; // tet leaf: same-shape enumeration N/A (cross-shape faces handled separately)
+        PyramidKey key = encodeElement(cand);
+        if (key != null && !key.equals(selfKey)) {
+            out.add(key);
         }
-        Pyramid self = PyramidIndex.pyramidFromKey(element);
-        if (self == null || self.level() != level || self.type() != leafType) {
-            return null; // defensive: decode did not resolve to the leaf pyramid
-        }
-        return self;
     }
 
-    /** Count vertices shared (by exact integer coordinate) between two pyramid vertex sets. */
+    /** Count vertices shared (by exact integer coordinate) between two vertex sets. */
     private static int sharedVertexCount(Point3i[] a, Point3i[] b) {
         int shared = 0;
         for (Point3i pa : a) {
