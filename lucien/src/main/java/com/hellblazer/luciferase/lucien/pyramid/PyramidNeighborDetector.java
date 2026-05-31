@@ -48,10 +48,10 @@ import java.util.Set;
  *
  * <p><b>Face neighbors: full depth.</b> {@link Tet#faceNeighborElement} resolves both the shallowest
  * pyramid↔tet boundary ({@code l == minTetLevel}) and deep pyramid-rooted tets ({@code l > minTetLevel})
- * via the t8code {@code t8_dpyramid_tet_boundary} corner-walk (RDR-010 Luciferase-cjwr). Until
- * {@link PyramidKeyCodec#encode(Tet)} accepts deep tets (cjwr Phase B) the detector only ever holds
- * shallow tet keys, so deep tets are not yet reachable as a query here — but the face topology itself
- * is no longer depth-limited.
+ * via the t8code {@code t8_dpyramid_tet_boundary} corner-walk (RDR-010 Luciferase-cjwr). The codec
+ * round-trips deep tet keys too (cjwr Phase B); in practice the detector still only holds shallow tet
+ * keys because the index locate primitive stops at the shallowest tet leaf (deep tet keys are not
+ * inserted until that primitive is extended) — but the face topology itself is no longer depth-limited.
  *
  * <p><b>Edge/vertex — bounded cumulative supersets (pi1.5).</b> Edge and vertex add the same-shape
  * (pyramid↔pyramid) geometric neighbors at shared-vertex thresholds 2 and 1 (the 27-cube enumeration
@@ -136,7 +136,8 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
             for (int f = 0; f < 4; f++) {
                 // faceNeighborElement now resolves deep pyramid-rooted tets too (RDR-010 Luciferase-cjwr,
                 // t8code t8_dpyramid_tet_boundary corner-walk); no fail-loud guard to catch. In practice
-                // `self` is still a shallow tet here until encode(Tet) accepts deep tets (cjwr Phase B).
+                // `self` is still a shallow tet here because the index locate primitive stops at the
+                // shallowest tet leaf, so deep tet keys are not inserted into the index.
                 addFaceNeighbor(t.faceNeighborElement(f), element, out);
             }
         }

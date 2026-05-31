@@ -8,6 +8,7 @@ package com.hellblazer.luciferase.lucien.pyramid;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.HybridElement;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
+import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -15,6 +16,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -30,8 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li><b>decode∘encode == identity</b> for every valid SFC pyramid (types 6 and 7, multiple levels).</li>
  *   <li><b>encode∘decode == identity</b> (key-side bijection).</li>
  *   <li><b>non-SFC / unreachable candidate → null</b> with no exception on the hot path.</li>
- *   <li><b>shallowest tet leaf round-trips</b> via {@code encode(Tet)} / {@code elementFromKey}; deeper
- *       or pure-Tetree tets → null (deep-tet cross-shape deferred to q3p Phase E).</li>
+ *   <li><b>pyramid-rooted tet leaves round-trip</b> via {@code encode(Tet)} / {@code elementFromKey} —
+ *       both shallowest ({@code minTetLevel == level}) and deep ({@code minTetLevel < level}) tets
+ *       (RDR-010 cjwr Phase B); a pure-Tetree tet ({@code minTetLevel == -1}) → null.</li>
  * </ul>
  *
  * @author hal.hildebrand
@@ -209,20 +212,116 @@ class PyramidKeyCodecTest {
     }
 
     /**
-     * Only the SHALLOWEST tet of a pyramidal branch (minTetLevel == level) is in pi1.5 scope. A deeper
-     * pyramid-rooted tet (minTetLevel &lt; level) and a pure-Tetree tet (minTetLevel == -1) both encode
-     * to null — fail-safe, never a throw, never a bogus key. Deep-tet cross-shape is deferred (q3p
-     * Phase E, fail-loud guarded).
+     * A pure-Tetree tet (minTetLevel == -1) has no pyramidal ancestor, so it is not an element of the
+     * pyramid SFC and encodes to {@code null} — fail-safe, never a throw.
      */
     @Test
-    void deepOrPureTetEncodesToNull() {
+    void pureTetEncodesToNull() {
         int h2 = Constants.lengthAtLevel((byte) 2);
-        // Deep pyramid-rooted tet: level 2 but the tet branch began at level 1.
-        var deep = new Tet(h2, 0, 0, (byte) 2, (byte) 3, (byte) 1);
-        assertNull(PyramidKeyCodec.encode(deep), "deeper-than-shallowest tet must encode to null");
-        // Pure-Tetree tet (no pyramid ancestor).
         var pure = new Tet(h2, 0, 0, (byte) 2, (byte) 0, (byte) -1); // minTetLevel -1 = pure-Tetree
         assertNull(PyramidKeyCodec.encode(pure), "pure-Tetree tet must encode to null");
+    }
+
+    /**
+     * Deep pyramid-rooted tets (minTetLevel &lt; level, a tet-of-tet refinement below the boundary) now
+     * round-trip through {@code encode(Tet)} / {@code elementFromKey} (RDR-010 cjwr Phase B). Generated
+     * via the real child chain (pyramid → shallowest tet → deeper tets) so every tet is a genuine SFC
+     * element. Distinct deep tets must yield distinct keys.
+     */
+    @Test
+    void deepTetRoundTrips() {
+        var seen = new java.util.HashMap<PyramidKey, Tet>();
+        var checked = 0;
+        // Arm 1: shallowest tets at level 2 (minTetLevel == 2), refined 2 more levels.
+        for (var rootType : new byte[] { Pyramid.TYPE_6, Pyramid.TYPE_7 }) {
+            var root = new Pyramid(0, 0, 0, (byte) 1, rootType);
+            for (var i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+                if (!(root.child(i) instanceof Tet shallow)) {
+                    continue; // shallowest tet (minTetLevel == its level == 2)
+                }
+                checked += roundTripDeep(shallow, shallow, 2, seen);
+            }
+        }
+        // Arm 2: shallowest tets at level 1 (minTetLevel == 1) — the distinct l=1 boundary code path
+        // (encode/decode handle the level-1 group as a TET type, not a pyramid type). Refine 1 level.
+        for (var rootType : new byte[] { Pyramid.TYPE_6, Pyramid.TYPE_7 }) {
+            var root0 = new Pyramid(0, 0, 0, (byte) 0, rootType);
+            for (var i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+                if (!(root0.child(i) instanceof Tet shallow1)) {
+                    continue; // shallowest tet at level 1 (minTetLevel == 1)
+                }
+                checked += roundTripDeep(shallow1, shallow1, 1, seen);
+            }
+        }
+        assertTrue(checked > 0, "must exercise deep pyramid-rooted tets");
+    }
+
+    /** Recurse {@code remainingDepth} below a shallowest tet, asserting each deep tet round-trips. */
+    private int roundTripDeep(Tet shallow, Tet current, int remainingDepth, java.util.Map<PyramidKey, Tet> seen) {
+        var count = 0;
+        if (current.l > shallow.l) {
+            var key = PyramidKeyCodec.encode(current);
+            assertNotNull(key, "deep tet must encode (level " + current.l + ", minTetLevel "
+                               + current.minTetLevel() + ", type " + current.type() + ")");
+            var prior = seen.put(key, current);
+            assertNull(prior, "distinct deep tets must yield distinct keys: " + current + " vs " + prior);
+            var decoded = PyramidIndex.elementFromKey(key);
+            assertInstanceOf(Tet.class, decoded, "deep tet key decodes to a Tet");
+            var dt = (Tet) decoded;
+            assertEquals(current.x(), dt.x(), "deep round-trip x");
+            assertEquals(current.y(), dt.y(), "deep round-trip y");
+            assertEquals(current.z(), dt.z(), "deep round-trip z");
+            assertEquals(current.level(), dt.level(), "deep round-trip level");
+            assertEquals(current.type(), dt.type(), "deep round-trip type");
+            assertEquals(current.minTetLevel(), dt.minTetLevel(), "deep round-trip minTetLevel");
+            count++;
+        }
+        if (remainingDepth > 0) {
+            for (var k = 0; k < TetreeConnectivity.CHILDREN_PER_TET; k++) {
+                count += roundTripDeep(shallow, current.child(k), remainingDepth - 1, seen);
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Independent bit-value oracle for a DEEP tet-leaf key (RDR-010 cjwr Phase B; parallels the 0utt
+     * SIG-3 golden-key discipline). Defends against a co-evolved error in {@code encode(Tet)} +
+     * {@code elementFromKey} (e.g. a wrong {@code lengthAtLevel}) that would still round-trip
+     * self-consistently. The per-level coord/type bits are derived from the leaf and its shallowest-tet
+     * ancestor using <em>literal</em> level lengths ({@code 1 << (21 - l)}) — independent of
+     * {@code Constants.lengthAtLevel} — and compared against the key's long-unpacking accessors.
+     */
+    @Test
+    void goldenDeepTetKeyBitsIndependentOfLengthAtLevel() {
+        // A deep tet: a level-1 shallowest tet (minTetLevel 1) refined once via Bey child 0.
+        var root6 = new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6);
+        Tet shallow1 = null;
+        for (var i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+            if (root6.child(i) instanceof Tet t) {
+                shallow1 = t;
+                break;
+            }
+        }
+        assertNotNull(shallow1, "root6 has a tet child");
+        assertEquals(1, shallow1.minTetLevel(), "shallowest tet at level 1");
+        var deep2 = (Tet) shallow1.child(0); // level 2, minTetLevel 1 (deep)
+        assertEquals(2, deep2.level());
+        assertEquals(1, deep2.minTetLevel(), "deep tet keeps the level-1 boundary");
+
+        var key = PyramidKeyCodec.encode(deep2);
+        assertNotNull(key, "deep tet encodes");
+
+        final int h1 = 1 << (21 - 1); // == lengthAtLevel(1), literal — independent of Constants
+        final int h2 = 1 << (21 - 2); // == lengthAtLevel(2)
+        int expectCb1 = ((shallow1.x() & h1) != 0 ? 1 : 0) | ((shallow1.y() & h1) != 0 ? 2 : 0)
+                        | ((shallow1.z() & h1) != 0 ? 4 : 0);
+        int expectCb2 = ((deep2.x() & h2) != 0 ? 1 : 0) | ((deep2.y() & h2) != 0 ? 2 : 0)
+                        | ((deep2.z() & h2) != 0 ? 4 : 0);
+        assertEquals(expectCb1, key.getCoordBitsAtLevel(1), "level-1 coord bits");
+        assertEquals(shallow1.type(), key.getTypeAtLevel(1), "level-1 type bits (shallowest tet type)");
+        assertEquals(expectCb2, key.getCoordBitsAtLevel(2), "level-2 coord bits");
+        assertEquals(deep2.type(), key.getTypeAtLevel(2), "level-2 type bits (deep tet type)");
     }
 
     /**

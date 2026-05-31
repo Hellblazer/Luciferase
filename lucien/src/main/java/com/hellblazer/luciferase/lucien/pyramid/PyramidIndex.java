@@ -719,12 +719,11 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
      * key to its enclosing parent pyramid), this returns the tet itself, so it is the validating
      * inverse of {@link PyramidKeyCodec#encode(Tet)}.
      *
-     * <p><b>Shallow boundary only.</b> The descent follows {@link Pyramid#child(int)} edges, so it can
-     * reconstruct a tet only at the leaf level (a tet born directly from a pyramid, {@code minTetLevel
-     * == level}). A key whose bits select a tet at a non-leaf level — a <em>deep</em> pyramid-rooted
-     * tet ({@code l > minTetLevel}) — is not reconstructible here (the tet-of-tet refinement is the
-     * q3p Phase E deferral, fail-loud elsewhere) and returns {@code null}. A key with no matching
-     * child at some level also returns {@code null}.
+     * <p><b>Full depth.</b> The descent follows {@link Pyramid#child(int)} edges while the path is
+     * pyramidal and {@link Tet#child(int)} edges once it enters the tetrahedral branch, so it
+     * reconstructs both a shallowest tet leaf ({@code minTetLevel == level}) and a <em>deep</em>
+     * pyramid-rooted tet ({@code l > minTetLevel}) — the tet-of-tet refinement below the boundary
+     * (RDR-010 Luciferase-cjwr Phase B). A key with no matching child at some level returns {@code null}.
      *
      * @param key the SFC key
      * @return the leaf element (Pyramid or Tet), or {@code null} for a non-reconstructible key
@@ -753,21 +752,36 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
         if (currentEl == null || level == 1) {
             return currentEl; // level-1 leaf (Tet or Pyramid), or no match
         }
-        // Descend levels 2..level via pyramid children. A tet at a non-leaf level cannot parent the
-        // next level here (deep-tet, out of pi1.5 scope) → null.
+        // Descend levels 2..level. While the path is pyramidal, follow Pyramid.child edges (matching the
+        // child's coord+type bits). Once it enters the tetrahedral branch, follow Tet.child edges (the
+        // deep tet-of-tet refinement, RDR-010 Luciferase-cjwr Phase B) — Tet.child inherits minTetLevel,
+        // so the reconstructed deep tet carries the boundary level set at the shallowest tet.
         for (int l = 2; l <= level; l++) {
-            if (!(currentEl instanceof Pyramid cp)) {
-                return null; // deep tet-of-tet path: not reconstructible at the shallow boundary
-            }
             int cb = key.getCoordBitsAtLevel(l);
             int tb = key.getTypeAtLevel(l);
             HybridElement next = null;
-            int row = cp.type() - Pyramid.TYPE_6;
-            for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
-                if (TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i] == cb
-                    && TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i] == tb) {
-                    next = cp.child(i);
-                    break;
+            if (currentEl instanceof Pyramid cp) {
+                int row = cp.type() - Pyramid.TYPE_6;
+                for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+                    if (TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i] == cb
+                        && TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i] == tb) {
+                        next = cp.child(i);
+                        break;
+                    }
+                }
+            } else {
+                // Deep tet-of-tet: (parent type, child cube-id) uniquely identifies the Bey child
+                // (TYPE_CID_TO_BEYID rows are permutations), so match on cube-id; type bits cross-check.
+                var ct = (Tet) currentEl;
+                int h = Constants.lengthAtLevel((byte) l);
+                for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_TET; i++) {
+                    var c = ct.child(i);
+                    int childCb = ((c.x() & h) != 0 ? 1 : 0) | ((c.y() & h) != 0 ? 2 : 0)
+                                  | ((c.z() & h) != 0 ? 4 : 0);
+                    if (childCb == cb && c.type() == tb) {
+                        next = c;
+                        break;
+                    }
                 }
             }
             if (next == null) {

@@ -11,8 +11,9 @@ import com.hellblazer.luciferase.lucien.tetree.Tet;
 
 /**
  * Encoder from a hybrid SFC element to its {@link PyramidKey}: {@link #encode(Pyramid)} (RDR-010 pi1.4
- * Phase A, bead Luciferase-8zv) and {@link #encode(Tet)} for a shallowest tet leaf (RDR-010 pi1.5
- * Phase A, bead Luciferase-uqik). Both are the inverse of the canonical decoders on {@link PyramidIndex}
+ * Phase A, bead Luciferase-8zv) and {@link #encode(Tet)} for a pyramid-rooted tet leaf — shallowest
+ * (RDR-010 pi1.5 Phase A, bead Luciferase-uqik) or deep (RDR-010 cjwr Phase B). Both are the inverse of
+ * the canonical decoders on {@link PyramidIndex}
  * ({@link PyramidIndex#pyramidFromKey(PyramidKey)} / {@link PyramidIndex#elementFromKey(PyramidKey)}).
  *
  * <p>The encoder walks the pyramid's {@link Pyramid#parent()} chain to the root, collecting at each
@@ -98,35 +99,32 @@ final class PyramidKeyCodec {
     }
 
     /**
-     * Encode a <em>shallowest</em> tet leaf to its tet-leaf {@link PyramidKey}, or {@code null} if the
-     * tet is not a shallowest, reachable element of the pyramid SFC (RDR-010 pi1.5 Phase A, bead
-     * Luciferase-uqik). This is the bridge that lets {@code PyramidNeighborDetector} (Phase B) surface
-     * a pyramid's four triangular-face tet neighbors (and a tet leaf's own neighbors) as keys.
+     * Encode a pyramid-rooted tet leaf to its tet-leaf {@link PyramidKey}, or {@code null} if the tet is
+     * not a reachable element of the pyramid SFC (RDR-010 pi1.5 Phase A, bead Luciferase-uqik; deep tets
+     * RDR-010 cjwr Phase B). This is the bridge that lets {@code PyramidNeighborDetector} surface a
+     * pyramid's tet neighbors (and a tet leaf's own neighbors) as keys.
      *
-     * <p><b>Shallow boundary only.</b> A tet whose tetrahedral branch begins at its own level
-     * ({@code minTetLevel == level}) sits directly on a pyramid face — its parent is a pyramid
-     * (recoverable via {@link Tet#parentElement()}). A deeper pyramid-rooted tet
-     * ({@code minTetLevel < level}) or a pure-Tetree tet ({@code minTetLevel == -1}) is out of pi1.5
-     * scope and returns {@code null} (deep-tet cross-shape is the q3p Phase E deferral). The level-0
-     * root is a pyramid, never a tet → {@code null}.
+     * <p><b>Full depth.</b> Both a shallowest tet ({@code minTetLevel == level}, parent is a pyramid) and
+     * a deep pyramid-rooted tet ({@code minTetLevel < level}, a tet-of-tet refinement below the boundary)
+     * are encodable: the parent walk follows {@link Tet#parentElement()} through the tetrahedral branch
+     * and then the pyramid chain to the root. A pure-Tetree tet ({@code minTetLevel == -1}) has no
+     * pyramidal ancestor and returns {@code null}; so does the level-0 root (a pyramid, never a tet).
      *
-     * <p><b>Fail-safe contract.</b> Mirrors {@link #encode(Pyramid)}: the {@link Tet#parentElement()}
-     * walk may throw on a non-SFC candidate; that is caught and funneled to {@code null}. The internal
-     * round-trip self-check ({@code elementFromKey(key)} must recover the same tet geometry) is the
-     * single source of truth for validity, so a co-consistent bit error never emits a bogus key.
+     * <p><b>Fail-safe contract.</b> Mirrors {@link #encode(Pyramid)}: the parent walk may throw on a
+     * non-SFC candidate; that is caught and funneled to {@code null}. The internal round-trip self-check
+     * ({@code elementFromKey(key)} must recover the same tet geometry) is the single source of truth for
+     * validity, so a co-consistent bit error never emits a bogus key.
      *
      * @param t the tetrahedron element
-     * @return the round-trip-verified tet-leaf key, or {@code null} for a non-shallowest / non-SFC tet
+     * @return the round-trip-verified tet-leaf key, or {@code null} for a pure-Tetree / non-SFC tet
      */
     static PyramidKey encode(Tet t) {
         byte level = t.level();
         if (level < 1) {
             return null; // the level-0 root is the pyramid cover, not a tet
         }
-        if (t.minTetLevel() != level) {
-            // Only the shallowest tet of a pyramidal branch (parent is a pyramid) is in pi1.5 scope.
-            // Deeper pyramid-rooted tets and pure-Tetree tets (minTetLevel == -1) are not SFC pyramid
-            // leaves the codec can bridge — reject up front (fail-safe, no throw).
+        if (t.minTetLevel() == Tet.NO_TET_ANCESTOR) {
+            // A pure-Tetree tet has no pyramidal ancestor — it is not an element of the pyramid SFC.
             return null;
         }
         // coordBits/typeBits indexed by refinement step 1..level (index 0 unused; root has no bits).
@@ -138,13 +136,10 @@ final class PyramidKeyCodec {
                          | ((t.z() & hLeaf) != 0 ? 4 : 0);
         typeBits[level] = t.type();
         try {
-            // The shallowest tet's parent is the pyramid that birthed it (Tet.parentElement, the
-            // minTetLevel == level branch). Walk that pyramid chain to the root for the coarser bits.
-            HybridElement parent = t.parentElement();
-            if (!(parent instanceof Pyramid pyramidParent)) {
-                return null; // defensive: a shallowest tet must have a pyramid parent
-            }
-            Pyramid cur = pyramidParent;
+            // Walk the ancestor chain to the root collecting coarser bits. Through the tetrahedral branch
+            // (levels > minTetLevel) the parent is a Tet; at the boundary Tet.parentElement returns the
+            // birthing Pyramid, and above that the pure pyramid chain continues to the root.
+            HybridElement cur = t.parentElement();
             for (int l = level - 1; l >= 1; l--) {
                 int h = Constants.lengthAtLevel((byte) l);
                 coordBits[l] = ((cur.x() & h) != 0 ? 1 : 0)
@@ -152,7 +147,7 @@ final class PyramidKeyCodec {
                              | ((cur.z() & h) != 0 ? 4 : 0);
                 typeBits[l] = cur.type();
                 if (l > 1) {
-                    cur = cur.parent();
+                    cur = (cur instanceof Tet ct) ? ct.parentElement() : ((Pyramid) cur).parent();
                 }
             }
             PyramidKey key = PyramidKey.fromLevels(level, coordBits, typeBits);
