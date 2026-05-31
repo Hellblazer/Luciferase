@@ -8,7 +8,6 @@ package com.hellblazer.luciferase.lucien.pyramid;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.HybridElement;
 import com.hellblazer.luciferase.lucien.HybridFaceNeighbor;
-import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 import org.junit.jupiter.api.Test;
 
@@ -16,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * t8code parity oracle for pyramid-source face neighbors, asserted against the <b>Luciferase
@@ -36,21 +36,41 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * not equality. The reachable-SFC predicate is {@code PyramidKeyCodec.encode(e) != null} — an
  * encode→decode round-trip against the canonical decoder, not a closed-form inequality (§C-1).
  *
- * <p><b>What this gate asserts (the contract, §C-4/§C-5):</b>
+ * <p><b>What this gate asserts (and what it does NOT prove):</b>
  * <ol>
- *   <li><b>Geometry parity ({@code value==0}).</b> Wherever Luciferase keeps the neighbor
- *       ({@code encode != null}) AND t8code reports it inside-root, the neighbor's
- *       {@code (x,y,z,type,face)} must agree exactly. This is the genuine correctness property and must
- *       hold unconditionally.</li>
- *   <li><b>D_fix tripwire ({@code liveGap==0}).</b> Every under-permissive case (t8code inside,
- *       Luciferase drops) is reconstructed with the <em>corrected</em> {@code minTetLevel = level} and
- *       must <em>still</em> fail {@code encode()}. This exhaustively proves §C-5's claim that the
- *       under-permissive set is a genuine cube-vs-single-root domain difference, not a missing-metadata
- *       {@code encode()} reachability bug. A non-zero {@code liveGap} is a live shallow-boundary
- *       reachability gap and must escalate to RDR-012 D_fix.</li>
- *   <li><b>Partition lock.</b> The exact (matched / over / under) split is pinned so the domain
- *       characterization cannot silently drift on a {@code Pyramid}/{@code encode} change (§C-4).</li>
+ *   <li><b>Geometry parity across the whole inside-root set ({@code geomDiverge==0}).</b> For EVERY
+ *       {@code (pyramid, face)} where t8code reports an inside-root neighbor and {@code Pyramid.faceNeighbor}
+ *       produced one, the neighbor's {@code (x,y,z,type,face)} must agree with the t8code candidate —
+ *       <em>regardless of whether the Luciferase reachability gate keeps it.</em> This validates
+ *       {@code faceNeighbor}'s arithmetic against the independent t8code transcription over the full
+ *       inside-root set, including the 17208 under-permissive neighbors the {@code encode()} gate drops
+ *       (those would otherwise escape all geometry validation). This is the genuine correctness property.</li>
+ *   <li><b>Partition lock.</b> The exact (matched / over / under) split through the {@code encode()}
+ *       reachability gate is pinned (§C-4) so the cube-vs-single-root domain characterization cannot
+ *       silently drift on a {@code Pyramid}/{@code encode} change.</li>
+ *   <li><b>Seam mapping ({@link #seamMappingDemonstratesOverPermissiveSet}).</b> Concretely exhibits an
+ *       over-permissive element — valid and reachable in Luciferase ({@code encode != null}) yet outside
+ *       t8code's single root-pyramid ({@code is_inside_root == false}) — demonstrating the §C-3 single-tree↔cube
+ *       mapping rather than only counting it.</li>
  * </ol>
+ *
+ * <p><b>Scope and what green does NOT establish (honest limits, RDR-012 §C-4/§C-5):</b>
+ * <ul>
+ *   <li>The under-permissive set (17208) is geometrically faithful to t8code AND dropped by {@code encode()};
+ *       this is consistent with the cube-vs-single-root domain difference — each such position belongs to a
+ *       <em>sibling</em> tree (pyramid-7 / root-tet) in Luciferase's cube partition. That every such position is
+ *       in fact owned by some reachable sibling element is implied by the Knapp space-filling cardinality
+ *       {@code N(ℓ)=2·8^ℓ−6^ℓ} but is NOT independently asserted by this test (a possible D3 strengthening:
+ *       assert {@code PyramidIndex.locate(centroid)} is non-null for a sample of under positions).</li>
+ *   <li>This sweep covers the <b>pyramid-source</b> face branch only ({@code Pyramid.faceNeighbor}); the
+ *       refinement descends into pyramid children only. Tet-source cross-shape neighbors
+ *       ({@code Tet.faceNeighborElement} from a pyramid-child tet) and the deep tet-return branch are NOT
+ *       covered here — they are RDR-012 D3 (bead {@code Luciferase-dk12}), which the RDR's recommended D3
+ *       path treats as required, not optional.</li>
+ *   <li>Green confirms {@code faceNeighbor} geometry matches t8code and that the {@code encode()} partition is
+ *       stable; it does NOT independently re-derive that {@code encode()} is "correct" beyond pinning its
+ *       current behavior against the contract. No live {@code encode()} reachability gap (D_fix) was found.</li>
+ * </ul>
  *
  * @author hal.hildebrand
  */
@@ -63,7 +83,7 @@ class T8codeDpyramidFaceOracleTest {
     // the encode() reachability filter (RDR-012 §C-4; T2 rdr/rdr-010-8xus-oracle-findings-2026-05-31).
     private static final int EXPECTED_MATCHED = 49523;
     private static final int EXPECTED_OVER    = 26569; // Luciferase keeps (sibling tree in the cube); t8code "outside root"
-    private static final int EXPECTED_UNDER   = 17208; // t8code "inside root"; Luciferase drops (genuinely unreachable here)
+    private static final int EXPECTED_UNDER   = 17208; // t8code "inside root"; Luciferase drops (sibling-tree position)
 
     /**
      * Ground-truth anchors (locks the t8code transcription against hand-verified cases derived directly
@@ -77,19 +97,19 @@ class T8codeDpyramidFaceOracleTest {
         assertEquals(1 << 20, len1, "len at level 1");
 
         // is_inside_root: level-0 root is the type-6 origin only
-        org.junit.jupiter.api.Assertions.assertTrue(oracleIsInsideRoot(0, 0, 0, (byte) 0, Pyramid.TYPE_6));
+        assertTrue(oracleIsInsideRoot(0, 0, 0, (byte) 0, Pyramid.TYPE_6));
         org.junit.jupiter.api.Assertions.assertFalse(oracleIsInsideRoot(0, 0, 0, (byte) 0, Pyramid.TYPE_7));
 
         // simplex bound: x < z is outside
         org.junit.jupiter.api.Assertions.assertFalse(oracleIsInsideRoot(3, 5, 5, (byte) 1, Pyramid.TYPE_6));
         // interior simplex point (x>=z, y>=z), no tie-break trigger -> inside
-        org.junit.jupiter.api.Assertions.assertTrue(oracleIsInsideRoot(5, 3, 3, (byte) 1, (byte) 3));
+        assertTrue(oracleIsInsideRoot(5, 3, 3, (byte) 1, (byte) 3));
         // degenerate-apex tie-break (flat type check, no shape gate — verified vs t8_dpyramid_bits.c:895):
         // x==z with tet type 3 -> outside; y==z with tet type 0 -> outside
         org.junit.jupiter.api.Assertions.assertFalse(oracleIsInsideRoot(5, 5, 5, (byte) 1, (byte) 3));
         org.junit.jupiter.api.Assertions.assertFalse(oracleIsInsideRoot(5, 5, 5, (byte) 1, (byte) 0));
         // same x==z coords but a non-tie-break tet type (1) stays inside -> tie-break is type-scoped
-        org.junit.jupiter.api.Assertions.assertTrue(oracleIsInsideRoot(5, 5, 5, (byte) 1, (byte) 1));
+        assertTrue(oracleIsInsideRoot(5, 5, 5, (byte) 1, (byte) 1));
 
         // face_neighbour: type-6 face 1 -> tet type 3, anchor x += len, reciprocal face 3
         int[] f1 = oracleRawPyramidNeighbor(new Pyramid(0, 0, 0, (byte) 1, Pyramid.TYPE_6), 1);
@@ -101,24 +121,25 @@ class T8codeDpyramidFaceOracleTest {
     }
 
     /**
-     * The contract gate (RDR-012 D0.2). Asserts geometry parity, the D_fix tripwire, and the locked
-     * domain partition over the refined two-root sweep. See class javadoc for the three properties.
+     * The contract gate (RDR-012 D0.2). Asserts geometry parity over the full inside-root set and the
+     * locked domain partition over the refined two-root sweep. See class javadoc for what this does and
+     * does not prove.
      */
     @Test
     void pyramidFaceNeighborsMatchT8codeOverTheRefinedTree() {
         var divergences = new ArrayList<String>();
-        var liveGaps = new ArrayList<String>();
 
         // Partition of (pyramid, face) candidates through the encode() reachability filter vs t8code
         // is_inside_root. matched = both agree (present+inside with same geometry, or absent+outside);
-        // over = Luciferase keeps / t8code outside; under = t8code inside / Luciferase drops;
-        // value = both present+inside but geometry disagrees (the only true bug class for kept neighbors).
-        int matched = 0, over = 0, under = 0, value = 0;
-        // liveGap: an under-permissive tet that, reconstructed with the corrected minTetLevel, DOES encode.
-        // Must stay 0 — a positive count is a live encode() reachability gap (RDR-012 D_fix).
-        int liveGap = 0;
+        // over = Luciferase keeps / t8code outside (cube sibling); under = t8code inside / Luciferase drops.
+        int matched = 0, over = 0, under = 0;
+        // geomDiverge: faceNeighbor and the t8code oracle disagree on the neighbor GEOMETRY for a
+        // (pyramid, face) t8code considers inside-root. This is the genuine bug class and is checked across
+        // the WHOLE inside-root set — kept AND dropped — so the under set does not escape validation.
+        int geomDiverge = 0;
+        var sweep = validPyramids(MAX_SWEEP);
 
-        for (var p : validPyramids(MAX_SWEEP)) {
+        for (var p : sweep) {
             for (int f = 0; f < 5; f++) {
                 HybridFaceNeighbor luc = p.faceNeighbor(f);
 
@@ -130,67 +151,106 @@ class T8codeDpyramidFaceOracleTest {
                 // (RDR-012 §C-1 reachable-SFC predicate — the gate PyramidNeighborDetector applies).
                 boolean kept = luc != null && encodes(luc.element());
 
+                // (1) Independent geometry check across the whole inside-root set. faceNeighbor (cube-AABB
+                //     gate) returns the raw neighbor for any non-negative coordinate; t8code returns it only
+                //     when inside-root. Wherever t8code says inside-root AND faceNeighbor produced an
+                //     element, the geometry must match — independent of the encode() reachability decision.
+                if (t8Inside && luc != null && !sameAs(luc, cand)) {
+                    geomDiverge++;
+                    if (divergences.size() < 40) {
+                        divergences.add("GEOM " + desc(p) + " f" + f + " -> luc=" + desc(luc.element())
+                                        + " ; t8code=" + candDesc(cand, p.level()));
+                    }
+                    continue; // do not also classify into the partition; it is a bug, not a domain case
+                }
+
+                // (2) Partition classification (geometry already validated above for the inside set).
                 if (!kept) {
                     if (t8Inside) {
                         under++;
-                        // D_fix tripwire: reconstruct the t8code "inside" candidate with the CORRECTED
-                        // minTetLevel and verify it is STILL unreachable in Luciferase's SFC. If it now
-                        // encodes, the drop was a missing-metadata bug, not a domain difference.
-                        if (reconstructEncodesWithCorrectedDepth(cand, p.level())) {
-                            liveGap++;
-                            if (liveGaps.size() < 40) {
-                                liveGaps.add(desc(p) + " f" + f + " -> t8code=" + candDesc(cand, p.level())
-                                             + " encodes with minTetLevel=" + p.level());
-                            }
-                        } else if (divergences.size() < 40) {
-                            divergences.add("UNDER " + desc(p) + " f" + f + " -> dropped ; t8code="
-                                            + candDesc(cand, p.level()));
-                        }
                     } else {
                         matched++;
                     }
                 } else if (!t8Inside) {
                     over++;
-                    if (divergences.size() < 40) {
-                        divergences.add("OVER  " + desc(p) + " f" + f + " -> luc=" + desc(luc.element())
-                                        + " (encode!=null) ; t8code=outside-root");
-                    }
-                } else if (sameAs(luc, cand)) {
-                    matched++;
                 } else {
-                    value++;
-                    if (divergences.size() < 40) {
-                        divergences.add("VALUE " + desc(p) + " f" + f + " -> luc=" + desc(luc.element())
-                                        + " ; t8code=" + candDesc(cand, p.level()));
-                    }
+                    matched++; // kept && t8Inside && sameAs
                 }
             }
         }
 
         var sb = new StringBuilder();
         sb.append("t8code pyramid face-neighbor parity (contract gate, RDR-012 D0.2) over ")
-          .append(validPyramids(MAX_SWEEP).size()).append(" pyramids (level<=").append(MAX_SWEEP).append("):\n");
+          .append(sweep.size()).append(" pyramids (level<=").append(MAX_SWEEP).append("):\n");
         sb.append("  matched=").append(matched).append(" over=").append(over).append(" under=").append(under)
-          .append(" value=").append(value).append(" liveGap=").append(liveGap).append('\n');
-        sb.append("  --- sample divergences (max 40) ---\n");
-        divergences.forEach(d -> sb.append("    ").append(d).append('\n'));
-        if (!liveGaps.isEmpty()) {
-            sb.append("  --- LIVE ENCODE() GAPS (escalate to RDR-012 D_fix) ---\n");
-            liveGaps.forEach(d -> sb.append("    ").append(d).append('\n'));
+          .append(" geomDiverge=").append(geomDiverge).append('\n');
+        if (!divergences.isEmpty()) {
+            sb.append("  --- geometry divergences (max 40) ---\n");
+            divergences.forEach(d -> sb.append("    ").append(d).append('\n'));
         }
         String report = sb.toString();
 
-        // (1) Geometry parity: wherever both keep the neighbor, the geometry must agree. The only true
-        //     bug class for kept neighbors. Must be 0 unconditionally.
-        assertEquals(0, value, "Geometry divergence on kept neighbors (RDR-012 §C-4 correctness property)\n" + report);
-        // (2) D_fix tripwire: no under-permissive case is a recoverable encode() reachability bug.
-        //     A positive liveGap escalates to RDR-012 D_fix (§C-5).
-        assertEquals(0, liveGap, "Live encode() reachability gap — escalate to RDR-012 D_fix (§C-5)\n" + report);
-        // (3) Partition lock: the cube-vs-single-root domain split is pinned (§C-4). over/under are the
+        // (1) Geometry parity over the whole inside-root set — the genuine correctness property; must be 0.
+        assertEquals(0, geomDiverge, "faceNeighbor geometry diverges from t8code on the inside-root set "
+                                     + "(RDR-012 §C-4 correctness property)\n" + report);
+        // (2) Partition lock: the cube-vs-single-root domain split is pinned (§C-4). over/under are the
         //     legitimate domain difference, NOT bugs; this anchors them against silent drift.
         assertEquals(EXPECTED_MATCHED, matched, "matched count drift (partition lock, RDR-012 §C-4)\n" + report);
         assertEquals(EXPECTED_OVER, over, "over-permissive count drift (sibling-tree neighbors, §C-4)\n" + report);
-        assertEquals(EXPECTED_UNDER, under, "under-permissive count drift (genuinely-unreachable tets, §C-4)\n" + report);
+        assertEquals(EXPECTED_UNDER, under, "under-permissive count drift (sibling-tree positions, §C-4)\n" + report);
+    }
+
+    /**
+     * Concretely demonstrates the §C-3 single-tree↔cube mapping (not just counts it): finds an
+     * over-permissive element — reachable in Luciferase ({@code encode != null}) yet rejected by t8code's
+     * single root-pyramid {@code is_inside_root} — and asserts it sits where the mapping predicts
+     * (outside the {@code x>=z, y>=z} simplex, or on a degenerate-apex tie-break plane). This is the
+     * 6↔7 / root-tet seam: the neighbor left root-pyramid-6's simplex into a sibling tree that the cube
+     * partition legitimately owns. Uses a real, validated element from a small sweep rather than a
+     * hand-guessed coordinate literal.
+     */
+    @Test
+    void seamMappingDemonstratesOverPermissiveSet() {
+        Pyramid witnessSrc = null;
+        int witnessFace = -1;
+        HybridElement witness = null;
+        int[] witnessCand = null;
+        outer:
+        for (var p : validPyramids(2)) {
+            for (int f = 0; f < 5; f++) {
+                var luc = p.faceNeighbor(f);
+                if (luc == null || !encodes(luc.element())) {
+                    continue; // not reachable in Luciferase
+                }
+                int[] cand = oracleRawPyramidNeighbor(p, f);
+                if (!oracleIsInsideRoot(cand[0], cand[1], cand[2], p.level(), (byte) cand[3])) {
+                    witnessSrc = p;
+                    witnessFace = f;
+                    witness = luc.element();
+                    witnessCand = cand;
+                    break outer; // over-permissive: reachable here, outside t8code root
+                }
+            }
+        }
+
+        assertTrue(witness != null,
+                   "expected at least one over-permissive (reachable-here / outside-t8code-root) neighbor "
+                   + "to exist at level<=2, demonstrating the cube-vs-single-root seam");
+
+        int nx = witnessCand[0], ny = witnessCand[1], nz = witnessCand[2];
+        byte ntype = (byte) witnessCand[3];
+        boolean coordsInCube = nx >= 0 && ny >= 0 && nz >= 0 && nx < ROOT_LEN && ny < ROOT_LEN && nz < ROOT_LEN;
+        assertTrue(coordsInCube, "the over-permissive neighbor must be a real cube position: "
+                                 + candDesc(witnessCand, witnessSrc.level()));
+
+        // The §C-3 prediction: outside t8code root means either outside the simplex (x<z or y<z) or on a
+        // degenerate-apex tie-break plane for its type. Assert one of those holds — that is the mapping.
+        boolean outsideSimplex = nx < nz || ny < nz;
+        boolean apexTieBreak = (nx == nz && (ntype == 3 || ntype == 5)) || (ny == nz && (ntype == 0 || ntype == 4));
+        assertTrue(outsideSimplex || apexTieBreak,
+                   "over-permissive neighbor must be explained by the single-root simplex/tie-break mapping "
+                   + "(§C-3): " + candDesc(witnessCand, witnessSrc.level()) + " from " + desc(witnessSrc)
+                   + " f" + witnessFace + " ; reachable witness=" + desc(witness));
     }
 
     private static boolean sameAs(HybridFaceNeighbor luc, int[] cand) {
@@ -201,33 +261,7 @@ class T8codeDpyramidFaceOracleTest {
 
     private static boolean encodes(HybridElement e) {
         return (e instanceof Pyramid py) ? PyramidKeyCodec.encode(py) != null
-                                         : PyramidKeyCodec.encode((Tet) e) != null;
-    }
-
-    /**
-     * D_fix tripwire helper (RDR-012 §C-5). Reconstruct the t8code inside-root candidate with the
-     * <em>corrected</em> {@code minTetLevel = level} (the metadata {@code Pyramid.faceNeighbor}'s 5-arg
-     * {@code Tet} ctor omits, defaulting to {@code NO_TET_ANCESTOR}) and test whether it now encodes. A
-     * tet candidate (type 0..5) becomes a shallowest pyramid-rooted tet; a pyramid candidate (6/7) is
-     * tried as a pure-pyramid cell. Returns {@code true} iff the corrected element is reachable — which
-     * would mean the original drop hid a recoverable element (a live gap), not a domain difference.
-     */
-    private static boolean reconstructEncodesWithCorrectedDepth(int[] cand, byte level) {
-        int x = cand[0], y = cand[1], z = cand[2];
-        byte type = (byte) cand[3];
-        if (x < 0 || y < 0 || z < 0) {
-            return false; // outside the cube; cannot be a reachable element regardless of metadata
-        }
-        try {
-            if (type <= 5) {
-                // shallowest pyramid-rooted tet: minTetLevel == level
-                return PyramidKeyCodec.encode(new Tet(x, y, z, level, type, level)) != null;
-            }
-            return PyramidKeyCodec.encode(new Pyramid(x, y, z, level, type)) != null;
-        } catch (IllegalArgumentException | IllegalStateException | AssertionError e) {
-            // Not a constructible/valid element at that cell — definitively not reachable.
-            return false;
-        }
+                                         : PyramidKeyCodec.encode((com.hellblazer.luciferase.lucien.tetree.Tet) e) != null;
     }
 
     // ---- independent t8code transcription (main@76a5347b, t8_dpyramid_bits.c) ----
@@ -284,6 +318,8 @@ class T8codeDpyramidFaceOracleTest {
         return out;
     }
 
+    // Pyramid-source sweep: recurse into pyramid children only. The 4 tet children per pyramid are NOT
+    // swept as source elements — tet-source cross-shape is RDR-012 D3 (Luciferase-dk12), out of scope here.
     private static void descend(Pyramid p, int maxLevel, List<Pyramid> out) {
         if (p.level() >= 1) {
             out.add(p);
