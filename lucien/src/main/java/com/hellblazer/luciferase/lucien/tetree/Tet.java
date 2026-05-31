@@ -1800,6 +1800,13 @@ public class Tet implements Spatial.aabt, HybridElement {
      * {@link Pyramid} neighbor; all other faces (and all faces of types 1,2,4,5) yield a tetrahedral
      * neighbor with {@code minTetLevel} propagated.
      *
+     * <p><b>Depth.</b> Both the shallowest pyramid-rooted tet ({@code l == minTetLevel}) and deep ones
+     * ({@code l > minTetLevel}) are resolved via {@link #tetBoundary(int)} (RDR-010 Luciferase-cjwr). The
+     * deep path is reached <em>in production</em> only once {@link
+     * com.hellblazer.luciferase.lucien.pyramid.PyramidKeyCodec#encode(Tet)} accepts deep tets (cjwr
+     * Phase B); until then a deep tet is not constructible from a key, so this path is exercised by tests
+     * (and by direct {@link #child(int)} refinement) only.
+     *
      * @param face face index, 0..3
      * @return the face neighbor (tetrahedron or pyramid) with its reciprocal face, or {@code null} if
      *         the neighbor lies outside the domain
@@ -1810,18 +1817,10 @@ public class Tet implements Spatial.aabt, HybridElement {
         // logic applies directly with no type translation. Only types 0 and 3 ever touch a pyramid.
         byte t8 = type;
         boolean pyramidCapable = minTetLevel != NO_TET_ANCESTOR && (t8 == 0 || t8 == 3);
-        if (pyramidCapable && l > minTetLevel) {
-            // Deep pyramid-rooted tet: the deep pyramid-boundary connectivity (t8code's multi-level
-            // corner-walk tables) is not yet ported, so deep-tet pyramid face neighbors are not yet
-            // computed. Fail loud rather than return a wrong neighbor. The shallowest tet
-            // (l == minTetLevel) is fully supported. Deep enablement: RDR-010 q3p Phase E / pi1.5.
-            throw new IllegalStateException(
-            "Deep pyramid-rooted tetrahedron (level " + l + " > minTetLevel " + minTetLevel
-            + ") face neighbors are not yet supported: deep pyramid-boundary connectivity not yet "
-            + "ported (RDR-010 q3p Phase E).");
-        }
         // Pure-Tetree or a type that never touches a pyramid, or a face that does not: tet neighbor.
-        if (!pyramidCapable || !tetTouchesPyramid(face)) {
+        // tetBoundary handles both the shallowest tet (l == minTetLevel) and deep pyramid-rooted tets
+        // (l > minTetLevel) via the t8code corner-walk (RDR-010 Luciferase-cjwr).
+        if (!pyramidCapable || !tetBoundary(face)) {
             var fn = faceNeighbor(face);
             if (fn == null) {
                 return null;
@@ -1885,16 +1884,45 @@ public class Tet implements Spatial.aabt, HybridElement {
     }
 
     /**
-     * Whether this shallowest pyramid-rooted tet's {@code face} touches the bounding pyramid envelope
-     * (t8code {@code t8_dpyramid_tet_pyra_face_connection}). Only valid for {@code l == minTetLevel}
-     * (the pyramid's direct tet child); {@link #faceNeighborElement(int)} guards deeper tets, whose
-     * boundary detection is deferred (RDR-010 q3p Phase E). The receiver's {@code type} is already a
-     * t8code dtet type (Luciferase-4pd alignment), so no translation is needed.
+     * Whether this pyramid-rooted tet's {@code face} touches the bounding pyramid envelope — the deep
+     * boundary test, a direct port of t8code {@code t8_dpyramid_tet_boundary} (RDR-010 Luciferase-cjwr).
+     * Handles both the shallowest tet ({@code l == minTetLevel}, where it reduces to
+     * {@code t8_dpyramid_tet_pyra_face_connection}) and deep pyramid-rooted tets ({@code l > minTetLevel}).
+     *
+     * <p>For a deep tet the connection is valid only when (a) the shallowest tet ancestor's same face
+     * connects to a pyramid AND (b) the tet hugs that face's corner at every refinement level down to
+     * the ancestor — otherwise the neighbor across the face is another tet. The receiver's {@code type}
+     * is already a t8code dtet type (Luciferase-4pd alignment), so no translation is needed.
+     *
+     * @param face triangular face index 0..3 (type-0/3 tets only; the caller guards type)
      */
-    private boolean tetTouchesPyramid(int face) {
-        assert l == minTetLevel : "tetTouchesPyramid is only valid for the shallowest tet; deeper "
-                                  + "tets are guarded in faceNeighborElement (RDR-010 q3p Phase E)";
-        return tetPyraFaceConnection(type, cubeIdAt(l), face);
+    private boolean tetBoundary(int face) {
+        // Shallowest tet: its parent is the pyramid, so the connection is the direct face test.
+        if (l == minTetLevel) {
+            return tetPyraFaceConnection(type, cubeIdAt(l), face);
+        }
+        // Deep tet: walk the type up to the shallowest ancestor (at minTetLevel), then test that
+        // ancestor's face against the pyramid (t8_dpyramid_tet_boundary: anc = ancestor at switch level).
+        byte ancType = type;
+        for (int i = l; i > minTetLevel; i--) {
+            ancType = TetreeConnectivity.CID_TYPE_TO_PARENTTYPE[cubeIdAt((byte) i)][ancType];
+        }
+        boolean validTouch = tetPyraFaceConnection(ancType, cubeIdAt((byte) minTetLevel), face);
+        if (!validTouch) {
+            return false;
+        }
+        // Corner-walk: the tet must lie in the pyramid-face corner at every level i in (minTetLevel, l].
+        // If at any level the Bey child is not "inside" that face, the neighbor is a tet, not the pyramid.
+        byte typeTemp = type;
+        for (int i = l; i > minTetLevel; i--) {
+            int cubeId = cubeIdAt((byte) i);
+            int beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[typeTemp][cubeId];
+            if (TetreeConnectivity.FACE_CHILDID_TO_IS_INSIDE[face][beyId] == -1) {
+                return false;
+            }
+            typeTemp = TetreeConnectivity.CID_TYPE_TO_PARENTTYPE[cubeId][typeTemp];
+        }
+        return true;
     }
 
     /**

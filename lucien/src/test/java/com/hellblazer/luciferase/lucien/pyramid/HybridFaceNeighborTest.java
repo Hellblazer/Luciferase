@@ -168,34 +168,74 @@ class HybridFaceNeighborTest {
     }
 
     @Test
-    void deepPyramidRootedTetFaceNeighborFailsLoud() {
-        // A deep pyramid-rooted tet (level > minTetLevel) of pyramid-capable type cannot have its
-        // pyramid-boundary faces resolved: Luciferase's Bey subdivision diverges from t8code's dtet
-        // tree below the pyramid boundary (RDR-010 Finding #16), so faceNeighborElement fails loud
-        // rather than returning a silently-wrong neighbor. (The prior geometric ">=3 shared vertices"
-        // test was invalid: Luciferase's non-conforming SFC face neighbors share 0-3 vertices.)
-        var l = Constants.lengthAtLevel(LEVEL);
-        var checked = 0;
+    void deepPyramidRootedTetFaceNeighborsAreConformingAndReciprocal() {
+        // RDR-010 Luciferase-cjwr: deep pyramid-rooted tets (level > minTetLevel) now resolve their
+        // pyramid-boundary faces via the ported t8code t8_dpyramid_tet_boundary corner-walk. Validation
+        // is table-INDEPENDENT: when faceNeighborElement returns a Pyramid, the abutting face is a
+        // conforming triangle, so the deep tet and the pyramid share exactly the 3 face vertices; and the
+        // pyramid's reciprocal-face neighbor (computed by the separate Pyramid.faceNeighbor pi1.5 code
+        // path) must geometrically be this same deep tet (cross-implementation involution).
+        var counts = new int[2]; // [0] = pyramid returns, [1] = tet returns
+        var depths = new HashSet<Integer>();
         for (var type : new byte[] { Pyramid.TYPE_6, Pyramid.TYPE_7 }) {
-            var p = new Pyramid(4 * l, 4 * l, 4 * l, LEVEL, type);
+            // Anchor deep enough that 3 extra refinement levels stay in-domain.
+            var l3 = Constants.lengthAtLevel((byte) (LEVEL + 3));
+            var p = new Pyramid(4 * l3, 4 * l3, 4 * l3, LEVEL, type);
             for (var i = 0; i < 10; i++) {
-                if (!(p.child(i) instanceof Tet shallow)) {
-                    continue;
-                }
-                for (var k = 0; k < 8; k++) {
-                    var deep = shallow.child(k); // minTetLevel == shallow.level < deep.level
-                    assertTrue(deep.minTetLevel() < deep.l, "deep tet: minTetLevel < level");
-                    if (deep.type != 0 && deep.type != 3) {
-                        continue; // only pyramid-capable types (t8code 0/3 == Luciferase 0/3) hit the guard
-                    }
-                    var d = deep;
-                    assertThrows(IllegalStateException.class, () -> d.faceNeighborElement(0),
-                                 "deep pyramid-capable tet must fail loud (type " + type + ")");
-                    checked++;
+                if (p.child(i) instanceof Tet shallow) {
+                    // Recurse up to 3 levels below the shallow tet → corner-walk of 1..3 iterations.
+                    checkDeepTet(shallow, shallow, 3, counts, depths);
                 }
             }
         }
-        assertTrue(checked > 0, "must exercise at least one deep pyramid-capable tet");
+        // Non-vacuity AND discrimination: the corner-walk must classify some deep faces as pyramid-bound
+        // and some as tet-bound — proving it is not trivially returning one branch.
+        // NOTE (cjwr Phase A scope): the pyramid-return branch is double-validated (conforming 3-vertex +
+        // cross-path involution), so a false-POSITIVE cannot survive. The tet-return branch is only
+        // counted, so a partial false-NEGATIVE (a face wrongly classified tet-bound) is not fully excluded
+        // here — that gap is closed in Phase C by a face-by-face comparison against the independent t8code
+        // port of t8_dpyramid_tet_boundary in the extended whole-domain oracle (substantive-critic SIG-2).
+        assertTrue(counts[0] > 0, "deep tets must surface pyramid face neighbors (got 0)");
+        assertTrue(counts[1] > 0, "deep tets must also have tet face neighbors (corner-walk discriminates)");
+        // Exercised more than a single refinement level (multi-iteration corner-walk + type propagation).
+        assertTrue(depths.size() >= 2, "must exercise deep tets at multiple levels, got depths " + depths);
+    }
+
+    /**
+     * Recurse {@code remainingDepth} levels below a shallow tet, validating every pyramid-capable (type
+     * 0/3) deep tet. The DFS over both pyramid types' 10 children, refined 3 levels, reliably yields deep
+     * tets whose corner-walk classifies some faces pyramid-bound and others tet-bound — so the caller's
+     * {@code counts[1] > 0} (tet-return) discrimination assertion is satisfied across the swept anchors.
+     */
+    private void checkDeepTet(Tet shallow, Tet current, int remainingDepth, int[] counts, HashSet<Integer> depths) {
+        if (current.l > shallow.l && (current.type == 0 || current.type == 3)) {
+            depths.add(current.l - shallow.l);
+            for (var face = 0; face < 4; face++) {
+                var hfn = current.faceNeighborElement(face);
+                if (hfn == null) {
+                    continue;
+                }
+                if (hfn.element() instanceof Pyramid pyr) {
+                    counts[0]++;
+                    // Geometric ground truth: conforming triangular face → exactly 3 shared vertices.
+                    assertEquals(3, sharedVertices(current, pyr),
+                                 "deep tet↔pyramid face " + face + " must share the 3 face vertices");
+                    // Cross-implementation involution: the pyramid's reciprocal-face neighbor (the separate
+                    // Pyramid.faceNeighbor pi1.5 path) is this deep tet (vertex set — minTetLevel is metadata).
+                    var back = pyr.faceNeighbor(hfn.face());
+                    assertNotNull(back, "pyramid reciprocal neighbor exists");
+                    assertEquals(vertexSet(current), vertexSet(back.element()),
+                                 "involution: pyramid.faceNeighbor(reciprocal) is the deep tet");
+                } else {
+                    counts[1]++;
+                }
+            }
+        }
+        if (remainingDepth > 0) {
+            for (var k = 0; k < 8; k++) {
+                checkDeepTet(shallow, current.child(k), remainingDepth - 1, counts, depths);
+            }
+        }
     }
 
     @Test

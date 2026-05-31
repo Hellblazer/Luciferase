@@ -127,12 +127,24 @@ public final class TetreeConnectivity {
      * used to walk a tet's type up the refinement tree (RDR-010 q3p face-neighbor ancestor walk).
      * {@code [cubeId][type]}. Verified against t8code {@code t8_dtet_cid_type_to_parenttype}.
      */
-    // The deep-tet face-boundary walk tables (t8code t8_dtet_cid_type_to_parenttype and
-    // t8_dpyramid_face_childid_to_is_inside) were removed in RDR-010 q3p Phase D: Luciferase's S0-S5
-    // Bey subdivision diverges from t8code's dtet tree below the pyramid boundary (Finding #16), so
-    // those t8code-tree tables do not apply to Luciferase's deep tets; faceNeighborElement guards the
-    // deep case fail-loud. They must be re-derived (or t8code dtet subdivision adopted under pyramids)
-    // by the tet-tree reconciliation RDR before deep-tet pyramid face neighbors can be supported.
+    /**
+     * Whether a deep pyramid-rooted tet hugs the pyramid-face corner at refinement level i, indexed
+     * {@code [face][beyId]} — t8code {@code t8_dpyramid_face_childid_to_is_inside}, verbatim. A value of
+     * {@code -1} means the child does NOT lie in the corner at this face (so the deep tet's face neighbor
+     * is a tet, not the bounding pyramid); {@code 0} means it stays in the corner and the corner-walk
+     * continues. Used by {@link Tet#faceNeighborElement(int)}'s deep boundary test (port of t8code
+     * {@code t8_dpyramid_tet_boundary}). RDR-010 Luciferase-cjwr — restored after q3p Phase D removed it
+     * on the (now-stale, pre-4pd) premise that the t8code deep tables did not apply to Luciferase tets.
+     * <p>Scope of validation: the dtet table <em>values</em> this walk consumes ({@link #TYPE_CID_TO_BEYID},
+     * {@link #CID_TYPE_TO_PARENTTYPE}) are oracle-verified by {@code T8codeDtetOracleTest} (Luciferase tet
+     * type k IS t8code dtet type k). The {@code tetBoundary} corner-walk <em>algorithm</em> that uses this
+     * table is first validated by {@code HybridFaceNeighborTest} (Phase A), not by that oracle.
+     */
+    public static final int[][] FACE_CHILDID_TO_IS_INSIDE = {
+    { -1, 0, 0, 0, -1, -1, -1, -1 },
+    { 0, -1, 0, 0, -1, -1, -1, -1 },
+    { 0, 0, -1, 0, -1, -1, -1, -1 },
+    { 0, 0, 0, -1, -1, -1, -1, -1 } };
 
     /**
      * Parent type by (child cube-id, child type) — t8code's {@code t8_dtet_cid_type_to_parenttype}

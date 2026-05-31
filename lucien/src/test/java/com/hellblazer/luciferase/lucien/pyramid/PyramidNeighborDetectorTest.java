@@ -391,8 +391,8 @@ class PyramidNeighborDetectorTest {
         // The detector must never propagate an exception (a throw would break KnnSearcher/CollisionEngine
         // BFS). A level-2 shallow tet leaf exercises the tet-leaf navigation path. Note: a DEEP tet
         // (l > minTetLevel) is unreachable as a key by construction — encode(Tet) returns null for it
-        // and elementFromKey cannot reconstruct it — so Tet.faceNeighborElement's fail-loud guard is
-        // never actually reached through a key; the detector's catch is defensive against future change.
+        // and elementFromKey cannot reconstruct it (until cjwr Phase B). Tet.faceNeighborElement no
+        // longer fails loud for deep tets either (RDR-010 Luciferase-cjwr), so there is no throw to catch.
         var p1 = new Pyramid(0, 0, 0, (byte) 1, Pyramid.TYPE_6);
         var tet2 = (Tet) p1.child(1);               // shallow level-2 tet (minTetLevel == level == 2)
         var tetKey = PyramidKeyCodec.encode(tet2);
