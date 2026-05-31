@@ -46,11 +46,12 @@ import java.util.Set;
  * reciprocity-validatable face topology (the {@link HybridFaceNeighbor#face()} reciprocal index), not a
  * shared-vertex heuristic.
  *
- * <p><b>Shallow boundary only.</b> Cross-shape descends to the shallowest pyramid↔tet boundary
- * ({@code l == minTetLevel}). A deep pyramid-rooted tet ({@code l > minTetLevel}) trips
- * {@link Tet#faceNeighborElement}'s fail-loud guard (RDR-010 Finding #16, deferred to q3p Phase E);
- * the detector <em>catches and skips</em> that face rather than propagating — a thrown exception would
- * break the BFS in {@code KnnSearcher}/{@code CollisionEngine}.
+ * <p><b>Face neighbors: full depth.</b> {@link Tet#faceNeighborElement} resolves both the shallowest
+ * pyramid↔tet boundary ({@code l == minTetLevel}) and deep pyramid-rooted tets ({@code l > minTetLevel})
+ * via the t8code {@code t8_dpyramid_tet_boundary} corner-walk (RDR-010 Luciferase-cjwr). Until
+ * {@link PyramidKeyCodec#encode(Tet)} accepts deep tets (cjwr Phase B) the detector only ever holds
+ * shallow tet keys, so deep tets are not yet reachable as a query here — but the face topology itself
+ * is no longer depth-limited.
  *
  * <p><b>Edge/vertex — bounded cumulative supersets (pi1.5).</b> Edge and vertex add the same-shape
  * (pyramid↔pyramid) geometric neighbors at shared-vertex thresholds 2 and 1 (the 27-cube enumeration
@@ -115,9 +116,9 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
     /**
      * The exact conforming face neighbors of {@code element}'s leaf, as keys. Resolves the leaf via
      * {@link PyramidIndex#elementFromKey} (a {@link Pyramid} or a shallowest {@link Tet}) and walks
-     * {@link Pyramid#faceNeighbor(int)} / {@link Tet#faceNeighborElement(int)}. A deep pyramid-rooted
-     * tet's fail-loud guard is caught and that face skipped (BFS-safe; deep cross-shape deferred to q3p
-     * Phase E). Out-of-domain / non-SFC neighbors encode to {@code null} and are dropped.
+     * {@link Pyramid#faceNeighbor(int)} / {@link Tet#faceNeighborElement(int)} (deep pyramid-rooted tets
+     * resolved via the cjwr corner-walk). Out-of-domain / non-SFC neighbors encode to {@code null} and
+     * are dropped.
      */
     private Set<PyramidKey> crossShapeFaceNeighbors(PyramidKey element) {
         HybridElement self = PyramidIndex.elementFromKey(element);
@@ -133,18 +134,10 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
             }
         } else if (self instanceof Tet t) {
             for (int f = 0; f < 4; f++) {
-                HybridFaceNeighbor fn;
-                try {
-                    fn = t.faceNeighborElement(f);
-                } catch (IllegalStateException deepTet) {
-                    // Defensive: a deep pyramid-rooted tet (l > minTetLevel) trips Tet.faceNeighborElement's
-                    // fail-loud guard (RDR-010 Finding #16, q3p Phase E). In practice this is unreachable
-                    // via a key — encode(Tet) rejects deep tets and elementFromKey cannot reconstruct one,
-                    // so `self` here is always a SHALLOW tet (l == minTetLevel). The catch guards against
-                    // future change: propagating would break the BFS in KnnSearcher/CollisionEngine.
-                    continue;
-                }
-                addFaceNeighbor(fn, element, out);
+                // faceNeighborElement now resolves deep pyramid-rooted tets too (RDR-010 Luciferase-cjwr,
+                // t8code t8_dpyramid_tet_boundary corner-walk); no fail-loud guard to catch. In practice
+                // `self` is still a shallow tet here until encode(Tet) accepts deep tets (cjwr Phase B).
+                addFaceNeighbor(t.faceNeighborElement(f), element, out);
             }
         }
         return out;
