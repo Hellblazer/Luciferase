@@ -67,9 +67,24 @@ class T8codeDpyramidTetBoundaryOracleTest {
         int pyramidTouches = 0, deepTetFacesChecked = 0;
         var failures = new ArrayList<String>();
 
+        int nonTouchTypesChecked = 0;
         for (var t : deepPyramidRootedTets(MAX_SWEEP)) {
             if (t.type() != 0 && t.type() != 3) {
-                continue; // only type 0/3 tets can touch a pyramid (t8code guard)
+                // t8code guard: only type 0/3 tets ever touch a pyramid. Assert the negative explicitly
+                // (do NOT silently skip) — faceNeighborElement must never return a Pyramid for these.
+                for (int f = 0; f < 4; f++) {
+                    var fn = t.faceNeighborElement(f);
+                    if (fn != null && fn.element() instanceof Pyramid) {
+                        decisionMismatch++;
+                        if (failures.size() < 40) {
+                            failures.add("NEG-DECISION " + desc(t) + " f" + f
+                                         + " returned a Pyramid but type∉{0,3} cannot touch a pyramid: "
+                                         + descEl(fn.element()));
+                        }
+                    }
+                    nonTouchTypesChecked++;
+                }
+                continue;
             }
             for (int f = 0; f < 4; f++) {
                 deepTetFacesChecked++;
@@ -91,16 +106,17 @@ class T8codeDpyramidTetBoundaryOracleTest {
                 }
                 pyramidTouches++;
 
-                // (2) geometry parity against the independent t8code switch
-                int[] exp = oraclePyramidReturn(t, f); // {nx,ny,nz,ntype,nface}
+                // (2) geometry parity against the independent t8code switch (incl. level: t8code sets
+                //     neigh->level = p->level for the same-level cross-shape neighbor).
+                int[] exp = oraclePyramidReturn(t, f); // {nx,ny,nz,ntype,nface,nlevel}
                 var py = (Pyramid) luc.element();
                 if (!(py.x() == exp[0] && py.y() == exp[1] && py.z() == exp[2] && py.type() == exp[3]
-                      && luc.face() == exp[4])) {
+                      && luc.face() == exp[4] && py.level() == exp[5])) {
                     geomMismatch++;
                     if (failures.size() < 40) {
                         failures.add("GEOM " + desc(t) + " f" + f + " luc=" + descEl(py) + ",face" + luc.face()
-                                     + " ; t8code=(" + exp[0] + "," + exp[1] + "," + exp[2] + ",t" + exp[3]
-                                     + ",face" + exp[4] + ")");
+                                     + ",l" + py.level() + " ; t8code=(" + exp[0] + "," + exp[1] + "," + exp[2]
+                                     + ",t" + exp[3] + ",face" + exp[4] + ",l" + exp[5] + ")");
                     }
                     continue;
                 }
@@ -126,6 +142,7 @@ class T8codeDpyramidTetBoundaryOracleTest {
         failures.forEach(s -> report.append("  ").append(s).append('\n'));
         String r = report.toString();
 
+        assertTrue(nonTouchTypesChecked > 0, "expected some non-0/3 deep tets to negative-check\n" + r);
         assertEquals(0, decisionMismatch, "deep tet->pyramid cross-shape DECISION diverges from t8code\n" + r);
         assertEquals(0, geomMismatch, "deep tet->pyramid pyramid-return GEOMETRY diverges from t8code\n" + r);
         assertEquals(0, involutionMismatch, "deep tet->pyramid neighbour fails cross-impl involution\n" + r);
@@ -201,7 +218,55 @@ class T8codeDpyramidTetBoundaryOracleTest {
                 default -> { nx -= len; ntype = Pyramid.TYPE_6; nface = 1; } // face 3
             }
         }
-        return new int[] { nx, ny, nz, ntype, nface };
+        // t8code: neigh->pyramid.level = p->pyramid.level (same-level cross-shape neighbor).
+        return new int[] { nx, ny, nz, ntype, nface, p.level() };
+    }
+
+    /**
+     * Independent table-parity gate (RDR-012 D3.1, twaf review). The deep ancestor/corner walk in both
+     * {@code Tet.tetBoundary} (SUT) and {@link #oracleTetBoundary} (this oracle) consumes the SAME
+     * {@link TetreeConnectivity#TYPE_CID_TO_BEYID} and {@link TetreeConnectivity#FACE_CHILDID_TO_IS_INSIDE}
+     * tables, so the parity sweep alone cannot catch a <em>coordinated</em> transcription error in those
+     * two tables (the substantive-critic's shared-table point — and {@code T8codeDtetOracleTest} does not
+     * exercise either table). This test closes that gap by transcribing the t8code literals directly
+     * (main@76a5347b: {@code t8_dtet_type_cid_to_beyid}, {@code t8_dtet_connectivity.c:72};
+     * {@code t8_dpyramid_face_childid_to_is_inside}, {@code t8_dpyramid_connectivity.c:105}) and asserting
+     * the production tables match element-by-element.
+     */
+    @Test
+    void cornerWalkTablesMatchT8codeVerbatim() {
+        int[][] t8TypeCidToBeyid = {
+            { 0, 1, 4, 7, 5, 2, 6, 3 },
+            { 0, 1, 5, 2, 4, 7, 6, 3 },
+            { 0, 5, 1, 2, 4, 6, 7, 3 },
+            { 0, 4, 1, 7, 5, 6, 2, 3 },
+            { 0, 4, 5, 6, 1, 7, 2, 3 },
+            { 0, 5, 4, 6, 1, 2, 7, 3 } };
+        assertEquals(t8TypeCidToBeyid.length, TetreeConnectivity.TYPE_CID_TO_BEYID.length,
+                     "TYPE_CID_TO_BEYID row count");
+        for (int type = 0; type < t8TypeCidToBeyid.length; type++) {
+            for (int cid = 0; cid < 8; cid++) {
+                assertEquals(t8TypeCidToBeyid[type][cid], TetreeConnectivity.TYPE_CID_TO_BEYID[type][cid],
+                             "TYPE_CID_TO_BEYID[" + type + "][" + cid + "] diverges from t8code "
+                             + "t8_dtet_type_cid_to_beyid");
+            }
+        }
+
+        int[][] t8FaceChildidToIsInside = {
+            { -1, 0, 0, 0, -1, -1, -1, -1 },
+            { 0, -1, 0, 0, -1, -1, -1, -1 },
+            { 0, 0, -1, 0, -1, -1, -1, -1 },
+            { 0, 0, 0, -1, -1, -1, -1, -1 } };
+        assertEquals(t8FaceChildidToIsInside.length, TetreeConnectivity.FACE_CHILDID_TO_IS_INSIDE.length,
+                     "FACE_CHILDID_TO_IS_INSIDE row count");
+        for (int face = 0; face < t8FaceChildidToIsInside.length; face++) {
+            for (int bey = 0; bey < 8; bey++) {
+                assertEquals(t8FaceChildidToIsInside[face][bey],
+                             TetreeConnectivity.FACE_CHILDID_TO_IS_INSIDE[face][bey],
+                             "FACE_CHILDID_TO_IS_INSIDE[" + face + "][" + bey + "] diverges from t8code "
+                             + "t8_dpyramid_face_childid_to_is_inside");
+            }
+        }
     }
 
     /** cube-id (0..7) of the tet's anchor at refinement level {@code l} ({@code compute_cubeid}). */
