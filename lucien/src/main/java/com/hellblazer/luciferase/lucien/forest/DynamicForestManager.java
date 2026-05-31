@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.pyramid.PyramidIndex;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -384,6 +385,13 @@ public class DynamicForestManager<Key extends SpatialKey<Key>, ID extends Entity
     /**
      * Add a new tree to the forest at runtime.
      *
+     * <p><b>Factory caveat (RDR-010 §4c / Luciferase-7poh):</b> the concrete index is produced by the
+     * injected {@code treeFactory}, which is homogeneous — {@code treeType} is recorded as metadata and
+     * checked against the produced type (a mismatch logs a warning), but it does NOT itself construct a
+     * {@code PyramidIndex}. To create a pyramid tree (so it emits {@link RegionShape#PYRAMID}), inject a
+     * factory that produces {@code PyramidIndex}, or add it directly via
+     * {@code forest.addTree(new PyramidIndex<>(...), metadata)}.
+     *
      * @param treeType the type of tree to add
      * @param name     optional name for the tree
      * @param bounds   optional initial bounds
@@ -707,6 +715,9 @@ public class DynamicForestManager<Key extends SpatialKey<Key>, ID extends Entity
             log.warn("Tree factory produced non-Octree for OCTREE type");
         } else if (type == TreeMetadata.TreeType.TETREE && !(tree instanceof Tetree)) {
             log.warn("Tree factory produced non-Tetree for TETREE type");
+        } else if (type == TreeMetadata.TreeType.PYRAMID
+                   && !(tree instanceof PyramidIndex)) {
+            log.warn("Tree factory produced non-PyramidIndex for PYRAMID type");
         }
         return tree;
     }

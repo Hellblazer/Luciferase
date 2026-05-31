@@ -233,7 +233,11 @@ public class ForestToTumblerBridge implements ForestEventListener {
         var parentServer = treeToServerAssignments.get(event.parentId());
 
         if (parentServer == null) {
-            // Parent has no assignment yet (e.g., root tree created via addTree())
+            // Parent has no assignment yet. Since RDR-010 §4c (Luciferase-7poh) made addTree emit a root
+            // TreeAdded, a root added through the public API is already assigned, so this guard now fires
+            // only for trees added before a listener was registered or via non-public paths. (The child
+            // TreeAdded emitted during subdivision also assigns each child to the parent's server; the
+            // re-assignment here is net-neutral — recordAssignment removes then re-adds the same weight.)
             parentServer = chooseRootServer();
             recordAssignment(event.parentId(), parentServer);
             log.debug("Assigned parent tree {} to {} (no prior assignment)", event.parentId(), parentServer);

@@ -317,6 +317,29 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
     
     @Override
     public String addTree(AbstractSpatialIndex<Key, ID, Content> spatialIndex, TreeMetadata metadata) {
+        var treeId = addTreeInternal(spatialIndex, metadata);
+
+        // Emit a root TreeAdded so listeners (e.g. ForestToTumblerBridge, shape-aware partitioners) see
+        // externally-added trees — RDR-010 §4c (Luciferase-7poh): the event carries the tree's true shape
+        // (RegionShape.of) so a PyramidIndex root reports PYRAMID rather than being invisible. (Internal
+        // subdivision/merge paths use addTreeInternal and emit their own parented events, avoiding a
+        // double emit.)
+        var node = getTree(treeId);
+        TreeBounds eventBounds = node != null ? node.getTreeBounds() : null;
+        if (eventBounds == null && node != null && node.getGlobalBounds() != null) {
+            eventBounds = new CubicBounds(node.getGlobalBounds());
+        }
+        emitEvent(new ForestEvent.TreeAdded(System.currentTimeMillis(), forestId, treeId, eventBounds,
+                                            RegionShape.of(spatialIndex), null));
+        return treeId;
+    }
+
+    /**
+     * Add a tree without emitting a {@link ForestEvent.TreeAdded} event. Used by the internal
+     * subdivision/merge paths, which emit their own parented events (so a child/merged tree is not
+     * double-announced). The public {@link #addTree} wraps this and emits the root-level event.
+     */
+    private String addTreeInternal(AbstractSpatialIndex<Key, ID, Content> spatialIndex, TreeMetadata metadata) {
         var treeId = super.addTree(spatialIndex, metadata);
 
         // Initialize density tracking for the new tree
@@ -1005,7 +1028,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             .build();
 
         // Add to forest
-        var childId = addTree(childSpatialIndex, childMetadata);
+        var childId = addTreeInternal(childSpatialIndex, childMetadata);
         var childTree = getTree(childId);
 
         // Expand bounds
@@ -1329,7 +1352,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             .build();
         
         // Add to forest
-        var childId = addTree(childSpatialIndex, childMetadata);
+        var childId = addTreeInternal(childSpatialIndex, childMetadata);
         var childTree = getTree(childId);
         childTree.expandGlobalBounds(bounds);
 
@@ -1345,7 +1368,8 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             forestId,
             childId,
             cubicBounds,
-            RegionShape.CUBIC,
+            RegionShape.of(childSpatialIndex), // index-driven (RDR-010 uzyd/7poh): was hardcoded CUBIC,
+                                               // mislabelling a Tetree child created via this split path
             parentTree.getTreeId()
         ));
 
@@ -1495,7 +1519,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             .property("mergeTime", System.currentTimeMillis())
             .build();
         
-        var mergedId = addTree(mergedIndex, mergedMetadata);
+        var mergedId = addTreeInternal(mergedIndex, mergedMetadata);
         var mergedTree = getTree(mergedId);
         mergedTree.expandGlobalBounds(mergedBounds);
         
