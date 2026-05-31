@@ -208,96 +208,62 @@ public final class TetreeConnectivity {
      * Children at each face for Bey refinement. Given a parent type and face index, returns which children touch that
      * face (up to 4 children per face).
      *
-     * In Bey refinement, the children at each face are: - Face 0 (opposite vertex 0): children 4, 5, 6, 7 - Face 1
-     * (opposite vertex 1): children 2, 3, 6, 7 - Face 2 (opposite vertex 2): children 1, 3, 5, 7 - Face 3 (opposite
-     * vertex 3): children 1, 2, 4, 5
+     * The children touching a given parent face are TYPE-DEPENDENT in t8code's dtet refinement. This is a
+     * verbatim port of t8code {@code t8_dtet_face_child_id_by_type[6][4][4]}
+     * ({@code t8code/src/t8_schemes/t8_default/t8_default_tet/t8_dtet_connectivity.c}). The prior Luciferase
+     * table used a single type-invariant pattern ({4,5,6,7}/{2,3,6,7}/{1,3,5,7}/{1,2,4,5}) for all 6 types,
+     * which matched NONE of the t8code rows and propagated descendant neighbors through the wrong children
+     * (Luciferase-koaw; T3 critique-luciferase-t8code-tet-neighbor S1).
      *
-     * [parent_type][face_index][position] -> child_index
+     * [parent_type][face_index][position] -> child_index (Morton child index, 0-7)
      */
     public static final byte[][][] CHILDREN_AT_FACE = {
-    // Type 0 - same pattern for all types in standard Bey refinement
-    { { 4, 5, 6, 7 }, { 2, 3, 6, 7 }, { 1, 3, 5, 7 }, { 1, 2, 4, 5 } },
+    // Type 0
+    { { 1, 4, 5, 7 }, { 0, 4, 6, 7 }, { 0, 1, 2, 7 }, { 0, 1, 3, 4 } },
     // Type 1
-    { { 4, 5, 6, 7 }, { 2, 3, 6, 7 }, { 1, 3, 5, 7 }, { 1, 2, 4, 5 } },
+    { { 1, 4, 5, 7 }, { 0, 5, 6, 7 }, { 0, 1, 3, 7 }, { 0, 1, 2, 5 } },
     // Type 2
-    { { 4, 5, 6, 7 }, { 2, 3, 6, 7 }, { 1, 3, 5, 7 }, { 1, 2, 4, 5 } },
+    { { 3, 4, 5, 7 }, { 0, 4, 6, 7 }, { 0, 1, 3, 7 }, { 0, 2, 3, 4 } },
     // Type 3
-    { { 4, 5, 6, 7 }, { 2, 3, 6, 7 }, { 1, 3, 5, 7 }, { 1, 2, 4, 5 } },
+    { { 1, 5, 6, 7 }, { 0, 4, 6, 7 }, { 0, 1, 3, 7 }, { 0, 1, 2, 6 } },
     // Type 4
-    { { 4, 5, 6, 7 }, { 2, 3, 6, 7 }, { 1, 3, 5, 7 }, { 1, 2, 4, 5 } },
+    { { 3, 5, 6, 7 }, { 0, 4, 5, 7 }, { 0, 1, 3, 7 }, { 0, 2, 3, 5 } },
     // Type 5
-    { { 4, 5, 6, 7 }, { 2, 3, 6, 7 }, { 1, 3, 5, 7 }, { 1, 2, 4, 5 } } };
+    { { 3, 5, 6, 7 }, { 0, 4, 6, 7 }, { 0, 2, 3, 7 }, { 0, 1, 3, 6 } } };
 
     /**
      * Face-to-face mapping between parent and child. Given parent type, child index, and parent face, returns which
      * face of the child corresponds to that parent face.
      *
-     * A value of -1 indicates the child doesn't touch that parent face. Based on CHILDREN_AT_FACE: - Face 0: children
-     * 4,5,6,7 - Face 1: children 2,3,6,7 - Face 2: children 1,3,5,7 - Face 3: children 1,2,4,5
+     * A value of -1 indicates the child doesn't touch that parent face. This table is TYPE-DEPENDENT and
+     * is derived geometrically from the verified {@code Tet.coordinates()} so that it is consistent with the
+     * t8code per-type {@link #CHILDREN_AT_FACE}: for each (parentType, childIndex, parentFace), the value is
+     * the child-local face whose 3 vertices all lie on the parent face plane, or -1 if the child does not
+     * touch that face. (Derived offline and frozen here to avoid a static-init cycle Tet <-> TetreeConnectivity;
+     * the consistency invariant is enforced by TetreeConnectivityTest.testFaceChildFace.) The prior table was
+     * type-invariant and matched the made-up Bey CHILDREN_AT_FACE pattern (Luciferase-koaw).
      *
      * [parent_type][child_index][parent_face] -> child_face
      */
     public static final byte[][][] FACE_CHILD_FACE = {
     // Type 0
-    { { -1, -1, -1, -1 },  // Child 0 (interior)
-      { -1, -1, 2, 3 },    // Child 1 (at faces 2,3)
-      { -1, 1, -1, 3 },    // Child 2 (at faces 1,3)
-      { -1, 1, 2, -1 },    // Child 3 (at faces 1,2)
-      { 0, -1, -1, 3 },    // Child 4 (at faces 0,3)
-      { 0, -1, 2, 3 },     // Child 5 (at faces 0,2,3)
-      { 0, 1, -1, -1 },    // Child 6 (at faces 0,1)
-      { 0, 1, 2, -1 }      // Child 7 (at faces 0,1,2)
-    },
-    // Type 1 (same pattern for standard Bey refinement)
-    { { -1, -1, -1, -1 },  // Child 0 (interior)
-      { -1, -1, 2, 3 },    // Child 1 (at faces 2,3)
-      { -1, 1, -1, 3 },    // Child 2 (at faces 1,3)
-      { -1, 1, 2, -1 },    // Child 3 (at faces 1,2)
-      { 0, -1, -1, 3 },    // Child 4 (at faces 0,3)
-      { 0, -1, 2, 3 },     // Child 5 (at faces 0,2,3)
-      { 0, 1, -1, -1 },    // Child 6 (at faces 0,1)
-      { 0, 1, 2, -1 }      // Child 7 (at faces 0,1,2)
-    },
+    { { -1, 1, 2, 3 }, { 0, -1, 2, 3 }, { -1, -1, 1, -1 }, { -1, -1, -1, 3 }, { 0, 1, -1, 3 }, { 0, -1, -1, -1 },
+      { -1, 2, -1, -1 }, { 0, 1, 2, -1 } },
+    // Type 1
+    { { -1, 1, 2, 3 }, { 0, -1, 2, 3 }, { -1, -1, -1, 3 }, { -1, -1, 1, -1 }, { 0, -1, -1, -1 }, { 0, 1, -1, 3 },
+      { -1, 2, -1, -1 }, { 0, 1, 2, -1 } },
     // Type 2
-    { { -1, -1, -1, -1 },  // Child 0 (interior)
-      { -1, -1, 2, 3 },    // Child 1 (at faces 2,3)
-      { -1, 1, -1, 3 },    // Child 2 (at faces 1,3)
-      { -1, 1, 2, -1 },    // Child 3 (at faces 1,2)
-      { 0, -1, -1, 3 },    // Child 4 (at faces 0,3)
-      { 0, -1, 2, 3 },     // Child 5 (at faces 0,2,3)
-      { 0, 1, -1, -1 },    // Child 6 (at faces 0,1)
-      { 0, 1, 2, -1 }      // Child 7 (at faces 0,1,2)
-    },
+    { { -1, 1, 2, 3 }, { -1, -1, 1, -1 }, { -1, -1, -1, 3 }, { 0, -1, 2, 3 }, { 0, 1, -1, 3 }, { 0, -1, -1, -1 },
+      { -1, 2, -1, -1 }, { 0, 1, 2, -1 } },
     // Type 3
-    { { -1, -1, -1, -1 },  // Child 0 (interior)
-      { -1, -1, 2, 3 },    // Child 1 (at faces 2,3)
-      { -1, 1, -1, 3 },    // Child 2 (at faces 1,3)
-      { -1, 1, 2, -1 },    // Child 3 (at faces 1,2)
-      { 0, -1, -1, 3 },    // Child 4 (at faces 0,3)
-      { 0, -1, 2, 3 },     // Child 5 (at faces 0,2,3)
-      { 0, 1, -1, -1 },    // Child 6 (at faces 0,1)
-      { 0, 1, 2, -1 }      // Child 7 (at faces 0,1,2)
-    },
+    { { -1, 1, 2, 3 }, { 0, -1, 2, 3 }, { -1, -1, -1, 3 }, { -1, -1, 1, -1 }, { -1, 2, -1, -1 }, { 0, -1, -1, -1 },
+      { 0, 1, -1, 3 }, { 0, 1, 2, -1 } },
     // Type 4
-    { { -1, -1, -1, -1 },  // Child 0 (interior)
-      { -1, -1, 2, 3 },    // Child 1 (at faces 2,3)
-      { -1, 1, -1, 3 },    // Child 2 (at faces 1,3)
-      { -1, 1, 2, -1 },    // Child 3 (at faces 1,2)
-      { 0, -1, -1, 3 },    // Child 4 (at faces 0,3)
-      { 0, -1, 2, 3 },     // Child 5 (at faces 0,2,3)
-      { 0, 1, -1, -1 },    // Child 6 (at faces 0,1)
-      { 0, 1, 2, -1 }      // Child 7 (at faces 0,1,2)
-    },
+    { { -1, 1, 2, 3 }, { -1, -1, 1, -1 }, { -1, -1, -1, 3 }, { 0, -1, 2, 3 }, { -1, 2, -1, -1 }, { 0, 1, -1, 3 },
+      { 0, -1, -1, -1 }, { 0, 1, 2, -1 } },
     // Type 5
-    { { -1, -1, -1, -1 },  // Child 0 (interior)
-      { -1, -1, 2, 3 },    // Child 1 (at faces 2,3)
-      { -1, 1, -1, 3 },    // Child 2 (at faces 1,3)
-      { -1, 1, 2, -1 },    // Child 3 (at faces 1,2)
-      { 0, -1, -1, 3 },    // Child 4 (at faces 0,3)
-      { 0, -1, 2, 3 },     // Child 5 (at faces 0,2,3)
-      { 0, 1, -1, -1 },    // Child 6 (at faces 0,1)
-      { 0, 1, 2, -1 }      // Child 7 (at faces 0,1,2)
-    } };
+    { { -1, 1, 2, 3 }, { -1, -1, -1, 3 }, { -1, -1, 1, -1 }, { 0, -1, 2, 3 }, { -1, 2, -1, -1 }, { 0, -1, -1, -1 },
+      { 0, 1, -1, 3 }, { 0, 1, 2, -1 } } };
 
     /**
      * Sibling relationships in Bey refinement. Given two child indices, returns true if they are siblings (i.e., they

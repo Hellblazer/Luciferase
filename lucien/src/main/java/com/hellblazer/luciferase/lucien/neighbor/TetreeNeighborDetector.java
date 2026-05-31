@@ -203,23 +203,31 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<? exte
         if (tet.l == 0) {
             return null; // Root has no neighbors
         }
-        
-        var parentTet = tet.parent();
-        if (parentTet == null) {
-            return null;
+
+        // Delegate to the verified t8code face-neighbor algorithm (Tet.faceNeighbor, oracle-gated by
+        // T8codeDtetFaceNeighborOracleTest / Luciferase-4bmd). The prior implementation passed a neighbor
+        // TYPE (0-5, from getFaceNeighborType) into parentTet.child() as a Morton index, which silently
+        // returned child[type] instead of the geometric face neighbor — corrupting every ghost face zone.
+        // This mirrors the correct sibling impl in TetreeNeighborFinder.findFaceNeighbor.
+        var neighbor = tet.faceNeighbor(face);
+        if (neighbor == null) {
+            return null; // Boundary of the positive octant
         }
-        
-        // Get sibling index within parent
-        var siblingIndex = TetreeConnectivity.getFaceNeighborType(tet.type, face);
-        if (siblingIndex >= 0 && siblingIndex < 8) {
-            // Neighbor is a sibling
-            var neighbor = parentTet.child(siblingIndex);
-            return tetToKey(neighbor);
+        var neighborTet = neighbor.tet();
+        if (!isWithinDomain(neighborTet)) {
+            return null; // Outside domain bounds
         }
-        
-        // Neighbor is in a different parent - need to go up and across
-        // This requires more complex logic using the connectivity tables
-        return null;
+        return tetToKey(neighborTet);
+    }
+
+    /**
+     * Domain-bounds check for a candidate neighbor: anchor in [0, rootLength). Mirrors
+     * TetreeNeighborFinder.isWithinDomain.
+     */
+    private boolean isWithinDomain(Tet tet) {
+        var maxCoord = Constants.lengthAtLevel((byte) 0);
+        return tet.x() >= 0 && tet.x() < maxCoord && tet.y() >= 0 && tet.y() < maxCoord && tet.z() >= 0
+        && tet.z() < maxCoord;
     }
     
     /**

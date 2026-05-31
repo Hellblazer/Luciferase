@@ -38,12 +38,15 @@ public class TetreeConnectivityTest {
         // 2. Each tetrahedron has exactly 4 faces
         assertEquals(4, TetreeConnectivity.FACES_PER_TET);
 
-        // 3. Interior child (0) touches no parent faces
+        // 3. Every child index in the t8code per-type CHILDREN_AT_FACE table is a valid Morton index (0-7).
+        //    NOTE: in the verbatim t8code t8_dtet_face_child_id_by_type table, child 0 (the corner child
+        //    sharing parent vertex 0) DOES lie on parent faces 1,2,3 — it is opposite face 0 only. The prior
+        //    "child 0 is interior, touches no face" assertion was a made-up Bey artifact, not t8code (koaw).
         for (byte parentType = 0; parentType < 6; parentType++) {
             for (int face = 0; face < 4; face++) {
                 byte[] childrenAtFace = TetreeConnectivity.getChildrenAtFace(parentType, face);
                 for (byte child : childrenAtFace) {
-                    assertNotEquals(0, child, "Interior child should not be at any face");
+                    assertTrue(child >= 0 && child < 8, "Child index must be a valid Morton index 0-7: " + child);
                 }
             }
         }
@@ -140,11 +143,9 @@ public class TetreeConnectivityTest {
                 }
             }
 
-            // Child 0 is interior, so it shouldn't be at any face
-            assertFalse(childAtSomeFace[0], "Child 0 should be interior");
-
-            // All other children should be at some face
-            for (int i = 1; i < 8; i++) {
+            // Every child (including child 0, the corner child opposite face 0) appears on some parent face
+            // in the t8code per-type table. No child is fully interior in t8_dtet_face_child_id_by_type.
+            for (int i = 0; i < 8; i++) {
                 assertTrue(childAtSomeFace[i], "Child " + i + " should be at some face");
             }
         }
@@ -178,11 +179,20 @@ public class TetreeConnectivityTest {
             }
         }
 
-        // Test interior child (index 0) has no face mappings
+        // Bidirectional consistency: a child appears in CHILDREN_AT_FACE[type][pf] IFF getChildFace != -1.
+        // (Reverse direction of the forward check above — closes the FACE_CHILD_FACE / CHILDREN_AT_FACE loop.)
         for (byte parentType = 0; parentType < 6; parentType++) {
             for (int parentFace = 0; parentFace < 4; parentFace++) {
-                assertEquals(-1, TetreeConnectivity.getChildFace(parentType, 0, parentFace),
-                             "Interior child should not touch any parent face");
+                var atFace = new boolean[8];
+                for (byte child : TetreeConnectivity.getChildrenAtFace(parentType, parentFace)) {
+                    atFace[child] = true;
+                }
+                for (int childIndex = 0; childIndex < 8; childIndex++) {
+                    byte childFace = TetreeConnectivity.getChildFace(parentType, childIndex, parentFace);
+                    assertEquals(atFace[childIndex], childFace != -1,
+                                 "FACE_CHILD_FACE/CHILDREN_AT_FACE disagree: type=" + parentType + " child="
+                                 + childIndex + " parentFace=" + parentFace);
+                }
             }
         }
     }
