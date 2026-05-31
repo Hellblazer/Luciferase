@@ -202,12 +202,10 @@ extends SubdivisionStrategy<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
         // Find which child contains the entity center
         for (int i = 0; i < TETREE_CHILDREN; i++) {
             Tet childTet = parentTet.child(i);
-            Point3i[] intVertices = childTet.coordinates();
-            Point3f[] vertices = convertToFloat(intVertices);
 
-            if (pointInTetrahedron(entityCenter, vertices)) {
+            if (pointInTetrahedron(entityCenter, childTet)) {
                 // Check if entire entity bounds fit within this child
-                if (entityBoundsContainedInTetrahedron(context.newEntityBounds, vertices)) {
+                if (entityBoundsContainedInTetrahedron(context.newEntityBounds, childTet)) {
                     return childTet.tmIndex();
                 }
             }
@@ -217,53 +215,19 @@ extends SubdivisionStrategy<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
     }
 
     /**
-     * Convert Point3i array to Point3f array
-     */
-    private Point3f[] convertToFloat(Point3i[] intVertices) {
-        Point3f[] floatVertices = new Point3f[intVertices.length];
-        for (int i = 0; i < intVertices.length; i++) {
-            floatVertices[i] = new Point3f(intVertices[i].x, intVertices[i].y, intVertices[i].z);
-        }
-        return floatVertices;
-    }
-
-    /**
-     * Check if entity bounds are completely contained within a tetrahedron
-     */
-    private boolean entityBoundsContainedInTetrahedron(EntityBounds bounds, Point3f[] tetVertices) {
-        // Check all 8 corners of the bounding box
-        Point3f[] corners = new Point3f[8];
-        corners[0] = new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ());
-        corners[1] = new Point3f(bounds.getMaxX(), bounds.getMinY(), bounds.getMinZ());
-        corners[2] = new Point3f(bounds.getMinX(), bounds.getMaxY(), bounds.getMinZ());
-        corners[3] = new Point3f(bounds.getMaxX(), bounds.getMaxY(), bounds.getMinZ());
-        corners[4] = new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMaxZ());
-        corners[5] = new Point3f(bounds.getMaxX(), bounds.getMinY(), bounds.getMaxZ());
-        corners[6] = new Point3f(bounds.getMinX(), bounds.getMaxY(), bounds.getMaxZ());
-        corners[7] = new Point3f(bounds.getMaxX(), bounds.getMaxY(), bounds.getMaxZ());
-
-        // All corners must be inside the tetrahedron
-        for (Point3f corner : corners) {
-            if (!pointInTetrahedron(corner, tetVertices)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * Estimate the size of a tetrahedron (length of longest edge)
      */
     private double estimateTetSize(Tet tet) {
         Point3i[] intVertices = tet.coordinates();
-        Point3f[] vertices = convertToFloat(intVertices);
         double maxEdgeLength = 0;
 
         // Check all edges
         for (int i = 0; i < 4; i++) {
             for (int j = i + 1; j < 4; j++) {
-                double edgeLength = vertices[i].distance(vertices[j]);
+                var vi = intVertices[i];
+                var vj = intVertices[j];
+                double dx = vi.x - vj.x, dy = vi.y - vj.y, dz = vi.z - vj.z;
+                double edgeLength = Math.sqrt(dx * dx + dy * dy + dz * dz);
                 maxEdgeLength = Math.max(maxEdgeLength, edgeLength);
             }
         }
@@ -272,10 +236,30 @@ extends SubdivisionStrategy<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
     }
 
     /**
-     * Check if a point is inside a tetrahedron using barycentric coordinates
+     * Check if a point is inside a tetrahedron using the exact 12-DOP test.
+     * Uses closed-simplex convention (boundary points belong to the tet) matching
+     * {@link Tet#contains12DOP} and the rest of the codebase (locatePointBeyRefinementFromRoot, etc.).
      */
-    private boolean pointInTetrahedron(Point3f point, Point3f[] vertices) {
-        // Use the proper geometric test from TetrahedralGeometry
-        return TetrahedralGeometry.containsPoint(point, vertices);
+    private boolean pointInTetrahedron(Point3f point, Tet childTet) {
+        return childTet.contains12DOP(point.x, point.y, point.z);
+    }
+
+    /**
+     * Check if entity bounds are completely contained within a tetrahedron.
+     * Tests all 8 AABB corners against the tet using the exact 12-DOP test.
+     * Uses closed-simplex convention matching {@link Tet#contains12DOP}.
+     */
+    private boolean entityBoundsContainedInTetrahedron(EntityBounds bounds, Tet childTet) {
+        float minX = bounds.getMinX(), minY = bounds.getMinY(), minZ = bounds.getMinZ();
+        float maxX = bounds.getMaxX(), maxY = bounds.getMaxY(), maxZ = bounds.getMaxZ();
+        // All 8 corners of the bounding box must be inside the tetrahedron
+        return childTet.contains12DOP(minX, minY, minZ)
+               && childTet.contains12DOP(maxX, minY, minZ)
+               && childTet.contains12DOP(minX, maxY, minZ)
+               && childTet.contains12DOP(maxX, maxY, minZ)
+               && childTet.contains12DOP(minX, minY, maxZ)
+               && childTet.contains12DOP(maxX, minY, maxZ)
+               && childTet.contains12DOP(minX, maxY, maxZ)
+               && childTet.contains12DOP(maxX, maxY, maxZ);
     }
 }

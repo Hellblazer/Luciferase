@@ -446,54 +446,116 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
     }
 
     /**
-     * True if the pyramid node's surrounding-cube AABB intersects the given {@code volume}.
+     * True if the pyramid node intersects the given {@code volume}.
      *
-     * <p>For point-volumes (a {@link Spatial.Sphere} at a single point or a degenerate volume),
-     * containment is tested via the AABB. For all other volumes, standard AABB-vs-AABB
-     * intersection is used (mirroring Octree / Tetree behaviour).
+     * <p>Uses the surrounding-cube AABB as an outer broad-phase gate (never-false-negative).
+     * For tet-typed leaf nodes (type 0–5 by construction — types 6/7 are Pyramids), the broad
+     * test is tightened via {@link Tet#intersects12DOP} against the volume's AABB, eliminating
+     * false positives that pass the cube gate but miss the tet. For Pyramid leaf nodes (type 6/7),
+     * the cube result is returned unchanged (14-DOP exact pyramid tests are pending separate work).
+     *
+     * <p>Invariant: never-false-negative — a node that truly intersects the volume always returns
+     * {@code true} (tet ⊆ cube, so tet∩volume≠∅ ⟹ tet∩volumeAABB≠∅ AND cube broad test passes).
      *
      * @param nodeIndex the PyramidKey identifying the node
      * @param volume    the query volume
-     * @return true if the node's AABB intersects {@code volume}
+     * @return true if the node intersects {@code volume}
      */
     @Override
     protected boolean doesNodeIntersectVolume(PyramidKey nodeIndex, Spatial volume) {
         var nodeBounds = getNodeBounds(nodeIndex);
-        if (nodeBounds instanceof Spatial.Cube cube) {
-            var vb = VolumeBounds.from(cube);
-            return volume.intersects(vb.minX(), vb.minY(), vb.minZ(), vb.maxX(), vb.maxY(), vb.maxZ());
+        if (!(nodeBounds instanceof Spatial.Cube cube)) {
+            return false;
         }
-        return false;
+        // Broad cube gate — never-false-negative outer guard.
+        var vb = VolumeBounds.from(cube);
+        boolean cubeIntersects = volume.intersects(vb.minX(), vb.minY(), vb.minZ(), vb.maxX(), vb.maxY(), vb.maxZ());
+        if (!cubeIntersects) {
+            return false;
+        }
+        // Tighten for tet-typed leaves (type 0–5). Types 6/7 are Pyramids — keep cube result.
+        // INVARIANT: must never call contains12DOP/intersects12DOP on a Tet of type 6 or 7.
+        var el = elementFromKey(nodeIndex);
+        if (el == null) {
+            // Key did not round-trip through elementFromKey (non-SFC key or decode failure).
+            // Fall through to cube result (conservative — never a false negative).
+            log.debug("doesNodeIntersectVolume: elementFromKey returned null for key {}; using cube-AABB fallback",
+                      nodeIndex);
+            return true;
+        }
+        if (el instanceof Tet t) {
+            // Tet leaf: use exact 12-DOP AABB-vs-tet test against the volume's AABB.
+            var volumeBounds = getVolumeBounds(volume);
+            if (volumeBounds == null) {
+                return true; // fall back to cube result (already true)
+            }
+            return t.intersects12DOP(volumeBounds.minX(), volumeBounds.minY(), volumeBounds.minZ(),
+                                     volumeBounds.maxX(), volumeBounds.maxY(), volumeBounds.maxZ());
+        }
+        // Pyramid leaf (type 6/7): exact 14-DOP pyramid test is pending separate work — keep cube result.
+        return true;
     }
 
     /**
-     * True if the pyramid node's surrounding-cube AABB is fully contained within {@code volume}.
+     * True if the pyramid node is fully contained within {@code volume}.
      *
-     * <p>Uses the same conservative AABB model as Octree: the cube-AABB must fit inside the
-     * volume. This may over-report "not contained" for volumes that contain the pyramid geometry
-     * but not its surrounding cube.
+     * <p>For tet-typed leaf nodes (type 0–5), containment is tested by checking all 4 tet
+     * vertices against the volume's AABB (the tet is convex, so this is necessary and sufficient
+     * for AABB query volumes). This is strictly tighter than testing all 8 cube corners for
+     * non-AABB volumes (Sphere etc.) whose AABB proxy is smaller than the surrounding cube.
+     * For pure AABB volumes the two tests are equivalent because the 4 tet vertices span the full
+     * cube AABB (v0 = anchor, v3 = opposite cube corner). For Pyramid leaf nodes (type 6/7), the
+     * conservative 8-cube-corner test is retained (exact 14-DOP pyramid work is pending).
+     *
+     * <p><b>Proxy note</b>: for non-AABB volumes (e.g. {@link Spatial.Sphere}), containment is
+     * tested against the volume's AABB via {@link #getVolumeBounds(Spatial)}, consistent with
+     * the pre-existing conservative approximation for all shape types.
      *
      * @param nodeIndex the PyramidKey identifying the node
      * @param volume    the query volume
-     * @return true if the node's AABB is fully contained in {@code volume}
+     * @return true if the node is fully contained in {@code volume}
      */
     @Override
     protected boolean isNodeContainedInVolume(PyramidKey nodeIndex, Spatial volume) {
         var nodeBounds = getNodeBounds(nodeIndex);
-        if (nodeBounds instanceof Spatial.Cube cube) {
-            float minX = cube.originX();
-            float minY = cube.originY();
-            float minZ = cube.originZ();
-            float maxX = minX + cube.extent();
-            float maxY = minY + cube.extent();
-            float maxZ = minZ + cube.extent();
-            // All 8 corners of the cube must be inside the volume's AABB.
-            var vb = getVolumeBounds(volume);
-            if (vb == null) return false;
-            return minX >= vb.minX() && minY >= vb.minY() && minZ >= vb.minZ()
-                   && maxX <= vb.maxX() && maxY <= vb.maxY() && maxZ <= vb.maxZ();
+        if (!(nodeBounds instanceof Spatial.Cube cube)) {
+            return false;
         }
-        return false;
+        var vb = getVolumeBounds(volume);
+        if (vb == null) {
+            return false;
+        }
+        // Tighten for tet-typed leaves (type 0–5). Types 6/7 are Pyramids — use cube corners.
+        // INVARIANT: must never call contains12DOP/intersects12DOP on a Tet of type 6 or 7.
+        var el = elementFromKey(nodeIndex);
+        if (el == null) {
+            // Key did not round-trip through elementFromKey (non-SFC key or decode failure).
+            // Fall through to cube-corner containment (conservative — may return false negative for a
+            // valid tet whose key cannot be decoded, but avoids incorrect true for invalid keys).
+            log.debug("isNodeContainedInVolume: elementFromKey returned null for key {}; using cube-corner fallback",
+                      nodeIndex);
+        }
+        if (el instanceof Tet t) {
+            // Tet leaf: all 4 tet vertices must be inside the volume's AABB (tet is convex).
+            for (var vertex : t.coordinates()) {
+                if (vertex.x < vb.minX() || vertex.x > vb.maxX()
+                    || vertex.y < vb.minY() || vertex.y > vb.maxY()
+                    || vertex.z < vb.minZ() || vertex.z > vb.maxZ()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        // Pyramid leaf (type 6/7): all 8 cube corners must be inside the volume's AABB.
+        // Exact 14-DOP pyramid containment test is pending separate work.
+        float minX = cube.originX();
+        float minY = cube.originY();
+        float minZ = cube.originZ();
+        float maxX = minX + cube.extent();
+        float maxY = minY + cube.extent();
+        float maxZ = minZ + cube.extent();
+        return minX >= vb.minX() && minY >= vb.minY() && minZ >= vb.minZ()
+               && maxX <= vb.maxX() && maxY <= vb.maxY() && maxZ <= vb.maxZ();
     }
 
     // ===== Abstract geometry methods — Phase-D ray/plane traversal cluster =====
