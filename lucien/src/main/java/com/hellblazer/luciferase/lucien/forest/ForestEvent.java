@@ -108,7 +108,10 @@ public sealed interface ForestEvent permits
     ) implements ForestEvent {}
 
     /**
-     * Event emitted when multiple trees are merged into one.
+     * Event emitted when multiple trees are merged into one. The merged tree is created without its own
+     * {@code TreeAdded} event, so this is the <em>only</em> announcement of its existence — a listener
+     * that tracks trees must handle {@code TreesMerged} (not just {@code TreeAdded}) to learn of it
+     * (RDR-010 Luciferase-l4p0).
      *
      * @param timestamp event timestamp
      * @param forestId forest identifier

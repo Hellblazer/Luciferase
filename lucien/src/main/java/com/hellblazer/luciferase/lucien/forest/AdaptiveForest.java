@@ -1527,10 +1527,18 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         transferEntities(tree1, mergedTree);
         transferEntities(tree2, mergedTree);
         
+        // Announce the merge (RDR-010 Luciferase-l4p0): the merged tree was created via addTreeInternal
+        // (no root TreeAdded), so TreesMerged is the only event that announces it. Listeners
+        // (ForestToTumblerBridge) clear the source assignments and assign the merged tree on this event —
+        // without it, handleTreesMerged is dead code and source server assignments leak. Emitted BEFORE
+        // removeTree so the source trees are still reachable (getTree) for any listener that inspects them.
+        emitEvent(new ForestEvent.TreesMerged(System.currentTimeMillis(), forestId,
+                                              Arrays.asList(tree1.getTreeId(), tree2.getTreeId()), mergedId));
+
         // Remove original trees
         removeTree(tree1.getTreeId());
         removeTree(tree2.getTreeId());
-        
+
         // Trigger ghost updates after forest repartitioning
         triggerGhostUpdatesAfterRepartitioning(mergedTree.getSpatialIndex());
     }
