@@ -71,6 +71,14 @@ import java.util.Set;
  * conforming same-shape pyramid topology; it is deliberately NOT
  * applied to tet faces (Bey-SFC tet faces share 0-3 vertices — see CLAUDE.md face-neighbor caveat).
  *
+ * <p><b>Deep cross-shape is infrastructure-only (RDR-012 D2).</b> The deep ({@code l > minTetLevel})
+ * cross-shape topology this detector can compute (deep face neighbors, and deep-tet edge/vertex via
+ * {@link #allShapeNeighbors}) is validated but <em>not consumed by live index operation</em>:
+ * {@link PyramidIndex} locate stops at the shallowest tet leaf, so deep tet keys are never inserted
+ * (pinned by {@code PyramidBoundaryPinningTest}). The production-live path is the shallow
+ * ({@code l == minTetLevel}) hex↔tet boundary. RDR-012 (accepted 2026-05-31) kept the deep path
+ * infrastructure-only; productionization is D1 (reopen-only).
+ *
  * @author Hal Hildebrand
  */
 public final class PyramidNeighborDetector implements NeighborDetector<PyramidKey> {

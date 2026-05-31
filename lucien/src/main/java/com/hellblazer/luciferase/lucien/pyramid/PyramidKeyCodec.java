@@ -110,6 +110,13 @@ final class PyramidKeyCodec {
      * and then the pyramid chain to the root. A pure-Tetree tet ({@code minTetLevel == -1}) has no
      * pyramidal ancestor and returns {@code null}; so does the level-0 root (a pyramid, never a tet).
      *
+     * <p><b>Deep encodability is infrastructure-only (RDR-012 D2).</b> That this method <em>accepts</em> a
+     * deep tet ({@code minTetLevel < level}) does not mean live index operation ever produces one:
+     * {@code PyramidIndex} locate stops at the shallowest tet leaf, so deep tet keys are never inserted
+     * by normal operation (pinned by {@code PyramidBoundaryPinningTest}). The deep round-trip is exercised
+     * by direct refinement and tests only. RDR-012 (accepted 2026-05-31) kept the deep path
+     * infrastructure-only.
+     *
      * <p><b>Fail-safe contract.</b> Mirrors {@link #encode(Pyramid)}: the parent walk may throw on a
      * non-SFC candidate; that is caught and funneled to {@code null}. The internal round-trip self-check
      * ({@code elementFromKey(key)} must recover the same tet geometry) is the single source of truth for
