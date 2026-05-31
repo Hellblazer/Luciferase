@@ -70,9 +70,13 @@ class PyramidCrossShapeEdgeVertexTest {
 
     @Test
     void crossShapeTetVertexAndEdgeNeighborsAreSurfacedAndReciprocal() {
+        // Sweep bounded to level 3 (was 5): the all-shape enumeration now probes every pyramidal-branch
+        // depth per cell (RDR-010 Luciferase-2l04), raising per-query cost from O(1) to O(level) tet
+        // probes, so whole-tree sweeps grow steeply. Reciprocity/subset are level-invariant; deep-tet
+        // completeness is covered exhaustively by PyramidDeepCrossShapeEdgeVertexTest.
         int crossShapeVertexChecks = 0;
         int crossShapeEdgeChecks = 0;
-        for (var p : validPyramids(5)) {
+        for (var p : validPyramids(3)) {
             var pk = PyramidKeyCodec.encode(p);
             if (pk == null) {
                 continue;
@@ -181,7 +185,7 @@ class PyramidCrossShapeEdgeVertexTest {
 
     @Test
     void faceSubsetOfEdgeSubsetOfVertex() {
-        for (var p : validPyramids(4)) {
+        for (var p : validPyramids(3)) {
             var pk = PyramidKeyCodec.encode(p);
             if (pk == null) {
                 continue;
@@ -199,7 +203,7 @@ class PyramidCrossShapeEdgeVertexTest {
         // A tet-leaf query previously got only its cross-shape face set from edge/vertex. Now it gets the
         // full all-shape edge/vertex set — including same-shape pyramid neighbors sharing an edge/vertex.
         PyramidKey tetKey = null;
-        for (var p : validPyramids(5)) {
+        for (var p : validPyramids(3)) {
             if (p.level() < 2) {
                 continue;
             }

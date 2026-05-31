@@ -53,22 +53,22 @@ import java.util.Set;
  * keys because the index locate primitive stops at the shallowest tet leaf (deep tet keys are not
  * inserted until that primitive is extended) — but the face topology itself is no longer depth-limited.
  *
- * <p><b>Edge/vertex — exhaustive cross-shape cumulative supersets (RDR-010 Luciferase-0utt).</b> Edge
- * and vertex enumerate ALL same-level SFC elements — pyramid (6/7) <em>and</em> shallowest tet (0-5) —
- * in the 27-cube neighbourhood, classified by shared-vertex count (≥ 2 edge, ≥ 1 vertex) and unioned
- * with the cross-shape face set, preserving face ⊆ edge ⊆ vertex. This surfaces tet↔tet edge sharing and
- * pyramid↔tet vertex fans (the pi1.5 superset enumerated same-shape pyramids only). The edge/vertex
- * enumeration currently builds only shallowest-tet candidates, so deep pyramid-rooted tet
- * ({@code l &gt; minTetLevel}) edge/vertex neighbors remain out of scope (RDR-010 Luciferase-2l04,
- * blocked on this enumeration being widened); note the codec itself now round-trips deep tet keys (cjwr
- * Phase B) and {@link Tet#faceNeighborElement} resolves deep faces, so the limit is the enumeration,
- * not encode. ghost {@code FACES} exchange still needs only the (exact) face set.
+ * <p><b>Edge/vertex — exhaustive cross-shape cumulative supersets (RDR-010 Luciferase-0utt / full-depth
+ * Luciferase-2l04).</b> Edge and vertex enumerate ALL same-level SFC elements — pyramid (6/7)
+ * <em>and</em> tet (0-5) at every pyramidal-branch depth (shallowest <em>and</em> deep, RDR-010
+ * Luciferase-2l04) — in the 27-cube neighbourhood, classified by shared-vertex count (≥ 2 edge, ≥ 1
+ * vertex) and unioned with the cross-shape face set, preserving face ⊆ edge ⊆ vertex. This surfaces
+ * tet↔tet edge sharing and pyramid↔tet vertex fans (the pi1.5 superset enumerated same-shape pyramids
+ * only). Both a deep-tet query and deep-tet neighbors are now in scope (encode round-trips deep tet keys,
+ * cjwr Phase B). ghost {@code FACES} exchange still needs only the (exact) face set.
  *
- * <p><b>Same-shape enumeration (edge/vertex contribution).</b> For each of the 27 cube offsets
- * {@code (dx,dy,dz) ∈ {-1,0,+1}³} and each pyramid type {@code {6,7}}, a candidate same-level pyramid is
- * built, filtered to genuine SFC elements via {@link PyramidKeyCodec#encode} (non-SFC → {@code null}),
- * and classified by shared-vertex count against the query element (edge ≥ 2, vertex ≥ 1). The
- * shared-vertex test is valid for the conforming same-shape pyramid topology; it is deliberately NOT
+ * <p><b>All-shape enumeration (edge/vertex contribution).</b> For each of the 27 cube offsets
+ * {@code (dx,dy,dz) ∈ {-1,0,+1}³}: each pyramid type {@code {6,7}}, and each tet type {@code {0..5}} at
+ * each candidate depth {@code minTetLevel ∈ [1, level]}, a same-level candidate is built, filtered to a
+ * genuine SFC element via {@link PyramidKeyCodec#encode} (non-SFC / wrong-depth → {@code null}; the
+ * encode round-trip pins the unique valid {@code minTetLevel} per cell), and classified by shared-vertex
+ * count against the query element (edge ≥ 2, vertex ≥ 1). The shared-vertex test is valid for the
+ * conforming same-shape pyramid topology; it is deliberately NOT
  * applied to tet faces (Bey-SFC tet faces share 0-3 vertices — see CLAUDE.md face-neighbor caveat).
  *
  * @author Hal Hildebrand
@@ -96,14 +96,16 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
     @Override
     public List<PyramidKey> findEdgeNeighbors(PyramidKey element) {
         // Exhaustive cross-shape edge adjacency (RDR-010 Luciferase-0utt): cross-shape faces ∪ all-shape
-        // (pyramid+tet) elements sharing ≥ 2 vertices. Deep-tet (l > minTetLevel) stays out of scope.
+        // (pyramid+tet) elements sharing ≥ 2 vertices, all pyramidal-branch depths (deep tets included,
+        // RDR-010 Luciferase-2l04).
         return unionFaceWithAllShape(element, EDGE_SHARED_VERTICES);
     }
 
     @Override
     public List<PyramidKey> findVertexNeighbors(PyramidKey element) {
         // Exhaustive cross-shape vertex adjacency (RDR-010 Luciferase-0utt): cross-shape faces ∪ all-shape
-        // (pyramid+tet) elements sharing ≥ 1 vertex. Deep-tet (l > minTetLevel) stays out of scope.
+        // (pyramid+tet) elements sharing ≥ 1 vertex, all pyramidal-branch depths (deep tets included,
+        // RDR-010 Luciferase-2l04).
         return unionFaceWithAllShape(element, VERTEX_SHARED_VERTICES);
     }
 
@@ -219,9 +221,10 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
 
     /**
      * Exhaustive cross-shape (pyramid↔pyramid, pyramid↔tet, tet↔tet) edge/vertex enumeration (RDR-010,
-     * bead Luciferase-0utt). Returns every same-level SFC element — pyramid (type 6/7) <em>or</em>
-     * shallowest tet (type 0-5, {@code minTetLevel == level}) — in the 27-cube neighbourhood that shares
-     * at least {@code minSharedVertices} vertices with the query element's leaf.
+     * bead Luciferase-0utt; full-depth Luciferase-2l04). Returns every same-level SFC element — pyramid
+     * (type 6/7) <em>or</em> tet (type 0-5) at <em>any</em> pyramidal-branch depth (shallowest
+     * {@code minTetLevel == level} and deep {@code minTetLevel < level}) — in the 27-cube neighbourhood
+     * that shares at least {@code minSharedVertices} vertices with the query element's leaf.
      *
      * <p>Shared-vertex count is a <em>conservative superset</em> classifier for edge (≥ 2 shared
      * vertices) and vertex (≥ 1) adjacency, honouring the {@link NeighborDetector} cumulative-superset
@@ -229,11 +232,15 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
      * so two elements sharing exactly that diagonal pair are counted as edge neighbours without a shared
      * geometric edge. Over-inclusion is safe for the BFS/ghost consumers (they tolerate extra neighbours;
      * never a false negative). Faces are NOT classified this way (Bey-SFC tet faces share 0-3 vertices) —
-     * they are handled separately by {@link #crossShapeFaceNeighbors} and unioned in. Candidates are filtered to genuine
-     * SFC elements via {@link PyramidKeyCodec#encode} (a non-SFC anchor/type, or a deep pyramid-rooted tet
-     * with {@code minTetLevel < level}, encodes to {@code null} — so deep-tet cross-shape adjacency below
-     * the shallow boundary remains out of scope, RDR-010 Finding #16 / q3p Phase E). Works for a pyramid
-     * <em>or</em> a tet-leaf query (vertices taken from the decoded leaf). Never throws.
+     * they are handled separately by {@link #crossShapeFaceNeighbors} and unioned in. Candidates are
+     * filtered to genuine SFC elements via {@link PyramidKeyCodec#encode} (a non-SFC anchor/type, or a
+     * tet at a pyramidal-branch depth it does not actually have, encodes to {@code null}). Works for a
+     * pyramid <em>or</em> a tet-leaf query (vertices taken from the decoded leaf). Never throws.
+     *
+     * @implNote Cost is O(27 · 6 · level) {@code encode} probes per call, each a parent-chain walk of
+     *           O(level), i.e. O(level²) overall — a (cube, type) cell that passes the geometric gate but
+     *           has no tet at any depth scans all {@code level} depths. Cheap at the shallow levels of a
+     *           cross-shape boundary; for deep BFS over a refined tree this is the dominant per-node cost.
      */
     private List<PyramidKey> allShapeNeighbors(PyramidKey element, int minSharedVertices) {
         HybridElement self = PyramidIndex.elementFromKey(element);
@@ -263,11 +270,32 @@ public final class PyramidNeighborDetector implements NeighborDetector<PyramidKe
                         addCandidate(new Pyramid(nx, ny, nz, level, candType), selfVerts, minSharedVertices,
                                      element, neighbors);
                     }
-                    // Shallow-tet candidates (type 0-5, minTetLevel == level). encode() drops non-SFC and
-                    // deep tets, so only genuine shallow SFC tets at this cube survive.
+                    // Tet candidates (type 0-5) at every pyramidal-branch depth (RDR-010 Luciferase-2l04).
+                    // Tet.coordinates() is minTetLevel-independent, so the shared-vertex gate is evaluated
+                    // ONCE per (cube, type); only for a genuine geometric neighbour do we probe the
+                    // pyramidal-branch depths minTetLevel ∈ [1, level] — covering the shallowest tet
+                    // (minTetLevel == level) and every deep pyramid-rooted tet (minTetLevel < level).
+                    // (anchor, level, type) does not pin minTetLevel; encode() round-trip-filters each
+                    // depth, and the hybrid partition tiles space once, so at most one depth survives.
                     for (byte tetType = 0; tetType < 6; tetType++) {
-                        addCandidate(new Tet(nx, ny, nz, level, tetType, level), selfVerts, minSharedVertices,
-                                     element, neighbors);
+                        var repVerts = new Tet(nx, ny, nz, level, tetType, level).coordinates();
+                        if (sharedVertexCount(selfVerts, repVerts) < minSharedVertices) {
+                            continue;
+                        }
+                        // Probe depths shallowest-first (minTetLevel == level is the common case in a
+                        // sparsely-refined tree), so the typical hit is the first encode.
+                        for (byte mtl = level; mtl >= 1; mtl--) {
+                            PyramidKey key = encodeElement(new Tet(nx, ny, nz, level, tetType, mtl));
+                            if (key != null) {
+                                // The hybrid partition tiles space once → a (cube, level, type) cell has
+                                // exactly one valid pyramidal-branch depth, so the first non-null encode is
+                                // the unique SFC tet there; stop probing other depths.
+                                if (!key.equals(element)) {
+                                    neighbors.add(key);
+                                }
+                                break;
+                            }
+                        }
                     }
                 }
             }

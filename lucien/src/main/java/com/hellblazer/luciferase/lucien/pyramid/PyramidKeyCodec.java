@@ -152,11 +152,14 @@ final class PyramidKeyCodec {
             }
             PyramidKey key = PyramidKey.fromLevels(level, coordBits, typeBits);
             // Round-trip self-check against the leaf-aware decoder: the decoded leaf must be a tet of
-            // the same geometric identity (x,y,z,level,type — minTetLevel is reconstructed identically
-            // by Pyramid.child, but compare the geometric fields explicitly to stay equals-independent).
+            // the same geometric identity (x,y,z,level,type) AND the same minTetLevel. The minTetLevel
+            // check matters when a caller probes a geometric position with a candidate minTetLevel it does
+            // not actually have (the enumerate-and-filter in PyramidNeighborDetector.allShapeNeighbors,
+            // RDR-010 Luciferase-2l04): the decoder derives the true minTetLevel from the path, so a
+            // mismatch means the candidate is not the real SFC element at that cell — reject it.
             HybridElement decoded = PyramidIndex.elementFromKey(key);
             if (decoded instanceof Tet dt && dt.x() == t.x() && dt.y() == t.y() && dt.z() == t.z()
-                && dt.level() == t.level() && dt.type() == t.type()) {
+                && dt.level() == t.level() && dt.type() == t.type() && dt.minTetLevel() == t.minTetLevel()) {
                 return key;
             }
             return null;
