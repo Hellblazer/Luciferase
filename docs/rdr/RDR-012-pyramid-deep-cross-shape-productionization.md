@@ -73,6 +73,50 @@ Findings:
 3. Add a boundary-pinning test with the **correct** invariant: every tet element `PyramidIndex` locate/insert emits has `minTetLevel == -1` (pure-Tetree) **or** `minTetLevel == level` (shallow pyramid-boundary); no element with `0 <= minTetLevel < level` (a deep pyramid-rooted tet) appears under normal refinement. (Naive `minTetLevel < level` is wrong — it fires on pyramids and pure-Tetree tets, whose `minTetLevel == -1`.)
 4. (D3) Extend the reframed oracle to cover the deep tet-return branch — closing the `kyz9` gap without productionizing.
 
+## D0.1 — PyramidIndex Reachable-SFC Domain Contract (bead `Luciferase-dgzx`)
+
+Specification deliverable (no code change). Verified against `PyramidKeyCodec` (HEAD), `PyramidIndex.pyramidFromKey` / `elementFromKey`, and t8code `t8_dpyramid_is_inside_root` (`main@76a5347b`, `t8_dpyramid_bits.c:883-906`). This is the prerequisite contract Gate-question-0 demands; it determines what the D0.2 oracle asserts.
+
+### C-1. The reachable-SFC predicate (definition)
+
+An element `e = (x, y, z, level, type [, minTetLevel])` is a **reachable element of the PyramidIndex SFC** iff `PyramidKeyCodec.encode(e) != null`. That gate is **operationally defined by an encode→decode round-trip against the canonical decoder** — *not* by a closed-form coordinate inequality:
+
+1. **Domain pre-filters** (cheap rejects, before the walk):
+   - Pyramid (`encode(Pyramid):52,61`): `minTetLevel == NO_TET_ANCESTOR` (pure-pyramid cell; a hybrid-path pyramid is rejected up front because `Pyramid.equals` is `minTetLevel`-blind and would alias). Level 0 ⇒ only the type-6 virtual cover round-trips; a level-0 type-7 is not a distinct SFC element.
+   - Tet (`encode(Tet):123,126`): `level >= 1` **and** `minTetLevel != NO_TET_ANCESTOR`. A **pure-Tetree** tet (`minTetLevel == -1`) has no pyramidal ancestor and is **not** a pyramid-SFC element.
+2. **Parent walk to root.** Collect `(cubeId, type)` at each refinement step `l = level..1` via `Pyramid.parent()` / `Tet.parentElement()` (the tet branch follows tets down to the boundary, then the pyramid chain to root). A non-SFC candidate trips `"Unreachable pyramid"` `IllegalStateException` (or `IllegalArgument`/`IndexOutOfBounds`) → caught → `null`.
+3. **Assemble + round-trip self-check.** Build `PyramidKey.fromLevels(...)`, decode via `pyramidFromKey` / `elementFromKey`, and require the decoded element to match `e` on full identity — `(x,y,z,level,type)` for pyramids; `(x,y,z,level,type,minTetLevel)` for tets (the decoder derives the *true* `minTetLevel` from the path, so a probe with a fabricated `minTetLevel` is correctly rejected). Mismatch → `null`.
+
+**Single source of truth: the decoder.** Reachability is exactly what the canonical decoder round-trips. `encode()` never emits a key the decoder would not reproduce; a co-consistent bit error cannot leak a bogus element. Callers (`PyramidNeighborDetector`, `addNeighboringNodes`) rely on the `null` return to filter geometric face/edge/vertex candidates down to genuine SFC elements.
+
+**Cardinality anchor.** Per level the reachable pyramid count is `N(ℓ) = 2·8^ℓ − 6^ℓ` (Knapp hybrid construction). Unlike Morton (every cube cell valid), most `(anchor, level, type)` triples are NOT reachable — the round-trip is the gate.
+
+### C-2. The domain is CUBE-rooted (by design)
+
+`PyramidIndex`'s root (`PyramidKey.getRoot`, level-0 type-6) is the **virtual pyramid cover of the entire cube** `[0, 2^maxLevel)^3`. The Knapp hybrid partition tiles that cube with **both** root sub-pyramids (type 6 **and** type 7) **plus** root tetrahedra; every point in the cube is covered. This is the answer to Gate-question-0: the index is cube-rooted (pyramids 6+7 + root tets), one tree spanning the whole cube.
+
+### C-3. Mapping to t8code `is_inside_root` (single-root-pyramid)
+
+t8code's `t8_dpyramid_is_inside_root` (`:883`) tests membership in a **single root-pyramid simplex** — one tree of a t8code forest:
+- bbox/ordering: `0 ≤ z < ROOT_LEN`, `x ≥ z`, `y ≥ z`, `x < ROOT_LEN`, `y < ROOT_LEN`;
+- apex-face tie-break (flat check on the element's `type` field, **no shape gate** — applies whatever the neighbor's shape): reject `x == z && type ∈ {3,5}`, reject `y == z && type ∈ {0,4}`;
+- level 0: only `type == ROOT_TYPE(6) && x==y==z==0`.
+
+**The two domains are NOT the same set, and Luciferase's is strictly larger.** `is_inside_root` admits one simplex (`x ≥ z, y ≥ z`) of the cube; PyramidIndex admits the whole cube. Elements with `x < z` or `y < z`, and the apex-face elements the tie-break removes, are **legitimately reachable in Luciferase** — they live in a *sibling t8code tree* (root pyramid 7, or a root tet) that a single-tree test reports as "outside root". **Therefore `encode()` is NOT, and must not be made, `is_inside_root`-equivalent** (the Gate-question-0 hard constraint): `is_inside_root` is a per-tree reference component for *building* the single-tree↔cube mapping, never the PyramidIndex predicate. Adopting it (direction B1) would null ~half the valid cube-domain neighbors (the 6↔7 seam and root tets).
+
+**Single-tree ↔ cube mapping.** A t8code face-neighbor that returns `is_inside_root == 0` means "the neighbor left *this* root pyramid"; in Luciferase's cube that same neighbor maps onto whichever sibling element (pyramid-7 / root-tet / adjacent-cube-cell pyramid) tiles that position. The PyramidIndex predicate accepts it iff that sibling element round-trips (C-1).
+
+### C-4. Explaining the oracle split (26569 over / 17208 under of 18660 pyramids, ℓ ≤ 5)
+
+Measured (`rdr/rdr-010-8xus-oracle-findings-2026-05-31`): `Pyramid.faceNeighbor` gated by `encode()` vs t8code `face_neighbour` gated by `is_inside_root` → matched 49523, **over-permissive 26569** (Luciferase accepts, t8code "outside"), **under-permissive 17208** (t8code "inside", Luciferase drops), 0 value-mismatches.
+
+- **Over-permissive (26569) — expected and correct.** Neighbors leaving root-pyramid-6's simplex (`x<z`/`y<z` or apex-face) into a sibling tree. t8code's single-root test rejects them; Luciferase's cube partition correctly contains them. Dominated by type-7 and cube-tet neighbors a single-root test cannot see. This is the domain difference, not a bug.
+- **Under-permissive (17208) — characterized; exhaustive scrutiny deferred to D0.2.** All are pyramid triangular-face **tet** neighbors that `encode()` drops. Current evidence says they are **genuinely unreachable** in Luciferase's SFC, not a metadata bug: `Pyramid.faceNeighbor` builds them with the 5-arg `Tet` ctor (`minTetLevel == -1`, pure-Tetree ⇒ `encode(Tet):126` rejects), **and** a probe reconstructing them with the corrected `minTetLevel == level` *still* failed the round-trip (the decoder derives a different live element at that cell). Consistent with cube-vs-single-root: the t8code "inside" tet is a sibling within one root pyramid, whereas Luciferase's live element at that position is a different cell that owns it.
+
+### C-5. Open item handed to D0.2 (`Luciferase-v7xc`) / D_fix
+
+The contract's claim — that **every** under-permissive case is a legitimate domain difference and **none** is a residual `encode()` reachability bug — rests on the refuted-`minTetLevel` probe and is **not yet proven exhaustively**. D0.2 reframes `T8codeDpyramidFaceOracleTest` to assert against this reachable-SFC predicate (C-1) with the single-tree↔cube mapping (C-3), and must either (a) confirm `encode()` is correct against the contract across the full sweep, or (b) pin a residual subset of the 17208 as a live shallow-boundary reachability gap → escalate to **D_fix**. Acceptance condition: the predicate in C-1 reproduces the 26569 / 17208 partition exactly when the oracle is re-run.
+
 ## Risks / Open Questions
 
 - **D0 risk:** if the domain contract turns out to require neighbors `encode()` currently drops (the 17208 under-permissive set), that *is* a live correctness gap in the detector, not just a characterization mismatch — D0 may surface real work. Conversely if the cube-domain reachability is correct as-is, D0 is mostly specification + oracle reframing.
