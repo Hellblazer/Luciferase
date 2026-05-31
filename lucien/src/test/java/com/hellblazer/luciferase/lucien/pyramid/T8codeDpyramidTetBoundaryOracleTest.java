@@ -35,8 +35,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * transcription slip). The deep ancestor/corner walk consumes the {@code t8_dtet_*} table values via
  * {@link TetreeConnectivity} ({@code TYPE_CID_TO_BEYID}, {@code FACE_CHILDID_TO_IS_INSIDE},
  * {@code CID_TYPE_TO_PARENTTYPE}) — independently re-walked here, NOT by calling
- * {@code Tet.tetBoundary}; those table values are themselves oracle-verified by {@code T8codeDtetOracleTest}.
- * This mirrors the independence stance of the pyramid-source oracle.
+ * {@code Tet.tetBoundary}. Of those three, only {@code CID_TYPE_TO_PARENTTYPE} is oracle-verified by
+ * {@code T8codeDtetOracleTest}; {@code TYPE_CID_TO_BEYID} and {@code FACE_CHILDID_TO_IS_INSIDE} are
+ * parity-asserted against the t8code literals by {@link #cornerWalkTablesMatchT8codeVerbatim} below (see
+ * the shared-table caveat in that method's contract). This mirrors the independence stance of the
+ * pyramid-source oracle.
  *
  * <p><b>What this gate asserts</b>, over a DFS of both root pyramids to {@link #MAX_SWEEP} restricted to
  * <b>deep</b> pyramid-rooted tets ({@code 0 <= minTetLevel < level}) of type 0/3 (the only tets that can
@@ -65,6 +68,7 @@ class T8codeDpyramidTetBoundaryOracleTest {
     void deepTetFaceNeighborsMatchT8codeTetBoundary() {
         int decisionMismatch = 0, geomMismatch = 0, involutionMismatch = 0;
         int pyramidTouches = 0, deepTetFacesChecked = 0;
+        int tetTouchesTetChecked = 0, minTetPropagationMismatch = 0;
         var failures = new ArrayList<String>();
 
         int nonTouchTypesChecked = 0;
@@ -102,7 +106,23 @@ class T8codeDpyramidTetBoundaryOracleTest {
                     continue;
                 }
                 if (!oracleSaysPyramid) {
-                    continue; // tet-touches-tet: plain Tet neighbor, covered by pure-Tetree tests
+                    // tet-touches-tet for a DEEP hybrid tet: faceNeighborElement returns a Tet carrying
+                    // the propagated minTetLevel (Tet.faceNeighborElement:1833,
+                    // fn.tet().withMinTetLevel(minTetLevel)) — a path pure-Tetree tests never exercise
+                    // (they have minTetLevel == -1). Verify the hybrid-ancestry metadata is propagated:
+                    // the neighbor must be a Tet whose minTetLevel equals the source's.
+                    if (luc != null && luc.element() instanceof Tet nt) {
+                        tetTouchesTetChecked++;
+                        if (nt.minTetLevel() != t.minTetLevel()) {
+                            minTetPropagationMismatch++;
+                            if (failures.size() < 40) {
+                                failures.add("MINTET " + desc(t) + " f" + f + " -> tet neighbor "
+                                             + descEl(nt) + " minTet=" + nt.minTetLevel()
+                                             + " expected " + t.minTetLevel());
+                            }
+                        }
+                    }
+                    continue;
                 }
                 pyramidTouches++;
 
