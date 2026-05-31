@@ -158,7 +158,9 @@ class T8codeDpyramidTetBoundaryOracleTest {
                                        + "tets (level<=" + MAX_SWEEP + "): deepTetFacesChecked="
                                        + deepTetFacesChecked + " pyramidTouches=" + pyramidTouches
                                        + " decisionMismatch=" + decisionMismatch + " geomMismatch=" + geomMismatch
-                                       + " involutionMismatch=" + involutionMismatch + "\n");
+                                       + " involutionMismatch=" + involutionMismatch
+                                       + " tetTouchesTetChecked=" + tetTouchesTetChecked
+                                       + " minTetPropagationMismatch=" + minTetPropagationMismatch + "\n");
         failures.forEach(s -> report.append("  ").append(s).append('\n'));
         String r = report.toString();
 
@@ -166,8 +168,12 @@ class T8codeDpyramidTetBoundaryOracleTest {
         assertEquals(0, decisionMismatch, "deep tet->pyramid cross-shape DECISION diverges from t8code\n" + r);
         assertEquals(0, geomMismatch, "deep tet->pyramid pyramid-return GEOMETRY diverges from t8code\n" + r);
         assertEquals(0, involutionMismatch, "deep tet->pyramid neighbour fails cross-impl involution\n" + r);
+        assertEquals(0, minTetPropagationMismatch,
+                     "deep tet-touches-tet neighbour dropped/changed minTetLevel propagation\n" + r);
         assertTrue(pyramidTouches > 0,
                    "vacuous: the sweep exercised no deep tet->pyramid face — non-vacuity failed\n" + r);
+        assertTrue(tetTouchesTetChecked > 0,
+                   "vacuous: the sweep exercised no deep tet-touches-tet propagation case\n" + r);
     }
 
     // ---- independent t8code transcription (main@76a5347b, t8_dpyramid_bits.c) ----
