@@ -604,9 +604,14 @@ public class DynamicForestManager<Key extends SpatialKey<Key>, ID extends Entity
                 var entities = entityManager.getEntitiesInTree(sourceId);
                 migratedCount += migrateEntities(entities, sourceId, targetId);
                 
-                // Remove source tree
+                // Remove source tree. This merges into a PRE-EXISTING targetId (entities migrated above),
+                // so — unlike AdaptiveForest.mergeTrees which creates a NEW merged tree — the correct event
+                // is TreeRemoved per source (emitted by AdaptiveForest.removeTree, RDR-010 Luciferase-juts),
+                // NOT TreesMerged. The target keeps its own server assignment; the gone sources are cleared.
+                // Do NOT "fix" this to emit TreesMerged: handleTreesMerged would reassign the live target to
+                // a new server, corrupting its assignment.
                 forest.removeTree(sourceId);
-                
+
                 // Record statistics
                 getOrCreateStats(sourceId).recordMerge(entities.size());
             }
