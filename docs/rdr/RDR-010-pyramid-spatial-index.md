@@ -2,16 +2,36 @@
 title: "Pyramid Spatial Index — Close the Hybrid Hex↔Tet Partition Gap"
 id: RDR-010
 type: Architecture
-status: accepted
+status: implemented
 priority: medium
 author: hal.hildebrand
 reviewed-by: self
 created: 2026-05-28
 accepted_date: 2026-05-28
+closed_date: 2026-05-31
 related_issues: [Luciferase-pi1, RDR-001, RDR-002, RDR-008, RDR-009]
 ---
 
 # RDR-010: Pyramid Spatial Index — Close the Hybrid Hex↔Tet Partition Gap
+
+## Close (implemented — 2026-05-31)
+
+**Status: implemented / closed.** The hybrid hex↔tet partition gap is closed by the pyramid construction (Knapp 2026). Shipped: `PyramidIndex` + `PyramidKey` (6D-Morton SFC, 128-bit), §3b decompose-and-reuse containment, all 17 `AbstractSpatialIndex` abstract methods, cross-shape pyramid↔tet neighbor finding, distributed ghost wiring, shape-aware Forest partition weights `N(ℓ)=2·8^ℓ−6^ℓ` + Alg-5.1 partitioner + `TwoOneBalanceChecker` shape-router, and forest lifecycle event coherence (`TreeAdded`/`TreesMerged`/`TreeRemoved`).
+
+**Divergence from Finding #16 — deep-tet cross-shape was NOT RDR-scoped after all.** Finding #16 (below) recorded the deep pyramid-rooted tet path (`l > minTetLevel`) as fail-loud-guarded and *blocked pending a separate tet-tree-reconciliation RDR*, on the premise that Luciferase's Bey subdivision is a geometrically different tree from t8code's dtet below the boundary. **That premise was superseded by Luciferase-4pd**, which aligned Luciferase tet type `k` to t8code dtet type `k` (subdivision now matches t8code exactly — `T8codeDtetOracleTest`). With the trees aligned, the t8code deep tables apply directly; the real blocker was only that the t8code dpyramid source had never been fetched. Deep cross-shape was then implemented within RDR-010 (no new RDR needed):
+- **cjwr Phase A** — deep `Tet.faceNeighborElement` via the ported `t8_dpyramid_tet_boundary` corner-walk (validated table-independently: conforming-face geometry + `Pyramid.faceNeighbor` involution).
+- **cjwr Phase B** — deep tet SFC keys (`encode(Tet)`/`elementFromKey` accept `minTetLevel < level`).
+- **2l04** — deep edge/vertex via full-depth `allShapeNeighbors` (whole-domain completeness oracle).
+
+**Honest scope caveat.** The deep-tet arc is complete and validated *as infrastructure* but is **not consumed in production**: `PyramidIndex`'s locate primitive stops at the shallowest tet leaf, so deep tet keys are never inserted. RDR-010's actual need is the shallow hex↔tet boundary, which is fully live. The deep path is reachable only via direct refinement / tests today.
+
+**Follow-ons at close:**
+- `Luciferase-401t` (open, backlog) — element-level/geometrically-filtered spanning (optional optimization; cube-granular spanning is shipped and correct).
+- Closed won't-do (speculative, no consumer): `Luciferase-9hse` (locate-deep-tet primitive), `Luciferase-kyz9` (deep-FACE completeness oracle), `Luciferase-tjdc` (production distributed pyramid bootstrap) — reopen only if a concrete workload needs deep-tet insertion or a distributed pyramid deployment.
+
+Implementation history (merged to main): pi1.1–pi1.7, 4pd, q3p, d3z3, uzyd, 7poh, 3y1, 7eb, l4p0, 0utt, juts, cjwr (A+B), 2l04. See `docs/rdr/post-mortem/010-pyramid-spatial-index.md`.
+
+---
 
 > Revise during planning; lock at implementation.
 > If wrong, abandon code and iterate RDR.
