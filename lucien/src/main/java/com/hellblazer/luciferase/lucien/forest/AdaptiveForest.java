@@ -663,6 +663,13 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
 
     /**
      * Determine child region shape based on their TreeBounds.
+     *
+     * <p>TODO(RDR-010 uzyd): this still infers shape from {@code TreeBounds} (a pyramid/prism child has
+     * an AABB bounds and would resolve to {@code CUBIC} here). It is benign today — pyramid/prism trees
+     * never flow through the Bey/octant subdivision path that calls this — but if a future phase routes
+     * pyramid subdivision through {@code establishHierarchy}, switch to
+     * {@code RegionShape.of(children.get(0).getSpatialIndex())} (index-driven, as the TreeAdded emit
+     * site now does).
      */
     private RegionShape determineChildShape(List<TreeNode<Key, ID, Content>> children) {
         if (children.isEmpty()) {
@@ -1017,7 +1024,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             forestId,
             childId,
             bounds,
-            bounds instanceof TetrahedralBounds ? RegionShape.TETRAHEDRAL : RegionShape.CUBIC,
+            RegionShape.of(childSpatialIndex), // index-driven shape (RDR-010 uzyd): pyramid/prism aware
             parentTree.getTreeId()
         ));
 

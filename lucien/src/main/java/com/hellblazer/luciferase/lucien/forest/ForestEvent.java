@@ -63,7 +63,7 @@ public sealed interface ForestEvent permits
      * @param forestId forest identifier
      * @param treeId unique tree identifier
      * @param bounds spatial bounds (CubicBounds or TetrahedralBounds)
-     * @param regionShape shape of the spatial region (CUBIC or TETRAHEDRAL)
+     * @param regionShape shape of the spatial region (CUBIC, TETRAHEDRAL, PYRAMID, or PRISM)
      * @param parentId parent tree ID (null for root trees)
      */
     record TreeAdded(
