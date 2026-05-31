@@ -725,10 +725,11 @@ public class ForestMultiIndexTest {
         
         // 1. TreeMetadata system supports all types
         var allTypes = TreeMetadata.TreeType.values();
-        assertEquals(3, allTypes.length);
+        assertEquals(4, allTypes.length);
         assertTrue(List.of(allTypes).contains(TreeMetadata.TreeType.OCTREE));
         assertTrue(List.of(allTypes).contains(TreeMetadata.TreeType.TETREE));
         assertTrue(List.of(allTypes).contains(TreeMetadata.TreeType.PRISM));
+        assertTrue(List.of(allTypes).contains(TreeMetadata.TreeType.PYRAMID));
         
         // 2. All spatial index implementations exist and can be instantiated
         var octree = new Octree<LongEntityID, String>(idGenerator);

@@ -806,8 +806,8 @@ class TetrahedralForestE2ETest {
         var rootId = forest.addTree((com.hellblazer.luciferase.lucien.AbstractSpatialIndex) spatialIndex, metadata);
         var root = forest.getTree(rootId);
 
-        // Server assignment occurs during subdivision (not during addTree):
-        // ForestToTumblerBridge.handleTreeSubdivided assigns parent if null, then children inherit
+        // The root is assigned a server on addTree (RDR-010 §4c / Luciferase-7poh: addTree emits a root
+        // TreeAdded); subdivision then assigns the children (inheriting the parent's server).
 
         // 2. Add entities to trigger subdivision (need >7.5, use 10)
         for (int i = 0; i < 10; i++) {
@@ -829,9 +829,9 @@ class TetrahedralForestE2ETest {
         assertTrue(root.isSubdivided(), "Root should be subdivided");
         assertEquals(6, root.getChildTreeIds().size(), "Should have 6 tetrahedral children");
 
-        // Get root server assignment (assigned during subdivision)
+        // Get root server assignment (assigned on addTree; subdivision assigns the children)
         var rootServer = bridge.getServerAssignment(rootId);
-        assertNotNull(rootServer, "Root should have server assignment after subdivision");
+        assertNotNull(rootServer, "Root should have a server assignment");
         assertTrue(rootServer.startsWith("server-"), "Root server should follow 'server-N' pattern");
 
         // 5. Verify all children have server assignments
@@ -971,9 +971,13 @@ class TetrahedralForestE2ETest {
         // 6. Verify all entities remain in parent
         assertEquals(10, spatialIndex.entityCount(), "All 10 entities should remain in parent tree");
 
-        // 7. Verify no server assignment (only occurs during subdivision)
-        assertNull(bridge.getServerAssignment(rootId),
-                  "Root should have no server assignment without subdivision");
+        // 7. The root tree is assigned a server on add (RDR-010 §4c / Luciferase-7poh: addTree now emits
+        // a root TreeAdded), but NO child trees were created (the no-subdivision intent above). The bridge
+        // therefore holds exactly the one root assignment and no child assignments.
+        assertEquals("server-0", bridge.getServerAssignment(rootId),
+                     "root is assigned a server on add (no longer gated on subdivision)");
+        assertEquals(1, bridge.getAllAssignments().size(),
+                     "only the root is assigned — no subdivision children");
 
         // Cleanup
         forest.shutdown();

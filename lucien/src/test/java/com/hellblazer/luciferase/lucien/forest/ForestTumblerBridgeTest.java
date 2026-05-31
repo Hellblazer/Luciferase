@@ -192,9 +192,8 @@ public class ForestTumblerBridgeTest {
             .build();
         var treeId = forest.addTree(tree, metadata);
 
-        // Manually trigger TreeAdded event via createChildTreeWithBounds
-        // (since addTree() doesn't emit TreeAdded in current impl)
-        // We'll test via subdivision which does emit TreeAdded
+        // addTree now emits a root TreeAdded (RDR-010 §4c / Luciferase-7poh), so the root tree is itself
+        // assigned a server; subdivision below then emits parented TreeAdded events for the children.
         for (int i = 0; i < 150; i++) {
             var pos = new Point3f(i * 2.0f, i * 2.0f, i * 2.0f);
             var entityId = idGenerator.generateID();
