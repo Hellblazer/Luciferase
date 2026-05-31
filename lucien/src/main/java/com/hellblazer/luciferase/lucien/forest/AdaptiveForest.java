@@ -381,6 +381,24 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
 
     @Override
     public boolean removeTree(String treeId) {
+        var removed = removeTreeInternal(treeId);
+        if (removed) {
+            // Announce the standalone removal (RDR-010 Luciferase-juts): listeners (ForestToTumblerBridge)
+            // clear the tree's server assignment on TreeRemoved — without this emission handleTreeRemoved
+            // is dead code and a standalone removeTree leaks the assignment. mergeTrees deliberately uses
+            // removeTreeInternal (no emit) so a merge announces source removal exactly once via TreesMerged.
+            emitEvent(new ForestEvent.TreeRemoved(System.currentTimeMillis(), forestId, treeId));
+        }
+        return removed;
+    }
+
+    /**
+     * Remove a tree without emitting {@link ForestEvent.TreeRemoved}. Used by {@link #mergeTrees} so the
+     * merge's source removal is announced exactly once (via {@link ForestEvent.TreesMerged}) rather than
+     * once via {@code TreesMerged} plus twice via {@code TreeRemoved}. Public {@link #removeTree} wraps
+     * this and emits.
+     */
+    private boolean removeTreeInternal(String treeId) {
         densityRegions.remove(treeId);
         return super.removeTree(treeId);
     }
@@ -1535,9 +1553,11 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         emitEvent(new ForestEvent.TreesMerged(System.currentTimeMillis(), forestId,
                                               Arrays.asList(tree1.getTreeId(), tree2.getTreeId()), mergedId));
 
-        // Remove original trees
-        removeTree(tree1.getTreeId());
-        removeTree(tree2.getTreeId());
+        // Remove original trees WITHOUT emitting TreeRemoved — the TreesMerged event above is the single
+        // announcement of the sources' removal (RDR-010 Luciferase-juts). Emitting TreeRemoved here too
+        // would double-announce (TreesMerged + 2x TreeRemoved) and confuse removal-tracking listeners.
+        removeTreeInternal(tree1.getTreeId());
+        removeTreeInternal(tree2.getTreeId());
 
         // Trigger ghost updates after forest repartitioning
         triggerGhostUpdatesAfterRepartitioning(mergedTree.getSpatialIndex());
