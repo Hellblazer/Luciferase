@@ -28,6 +28,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Point3i;
 import java.util.*;
 
 /**
@@ -231,114 +232,131 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<? exte
     }
     
     /**
-     * Find all neighbors sharing a specific edge with the given tetrahedron.
-     * This includes siblings and non-siblings at various levels.
+     * Find all same-level neighbors (siblings AND cross-parent non-siblings) sharing a specific edge with
+     * the given tetrahedron. The canonical-descent search in {@link #findNonSiblingNeighborsSharing} is
+     * authoritative over the whole edge fan, so no separate sibling pass is needed — siblings touching the
+     * edge are enumerated like any other fan member.
      */
-    private List<TetreeKey<?>> findNeighborsSharingEdge(Tet tet, int edge) {
+    List<TetreeKey<?>> findNeighborsSharingEdge(Tet tet, int edge) {
         var neighbors = new ArrayList<TetreeKey<?>>();
-        
         if (tet.l == 0) {
             return neighbors; // Root has no neighbors
         }
-        
-        // Get the two vertices that form this edge
-        int v0 = EDGE_VERTICES[edge][0];
-        int v1 = EDGE_VERTICES[edge][1];
-        
-        // Strategy: Find all tetrahedra that share these two vertices
-        // 1. Check siblings that share the edge
-        // 2. Check parent's neighbors that share the edge
-        // 3. Check children of neighbors at same level
-        
-        // First, find siblings sharing this edge
-        findSiblingsSharing(tet, neighbors, (sibling) -> sharesEdge(tet, sibling, v0, v1));
-        
-        // For non-sibling neighbors, we need to traverse up and across the tree
-        // This is more complex and depends on the specific edge and parent configuration
         findNonSiblingNeighborsSharing(tet, neighbors, edge, true);
-        
         return neighbors;
     }
-    
+
     /**
-     * Find all neighbors sharing a specific vertex with the given tetrahedron.
+     * Find all same-level neighbors (siblings AND cross-parent non-siblings) sharing a specific vertex with
+     * the given tetrahedron. See {@link #findNeighborsSharingEdge} — the descent covers the whole vertex star.
      */
-    private List<TetreeKey<?>> findNeighborsSharingVertex(Tet tet, int vertex) {
+    List<TetreeKey<?>> findNeighborsSharingVertex(Tet tet, int vertex) {
         var neighbors = new ArrayList<TetreeKey<?>>();
-        
         if (tet.l == 0) {
             return neighbors; // Root has no neighbors
         }
-        
-        // Strategy: Find all tetrahedra that share this vertex
-        // 1. Check siblings that share the vertex
-        // 2. Check parent's neighbors that share the vertex
-        // 3. Check descendants of parent's neighbors
-        
-        // First, find siblings sharing this vertex
-        findSiblingsSharing(tet, neighbors, (sibling) -> sharesVertex(tet, sibling, vertex));
-        
-        // For non-sibling neighbors, traverse up and across the tree
         findNonSiblingNeighborsSharing(tet, neighbors, vertex, false);
-        
         return neighbors;
     }
-    
+
     /**
-     * Find siblings that satisfy a given predicate.
-     */
-    private void findSiblingsSharing(Tet tet, List<TetreeKey<?>> neighbors, 
-                                     java.util.function.Predicate<Tet> predicate) {
-        var parentTet = tet.parent();
-        if (parentTet == null) {
-            return;
-        }
-        
-        for (int sibling = 0; sibling < 8; sibling++) {
-            var siblingTet = parentTet.child(sibling);
-            if (siblingTet.equals(tet)) {
-                continue; // Skip self
-            }
-            
-            if (predicate.test(siblingTet)) {
-                neighbors.add(tetToKey(siblingTet));
-            }
-        }
-    }
-    
-    /**
-     * Find non-sibling neighbors that share an edge or vertex.
-     * This requires traversing up the tree and across to other branches.
+     * Find neighbors (siblings AND cross-parent non-siblings) that share a given edge or vertex with
+     * {@code tet}, at the same refinement level.
      *
-     * TODO(Luciferase-v9vm): this is an UNIMPLEMENTED STUB — the loop walks up the parent chain but never
-     * collects any neighbors. Cross-parent EDGE/VERTEX ghost queries silently return only same-parent
-     * siblings. Owned by the cross-parent-walk bead Luciferase-v9vm (gated on this koaw fix).
+     * <p>Implementation (Luciferase-v9vm): a same-level tetrahedron is a neighbor across the element iff its
+     * vertex set contains all of the element's grid points (both endpoints for an edge, the single point for
+     * a vertex). We enumerate those tets by a pruned top-down descent over the canonical Bey tiling: from the
+     * root, recurse only into children whose cube encloses the target point, and at the target level keep the
+     * tets that actually carry the point as a vertex. For an edge we intersect the sharer sets of its two
+     * endpoints.
+     *
+     * <p>The descent uses {@code child()} exclusively, so it only ever yields canonical tiling tets — tets
+     * that the tree can actually store. This is deliberately NOT a {@link Tet#faceNeighbor(int)} flood: the
+     * Bey-SFC face neighbor is non-conforming (it returns geometrically-adjacent tets of types that are not
+     * the tiling's type at that cell), so a face flood wanders off the tiling and reports phantom neighbors.
+     * A tet's cube is exactly its axis-aligned bounding box (vertices span {@code v0..v7}), so cube-encloses
+     * is an exact, cheap prune that keeps the descent narrow (only the &le;8 cubes around the point at each
+     * level) and complete (every ancestor of a qualifying tet also encloses the point). The cost is therefore
+     * LINEAR in the level, not exponential: measured node visits are ~64 per level (1409 visits, &lt;1ms, at
+     * the max level 21), since the enclosing fan stays bounded at every level.
+     *
+     * <p>Scope: {@code TetreeNeighborDetector} is a pure-Tetree detector — the descent roots a fresh
+     * {@code Tet(0,0,0,0,0)} with {@code minTetLevel == NO_TET_ANCESTOR}. The self-exclusion
+     * {@code sharers.remove(tet)} relies on {@code Tet.equals} (which includes {@code minTetLevel}); it is
+     * correct here because the query {@code tet} also carries {@code NO_TET_ANCESTOR}. A hybrid/pyramid
+     * caller passing a tet with a real {@code minTetLevel} would not self-exclude — not a concern today, but
+     * a trap if this detector is ever reused outside pure-Tetree context.
+     *
+     * @param elementIndex edge index (0-5) when {@code isEdge}, else vertex index (0-3)
      */
     private void findNonSiblingNeighborsSharing(Tet tet, List<TetreeKey<?>> neighbors,
                                                int elementIndex, boolean isEdge) {
-        // To find non-sibling neighbors, we need to:
-        // 1. Go up to parent and find parent's neighbors
-        // 2. Check children of those neighbors
-        
-        var currentTet = tet;
-        var currentLevel = tet.l;
-        
-        // Traverse up the tree
-        while (currentLevel > 0 && neighbors.size() < 20) { // Limit to prevent excessive search
-            var parentTet = currentTet.parent();
-            if (parentTet == null) {
-                break;
-            }
-            
-            // Find parent's neighbors that might have children sharing our element
-            // This is simplified - a full implementation would use connectivity tables
-            // to determine which parent neighbors to check
-            
-            currentTet = parentTet;
-            currentLevel--;
+        if (tet.l == 0) {
+            return; // Root has no neighbors
+        }
+
+        // Grid points of the shared element: 2 endpoints for an edge, 1 for a vertex.
+        var coords = tet.coordinates();
+        int[] vertexIndices = isEdge ? EDGE_VERTICES[elementIndex] : new int[] { elementIndex };
+
+        // Sharers of the first point; for an edge, intersect with sharers of the second endpoint so only
+        // tets carrying the whole edge survive.
+        var sharers = sharersOfPoint(coords[vertexIndices[0]], tet.l);
+        for (int i = 1; i < vertexIndices.length; i++) {
+            sharers.retainAll(sharersOfPoint(coords[vertexIndices[i]], tet.l));
+        }
+        sharers.remove(tet); // exclude self
+
+        for (var sharer : sharers) {
+            neighbors.add(tetToKey(sharer));
         }
     }
-    
+
+    /**
+     * All in-domain canonical tiling tets at {@code level} that carry {@code p} as one of their four
+     * vertices. Found by a pruned descent from the root: a tet's cube is its exact AABB, so we recurse only
+     * into children whose cube encloses {@code p}, and at {@code level} keep those with {@code p} as an
+     * actual vertex.
+     */
+    private Set<Tet> sharersOfPoint(Point3i p, byte level) {
+        var result = new HashSet<Tet>();
+        var stack = new ArrayDeque<Tet>();
+        stack.push(new Tet(0, 0, 0, (byte) 0, (byte) 0));
+        while (!stack.isEmpty()) {
+            var t = stack.pop();
+            if (!cubeEncloses(t, p)) {
+                continue; // p outside this subtree's cube — prune
+            }
+            if (t.l == level) {
+                if (isWithinDomain(t) && hasVertex(t, p)) {
+                    result.add(t);
+                }
+            } else {
+                for (int c = 0; c < 8; c++) {
+                    stack.push(t.child(c));
+                }
+            }
+        }
+        return result;
+    }
+
+    /** True iff {@code p} lies within (inclusive) the closed cube spanned by {@code t}. */
+    private boolean cubeEncloses(Tet t, Point3i p) {
+        int h = Constants.lengthAtLevel(t.l);
+        return p.x >= t.x() && p.x <= t.x() + h && p.y >= t.y() && p.y <= t.y() + h && p.z >= t.z()
+        && p.z <= t.z() + h;
+    }
+
+    /** True iff {@code p} is one of {@code t}'s four vertices (exact integer match). */
+    private boolean hasVertex(Tet t, Point3i p) {
+        for (var c : t.coordinates()) {
+            if (c.x == p.x && c.y == p.y && c.z == p.z) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Convert a TetreeKey to a Tet object via the canonical TM-index decoder.
      * Delegates to {@link TetreeKey#toTet()} (which walks all path bits from
@@ -357,104 +375,4 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<? exte
         return tet.tmIndex();
     }
     
-    /**
-     * Get the child index of a tet within its parent.
-     */
-    private int getChildIndex(Tet tet) {
-        if (tet.l == 0) {
-            return 0; // Root has no meaningful child index
-        }
-        
-        // The child index is determined by the coordinate bits at the current level
-        // In the Tet's morton encoding, this would be the last 3 bits
-        // For our purposes, we can derive it from the coordinate and type
-        
-        // Get the TetreeKey to access the coordinate bits
-        var key = tetToKey(tet);
-        byte coordBits = key.getCoordBitsAtLevel(tet.l);
-        
-        // The child index in Morton order is the coordinate bits
-        // This gives us values 0-7 corresponding to the 8 children
-        return coordBits & 0x7;
-    }
-    
-    /**
-     * Check if two tetrahedra share an edge defined by two vertices.
-     * This uses the vertex mapping tables from TetreeConnectivity.
-     */
-    private boolean sharesEdge(Tet tet1, Tet tet2, int v0, int v1) {
-        // For siblings in Bey refinement, we can use the connectivity tables
-        // to determine which children share edges
-        
-        // Get the child indices within their parent
-        int childIndex1 = getChildIndex(tet1);
-        int childIndex2 = getChildIndex(tet2);
-        
-        // Use the CHILD_VERTEX_PARENT_VERTEX table to check if they share
-        // the same parent edge
-        return checkSharedParentEdge(childIndex1, childIndex2, v0, v1);
-    }
-    
-    /**
-     * Check if two tetrahedra share a vertex.
-     * This uses the vertex mapping tables from TetreeConnectivity.
-     */
-    private boolean sharesVertex(Tet tet1, Tet tet2, int vertex) {
-        // For siblings in Bey refinement, we can use the connectivity tables
-        // to determine which children share vertices
-        
-        // Get the child indices within their parent
-        int childIndex1 = getChildIndex(tet1);
-        int childIndex2 = getChildIndex(tet2);
-        
-        // Use the CHILD_VERTEX_PARENT_VERTEX table to check if they share
-        // the same parent vertex
-        return checkSharedParentVertex(childIndex1, childIndex2, vertex);
-    }
-    
-    /**
-     * Check if two child indices share a parent edge.
-     */
-    private boolean checkSharedParentEdge(int child1, int child2, int v0, int v1) {
-        // Use CHILD_VERTEX_PARENT_VERTEX to map child vertices to parent references
-        byte[] child1Vertices = TetreeConnectivity.CHILD_VERTEX_PARENT_VERTEX[child1];
-        byte[] child2Vertices = TetreeConnectivity.CHILD_VERTEX_PARENT_VERTEX[child2];
-        
-        // An edge is shared if both children have vertices that map to the same 
-        // two parent reference points
-        int sharedCount = 0;
-        Set<Byte> sharedReferences = new HashSet<>();
-        
-        // Find parent references that both children share
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                if (child1Vertices[i] == child2Vertices[j]) {
-                    sharedReferences.add(child1Vertices[i]);
-                }
-            }
-        }
-        
-        // An edge is shared if they have at least 2 common parent references
-        return sharedReferences.size() >= 2;
-    }
-    
-    /**
-     * Check if two child indices share a parent vertex.
-     */
-    private boolean checkSharedParentVertex(int child1, int child2, int vertex) {
-        // Use CHILD_VERTEX_PARENT_VERTEX to map child vertices to parent references
-        byte[] child1Vertices = TetreeConnectivity.CHILD_VERTEX_PARENT_VERTEX[child1];
-        byte[] child2Vertices = TetreeConnectivity.CHILD_VERTEX_PARENT_VERTEX[child2];
-        
-        // Check if both children have a vertex that maps to the same parent reference
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                if (child1Vertices[i] == child2Vertices[j] && child1Vertices[i] < 4) {
-                    // Parent vertices are 0-3, edge midpoints are 4-9, center is 10
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
 }
