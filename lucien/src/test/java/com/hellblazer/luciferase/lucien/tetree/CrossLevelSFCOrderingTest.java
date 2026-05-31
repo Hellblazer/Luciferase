@@ -425,9 +425,10 @@ class CrossLevelSFCOrderingTest {
         assertTrue(level20Key.compareTo(level21Key) < 0,
             "Level 20 should < Level 21 for non-zero coordinates - bit packing test!");
         
-        // Verify we can extract the coordinates correctly from level 21
-        assertEquals(1, level21Key.getCoordBitsAtLevel(21));
-        assertEquals(1, level21Key.getTypeAtLevel(21));
+        // Verify we can extract the coordinates correctly from the level-21 leaf. Coarsest-at-MSB
+        // layout (Luciferase-tkvb): the leaf is step level-1 == 20, at bits 0-5.
+        assertEquals(1, level21Key.getCoordBitsAtLevel(20));
+        assertEquals(1, level21Key.getTypeAtLevel(20));
     }
     
     /**

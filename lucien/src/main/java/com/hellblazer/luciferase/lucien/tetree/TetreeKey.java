@@ -58,16 +58,10 @@ import java.util.Objects;
  */
 public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<TetreeKey<? extends TetreeKey<?>>> {
 
-    // Bit layout constants
+    // Bit layout constants. Coarsest-at-MSB uniform layout (Luciferase-tkvb): 6 bits per level,
+    // 21 * 6 = 126 bits across two longs, no special level-21 split.
     protected static final int  BITS_PER_LEVEL       = 6;
     protected static final int  MAX_COMPACT_LEVEL    = 10;
-
-
-    // Level 21 special bit packing constants
-    protected static final int  LEVEL_21_LOW_BITS_SHIFT = 60;  // Position in low long for level 21 bits
-    protected static final int  LEVEL_21_HIGH_BITS_SHIFT = 60; // Position in high long for level 21 bits
-    protected static final long LEVEL_21_LOW_MASK = 0xFL;      // 4 bits: 0b1111
-    protected static final long LEVEL_21_HIGH_MASK = 0x3L;     // 2 bits: 0b11
 
     // Cached root instance - root is always compact
     private static final CompactTetreeKey ROOT = new CompactTetreeKey((byte) 0, 0L);
@@ -136,22 +130,38 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         if (targetLevel < 0 || targetLevel > level) {
             throw new IllegalArgumentException("Target level must be between 0 and " + level);
         }
+        // Coordinate bits are the upper 3 bits of the 6-bit group.
+        return (byte) ((rawGroupAt(targetLevel) >> 3) & 0x7);
+    }
 
-        // Special handling for level 21 with split bit encoding
-        if (targetLevel == 21) {
-            return getLevel21CoordBits();
+    /**
+     * Extract the raw 6-bit group for refinement step {@code targetLevel}. Coarsest-at-MSB layout
+     * (Luciferase-tkvb): {@code targetLevel == 0} is the shallowest step and sits in the most
+     * significant occupied bits; {@code targetLevel == level - 1} is the leaf and sits at bits 0-5.
+     * The group lives at bit offset {@code (level - 1 - targetLevel) * 6} from the LSB across the
+     * 128-bit {@code (highBits, lowBits)} value and may straddle the 64-bit boundary.
+     *
+     * @param targetLevel the 0-indexed refinement step (0 = shallowest, level-1 = leaf)
+     * @return the 6-bit group value (0..63)
+     */
+    private long rawGroupAt(int targetLevel) {
+        if (level == 0) {
+            return 0L;
         }
-
-        // Determine which long contains this level's data
-        if (targetLevel < 10) {
-            // In low bits: level 0 at bits 0-5, level 1 at bits 6-11, ..., level 9 at bits 54-59
-            int shift = targetLevel * BITS_PER_LEVEL + 3;
-            return (byte) ((getLowBits() >> shift) & 0x7);
-        } else {
-            // In high bits: level 10 at bits 0-5, level 11 at bits 6-11, etc.
-            int shift = (targetLevel - 10) * BITS_PER_LEVEL + 3;
-            return (byte) ((getHighBits() >> shift) & 0x7);
+        int bit = (level - 1 - targetLevel) * BITS_PER_LEVEL; // offset from LSB
+        if (bit < 0) {
+            return 0L; // targetLevel == level (one past the leaf): no group
         }
+        if (bit >= 64) {
+            return (getHighBits() >>> (bit - 64)) & 0x3FL;
+        }
+        if (bit + BITS_PER_LEVEL <= 64) {
+            return (getLowBits() >>> bit) & 0x3FL;
+        }
+        // Straddles the low/high boundary.
+        long lowPart = getLowBits() >>> bit;
+        long highPart = getHighBits() << (64 - bit);
+        return (lowPart | highPart) & 0x3FL;
     }
 
     /**
@@ -184,22 +194,8 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         if (targetLevel < 0 || targetLevel > level) {
             throw new IllegalArgumentException("Target level must be between 0 and " + level);
         }
-
-        // Special handling for level 21 with split bit encoding
-        if (targetLevel == 21) {
-            return getLevel21TypeBits();
-        }
-
-        // Determine which long contains this level's data
-        if (targetLevel < 10) {
-            // In low bits: level 0 at bits 0-5, level 1 at bits 6-11, ..., level 9 at bits 54-59
-            int shift = targetLevel * BITS_PER_LEVEL;
-            return (byte) ((getLowBits() >> shift) & 0x7);
-        } else {
-            // In high bits: level 10 at bits 0-5, level 11 at bits 6-11, etc.
-            int shift = (targetLevel - 10) * BITS_PER_LEVEL;
-            return (byte) ((getHighBits() >> shift) & 0x7);
-        }
+        // Type bits are the lower 3 bits of the 6-bit group.
+        return (byte) (rawGroupAt(targetLevel) & 0x7);
     }
 
     @Override
@@ -342,77 +338,6 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         return base64.substring(firstNonA);
     }
 
-    // ===== Level 21 Special Bit Packing Support =====
-
-    /**
-     * Extract coordinate bits for level 21 from split encoding.
-     * Level 21 coordinate bits are split: 4 bits in low long (60-63), 2 bits in high long (60-61).
-     * The coordinate bits are the high 3 bits of the 6-bit level encoding.
-     *
-     * @return 3-bit coordinate value for level 21
-     */
-    protected byte getLevel21CoordBits() {
-        if (level != 21) {
-            throw new IllegalStateException("getLevel21CoordBits() can only be called for level 21");
-        }
-
-        // Extract 4 bits from low long (bits 60-63)
-        long lowPart = (getLowBits() >> LEVEL_21_LOW_BITS_SHIFT) & LEVEL_21_LOW_MASK;
-        // Extract 2 bits from high long (bits 60-61)
-        long highPart = (getHighBits() >> LEVEL_21_HIGH_BITS_SHIFT) & LEVEL_21_HIGH_MASK;
-
-        // Combine: low 4 bits + high 2 bits = 6 bits total
-        // Coordinate bits are the upper 3 bits of this 6-bit value
-        long combined = lowPart | (highPart << 4);
-        return (byte) ((combined >> 3) & 0x7);
-    }
-
-    /**
-     * Extract type bits for level 21 from split encoding.
-     * Level 21 type bits are split: 4 bits in low long (60-63), 2 bits in high long (60-61).
-     * The type bits are the low 3 bits of the 6-bit level encoding.
-     *
-     * @return 3-bit type value for level 21
-     */
-    protected byte getLevel21TypeBits() {
-        if (level != 21) {
-            throw new IllegalStateException("getLevel21TypeBits() can only be called for level 21");
-        }
-
-        // Extract 4 bits from low long (bits 60-63)
-        long lowPart = (getLowBits() >> LEVEL_21_LOW_BITS_SHIFT) & LEVEL_21_LOW_MASK;
-        // Extract 2 bits from high long (bits 60-61)
-        long highPart = (getHighBits() >> LEVEL_21_HIGH_BITS_SHIFT) & LEVEL_21_HIGH_MASK;
-
-        // Combine: low 4 bits + high 2 bits = 6 bits total
-        // Type bits are the lower 3 bits of this 6-bit value
-        long combined = lowPart | (highPart << 4);
-        return (byte) (combined & 0x7);
-    }
-
-    /**
-     * Pack level 21 data (6 bits) into the split encoding.
-     * Splits 6 bits across low long (4 bits at position 60-63) and high long (2 bits at position 60-61).
-     *
-     * @param level21Bits the 6-bit value to pack (typically type + (coord << 3))
-     * @return array with [lowBits, highBits] containing the packed data
-     */
-    protected static long[] packLevel21Bits(byte level21Bits) {
-        // Ensure we only have 6 bits
-        long bits = level21Bits & 0x3F;
-
-        // Split into 4-bit low part and 2-bit high part
-        long lowPart = bits & LEVEL_21_LOW_MASK;           // Lower 4 bits
-        long highPart = (bits >> 4) & LEVEL_21_HIGH_MASK; // Upper 2 bits
-
-        // Position them correctly in their respective longs
-        long lowBits = lowPart << LEVEL_21_LOW_BITS_SHIFT;   // Bits 60-63
-        long highBits = highPart << LEVEL_21_HIGH_BITS_SHIFT; // Bits 60-61
-
-        return new long[]{lowBits, highBits};
-    }
-
-
     // ===== SFC Range Estimation for k-NN Optimization =====
     
     /**
@@ -554,27 +479,29 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         long lowBits = key.getLowBits();
         long highBits = key.getHighBits();
         byte level = key.getLevel();
-        
-        // Try to increment low bits
-        if (lowBits < Long.MAX_VALUE) {
+
+        // Coarsest-at-MSB layout (Luciferase-tkvb): lowBits is the least-significant half of the
+        // 128-bit index. Increment it as an unsigned 128-bit value. -1L is the all-ones (unsigned
+        // max) word, so a non-all-ones word increments without carry.
+        if (lowBits != -1L) {
             return create(level, lowBits + 1, highBits);
         }
-        
-        // Low bits overflow, try to increment high bits
-        if (highBits < Long.MAX_VALUE) {
-            return create(level, 0, highBits + 1);
+
+        // Low bits are all-ones: they wrap to 0, carry into high bits.
+        if (highBits != -1L) {
+            return create(level, 0L, highBits + 1);
         }
-        
-        // Both overflow - use a sentinel at parent level if possible
+
+        // Both halves are all-ones (the maximum key at this level) - use a sentinel at parent level.
         if (level > 0) {
             var parent = key.parent();
             if (parent != null) {
                 return getNextKey((TetreeKey<?>) parent);
             }
         }
-        
-        // At root and overflowed - return maximum possible key
-        return create(level, Long.MAX_VALUE, Long.MAX_VALUE);
+
+        // At root and overflowed - return maximum possible key.
+        return create(level, -1L, -1L);
     }
 
     /**

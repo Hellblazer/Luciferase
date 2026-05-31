@@ -101,16 +101,15 @@ public class SpatialKeyParentTest {
         assertEquals(0xFFFFFFFFFFFFFFFFL >>> 6, parent10to9.getLowBits());
         assertEquals(0L, parent10to9.getHighBits());
 
-        // Level 11 -> 10 (transition from using highBits to not using them)
-        // lowBits contains levels 0-9, highBits contains level 10 and up
+        // Level 11 -> 10. Coarsest-at-MSB layout (Luciferase-tkvb): parent() drops the leaf group
+        // (LSB) by shifting the whole 128-bit (highBits, lowBits) value right by 6 bits, so the low
+        // bits also receive the bottom 6 bits of the high word.
         TetreeKey<? extends TetreeKey<?>> level11 = new ExtendedTetreeKey((byte) 11, 0xAAAAAAAAAAAAAAAAL,
-                                                                       0xBBL); // highBits has 6 bits for level 10
+                                                                       0xBBL);
         TetreeKey<? extends TetreeKey<?>> parent11to10 = level11.parent();
         assertNotNull(parent11to10);
         assertEquals(10, parent11to10.getLevel());
-        // Low bits stay the same (contains levels 0-9)
-        assertEquals(0xAAAAAAAAAAAAAAAAL, parent11to10.getLowBits());
-        // High bits are shifted right by 6 to remove level 10
+        assertEquals((0xAAAAAAAAAAAAAAAAL >>> 6) | (0xBBL << 58), parent11to10.getLowBits());
         assertEquals(0xBBL >>> 6, parent11to10.getHighBits());
     }
 

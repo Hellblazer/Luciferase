@@ -86,15 +86,16 @@ public class CompactTetreeKey extends TetreeKey<CompactTetreeKey> {
             return levelComparison;
         }
         
-        // Levels are equal, now compare TM-index bits
-        // First compare low bits
-        int lowComparison = Long.compareUnsigned(tmIndex, other.getLowBits());
-        if (lowComparison != 0) {
-            return lowComparison;
+        // Levels are equal, now compare TM-index bits. Coarsest-at-MSB layout (Luciferase-tkvb):
+        // the shallowest step occupies the most significant bits, so compare (highBits, lowBits) as
+        // a 128-bit unsigned value - high bits first - to reproduce the coarse-dominant SFC order.
+        // A CompactTetreeKey has no high bits (always 0).
+        int highComparison = Long.compareUnsigned(0L, other.getHighBits());
+        if (highComparison != 0) {
+            return highComparison;
         }
 
-        // If low bits are equal, compare high bits (this key has no high bits)
-        return Long.compareUnsigned(0L, other.getHighBits());
+        return Long.compareUnsigned(tmIndex, other.getLowBits());
     }
 
     @Override

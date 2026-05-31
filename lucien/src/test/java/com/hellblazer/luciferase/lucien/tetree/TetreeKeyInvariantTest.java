@@ -14,23 +14,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Key-invariant contract tests for {@link TetreeKey} and its implementations
  * ({@link CompactTetreeKey}, {@link ExtendedTetreeKey}, {@link LazyTetreeKey}).
  *
- * <p>These are the RED-first specification (bead Luciferase-o988) that gates the encoding flip
- * keystone (bead Luciferase-tkvb). The tetrahedral TM-index currently packs the <em>coarsest</em>
- * level at the LSB tuple and the finest (leaf) level at the most-significant tuple
- * (see {@link Tet#tmIndex()}: level index {@code i=0} is written at bit {@code 6*i}). Under that
- * layout two key-level invariants are violated:
- * <ul>
- *   <li><b>parent()</b>: {@link CompactTetreeKey#parent()} shifts right by 6 bits, which strips the
- *       LSB tuple (the <em>coarsest</em> level) rather than the finest. So
- *       {@code tet.tmIndex().parent()} disagrees with the ground-truth {@code tet.parent().tmIndex()}
- *       at every level &ge; 2. Fixed by Luciferase-tkvb (coarsest-at-MSB consecutive encoding).</li>
- *   <li><b>level-21 round-trip</b>: the level-21 split-bit packing does not round-trip
- *       {@code Tet -> tmIndex -> Tet}. Also in Luciferase-tkvb's scope.</li>
- * </ul>
- * The tests asserting those two are {@link Disabled @Disabled} with a pointer to the owning bead;
- * <b>Luciferase-tkvb's acceptance criterion is to remove those {@code @Disabled} markers and have the
- * tests pass.</b> The remaining tests lock in behaviour that is correct today (decode round-trip
- * L1-20, equals/compareTo consistency for concrete keys) as regression guards.
+ * <p>Originally the RED-first specification (bead Luciferase-o988) that gated the encoding-flip
+ * keystone (bead Luciferase-tkvb). The TM-index now packs the <em>coarsest</em> level at the
+ * most-significant tuple and the finest (leaf) level at the LSB tuple (coarsest-at-MSB consecutive
+ * layout, matching {@code PyramidKey}; see {@link Tet#tmIndex()}). tkvb landed the flip, so the
+ * {@code parent()} round-trip ({@link #parentRoundTrip_allLevels()}) and level-21 decode round-trip
+ * ({@link #decodeRoundTrip_L21()}) invariants now hold and their tests are enabled.
+ *
+ * <p>Two tests remain {@link Disabled @Disabled} pending bead Luciferase-567m (equals/hashCode are
+ * not uniform across {@link CompactTetreeKey}/{@link ExtendedTetreeKey}/{@link LazyTetreeKey}): its
+ * acceptance criterion is to remove those markers and have the tests pass. The other tests lock in
+ * the encoding contract (decode round-trip L1-20, parent round-trip, equals/compareTo consistency
+ * for concrete keys, distinct-key ordering) as regression guards.
  *
  * <p>Ground truth for the parent/round-trip invariants is the geometric/topological {@link Tet}
  * (its {@link Tet#parent()} and {@link Tet#tmIndex()} are independently validated against the t8code
@@ -60,8 +55,6 @@ class TetreeKeyInvariantTest {
      * {@code parent()} strips the coarsest tuple instead of the finest.
      */
     @Test
-    @Disabled("RED until Luciferase-tkvb: TetreeKey.parent() strips coarsest-at-LSB tuple instead of "
-              + "the finest level; tet.tmIndex().parent() != tet.parent().tmIndex() for level >= 2")
     void parentRoundTrip_allLevels() {
         var rnd = new Random(0xB0BACAFEL);
         // Note: level 1 passes today (parent is root, all-zero bits); the breakage starts at level 2.
@@ -122,8 +115,6 @@ class TetreeKeyInvariantTest {
      * fixes the level-21 split.
      */
     @Test
-    @Disabled("RED until Luciferase-tkvb: level-21 split-bit encoding does not round-trip "
-              + "Tet -> tmIndex -> Tet")
     void decodeRoundTrip_L21() {
         var rnd = new Random(0x21212121L);
         for (int sample = 0; sample < 256; sample++) {

@@ -28,89 +28,35 @@ public class TetreeKeyLevelEncodingTest {
     
     @Test
     void testTetreeKeyCanEncodeAllLevels() {
-        // Test that we can create TetreeKeys for all levels 0-21
+        // Coarsest-at-MSB uniform layout (Luciferase-tkvb): each step's 6-bit group is appended at
+        // the LSB, so step 0 (shallowest) ends in the most significant bits and the leaf
+        // (step level-1) is at bits 0-5. All 21 levels fit two longs with no split and no
+        // truncation. Plant a known (coord, type) per step, then read it back exactly.
         for (byte level = 0; level <= 21; level++) {
-            // Create a key with some pattern of bits
             long lowBits = 0L;
             long highBits = 0L;
-            
-            // For each level, encode some type and coordinate bits
-            if (level <= 10) {
-                // Compact form - all data in low bits
-                for (int i = 0; i < level; i++) {
-                    // Each level uses 6 bits: 3 for type, 3 for coordinates
-                    int shift = i * 6;
-                    byte type = (byte) (i % 6); // Valid types are 0-5
-                    byte coords = (byte) (i % 8); // 3 bits for coordinates
-                    lowBits |= ((long) type) << shift;
-                    lowBits |= ((long) coords) << (shift + 3);
-                }
-            } else {
-                // Extended form - levels 0-9 in low bits, 10+ in high bits
-                // Fill low bits with levels 0-9
-                for (int i = 0; i < 10; i++) {
-                    int shift = i * 6;
-                    byte type = (byte) (i % 6);
-                    byte coords = (byte) (i % 8);
-                    lowBits |= ((long) type) << shift;
-                    lowBits |= ((long) coords) << (shift + 3);
-                }
-                
-                // Fill high bits with levels 10+
-                for (int i = 10; i < level; i++) {
-                    int shift = (i - 10) * 6;
-                    byte type = (byte) (i % 6);
-                    byte coords = (byte) (i % 8);
-                    // Ensure we don't overflow when shifting
-                    if (shift < 64) {
-                        highBits |= ((long) type) << shift;
-                    }
-                    if (shift + 3 < 64) {
-                        highBits |= ((long) coords) << (shift + 3);
-                    }
-                }
+            for (int i = 0; i < level; i++) {
+                byte type = (byte) (i % 6);   // valid types 0-5
+                byte coords = (byte) (i % 8); // 3 coordinate bits
+                int sixBits = (coords << 3) | type;
+                // Append at the LSB (shift the running 128-bit value left by one group).
+                highBits = (highBits << 6) | (lowBits >>> 58);
+                lowBits = (lowBits << 6) | sixBits;
             }
-            
-            // Create the key
+
             TetreeKey<?> key = TetreeKey.create(level, lowBits, highBits);
-            
-            // Verify the key was created successfully
+
             assertNotNull(key, "Key should not be null for level " + level);
             assertEquals(level, key.getLevel(), "Key level should match");
-            
-            // Verify we can extract data from each level
+
+            // Every step round-trips exactly - no truncation in the uniform layout.
             for (int i = 0; i < level; i++) {
                 byte expectedType = (byte) (i % 6);
                 byte expectedCoords = (byte) (i % 8);
-                
-                // For levels beyond bit capacity, expect 0
-                if (i >= 10) {
-                    int shift = (i - 10) * 6;
-                    if (shift >= 64) {
-                        expectedType = 0;
-                        expectedCoords = 0;
-                    } else if (shift + 3 >= 64) {
-                        expectedCoords = 0;
-                    } else if (shift + 6 > 64) {
-                        // Partial bits - type might fit but coords might be truncated
-                        int bitsAvailable = 64 - shift;
-                        if (bitsAvailable < 3) {
-                            expectedType = 0;
-                            expectedCoords = 0;
-                        } else if (bitsAvailable < 6) {
-                            // Type fits, but coords might be truncated
-                            expectedCoords &= (1 << (bitsAvailable - 3)) - 1;
-                        }
-                    }
-                }
-                
-                byte actualType = key.getTypeAtLevel(i);
-                byte actualCoords = key.getCoordBitsAtLevel(i);
-                
-                assertEquals(expectedType, actualType, 
-                    "Type at level " + i + " should match for key at level " + level);
-                assertEquals(expectedCoords, actualCoords, 
-                    "Coords at level " + i + " should match for key at level " + level);
+                assertEquals(expectedType, key.getTypeAtLevel(i),
+                    "Type at step " + i + " should match for key at level " + level);
+                assertEquals(expectedCoords, key.getCoordBitsAtLevel(i),
+                    "Coords at step " + i + " should match for key at level " + level);
             }
             
             // Test that the key is valid
