@@ -63,7 +63,13 @@ class TetreeNeighborDetectorTest {
      * neighbor (Tet.faceNeighbor, oracle-gated by Luciferase-4bmd), not child[neighborType]. The old impl
      * passed a neighbor TYPE (0-5) into parentTet.child() as a Morton index, silently returning a wrong tet.
      * This asserts EXACT set-equality between the detector output and the in-domain geometric neighbors —
-     * a non-vacuous check the prior size<=4 / no-duplicate tests could not catch.
+     * a non-vacuous check the prior size<=4 / no-duplicate tests could not catch. It WOULD have failed
+     * against the old child[neighborType] impl.
+     *
+     * <p>Scope: the detector now delegates to Tet.faceNeighbor, so this pins the detector plumbing (key
+     * round-trip, domain filter, self-exclusion) but is circular w.r.t. Tet.faceNeighbor's own correctness.
+     * The latter is independently validated against t8code by T8codeDtetFaceNeighborOracleTest
+     * (Luciferase-4bmd), on which this PR stacks.
      */
     @Test
     void faceNeighborsMatchGeometricGroundTruth() {

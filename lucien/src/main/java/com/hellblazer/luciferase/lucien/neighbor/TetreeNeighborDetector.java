@@ -309,8 +309,12 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<? exte
     /**
      * Find non-sibling neighbors that share an edge or vertex.
      * This requires traversing up the tree and across to other branches.
+     *
+     * TODO(Luciferase-v9vm): this is an UNIMPLEMENTED STUB — the loop walks up the parent chain but never
+     * collects any neighbors. Cross-parent EDGE/VERTEX ghost queries silently return only same-parent
+     * siblings. Owned by the cross-parent-walk bead Luciferase-v9vm (gated on this koaw fix).
      */
-    private void findNonSiblingNeighborsSharing(Tet tet, List<TetreeKey<?>> neighbors, 
+    private void findNonSiblingNeighborsSharing(Tet tet, List<TetreeKey<?>> neighbors,
                                                int elementIndex, boolean isEdge) {
         // To find non-sibling neighbors, we need to:
         // 1. Go up to parent and find parent's neighbors

@@ -240,8 +240,15 @@ public final class TetreeConnectivity {
      * t8code per-type {@link #CHILDREN_AT_FACE}: for each (parentType, childIndex, parentFace), the value is
      * the child-local face whose 3 vertices all lie on the parent face plane, or -1 if the child does not
      * touch that face. (Derived offline and frozen here to avoid a static-init cycle Tet <-> TetreeConnectivity;
-     * the consistency invariant is enforced by TetreeConnectivityTest.testFaceChildFace.) The prior table was
+     * the exact values are re-derived geometrically and asserted by
+     * TetreeConnectivityTest.faceChildFaceMatchesGeometry, and the table is cross-checked against
+     * {@link #CHILDREN_AT_FACE} by TetreeConnectivityTest.testFaceChildFace.) The prior table was
      * type-invariant and matched the made-up Bey CHILDREN_AT_FACE pattern (Luciferase-koaw).
+     *
+     * <p>NOTE on index space: this is indexed by the MORTON child index (0-7), unlike t8code's
+     * {@code t8_dtet_face_child_face(elem, face, face_child)} which takes {@code face_child} as the ordinal
+     * among the 4 children on that face. t8code has no equivalent static lookup table (it computes the value
+     * algorithmically in {@code t8_dtri_bits.c}), so this table is validated by geometry, not by transcription.
      *
      * [parent_type][child_index][parent_face] -> child_face
      */

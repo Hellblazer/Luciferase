@@ -18,6 +18,8 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import org.junit.jupiter.api.Test;
 
+import javax.vecmath.Point3i;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -195,6 +197,50 @@ public class TetreeConnectivityTest {
                 }
             }
         }
+    }
+
+    /**
+     * Independent geometric validation of FACE_CHILD_FACE (Luciferase-koaw). The table is a frozen,
+     * offline-derived lookup; this re-derives every (parentType, childMortonIndex, parentFace) entry live
+     * from the verified {@code Tet.coordinates()} — the child-local face whose 3 vertices all lie on the
+     * parent face plane, or -1 — and asserts equality. This removes the maintenance hazard of an
+     * unverifiable frozen table (t8code has no equivalent static table to transcribe against).
+     */
+    @Test
+    public void faceChildFaceMatchesGeometry() {
+        // child-local face f = the 3 vertices != f (t8code: face opposite vertex f)
+        final int[][] faceVerts = { { 1, 2, 3 }, { 0, 2, 3 }, { 0, 1, 3 }, { 0, 1, 2 } };
+        final byte level = 5;
+        for (byte ptype = 0; ptype < 6; ptype++) {
+            var parent = new Tet(0, 0, 0, level, ptype);
+            Point3i[] pv = parent.coordinates();
+            for (int child = 0; child < 8; child++) {
+                Point3i[] cv = parent.child(child).coordinates();
+                for (int pf = 0; pf < 4; pf++) {
+                    Point3i pa = pv[faceVerts[pf][0]], pb = pv[faceVerts[pf][1]], pc = pv[faceVerts[pf][2]];
+                    int expected = -1;
+                    for (int cf = 0; cf < 4; cf++) {
+                        boolean all = true;
+                        for (int k = 0; k < 3 && all; k++) {
+                            all = coplanar(pa, pb, pc, cv[faceVerts[cf][k]]);
+                        }
+                        if (all) {
+                            expected = cf;
+                            break;
+                        }
+                    }
+                    assertEquals(expected, TetreeConnectivity.getChildFace(ptype, child, pf),
+                                 "FACE_CHILD_FACE geometry mismatch type=" + ptype + " child=" + child + " face=" + pf);
+                }
+            }
+        }
+    }
+
+    private static boolean coplanar(Point3i a, Point3i b, Point3i c, Point3i p) {
+        long ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+        long vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+        long nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        return nx * (p.x - a.x) + ny * (p.y - a.y) + nz * (p.z - a.z) == 0;
     }
 
     @Test
