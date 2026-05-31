@@ -1801,11 +1801,15 @@ public class Tet implements Spatial.aabt, HybridElement {
      * neighbor with {@code minTetLevel} propagated.
      *
      * <p><b>Depth.</b> Both the shallowest pyramid-rooted tet ({@code l == minTetLevel}) and deep ones
-     * ({@code l > minTetLevel}) are resolved via {@link #tetBoundary(int)} (RDR-010 Luciferase-cjwr). The
-     * deep path is reached <em>in production</em> only once {@link
-     * com.hellblazer.luciferase.lucien.pyramid.PyramidKeyCodec#encode(Tet)} accepts deep tets (cjwr
-     * Phase B); until then a deep tet is not constructible from a key, so this path is exercised by tests
-     * (and by direct {@link #child(int)} refinement) only.
+     * ({@code l > minTetLevel}) are resolved via {@link #tetBoundary(int)} (RDR-010 Luciferase-cjwr).
+     *
+     * <p><b>Infrastructure-only for the deep path (RDR-012 D2).</b> The deep ({@code l > minTetLevel})
+     * branch is validated topology but is <em>not consumed in production</em>: {@code PyramidIndex} locate
+     * stops at the shallowest tet leaf, so deep tet keys are never inserted by normal index operation
+     * (pinned by {@code PyramidBoundaryPinningTest}). It is reachable only via direct {@link #child(int)}
+     * refinement and tests. RDR-012 (accepted 2026-05-31) kept it infrastructure-only; productionization
+     * (deep insert/query) is D1, reopen-only when a concrete deep-insertion workload appears. The shallow
+     * ({@code l == minTetLevel}) cross-shape path IS the production-live hex↔tet boundary.
      *
      * @param face face index, 0..3
      * @return the face neighbor (tetrahedron or pyramid) with its reciprocal face, or {@code null} if
