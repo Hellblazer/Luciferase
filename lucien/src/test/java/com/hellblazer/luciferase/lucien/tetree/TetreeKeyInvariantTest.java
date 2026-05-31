@@ -258,4 +258,34 @@ class TetreeKeyInvariantTest {
             }
         }
     }
+
+    /**
+     * Regression guard for the {@code getNextKey} signed-compare bug (Luciferase-tkvb). The SFC
+     * "next key" (exclusive {@code subMap} upper bound) must increment the 128-bit
+     * {@code (highBits, lowBits)} value as <em>unsigned</em>. The original code used
+     * {@code lowBits < Long.MAX_VALUE}, which at {@code lowBits == -1L} (all ones) wrongly returned
+     * {@code (0, highBits)} — dropping the carry into the high word and silently truncating
+     * k-NN/range scans over the upper half of the curve.
+     */
+    @Test
+    void getNextKey_unsignedCarryAtAllOnesLowBits() {
+        // lowBits all-ones must carry into highBits (the case the signed compare got wrong).
+        var atLowMax = TetreeKey.create((byte) 21, -1L, 5L);
+        var next = TetreeKey.getNextKey(atLowMax);
+        assertEquals(TetreeKey.create((byte) 21, 0L, 6L), next,
+                     "all-ones lowBits must carry into highBits");
+        assertTrue(next.compareTo(atLowMax) > 0, "next key must be strictly greater");
+
+        // A lowBits value that is negative-as-signed but NOT all-ones must increment in place.
+        var midHigh = TetreeKey.create((byte) 21, 0x8000_0000_0000_0000L, 5L);
+        var nextMid = TetreeKey.getNextKey(midHigh);
+        assertEquals(TetreeKey.create((byte) 21, 0x8000_0000_0000_0001L, 5L), nextMid,
+                     "negative-as-signed lowBits must still increment in place");
+        assertTrue(nextMid.compareTo(midHigh) > 0, "next key must be strictly greater");
+
+        // Ordinary case: plain low-bit increment.
+        var ordinary = TetreeKey.create((byte) 11, 0x123L, 0L);
+        assertEquals(TetreeKey.create((byte) 11, 0x124L, 0L), TetreeKey.getNextKey(ordinary),
+                     "ordinary increment must add 1 to lowBits");
+    }
 }

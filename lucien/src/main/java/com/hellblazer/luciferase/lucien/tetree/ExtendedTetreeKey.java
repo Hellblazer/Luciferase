@@ -22,22 +22,16 @@ import java.util.Objects;
 
 /**
  * Extended spatial key implementation for Tetree structures using 128-bit representation supporting all levels 0-21.
- * This provides full Octree-equivalent refinement capacity with innovative level 21 bit packing.
+ * This provides full Octree-equivalent refinement capacity.
  *
- * <h3>Memory Layout</h3>
+ * <h3>Bit layout (coarsest-at-MSB, Luciferase-tkvb)</h3>
  * <ul>
- * <li><b>Total Storage</b>: 128 bits (two longs: lowBits + highBits)</li>
- * <li><b>Standard Encoding</b>: Levels 0-20 use standard 6-bits-per-level encoding</li>
- * <li><b>Level 21 Bit Packing</b>: Uses leftover bits in both longs for full 21-level support</li>
- * </ul>
- *
- * <h3>Level 21 Innovation</h3>
- * Level 21 uses split encoding across both longs:
- * <ul>
- * <li><b>Low Long</b>: 4 bits stored in positions 60-63</li>
- * <li><b>High Long</b>: 2 bits stored in positions 60-61</li>
- * <li><b>Total</b>: 6 bits (3 coordinate + 3 type) maintaining SFC semantics</li>
- * <li><b>Ordering</b>: Preserves space-filling curve ordering properties</li>
+ * <li><b>Total Storage</b>: 128 bits (two longs: lowBits = bits 0-63, highBits = bits 64-125)</li>
+ * <li><b>Uniform Encoding</b>: 6 bits per level (3 coordinate + 3 type), all levels 1-21 alike</li>
+ * <li><b>No Split</b>: 21 * 6 = 126 bits fit two longs with no special level-21 packing</li>
+ * <li><b>Ordering</b>: the shallowest step occupies the most significant bits; the leaf is at bits
+ *     0-5. {@link #compareTo} compares {@code (highBits, lowBits)} unsigned, giving the
+ *     coarse-dominant SFC order (matches {@code PyramidKey})</li>
  * </ul>
  *
  * <h3>Key Features</h3>
@@ -52,15 +46,15 @@ import java.util.Objects;
  */
 public class ExtendedTetreeKey extends CompactTetreeKey {
 
-    private final long highBits; // Upper 64 bits (levels 10-20, 6 bits per level)
+    private final long highBits; // Index bits 64-125 (coarsest-at-MSB uniform layout)
 
     /**
-     * Create a new ExtendedTetreeKey using 128-bit representation.
-     * For level 21, uses special bit packing with level 21 data split across both longs.
+     * Create a new ExtendedTetreeKey using 128-bit representation. Coarsest-at-MSB uniform layout
+     * (Luciferase-tkvb): 6 bits per level, leaf at the LSB, no level-21 split.
      *
      * @param level    the hierarchical level (0-based, 0-21)
-     * @param lowBits  the lower 64 bits of the TM-index (levels 0-9, plus level 21 bits 0-3)
-     * @param highBits the upper 64 bits of the TM-index (levels 10-20, plus level 21 bits 4-5)
+     * @param lowBits  index bits 0-63 (the deeper refinement steps; leaf at bits 0-5)
+     * @param highBits index bits 64-125 (the shallower refinement steps)
      */
     public ExtendedTetreeKey(byte level, long lowBits, long highBits) {
         super(level, lowBits, true); // Use protected constructor to skip level validation

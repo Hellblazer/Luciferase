@@ -36,13 +36,13 @@ import java.util.Objects;
  * <li><b>ExtendedTetreeKey</b>: Dual 64-bit longs for levels 0-21 (full Octree-equivalent capacity)</li>
  * </ul>
  *
- * <h3>Level 21 Bit Packing</h3>
- * Level 21 uses innovative split encoding to achieve full 21-level support:
+ * <h3>Bit Layout (coarsest-at-MSB, Luciferase-tkvb)</h3>
+ * Uniform 6 bits per level across two longs, no special level-21 split:
  * <ul>
- * <li>4 bits stored in low long positions 60-63</li>
- * <li>2 bits stored in high long positions 60-61</li>
- * <li>Preserves space-filling curve ordering properties</li>
- * <li>Enables efficient parent/child computation</li>
+ * <li>21 * 6 = 126 bits fit two longs (lowBits = 0-63, highBits = 64-125)</li>
+ * <li>Shallowest refinement step occupies the most significant bits; the leaf is at bits 0-5</li>
+ * <li>compareTo compares (highBits, lowBits) unsigned, giving coarse-dominant SFC order</li>
+ * <li>parent() drops the leaf group via a 128-bit right shift of 6 (matches PyramidKey)</li>
  * </ul>
  *
  * <h3>Tetrahedral Space-Filling Curve</h3>
@@ -177,8 +177,9 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
     }
 
     /**
-     * Get the low bits of the TM-index. For levels <= 10, this contains the entire TM-index. For levels > 10, this
-     * contains levels 0-9.
+     * Get the low bits of the TM-index (index bits 0-63). Coarsest-at-MSB layout (Luciferase-tkvb):
+     * these are the deeper refinement steps, with the leaf group at bits 0-5. For levels <= 10 the
+     * whole index fits here and the high bits are 0.
      *
      * @return the low bits of the TM-index
      */
@@ -471,7 +472,10 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
      * @param key the current key
      * @return the next key in SFC order, or a sentinel maximum key if at the end
      */
-    private static TetreeKey<?> getNextKey(TetreeKey<?> key) {
+    // Package-private (not private) so the unsigned-increment boundary can be regression-tested
+    // directly (Luciferase-tkvb): the lowBits == -1L all-ones carry path is not reachable through
+    // estimateSFCRange with ordinary inputs.
+    static TetreeKey<?> getNextKey(TetreeKey<?> key) {
         // Strategy: Try to increment the tm-index by 1
         // If we overflow at this level, return a key at level-1 (coarser level)
         // This ensures we don't miss any keys in the range
