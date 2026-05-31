@@ -57,9 +57,12 @@ import java.util.Set;
  * and vertex enumerate ALL same-level SFC elements — pyramid (6/7) <em>and</em> shallowest tet (0-5) —
  * in the 27-cube neighbourhood, classified by shared-vertex count (≥ 2 edge, ≥ 1 vertex) and unioned
  * with the cross-shape face set, preserving face ⊆ edge ⊆ vertex. This surfaces tet↔tet edge sharing and
- * pyramid↔tet vertex fans (the pi1.5 superset enumerated same-shape pyramids only). Deep pyramid-rooted
- * tets (l &gt; minTetLevel) remain out of scope — {@link PyramidKeyCodec#encode} rejects them
- * (Finding #16 / q3p Phase E). ghost {@code FACES} exchange still needs only the (exact) face set.
+ * pyramid↔tet vertex fans (the pi1.5 superset enumerated same-shape pyramids only). The edge/vertex
+ * enumeration currently builds only shallowest-tet candidates, so deep pyramid-rooted tet
+ * ({@code l &gt; minTetLevel}) edge/vertex neighbors remain out of scope (RDR-010 Luciferase-2l04,
+ * blocked on this enumeration being widened); note the codec itself now round-trips deep tet keys (cjwr
+ * Phase B) and {@link Tet#faceNeighborElement} resolves deep faces, so the limit is the enumeration,
+ * not encode. ghost {@code FACES} exchange still needs only the (exact) face set.
  *
  * <p><b>Same-shape enumeration (edge/vertex contribution).</b> For each of the 27 cube offsets
  * {@code (dx,dy,dz) ∈ {-1,0,+1}³} and each pyramid type {@code {6,7}}, a candidate same-level pyramid is
