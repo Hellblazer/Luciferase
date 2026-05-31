@@ -2,12 +2,15 @@
 title: "PyramidIndex Domain Contract & Deep Cross-Shape — Define the Reachable-SFC Set, Productionize the Deep-Tet Path or Fence It"
 id: RDR-012
 type: Architecture
-status: accepted
+status: closed
 priority: medium
 author: hal.hildebrand
 reviewed-by: self
 created: 2026-05-31
 accepted_date: 2026-05-31
+closed_date: 2026-05-31
+close_reason: implemented
+post_mortem: docs/rdr/post-mortem/012-pyramid-deep-cross-shape-productionization.md
 related_issues: [RDR-010, Luciferase-8xus, Luciferase-ogm2]
 ---
 

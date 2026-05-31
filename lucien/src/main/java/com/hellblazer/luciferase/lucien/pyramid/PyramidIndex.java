@@ -23,12 +23,15 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 /**
- * Pyramid-based spatial index (RDR-010 pi1.3, Phase A skeleton). Extends {@link AbstractSpatialIndex} with
+ * Pyramid-based spatial index (RDR-010, pi1.3 through pi1.5). Extends {@link AbstractSpatialIndex} with
  * {@link PyramidKey} as the SFC key type, mirroring the {@link com.hellblazer.luciferase.lucien.octree.Octree}
  * collaborator initialisation order.
  *
- * <p>Phase A contract: all 17 abstract geometry methods throw {@link UnsupportedOperationException}
- * with a phase-bead routing message. Geometry is implemented in subsequent phases (B–E).
+ * <p>All 17 abstract geometry hooks are implemented (phases B–E); none throw. Two query paths are
+ * intentionally conservative pending exact tet-geometry tests (Phase E): {@link #findNodesIntersectingBounds}
+ * is an O(n) scan, and ray/plane intersection on deep tet keys uses the enclosing pyramid's bounds as a
+ * never-false-negative over-approximation. Queries therefore return correct (possibly over-inclusive)
+ * results today; exactness and pruning are the open tail.
  *
  * @param <ID>      entity-ID type
  * @param <Content> content type
