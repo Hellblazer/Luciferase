@@ -135,10 +135,13 @@ public final class TetreeConnectivity {
      * continues. Used by {@link Tet#faceNeighborElement(int)}'s deep boundary test (port of t8code
      * {@code t8_dpyramid_tet_boundary}). RDR-010 Luciferase-cjwr — restored after q3p Phase D removed it
      * on the (now-stale, pre-4pd) premise that the t8code deep tables did not apply to Luciferase tets.
-     * <p>Scope of validation: the dtet table <em>values</em> this walk consumes ({@link #TYPE_CID_TO_BEYID},
-     * {@link #CID_TYPE_TO_PARENTTYPE}) are oracle-verified by {@code T8codeDtetOracleTest} (Luciferase tet
-     * type k IS t8code dtet type k). The {@code tetBoundary} corner-walk <em>algorithm</em> that uses this
-     * table is first validated by {@code HybridFaceNeighborTest} (Phase A), not by that oracle.
+     * <p>Scope of validation: {@link #CID_TYPE_TO_PARENTTYPE} is oracle-verified by
+     * {@code T8codeDtetOracleTest} (Luciferase tet type k IS t8code dtet type k). {@link #TYPE_CID_TO_BEYID}
+     * and {@code FACE_CHILDID_TO_IS_INSIDE} — the two tables the deep corner walk consumes — are NOT
+     * exercised by {@code T8codeDtetOracleTest}; they are transcription-parity-asserted against the t8code
+     * literals by {@code T8codeDpyramidTetBoundaryOracleTest.cornerWalkTablesMatchT8codeVerbatim}
+     * (RDR-012 D3.1). The {@code tetBoundary} corner-walk <em>algorithm</em> that uses this table is
+     * validated by {@code HybridFaceNeighborTest} (Phase A) and the D3.1 parity sweep.
      */
     public static final int[][] FACE_CHILDID_TO_IS_INSIDE = {
     { -1, 0, 0, 0, -1, -1, -1, -1 },
