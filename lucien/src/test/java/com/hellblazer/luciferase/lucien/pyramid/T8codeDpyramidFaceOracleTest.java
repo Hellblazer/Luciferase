@@ -44,20 +44,56 @@ class T8codeDpyramidFaceOracleTest {
     private static final int ROOT_LEN  = Constants.MAX_EXTENT;     // 1<<21, == t8code T8_DPYRAMID_ROOT_LEN
     private static final int MAX_SWEEP = 5;
 
+    /**
+     * Ground-truth anchors (enabled, runs in CI). Locks the t8code transcription against hand-verified
+     * cases derived directly from {@code t8_dpyramid_bits.c} ({@code is_inside_root:883},
+     * {@code face_neighbour:599}) at {@code main@76a5347b}, so the characterization sweep's counts cannot
+     * silently drift on a transcription error (gate critique Obs3). {@code len(l1) = 2^(21-1) = 1048576}.
+     */
+    @Test
+    void oracleGroundTruthAnchors() {
+        int len1 = Constants.lengthAtLevel((byte) 1);
+        assertEquals(1 << 20, len1, "len at level 1");
+
+        // is_inside_root: level-0 root is the type-6 origin only
+        org.junit.jupiter.api.Assertions.assertTrue(oracleIsInsideRoot(0, 0, 0, (byte) 0, Pyramid.TYPE_6));
+        org.junit.jupiter.api.Assertions.assertFalse(oracleIsInsideRoot(0, 0, 0, (byte) 0, Pyramid.TYPE_7));
+
+        // simplex bound: x < z is outside
+        org.junit.jupiter.api.Assertions.assertFalse(oracleIsInsideRoot(3, 5, 5, (byte) 1, Pyramid.TYPE_6));
+        // interior simplex point (x>=z, y>=z), no tie-break trigger -> inside
+        org.junit.jupiter.api.Assertions.assertTrue(oracleIsInsideRoot(5, 3, 3, (byte) 1, (byte) 3));
+        // degenerate-apex tie-break (flat type check, no shape gate — verified vs t8_dpyramid_bits.c:895):
+        // x==z with tet type 3 -> outside; y==z with tet type 0 -> outside
+        org.junit.jupiter.api.Assertions.assertFalse(oracleIsInsideRoot(5, 5, 5, (byte) 1, (byte) 3));
+        org.junit.jupiter.api.Assertions.assertFalse(oracleIsInsideRoot(5, 5, 5, (byte) 1, (byte) 0));
+        // same x==z coords but a non-tie-break tet type (1) stays inside -> tie-break is type-scoped
+        org.junit.jupiter.api.Assertions.assertTrue(oracleIsInsideRoot(5, 5, 5, (byte) 1, (byte) 1));
+
+        // face_neighbour: type-6 face 1 -> tet type 3, anchor x += len, reciprocal face 3
+        int[] f1 = oracleRawPyramidNeighbor(new Pyramid(0, 0, 0, (byte) 1, Pyramid.TYPE_6), 1);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new int[] { len1, 0, 0, 3, 3 }, f1);
+        // type-6 face 4 (quad base) -> other pyramid type 7, z -= len (negative -> outside root)
+        int[] f4 = oracleRawPyramidNeighbor(new Pyramid(0, 0, 0, (byte) 1, Pyramid.TYPE_6), 4);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new int[] { 0, 0, -len1, Pyramid.TYPE_7, 4 }, f4);
+        org.junit.jupiter.api.Assertions.assertFalse(oracleIsInsideRoot(f4[0], f4[1], f4[2], (byte) 1, (byte) f4[3]));
+    }
+
     @Test
     @Disabled("""
-              CHARACTERIZATION HARNESS, not yet a pass/fail gate (RDR-010 remediation P1, Luciferase-8xus).
+              CHARACTERIZATION HARNESS, not yet a pass/fail gate (RDR-012 D0, ex-remediation-P1, Luciferase-8xus).
               Asserting raw t8code is_inside_root parity is the WRONG target: t8code's is_inside_root tests
               membership in a SINGLE root-pyramid simplex, whereas Luciferase PyramidIndex is CUBE-rooted
               (root pyramids 6 AND 7 plus root tets). Measured over 18660 pyramids (level<=5):
                 RAW primitive : matched=48071 over=45229 under=0
                 EFFECTIVE     : matched=49523 over=26569 under=17208
-              Both-direction divergence is attributable to the cube-vs-single-root domain difference, NOT a
-              localized bug: a probe reconstructing the under-permissive tet neighbors with the corrected
-              minTetLevel=level still failed encode(), so they are genuinely unreachable in Luciferase's SFC.
-              Re-enable once the pyramid-index DOMAIN/reachability contract is defined and the oracle is
-              reframed to assert against Luciferase's reachable-SFC set (what encode() characterizes) with an
-              explicit single-tree<->cube mapping to t8code. See T2 rdr/rdr-010-8xus-oracle-findings-2026-05-31.""")
+              Both-direction divergence is attributable to the cube-vs-single-root domain difference (the
+              is_inside_root tie-break transcription is source-verified — flat type check, t8_dpyramid_bits.c:895
+              — and a minTetLevel=level reconstruction probe was refuted: the under-permissive tet neighbors
+              are genuinely unreachable in Luciferase's SFC). See oracleGroundTruthAnchors() for the locked
+              transcription cases. Re-enable once RDR-012 D0 defines the pyramid-index DOMAIN/reachability
+              contract and the oracle is reframed to assert against Luciferase's reachable-SFC set with an
+              explicit single-tree<->cube mapping. See T2 rdr/rdr-010-8xus-oracle-findings-2026-05-31.""")
     void pyramidFaceNeighborsMatchT8codeOverTheRefinedTree() {
         var divergences = new ArrayList<String>();
         // Raw-primitive parity: Pyramid.faceNeighbor vs t8code (gates on cube AABB only).
