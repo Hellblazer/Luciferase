@@ -368,13 +368,12 @@ public class ParallelBalancerTest {
         }
 
         private static com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<MortonKey, LongEntityID, String> createMockGhostBoundaryDetector() {
-            // Create a minimal stub using Forest constructor
-            var mockForest = new com.hellblazer.luciferase.lucien.forest.Forest<MortonKey, LongEntityID, String>(
-                com.hellblazer.luciferase.lucien.forest.ForestConfig.defaultConfig()
-            );
+            // Minimal element-level stub (the forest/tree-level constructor was removed in Luciferase-1q7u);
+            // this mock only needs a valid detector instance for the DistributedGhostManager stub.
             return new com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<>(
-                mockForest,
-                0.0f // ghostDepth - not used in tests
+                null, null,
+                com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES,
+                com.hellblazer.luciferase.lucien.forest.ghost.GhostAlgorithm.MINIMAL
             );
         }
 
