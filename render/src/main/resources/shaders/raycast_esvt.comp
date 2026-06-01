@@ -57,34 +57,34 @@ const int PARENT_TYPE_TO_CHILD_TYPE[6][8] = {
     { 5, 5, 5, 5, 1, 0, 3, 4 }   // Parent type 5
 };
 
-// CHILDREN_AT_FACE[4][4] - which children touch each face (same for all types)
-// Face 0 (opposite v0): children 4,5,6,7
-// Face 1 (opposite v1): children 2,3,6,7
-// Face 2 (opposite v2): children 1,3,5,7
-// Face 3 (opposite v3): children 1,2,4,5
-const int CHILDREN_AT_FACE[4][4] = {
-    { 4, 5, 6, 7 },  // Face 0
-    { 2, 3, 6, 7 },  // Face 1
-    { 1, 3, 5, 7 },  // Face 2
-    { 1, 2, 4, 5 }   // Face 3
-};
+// Children-at-face is PER-TYPE (Luciferase-d5o9 / koaw): the real table is
+// TetreeConnectivity.CHILDREN_AT_FACE[type][face] (t8code t8_dtet_face_child_id_by_type). This shader does
+// NOT carry a standalone children-at-face constant: front-to-back traversal reads the precomputed PER-TYPE
+// CHILD_ORDER[tetType][entryFace][position] table below (derived from ESVTChildOrder, which consumes the
+// per-type lucien table). An earlier type-INVARIANT "same for all types" CHILDREN_AT_FACE const lived here but
+// was unused (never referenced in the shader body) and silently diverged from the corrected per-type table, so
+// it was removed to avoid implying a single children-at-face set exists for all six tet types.
 
 // CHILD_ORDER[6][4][4] - children sorted by centroid distance from face center
-// This is precomputed from ESVTChildOrder.java for front-to-back traversal
-// [tetType][entryFace][position] -> childIndex
+// [tetType][entryFace][position] -> childIndex. Precomputed from ESVTChildOrder.java, which sorts the PER-TYPE
+// children-at-face (TetreeConnectivity.CHILDREN_AT_FACE[type][face], t8code t8_dtet_face_child_id_by_type) by
+// face-center distance for front-to-back GPU traversal. Regenerated for the per-type table (Luciferase-d5o9):
+// the prior literal carried only two distinct patterns (type parity) and silently diverged from the corrected
+// CPU order after Luciferase-koaw. Kept in sync by ESVTChildOrderShaderParityTest; if that test fails,
+// regenerate these values from ESVTChildOrder.getChildOrder(type, face).
 const int CHILD_ORDER[6][4][4] = {
     // Type 0
-    { { 7, 6, 5, 4 }, { 6, 7, 2, 3 }, { 5, 1, 7, 3 }, { 4, 5, 1, 2 } },
+    { { 7, 5, 1, 4 }, { 6, 7, 4, 0 }, { 1, 7, 0, 2 }, { 4, 1, 0, 3 } },
     // Type 1
-    { { 7, 5, 6, 4 }, { 6, 3, 7, 2 }, { 7, 5, 3, 1 }, { 5, 4, 2, 1 } },
+    { { 7, 5, 1, 4 }, { 6, 0, 7, 5 }, { 7, 3, 0, 1 }, { 5, 2, 1, 0 } },
     // Type 2
-    { { 7, 6, 5, 4 }, { 6, 7, 2, 3 }, { 5, 1, 7, 3 }, { 4, 5, 1, 2 } },
+    { { 7, 3, 5, 4 }, { 6, 7, 4, 0 }, { 1, 7, 0, 3 }, { 4, 0, 2, 3 } },
     // Type 3
-    { { 7, 5, 6, 4 }, { 6, 3, 7, 2 }, { 7, 5, 3, 1 }, { 5, 4, 2, 1 } },
+    { { 7, 5, 1, 6 }, { 6, 4, 0, 7 }, { 7, 3, 0, 1 }, { 6, 2, 1, 0 } },
     // Type 4
-    { { 7, 6, 5, 4 }, { 6, 7, 2, 3 }, { 5, 1, 7, 3 }, { 4, 5, 1, 2 } },
+    { { 7, 6, 3, 5 }, { 7, 4, 5, 0 }, { 1, 7, 0, 3 }, { 5, 0, 2, 3 } },
     // Type 5
-    { { 7, 5, 6, 4 }, { 6, 3, 7, 2 }, { 7, 5, 3, 1 }, { 5, 4, 2, 1 } }
+    { { 7, 5, 6, 3 }, { 6, 4, 0, 7 }, { 7, 3, 0, 2 }, { 6, 1, 3, 0 } }
 };
 
 // ============================================================================
