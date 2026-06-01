@@ -358,8 +358,14 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     /**
      * Get element owner information.
      *
+     * <p>Defaults to rank 0 when no owner was explicitly registered. Note that 0 is "local" only for a rank-0
+     * process: a {@code currentRank > 0} process treats an unregistered owner (0) as <em>remote</em>. Callers
+     * that classify partition seams ({@link #isPartitionBoundary}, {@link #createGhostsForElement}) therefore
+     * first exclude locally-present keys (which this rank owns regardless of the map) before consulting this
+     * default. Owner-map unification across the default-0 convention is Luciferase-9m31's concern.
+     *
      * @param key the spatial key
-     * @return owner rank, or 0 if local
+     * @return the registered owner rank, or 0 if none was registered
      */
     public int getElementOwner(Key key) {
         return elementOwners.getOrDefault(key, 0);
@@ -692,16 +698,24 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     }
 
     /**
-     * An occupied element is a partition-boundary element iff at least one of its face neighbors is owned by a
-     * rank other than {@link #currentRank} (Luciferase-3uwx). Uses {@link #getElementOwner(SpatialKey)} for the
-     * neighbor's owner, so the identified set matches the keys {@link #createGhostsForElement} would turn into
-     * ghosts (consistent identify/create owner notion).
+     * An occupied element is a partition-boundary element iff at least one of its face neighbors is
+     * <em>absent from the local index</em> and owned by a rank other than {@link #currentRank}
+     * (Luciferase-3uwx). A locally-present face neighbor is owned by this rank (it is in our index), so it is
+     * skipped before the owner check — this mirrors the {@link #createGhostsForElement} guard
+     * ({@code !containsSpatialKey(neighborKey)} then {@code ownerRank != currentRank}) exactly, so the
+     * identified boundary set is precisely the set of elements that {@code createGhostsForElement} turns into
+     * ghosts. Without the locally-present skip, a {@code currentRank > 0} process would spuriously flag every
+     * interior element (a present neighbor with no explicit owner entry defaults to rank 0 ≠ currentRank), and
+     * identify/create would disagree (flagged boundary, but no ghost emitted).
      */
     private boolean isPartitionBoundary(Key key) {
         if (neighborDetector == null) {
             return false;
         }
         for (var neighbor : neighborDetector.findFaceNeighbors(key)) {
+            if (spatialIndex != null && spatialIndex.containsSpatialKey(neighbor)) {
+                continue; // locally present ⇒ owned by this rank ⇒ not a seam (and creates no ghost)
+            }
             if (getElementOwner(neighbor) != currentRank) {
                 return true;
             }

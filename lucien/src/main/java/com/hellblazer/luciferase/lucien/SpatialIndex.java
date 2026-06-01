@@ -404,8 +404,15 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
      * @param fromInclusive whether {@code fromKey} itself is included
      * @param toKey         upper bound of the SFC subrange
      * @param toInclusive   whether {@code toKey} itself is included
+     * @apiNote For {@code MortonKey}-backed indices, {@code MortonKey.compareTo} orders <em>level-first</em>
+     *          then by Morton code, so a single call captures only the occupied keys stored at the same level
+     *          as {@code fromKey}/{@code toKey}. A descent over a multi-level index must therefore group by
+     *          level and query each level's contiguous code range separately (cross-level bounds silently
+     *          return an empty or partial set, not an error).
      * @return the occupied keys in the subrange, in ascending SFC order
      * @throws UnsupportedOperationException if this index type does not expose a navigable SFC view
+     * @throws IllegalArgumentException if {@code fromKey} sorts after {@code toKey} (propagated from the
+     *                                  underlying navigable map's {@code subMap})
      */
     default NavigableSet<Key> spatialKeysInRange(Key fromKey, boolean fromInclusive, Key toKey,
                                                  boolean toInclusive) {

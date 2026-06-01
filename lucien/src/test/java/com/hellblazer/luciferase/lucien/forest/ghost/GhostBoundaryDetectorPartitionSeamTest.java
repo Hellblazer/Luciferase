@@ -27,6 +27,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * never seeded ghosts for domain-interior partition-seam elements. There is intentionally no old==new
  * equivalence assertion; these two sets differ.
  *
+ * <p>The {@code isPartitionBoundary} gate is type-agnostic (it consults only {@code findFaceNeighbors} +
+ * {@code getElementOwner} + {@code currentRank}, no key-type-specific logic), so this Octree/MortonKey coverage
+ * pins the contract for all index types; the pyramid path's seam behavior is additionally exercised by
+ * {@code PyramidCrossShapeGhostTest}.
+ *
  * @author hal.hildebrand
  */
 class GhostBoundaryDetectorPartitionSeamTest {
@@ -90,11 +95,12 @@ class GhostBoundaryDetectorPartitionSeamTest {
         detector.setElementOwner(seamNeighbor, 1); // owned by remote rank 1 (local rank is 0)
         detector.createGhostLayer();
 
-        // Independent restatement of the contract: e is boundary iff some face neighbor's owner != currentRank.
+        // Independent restatement of the contract: e is boundary iff some ABSENT face neighbor is owned by a
+        // rank != currentRank (a locally-present neighbor is owned by this rank, so it is not a seam).
         Set<MortonKey> expected = new HashSet<>();
         for (var e : occupied) {
             for (var fn : nd.findFaceNeighbors(e)) {
-                if (detector.getElementOwner(fn) != detector.getCurrentRank()) {
+                if (!octree.containsSpatialKey(fn) && detector.getElementOwner(fn) != detector.getCurrentRank()) {
                     expected.add(e);
                     break;
                 }
@@ -107,5 +113,54 @@ class GhostBoundaryDetectorPartitionSeamTest {
         assertFalse(detector.getBoundaryElements().isEmpty(), "non-vacuous: the seam is non-empty");
         assertTrue(detector.getBoundaryElements().size() < occupied.size(),
                    "non-vacuous: interior elements are excluded");
+    }
+
+    /**
+     * Regression for the identify/create-asymmetry trap (substantive-critic SIG-1): at {@code currentRank > 0},
+     * a locally-present face neighbor (no explicit owner entry, so {@code getElementOwner} defaults to 0) must
+     * NOT flag an element as boundary — it is locally owned, and {@code createGhostsForElement} would emit no
+     * ghost for it. Only an absent, remote-owned neighbor is a seam.
+     */
+    @Test
+    void rankAboveZeroDoesNotSpuriouslyFlagInteriorElementsWithLocalNeighbors() {
+        var octree = lineOfThree();
+        NeighborDetector<MortonKey> nd = octree.getNeighborDetector();
+        var detector = new GhostBoundaryDetector<>(octree, nd, GhostType.FACES, GhostAlgorithm.MINIMAL);
+        detector.setCurrentRank(2); // non-zero local rank; no element owners registered
+
+        detector.createGhostLayer();
+
+        // B (the middle cell) has present neighbors A and C; its other face neighbors are absent and default
+        // to owner 0 (remote at rank 2), so B IS a seam element — but it must be flagged via the ABSENT
+        // neighbors, not its present local neighbors. The pre-fix bug would also flag based on A/C. Assert the
+        // boundary set equals exactly the contract model (absent + remote), with present neighbors skipped.
+        Set<MortonKey> expected = new HashSet<>();
+        for (var e : octree.getSpatialKeys()) {
+            for (var fn : nd.findFaceNeighbors(e)) {
+                if (!octree.containsSpatialKey(fn) && detector.getElementOwner(fn) != detector.getCurrentRank()) {
+                    expected.add(e);
+                    break;
+                }
+            }
+        }
+        assertEquals(expected, detector.getBoundaryElements(),
+                     "boundary set must match the absent-and-remote contract, never flag via local neighbors");
+
+        // Now register every occupied element's absent neighbors as owned by the local rank 2: the seam closes
+        // and the boundary set must be empty (proves present-neighbor skip + absent-remote gate, not domain edge).
+        var octree2 = lineOfThree();
+        var nd2 = octree2.getNeighborDetector();
+        var detector2 = new GhostBoundaryDetector<>(octree2, nd2, GhostType.FACES, GhostAlgorithm.MINIMAL);
+        detector2.setCurrentRank(2);
+        for (var e : octree2.getSpatialKeys()) {
+            for (var fn : nd2.findFaceNeighbors(e)) {
+                if (!octree2.containsSpatialKey(fn)) {
+                    detector2.setElementOwner(fn, 2); // all absent neighbors locally owned ⇒ no seam
+                }
+            }
+        }
+        detector2.createGhostLayer();
+        assertTrue(detector2.getBoundaryElements().isEmpty(),
+                   "all neighbors local-owned ⇒ no partition seam ⇒ empty boundary set, even at rank 2");
     }
 }

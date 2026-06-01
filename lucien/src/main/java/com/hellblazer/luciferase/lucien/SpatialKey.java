@@ -146,6 +146,9 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
     default K lastDescendantAtLevel(byte targetLevel) {
         throw new UnsupportedOperationException(
             getClass().getSimpleName() + " does not support lastDescendantAtLevel");
+        // TODO Luciferase-j4zn: implement firstDescendantAtLevel/lastDescendantAtLevel for TetreeKey and
+        // PyramidKey before the owner-range descent (which consumes them) is applied to those index types.
+        // Only MortonKey overrides today; the descent prune is currently deferred, so the default-throw is safe.
     }
 
     /**
