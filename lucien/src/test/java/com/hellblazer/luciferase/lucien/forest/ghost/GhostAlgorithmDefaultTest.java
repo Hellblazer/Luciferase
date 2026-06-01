@@ -7,7 +7,6 @@ package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
-import com.hellblazer.luciferase.lucien.forest.Forest;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import org.junit.jupiter.api.Test;
 
@@ -28,14 +27,6 @@ class GhostAlgorithmDefaultTest {
         assertNotNull(GhostAlgorithm.valueOf("DEEP_COVERAGE"));
         assertThrows(IllegalArgumentException.class, () -> GhostAlgorithm.valueOf("CONSERVATIVE"),
                      "CONSERVATIVE must no longer be a GhostAlgorithm constant");
-    }
-
-    @Test
-    void forestLevelDetectorDefaultsToMinimal() {
-        var forest = new Forest<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String>();
-        var detector = new GhostBoundaryDetector<>(forest, 1.0f);
-        assertEquals(GhostAlgorithm.MINIMAL, detector.getGhostAlgorithm(),
-                     "forest-level detector must default to MINIMAL (Luciferase-9m31)");
     }
 
     @Test

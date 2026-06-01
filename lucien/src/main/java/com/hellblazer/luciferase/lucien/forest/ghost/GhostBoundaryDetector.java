@@ -19,29 +19,21 @@ package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
-import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.Forest;
-import com.hellblazer.luciferase.lucien.forest.TreeNode;
 import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Unified ghost boundary detection for spatial indices.
+ * Element-level ghost boundary detection for spatial indices.
  *
- * <p>This class consolidates element-level and tree-level ghost boundary detection into a single cohesive
- * component (it superseded the earlier element- and tree-level ghost managers, which have since been removed).
- *
- * <p><strong>Hierarchy:</strong>
- * <ul>
- *   <li><strong>Element-Level</strong>: Boundary element identification using neighbor detection</li>
- *   <li><strong>Tree-Level</strong>: Forest-level ghost zone coordination between trees</li>
- * </ul>
+ * <p>Identifies the local <em>partition-boundary</em> elements (those with a face neighbor owned by a different
+ * rank) that seed the distributed ghost layer. This class superseded the earlier element- and tree-level ghost
+ * managers, which have been removed; the dead tree-level ghost-zone coordination it briefly carried was deleted
+ * in Luciferase-1q7u (it had no callers).
  *
  * <p><strong>Ghost Algorithms</strong>:
  * <ul>
@@ -91,82 +83,11 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     private volatile int currentRank = 0;
 
     // ========================================
-    // Tree-Level Detection (entity-halo role absorbed from the former, now-deleted GhostZoneManager)
-    // ========================================
-    //
-    // INFRASTRUCTURE-ONLY (Luciferase-v9ro): the tree-level zone methods below (establishGhostZone,
-    // updateGhostEntity, removeGhostEntity, getGhostEntities, synchronizeAllGhostZones, ...) currently have
-    // ZERO callers in production or tests — verified at v9ro. Their only coverage was GhostZoneManagerTest,
-    // which was deleted with the dead GhostZoneManager outer class. They are retained as the absorbed API
-    // surface but exercise no live path; their deletion is tracked as a follow-up dead-code-removal bead. Do
-    // not assume this logic is validated until that bead either deletes it or restores coverage.
-
-    // The forest being managed (optional - null for single-tree mode)
-    private final Forest<Key, ID, Content> forest;
-
-    // Default ghost zone width
-    private volatile float defaultGhostZoneWidth;
-
-    // Ghost zone relationships between trees
-    private final Set<GhostZoneRelation> ghostZoneRelations;
-
-    // Ghost entities by tree: Tree ID → Set of ghost entities (Luciferase-v9ro: the former nested GhostEntity
-    // was unified into the top-level GhostEntityHalo).
-    private final Map<String, Set<GhostEntityHalo<ID, Content>>> ghostEntitiesByTree;
-
-    // Entity to ghost locations: Entity ID → Set of tree IDs where it exists as ghost
-    private final Map<ID, Set<String>> entityGhostLocations;
-
-    /**
-     * Tracks ghost zone relationships between trees.
-     */
-    private static class GhostZoneRelation {
-        private final String treeId1;
-        private final String treeId2;
-        private final float ghostZoneWidth;
-
-        public GhostZoneRelation(String treeId1, String treeId2, float ghostZoneWidth) {
-            // Ensure consistent ordering for bidirectional relationships
-            if (treeId1.compareTo(treeId2) < 0) {
-                this.treeId1 = treeId1;
-                this.treeId2 = treeId2;
-            } else {
-                this.treeId1 = treeId2;
-                this.treeId2 = treeId1;
-            }
-            this.ghostZoneWidth = ghostZoneWidth;
-        }
-
-        public boolean involvesTree(String treeId) {
-            return treeId1.equals(treeId) || treeId2.equals(treeId);
-        }
-
-        public String getOtherTree(String treeId) {
-            if (treeId1.equals(treeId)) return treeId2;
-            if (treeId2.equals(treeId)) return treeId1;
-            return null;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            var that = (GhostZoneRelation) o;
-            return treeId1.equals(that.treeId1) && treeId2.equals(that.treeId2);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(treeId1, treeId2);
-        }
-    }
-
-    // ========================================
     // Constructors
     // ========================================
 
     /**
-     * Create a ghost boundary detector for single-tree element-level detection.
+     * Create a ghost boundary detector for element-level (partition-boundary) detection.
      *
      * @param spatialIndex the spatial index
      * @param neighborDetector the neighbor detector
@@ -177,38 +98,6 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
                                  NeighborDetector<Key> neighborDetector,
                                  GhostType ghostType,
                                  GhostAlgorithm ghostAlgorithm) {
-        this(spatialIndex, neighborDetector, ghostType, ghostAlgorithm, null, 0L, 0f);
-    }
-
-    /**
-     * Create a ghost boundary detector for forest-level tree-level detection.
-     *
-     * @param forest the forest to manage
-     * @param defaultGhostZoneWidth the default ghost zone width
-     */
-    public GhostBoundaryDetector(Forest<Key, ID, Content> forest, float defaultGhostZoneWidth) {
-        this(null, null, GhostType.FACES, GhostAlgorithm.MINIMAL, forest, 0L, defaultGhostZoneWidth);
-    }
-
-    /**
-     * Create a unified ghost boundary detector with both element and tree-level support.
-     *
-     * @param spatialIndex the spatial index
-     * @param neighborDetector the neighbor detector
-     * @param ghostType the type of ghosts to create
-     * @param ghostAlgorithm the ghost creation algorithm
-     * @param forest the forest (null for single-tree mode)
-     * @param treeId tree identifier for distributed ghost requests
-     * @param defaultGhostZoneWidth default ghost zone width for forest mode
-     */
-    public GhostBoundaryDetector(SpatialIndex<Key, ID, Content> spatialIndex,
-                                 NeighborDetector<Key> neighborDetector,
-                                 GhostType ghostType,
-                                 GhostAlgorithm ghostAlgorithm,
-                                 Forest<Key, ID, Content> forest,
-                                 long treeId,
-                                 float defaultGhostZoneWidth) {
-        // Element-level fields
         this.spatialIndex = spatialIndex;
         this.neighborDetector = neighborDetector;
         this.ghostLayer = spatialIndex != null ? new GhostLayer<>(ghostType) : null;
@@ -216,17 +105,10 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
         this.boundaryElements = ConcurrentHashMap.newKeySet();
         this.processedElements = ConcurrentHashMap.newKeySet();
         this.elementOwners = new ConcurrentHashMap<>();
-        this.treeId = treeId;
+        this.treeId = 0L;
 
-        // Tree-level fields
-        this.forest = forest;
-        this.defaultGhostZoneWidth = defaultGhostZoneWidth;
-        this.ghostZoneRelations = ConcurrentHashMap.newKeySet();
-        this.ghostEntitiesByTree = new ConcurrentHashMap<>();
-        this.entityGhostLocations = new ConcurrentHashMap<>();
-
-        log.info("Created GhostBoundaryDetector: element-level={}, tree-level={}, algorithm={}",
-                spatialIndex != null, forest != null, ghostAlgorithm);
+        log.info("Created GhostBoundaryDetector: element-level={}, algorithm={}",
+                spatialIndex != null, ghostAlgorithm);
     }
 
     // ========================================
@@ -384,217 +266,6 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
         return ghostAlgorithm;
     }
 
-    // ========================================
-    // Tree-Level API
-    // ========================================
-
-    /**
-     * Set the default ghost zone width.
-     *
-     * @param width the new default width
-     */
-    public void setDefaultGhostZoneWidth(float width) {
-        this.defaultGhostZoneWidth = width;
-        log.info("Updated default ghost zone width to: {}", width);
-    }
-
-    /**
-     * Get the default ghost zone width.
-     *
-     * @return the default width
-     */
-    public float getDefaultGhostZoneWidth() {
-        return defaultGhostZoneWidth;
-    }
-
-    /**
-     * Establish a ghost zone relationship between two trees.
-     *
-     * @param treeId1 the first tree ID
-     * @param treeId2 the second tree ID
-     * @param ghostZoneWidth the width (null for default)
-     * @return true if newly established
-     */
-    public boolean establishGhostZone(String treeId1, String treeId2, Float ghostZoneWidth) {
-        if (forest == null) {
-            log.warn("Cannot establish ghost zone - forest not set");
-            return false;
-        }
-
-        var width = ghostZoneWidth != null ? ghostZoneWidth : defaultGhostZoneWidth;
-        var relation = new GhostZoneRelation(treeId1, treeId2, width);
-
-        if (ghostZoneRelations.add(relation)) {
-            // Initialize ghost entity storage
-            ghostEntitiesByTree.computeIfAbsent(treeId1, k -> ConcurrentHashMap.newKeySet());
-            ghostEntitiesByTree.computeIfAbsent(treeId2, k -> ConcurrentHashMap.newKeySet());
-
-            log.info("Established ghost zone between trees {} and {} with width {}",
-                    treeId1, treeId2, width);
-
-            // Perform initial synchronization
-            synchronizeGhostZone(treeId1, treeId2);
-
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Remove a ghost zone relationship.
-     *
-     * @param treeId1 the first tree ID
-     * @param treeId2 the second tree ID
-     * @return true if removed
-     */
-    public boolean removeGhostZone(String treeId1, String treeId2) {
-        if (forest == null) return false;
-
-        var relation = new GhostZoneRelation(treeId1, treeId2, 0);
-
-        if (ghostZoneRelations.remove(relation)) {
-            cleanupGhostsBetweenTrees(treeId1, treeId2);
-            log.info("Removed ghost zone between trees {} and {}", treeId1, treeId2);
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Get all trees with ghost zones to specified tree.
-     *
-     * @param treeId the tree ID
-     * @return set of neighbor tree IDs
-     */
-    public Set<String> getGhostZoneNeighbors(String treeId) {
-        return ghostZoneRelations.stream()
-            .filter(r -> r.involvesTree(treeId))
-            .map(r -> r.getOtherTree(treeId))
-            .filter(Objects::nonNull)
-            .collect(java.util.stream.Collectors.toSet());
-    }
-
-    /**
-     * Update ghost entity in neighboring trees.
-     *
-     * @param entityId the entity ID
-     * @param sourceTreeId the source tree
-     * @param position the entity position
-     * @param bounds optional entity bounds
-     * @param content the entity content
-     */
-    public void updateGhostEntity(ID entityId, String sourceTreeId, Point3f position,
-                                 EntityBounds bounds, Content content) {
-        if (forest == null) return;
-
-        var sourceTree = forest.getTree(sourceTreeId);
-        if (sourceTree == null) {
-            log.warn("Source tree {} not found", sourceTreeId);
-            return;
-        }
-
-        // Find all trees with ghost zones to source tree
-        var ghostZoneNeighbors = getGhostZoneNeighbors(sourceTreeId);
-
-        // Track which trees should have this ghost
-        var newGhostTrees = new HashSet<String>();
-
-        for (var neighborId : ghostZoneNeighbors) {
-            var neighborTree = forest.getTree(neighborId);
-            if (neighborTree == null) continue;
-
-            // Check if entity is within ghost zone distance
-            var ghostZoneWidth = getGhostZoneWidth(sourceTreeId, neighborId);
-            if (isInGhostZone(position, bounds, sourceTree, neighborTree, ghostZoneWidth)) {
-                // Create or update ghost entity
-                var ghost = new GhostEntityHalo<>(entityId, content, position, bounds, sourceTreeId);
-                var ghosts = ghostEntitiesByTree.get(neighborId);
-
-                // Remove old version if exists
-                ghosts.removeIf(g -> g.getEntityId().equals(entityId) &&
-                                    g.getSourceTreeId().equals(sourceTreeId));
-
-                // Add new version
-                ghosts.add(ghost);
-                newGhostTrees.add(neighborId);
-
-                log.debug("Updated ghost entity {} from tree {} in tree {}",
-                         entityId, sourceTreeId, neighborId);
-            }
-        }
-
-        // Update entity ghost locations
-        var oldGhostTrees = entityGhostLocations.get(entityId);
-        if (oldGhostTrees != null) {
-            // Remove ghost from trees where no longer needed
-            for (var treeId : oldGhostTrees) {
-                if (!newGhostTrees.contains(treeId)) {
-                    removeGhostFromTree(entityId, sourceTreeId, treeId);
-                }
-            }
-        }
-
-        // Update tracking
-        if (!newGhostTrees.isEmpty()) {
-            entityGhostLocations.put(entityId, newGhostTrees);
-        } else {
-            entityGhostLocations.remove(entityId);
-        }
-    }
-
-    /**
-     * Remove ghost entities when entity deleted.
-     *
-     * @param entityId the entity ID
-     * @param sourceTreeId the source tree
-     */
-    public void removeGhostEntity(ID entityId, String sourceTreeId) {
-        if (forest == null) return;
-
-        var ghostTrees = entityGhostLocations.remove(entityId);
-        if (ghostTrees != null) {
-            for (var treeId : ghostTrees) {
-                removeGhostFromTree(entityId, sourceTreeId, treeId);
-            }
-        }
-
-        log.debug("Removed all ghost entities for entity {} from source tree {}",
-                 entityId, sourceTreeId);
-    }
-
-    /**
-     * Get all ghost entities in a tree.
-     *
-     * @param treeId the tree ID
-     * @return set of ghost entities
-     */
-    public Set<GhostEntityHalo<ID, Content>> getGhostEntities(String treeId) {
-        var ghosts = ghostEntitiesByTree.get(treeId);
-        return ghosts != null ? new HashSet<>(ghosts) : Collections.emptySet();
-    }
-
-    /**
-     * Synchronize all ghost zones.
-     */
-    public void synchronizeAllGhostZones() {
-        if (forest == null) return;
-
-        log.info("Starting full ghost zone synchronization");
-
-        // Clear existing ghosts
-        ghostEntitiesByTree.values().forEach(Set::clear);
-        entityGhostLocations.clear();
-
-        // Synchronize each relation
-        for (var relation : ghostZoneRelations) {
-            synchronizeGhostZone(relation.treeId1, relation.treeId2);
-        }
-
-        log.info("Completed full ghost zone synchronization");
-    }
-
     /**
      * Get statistics.
      *
@@ -602,23 +273,12 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
      */
     public Map<String, Object> getStatistics() {
         var stats = new HashMap<String, Object>();
-
-        // Element-level stats
         if (spatialIndex != null) {
             stats.put("boundaryElements", boundaryElements.size());
             stats.put("processedElements", processedElements.size());
             stats.put("ghostElements", ghostLayer != null ? ghostLayer.getNumGhostElements() : 0);
             stats.put("ghostAlgorithm", ghostAlgorithm);
         }
-
-        // Tree-level stats
-        if (forest != null) {
-            stats.put("ghostZoneRelations", ghostZoneRelations.size());
-            stats.put("totalTreeGhosts", ghostEntitiesByTree.values().stream().mapToInt(Set::size).sum());
-            stats.put("entitiesWithGhosts", entityGhostLocations.size());
-            stats.put("defaultGhostZoneWidth", defaultGhostZoneWidth);
-        }
-
         return stats;
     }
 
@@ -626,18 +286,12 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
      * Clear all ghost data.
      */
     public void clear() {
-        // Element-level
         if (ghostLayer != null) {
             ghostLayer.clear();
         }
         boundaryElements.clear();
         processedElements.clear();
         elementOwners.clear();
-
-        // Tree-level
-        ghostZoneRelations.clear();
-        ghostEntitiesByTree.clear();
-        entityGhostLocations.clear();
 
         log.info("Cleared all ghost boundary data");
     }
@@ -832,109 +486,5 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
         }
 
         return false;
-    }
-
-    // ========================================
-    // Private Tree-Level Helper Methods
-    // ========================================
-
-    private void synchronizeGhostZone(String treeId1, String treeId2) {
-        if (forest == null) return;
-
-        var tree1 = forest.getTree(treeId1);
-        var tree2 = forest.getTree(treeId2);
-
-        if (tree1 == null || tree2 == null) {
-            log.warn("Cannot synchronize ghost zone - tree not found");
-            return;
-        }
-
-        log.debug("Synchronized ghost zone between {} and {}", treeId1, treeId2);
-    }
-
-    private boolean isInGhostZone(Point3f position, EntityBounds entityBounds,
-                                 TreeNode<Key, ID, Content> sourceTree,
-                                 TreeNode<Key, ID, Content> targetTree,
-                                 float ghostZoneWidth) {
-        var targetBounds = targetTree.getGlobalBounds();
-        if (targetBounds == null) return false;
-
-        if (entityBounds != null) {
-            return isAABBNearAABB(entityBounds, targetBounds, ghostZoneWidth);
-        } else {
-            return isPointNearAABB(position, targetBounds, ghostZoneWidth);
-        }
-    }
-
-    private boolean isPointNearAABB(Point3f point, EntityBounds aabb, float distance) {
-        if (aabb == null) return false;
-
-        var min = aabb.getMin();
-        var max = aabb.getMax();
-
-        var closestX = Math.max(min.x, Math.min(point.x, max.x));
-        var closestY = Math.max(min.y, Math.min(point.y, max.y));
-        var closestZ = Math.max(min.z, Math.min(point.z, max.z));
-
-        var dx = point.x - closestX;
-        var dy = point.y - closestY;
-        var dz = point.z - closestZ;
-        var sqDist = dx * dx + dy * dy + dz * dz;
-
-        return sqDist <= distance * distance;
-    }
-
-    private boolean isAABBNearAABB(EntityBounds aabb1, EntityBounds aabb2, float distance) {
-        if (aabb1 == null || aabb2 == null) return false;
-
-        var min1 = aabb1.getMin();
-        var max1 = aabb1.getMax();
-        var min2 = aabb2.getMin();
-        var max2 = aabb2.getMax();
-
-        var xSeparation = Math.max(0, Math.max(min1.x - max2.x, min2.x - max1.x));
-        var ySeparation = Math.max(0, Math.max(min1.y - max2.y, min2.y - max1.y));
-        var zSeparation = Math.max(0, Math.max(min1.z - max2.z, min2.z - max1.z));
-
-        return xSeparation <= distance && ySeparation <= distance && zSeparation <= distance;
-    }
-
-    private float getGhostZoneWidth(String treeId1, String treeId2) {
-        for (var relation : ghostZoneRelations) {
-            if (relation.involvesTree(treeId1) && relation.involvesTree(treeId2)) {
-                return relation.ghostZoneWidth;
-            }
-        }
-        return defaultGhostZoneWidth;
-    }
-
-    private void removeGhostFromTree(ID entityId, String sourceTreeId, String targetTreeId) {
-        var ghosts = ghostEntitiesByTree.get(targetTreeId);
-        if (ghosts != null) {
-            ghosts.removeIf(g -> g.getEntityId().equals(entityId) &&
-                               g.getSourceTreeId().equals(sourceTreeId));
-        }
-    }
-
-    private void cleanupGhostsBetweenTrees(String treeId1, String treeId2) {
-        // Remove ghosts from tree1 that came from tree2
-        var ghosts1 = ghostEntitiesByTree.get(treeId1);
-        if (ghosts1 != null) {
-            ghosts1.removeIf(g -> g.getSourceTreeId().equals(treeId2));
-        }
-
-        // Remove ghosts from tree2 that came from tree1
-        var ghosts2 = ghostEntitiesByTree.get(treeId2);
-        if (ghosts2 != null) {
-            ghosts2.removeIf(g -> g.getSourceTreeId().equals(treeId1));
-        }
-
-        // Update tracking
-        for (var entry : entityGhostLocations.entrySet()) {
-            entry.getValue().remove(treeId1);
-            entry.getValue().remove(treeId2);
-        }
-
-        entityGhostLocations.entrySet().removeIf(e -> e.getValue().isEmpty());
     }
 }
