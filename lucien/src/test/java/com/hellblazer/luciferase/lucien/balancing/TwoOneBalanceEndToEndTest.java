@@ -143,4 +143,69 @@ class TwoOneBalanceEndToEndTest {
         assertTrue(result.finalMetrics().roundCount() <= config.maxRounds(),
                    "converged within the maxRounds safety cap");
     }
+
+    /** Ghost-coarser one-shot seam: emits a single !localNeedsRefinement() violation, then reports balanced. */
+    private static final class GhostCoarserSeam extends TwoOneBalanceChecker<MortonKey, LongEntityID, String> {
+        private final MortonKey localKey;
+        private final MortonKey ghostKey;
+        private final int ownerRank;
+        private boolean emitted = false;
+
+        GhostCoarserSeam(MortonKey localKey, MortonKey ghostKey, int ownerRank) {
+            this.localKey = localKey;
+            this.ghostKey = ghostKey;
+            this.ownerRank = ownerRank;
+        }
+
+        @Override
+        public List<BalanceViolation<MortonKey>> findViolations(GhostLayer<MortonKey, LongEntityID, String> ghostLayer,
+                                                                Forest<MortonKey, LongEntityID, String> forest) {
+            if (emitted) {
+                return List.of();
+            }
+            emitted = true;
+            int local = localKey.getLevel();   // fine
+            int ghost = ghostKey.getLevel();   // coarse: local > ghost -> !localNeedsRefinement -> remote request
+            return List.of(new BalanceViolation<>(localKey, ghostKey, local, ghost, Math.abs(local - ghost), ownerRank));
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void ghostCoarserBoundary_propagatesRefinementRequestToOwner() {
+        var forest = new Forest<MortonKey, LongEntityID, String>(ForestConfig.defaultConfig());
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        forest.addTree(octree);
+
+        byte localLevel = 6; // fine local element
+        int cell = Constants.lengthAtLevel(localLevel);
+        octree.insert(new Point3f(cell + 50, cell + 50, cell + 50), localLevel, "localFine");
+        var localKey = octree.getSpatialKeys().iterator().next();
+        var ghostKey = new MortonKey(localKey.getMortonCode(), (byte) (localLevel - 2)); // coarser ghost, diff 2
+        int ownerRank = 1;
+
+        // Recording exchange: captures the target rank and boundary keys that reach the wire.
+        var recordedTargets = new java.util.ArrayList<Integer>();
+        var recordedKeyCounts = new java.util.ArrayList<Integer>();
+        RefinementExchange<MortonKey, LongEntityID, String> recording =
+            (targetRank, treeId, roundNumber, treeLevel, boundaryKeys) -> {
+                recordedTargets.add(targetRank);
+                recordedKeyCounts.add(boundaryKeys.size());
+                return CompletableFuture.completedFuture(RefinementResponse.empty());
+            };
+
+        var ghostLayer = new GhostLayer<MortonKey, LongEntityID, String>(GhostType.FACES);
+        var config = BalanceConfiguration.defaultConfig();
+        var phase = new CrossPartitionBalancePhase<>(recording, new SinglePartitionRegistry(), config);
+        phase.setForestContext(forest, ghostLayer);
+        phase.setBalanceChecker(new GhostCoarserSeam(localKey, ghostKey, ownerRank));
+
+        var result = phase.execute(forest, 0, 2);
+
+        assertTrue(result.successful(), "balance completes");
+        assertTrue(recordedTargets.contains(ownerRank),
+                   "a refinement request must be propagated to the ghost owner's rank");
+        assertTrue(recordedKeyCounts.stream().anyMatch(n -> n > 0),
+                   "the propagated request must carry real boundary keys (the ghost-coarser violation's keys)");
+    }
 }

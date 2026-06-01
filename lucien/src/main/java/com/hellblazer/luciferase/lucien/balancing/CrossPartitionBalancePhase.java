@@ -113,7 +113,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
      *
      * @param balanceChecker the checker to use (must not be null)
      */
-    public void setBalanceChecker(TwoOneBalanceChecker<Key, ID, Content> balanceChecker) {
+    void setBalanceChecker(TwoOneBalanceChecker<Key, ID, Content> balanceChecker) {
         this.balanceChecker = Objects.requireNonNull(balanceChecker, "balanceChecker cannot be null");
     }
 
@@ -305,7 +305,10 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                      locallyBalanced);
 
             var elapsedMs = Math.max(1L, (System.nanoTime() - startTime) / 1_000_000L);
-            return new RefinementRoundResult(violations.size(), locallyBalanced, elapsedMs);
+            // refinementsApplied counts ACTUAL local subdivisions this round (review MEDIUM-1) — not the violation
+            // count — so totalRefinements / converged() reflect work done, and a round that drains keys but cannot
+            // subdivide any of them (see applyLocalRefinements warn) is distinguishable from real progress.
+            return new RefinementRoundResult(localSubdivides, locallyBalanced, elapsedMs);
 
         } catch (Exception e) {
             log.error("Error in refinement round {}", roundNumber, e);
@@ -342,6 +345,13 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                 if (index.containsSpatialKey(key)) {
                     if (index.subdivide(key)) {
                         subdivided++;
+                    } else {
+                        // The node could not be refined (e.g. all its entities map to one child cell, or the index
+                        // does not support on-demand subdivision such as SFCArrayIndex — review MEDIUM-2). The
+                        // violation cannot be resolved locally, so the Allreduce-LAND loop will run to maxRounds for
+                        // it; surface that rather than spinning silently.
+                        log.warn("Round {}: local refinement key {} could not be subdivided (unresolvable local "
+                                 + "violation for index {})", roundNumber, key, index.getClass().getSimpleName());
                     }
                     break;
                 }

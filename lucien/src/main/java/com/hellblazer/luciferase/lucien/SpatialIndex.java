@@ -280,8 +280,8 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
      * coarse key are redistributed to the appropriate child keys. The caller is responsible for any subsequent
      * ghost-layer re-synchronization.
      *
-     * <p>Default delegates to {@link #hasNode(Object)} for a no-op when the key is absent; concrete indices
-     * override to perform the real subdivision.
+     * <p>The default is an unconditional no-op returning {@code false}; concrete indices override to perform the real
+     * subdivision (those whose structure cannot subdivide, e.g. a flat SFC array, keep the no-op default).
      *
      * @param key the spatial key of the node to refine
      * @return true if a node was refined; false if the key was absent or already at maximum depth
