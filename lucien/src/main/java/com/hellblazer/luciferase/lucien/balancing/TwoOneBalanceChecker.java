@@ -382,8 +382,14 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
      * @return the queued local refinement keys (empty if none); insertion order is not guaranteed
      */
     public List<Key> drainLocalRefinements() {
-        var drained = new ArrayList<Key>(localRefinementQueue);
-        localRefinementQueue.removeAll(drained);
+        // Iterate-and-remove in one pass so a key added concurrently between a snapshot and a bulk remove cannot be
+        // silently dropped (it is either returned here or remains for the next drain). The newKeySet() iterator is
+        // weakly consistent and supports remove().
+        var drained = new ArrayList<Key>(localRefinementQueue.size());
+        for (var it = localRefinementQueue.iterator(); it.hasNext(); ) {
+            drained.add(it.next());
+            it.remove();
+        }
         return drained;
     }
 }
