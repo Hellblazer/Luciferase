@@ -1,7 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.Random;
@@ -21,11 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code parent()} round-trip ({@link #parentRoundTrip_allLevels()}) and level-21 decode round-trip
  * ({@link #decodeRoundTrip_L21()}) invariants now hold and their tests are enabled.
  *
- * <p>Two tests remain {@link Disabled @Disabled} pending bead Luciferase-567m (equals/hashCode are
- * not uniform across {@link CompactTetreeKey}/{@link ExtendedTetreeKey}/{@link LazyTetreeKey}): its
- * acceptance criterion is to remove those markers and have the tests pass. The other tests lock in
- * the encoding contract (decode round-trip L1-20, parent round-trip, equals/compareTo consistency
- * for concrete keys, distinct-key ordering) as regression guards.
+ * <p>The cross-implementation equals/hashCode symmetry tests ({@link #equalsSymmetry_crossImpl()},
+ * {@link #equalsSymmetry_lazyVsConcrete()}) are now enabled: bead Luciferase-567m made equals/hashCode
+ * uniform across {@link CompactTetreeKey}/{@link ExtendedTetreeKey}/{@link LazyTetreeKey} by hoisting
+ * them into {@link TetreeKey} as {@code final} methods over {@code (level, lowBits, highBits)}. The
+ * other tests lock in the encoding contract (decode round-trip L1-20, parent round-trip,
+ * equals/compareTo consistency for concrete keys, distinct-key ordering) as regression guards.
  *
  * <p>Ground truth for the parent/round-trip invariants is the geometric/topological {@link Tet}
  * (its {@link Tet#parent()} and {@link Tet#tmIndex()} are independently validated against the t8code
@@ -174,8 +174,6 @@ class TetreeKeyInvariantTest {
      * The fix (567m) is to compare on (level, lowBits, highBits) uniformly across all implementations.
      */
     @Test
-    @Disabled("RED until Luciferase-567m: Compact/Extended equals is asymmetric (instanceof keyed to "
-              + "own class); equal-bits keys of different impls are not mutually equal")
     void equalsSymmetry_crossImpl() {
         // Same level (10), same bits, different runtime classes: Compact vs Extended-with-zero-high.
         long bits = 0x1234567L;
@@ -197,9 +195,6 @@ class TetreeKeyInvariantTest {
      * lazy/concrete keys have different hash codes — 567m must align hashCode, not just equals.
      */
     @Test
-    @Disabled("RED until Luciferase-567m: LazyTetreeKey.equals is asymmetric vs Compact/Extended keys, "
-              + "and LazyTetreeKey.hashCode() uses a Tet-coordinate polynomial rather than the tmIndex "
-              + "hash, so equal lazy/concrete keys have different hash codes")
     void equalsSymmetry_lazyVsConcrete() {
         var rnd = new Random(0x1A2B3CL);
         for (byte target = 1; target <= 20; target++) {

@@ -28,7 +28,6 @@ import java.util.Objects;
 public class LazyTetreeKey extends ExtendedTetreeKey {
 
     private final    Tet                            tet;
-    private final    int                            lazyHashCode;
     private volatile TetreeKey<? extends TetreeKey<?>> resolved;
 
     /**
@@ -39,20 +38,6 @@ public class LazyTetreeKey extends ExtendedTetreeKey {
     public LazyTetreeKey(Tet tet) {
         super(tet.l(), 0L, 0L);  // Use actual level, placeholder values
         this.tet = Objects.requireNonNull(tet, "Tet cannot be null");
-        this.lazyHashCode = computeLazyHash(tet);
-    }
-
-    /**
-     * Compute a hash code based on Tet coordinates for HashMap efficiency. This allows the key to be used in HashMap
-     * without resolving tmIndex.
-     */
-    private static int computeLazyHash(Tet tet) {
-        int hash = 31 * tet.x();
-        hash = 31 * hash + tet.y();
-        hash = 31 * hash + tet.z();
-        hash = 31 * hash + tet.l();
-        hash = 31 * hash + tet.type();
-        return hash;
     }
 
     @Override
@@ -73,23 +58,11 @@ public class LazyTetreeKey extends ExtendedTetreeKey {
         return resolved.compareTo(other);
     }
 
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-
-        if (obj instanceof LazyTetreeKey other) {
-            // Both lazy - compare Tet directly without resolution
-            return tet.equals(other.tet);
-        } else if (obj instanceof TetreeKey<? extends TetreeKey<?>>) {
-            // Must resolve to compare with regular TetreeKey<? extends TetreeKey<?>>
-            ensureResolved();
-            return resolved.equals(obj);
-        }
-
-        return false;
-    }
+    // equals()/hashCode() are final in TetreeKey (Luciferase-567m). The old lazy overrides were the source of the
+    // asymmetry bug: lazy.equals(concrete) resolved while concrete.equals(lazy) did not, and lazyHashCode used a
+    // Tet-coordinate polynomial that never matched the concrete key's tmIndex hash. The uniform base versions
+    // resolve this key's bits (via getLowBits/getHighBits) so equal lazy/concrete keys are mutually equal and share
+    // a hashCode. compareTo (below) keeps its lazy-vs-lazy fast path — it is not part of the equals/hashCode contract.
 
     @Override
     public long getHighBits() {
@@ -116,12 +89,6 @@ public class LazyTetreeKey extends ExtendedTetreeKey {
      */
     public Tet getTet() {
         return tet;
-    }
-
-    @Override
-    public int hashCode() {
-        // Use pre-computed hash for HashMap efficiency
-        return lazyHashCode;
     }
 
     /**
