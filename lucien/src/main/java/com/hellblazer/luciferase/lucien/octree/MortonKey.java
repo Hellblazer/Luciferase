@@ -215,8 +215,38 @@ public final class MortonKey implements SpatialKey<MortonKey> {
     }
     
     /**
+     * The first (SFC-smallest) descendant at {@code targetLevel} — repeatedly taking child 0 (Luciferase-3uwx).
+     * Morton child encoding is {@code childCode = (code << 3) | childIndex}, so the first descendant left-shifts the
+     * code by 3 bits per level with all appended bits zero.
+     */
+    @Override
+    public MortonKey firstDescendantAtLevel(byte targetLevel) {
+        if (targetLevel < level || targetLevel > Constants.getMaxRefinementLevel()) {
+            throw new IllegalArgumentException("targetLevel " + targetLevel + " out of range [" + level + ", "
+                                               + Constants.getMaxRefinementLevel() + "]");
+        }
+        var shift = 3 * (targetLevel - level);
+        return new MortonKey(mortonCode << shift, targetLevel);
+    }
+
+    /**
+     * The last (SFC-largest) descendant at {@code targetLevel} — repeatedly taking child 7 (Luciferase-3uwx): the
+     * code left-shifted by 3 bits per level with all appended child bits set to 1.
+     */
+    @Override
+    public MortonKey lastDescendantAtLevel(byte targetLevel) {
+        if (targetLevel < level || targetLevel > Constants.getMaxRefinementLevel()) {
+            throw new IllegalArgumentException("targetLevel " + targetLevel + " out of range [" + level + ", "
+                                               + Constants.getMaxRefinementLevel() + "]");
+        }
+        var shift = 3 * (targetLevel - level);
+        var appended = shift == 0 ? 0L : (1L << shift) - 1L;
+        return new MortonKey((mortonCode << shift) | appended, targetLevel);
+    }
+
+    /**
      * Get all 8 children of this Morton key.
-     * 
+     *
      * @return array of 8 child MortonKeys, or null if at max level
      */
     public MortonKey[] getChildren() {
