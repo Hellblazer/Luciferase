@@ -422,13 +422,16 @@ public class GhostStateManager {
         // Create EntityData (content)
         EntityData content = new EntityData<>(entityId, position, (byte) 10, null);
 
-        // Create GhostEntity wrapper (lucien.forest.ghost.GhostEntityHalo)
+        // Create GhostEntity wrapper (lucien.forest.ghost.GhostEntityHalo). Stamp the halo from this manager's
+        // injected clock (Luciferase-55pi) so staleness-detection driven by the halo timestamp — which is
+        // serialized onto the wire via P2PGhostChannel — is deterministic under setClock() in tests.
         var ghostEntity = new GhostEntityHalo<>(
             entityId,
             content,
             position,
             new EntityBounds(position, 0.1f), // small radius
-            "remote-" + sourceBubbleId // sourceTreeId
+            "remote-" + sourceBubbleId, // sourceTreeId
+            clock.currentTimeMillis()
         );
 
         // Wrap in SimulationGhostEntity with metadata
