@@ -28,7 +28,6 @@ import org.slf4j.LoggerFactory;
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -69,7 +68,6 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
 
     // Process management
     private final Set<Integer> knownRanks;
-    private final Map<Key, Integer> elementOwners;
 
     // Synchronization control
     private volatile boolean autoSyncEnabled = true;
@@ -96,7 +94,6 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
         this.treeId = ghostChannel.getTreeId();
 
         this.knownRanks = new CopyOnWriteArraySet<>();
-        this.elementOwners = new ConcurrentHashMap<>();
 
         log.info("Created distributed ghost manager for rank {} tree {}",
                 currentRank, treeId);
@@ -244,31 +241,33 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
     /**
      * Set element ownership information for distributed ghost detection.
      *
-     * <p><b>Owner-map split (RDR-010 pi1.5 Phase C — Luciferase-azwr).</b> This populates the manager's
-     * own {@link #elementOwners} map, which is <em>separate</em> from
-     * {@link GhostBoundaryDetector#setElementOwner}'s map. The local boundary scan
-     * ({@link GhostBoundaryDetector#createGhostLayer}) — the path that decides which remote-owned
-     * neighbors become ghosts — reads the <em>detector's</em> map, not this one. To drive local
-     * cross-shape ghost creation from external (Forest-partition) ownership, set owners on the
-     * {@link GhostBoundaryDetector} (the inverted-seam owner store). This map currently backs only
-     * {@link #getElementOwner} for manager-level routing; do not assume setting it here feeds the local
-     * ghost scan.
+     * <p><b>Owner-map unification (Luciferase-9m31).</b> Delegates to
+     * {@link GhostBoundaryDetector#setElementOwner} — the detector's owner map is the single source of truth.
+     * The local boundary scan ({@link GhostBoundaryDetector#createGhostLayer}) reads that same map, so owners
+     * set here <em>do</em> drive local cross-shape ghost creation. (Previously the manager kept a separate
+     * map that the scan never read, so external Forest-partition ownership set via the manager silently had no
+     * effect on the local scan.)
      *
      * @param key the spatial key
      * @param ownerRank the rank of the process that owns this element
      */
     public void setElementOwner(Key key, int ownerRank) {
-        elementOwners.put(key, ownerRank);
+        localGhostManager.setElementOwner(key, ownerRank);
     }
-    
+
     /**
-     * Get the owner rank for a spatial key.
-     * 
+     * Get the owner rank for a spatial key, read through the unified owner map (Luciferase-9m31).
+     *
+     * <p>Delegates to {@link GhostBoundaryDetector#getElementOwner}, so the default for an unregistered key is
+     * the detector's convention (rank 0), not the manager's former {@code currentRank} default. The two now
+     * agree by construction. Callers that classify partition seams must, as the detector does, exclude
+     * locally-present keys before consulting this default (see {@link GhostBoundaryDetector#getElementOwner}).
+     *
      * @param key the spatial key
-     * @return the owner rank, or current rank if not found
+     * @return the registered owner rank, or 0 if none was registered
      */
     public int getElementOwner(Key key) {
-        return elementOwners.getOrDefault(key, currentRank);
+        return localGhostManager.getElementOwner(key);
     }
     
     /**
@@ -320,7 +319,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
         stats.put("treeId", treeId);
         stats.put("ghostType", ghostChannel.getGhostType());
         stats.put("knownProcesses", knownRanks.size());
-        stats.put("trackedElements", elementOwners.size());
+        stats.put("trackedElements", localGhostManager.getTrackedOwnerCount());
         stats.put("autoSyncEnabled", autoSyncEnabled);
         stats.put("lastSyncTime", lastSyncTime);
         stats.put("syncIntervalMs", syncIntervalMs);
@@ -338,9 +337,9 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
         // Clear ghost channel
         ghostChannel.clear();
 
-        // Clear internal state
+        // Clear internal state (owners live on the detector after unification — Luciferase-9m31)
         knownRanks.clear();
-        elementOwners.clear();
+        localGhostManager.clearElementOwners();
     }
 
     // Private helper methods

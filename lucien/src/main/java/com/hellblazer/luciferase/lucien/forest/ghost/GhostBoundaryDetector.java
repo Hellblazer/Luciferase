@@ -372,6 +372,24 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     }
 
     /**
+     * Number of elements with an explicitly-registered owner (Luciferase-9m31). The owner map is the single
+     * source of truth shared with {@link DistributedGhostManager} after owner-map unification.
+     *
+     * @return the count of registered element owners
+     */
+    public int getTrackedOwnerCount() {
+        return elementOwners.size();
+    }
+
+    /**
+     * Clear all registered element owners (Luciferase-9m31), without touching boundary/processed state. Used by
+     * {@link DistributedGhostManager#shutdown()} now that the manager delegates ownership to this detector.
+     */
+    public void clearElementOwners() {
+        elementOwners.clear();
+    }
+
+    /**
      * Set the local partition rank (Luciferase-8ggq). A neighbor element is treated as remote — and thus gets a
      * ghost created — when its owner rank differs from this value. Injected by
      * {@code GhostCoordinator.setupDistributedGhosts} once the rank is known; defaults to 0 for single-process use.
