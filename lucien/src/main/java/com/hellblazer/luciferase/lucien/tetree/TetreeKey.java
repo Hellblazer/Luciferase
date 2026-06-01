@@ -511,9 +511,12 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
     /**
      * {@inheritDoc}
      *
-     * <p>{@code TetreeKey} returns a single range and ignores {@code indexKeys}. The TM-index ordering is not
-     * level-scoped, so one {@code subMap} query suffices regardless of the storage levels present. RDR-008 P3
-     * follow-up (bead Luciferase-vpl).
+     * <p>{@code TetreeKey} currently returns a single range and ignores {@code indexKeys}. <strong>This
+     * under-covers a multi-level index:</strong> {@link #compareTo} is level-first (level, then 128-bit TM-index
+     * unsigned), so a {@code subMap} bounded at the single level chosen by {@link #estimateSFCRange} only returns
+     * keys at that level — entities stored at other levels within the radius are silently skipped. The correct
+     * behaviour mirrors {@code MortonKey.sfcRangesForKNN} (one range per occupied level); tracked by
+     * {@code Luciferase-6gnb}. RDR-008 P3 follow-up (bead Luciferase-vpl).
      */
     @Override
     public Iterable<SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>> sfcRangesForKNN(

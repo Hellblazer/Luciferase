@@ -172,15 +172,37 @@ class SpatialKeyLocalityTest {
         Collections.shuffle(mixedLevelKeys);
         Collections.sort(mixedLevelKeys);
 
-        // Verify that keys are sorted by tm-index value (not by level)
-        // ExtendedTetreeKey comparison is based solely on tm-index
+        // ExtendedTetreeKey ordering is LEVEL-FIRST (Luciferase-tkvb): compareTo compares level before the
+        // 128-bit TM-index. So sorting groups keys by level — every level-L key precedes every level-(L+1) key,
+        // regardless of TM-index. Verify both the non-descending order and the strict level separation.
         for (int i = 0; i < mixedLevelKeys.size() - 1; i++) {
             var current = mixedLevelKeys.get(i);
             var next = mixedLevelKeys.get(i + 1);
 
-            // Keys should be in non-descending order by tm-index
-            assertTrue(current.compareTo(next) <= 0, "Keys should be sorted in non-descending order by tm-index");
+            assertTrue(current.compareTo(next) <= 0, "Keys should be sorted in non-descending order");
+            assertTrue(current.getLevel() <= next.getLevel(),
+                       "Level-first ordering: a coarser key must never sort after a finer one (got level "
+                       + current.getLevel() + " before level " + next.getLevel() + ")");
         }
+
+        // Concrete cross-level boundary (bead Luciferase-i3e4 AC): ALL level-1 keys sort strictly before ALL
+        // level-2 keys. Assert it directly on the partition, not just via the adjacent-pair monotonicity above —
+        // the last level-1 key must come before the first level-2 key in the sorted list.
+        int lastLevel1Idx = -1;
+        int firstLevel2Idx = -1;
+        for (int i = 0; i < mixedLevelKeys.size(); i++) {
+            byte lvl = mixedLevelKeys.get(i).getLevel();
+            if (lvl == 1) {
+                lastLevel1Idx = i;
+            } else if (lvl == 2 && firstLevel2Idx == -1) {
+                firstLevel2Idx = i;
+            }
+        }
+        assertTrue(lastLevel1Idx >= 0 && firstLevel2Idx >= 0,
+                   "Test setup must produce both level-1 and level-2 keys");
+        assertTrue(lastLevel1Idx < firstLevel2Idx,
+                   "Every level-1 key must sort before every level-2 key (level-first ordering): last level-1 at "
+                   + lastLevel1Idx + ", first level-2 at " + firstLevel2Idx);
     }
 
     @Test

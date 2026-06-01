@@ -38,8 +38,11 @@ class TetreeValidatorTest {
         TetreeValidator.setValidationEnabled(true);
     }
 
+    // Re-enabled by Luciferase-i3e4: the prior @Disabled reason "t8code has known parent-child consistency
+    // issues" is stale. The t8code type alignment (Luciferase-4pd) made Tet.child()/parent() t8code-consistent,
+    // and T8codeDtetOracleTest now independently validates child/parent geometry against a t8code port. These
+    // tests exercise the TetreeValidator child()<->parent() round-trip on top of that now-validated machinery.
     @Test
-    @org.junit.jupiter.api.Disabled("t8code has known parent-child consistency issues")
     void testAssertions() {
         Tet validTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
         assertDoesNotThrow(() -> TetreeValidator.assertValidTet(validTet));
@@ -124,7 +127,6 @@ class TetreeValidatorTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("t8code has known parent-child consistency issues")
     void testFamilyValidation() {
         Tet parent = new Tet(0, 0, 0, (byte) 1, (byte) 0);
 
@@ -235,7 +237,6 @@ class TetreeValidatorTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("t8code has known parent-child consistency issues")
     void testParentChildValidation() {
         Tet parent = new Tet(0, 0, 0, (byte) 2, (byte) 0);
 
