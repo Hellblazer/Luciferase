@@ -2136,6 +2136,40 @@ implements SpatialIndex<Key, ID, Content>,
     }
 
     /**
+     * Refine the node at {@code key} by one level on demand (Luciferase-m27q, 2:1 balance B10c).
+     *
+     * <p>Locates the node and invokes the subclass {@link #handleNodeSubdivision} hook under the write lock,
+     * independent of the entity-count threshold and the deferred bulk-loading queue. Returns whether the
+     * subdivision actually produced finer nodes (it is a no-op when the key is absent, already at {@link #maxDepth},
+     * or when every entity maps to the same child cell so refining cannot distribute them). Ghost re-synchronization
+     * is the caller's responsibility (the 2:1-balance round triggers it once per round after draining all local
+     * refinements).
+     */
+    @Override
+    public boolean subdivide(Key key) {
+        lock.writeLock().lock();
+        try {
+            var node = spatialIndex.get(key);
+            if (node == null) {
+                log.debug("subdivide: no node at key {}", key);
+                return false;
+            }
+            var level = key.getLevel();
+            if (level >= maxDepth) {
+                log.debug("subdivide: node at key {} already at max depth {}", key, maxDepth);
+                return false;
+            }
+            var before = spatialIndex.size();
+            handleNodeSubdivision(key, level, node);
+            var created = spatialIndex.size() - before;
+            log.debug("subdivide: refined node at key {} (level {}); {} child node(s) created", key, level, created);
+            return created > 0;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
      * Hook for subclasses to handle node subdivision
      */
     protected void handleNodeSubdivision(Key spatialIndex, byte level, SpatialNodeImpl<ID> node) {
