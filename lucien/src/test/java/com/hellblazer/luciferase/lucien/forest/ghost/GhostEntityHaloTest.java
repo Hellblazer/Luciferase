@@ -52,4 +52,22 @@ class GhostEntityHaloTest {
         assertThrows(NullPointerException.class,
                      () -> new GhostEntityHalo<LongEntityID, String>(new LongEntityID(1), "c", new Point3f(), null, null));
     }
+
+    @Test
+    void explicitTimestampIsStoredVerbatim() {
+        // Luciferase-55pi: the deterministic seam — an injected timestamp is stored as-is (no wall-clock).
+        var h = new GhostEntityHalo<LongEntityID, String>(new LongEntityID(1), "c", new Point3f(), null, "t",
+                                                          123456789L);
+        assertEquals(123456789L, h.getTimestamp(), "explicit timestamp must be stored verbatim");
+    }
+
+    @Test
+    void clockBackedConstructorStampsFromSystemClock() {
+        // The convenience constructor stamps from Clock.system() (not a direct System.currentTimeMillis call).
+        long before = com.hellblazer.luciferase.common.time.Clock.system().currentTimeMillis();
+        var h = new GhostEntityHalo<LongEntityID, String>(new LongEntityID(1), "c", new Point3f(), null, "t");
+        long after = com.hellblazer.luciferase.common.time.Clock.system().currentTimeMillis();
+        assertTrue(h.getTimestamp() >= before && h.getTimestamp() <= after,
+                   "convenience constructor stamps a current timestamp via Clock.system()");
+    }
 }

@@ -5,6 +5,7 @@
  */
 package com.hellblazer.luciferase.lucien.forest.ghost;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 
@@ -32,14 +33,32 @@ public final class GhostEntityHalo<ID extends EntityID, Content> {
     private final String       sourceTreeId;
     private final long         timestamp;
 
+    /**
+     * Create a halo stamped with the current time from {@link Clock#system()} (Luciferase-55pi: replaces a
+     * direct {@code System.currentTimeMillis()} call, honouring the no-raw-wall-clock contract). For
+     * deterministic tests, use the {@link #GhostEntityHalo(EntityID, Object, Point3f, EntityBounds, String,
+     * long) explicit-timestamp constructor}.
+     */
     public GhostEntityHalo(ID entityId, Content content, Point3f position, EntityBounds bounds,
                            String sourceTreeId) {
+        this(entityId, content, position, bounds, sourceTreeId, Clock.system().currentTimeMillis());
+    }
+
+    /**
+     * Create a halo with an explicit observation timestamp (Luciferase-55pi). This is the injectable seam:
+     * callers with a {@link Clock} pass {@code clock.currentTimeMillis()}, and tests pass a fixed value, so
+     * staleness-detection logic is deterministic.
+     *
+     * @param timestamp the observation time in milliseconds since epoch
+     */
+    public GhostEntityHalo(ID entityId, Content content, Point3f position, EntityBounds bounds,
+                           String sourceTreeId, long timestamp) {
         this.entityId = Objects.requireNonNull(entityId, "Entity ID cannot be null");
         this.content = content;
         this.position = new Point3f(Objects.requireNonNull(position, "Position cannot be null"));
         this.bounds = bounds;
         this.sourceTreeId = Objects.requireNonNull(sourceTreeId, "Source tree ID cannot be null");
-        this.timestamp = System.currentTimeMillis();
+        this.timestamp = timestamp;
     }
 
     public ID getEntityId() { return entityId; }
