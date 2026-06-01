@@ -302,9 +302,9 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
             }
             // Inject the local rank into the lazily-built detector now that it is known (Luciferase-8ggq): the
             // ghost-creation guard treats a neighbor as remote when its owner != currentRank. Without this the
-            // detector keeps its default rank 0 and misfires on every rank > 0. Persist it on the coordinator so a
-            // later setGhostType/setGhostCreationAlgorithm reconstruction re-applies the rank rather than resetting
-            // to 0.
+            // detector keeps its default rank 0 and misfires on every rank > 0. The rank is persisted on the
+            // coordinator; post-setup setGhostType/setGhostCreationAlgorithm now throw (Luciferase-9m31) rather
+            // than rebuild a detached detector, so the rank cannot be silently lost.
             this.currentRank = currentRank;
             ghostBoundaryDetector.setCurrentRank(currentRank);
             this.distributedGhostManager = new DistributedGhostManager<>(facade, ghostChannel, ghostBoundaryDetector);
