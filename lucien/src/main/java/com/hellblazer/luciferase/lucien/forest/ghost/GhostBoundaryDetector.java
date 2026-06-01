@@ -74,9 +74,6 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     // Owner information for distributed support
     private final Map<Key, Integer> elementOwners;
 
-    // Tree ID for distributed ghost requests (candidate-dead-field; flagged for follow-up review B6)
-    private final long treeId;
-
     // Rank of the local partition (Luciferase-8ggq). Defaults to 0; injected via setCurrentRank() from
     // GhostCoordinator.setupDistributedGhosts once the rank is known. A neighbor is "remote" (needs a ghost)
     // when its owner differs from this rank — so single-process use (rank 0) preserves the original != 0 guard.
@@ -105,7 +102,6 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
         this.boundaryElements = ConcurrentHashMap.newKeySet();
         this.processedElements = ConcurrentHashMap.newKeySet();
         this.elementOwners = new ConcurrentHashMap<>();
-        this.treeId = 0L;
 
         log.info("Created GhostBoundaryDetector: element-level={}, algorithm={}",
                 spatialIndex != null, ghostAlgorithm);
