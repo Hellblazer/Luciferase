@@ -1183,6 +1183,8 @@ implements SpatialIndex<Key, ID, Content>,
      * Manually trigger tree rebalancing.
      */
     public TreeBalancer.RebalancingResult rebalanceTree() {
+        // treeBalancer is never null: structures with no tree to balance (e.g. SFCArrayIndex) supply a
+        // NoOpTreeBalancer (Luciferase-7sv7), which returns a benign no-op result here.
         lock.writeLock().lock();
         try {
             return treeBalancer.rebalanceTree();

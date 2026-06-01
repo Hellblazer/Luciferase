@@ -107,7 +107,11 @@ public interface TreeBalancer<Key extends SpatialKey<Key>, ID extends EntityID> 
     }
 
     /**
-     * Result of a rebalancing operation
+     * Result of a rebalancing operation.
+     *
+     * <p>Convention: {@code successful=true} with {@link #hasChanges()}{@code ==false} means either the tree was
+     * already balanced or balancing is not applicable to the structure (e.g. a flat {@code SFCArrayIndex} backed by
+     * {@link NoOpTreeBalancer}). {@code successful=false} is reserved for an attempted-but-failed rebalance.
      */
     record RebalancingResult(int nodesCreated, int nodesRemoved, int nodesMerged, int nodesSplit, int entitiesRelocated,
                              long timeTaken, boolean successful) {
