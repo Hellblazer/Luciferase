@@ -101,7 +101,12 @@ class ForestLoadBalancerMigrationTest {
         new ForestLoadBalancer<MortonKey, LongEntityID, String>()
             .executeMigration(plan, trees, (eid, pt) -> pt.set(center));
 
-        assertEquals(bounds, target.getEntityBounds(id), "spanning entity must keep its bounds after migration");
+        // Compare bounds by value (min/max), not by reference: EntityBounds has no value equals() (see the
+        // follow-up bead), so assertEquals(bounds, ...) would only pass by reference identity.
+        var migrated = target.getEntityBounds(id);
+        assertNotNull(migrated, "spanning entity must retain bounds after migration");
+        assertEquals(bounds.getMin(), migrated.getMin(), "min bound preserved");
+        assertEquals(bounds.getMax(), migrated.getMax(), "max bound preserved");
         assertEquals(sourceSpan, target.getEntitySpanCount(id),
                      "spanning entity must keep its span (not collapse to a point)");
         assertTrue(sourceSpan > 1, "precondition: the fixture entity actually spans multiple cells");
