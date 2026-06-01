@@ -196,8 +196,10 @@ public final class ESVTTraversal {
                 continue;
             }
 
-            // Get children at entry face in front-to-back order
-            // NOTE: childOrder contains BEY indices from CHILDREN_AT_FACE table
+            // Get children at entry face in front-to-back order. childOrder holds Bey child indices from the
+            // PER-TYPE children-at-face table (TetreeConnectivity.CHILDREN_AT_FACE[parentType][entryFace],
+            // t8code t8_dtet_face_child_id_by_type), sorted by face-center distance in ESVTChildOrder
+            // (Luciferase-d5o9: not the old type-invariant ESVTTopology.CHILDREN_AT_FACE).
             byte[] childOrder = ESVTChildOrder.getChildOrder(parentType, entryFace);
 
             // Try each child starting from siblingPos

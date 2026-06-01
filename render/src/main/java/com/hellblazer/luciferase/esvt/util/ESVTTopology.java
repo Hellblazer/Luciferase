@@ -63,8 +63,16 @@ public final class ESVTTopology {
     public static final int VERTICES_PER_TET = 4;
 
     /**
-     * Children touching each face: [faceIndex] -> array of 4 child indices
-     * Face i is opposite vertex i, so children at corners touch it
+     * Children touching each face: [faceIndex] -> array of 4 child indices.
+     *
+     * <p><b>Type-INVARIANT / illustrative only (Luciferase-d5o9).</b> This is the Bey type-0 children-at-face
+     * set and is NOT the authoritative table. The real children-at-face is PER-TYPE:
+     * {@code TetreeConnectivity.CHILDREN_AT_FACE[type][face]} (t8code {@code t8_dtet_face_child_id_by_type},
+     * corrected by Luciferase-koaw). The live ESVT traversal does not read this constant: the CPU path goes
+     * through {@link com.hellblazer.luciferase.esvt.traversal.ESVTChildOrder} (which reads the per-type lucien
+     * table) and the GPU path uses the precomputed per-type {@code CHILD_ORDER} in {@code raycast_esvt.comp}.
+     * {@code ESVTTopology} has no production caller (test-only utility); this constant is retained for
+     * illustration and its own tests. Do NOT use it as a children-at-face source of truth.
      */
     public static final int[][] CHILDREN_AT_FACE = {
         {4, 5, 6, 7},  // Face 0: opposite v0, includes all octahedral children
