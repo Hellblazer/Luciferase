@@ -2109,6 +2109,18 @@ implements SpatialIndex<Key, ID, Content>,
     }
 
     /**
+     * Occupied spatial keys in the SFC subrange {@code [fromKey, toKey]} (Luciferase-3uwx). Backed by the
+     * navigable {@code spatialIndex} {@link ConcurrentNavigableMap#subMap} view, this is {@code O(log n + k)}
+     * for {@code k} keys in range — the pruning primitive for owner-range ghost descent. The returned set is a
+     * snapshot copy, so iteration is safe against concurrent index mutation.
+     */
+    @Override
+    public NavigableSet<Key> spatialKeysInRange(Key fromKey, boolean fromInclusive, Key toKey,
+                                                boolean toInclusive) {
+        return new TreeSet<>(spatialIndex.subMap(fromKey, fromInclusive, toKey, toInclusive).keySet());
+    }
+
+    /**
      * Get the spatial index storage map
      */
     protected Map<Key, SpatialNodeImpl<ID>> getSpatialIndex() {

@@ -358,8 +358,14 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     /**
      * Get element owner information.
      *
+     * <p>Defaults to rank 0 when no owner was explicitly registered. Note that 0 is "local" only for a rank-0
+     * process: a {@code currentRank > 0} process treats an unregistered owner (0) as <em>remote</em>. Callers
+     * that classify partition seams ({@link #isPartitionBoundary}, {@link #createGhostsForElement}) therefore
+     * first exclude locally-present keys (which this rank owns regardless of the map) before consulting this
+     * default. Owner-map unification across the default-0 convention is Luciferase-9m31's concern.
+     *
      * @param key the spatial key
-     * @return owner rank, or 0 if local
+     * @return the registered owner rank, or 0 if none was registered
      */
     public int getElementOwner(Key key) {
         return elementOwners.getOrDefault(key, 0);
@@ -647,6 +653,30 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     // Private Element-Level Helper Methods
     // ========================================
 
+    /**
+     * Identify the local <em>partition-boundary</em> elements: those occupied by this rank that have at least one
+     * face neighbor owned by a different rank (Luciferase-3uwx). This is the t8code ghost-v3 seed set —
+     * partition seam, not domain edge.
+     *
+     * <p><b>Semantic change (Luciferase-3uwx, user-approved correctness+perf).</b> The previous implementation
+     * flagged <em>domain</em>-boundary elements (via {@code neighborDetector.getBoundaryDirections}, a
+     * coords-vs-MAX_COORD test), which never seeded ghosts for domain-interior partition-seam elements — a
+     * correctness gap. The identified set is now exactly the partition seam, and is consistent with the
+     * downstream {@link #createGhostsForElement} guard (a face neighbor with owner {@code != currentRank}).
+     * Single-process use (one rank, no remote owners) therefore yields an empty boundary set, as it should.
+     *
+     * <p><b>Iteration strategy (Luciferase-3uwx).</b> A flat scan over the local elements with the
+     * partition-boundary leaf test. In this single-index-per-rank model the local {@code spatialIndex} already
+     * holds <em>only</em> this rank's elements, so the remote-subtree pruning t8code uses to avoid visiting
+     * other ranks' elements is structurally already realized (other ranks' elements are simply absent). The
+     * remaining t8code optimization — pruning local-<em>interior</em> subtrees to skip the face test on
+     * elements all of whose neighbors are local — is deferred (Luciferase follow-up): it requires a sound
+     * seam-face check at subtree granularity (a node's neighbor-dilated cube is not a single SFC-contiguous
+     * range, so it cannot be bounded by {@code ownerOf} at the range endpoints alone). The reusable
+     * primitives for that descent are in place: {@link SpatialKey#firstDescendantAtLevel(byte)} /
+     * {@link SpatialKey#lastDescendantAtLevel(byte)} (S1), {@code ShapeWeightPartitioner.cutPoints/ownerOf}
+     * (S2), and {@link SpatialIndex#spatialKeysInRange} (S3).
+     */
     private void identifyBoundaryElements() {
         if (neighborDetector == null || spatialIndex == null) {
             log.warn("Cannot identify boundary elements - detector or index not set");
@@ -659,18 +689,38 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
         log.debug("Identifying boundary elements from {} total elements", spatialKeys.size());
 
         for (var key : spatialKeys) {
-            if (isElementAtBoundary(key)) {
+            if (isPartitionBoundary(key)) {
                 boundaryElements.add(key);
             }
         }
 
-        log.debug("Identified {} boundary elements", boundaryElements.size());
+        log.debug("Identified {} partition-boundary elements", boundaryElements.size());
     }
 
-    private boolean isElementAtBoundary(Key key) {
-        if (neighborDetector == null) return false;
-        var boundaryDirections = neighborDetector.getBoundaryDirections(key);
-        return !boundaryDirections.isEmpty();
+    /**
+     * An occupied element is a partition-boundary element iff at least one of its face neighbors is
+     * <em>absent from the local index</em> and owned by a rank other than {@link #currentRank}
+     * (Luciferase-3uwx). A locally-present face neighbor is owned by this rank (it is in our index), so it is
+     * skipped before the owner check — this mirrors the {@link #createGhostsForElement} guard
+     * ({@code !containsSpatialKey(neighborKey)} then {@code ownerRank != currentRank}) exactly, so the
+     * identified boundary set is precisely the set of elements that {@code createGhostsForElement} turns into
+     * ghosts. Without the locally-present skip, a {@code currentRank > 0} process would spuriously flag every
+     * interior element (a present neighbor with no explicit owner entry defaults to rank 0 ≠ currentRank), and
+     * identify/create would disagree (flagged boundary, but no ghost emitted).
+     */
+    private boolean isPartitionBoundary(Key key) {
+        if (neighborDetector == null) {
+            return false;
+        }
+        for (var neighbor : neighborDetector.findFaceNeighbors(key)) {
+            if (spatialIndex != null && spatialIndex.containsSpatialKey(neighbor)) {
+                continue; // locally present ⇒ owned by this rank ⇒ not a seam (and creates no ghost)
+            }
+            if (getElementOwner(neighbor) != currentRank) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void createGhostsForElement(Key key) {

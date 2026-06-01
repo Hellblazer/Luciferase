@@ -96,6 +96,68 @@ public final class ShapeWeightPartitioner {
     }
 
     /**
+     * Precompute per-rank SFC cut points (offsets) from an {@link #assign(long[], int)} result, for
+     * {@code O(log P)} owner-of-unit queries (Luciferase-3uwx, the t8code {@code element_offsets} analogue).
+     *
+     * <p>Returns an array of length {@code partitionCount + 1} where {@code offsets[r]} is the index of the
+     * first SFC unit owned by rank {@code r} (equivalently, the count of units assigned to a rank
+     * {@code < r}), and {@code offsets[partitionCount]} is the unit count {@code n}. The array is
+     * non-decreasing; an empty rank {@code r} (which the cumulative-weight partition may produce) has
+     * {@code offsets[r] == offsets[r + 1]} — a zero-width band that {@link #ownerOf(int[], int)} skips.
+     *
+     * @param ranks          a non-decreasing rank-per-unit assignment from {@link #assign(long[], int)}
+     * @param partitionCount the rank count {@code P} used to produce {@code ranks} (&ge; 1)
+     * @return offsets of length {@code P + 1}; {@code offsets[0] == 0}, {@code offsets[P] == ranks.length}
+     * @throws IllegalArgumentException if {@code partitionCount < 1}
+     */
+    public static int[] cutPoints(int[] ranks, int partitionCount) {
+        if (partitionCount < 1) {
+            throw new IllegalArgumentException("partitionCount must be >= 1, got " + partitionCount);
+        }
+        int[] offsets = new int[partitionCount + 1];
+        int n = ranks.length;
+        // ranks is non-decreasing: the first index whose rank is >= r is the start offset of rank r.
+        int i = 0;
+        for (int r = 0; r <= partitionCount; r++) {
+            while (i < n && ranks[i] < r) {
+                i++;
+            }
+            offsets[r] = i;
+        }
+        offsets[partitionCount] = n;
+        return offsets;
+    }
+
+    /**
+     * Owner rank of an SFC unit, by binary search over the {@link #cutPoints(int[], int)} offsets
+     * ({@code O(log P)}; Luciferase-3uwx). Returns the largest rank {@code r} with
+     * {@code cutPoints[r] <= unitIndex}, so empty ranks (zero-width bands) are never returned.
+     *
+     * @param cutPoints offsets from {@link #cutPoints(int[], int)} (length {@code P + 1})
+     * @param unitIndex SFC unit index in {@code [0, n)} where {@code n == cutPoints[P]}
+     * @return the owning rank in {@code [0, P-1]}
+     * @throws IndexOutOfBoundsException if {@code unitIndex} is outside {@code [0, n)}
+     */
+    public static int ownerOf(int[] cutPoints, int unitIndex) {
+        int n = cutPoints[cutPoints.length - 1];
+        if (unitIndex < 0 || unitIndex >= n) {
+            throw new IndexOutOfBoundsException("unitIndex " + unitIndex + " out of range [0, " + n + ")");
+        }
+        // Largest r with cutPoints[r] <= unitIndex. Search the rank boundaries [0, P].
+        int lo = 0;
+        int hi = cutPoints.length - 1; // P
+        while (lo < hi) {
+            int mid = (lo + hi + 1) >>> 1;
+            if (cutPoints[mid] <= unitIndex) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        return lo;
+    }
+
+    /**
      * Map a list of shapes to their {@code N_shape(level)} weights.
      *
      * @param shapes the per-unit shape weight providers (typically forest tree spatial indices)

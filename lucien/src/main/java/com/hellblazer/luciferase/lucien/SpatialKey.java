@@ -117,6 +117,41 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
     K root();
 
     /**
+     * The first (SFC-smallest) descendant of this key at {@code targetLevel} (Luciferase-3uwx).
+     *
+     * <p>Together with {@link #lastDescendantAtLevel(byte)} this bounds the contiguous space-filling-curve subrange
+     * covered by this node's subtree — the input to t8code-style owner-range pruning, which maps an SFC subrange to
+     * the interval of owning ranks {@code [ownerOf(first), ownerOf(last)]}. The default throws; key types that
+     * support descendant enumeration override it.
+     *
+     * @param targetLevel a level &ge; this key's level (and &le; the type's maximum level)
+     * @return the first descendant key at {@code targetLevel}
+     * @throws UnsupportedOperationException if this key type does not support descendant enumeration
+     * @throws IllegalArgumentException if {@code targetLevel} is out of range
+     */
+    default K firstDescendantAtLevel(byte targetLevel) {
+        throw new UnsupportedOperationException(
+            getClass().getSimpleName() + " does not support firstDescendantAtLevel");
+    }
+
+    /**
+     * The last (SFC-largest) descendant of this key at {@code targetLevel} (Luciferase-3uwx). See
+     * {@link #firstDescendantAtLevel(byte)} for the role of the [first, last] SFC subrange in owner-range pruning.
+     *
+     * @param targetLevel a level &ge; this key's level (and &le; the type's maximum level)
+     * @return the last descendant key at {@code targetLevel}
+     * @throws UnsupportedOperationException if this key type does not support descendant enumeration
+     * @throws IllegalArgumentException if {@code targetLevel} is out of range
+     */
+    default K lastDescendantAtLevel(byte targetLevel) {
+        throw new UnsupportedOperationException(
+            getClass().getSimpleName() + " does not support lastDescendantAtLevel");
+        // TODO Luciferase-j4zn: implement firstDescendantAtLevel/lastDescendantAtLevel for TetreeKey and
+        // PyramidKey before the owner-range descent (which consumes them) is applied to those index types.
+        // Only MortonKey overrides today; the descent prune is currently deferred, so the default-throw is safe.
+    }
+
+    /**
      * Get a human-readable string representation of this key. This should include all relevant components (level,
      * index, etc.) for debugging purposes.
      *

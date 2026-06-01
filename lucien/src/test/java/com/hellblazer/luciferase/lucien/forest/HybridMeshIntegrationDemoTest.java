@@ -130,16 +130,30 @@ class HybridMeshIntegrationDemoTest {
         // PyramidCrossShapeGhostTest (pi1.5); here we only show the ghost layer builds over a populated
         // pyramid index without error and surfaces boundary elements.
         var pyramid = new PyramidIndex<LongEntityID, String>(new SequentialLongIDGenerator());
-        seedGrid(pyramid, 1f, 8000f); // span to the domain edge so boundary elements exist
+        seedGrid(pyramid, 1f, 8000f); // span the domain
+        var detector = pyramid.getNeighborDetector();
         var ghost = new com.hellblazer.luciferase.lucien.forest.ghost.GhostBoundaryDetector<>(
-            pyramid, pyramid.getNeighborDetector(),
+            pyramid, detector,
             com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES,
             com.hellblazer.luciferase.lucien.forest.ghost.GhostAlgorithm.MINIMAL);
+
+        // Luciferase-3uwx: the boundary set is the PARTITION seam (a face neighbor owned by a different rank),
+        // not the domain edge. Establish a seam by assigning a remote owner to an absent face neighbor of an
+        // occupied element so the ghost-exchange boundary set is non-empty.
+        outer:
+        for (var key : pyramid.getSpatialKeys()) {
+            for (var fk : detector.findFaceNeighbors(key)) {
+                if (!pyramid.containsSpatialKey(fk)) {
+                    ghost.setElementOwner(fk, 1); // remote relative to default local rank 0
+                    break outer;
+                }
+            }
+        }
 
         assertDoesNotThrow(ghost::createGhostLayer, "pyramid ghost layer must build without error");
         assertNotNull(ghost.getGhostLayer(), "pyramid ghost layer must be present");
         assertFalse(ghost.getBoundaryElements().isEmpty(),
-                    "a domain-spanning pyramid index must yield boundary elements for ghost exchange");
+                    "a partition seam (remote-owned face neighbor) must yield boundary elements for ghost exchange");
     }
 
     @Test
