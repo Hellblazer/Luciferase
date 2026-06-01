@@ -27,6 +27,7 @@ import javax.vecmath.Tuple3i;
 import javax.vecmath.Vector3f;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -389,6 +390,28 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
      * @return stream of spatial nodes with their entity IDs
      */
     Stream<SpatialNode<Key, ID>> nodes();
+
+    /**
+     * The occupied spatial keys whose SFC order falls in the range {@code [fromKey, toKey]} (inclusivity per the
+     * flags), in ascending SFC order (Luciferase-3uwx).
+     *
+     * <p>This is the SFC-subrange primitive for t8code-style owner-range ghost pruning: a descent maps a tree
+     * node's contiguous descendant range {@code [firstDescendantAtLevel, lastDescendantAtLevel]} to the occupied
+     * leaves it contains, so an entirely locally-owned subtree can be skipped without visiting its elements. The
+     * default throws; index types backed by a navigable SFC map override it.
+     *
+     * @param fromKey       lower bound of the SFC subrange
+     * @param fromInclusive whether {@code fromKey} itself is included
+     * @param toKey         upper bound of the SFC subrange
+     * @param toInclusive   whether {@code toKey} itself is included
+     * @return the occupied keys in the subrange, in ascending SFC order
+     * @throws UnsupportedOperationException if this index type does not expose a navigable SFC view
+     */
+    default NavigableSet<Key> spatialKeysInRange(Key fromKey, boolean fromInclusive, Key toKey,
+                                                 boolean toInclusive) {
+        throw new UnsupportedOperationException(
+            getClass().getSimpleName() + " does not support spatialKeysInRange");
+    }
 
     /**
      * Find all entities intersected by a ray, sorted by distance
