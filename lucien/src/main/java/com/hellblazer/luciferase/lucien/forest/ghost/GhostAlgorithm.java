@@ -30,26 +30,29 @@ package com.hellblazer.luciferase.lucien.forest.ghost;
 public enum GhostAlgorithm {
     
     /**
-     * Minimal ghost creation - only creates ghosts for direct neighbors.
-     * 
+     * Minimal ghost creation - only creates ghosts for direct (face) neighbors.
+     *
      * Characteristics:
      * - Lowest memory usage
      * - Minimal network traffic
      * - Fast creation
-     * - May require additional communication during queries
+     * - Sufficient for 2:1-balanced meshes, where a face neighbor is at most one level away
+     * - <b>Default choice</b> (Luciferase-9m31)
      */
     MINIMAL,
-    
+
     /**
-     * Conservative ghost creation - creates ghosts for neighbors and their immediate neighbors.
-     * 
+     * Deep-coverage ghost creation - creates ghosts for neighbors and their immediate neighbors (depth-2 BFS).
+     * Renamed from {@code CONSERVATIVE} (Luciferase-9m31): the old name understated that this is the
+     * over-aggressive depth-2 option, not a conservative one. Prefer {@link #MINIMAL} on 2:1-balanced meshes;
+     * use this only when the mesh is not balanced and second-level coverage is genuinely required.
+     *
      * Characteristics:
      * - Moderate memory usage
-     * - Balanced network traffic
-     * - Good query performance for most use cases
-     * - Default choice for most applications
+     * - Heavier network traffic (second-level fan-out)
+     * - Broader query coverage on unbalanced meshes
      */
-    CONSERVATIVE,
+    DEEP_COVERAGE,
     
     /**
      * Aggressive ghost creation - creates extensive ghost layers for maximum query performance.

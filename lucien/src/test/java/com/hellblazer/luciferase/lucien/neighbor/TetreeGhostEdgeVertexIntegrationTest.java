@@ -94,7 +94,7 @@ class TetreeGhostEdgeVertexIntegrationTest {
         var tetree = populatedTreeNearOriginCorner();
         var detector = new TetreeNeighborDetector(tetree);
         var ghostDetector = new RecordingGhostBoundaryDetector<TetreeKey<? extends TetreeKey<?>>>(
-            tetree, detector, ghostType, GhostAlgorithm.CONSERVATIVE);
+            tetree, detector, ghostType, GhostAlgorithm.DEEP_COVERAGE);
 
         // Mark every absent neighbor (edge or vertex, per ghostType) of every local key as remotely owned, so
         // ghost creation has remote targets to fire on.

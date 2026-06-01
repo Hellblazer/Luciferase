@@ -19,7 +19,6 @@ package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
-import com.hellblazer.luciferase.lucien.entity.Entity;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
@@ -46,10 +45,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p><strong>Ghost Algorithms</strong>:
  * <ul>
- *   <li>MINIMAL: Direct neighbors only</li>
- *   <li>CONSERVATIVE: Direct + second-level neighbors (default)</li>
+ *   <li>MINIMAL: Direct (face) neighbors only (default — Luciferase-9m31)</li>
+ *   <li>DEEP_COVERAGE: Direct + second-level neighbors (depth-2 BFS; renamed from CONSERVATIVE)</li>
  *   <li>AGGRESSIVE: 3-level deep neighbor search</li>
- *   <li>ADAPTIVE: Conservative with usage statistics</li>
+ *   <li>ADAPTIVE: Depth-2 coverage with usage statistics</li>
  *   <li>CUSTOM: Pluggable strategy pattern</li>
  * </ul>
  *
@@ -222,7 +221,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
      * @param defaultGhostZoneWidth the default ghost zone width
      */
     public GhostBoundaryDetector(Forest<Key, ID, Content> forest, float defaultGhostZoneWidth) {
-        this(null, null, GhostType.FACES, GhostAlgorithm.CONSERVATIVE, forest, 0L, defaultGhostZoneWidth);
+        this(null, null, GhostType.FACES, GhostAlgorithm.MINIMAL, forest, 0L, defaultGhostZoneWidth);
     }
 
     /**
@@ -372,6 +371,24 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     }
 
     /**
+     * Number of elements with an explicitly-registered owner (Luciferase-9m31). The owner map is the single
+     * source of truth shared with {@link DistributedGhostManager} after owner-map unification.
+     *
+     * @return the count of registered element owners
+     */
+    public int getTrackedOwnerCount() {
+        return elementOwners.size();
+    }
+
+    /**
+     * Clear all registered element owners (Luciferase-9m31), without touching boundary/processed state. Used by
+     * {@link DistributedGhostManager#shutdown()} now that the manager delegates ownership to this detector.
+     */
+    public void clearElementOwners() {
+        elementOwners.clear();
+    }
+
+    /**
      * Set the local partition rank (Luciferase-8ggq). A neighbor element is treated as remote — and thus gets a
      * ghost created — when its owner rank differs from this value. Injected by
      * {@code GhostCoordinator.setupDistributedGhosts} once the rank is known; defaults to 0 for single-process use.
@@ -389,6 +406,16 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
      */
     public int getCurrentRank() {
         return currentRank;
+    }
+
+    /**
+     * The ghost-creation algorithm this detector uses (Luciferase-9m31). {@link GhostAlgorithm#MINIMAL} is the
+     * default for the forest-level constructor (sufficient on 2:1-balanced meshes).
+     *
+     * @return the ghost algorithm
+     */
+    public GhostAlgorithm getGhostAlgorithm() {
+        return ghostAlgorithm;
     }
 
     // ========================================
@@ -752,7 +779,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
                 // Only direct neighbors
                 neighbors.addAll(neighborDetector.findNeighbors(key, ghostType));
             }
-            case CONSERVATIVE -> {
+            case DEEP_COVERAGE -> {
                 // Direct + second-level neighbors
                 var directNeighbors = neighborDetector.findNeighbors(key, ghostType);
                 neighbors.addAll(directNeighbors);
@@ -780,7 +807,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
                 }
             }
             case ADAPTIVE, CUSTOM -> {
-                // Conservative fallback
+                // Depth-2 deep-coverage fallback
                 var directNeighbors = neighborDetector.findNeighbors(key, ghostType);
                 neighbors.addAll(directNeighbors);
 
