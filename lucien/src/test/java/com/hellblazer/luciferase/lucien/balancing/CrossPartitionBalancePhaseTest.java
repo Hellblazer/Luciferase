@@ -92,8 +92,10 @@ public class CrossPartitionBalancePhaseTest {
         var result = phase.execute(forest, 0, 4);
 
         assertTrue(result.successful(), "Should succeed with 4 partitions");
-        assertEquals(2, result.finalMetrics().roundCount(),
-                    "Should execute exactly 2 refinement rounds for 4 partitions (O(log 4) = 2)");
+        // Luciferase-uhsn: round count is data-driven (Allreduce-LAND), not ceil(log2 P). With no forest context /
+        // no violations the partition is immediately locally balanced, so the loop converges in a single round.
+        assertEquals(1, result.finalMetrics().roundCount(),
+                    "A balanced forest converges in 1 round under Allreduce-LAND");
     }
 
     // TEST 3: 8 Partitions - O(log 8) = 3 rounds
@@ -106,8 +108,9 @@ public class CrossPartitionBalancePhaseTest {
         var result = phase.execute(forest, 0, 8);
 
         assertTrue(result.successful(), "Should succeed with 8 partitions");
-        assertEquals(3, result.finalMetrics().roundCount(),
-                    "Should execute exactly 3 refinement rounds for 8 partitions (O(log 8) = 3)");
+        // Luciferase-uhsn: data-driven convergence — a balanced forest needs only one round regardless of P.
+        assertEquals(1, result.finalMetrics().roundCount(),
+                    "A balanced forest converges in 1 round under Allreduce-LAND");
     }
 
     // TEST 4: Refinement Request Generation
@@ -195,9 +198,11 @@ public class CrossPartitionBalancePhaseTest {
 
         assertTrue(result.successful(), "Should complete with barrier synchronization");
 
-        var expectedRounds = (int) Math.ceil(Math.log(4) / Math.log(2));
-        assertTrue(registry.getBarrierCount() >= expectedRounds,
-                  "Should synchronize at barrier after each round");
+        // Luciferase-uhsn: one barrier per executed round; a balanced forest converges in one round.
+        assertTrue(registry.getBarrierCount() >= 1,
+                  "Should synchronize at a barrier after each executed round");
+        assertEquals(result.finalMetrics().roundCount(), registry.getBarrierCount(),
+                  "Exactly one barrier per executed round");
     }
 
     // TEST 11: Max Rounds Respected
@@ -237,8 +242,10 @@ public class CrossPartitionBalancePhaseTest {
         var result = phase.execute(forest, 0, 8);
 
         assertTrue(result.successful(), "Should succeed with butterfly pattern");
-        assertEquals(3, result.finalMetrics().roundCount(),
-                    "Should execute 3 rounds for 8 partitions (O(log 8) = 3)");
+        // Luciferase-uhsn: butterfly scheduling is the coordinator's concern; the phase loop now terminates on
+        // Allreduce-LAND, so a balanced forest converges in one round (data-driven, not a fixed butterfly count).
+        assertEquals(1, result.finalMetrics().roundCount(),
+                    "A balanced forest converges in 1 round under Allreduce-LAND");
     }
 
     // TEST 14: TwoOneBalanceChecker Integration
@@ -251,16 +258,28 @@ public class CrossPartitionBalancePhaseTest {
         assertTrue(result.finalMetrics().roundCount() >= 1, "Should execute at least 1 round");
     }
 
-    // TEST 15: Refinement Requests Created From Violations
+    // TEST 15 (Luciferase-uhsn S6): a ghost-coarser violation produces a remote request carrying REAL boundary
+    // keys on the wire (replacing the prior inline empty-key send), routed to the ghost owner's rank.
     @Test
     @Timeout(value = 5, unit = TimeUnit.SECONDS)
     public void testRefinementRequestsCreatedFromViolations() {
-        exchange.setAlwaysNeedsRefinement(true);
+        var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES);
+        // Ghost is COARSER (level 1) than the adjacent local element (level 3): !localNeedsRefinement() => the ghost
+        // owner (rank 2) is the side that must refine, so a remote request is warranted (D3).
+        createProperViolation(ghostLayer, forest, (byte) 1, (byte) 3, 2);
+        phase.setForestContext(forest, ghostLayer);
 
         var result = phase.execute(forest, 0, 4);
 
         assertTrue(result.successful(), "Should handle refinement requests");
-        assertTrue(exchange.getRequestCount() > 0, "Should send refinement requests");
+        assertTrue(exchange.getRequestCount() > 0, "Should send a refinement request for the ghost-coarser violation");
+
+        var sent = exchange.getSentRequests();
+        assertTrue(sent.stream().anyMatch(r -> !r.boundaryKeys().isEmpty()),
+                   "Request must carry REAL boundary keys, not an empty list");
+        assertTrue(sent.stream().allMatch(r -> r.roundNumber() > 0),
+                   "Placeholder roundNumber=0 must be overwritten before transmit");
     }
 
     // TEST 16: Ghost Elements Applied During Rounds
@@ -270,8 +289,9 @@ public class CrossPartitionBalancePhaseTest {
         var result = phase.execute(forest, 0, 4);
 
         assertTrue(result.successful(), "Should successfully apply ghost elements");
-        assertEquals(2, result.finalMetrics().roundCount(),
-                    "4 partitions should converge in 2 rounds");
+        // Luciferase-uhsn: data-driven convergence — balanced forest converges in one round.
+        assertEquals(1, result.finalMetrics().roundCount(),
+                    "A balanced forest converges in 1 round under Allreduce-LAND");
     }
 
     // TEST 17: Convergence Detected When No Violations Remain
@@ -284,7 +304,10 @@ public class CrossPartitionBalancePhaseTest {
         var result = phase.execute(forest, 0, 4);
 
         assertTrue(result.successful(), "Should converge when no violations remain");
-        assertTrue(result.converged(), "Result should indicate convergence");
+        // Luciferase-uhsn: no violations => the Allreduce-LAND loop terminates immediately with no refinements.
+        // converged() is defined as "successful with refinements applied", so the no-violation case is noWork().
+        assertEquals(1, result.finalMetrics().roundCount(), "Terminates in one round when already balanced");
+        assertTrue(result.noWorkNeeded(), "No violations => no refinements applied (noWorkNeeded)");
     }
 
     // Helper method to create domain mock refinement response

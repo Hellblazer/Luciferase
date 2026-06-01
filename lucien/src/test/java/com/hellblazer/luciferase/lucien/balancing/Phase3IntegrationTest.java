@@ -124,21 +124,18 @@ public class Phase3IntegrationTest {
             .as("Phase 3 should complete successfully for 4 partitions")
             .isTrue();
 
+        // Luciferase-uhsn: round count is data-driven (Allreduce-LAND), not a fixed ceil(log2 P). A balanced
+        // fixture converges in one round; an unresolved one runs to the maxRounds safety cap.
         assertThat(result.finalMetrics().roundCount())
-            .as("Should execute exactly 2 refinement rounds for 4 partitions (O(log 4) = 2)")
-            .isEqualTo(2);
-
-        var sentRequests = exchange.getSentRequests();
-        assertThat(sentRequests)
-            .as("Should send requests in butterfly pattern")
-            .isNotEmpty();
+            .as("Data-driven convergence within [1, maxRounds]")
+            .isBetween(1, config.maxRounds());
 
         assertThat(registry.getBarrierCount())
-            .as("Should synchronize at barrier after each round (2 barriers for 2 rounds)")
-            .isGreaterThanOrEqualTo(2);
+            .as("Exactly one barrier per executed round")
+            .isEqualTo(result.finalMetrics().roundCount());
 
         log.info("Scenario 2 PASSED: Converged in {} rounds with {} refinements, {} requests sent",
-                result.finalMetrics().roundCount(), result.refinementsApplied(), sentRequests.size());
+                result.finalMetrics().roundCount(), result.refinementsApplied(), exchange.getSentRequests().size());
     }
 
     /**
@@ -217,10 +214,11 @@ public class Phase3IntegrationTest {
             .as("Phase 3 should complete successfully even with 1 failed partition")
             .isTrue();
 
-        var sentRequests = exchange.getSentRequests();
-        assertThat(sentRequests)
-            .as("Should send requests only to healthy partitions")
-            .isNotEmpty();
+        // Luciferase-uhsn: a balanced fixture legitimately produces no remote requests; the contract here is
+        // graceful completion despite a failed partition, not a nonzero request count.
+        assertThat(result.finalMetrics().roundCount())
+            .as("Completes within [1, maxRounds] despite a failed partition")
+            .isBetween(1, config.maxRounds());
 
         log.info("Scenario 4 PASSED: Graceful degradation with 1 failed partition, {} refinements applied",
                 result.refinementsApplied());
@@ -255,9 +253,10 @@ public class Phase3IntegrationTest {
             .as("Phase 3 should complete successfully for 8 partitions")
             .isTrue();
 
+        // Luciferase-uhsn: data-driven convergence within [1, maxRounds], not a fixed ceil(log2 8)=3.
         assertThat(result.finalMetrics().roundCount())
-            .as("Should execute exactly 3 refinement rounds for 8 partitions (O(log 8) = 3)")
-            .isEqualTo(3);
+            .as("Data-driven convergence within [1, maxRounds]")
+            .isBetween(1, config.maxRounds());
 
         assertThat(elapsed)
             .as("Total execution time should be reasonable (<15s)")
@@ -269,8 +268,8 @@ public class Phase3IntegrationTest {
             .isLessThan(5000L);
 
         assertThat(registry.getBarrierCount())
-            .as("Should synchronize at barrier after each round (3 barriers for 3 rounds)")
-            .isGreaterThanOrEqualTo(3);
+            .as("Exactly one barrier per executed round")
+            .isEqualTo(result.finalMetrics().roundCount());
 
         log.info("Scenario 5 PASSED: 8 partitions converged in {} rounds, total time={}ms, avg round time={}ms",
                 result.finalMetrics().roundCount(), elapsed, avgRoundTime);
@@ -309,15 +308,13 @@ public class Phase3IntegrationTest {
             .as("Phase 3 workflow should complete successfully")
             .isTrue();
 
+        // Luciferase-uhsn: data-driven convergence within [1, maxRounds], not a fixed ceil(log2 4)=2.
         assertThat(result.finalMetrics().roundCount())
-            .as("Should execute expected rounds for 4 partitions (O(log 4) = 2)")
-            .isEqualTo(2);
+            .as("Data-driven convergence within [1, maxRounds]")
+            .isBetween(1, config.maxRounds());
 
-        // STEP 4: Verify requests were sent
+        // STEP 4: Inspect any requests that were sent (a balanced fixture may legitimately send none).
         var sentRequests = exchange.getSentRequests();
-        assertThat(sentRequests)
-            .as("identifyRefinementNeeds() should create refinement requests")
-            .isNotEmpty();
 
         // STEP 5: Verify domain request structure (record accessors, not proto getters)
         for (var request : sentRequests) {
@@ -338,10 +335,10 @@ public class Phase3IntegrationTest {
                 .isGreaterThan(0L);
         }
 
-        // STEP 6: Verify synchronization
+        // STEP 6: Verify synchronization — one barrier per executed round (data-driven convergence).
         assertThat(registry.getBarrierCount())
-            .as("Should synchronize at barrier after each round")
-            .isGreaterThanOrEqualTo(2);
+            .as("Exactly one barrier per executed round")
+            .isEqualTo(result.finalMetrics().roundCount());
 
         // STEP 7: Verify metrics collection
         var metrics = result.finalMetrics();

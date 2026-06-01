@@ -208,5 +208,29 @@ public interface ParallelBalancer<Key extends SpatialKey<Key>, ID extends Entity
          * @return the pending refinement count
          */
         int getPendingRefinements();
+
+        /**
+         * Globally reduce a per-partition convergence flag with logical-AND (Allreduce-LAND).
+         *
+         * <p>Luciferase-uhsn (2:1 balance B10b). Mirrors {@code t8_forest_balance}'s
+         * {@code sc_MPI_Allreduce(&done, &done_global, MPI_LAND)} termination: the cross-partition balance loop
+         * continues until <em>every</em> partition reports it is locally balanced (produced no remote refinement
+         * requests and queued no local refinements in the round). Returns {@code true} only when all partitions
+         * passed {@code true}.
+         *
+         * <p>The default is the degenerate single-partition identity — it returns the caller's own value, which is
+         * correct when there is no peer to reduce against. A genuine distributed implementation overrides this to
+         * perform the real cross-rank AND over the transport; no such implementor exists yet in this in-process
+         * setup (the cross-JVM override lands with the distributed transport work, m27q and beyond). Note that
+         * {@code FaultAwarePartitionRegistry} wraps its OWN unrelated inner registry interface and is NOT a
+         * {@link PartitionRegistry}, so it is not the override site.
+         *
+         * @param locallyConverged whether THIS partition is locally balanced this round
+         * @return the global logical-AND across all partitions
+         * @throws InterruptedException if interrupted while waiting for peers
+         */
+        default boolean allReduceConverged(boolean locallyConverged) throws InterruptedException {
+            return locallyConverged;
+        }
     }
 }

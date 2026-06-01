@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -57,6 +58,15 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
     private final int totalPartitions;
 
     /**
+     * Per-partner refinement requests for the current round, keyed by target (partner) rank (Luciferase-uhsn, B10b —
+     * D1). Populated by {@code CrossPartitionBalancePhase} from the round's 2:1 violations (findViolations ->
+     * createRefinementRequests, D3-filtered to ghost-coarser violations only). {@link #buildRequestsForPartner}
+     * selects the bucket for the butterfly partner. Empty map => no work to push this round (vacuous requests are no
+     * longer synthesized).
+     */
+    private final Map<Integer, List<RefinementRequest<Key>>> requestsByPartner;
+
+    /**
      * Create a new refinement coordinator.
      *
      * @param exchange the domain exchange interface for refinement communication
@@ -69,8 +79,28 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
     public RefinementCoordinator(RefinementExchange<Key, ID, Content> exchange,
                                  RefinementRequestManager requestManager,
                                  int myRank, int totalPartitions) {
+        this(exchange, requestManager, myRank, totalPartitions, Map.of());
+    }
+
+    /**
+     * Create a refinement coordinator with a per-partner request map (Luciferase-uhsn, B10b — D1).
+     *
+     * @param exchange the domain exchange interface for refinement communication
+     * @param requestManager the request manager for tracking
+     * @param myRank this partition's rank (0 to P-1)
+     * @param totalPartitions total number of partitions P
+     * @param requestsByPartner refinement requests for this round keyed by target (partner) rank; an empty map means
+     *                          this partition has nothing to push (no vacuous requests are synthesized)
+     * @throws NullPointerException if exchange, requestManager, or requestsByPartner is null
+     * @throws IllegalArgumentException if myRank < 0 or totalPartitions <= 0
+     */
+    public RefinementCoordinator(RefinementExchange<Key, ID, Content> exchange,
+                                 RefinementRequestManager requestManager,
+                                 int myRank, int totalPartitions,
+                                 Map<Integer, List<RefinementRequest<Key>>> requestsByPartner) {
         this.exchange = Objects.requireNonNull(exchange, "exchange cannot be null");
         this.requestManager = Objects.requireNonNull(requestManager, "requestManager cannot be null");
+        this.requestsByPartner = Objects.requireNonNull(requestsByPartner, "requestsByPartner cannot be null");
 
         if (myRank < 0) {
             throw new IllegalArgumentException("myRank must be non-negative, got " + myRank);
@@ -107,43 +137,55 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
         log.info("Coordinating refinement: partitions={}, maxRounds={}, initiator={}",
                 totalPartitions, maxRounds, initiatorRank);
 
-        // Calculate optimal rounds = min(ceil(log₂(P)), maxRounds)
-        var optimalRounds = (int) Math.ceil(Math.log(totalPartitions) / Math.log(2));
-        var targetRounds = Math.min(optimalRounds, maxRounds);
-
-        log.debug("Calculated target rounds: optimal={}, max={}, target={}",
-                 optimalRounds, maxRounds, targetRounds);
-
         var startTime = System.currentTimeMillis();
         var totalRefinements = 0;
         var converged = false;
+        var roundsExecuted = 0;
 
-        // Execute refinement rounds
-        for (int round = 1; round <= targetRounds; round++) {
-            var roundResult = executeRefinementRound(round, targetRounds);
+        // Luciferase-uhsn (B10b — D2): iterate until a global Allreduce-LAND reports every partition is locally
+        // balanced (t8_forest_balance's `while (!done_global)`), NOT a fixed ceil(log2 P) count. maxRounds is a
+        // safety cap only. NOTE: this coordinator drives off a single injected per-partner snapshot, so it cannot
+        // recompute violations between rounds — the live, multi-round convergence loop that re-derives violations as
+        // refinements land is CrossPartitionBalancePhase.execute(). This method is the unit-level convergence harness.
+        for (int round = 1; round <= maxRounds; round++) {
+            roundsExecuted = round;
+
+            var partner = ButterflyPattern.getPartner(myRank, round - 1, totalPartitions);
+            var hadRequests = partner >= 0 && !requestsByPartner.getOrDefault(partner, List.of()).isEmpty();
+
+            var roundResult = executeRefinementRound(round, maxRounds);
             totalRefinements += roundResult.refinementsApplied();
 
             // Synchronize after each round
             synchronizePartitions(round, registry);
 
-            // Check for convergence (early termination)
-            if (!roundResult.needsMoreRefinement()) {
-                log.info("Converged after {} rounds (no more refinement needed)", round);
-                converged = true;
-                var elapsed = System.currentTimeMillis() - startTime;
-                return new CoordinationResult(round, totalRefinements, true, elapsed);
+            // Locally balanced this round iff we pushed no requests AND applied no refinements from responses.
+            var locallyBalanced = !hadRequests && roundResult.refinementsApplied() == 0;
+
+            boolean globallyConverged;
+            try {
+                globallyConverged = registry.allReduceConverged(locallyBalanced);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Allreduce convergence interrupted at round " + round, e);
             }
 
-            log.debug("Completed refinement round {}: refinements={}, needsMore={}",
-                     round, roundResult.refinementsApplied(), roundResult.needsMoreRefinement());
+            log.debug("Completed refinement round {}: refinements={}, locallyBalanced={}, globallyConverged={}",
+                     round, roundResult.refinementsApplied(), locallyBalanced, globallyConverged);
+
+            if (globallyConverged) {
+                log.info("Converged after {} rounds (global Allreduce-LAND)", round);
+                converged = true;
+                break;
+            }
         }
 
         var elapsed = System.currentTimeMillis() - startTime;
 
         log.info("Coordination complete: executed {} rounds, refinements={}, converged={}",
-                targetRounds, totalRefinements, converged);
+                roundsExecuted, totalRefinements, converged);
 
-        return new CoordinationResult(targetRounds, totalRefinements, converged, elapsed);
+        return new CoordinationResult(roundsExecuted, totalRefinements, converged, elapsed);
     }
 
     /**
@@ -181,8 +223,8 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
             var requests = buildRequestsForPartner(partner, roundNumber);
 
             if (!requests.isEmpty()) {
-                // Send requests in parallel
-                var futures = sendRequestsParallel(requests);
+                // Send requests in parallel (targeted at the butterfly partner)
+                var futures = sendRequestsParallel(partner, requests);
 
                 // Wait for responses with timeout
                 var responses = new ArrayList<RefinementResponse<Key, ID, Content>>();
@@ -227,21 +269,24 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
      * @return list of refinement requests (typically 1 per partner)
      */
     private List<RefinementRequest<Key>> buildRequestsForPartner(int partnerRank, int roundNumber) {
-        var requests = new ArrayList<RefinementRequest<Key>>();
+        // D1 (Luciferase-uhsn): select the real per-partner request bucket built from this round's 2:1 violations.
+        // No bucket => nothing to push to this partner this round (no vacuous request).
+        var partnerRequests = requestsByPartner.getOrDefault(partnerRank, List.of());
+        if (partnerRequests.isEmpty()) {
+            return List.of();
+        }
 
-        // Build request for this partner
-        var request = new RefinementRequest<Key>(
-            myRank,
-            0L,  // TODO: support multiple trees
-            roundNumber,
-            0,   // TODO: extract actual level from boundary violations
-            List.of(),
-            System.currentTimeMillis()
-        );
+        // Overwrite the pre-coordinator placeholders stamped by TwoOneBalanceChecker.createRefinementRequests
+        // (roundNumber=0, which collides with the butterfly sentinel) with the actual convergence round. requesterRank
+        // stays the LOCAL rank (reply-to); requesterTreeId/treeLevel/boundaryKeys/timestamp are preserved.
+        var requests = new ArrayList<RefinementRequest<Key>>(partnerRequests.size());
+        for (var r : partnerRequests) {
+            requests.add(new RefinementRequest<>(r.requesterRank(), r.requesterTreeId(), roundNumber,
+                                                 r.treeLevel(), r.boundaryKeys(), r.timestamp()));
+        }
 
-        requests.add(request);
-
-        log.trace("Built {} refinement requests for partner rank {}", requests.size(), partnerRank);
+        log.trace("Built {} refinement requests for partner rank {} (round {})",
+                  requests.size(), partnerRank, roundNumber);
 
         return requests;
     }
@@ -280,8 +325,8 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
      * @return futures for all requests
      */
     private List<CompletableFuture<RefinementResponse<Key, ID, Content>>> sendRequestsParallel(
-            List<RefinementRequest<Key>> requests) {
-        log.debug("Sending {} refinement requests in parallel", requests.size());
+            int targetRank, List<RefinementRequest<Key>> requests) {
+        log.debug("Sending {} refinement requests in parallel to partner rank {}", requests.size(), targetRank);
 
         var futures = new ArrayList<CompletableFuture<RefinementResponse<Key, ID, Content>>>();
 
@@ -293,9 +338,11 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
             // Track request for monitoring
             requestManager.trackRequest(request, System.currentTimeMillis());
 
-            // Send async with timeout via domain exchange
+            // Send async with timeout via domain exchange. The request travels to the butterfly PARTNER
+            // (targetRank); request.requesterRank() is the LOCAL reply-to rank (Luciferase-uhsn D1/w3lm S1),
+            // NOT the destination — do not conflate the two.
             var future = exchange.requestRefinementAsync(
-                request.requesterRank(),
+                targetRank,
                 request.requesterTreeId(),
                 request.roundNumber(),
                 request.treeLevel(),

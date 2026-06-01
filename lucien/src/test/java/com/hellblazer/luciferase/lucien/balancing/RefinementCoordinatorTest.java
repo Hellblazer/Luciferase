@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Timeout;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -48,6 +49,17 @@ public class RefinementCoordinatorTest {
     public void setUp() {
         exchange = new MockRefinementExchange();
         requestManager = new RefinementRequestManager();
+    }
+
+    /**
+     * A by-partner request map covering rank-0's possible butterfly partners {1,2,3} in a 4-partition run, each with
+     * one ghost-coarser request (requesterRank=0 local, placeholder roundNumber=0). Lets the butterfly-routing tests
+     * exercise a non-vacuous send after Luciferase-uhsn removed the synthesized vacuous request.
+     */
+    private static Map<Integer, List<RefinementRequest<MortonKey>>> rank0PartnerMap() {
+        var keys = List.of(new MortonKey(10L, (byte) 3), new MortonKey(11L, (byte) 2));
+        var req = new RefinementRequest<>(0, 0L, 0, 3, keys, 123L);
+        return Map.of(1, List.of(req), 2, List.of(req), 3, List.of(req));
     }
 
     // TEST 1: Constructor with valid parameters
@@ -83,7 +95,7 @@ public class RefinementCoordinatorTest {
     // TEST 4: Butterfly partner calculation - Round 0
     @Test
     public void testButterflyPartnerRound0() {
-        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4);
+        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4, rank0PartnerMap());
 
         var result = coordinator.executeRefinementRound(1, 2); // roundNumber=1 (1-based)
 
@@ -96,7 +108,7 @@ public class RefinementCoordinatorTest {
     // TEST 5: Butterfly partner calculation - Round 1
     @Test
     public void testButterflyPartnerRound1() {
-        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4);
+        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4, rank0PartnerMap());
 
         var result = coordinator.executeRefinementRound(2, 2); // roundNumber=2 (1-based)
 
@@ -131,7 +143,7 @@ public class RefinementCoordinatorTest {
     @Test
     @Timeout(value = 5, unit = TimeUnit.SECONDS)
     public void testSendRequestsParallelCalled() {
-        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4);
+        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4, rank0PartnerMap());
 
         var result = coordinator.executeRefinementRound(1, 2);
 
@@ -160,7 +172,7 @@ public class RefinementCoordinatorTest {
     public void testResponseProcessingUpdatesRefinementsApplied() {
         exchange.setGhostElementCount(5);
 
-        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4);
+        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4, rank0PartnerMap());
 
         var result = coordinator.executeRefinementRound(1, 2);
 
@@ -169,7 +181,116 @@ public class RefinementCoordinatorTest {
         assertNotNull(result, "Should return valid result");
     }
 
+    // TEST 11 (Luciferase-uhsn S3): allReduceConverged default returns the local value
+    @Test
+    public void allReduceConverged_defaultReturnsLocalValue() throws InterruptedException {
+        // A PartitionRegistry implementing only the pre-existing abstract methods must inherit the
+        // allReduceConverged default, which returns its argument (degenerate single-partition behavior).
+        var registry = new ParallelBalancer.PartitionRegistry() {
+            @Override public int getCurrentPartitionId() { return 0; }
+            @Override public int getPartitionCount() { return 1; }
+            @Override public void barrier(int round) { }
+            @Override public void requestRefinement(Object elementKey) { }
+            @Override public int getPendingRefinements() { return 0; }
+        };
+
+        assertTrue(registry.allReduceConverged(true), "default returns local convergence value (true)");
+        assertFalse(registry.allReduceConverged(false), "default returns local convergence value (false)");
+    }
+
+    // TEST 12 (Luciferase-uhsn S4): buildRequestsForPartner returns the partner's real injected request set,
+    // overwriting the placeholder roundNumber, and targets the butterfly partner.
+    @Test
+    public void buildRequestsForPartner_withInjectedMap_returnsPartnerRealRequestSet() {
+        int partner = ButterflyPattern.getPartner(0, 0, 4); // round 1 (0-based 0) partner for rank 0 in P=4
+        var k1 = new MortonKey(20L, (byte) 3);
+        var k2 = new MortonKey(21L, (byte) 3);
+        var k3 = new MortonKey(22L, (byte) 3);
+        var injected = new RefinementRequest<>(0 /*local reply-to*/, 0L, 0 /*placeholder round*/, 3,
+                                               List.of(k1, k2, k3), 777L);
+        var map = Map.of(partner, List.of(injected));
+
+        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4, map);
+        coordinator.executeRefinementRound(1, 2);
+
+        var sent = exchange.getSentRequests();
+        assertEquals(1, sent.size(), "the partner's single injected request is sent (not a vacuous one)");
+        assertEquals(3, sent.get(0).boundaryKeys().size(), "real boundary keys are carried, not List.of()");
+        assertTrue(sent.get(0).boundaryKeys().containsAll(List.of(k1, k2, k3)));
+        assertEquals(1, sent.get(0).roundNumber(), "placeholder round 0 overwritten with actual round 1");
+        assertEquals(partner, sent.get(0).requesterRank(),
+                     "exchange targetRank (captured as requesterRank in the mock) is the butterfly partner");
+    }
+
+    // TEST 13 (Luciferase-uhsn S4): a partner with no entry in the map yields no request (no vacuous send).
+    @Test
+    public void buildRequestsForPartner_partnerAbsentFromMap_sendsNothing() {
+        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4, Map.of());
+        coordinator.executeRefinementRound(1, 2);
+
+        assertTrue(exchange.getSentRequests().isEmpty(),
+                   "empty by-partner map => no refinement request is sent");
+    }
+
+    // TEST 14 (Luciferase-uhsn S5): coordinateRefinement terminates on global Allreduce-LAND, not a fixed count.
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void coordinateRefinement_terminatesOnAllReduceConvergence_notFixedRounds() {
+        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4, rank0PartnerMap());
+
+        // Not converged on round 1, converged on round 2. maxRounds high so termination is driven by the reduction.
+        var registry = new ScriptedRegistry(0, 4, List.of(false, true));
+
+        var result = coordinator.coordinateRefinement(4, 10, 0, registry);
+
+        assertEquals(2, result.roundsExecuted(), "must stop the round AFTER the reduction first returns true");
+        assertTrue(result.converged(), "result reflects global convergence");
+        assertEquals(2, registry.allReduceCalls(), "allReduceConverged drives the loop");
+    }
+
+    // TEST 15 (Luciferase-uhsn S5): a never-converging reduction stops at maxRounds (safety cap), not forever.
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void coordinateRefinement_neverConverges_stopsAtMaxRounds() {
+        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4, rank0PartnerMap());
+
+        var registry = new ScriptedRegistry(0, 4, List.of()); // always returns false
+
+        var result = coordinator.coordinateRefinement(4, 3, 0, registry);
+
+        assertEquals(3, result.roundsExecuted(), "maxRounds is the safety cap");
+        assertFalse(result.converged(), "never reached global convergence");
+    }
+
     // ========== Mock implementations ==========
+
+    /** PartitionRegistry whose allReduceConverged follows a scripted sequence (then false forever). */
+    private static class ScriptedRegistry implements ParallelBalancer.PartitionRegistry {
+        private final int id;
+        private final int count;
+        private final List<Boolean> script;
+        private int calls = 0;
+
+        ScriptedRegistry(int id, int count, List<Boolean> script) {
+            this.id = id;
+            this.count = count;
+            this.script = script;
+        }
+
+        @Override public int getCurrentPartitionId() { return id; }
+        @Override public int getPartitionCount() { return count; }
+        @Override public void barrier(int round) { }
+        @Override public void requestRefinement(Object elementKey) { }
+        @Override public int getPendingRefinements() { return 0; }
+
+        @Override
+        public boolean allReduceConverged(boolean locallyConverged) {
+            var idx = calls++;
+            return idx < script.size() && script.get(idx);
+        }
+
+        int allReduceCalls() { return calls; }
+    }
 
     /** Domain exchange mock for RefinementCoordinator tests. */
     private static class MockRefinementExchange
