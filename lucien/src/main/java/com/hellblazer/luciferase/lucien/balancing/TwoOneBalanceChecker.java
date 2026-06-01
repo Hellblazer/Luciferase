@@ -200,6 +200,12 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             // Scan only [0, ghostLevel-2] U [ghostLevel+2, 21]; the skipped levels are behavior-equivalent (they
             // would find an element but add no violation). This bounds the per-direction scan to the two
             // violating bands instead of all 22 levels.
+            //
+            // KNOWN GAPS (deferred to Luciferase-3aut): (1) the coarse-band probe below uses the full fine code
+            // at a coarse level; the correct coarse ancestor code is neighborMortonCode >>> (3*(ghostLevel-C)),
+            // so most coarse-local violations are currently missed (correctness). (2) The numTrees-axis scan
+            // (forest.getAllTrees) is not reduced: the bead's floorKey/ceilingKey is infeasible under MortonKey's
+            // level-first ordering; a real bound needs forest spatial routing.
             for (byte level = 0; level <= 21; level++) {
                 if (Math.abs(level - ghostLevel) <= 1) {
                     continue; // within 1 level of the ghost -> levelDiff <= 1 -> not a violation
