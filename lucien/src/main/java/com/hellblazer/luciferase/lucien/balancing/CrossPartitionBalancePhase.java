@@ -65,7 +65,6 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     private final BalanceConfiguration config;
     private final RefinementRequestManager requestManager;
     private volatile RefinementCoordinator<Key, ID, Content> coordinator;  // Initialized lazily in execute()
-    private volatile boolean lastRoundIndicatedConvergence = false;
 
     // Forest context for violation detection and ghost element application
     private volatile Forest<Key, ID, Content> forest;
@@ -139,17 +138,17 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         var startTime = System.currentTimeMillis();
 
         try {
-            // Calculate optimal rounds = ceil(log₂(P))
-            var optimalRounds = (int) Math.ceil(Math.log(totalPartitions) / Math.log(2));
-            var targetRounds = Math.min(optimalRounds, config.maxRounds());
-
-            log.debug("Executing {} refinement rounds for {} partitions", targetRounds, totalPartitions);
+            // Luciferase-uhsn (B10b — D2): iterate until a global Allreduce-LAND reports EVERY partition is locally
+            // balanced (no 2:1 violations this round), mirroring t8_forest_balance's `while (!done_global)`. The
+            // round count is therefore data-driven — a balanced forest converges in one round — NOT a fixed
+            // ceil(log2 P). config.maxRounds() is only a safety cap against non-termination.
+            log.debug("Executing cross-partition balance via Allreduce-LAND convergence (maxRounds={})",
+                     config.maxRounds());
 
             var totalRefinements = 0;
             var converged = false;
 
-            // Execute refinement rounds
-            for (int round = 1; round <= targetRounds; round++) {
+            for (int round = 1; round <= config.maxRounds(); round++) {
                 var roundResult = executeRefinementRound(round);
                 totalRefinements += roundResult.refinementsApplied();
                 metrics.recordRound(java.time.Duration.ofMillis(roundResult.roundTimeMillis()));
@@ -163,17 +162,25 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                     log.warn("Interrupted while synchronizing at round {}", round);
                 }
 
-                // Check for convergence (early termination only after minimum rounds)
-                if (round >= optimalRounds && isConverged()) {
-                    log.info("Converged after {} rounds", round);
+                // Global termination: logical-AND every partition's "I am locally balanced" flag.
+                boolean globallyConverged;
+                try {
+                    globallyConverged = registry.allReduceConverged(roundResult.locallyBalanced());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.warn("Interrupted during Allreduce convergence at round {}", round);
+                    break;
+                }
+                if (globallyConverged) {
+                    log.info("Converged after {} rounds (global Allreduce-LAND)", round);
                     converged = true;
                     break;
                 }
             }
 
             var elapsed = System.currentTimeMillis() - startTime;
-            log.info("Cross-partition balance complete: rounds={}, refinements={}, converged={}, time={}ms",
-                    targetRounds, totalRefinements, converged, elapsed);
+            log.info("Cross-partition balance complete: refinements={}, converged={}, time={}ms",
+                    totalRefinements, converged, elapsed);
 
             return BalanceResult.success(metrics.snapshot(), totalRefinements);
 
@@ -204,59 +211,68 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         var startTime = System.nanoTime();
 
         try {
-            // Phase 1: Identify refinement needs at partition boundaries
-            var refinementNeeds = identifyRefinementNeeds(roundNumber);
+            // No forest context => nothing to detect; the partition is trivially locally balanced
+            // (t8_forest_balance's done=1). No vacuous request is synthesized (Luciferase-uhsn).
+            if (balanceChecker == null || forest == null || ghostLayer == null) {
+                log.warn("Forest context not set; round {} has no violations to process", roundNumber);
+                var elapsed0 = Math.max(1L, (System.nanoTime() - startTime) / 1_000_000L);
+                return new RefinementRoundResult(0, true, elapsed0);
+            }
 
-            // Phase 2: Send requests to neighbors
-            var responses = new ArrayList<RefinementResponse<Key, ID, Content>>();
+            // Phase 1: detect 2:1 violations. "Locally balanced" iff none remain (the Allreduce-LAND input).
+            var violations = balanceChecker.findViolations(ghostLayer, forest);
+            var locallyBalanced = violations.isEmpty();
 
-            if (!refinementNeeds.isEmpty()) {
-                log.debug("Sending {} refinement requests in round {}", refinementNeeds.size(), roundNumber);
-
-                // Send each request via exchange and collect responses
-                for (int i = 0; i < refinementNeeds.size(); i++) {
-                    var responseFuture = exchange.requestRefinementAsync(i, 0L, roundNumber, 0, List.of());
-                    try {
-                        var response = responseFuture.get();
-                        responses.add(response);
-                        log.trace("Received response from rank {} in round {}", i, roundNumber);
-                    } catch (Exception e) {
-                        log.warn("Failed to get response from rank {} in round {}", i, roundNumber, e);
-                    }
+            // Phase 2: build per-target-rank requests. Grouping ALL violations by sourceRank and routing each group
+            // through createRefinementRequests applies D3 (ghost-coarser -> remote request keyed by that rank;
+            // local-coarser -> the checker's local refinement queue for m27q/B10c) and yields one request per remote
+            // rank. Overwrite the placeholder roundNumber with the actual round (D1; 0 collides with the butterfly
+            // sentinel and must never reach the wire).
+            var ts = System.currentTimeMillis();
+            var localRank = registry.getCurrentPartitionId();
+            var byRank = violations.stream()
+                .collect(Collectors.groupingBy(TwoOneBalanceChecker.BalanceViolation::sourceRank));
+            var requestsByRank = new java.util.HashMap<Integer, RefinementRequest<Key>>();
+            for (var entry : byRank.entrySet()) {
+                var reqs = balanceChecker.createRefinementRequests(entry.getValue(), ts, localRank);
+                if (!reqs.isEmpty()) {
+                    var r = reqs.get(0); // createRefinementRequests emits exactly one request per sourceRank group
+                    requestsByRank.put(entry.getKey(),
+                        new RefinementRequest<>(r.requesterRank(), r.requesterTreeId(), roundNumber,
+                                                r.treeLevel(), r.boundaryKeys(), r.timestamp()));
                 }
             }
 
-            // Phase 3: Process responses
-            log.debug("Received {} responses in round {}", responses.size(), roundNumber);
+            // Phase 3: send each request to its target (ghost-owner) rank carrying REAL boundary keys (this replaces
+            // the prior inline send that shipped empty key lists), collect responses.
+            var responses = new ArrayList<RefinementResponse<Key, ID, Content>>();
+            for (var entry : requestsByRank.entrySet()) {
+                var targetRank = entry.getKey();
+                var req = entry.getValue();
+                try {
+                    var response = exchange.requestRefinementAsync(
+                        targetRank, req.requesterTreeId(), req.roundNumber(), req.treeLevel(),
+                        req.boundaryKeys()).get();
+                    responses.add(response);
+                } catch (Exception e) {
+                    log.warn("Round {}: request to rank {} failed: {}", roundNumber, targetRank, e.getMessage());
+                }
+            }
 
-            // Phase 4: Apply refinements from responses
+            // Phase 4: apply returned domain ghost elements (m27q/B10c upgrades this to also subdivide the
+            // local SpatialIndex and consume the local refinement queue).
             applyRefinementResponses(responses);
 
-            // Phase 5: Check if more refinement is needed.
-            // SIG-1: Exclude empty/sentinel responses from the convergence vote. A response
-            // mapped to RefinementResponse.empty() means the peer was unreachable; counting
-            // its needsFurtherRefinement==false as a vote toward convergence would risk
-            // premature termination. Only update lastRoundIndicatedConvergence when ALL
-            // responses are real (non-empty).
-            var realResponses = responses.stream().filter(r -> !r.isEmpty()).collect(Collectors.toList());
-            if (!realResponses.isEmpty()) {
-                lastRoundIndicatedConvergence = realResponses.stream()
-                    .noneMatch(RefinementResponse::needsFurtherRefinement);
-            }
-            // If all responses are empty (all peers unreachable), leave lastRoundIndicatedConvergence
-            // unchanged — equivalent to the old NPE-abort behavior that held the prior convergence state.
-
-            var needsMore = !isConverged() && roundNumber < config.maxRounds();
-
-            log.debug("Refinement round {} complete: requests={}, responses={}, converged={}, needsMore={}",
-                     roundNumber, refinementNeeds.size(), responses.size(), lastRoundIndicatedConvergence, needsMore);
+            log.debug("Refinement round {}: {} violations, {} remote requests, {} responses, locallyBalanced={}",
+                     roundNumber, violations.size(), requestsByRank.size(), responses.size(), locallyBalanced);
 
             var elapsedMs = Math.max(1L, (System.nanoTime() - startTime) / 1_000_000L);
-            return new RefinementRoundResult(refinementNeeds.size(), needsMore, elapsedMs);
+            return new RefinementRoundResult(violations.size(), locallyBalanced, elapsedMs);
 
         } catch (Exception e) {
             log.error("Error in refinement round {}", roundNumber, e);
             var elapsedMs = Math.max(1L, (System.nanoTime() - startTime) / 1_000_000L);
+            // On error, do not claim convergence — let the loop continue up to maxRounds.
             return new RefinementRoundResult(0, false, elapsedMs);
         }
     }
@@ -406,83 +422,6 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     }
 
     /**
-     * Identify refinement needs at partition boundaries for the current round.
-     *
-     * <p>Uses the TwoOneBalanceChecker to detect 2:1 balance violations at partition
-     * boundaries and creates domain refinement requests for neighboring partitions.
-     *
-     * @param roundNumber the round number
-     * @return list of domain refinement requests for neighbors
-     */
-    private List<RefinementRequest<Key>> identifyRefinementNeeds(int roundNumber) {
-        var requests = new java.util.ArrayList<RefinementRequest<Key>>();
-
-        // Check if forest context is available
-        if (balanceChecker == null || forest == null || ghostLayer == null) {
-            log.warn("Forest context not set, using fallback request for round {}", roundNumber);
-            // Fallback: single empty request to maintain butterfly pattern
-            var request = new RefinementRequest<Key>(
-                registry.getCurrentPartitionId(), 0L, roundNumber, 0, List.of(), System.currentTimeMillis()
-            );
-            requests.add(request);
-            return requests;
-        }
-
-        // Find all 2:1 violations using TwoOneBalanceChecker
-        var violations = balanceChecker.findViolations(ghostLayer, forest);
-
-        if (violations.isEmpty()) {
-            log.debug("No 2:1 violations found in round {}", roundNumber);
-            // Still send request to maintain butterfly pattern, but with no boundary keys
-            var request = new RefinementRequest<Key>(
-                registry.getCurrentPartitionId(), 0L, roundNumber, 0, List.of(), System.currentTimeMillis()
-            );
-            requests.add(request);
-            return requests;
-        }
-
-        log.debug("Found {} violations in round {}, creating requests", violations.size(), roundNumber);
-
-        // Group violations by source rank (butterfly partner)
-        var violationsByRank = new java.util.HashMap<Integer, java.util.ArrayList<TwoOneBalanceChecker.BalanceViolation<Key>>>();
-        for (var violation : violations) {
-            violationsByRank.computeIfAbsent(violation.sourceRank(), rank -> new java.util.ArrayList<>())
-                           .add(violation);
-        }
-
-        // Create domain refinement request per source rank
-        for (var entry : violationsByRank.entrySet()) {
-            var sourceRank = entry.getKey();
-            var groupViolations = entry.getValue();
-
-            // Extract max level from violations
-            var maxLevel = groupViolations.stream()
-                .mapToInt(v -> Math.max(v.localLevel(), v.ghostLevel()))
-                .max()
-                .orElse(0);
-
-            // Collect boundary keys from violations (domain SpatialKey, no proto conversion)
-            var boundaryKeys = groupViolations.stream()
-                .flatMap(v -> Stream.of(v.localKey(), v.ghostKey()))
-                .collect(Collectors.toList());
-
-            var request = new RefinementRequest<>(
-                registry.getCurrentPartitionId(),
-                0L,
-                roundNumber,
-                maxLevel,
-                boundaryKeys,
-                System.currentTimeMillis()
-            );
-
-            requests.add(request);
-            log.trace("Created request for rank {} with {} violations", sourceRank, groupViolations.size());
-        }
-
-        return requests;
-    }
-
-    /**
      * Process a single refinement response and apply domain ghost elements to the ghost layer.
      *
      * <p>Ghost elements are already deserialized domain objects (deserialization happens in the
@@ -575,23 +514,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     }
 
     /**
-     * Check if balance has converged (no further refinement needed).
-     *
-     * <p>Convergence is detected when all neighbors report that no further refinement
-     * is needed. This is tracked via the responses from refinement requests.
-     *
-     * @return true if converged
-     */
-    private boolean isConverged() {
-        // Convergence is indicated when:
-        // 1. Last round's responses all indicated no further refinement needed
-        // 2. This prevents unnecessary rounds from executing
-
-        return lastRoundIndicatedConvergence;
-    }
-
-    /**
      * Result of a single refinement round.
      */
-    private record RefinementRoundResult(int refinementsApplied, boolean needsMoreRefinement, long roundTimeMillis) {}
+    private record RefinementRoundResult(int refinementsApplied, boolean locallyBalanced, long roundTimeMillis) {}
 }

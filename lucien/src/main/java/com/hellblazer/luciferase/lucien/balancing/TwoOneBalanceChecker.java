@@ -54,6 +54,14 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
     private static final Logger log = LoggerFactory.getLogger(TwoOneBalanceChecker.class);
 
     /**
+     * Local refinement queue (Luciferase-uhsn, B10b — D3). Violations where the LOCAL element is the coarser side
+     * ({@link BalanceViolation#localNeedsRefinement()}) are NOT sent to a remote partition; the local partition must
+     * subdivide its own element. Such localKeys are enqueued here by {@link #createRefinementRequests} and drained by
+     * the downstream local-refinement step (m27q/B10c, which owns the actual {@code SpatialIndex} subdivide).
+     */
+    private final java.util.Queue<Key> localRefinementQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    /**
      * Record representing a 2:1 balance constraint violation.
      *
      * <p>A violation occurs when a local element and adjacent ghost element differ by more than 1 level.
@@ -327,7 +335,21 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             return new ArrayList<>();
         }
 
-        var byRank = violations.stream().collect(Collectors.groupingBy(BalanceViolation::sourceRank));
+        // D3 (Luciferase-uhsn): partition violations by refinement direction.
+        //  - LOCAL coarser (localNeedsRefinement()): the local partition must subdivide its own element. Enqueue the
+        //    localKey for the downstream local-refinement step (m27q/B10c) — do NOT ask a remote partition.
+        //  - GHOST coarser (!localNeedsRefinement()): the ghost-owning partition is the coarse side that must refine,
+        //    so a remote request to its sourceRank is warranted. Only these reach the wire.
+        var remoteViolations = new ArrayList<BalanceViolation<Key>>(violations.size());
+        for (var v : violations) {
+            if (v.localNeedsRefinement()) {
+                localRefinementQueue.add(v.localKey());
+            } else {
+                remoteViolations.add(v);
+            }
+        }
+
+        var byRank = remoteViolations.stream().collect(Collectors.groupingBy(BalanceViolation::sourceRank));
 
         var requests = new ArrayList<RefinementRequest<Key>>(byRank.size());
         for (var group : byRank.values()) {
@@ -341,5 +363,23 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             requests.add(new RefinementRequest<>(localRank, 0L, 0, treeLevel, boundaryKeys, timestamp));
         }
         return requests;
+    }
+
+    /**
+     * Drain the local refinement queue (Luciferase-uhsn, B10b — D3).
+     *
+     * <p>Returns and removes all localKeys queued by {@link #createRefinementRequests} for violations where the local
+     * element is the coarser side ({@link BalanceViolation#localNeedsRefinement()}). These elements must be subdivided
+     * locally rather than via a remote request. Consumed by the downstream local-refinement step (m27q/B10c). After
+     * this call the queue is empty.
+     *
+     * @return the queued local refinement keys (empty if none); insertion order is not guaranteed
+     */
+    public List<Key> drainLocalRefinements() {
+        var drained = new ArrayList<Key>();
+        for (Key k; (k = localRefinementQueue.poll()) != null; ) {
+            drained.add(k);
+        }
+        return drained;
     }
 }

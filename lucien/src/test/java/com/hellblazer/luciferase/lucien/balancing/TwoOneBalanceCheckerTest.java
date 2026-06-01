@@ -170,20 +170,20 @@ public class TwoOneBalanceCheckerTest {
 
     @Test
     public void testCreateRefinementRequestsExists() {
-        // Verify createRefinementRequests method exists and can be called
-        var mockForest = mock(Forest.class);
+        // Verify createRefinementRequests emits a request for a ghost-coarser violation (local is finer, so the
+        // ghost owner is the side that must refine -> a remote request is warranted; Luciferase-uhsn D3).
         var violations = List.of(
             new TwoOneBalanceChecker.BalanceViolation<>(
-                new MortonKey(1L, (byte) 2),
-                new MortonKey(0L, (byte) 4),
-                2, 4, 2, 1
+                new MortonKey(1L, (byte) 4),
+                new MortonKey(0L, (byte) 2),
+                4, 2, 2, 1   // localLevel > ghostLevel -> !localNeedsRefinement()
             )
         );
 
         var requests = checker.createRefinementRequests(violations, 0, 0);
 
         assertNotNull(requests, "Should return refinement requests");
-        assertEquals(1, requests.size(), "one violation from one sourceRank -> one request");
+        assertEquals(1, requests.size(), "one ghost-coarser violation from one sourceRank -> one request");
         assertEquals(0, requests.get(0).requesterRank(), "requesterRank must be the supplied local rank");
     }
 
@@ -196,19 +196,20 @@ public class TwoOneBalanceCheckerTest {
 
     @Test
     public void testCreateRefinementRequestsGroupsBySourceRank() {
-        // Luciferase-w3lm: violations from two distinct ghost-owner ranks -> one request per rank, carrying both
-        // local and ghost keys, treeLevel = max level in the group, requesterRank = coordinatorId.
-        var localA1 = new MortonKey(1L, (byte) 2);
-        var ghostA1 = new MortonKey(2L, (byte) 5);   // rank 1, max level 5
-        var localA2 = new MortonKey(3L, (byte) 4);
-        var ghostA2 = new MortonKey(4L, (byte) 7);   // rank 1, max level 7
-        var localB = new MortonKey(5L, (byte) 1);
-        var ghostB = new MortonKey(6L, (byte) 3);    // rank 2, max level 3
+        // Luciferase-uhsn D3: only ghost-coarser violations (!localNeedsRefinement(), local finer) become remote
+        // requests. Two distinct ghost-owner ranks -> one request per rank, carrying both local and ghost keys,
+        // treeLevel = max level in the group, requesterRank = the supplied local rank.
+        var localA1 = new MortonKey(1L, (byte) 5);
+        var ghostA1 = new MortonKey(2L, (byte) 2);   // rank 1, max level 5
+        var localA2 = new MortonKey(3L, (byte) 7);
+        var ghostA2 = new MortonKey(4L, (byte) 4);   // rank 1, max level 7
+        var localB = new MortonKey(5L, (byte) 3);
+        var ghostB = new MortonKey(6L, (byte) 1);    // rank 2, max level 3
 
         var violations = List.of(
-            new TwoOneBalanceChecker.BalanceViolation<>(localA1, ghostA1, 2, 5, 3, 1),
-            new TwoOneBalanceChecker.BalanceViolation<>(localA2, ghostA2, 4, 7, 3, 1),
-            new TwoOneBalanceChecker.BalanceViolation<>(localB, ghostB, 1, 3, 2, 2)
+            new TwoOneBalanceChecker.BalanceViolation<>(localA1, ghostA1, 5, 2, 3, 1),
+            new TwoOneBalanceChecker.BalanceViolation<>(localA2, ghostA2, 7, 4, 3, 1),
+            new TwoOneBalanceChecker.BalanceViolation<>(localB, ghostB, 3, 1, 2, 2)
         );
 
         var requests = checker.createRefinementRequests(violations, 99L, 42);
@@ -226,10 +227,62 @@ public class TwoOneBalanceCheckerTest {
         assertEquals(4, rank1.boundaryKeys().size(), "two violations contribute local+ghost each");
         assertTrue(rank1.boundaryKeys().containsAll(List.of(localA1, ghostA1, localA2, ghostA2)));
 
-        // Rank-2 group: 1 violation -> 2 boundary keys, treeLevel = max(1,3) = 3.
+        // Rank-2 group: 1 violation -> 2 boundary keys, treeLevel = max(3,1) = 3.
         var rank2 = requests.stream().filter(r -> r.treeLevel() == 3).findFirst().orElseThrow();
         assertEquals(2, rank2.boundaryKeys().size());
         assertTrue(rank2.boundaryKeys().containsAll(List.of(localB, ghostB)));
+    }
+
+    @Test
+    public void createRefinementRequests_localNeedsRefinementViolations_producesNoRemoteRequest() {
+        // Luciferase-uhsn D3: a violation where LOCAL is coarser (localNeedsRefinement()==true) must NOT produce a
+        // remote request — the local partition refines itself. Only the ghost-coarser violation is sent on the wire.
+        var localCoarse = new MortonKey(1L, (byte) 2);
+        var ghostFine   = new MortonKey(2L, (byte) 4);   // local coarser: localNeedsRefinement() == true
+        var localFine   = new MortonKey(3L, (byte) 5);
+        var ghostCoarse = new MortonKey(4L, (byte) 2);   // ghost coarser: !localNeedsRefinement()
+
+        var violations = List.of(
+            new TwoOneBalanceChecker.BalanceViolation<>(localCoarse, ghostFine, 2, 4, 2, 1),
+            new TwoOneBalanceChecker.BalanceViolation<>(localFine, ghostCoarse, 5, 2, 3, 1)
+        );
+
+        var requests = checker.createRefinementRequests(violations, 0L, 7);
+
+        assertEquals(1, requests.size(), "only the ghost-coarser violation yields a remote request");
+        var keys = requests.get(0).boundaryKeys();
+        assertTrue(keys.containsAll(List.of(localFine, ghostCoarse)),
+                   "remote request carries the ghost-coarser violation's keys");
+        assertFalse(keys.contains(localCoarse), "local-coarser violation must not appear in any remote request");
+        assertFalse(keys.contains(ghostFine), "local-coarser violation must not appear in any remote request");
+    }
+
+    @Test
+    public void createRefinementRequests_localNeedsRefinementViolations_enqueuedLocally() {
+        // Luciferase-uhsn D3: local-coarser violations are routed to a local refinement queue (consumed by
+        // m27q/B10c), not dropped. drainLocalRefinements() returns exactly those localKeys and clears the queue.
+        var localCoarse1 = new MortonKey(1L, (byte) 2);
+        var ghostFine1   = new MortonKey(2L, (byte) 4);
+        var localCoarse2 = new MortonKey(3L, (byte) 1);
+        var ghostFine2   = new MortonKey(4L, (byte) 5);
+        var localFine    = new MortonKey(5L, (byte) 6);
+        var ghostCoarse  = new MortonKey(6L, (byte) 2);
+
+        var violations = List.of(
+            new TwoOneBalanceChecker.BalanceViolation<>(localCoarse1, ghostFine1, 2, 4, 2, 1),
+            new TwoOneBalanceChecker.BalanceViolation<>(localCoarse2, ghostFine2, 1, 5, 4, 2),
+            new TwoOneBalanceChecker.BalanceViolation<>(localFine, ghostCoarse, 6, 2, 4, 1)
+        );
+
+        checker.createRefinementRequests(violations, 0L, 7);
+
+        var drained = checker.drainLocalRefinements();
+        assertEquals(2, drained.size(), "both local-coarser violations are enqueued locally");
+        assertTrue(drained.containsAll(List.of(localCoarse1, localCoarse2)),
+                   "queue holds the localKeys of local-coarser violations");
+        assertFalse(drained.contains(localFine), "ghost-coarser violation must not be enqueued locally");
+
+        assertTrue(checker.drainLocalRefinements().isEmpty(), "drain must clear the queue");
     }
 
     @Test
