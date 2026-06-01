@@ -346,7 +346,7 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
         var content = deserializeContent(tg.contentClass(), tg.contentValue());
 
         // Create ghost entity with reconstructed content
-        var internalGhost = new com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager.GhostEntity<ID, Content>(
+        var internalGhost = new com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo<ID, Content>(
             (ID) new StringEntityID(tg.entityId()),  // Use StringEntityID as placeholder
             content,  // Reconstructed content
             tg.position(),

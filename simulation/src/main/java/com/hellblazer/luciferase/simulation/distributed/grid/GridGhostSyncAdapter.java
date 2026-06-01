@@ -8,7 +8,7 @@
  */
 package com.hellblazer.luciferase.simulation.distributed.grid;
 
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.ExternalBubbleTracker;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
@@ -239,7 +239,7 @@ public class GridGhostSyncAdapter {
 
             // Create ghost entity
             var entityId = new StringEntityID(entityRecord.id());
-            var ghostEntity = new GhostZoneManager.GhostEntity<>(
+            var ghostEntity = new GhostEntityHalo<>(
                 entityId,
                 entityRecord.content(),
                 position,

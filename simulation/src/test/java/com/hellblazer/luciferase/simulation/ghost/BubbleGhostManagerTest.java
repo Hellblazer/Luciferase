@@ -5,7 +5,7 @@ package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.ExternalBubbleTracker;
 import com.hellblazer.luciferase.simulation.ghost.GhostLayerHealth;
@@ -377,7 +377,7 @@ class BubbleGhostManagerTest {
 
     private SimulationGhostEntity<TestEntityID, String> createTestGhost(UUID targetBubbleId, long bucket) {
         var position = new Point3f(1.0f, 1.0f, 1.0f);
-        var ghostEntity = new GhostZoneManager.GhostEntity<>(
+        var ghostEntity = new GhostEntityHalo<>(
             new TestEntityID("test-" + UUID.randomUUID()),
             "content",
             position,

@@ -348,20 +348,20 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
     /**
      * Create GhostEntity from entity data.
      * <p>
-     * Helper method to construct GhostZoneManager.GhostEntity for GhostBoundarySync.
+     * Helper method to construct GhostEntityHalo for GhostBoundarySync.
      *
      * @param entityId Entity ID
      * @param content  Entity content
      * @param position Entity position
      * @return GhostEntity for transmission
      */
-    private com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager.GhostEntity<ID, Content> createGhostEntity(
+    private com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo<ID, Content> createGhostEntity(
         ID entityId,
         Content content,
         Point3f position
     ) {
         var bounds = new com.hellblazer.luciferase.lucien.entity.EntityBounds(position, 0.5f);
-        return new com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager.GhostEntity<>(
+        return new com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo<>(
             entityId,
             content,
             position,

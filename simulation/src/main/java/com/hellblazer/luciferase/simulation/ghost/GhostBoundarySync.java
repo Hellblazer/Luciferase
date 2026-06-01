@@ -5,7 +5,7 @@ import com.hellblazer.luciferase.simulation.ghost.*;
 import com.hellblazer.luciferase.simulation.bubble.*;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -83,11 +83,11 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
      * Ghost entry with metadata.
      */
     private static class GhostEntry<ID extends EntityID, Content> {
-        final GhostZoneManager.GhostEntity<ID, Content> ghost;
+        final GhostEntityHalo<ID, Content> ghost;
         final UUID sourceBubbleId;
         final long bucket;
 
-        GhostEntry(GhostZoneManager.GhostEntity<ID, Content> ghost, UUID sourceBubbleId, long bucket) {
+        GhostEntry(GhostEntityHalo<ID, Content> ghost, UUID sourceBubbleId, long bucket) {
             this.ghost = ghost;
             this.sourceBubbleId = sourceBubbleId;
             this.bucket = bucket;
@@ -126,13 +126,13 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
      * <p>
      * Call when entity is near boundary: ghost zone overlaps with neighbor.
      *
-     * @param ghostEntity    Ghost entity from GhostZoneManager
+     * @param ghostEntity    Ghost entity halo (GhostEntityHalo)
      * @param sourceBubbleId Source bubble ID (for VON discovery)
      * @param neighborId     Neighbor to send ghost to
      * @param bucket         Current bucket number
      */
     public void addGhost(
-        GhostZoneManager.GhostEntity<ID, Content> ghostEntity,
+        GhostEntityHalo<ID, Content> ghostEntity,
         UUID sourceBubbleId,
         UUID neighborId,
         long bucket

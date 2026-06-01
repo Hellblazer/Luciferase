@@ -6,7 +6,7 @@ import com.hellblazer.luciferase.simulation.bubble.*;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -127,7 +127,7 @@ class GhostBoundarySyncTest {
         var bounds = new EntityBounds(position, 0.1f);
         var content = new TestContent("data-1");
 
-        var ghostEntity = new GhostZoneManager.GhostEntity<>(
+        var ghostEntity = new GhostEntityHalo<>(
             entityId,
             content,
             position,
@@ -154,7 +154,7 @@ class GhostBoundarySyncTest {
             var entityId = new TestEntityID("entity-" + i);
             var position = new Point3f(i * 0.1f, 0.5f, 0.5f);
             var bounds = new EntityBounds(position, 0.1f);
-            var ghostEntity = new GhostZoneManager.GhostEntity<>(
+            var ghostEntity = new GhostEntityHalo<>(
                 entityId,
                 new TestContent("data-" + i),
                 position,
@@ -536,13 +536,13 @@ class GhostBoundarySyncTest {
     }
 
     // Helper method to create ghost entity
-    private GhostZoneManager.GhostEntity<TestEntityID, TestContent> createGhostEntity(
+    private GhostEntityHalo<TestEntityID, TestContent> createGhostEntity(
         TestEntityID entityId,
         float x
     ) {
         var position = new Point3f(x, 0.5f, 0.5f);
         var bounds = new EntityBounds(position, 0.1f);
-        return new GhostZoneManager.GhostEntity<>(
+        return new GhostEntityHalo<>(
             entityId,
             new TestContent("data-" + entityId.toDebugString()),
             position,

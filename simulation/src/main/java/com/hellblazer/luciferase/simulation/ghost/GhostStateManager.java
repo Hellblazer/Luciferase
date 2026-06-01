@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityData;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
@@ -422,8 +422,8 @@ public class GhostStateManager {
         // Create EntityData (content)
         EntityData content = new EntityData<>(entityId, position, (byte) 10, null);
 
-        // Create GhostEntity wrapper (from lucien.forest.ghost.GhostZoneManager)
-        var ghostEntity = new GhostZoneManager.GhostEntity<>(
+        // Create GhostEntity wrapper (lucien.forest.ghost.GhostEntityHalo)
+        var ghostEntity = new GhostEntityHalo<>(
             entityId,
             content,
             position,

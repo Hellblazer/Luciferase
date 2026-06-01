@@ -609,7 +609,7 @@ public class ClusterIntegrationTest {
     ) {
         var id = new StringEntityID(entityId);
         var bounds = new com.hellblazer.luciferase.lucien.entity.EntityBounds(position, 0.5f);
-        var ghost = new com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager.GhostEntity<StringEntityID, Object>(
+        var ghost = new com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo<StringEntityID, Object>(
             id, new Object(), position, bounds, "tree-" + sourceBubbleId
         );
         return new SimulationGhostEntity<>(ghost, sourceBubbleId, 1L, 1L, 1L);

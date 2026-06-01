@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityData;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.events.EntityUpdateEvent;
 import com.hellblazer.luciferase.simulation.events.EventSerializer;
@@ -342,8 +342,8 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
         EntityData content = new EntityData<>(entityId, position, (byte) 10, null);
 
         // Create GhostEntity wrapper
-        GhostZoneManager.GhostEntity<StringEntityID, EntityData> ghostEntity =
-            new GhostZoneManager.GhostEntity<>(
+        GhostEntityHalo<StringEntityID, EntityData> ghostEntity =
+            new GhostEntityHalo<>(
                 entityId,
                 content,
                 position,
