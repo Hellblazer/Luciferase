@@ -185,6 +185,15 @@ class PyramidCrossShapeGhostTest {
         var detector = index.getNeighborDetector();
         var ghostDetector = new GhostBoundaryDetector<>(index, detector, GhostType.FACES,
                                                         GhostAlgorithm.MINIMAL);
+        // Luciferase-3uwx: the boundary set is now the PARTITION seam (an occupied element with a face
+        // neighbor owned by a different rank), not the domain edge. Establish a seam by assigning a remote
+        // owner to the absent cross-shape face neighbors of one occupied boundary element, so the local
+        // boundary set is non-empty for the fan-out assertion.
+        var qualifying = findBoundaryKeyWithCrossShapeTetNeighbors(detector);
+        assertNotNull(qualifying, "fixture must yield an occupied element with absent cross-shape tet neighbors");
+        for (var tk : qualifying.tetNeighbors) {
+            ghostDetector.setElementOwner(tk, 9); // rank 9 is remote relative to the default local rank 0
+        }
         var channel = new RecordingGhostChannel<PyramidKey>();
         var manager = new DistributedGhostManager<>(index, channel, ghostDetector);
         manager.addKnownProcess(1);
@@ -204,7 +213,7 @@ class PyramidCrossShapeGhostTest {
         // The queued ghosts are exactly the detector's identified boundary elements (the elements this
         // rank owns and advertises to peers) — and the set is non-empty (origin corner is a boundary).
         var boundary = ghostDetector.getBoundaryElements();
-        assertFalse(boundary.isEmpty(), "precondition: origin corner yields boundary elements");
+        assertFalse(boundary.isEmpty(), "precondition: the seam (remote-owned face neighbor) yields a boundary element");
         assertEquals(boundary, channel.queuedByRank.get(1),
                      "queued ghosts to a rank must equal the local boundary element set");
     }

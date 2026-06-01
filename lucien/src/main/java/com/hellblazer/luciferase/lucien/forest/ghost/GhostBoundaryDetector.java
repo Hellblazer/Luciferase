@@ -647,6 +647,30 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     // Private Element-Level Helper Methods
     // ========================================
 
+    /**
+     * Identify the local <em>partition-boundary</em> elements: those occupied by this rank that have at least one
+     * face neighbor owned by a different rank (Luciferase-3uwx). This is the t8code ghost-v3 seed set —
+     * partition seam, not domain edge.
+     *
+     * <p><b>Semantic change (Luciferase-3uwx, user-approved correctness+perf).</b> The previous implementation
+     * flagged <em>domain</em>-boundary elements (via {@code neighborDetector.getBoundaryDirections}, a
+     * coords-vs-MAX_COORD test), which never seeded ghosts for domain-interior partition-seam elements — a
+     * correctness gap. The identified set is now exactly the partition seam, and is consistent with the
+     * downstream {@link #createGhostsForElement} guard (a face neighbor with owner {@code != currentRank}).
+     * Single-process use (one rank, no remote owners) therefore yields an empty boundary set, as it should.
+     *
+     * <p><b>Iteration strategy (Luciferase-3uwx).</b> A flat scan over the local elements with the
+     * partition-boundary leaf test. In this single-index-per-rank model the local {@code spatialIndex} already
+     * holds <em>only</em> this rank's elements, so the remote-subtree pruning t8code uses to avoid visiting
+     * other ranks' elements is structurally already realized (other ranks' elements are simply absent). The
+     * remaining t8code optimization — pruning local-<em>interior</em> subtrees to skip the face test on
+     * elements all of whose neighbors are local — is deferred (Luciferase follow-up): it requires a sound
+     * seam-face check at subtree granularity (a node's neighbor-dilated cube is not a single SFC-contiguous
+     * range, so it cannot be bounded by {@code ownerOf} at the range endpoints alone). The reusable
+     * primitives for that descent are in place: {@link SpatialKey#firstDescendantAtLevel(byte)} /
+     * {@link SpatialKey#lastDescendantAtLevel(byte)} (S1), {@code ShapeWeightPartitioner.cutPoints/ownerOf}
+     * (S2), and {@link SpatialIndex#spatialKeysInRange} (S3).
+     */
     private void identifyBoundaryElements() {
         if (neighborDetector == null || spatialIndex == null) {
             log.warn("Cannot identify boundary elements - detector or index not set");
@@ -659,18 +683,30 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
         log.debug("Identifying boundary elements from {} total elements", spatialKeys.size());
 
         for (var key : spatialKeys) {
-            if (isElementAtBoundary(key)) {
+            if (isPartitionBoundary(key)) {
                 boundaryElements.add(key);
             }
         }
 
-        log.debug("Identified {} boundary elements", boundaryElements.size());
+        log.debug("Identified {} partition-boundary elements", boundaryElements.size());
     }
 
-    private boolean isElementAtBoundary(Key key) {
-        if (neighborDetector == null) return false;
-        var boundaryDirections = neighborDetector.getBoundaryDirections(key);
-        return !boundaryDirections.isEmpty();
+    /**
+     * An occupied element is a partition-boundary element iff at least one of its face neighbors is owned by a
+     * rank other than {@link #currentRank} (Luciferase-3uwx). Uses {@link #getElementOwner(SpatialKey)} for the
+     * neighbor's owner, so the identified set matches the keys {@link #createGhostsForElement} would turn into
+     * ghosts (consistent identify/create owner notion).
+     */
+    private boolean isPartitionBoundary(Key key) {
+        if (neighborDetector == null) {
+            return false;
+        }
+        for (var neighbor : neighborDetector.findFaceNeighbors(key)) {
+            if (getElementOwner(neighbor) != currentRank) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void createGhostsForElement(Key key) {
