@@ -1496,8 +1496,16 @@ public class Tet implements Spatial.aabt, HybridElement {
             return null;
         }
 
-        // Special case: at level 0, we can only have type 0
-        // If the neighbor would be at level 0 with a different type, it doesn't exist
+        // At level 0 a single-tree Tetree is a single type-0 root tet (t8code: the root tet's type is hardcoded
+        // to 0). t8code's t8_dtri_is_inside_root classifies a level-0 simplex as inside the root tree only when
+        // type==0 (and the anchor is the origin); a type-changing root face (faces 1/2 keep the coordinates but
+        // change type) names a level-0 non-type-0 tet, which is OUTSIDE the root tree. t8code expects callers to
+        // run is_inside_root after t8_dtri_face_neighbour; this guard inlines that caller-side check, returning
+        // null (no same-tree neighbor). (Luciferase-t6su confirmed the guard is correct — NOT spurious. Note: it
+        // is load-bearing under the default assertions-disabled build, where the Tet constructor's
+        // validateAnchorCoordinates assert does not fire; without this guard faceNeighbor would return a
+        // FaceNeighbor wrapping a semantically-invalid level-0 non-type-0 tet. Faces 0/3 are already rejected by
+        // the out-of-bounds check above.)
         if (l == 0 && typeNew != 0) {
             return null;
         }

@@ -37,10 +37,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * are non-conforming and share 0-3 vertices even for pure tets — see CLAUDE.md "Face-neighbor
  * testing caveat").
  *
- * <p>The root tet ({@code l == 0}) is excluded from the sweep: {@code Tet.faceNeighbor} carries a
- * spurious {@code l == 0 && typeNew != 0} guard not present in t8code (tracked separately by
- * Luciferase-t6su). This oracle pins the algorithm for {@code l >= 1}, where t8code and Luciferase
- * agree unconditionally.
+ * <p>The root tet ({@code l == 0}) is excluded from the sweep: {@code Tet.faceNeighbor} returns null for all
+ * four root faces (faces 0/3 via the coordinate out-of-bounds check, faces 1/2 via the
+ * {@code l == 0 && typeNew != 0} guard). That guard is CORRECT, not spurious (Luciferase-t6su resolved this):
+ * it inlines t8code's caller-side {@code t8_dtri_is_inside_root} check — a level-0 non-type-0 simplex is
+ * outside the root tree, so a type-changing root face has no same-tree neighbor. This oracle pins the
+ * algorithm for {@code l >= 1}, where t8code and Luciferase agree unconditionally; root behavior is pinned by
+ * {@code TetFaceNeighborRootTest}.
  */
 class T8codeDtetFaceNeighborOracleTest {
 
