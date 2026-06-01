@@ -177,6 +177,26 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
     }
 
     /**
+     * Uniform equality across all {@code TetreeKey} implementations (Luciferase-567m). Two keys are equal iff they
+     * share {@code (level, lowBits, highBits)}, regardless of runtime class. Declared {@code final} so the three
+     * implementations ({@code CompactTetreeKey}, {@code ExtendedTetreeKey}, {@code LazyTetreeKey}) cannot
+     * reintroduce the {@code instanceof}-keyed-to-own-class asymmetry that violated {@link Object#equals} symmetry
+     * and diverged from {@code compareTo == 0}. A {@code LazyTetreeKey} resolves its bits here (via the overridden
+     * {@code getLowBits}/{@code getHighBits}); the spatial index's {@code compareTo}-based skip-list path is
+     * unaffected since it never calls this method.
+     */
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof TetreeKey<?> that)) {
+            return false;
+        }
+        return level == that.getLevel() && getLowBits() == that.getLowBits() && getHighBits() == that.getHighBits();
+    }
+
+    /**
      * Get the low bits of the TM-index (index bits 0-63). Coarsest-at-MSB layout (Luciferase-tkvb):
      * these are the deeper refinement steps, with the leaf group at bits 0-5. For levels <= 10 the
      * whole index fits here and the high bits are 0.
@@ -199,8 +219,14 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         return (byte) (rawGroupAt(targetLevel) & 0x7);
     }
 
+    /**
+     * Hash aligned to {@link #equals} on the {@code (level, lowBits, highBits)} tuple. Declared {@code final}
+     * (Luciferase-567m) so every implementation hashes identically for equal keys — in particular a
+     * {@code LazyTetreeKey} resolves to the same hash as the concrete key it represents, rather than the old
+     * Tet-coordinate polynomial that diverged from the concrete tmIndex hash.
+     */
     @Override
-    public int hashCode() {
+    public final int hashCode() {
         return Objects.hash(level, getLowBits(), getHighBits());
     }
 

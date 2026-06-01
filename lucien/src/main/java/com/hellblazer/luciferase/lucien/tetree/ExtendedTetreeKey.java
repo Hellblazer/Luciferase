@@ -108,19 +108,9 @@ public class ExtendedTetreeKey extends CompactTetreeKey {
         return Long.compareUnsigned(getLowBits(), other.getLowBits());
     }
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (!(o instanceof ExtendedTetreeKey tetreeKey)) {
-            return false;
-        }
-        if (!super.equals(o)) {
-            return false;
-        }
-        return highBits == tetreeKey.highBits;
-    }
+    // equals()/hashCode() are final in TetreeKey (Luciferase-567m): uniform (level, lowBits, highBits) across all
+    // implementations. The old instanceof-ExtendedTetreeKey equals was asymmetric vs CompactTetreeKey, and the
+    // inherited Compact hashCode ignored highBits.
 
     @Override
     public long getHighBits() {
