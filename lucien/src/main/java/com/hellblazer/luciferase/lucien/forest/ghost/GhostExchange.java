@@ -27,9 +27,8 @@ import java.util.List;
 /**
  * Transport-agnostic interface for synchronous ghost-element requests between distributed processes.
  *
- * <p>lucien core ({@link ElementGhostManager}) depends on this interface rather than on a concrete
- * gRPC transport, so the gRPC implementation ({@code GhostServiceClient})
- * can be moved out of the core module without touching core code.
+ * <p>lucien core depends on this interface rather than on a concrete gRPC transport, so the gRPC
+ * implementation ({@code GhostServiceClient}) can be moved out of the core module without touching core code.
  *
  * <p>Returns domain {@link GhostElement} objects rather than proto types, keeping the core module
  * free of protobuf dependencies. Mirrors the pattern established by {@link GhostChannel} for
