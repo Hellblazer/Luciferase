@@ -26,8 +26,18 @@ import java.util.NavigableSet;
  * This interface defines the contract for keys used in spatial index structures. Each spatial structure (Octree,
  * Tetree, etc.) implements its own key type that encodes the necessary information for unique spatial identification.
  *
- * Keys must be immutable and implement proper equals/hashCode semantics. The Comparable ordering must preserve spatial
- * locality where possible.
+ * Keys must be immutable and implement proper equals/hashCode semantics.
+ *
+ * <h2>Ordering contract</h2>
+ * <p>All current {@code SpatialKey} implementations order <em>level first</em>: {@link #compareTo} compares
+ * {@link #getLevel()} before any space-filling-curve bits. Consequently every key at level {@code L} sorts before
+ * every key at level {@code L+1}, regardless of SFC position. Within a single level, ordering follows the
+ * implementation's space-filling curve and preserves spatial locality where possible. This holds for both
+ * {@code MortonKey} (level, then Morton code) and {@code TetreeKey} (level, then 128-bit TM-index, unsigned).
+ *
+ * <p><strong>Implication for range queries:</strong> a {@code subMap(lower, upper)} whose bounds are both at level
+ * {@code L} returns only level-{@code L} keys. Callers that must cover entities stored across multiple levels (e.g.
+ * k-NN SFC pruning) must issue one range per occupied level — see {@link #sfcRangesForKNN}.
  *
  * @param <K> The concrete key type (self-referential for type safety)
  * @author hal.hildebrand
@@ -56,8 +66,10 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
      *     <li>{@code MortonKey} returns one range per distinct storage level present in the index — required
      *         because {@code MortonKey.compareTo} orders keys by level first, so a subMap query at level L only
      *         returns keys at level L. The level set is collected from {@code indexKeys}.</li>
-     *     <li>{@code TetreeKey} returns a single range and ignores {@code indexKeys} — its ordering is not
-     *         level-scoped.</li>
+     *     <li>{@code TetreeKey} currently returns a single range and ignores {@code indexKeys}. Note its ordering
+     *         <em>is</em> level-first (see the ordering contract above), so this single range under-covers an index
+     *         holding entities at multiple levels — a known bug tracked by {@code Luciferase-6gnb}, not a property of
+     *         the ordering.</li>
      *     <li>Implementations without an SFC range estimator (e.g. {@code PrismKey}) return the default empty
      *         iterable, signaling {@code KnnSearcher} to fall back to the breadth-first search path.</li>
      * </ul>
