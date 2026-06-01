@@ -175,6 +175,13 @@ public class DefaultParallelBalancer<Key extends SpatialKey<Key>, ID extends Ent
                 // Set forest context for violation detection
                 crossPartitionPhase.setForestContext(currentForest, ghostLayer);
 
+                // Luciferase-m27q (S9): re-synchronize the ghost layer after each round's local subdivisions so a
+                // stale ghost cannot hide a violation before the next balance-check. Wires the phase's ghost-resync
+                // hook to the distributed ghost manager's refresh (review SIG-3 — previously the hook was the no-op
+                // default in this production path).
+                var ghostManager = currentGhostManager;
+                crossPartitionPhase.setGhostResync(ghostManager::updateDistributedGhostLayer);
+
                 log.debug("Phase 3: Executing O(log P) cross-partition refinement");
 
                 // Execute cross-partition balance with forest integration

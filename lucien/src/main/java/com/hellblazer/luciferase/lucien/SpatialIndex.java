@@ -271,6 +271,26 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
     }
 
     /**
+     * Refine (subdivide) the node at the given spatial key by one level, on demand.
+     *
+     * <p>Luciferase-m27q (2:1 balance B10c). Unlike the entity-threshold and deferred bulk-loading subdivision
+     * paths, this refines a specific node immediately regardless of its entity count — the operation the
+     * distributed 2:1-balance protocol needs when a local element is the coarser side of a boundary violation
+     * (t8code's {@code t8_forest_balance_adapt} refines an element so its level increases by one). Entities at the
+     * coarse key are redistributed to the appropriate child keys. The caller is responsible for any subsequent
+     * ghost-layer re-synchronization.
+     *
+     * <p>The default is an unconditional no-op returning {@code false}; concrete indices override to perform the real
+     * subdivision (those whose structure cannot subdivide, e.g. a flat SFC array, keep the no-op default).
+     *
+     * @param key the spatial key of the node to refine
+     * @return true if a node was refined; false if the key was absent or already at maximum depth
+     */
+    default boolean subdivide(Key key) {
+        return false;
+    }
+
+    /**
      * Check if a node exists at the given Morton index
      *
      * @param sfcIndex the sfc index to check

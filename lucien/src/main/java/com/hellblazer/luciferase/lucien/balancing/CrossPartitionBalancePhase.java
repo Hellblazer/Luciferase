@@ -69,6 +69,11 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     private volatile GhostLayer<Key, ID, Content> ghostLayer;
     private volatile TwoOneBalanceChecker<Key, ID, Content> balanceChecker;
 
+    // Luciferase-m27q (S9): hook invoked once per round after local subdivisions to re-synchronize the ghost layer
+    // before the next balance-check, so a stale ghost cannot hide a violation on either side. Default is a no-op
+    // (single-partition / tests that re-sync externally); cross-partition wiring sets a real ghost refresh.
+    private volatile Runnable ghostResync = () -> { };
+
     /**
      * Create a new cross-partition balance phase.
      *
@@ -99,6 +104,28 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         this.balanceChecker = new TwoOneBalanceChecker<>();
         log.debug("Forest context set: forest with {} trees, {} ghost elements",
                  forest.getTreeCount(), ghostLayer.getNumGhostElements());
+    }
+
+    /**
+     * Override the balance checker after {@link #setForestContext} (test seam, Luciferase-m27q). Lets a test drive
+     * the round loop with a controlled violation set, since constructing a Morton-detectable local-coarser violation
+     * geometrically is intricate and orthogonal to the local-refinement path under test. Not used in production.
+     *
+     * @param balanceChecker the checker to use (must not be null)
+     */
+    void setBalanceChecker(TwoOneBalanceChecker<Key, ID, Content> balanceChecker) {
+        this.balanceChecker = Objects.requireNonNull(balanceChecker, "balanceChecker cannot be null");
+    }
+
+    /**
+     * Set the ghost re-synchronization hook (Luciferase-m27q, S9). Invoked once per round, after this partition's
+     * local subdivisions, so the ghost layer reflects the adapted tree before the next balance-check — closing the
+     * stale-ghost / undetected-violation hazard. Defaults to a no-op.
+     *
+     * @param ghostResync the re-sync action (must not be null)
+     */
+    public void setGhostResync(Runnable ghostResync) {
+        this.ghostResync = Objects.requireNonNull(ghostResync, "ghostResync cannot be null");
     }
 
     /**
@@ -261,15 +288,27 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                 }
             }
 
-            // Phase 4: apply returned domain ghost elements (m27q/B10c upgrades this to also subdivide the
-            // local SpatialIndex and consume the local refinement queue).
+            // Phase 4: apply returned domain ghost elements (the remote's refined children become finer local
+            // ghosts). This stays ghost-only — the LOCAL SpatialIndex refinement is Phase 5.
             applyRefinementResponses(responses);
 
-            log.debug("Refinement round {}: {} violations, {} remote requests, {} responses, locallyBalanced={}",
-                     roundNumber, violations.size(), requestsByRank.size(), responses.size(), locallyBalanced);
+            // Phase 5 (Luciferase-m27q, B10c): consume the local refinement queue — for violations where the LOCAL
+            // element is the coarser side (createRefinementRequests routed these to the queue, not the wire),
+            // subdivide the local node by one level so the next round sees it balanced. Trigger ghost re-sync once
+            // after the local adapt so the stale-ghost / undetected-violation hazard (partition-balance S9) is closed
+            // before the next balance-check.
+            var localSubdivides = applyLocalRefinements(roundNumber);
+
+            log.debug("Refinement round {}: {} violations, {} remote requests, {} responses, {} local subdivides, "
+                     + "locallyBalanced={}",
+                     roundNumber, violations.size(), requestsByRank.size(), responses.size(), localSubdivides,
+                     locallyBalanced);
 
             var elapsedMs = Math.max(1L, (System.nanoTime() - startTime) / 1_000_000L);
-            return new RefinementRoundResult(violations.size(), locallyBalanced, elapsedMs);
+            // refinementsApplied counts ACTUAL local subdivisions this round (review MEDIUM-1) — not the violation
+            // count — so totalRefinements / converged() reflect work done, and a round that drains keys but cannot
+            // subdivide any of them (see applyLocalRefinements warn) is distinguishable from real progress.
+            return new RefinementRoundResult(localSubdivides, locallyBalanced, elapsedMs);
 
         } catch (Exception e) {
             log.error("Error in refinement round {}", roundNumber, e);
@@ -277,6 +316,53 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
             // On error, do not claim convergence — let the loop continue up to maxRounds.
             return new RefinementRoundResult(0, false, elapsedMs);
         }
+    }
+
+    /**
+     * Consume the local refinement queue and subdivide each local-coarser node by one level (Luciferase-m27q, B10c).
+     *
+     * <p>{@link TwoOneBalanceChecker#createRefinementRequests} routed local-coarser violations (where this partition
+     * is the side that must refine) to {@link TwoOneBalanceChecker#drainLocalRefinements}. Here we drain that queue
+     * and call {@link SpatialIndex#subdivide} on the owning tree for each key, refining the coarse node by one level
+     * so the next round's {@code findViolations} sees the boundary balanced. If any node was actually refined, the
+     * ghost re-sync hook runs once (S9) so a stale ghost cannot mask a violation before the next balance-check.
+     *
+     * @param roundNumber current round (logging only)
+     * @return the number of nodes actually subdivided this round
+     */
+    private int applyLocalRefinements(int roundNumber) {
+        if (balanceChecker == null || forest == null) {
+            return 0;
+        }
+        var localKeys = balanceChecker.drainLocalRefinements();
+        if (localKeys.isEmpty()) {
+            return 0;
+        }
+        int subdivided = 0;
+        for (var key : localKeys) {
+            for (var tree : forest.getAllTrees()) {
+                var index = tree.getSpatialIndex();
+                if (index.containsSpatialKey(key)) {
+                    if (index.subdivide(key)) {
+                        subdivided++;
+                    } else {
+                        // The node could not be refined (e.g. all its entities map to one child cell, or the index
+                        // does not support on-demand subdivision such as SFCArrayIndex — review MEDIUM-2). The
+                        // violation cannot be resolved locally, so the Allreduce-LAND loop will run to maxRounds for
+                        // it; surface that rather than spinning silently.
+                        log.warn("Round {}: local refinement key {} could not be subdivided (unresolvable local "
+                                 + "violation for index {})", roundNumber, key, index.getClass().getSimpleName());
+                    }
+                    break;
+                }
+            }
+        }
+        if (subdivided > 0) {
+            ghostResync.run(); // S9: refresh ghosts after the local adapt, before the next balance-check
+        }
+        log.debug("Round {}: drained {} local refinement key(s), subdivided {}", roundNumber, localKeys.size(),
+                  subdivided);
+        return subdivided;
     }
 
     /**
