@@ -196,10 +196,8 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
      * Requests ghost elements from a remote process, returning domain objects.
      *
      * <p>This is the {@link GhostExchange} implementation. It calls the proto-returning
-     * {@link #requestGhosts} internally and converts each element verbatim — preserving the
-     * same stub conversion logic that lived in {@code ElementGhostManager.processReceivedGhostElement}
-     * before Inc2b. Per-element try/catch is preserved: one malformed proto logs and continues,
-     * it does NOT abort the whole batch.
+     * {@link #requestGhosts} internally and converts each element verbatim. Per-element try/catch is
+     * load-bearing: one malformed proto logs and continues, it does NOT abort the whole batch.
      *
      * @param targetRank   the rank of the target process
      * @param treeId       the tree ID to request ghosts for (threaded verbatim into each GhostElement)
@@ -217,9 +215,8 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
         }
         var elements = new ArrayList<GhostElement<Key, ID, Content>>();
         for (var proto : batch.getElementsList()) {
-            // PER-ELEMENT try/catch is LOAD-BEARING: verbatim relocation of the guard that
-            // was in ElementGhostManager.processReceivedGhostElement. One malformed proto
-            // must NOT abort the whole batch — log and continue.
+            // PER-ELEMENT try/catch is LOAD-BEARING: one malformed proto must NOT abort the whole
+            // batch — log and continue.
             try {
                 var spatialKey = ProtobufConverters.spatialKeyFromProtobuf(proto.getSpatialKey());
                 var p = proto.getPosition();

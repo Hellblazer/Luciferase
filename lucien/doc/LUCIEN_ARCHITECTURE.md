@@ -95,7 +95,7 @@ com.hellblazer.luciferase.lucien/
 │   ├── Connectivity: TreeConnectivityManager
 │   └── ghost/ (11 classes)
 │       ├── Core: GhostElement, GhostType, GhostLayer, GhostZoneManager, GhostAlgorithm
-│       ├── Management: ElementGhostManager, DistributedGhostManager, GhostBoundaryDetector
+│       ├── Management: DistributedGhostManager, GhostBoundaryDetector
 │       ├── Communication: GrpcGhostChannel
 │       └── Serialization: ContentSerializer, ContentSerializerRegistry
 ├── neighbor/ (3 classes)

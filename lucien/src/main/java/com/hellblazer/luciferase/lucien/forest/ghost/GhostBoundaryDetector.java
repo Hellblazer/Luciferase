@@ -35,9 +35,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Unified ghost boundary detection for spatial indices.
  *
- * <p>This class consolidates element-level and tree-level ghost boundary detection,
- * merging the functionality of ElementGhostManager (537 LOC) and GhostZoneManager (628 LOC)
- * into a single cohesive component (~700 LOC).
+ * <p>This class consolidates element-level and tree-level ghost boundary detection into a single cohesive
+ * component (it superseded the earlier element- and tree-level ghost managers, which have since been removed).
  *
  * <p><strong>Hierarchy:</strong>
  * <ul>
@@ -67,7 +66,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     private static final Logger log = LoggerFactory.getLogger(GhostBoundaryDetector.class);
 
     // ========================================
-    // Element-Level Detection (from ElementGhostManager)
+    // Element-Level Detection
     // ========================================
 
     private final SpatialIndex<Key, ID, Content> spatialIndex;
