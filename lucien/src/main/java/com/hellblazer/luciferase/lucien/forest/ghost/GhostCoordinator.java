@@ -53,6 +53,15 @@ import java.util.Objects;
  * interface — retiring the original P2 "concrete-façade back-reference concession". The reference still exists
  * (the detector + manager need the spatial-index instance) but no longer leaks the god-class type.
  *
+ * <p><b>Default ghost algorithm (Luciferase-9m31).</b> The default {@link GhostAlgorithm} is
+ * {@link GhostAlgorithm#MINIMAL} (direct face neighbors only). This assumes a <b>2:1-balanced</b> mesh, where
+ * a face neighbor is at most one refinement level away, so direct-neighbor ghosts give full coverage. Callers
+ * operating on a non-2:1-balanced mesh (e.g. a partially-refined tree before balance is re-established, or a
+ * raw {@code Forest} used without the balancer) must call {@link #setGhostCreationAlgorithm} with
+ * {@link GhostAlgorithm#DEEP_COVERAGE} to restore the previous depth-2 coverage. Ghost type/algorithm must be
+ * configured before {@link #setupDistributedGhosts}; reconfiguring afterward throws (the distributed manager
+ * pins the live detector as the single owner store).
+ *
  * @param <Key>     the spatial key type
  * @param <ID>      the entity identifier type
  * @param <Content> the entity content type
@@ -95,6 +104,7 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
     public void setGhostType(GhostType type) {
         core.lock().writeLock().lock();
         try {
+            requireNotDistributed("ghost type");
             this.ghostType = Objects.requireNonNull(type);
             this.ghostLayer = new GhostLayer<>(type);
             // Recreate GhostBoundaryDetector with new ghost type if we have a neighbor detector
@@ -114,6 +124,7 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
     public void setGhostCreationAlgorithm(GhostAlgorithm algorithm) {
         core.lock().writeLock().lock();
         try {
+            requireNotDistributed("ghost creation algorithm");
             this.ghostAlgorithm = Objects.requireNonNull(algorithm);
             if (this.ghostBoundaryDetector != null) {
                 this.ghostBoundaryDetector = new GhostBoundaryDetector<>(facade, neighborDetector, ghostType, algorithm);
@@ -127,6 +138,24 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
 
     public GhostAlgorithm getGhostCreationAlgorithm() {
         return ghostAlgorithm;
+    }
+
+    /**
+     * Guard against reconfiguring the ghost type/algorithm after distributed setup (Luciferase-9m31). Both
+     * setters rebuild {@link #ghostBoundaryDetector} as a fresh instance with an empty owner map, but
+     * {@link DistributedGhostManager} captured the previous detector by reference in a {@code final} field
+     * (and after owner-map unification that detector is the single owner store). Swapping the detector
+     * post-setup would silently divert owner writes to the old instance while the coordinator scans the new
+     * (empty) one — zero ghost coverage. All production paths configure type/algorithm before
+     * {@link #setupDistributedGhosts}; this makes the ordering invariant fail loud rather than silent.
+     */
+    private void requireNotDistributed(String what) {
+        if (distributedGhostManager != null) {
+            throw new IllegalStateException(
+                "Cannot change " + what + " after setupDistributedGhosts: the distributed ghost manager holds "
+                + "the live detector as the single owner store. Configure ghost type/algorithm before "
+                + "enabling distributed ghosts.");
+        }
     }
 
     // ---- Ghost layer lifecycle ----------------------------------------------------------------------------------

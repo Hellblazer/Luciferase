@@ -91,6 +91,22 @@ class DistributedGhostManagerOwnerUnificationTest {
     }
 
     @Test
+    void reconfiguringGhostTypeAfterDistributedSetupFailsLoud() {
+        // After owner-map unification the detector is the single owner store, captured by reference in the
+        // DistributedGhostManager. Swapping the detector (setGhostType/setGhostCreationAlgorithm rebuild it)
+        // after distributed setup would silently divert owner writes to the old instance — zero coverage.
+        // The coordinator now guards against this ordering, failing loud instead.
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        octree.setGhostType(GhostType.FACES); // configure before distributed setup — allowed
+        octree.setupDistributedGhosts(new StubChannel(1), null, null, 1, 0L);
+
+        assertThrows(IllegalStateException.class, () -> octree.setGhostType(GhostType.FACES),
+                     "changing ghost type after distributed setup must fail loud (split-brain guard)");
+        assertThrows(IllegalStateException.class, () -> octree.setGhostCreationAlgorithm(GhostAlgorithm.MINIMAL),
+                     "changing ghost algorithm after distributed setup must fail loud (split-brain guard)");
+    }
+
+    @Test
     void getElementOwnerDefaultsAreUnifiedWithTheDetector() {
         var octree = cornerOctree();
         var detector = new GhostBoundaryDetector<>(octree, octree.getNeighborDetector(), GhostType.FACES,
