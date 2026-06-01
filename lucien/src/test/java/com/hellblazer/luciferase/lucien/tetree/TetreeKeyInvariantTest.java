@@ -282,5 +282,14 @@ class TetreeKeyInvariantTest {
         var ordinary = TetreeKey.create((byte) 11, 0x123L, 0L);
         assertEquals(TetreeKey.create((byte) 11, 0x124L, 0L), TetreeKey.getNextKey(ordinary),
                      "ordinary increment must add 1 to lowBits");
+
+        // Both halves all-ones: the 128-bit maximum at this level. getNextKey must saturate at the SAME level's
+        // all-ones sentinel (Luciferase-6gnb), not walk to a coarser level — ordering is level-first, so a
+        // level-(L-1) sentinel would sort before all level-L keys and make the subMap upper bound empty.
+        var atMax = TetreeKey.create((byte) 21, -1L, -1L);
+        var nextMax = TetreeKey.getNextKey(atMax);
+        assertEquals((byte) 21, nextMax.getLevel(), "saturated sentinel must stay at the same level");
+        assertEquals(TetreeKey.create((byte) 21, -1L, -1L), nextMax,
+                     "both-all-ones must saturate at the same-level all-ones sentinel");
     }
 }
