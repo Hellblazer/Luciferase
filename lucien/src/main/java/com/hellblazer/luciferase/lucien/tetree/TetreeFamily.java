@@ -217,6 +217,12 @@ public class TetreeFamily {
             }
         }
 
+        // Root tetrahedra have no parent (Tet.parent() throws at l==0), so they cannot form a mergeable
+        // family — match t8code, which returns false rather than faulting (Luciferase-t6su).
+        if (level == 0) {
+            return false;
+        }
+
         // Check if they all have the same parent
         Tet parent0 = tets[0].parent();
         for (int i = 1; i < tets.length; i++) {
