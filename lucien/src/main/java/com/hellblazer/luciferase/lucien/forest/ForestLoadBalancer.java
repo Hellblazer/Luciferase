@@ -384,9 +384,16 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
                     // Preserve the entity's refinement level across the migration (Luciferase-fhc9): re-insert
                     // at the source level rather than a hardcoded 0, which would coarsen every migrated entity.
                     var level = entityLevel(sourceTree, entityId);
+                    // Carry the entity's bounds so a spanning entity stays spanning in the target (otherwise the
+                    // 4-arg insert silently re-creates it as a point entity, shrinking its footprint).
+                    var bounds = sourceTree.getEntityBounds(entityId);
 
                     sourceTree.removeEntity(entityId);
-                    targetTree.insert(entityId, position, level, content);
+                    if (bounds != null) {
+                        targetTree.insert(entityId, position, level, content, bounds);
+                    } else {
+                        targetTree.insert(entityId, position, level, content);
+                    }
                     migratedCount++;
                 }
             } catch (Exception e) {
@@ -467,11 +474,15 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
             metrics.getEntityCount() * (loadToReduce / currentLoad)
         );
         
-        // SFC-local selection (Luciferase-fhc9): migrate a CONTIGUOUS space-filling-curve block rather than a
-        // random sample. Random selection (the prior Collections.shuffle) scatters the migrated entities across
-        // the tree, destroying spatial locality and producing a fragmented, ghost-heavy partition. Sorting by
-        // each entity's primary (coarsest) location key and taking the lowest-SFC run keeps the migrated set
-        // spatially clustered, so it lands as a compact region in the target tree.
+        // Locality-preserving selection (Luciferase-fhc9): migrate the lowest-ordered block of entities by
+        // their primary (coarsest) location key, rather than a random sample. Random selection (the prior
+        // Collections.shuffle) scattered the migrated entities across the tree, destroying locality and
+        // producing a fragmented, ghost-heavy partition; this deterministic block keeps them clustered.
+        // Ordering note: SpatialKey.compareTo is LEVEL-FIRST then SFC-code, so within a single refinement
+        // level this is an exact SFC-contiguous run; across mixed levels it groups coarsest-first (still
+        // clustered and deterministic, but not a strict spatial-SFC interval). A level-normalized comparator
+        // would be needed for strict cross-level SFC contiguity (deferred — not required for the load-balance
+        // use, where shedding the coarsest/lowest block is a reasonable target).
         return tree.getEntitiesWithPositions().keySet().stream()
             .map(id -> Map.entry(id, tree.getEntityLocations(id).stream().min(Comparator.naturalOrder())))
             .filter(e -> e.getValue().isPresent())

@@ -76,6 +76,38 @@ class ForestLoadBalancerMigrationTest {
     }
 
     @Test
+    void migrationPreservesSpanningEntityBoundsAndSpan() {
+        // substantive-critic SIG-1/SIG-2: a spanning entity must survive migration as a spanning entity with
+        // its bounds intact — not be silently re-created as a point entity by a bounds-less insert.
+        var gen = new SequentialLongIDGenerator();
+        // Spanning requires a spanning policy (default is SINGLE_NODE_ONLY); adaptive() spans to overlapping cells.
+        var policy = com.hellblazer.luciferase.lucien.entity.EntitySpanningPolicy.adaptive();
+        var source = new Octree<LongEntityID, String>(gen, 10, (byte) 21, policy);
+        var target = new Octree<LongEntityID, String>(gen, 10, (byte) 21, policy);
+        var id = new LongEntityID(1);
+        var center = new Point3f(500, 500, 500);
+        byte spanLevel = 15; // fine cells (~64 wide) so a radius-100 entity spans several
+        var bounds = new com.hellblazer.luciferase.lucien.entity.EntityBounds(center, 100f);
+        source.insert(id, center, spanLevel, "spanning", bounds);
+        int sourceSpan = source.getEntitySpanCount(id);
+
+        var trees = new HashMap<Integer, SpatialIndex<MortonKey, LongEntityID, String>>();
+        trees.put(0, source);
+        trees.put(1, target);
+        var ids = new java.util.HashSet<LongEntityID>();
+        ids.add(id);
+        var plan = new ForestLoadBalancer.MigrationPlan<>(0, 1, ids, 1.0);
+
+        new ForestLoadBalancer<MortonKey, LongEntityID, String>()
+            .executeMigration(plan, trees, (eid, pt) -> pt.set(center));
+
+        assertEquals(bounds, target.getEntityBounds(id), "spanning entity must keep its bounds after migration");
+        assertEquals(sourceSpan, target.getEntitySpanCount(id),
+                     "spanning entity must keep its span (not collapse to a point)");
+        assertTrue(sourceSpan > 1, "precondition: the fixture entity actually spans multiple cells");
+    }
+
+    @Test
     void selectionIsDeterministicSfcBlockNotRandom() {
         // createMigrationPlans drives selectEntitiesToMigrate. The prior Collections.shuffle made the selected
         // set random; the SFC-block selection is deterministic. Two identical balancers must pick the same set.
