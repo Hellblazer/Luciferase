@@ -6,7 +6,7 @@ import com.hellblazer.luciferase.simulation.bubble.*;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration tests for complete ghost propagation flow across Phase 3 components.
  * <p>
  * Tests the end-to-end flow:
- * 1. Entity near boundary creates ghost (GhostZoneManager)
+ * 1. Entity near boundary creates ghost halo (GhostEntityHalo)
  * 2. Ghost added to GhostBoundarySync for batching
  * 3. Ghost sent at bucket boundary
  * 4. ExternalBubbleTracker records interaction
@@ -440,13 +440,13 @@ class GhostPropagationIntegrationTest {
     }
 
     // Helper method to create ghost entity
-    private GhostZoneManager.GhostEntity<TestEntityID, TestContent> createGhostEntity(
+    private GhostEntityHalo<TestEntityID, TestContent> createGhostEntity(
         TestEntityID entityId,
         float x
     ) {
         var position = new Point3f(x, 0.5f, 0.5f);
         var bounds = new EntityBounds(position, 0.1f);
-        return new GhostZoneManager.GhostEntity<>(
+        return new GhostEntityHalo<>(
             entityId,
             new TestContent("data-" + entityId.toDebugString()),
             position,

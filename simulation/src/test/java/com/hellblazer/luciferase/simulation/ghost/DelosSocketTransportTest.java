@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityData;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.events.EntityUpdateEvent;
 import org.junit.jupiter.api.AfterEach;
@@ -458,8 +458,8 @@ class DelosSocketTransportTest {
         EntityData content = new EntityData<>(entityId, position, (byte) 10, null); // raw type
         var bounds = new EntityBounds(position, 0.1f); // small radius for point-like entity
 
-        GhostZoneManager.GhostEntity<StringEntityID, EntityData> ghostEntity =
-            new GhostZoneManager.GhostEntity<>(
+        GhostEntityHalo<StringEntityID, EntityData> ghostEntity =
+            new GhostEntityHalo<>(
                 entityId,
                 content,
                 position,

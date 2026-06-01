@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.simulation.bubble;
 
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.ghost.GhostBoundarySync;
@@ -313,7 +313,7 @@ public class TetreeGhostSyncAdapter {
 
             // Create ghost entity
             var entityId = new StringEntityID(entityRecord.id());
-            var ghostEntity = new GhostZoneManager.GhostEntity<>(
+            var ghostEntity = new GhostEntityHalo<>(
                 entityId,
                 entityRecord.content(),
                 position,

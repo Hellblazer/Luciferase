@@ -91,8 +91,15 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     private volatile int currentRank = 0;
 
     // ========================================
-    // Tree-Level Detection (from GhostZoneManager)
+    // Tree-Level Detection (entity-halo role absorbed from the former, now-deleted GhostZoneManager)
     // ========================================
+    //
+    // INFRASTRUCTURE-ONLY (Luciferase-v9ro): the tree-level zone methods below (establishGhostZone,
+    // updateGhostEntity, removeGhostEntity, getGhostEntities, synchronizeAllGhostZones, ...) currently have
+    // ZERO callers in production or tests — verified at v9ro. Their only coverage was GhostZoneManagerTest,
+    // which was deleted with the dead GhostZoneManager outer class. They are retained as the absorbed API
+    // surface but exercise no live path; their deletion is tracked as a follow-up dead-code-removal bead. Do
+    // not assume this logic is validated until that bead either deletes it or restores coverage.
 
     // The forest being managed (optional - null for single-tree mode)
     private final Forest<Key, ID, Content> forest;
@@ -103,53 +110,12 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     // Ghost zone relationships between trees
     private final Set<GhostZoneRelation> ghostZoneRelations;
 
-    // Ghost entities by tree: Tree ID → Set of ghost entities
-    private final Map<String, Set<GhostEntity<ID, Content>>> ghostEntitiesByTree;
+    // Ghost entities by tree: Tree ID → Set of ghost entities (Luciferase-v9ro: the former nested GhostEntity
+    // was unified into the top-level GhostEntityHalo).
+    private final Map<String, Set<GhostEntityHalo<ID, Content>>> ghostEntitiesByTree;
 
     // Entity to ghost locations: Entity ID → Set of tree IDs where it exists as ghost
     private final Map<ID, Set<String>> entityGhostLocations;
-
-    /**
-     * Represents a ghost entity - a read-only replica from another tree.
-     */
-    public static class GhostEntity<ID extends EntityID, Content> {
-        private final ID entityId;
-        private final Content content;
-        private final Point3f position;
-        private final EntityBounds bounds;
-        private final String sourceTreeId;
-        private final long timestamp;
-
-        public GhostEntity(ID entityId, Content content, Point3f position,
-                          EntityBounds bounds, String sourceTreeId) {
-            this.entityId = Objects.requireNonNull(entityId);
-            this.content = content;
-            this.position = new Point3f(Objects.requireNonNull(position));
-            this.bounds = bounds;
-            this.sourceTreeId = Objects.requireNonNull(sourceTreeId);
-            this.timestamp = System.currentTimeMillis();
-        }
-
-        public ID getEntityId() { return entityId; }
-        public Content getContent() { return content; }
-        public Point3f getPosition() { return new Point3f(position); }
-        public EntityBounds getBounds() { return bounds; }
-        public String getSourceTreeId() { return sourceTreeId; }
-        public long getTimestamp() { return timestamp; }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            var that = (GhostEntity<?, ?>) o;
-            return entityId.equals(that.entityId) && sourceTreeId.equals(that.sourceTreeId);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(entityId, sourceTreeId);
-        }
-    }
 
     /**
      * Tracks ghost zone relationships between trees.
@@ -543,7 +509,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
             var ghostZoneWidth = getGhostZoneWidth(sourceTreeId, neighborId);
             if (isInGhostZone(position, bounds, sourceTree, neighborTree, ghostZoneWidth)) {
                 // Create or update ghost entity
-                var ghost = new GhostEntity<>(entityId, content, position, bounds, sourceTreeId);
+                var ghost = new GhostEntityHalo<>(entityId, content, position, bounds, sourceTreeId);
                 var ghosts = ghostEntitiesByTree.get(neighborId);
 
                 // Remove old version if exists
@@ -604,7 +570,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
      * @param treeId the tree ID
      * @return set of ghost entities
      */
-    public Set<GhostEntity<ID, Content>> getGhostEntities(String treeId) {
+    public Set<GhostEntityHalo<ID, Content>> getGhostEntities(String treeId) {
         var ghosts = ghostEntitiesByTree.get(treeId);
         return ghosts != null ? new HashSet<>(ghosts) : Collections.emptySet();
     }

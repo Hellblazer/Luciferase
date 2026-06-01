@@ -8,7 +8,7 @@ import com.hellblazer.luciferase.simulation.bubble.*;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 
 import javax.vecmath.Point3f;
 import java.util.UUID;
@@ -23,7 +23,7 @@ import java.util.UUID;
  * - version: Entity version within epoch
  * <p>
  * This follows the wrapper pattern from Phase 0 V3 decision:
- * - GhostZoneManager remains generic (spatial indexing)
+ * - GhostEntityHalo carries the cross-tree replica payload
  * - SimulationGhostEntity adds simulation semantics (ownership, time, authority)
  * <p>
  * Usage:
@@ -51,7 +51,7 @@ import java.util.UUID;
  * @author hal.hildebrand
  */
 public record SimulationGhostEntity<ID extends EntityID, Content>(
-    GhostZoneManager.GhostEntity<ID, Content> ghost,
+    GhostEntityHalo<ID, Content> ghost,
     UUID sourceBubbleId,
     long bucket,
     long epoch,

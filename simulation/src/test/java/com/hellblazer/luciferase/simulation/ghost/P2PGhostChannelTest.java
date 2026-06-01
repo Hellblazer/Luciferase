@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.von.LocalServerTransport;
 import com.hellblazer.luciferase.simulation.von.Bubble;
@@ -438,7 +438,7 @@ class P2PGhostChannelTest {
     ) {
         var id = new StringEntityID(entityId);
         var bounds = new EntityBounds(position, 0.5f);
-        var ghost = new GhostZoneManager.GhostEntity<StringEntityID, Object>(
+        var ghost = new GhostEntityHalo<StringEntityID, Object>(
             id, new Object(), position, bounds, "tree-" + bubble1.id()
         );
         return new SimulationGhostEntity<>(
@@ -452,7 +452,7 @@ class P2PGhostChannelTest {
     ) {
         var id = new StringEntityID(entityId);
         var bounds = new EntityBounds(position, 0.5f);
-        var ghost = new GhostZoneManager.GhostEntity<StringEntityID, Object>(
+        var ghost = new GhostEntityHalo<StringEntityID, Object>(
             id, entityType, position, bounds, "tree-" + bubble1.id()
         );
         return new SimulationGhostEntity<>(

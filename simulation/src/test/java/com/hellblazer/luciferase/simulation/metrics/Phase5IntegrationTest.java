@@ -434,7 +434,7 @@ class Phase5IntegrationTest {
             var bucket = System.currentTimeMillis();
 
             // Create GhostEntity first, then wrap in SimulationGhostEntity
-            var ghostEntity = new com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager.GhostEntity<StringEntityID, Object>(
+            var ghostEntity = new com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo<StringEntityID, Object>(
                 entityId,
                 content,
                 position,

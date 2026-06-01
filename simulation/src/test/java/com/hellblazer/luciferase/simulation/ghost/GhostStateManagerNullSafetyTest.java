@@ -202,7 +202,7 @@ class GhostStateManagerNullSafetyTest {
     @Test
     void testSimulationGhostEntityConstructorValidation() {
         // This test would require creating a GhostEntity with null position,
-        // which is blocked by GhostZoneManager.GhostEntity constructor validation.
+        // which is blocked by GhostEntityHalo constructor validation.
         // The SimulationGhostEntity compact constructor provides defense-in-depth
         // in case GhostEntity validation is bypassed or changed.
 

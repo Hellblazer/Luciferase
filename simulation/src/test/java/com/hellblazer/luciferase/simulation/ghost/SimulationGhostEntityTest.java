@@ -6,7 +6,7 @@ import com.hellblazer.luciferase.simulation.bubble.*;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class SimulationGhostEntityTest {
 
-    private GhostZoneManager.GhostEntity<TestEntityID, String> ghostEntity;
+    private GhostEntityHalo<TestEntityID, String> ghostEntity;
     private UUID sourceBubbleId;
     private Point3f position;
     private EntityBounds bounds;
@@ -65,7 +65,7 @@ class SimulationGhostEntityTest {
         bounds = new EntityBounds(position, 0.5f);  // center, radius
         sourceBubbleId = UUID.randomUUID();
 
-        ghostEntity = new GhostZoneManager.GhostEntity<>(
+        ghostEntity = new GhostEntityHalo<>(
             entityId,
             "test-content",
             position,

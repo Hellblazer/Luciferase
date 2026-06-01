@@ -5,7 +5,7 @@ package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import com.hellblazer.luciferase.simulation.ghost.SimulationGhostEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,7 +68,7 @@ class GhostChannelTest {
 
     private SimulationGhostEntity<TestEntityID, String> createTestGhost() {
         var position = new Point3f(0, 0, 0);
-        var ghostEntity = new GhostZoneManager.GhostEntity<>(
+        var ghostEntity = new GhostEntityHalo<>(
             new TestEntityID("test-" + UUID.randomUUID()),
             "content",
             position,
