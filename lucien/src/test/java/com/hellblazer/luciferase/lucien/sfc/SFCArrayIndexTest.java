@@ -43,6 +43,32 @@ public class SFCArrayIndexTest {
         sfcIndex = new SFCArrayIndex<>(new SequentialLongIDGenerator());
     }
 
+    // ===== Tree Operations =====
+
+    /**
+     * Regression for Luciferase-7sv7: SFCArrayIndex is a flat structure with no balancer
+     * (createTreeBalancer() returns null). rebalanceTree() must return a benign no-op result instead of
+     * NPE-ing — callers that loop rebalanceTree() over a heterogeneous set of indices relied on this.
+     */
+    @Test
+    void rebalanceTreeIsNoOpAndDoesNotThrow() {
+        // Empty index
+        var resultEmpty = assertDoesNotThrow(() -> sfcIndex.rebalanceTree());
+        assertNotNull(resultEmpty);
+        assertTrue(resultEmpty.successful());
+        assertFalse(resultEmpty.hasChanges(), "flat-array rebalance must report no changes");
+
+        // Populated index — still a no-op, still no NPE.
+        for (int i = 0; i < 50; i++) {
+            sfcIndex.insert(new Point3f(100 + i, 200 + i, 300 + i), (byte) 15, "E" + i);
+        }
+        var resultPopulated = assertDoesNotThrow(() -> sfcIndex.rebalanceTree());
+        assertNotNull(resultPopulated);
+        assertTrue(resultPopulated.successful());
+        assertFalse(resultPopulated.hasChanges());
+        assertEquals(50, sfcIndex.entityCount(), "rebalance must not move or drop entities");
+    }
+
     // ===== Basic Operations =====
 
     @Test

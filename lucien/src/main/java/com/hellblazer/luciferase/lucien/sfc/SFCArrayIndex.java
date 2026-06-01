@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.lucien.sfc;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.*;
+import com.hellblazer.luciferase.lucien.balancing.NoOpTreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
@@ -312,8 +313,10 @@ public class SFCArrayIndex<ID extends EntityID, Content> extends AbstractSpatial
 
     @Override
     protected TreeBalancer<MortonKey, ID> createTreeBalancer() {
-        // No balancing for flat array
-        return null;
+        // Flat Morton-sorted array has no tree to balance. Return the null-object balancer rather than null so the
+        // base treeBalancer field stays non-null and rebalanceTree()/checkAutoBalance() are safe no-ops without
+        // per-site null guards (Luciferase-7sv7).
+        return new NoOpTreeBalancer<>();
     }
 
     @Override
