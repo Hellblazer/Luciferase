@@ -230,6 +230,21 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
     int getEntitySpanCount(ID entityId);
 
     /**
+     * The spatial keys at which an entity is stored (Luciferase-fhc9). Each key carries the entity's
+     * refinement {@link SpatialKey#getLevel() level}; a point entity has a single location, a spanning entity
+     * may have several. Used by load balancing to preserve an entity's level when migrating it between trees
+     * (rather than re-inserting at a hardcoded level). The default throws; index types backed by an entity
+     * manager override it.
+     *
+     * @param entityId the entity ID
+     * @return the set of location keys, empty if the entity is absent
+     */
+    default Set<Key> getEntityLocations(ID entityId) {
+        throw new UnsupportedOperationException(
+            getClass().getSimpleName() + " does not support getEntityLocations");
+    }
+
+    /**
      * Get comprehensive statistics about the spatial index
      *
      * @return statistics object

@@ -19,6 +19,15 @@ import java.util.stream.Collectors;
  * Handles load balancing across trees in a spatial forest.
  * Monitors tree load metrics and performs entity migrations to maintain balance.
  *
+ * <p><b>Relationship to {@link com.hellblazer.luciferase.lucien.balancing.ShapeWeightPartitioner}
+ * (Luciferase-fhc9).</b> {@code ShapeWeightPartitioner} computes the <em>initial</em> contiguous,
+ * shape-weighted SFC partition of trees across ranks (a one-shot, weight-balanced assignment). This balancer
+ * handles <em>runtime drift</em>: as entities accumulate unevenly it migrates entities between trees to
+ * restore balance. To stay consistent with the partitioner's contiguous-SFC intent, migration moves an
+ * SFC-contiguous block (see {@code selectEntitiesToMigrate}) rather than a scattered random sample, and
+ * preserves each entity's refinement level. Ghost layers are rebuilt after a migration batch via the
+ * caller-supplied hook on {@link #executeMigration(MigrationPlan, Map, java.util.function.BiConsumer, Runnable)}.
+ *
  * @param <Key>     The type of spatial key used by the trees
  * @param <ID>      The type of entity identifier
  * @param <Content> The type of entity content
@@ -191,7 +200,6 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
     private final Map<Integer, TreeLoadMetrics> treeMetrics = new ConcurrentHashMap<>();
     private final LoadBalancerConfig config;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
-    private final Random random = new Random();
 
     public ForestLoadBalancer() {
         this(new LoadBalancerConfig());
@@ -329,17 +337,42 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
     /**
      * Execute a migration plan
      */
-    public void executeMigration(MigrationPlan<ID> plan, 
+    public void executeMigration(MigrationPlan<ID> plan,
                                 Map<Integer, SpatialIndex<Key, ID, Content>> trees,
                                 BiConsumer<ID, Point3f> entityPositionProvider) {
+        executeMigration(plan, trees, entityPositionProvider, () -> { });
+    }
+
+    /**
+     * Execute a migration, then run {@code ghostRebuildHook} once after the batch (Luciferase-fhc9).
+     *
+     * <p>Moving entities between trees invalidates both trees' ghost layers (a migrated entity's old and new
+     * neighbors change), so the caller must rebuild ghosts afterward. This balancer does not own the ghost
+     * subsystem, so the rebuild is supplied as a hook the orchestrator wires to its
+     * {@code GhostCoordinator}/{@code DistributedGhostManager}. The hook runs only when at least one entity
+     * actually moved.
+     *
+     * <p>Entities are re-inserted at their <em>source refinement level</em> (recovered from
+     * {@link SpatialIndex#getEntityLocations}), not a hardcoded level 0 — preserving each entity's level
+     * across the migration.
+     *
+     * @param plan                  the migration plan
+     * @param trees                 the tree id → index map
+     * @param entityPositionProvider supplies each entity's position
+     * @param ghostRebuildHook      invoked once after a non-empty migration batch to rebuild stale ghosts
+     */
+    public void executeMigration(MigrationPlan<ID> plan,
+                                Map<Integer, SpatialIndex<Key, ID, Content>> trees,
+                                BiConsumer<ID, Point3f> entityPositionProvider,
+                                Runnable ghostRebuildHook) {
         var sourceTree = trees.get(plan.getSourceTreeId());
         var targetTree = trees.get(plan.getTargetTreeId());
-        
+
         if (sourceTree == null || targetTree == null) {
             log.warn("Cannot execute migration: source or target tree not found");
             return;
         }
-        
+
         var migratedCount = 0;
         for (var entityId : plan.getEntityIds()) {
             try {
@@ -347,18 +380,51 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
                 if (content != null) {
                     var position = new Point3f();
                     entityPositionProvider.accept(entityId, position);
-                    
+
+                    // Preserve the entity's refinement level across the migration (Luciferase-fhc9): re-insert
+                    // at the source level rather than a hardcoded 0, which would coarsen every migrated entity.
+                    var level = entityLevel(sourceTree, entityId);
+                    // Carry the entity's bounds so a spanning entity stays spanning in the target (otherwise the
+                    // 4-arg insert silently re-creates it as a point entity, shrinking its footprint).
+                    var bounds = sourceTree.getEntityBounds(entityId);
+
                     sourceTree.removeEntity(entityId);
-                    targetTree.insert(entityId, position, (byte)0, content); // Using default level 0
+                    if (bounds != null) {
+                        targetTree.insert(entityId, position, level, content, bounds);
+                    } else {
+                        targetTree.insert(entityId, position, level, content);
+                    }
                     migratedCount++;
                 }
             } catch (Exception e) {
                 log.error("Failed to migrate entity {}: {}", entityId, e.getMessage());
             }
         }
-        
-        log.info("Migrated {} entities from tree {} to tree {}", 
+
+        log.info("Migrated {} entities from tree {} to tree {}",
                 migratedCount, plan.getSourceTreeId(), plan.getTargetTreeId());
+
+        // Ghosts on both trees are stale after entities moved; rebuild once for the batch (Luciferase-fhc9).
+        if (migratedCount > 0) {
+            ghostRebuildHook.run();
+        }
+    }
+
+    /**
+     * The refinement level at which {@code entityId} is stored in {@code tree} (Luciferase-fhc9). Uses the
+     * coarsest (minimum) location level for a spanning entity; falls back to level 0 only if the entity has no
+     * recorded location (logged), preserving the prior behaviour for that degenerate case.
+     */
+    private byte entityLevel(SpatialIndex<Key, ID, Content> tree, ID entityId) {
+        byte level = Byte.MAX_VALUE;
+        for (var key : tree.getEntityLocations(entityId)) {
+            level = (byte) Math.min(level, key.getLevel());
+        }
+        if (level == Byte.MAX_VALUE) {
+            log.warn("Entity {} has no recorded location; migrating at level 0", entityId);
+            return 0;
+        }
+        return level;
     }
 
     /**
@@ -408,13 +474,22 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
             metrics.getEntityCount() * (loadToReduce / currentLoad)
         );
         
-        // Random selection strategy (could be improved with spatial locality awareness)
-        var allEntities = tree.getEntitiesWithPositions().keySet().stream().collect(Collectors.toList());
-        Collections.shuffle(allEntities, random);
-        
-        return allEntities.stream()
+        // Locality-preserving selection (Luciferase-fhc9): migrate the lowest-ordered block of entities by
+        // their primary (coarsest) location key, rather than a random sample. Random selection (the prior
+        // Collections.shuffle) scattered the migrated entities across the tree, destroying locality and
+        // producing a fragmented, ghost-heavy partition; this deterministic block keeps them clustered.
+        // Ordering note: SpatialKey.compareTo is LEVEL-FIRST then SFC-code, so within a single refinement
+        // level this is an exact SFC-contiguous run; across mixed levels it groups coarsest-first (still
+        // clustered and deterministic, but not a strict spatial-SFC interval). A level-normalized comparator
+        // would be needed for strict cross-level SFC contiguity (deferred — not required for the load-balance
+        // use, where shedding the coarsest/lowest block is a reasonable target).
+        return tree.getEntitiesWithPositions().keySet().stream()
+            .map(id -> Map.entry(id, tree.getEntityLocations(id).stream().min(Comparator.naturalOrder())))
+            .filter(e -> e.getValue().isPresent())
+            .sorted(Comparator.comparing(e -> e.getValue().get()))
             .limit(entitiesToMigrate)
-            .collect(Collectors.toSet());
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     /**

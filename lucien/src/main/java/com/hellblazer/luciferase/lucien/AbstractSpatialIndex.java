@@ -756,6 +756,15 @@ implements SpatialIndex<Key, ID, Content>,
     }
 
     /**
+     * The spatial keys at which an entity is stored (Luciferase-fhc9), delegating to the entity manager. Each
+     * key carries the entity's refinement level; used by load balancing to preserve level on migration.
+     */
+    @Override
+    public Set<Key> getEntityLocations(ID entityId) {
+        return entityManager.getEntityLocations(entityId);
+    }
+
+    /**
      * Get memory usage statistics for capacity planning
      */
     public MemoryStats getMemoryStats() {
