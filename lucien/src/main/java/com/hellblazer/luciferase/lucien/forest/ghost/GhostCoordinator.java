@@ -73,6 +73,11 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
     private DistributedGhostManager<Key, ID, Content>            distributedGhostManager;
     private NeighborDetector<Key>                                neighborDetector;
 
+    // Local partition rank (Luciferase-8ggq). Captured from setupDistributedGhosts and re-applied to every
+    // (re)constructed GhostBoundaryDetector so a post-setup setGhostType/setGhostCreationAlgorithm cannot silently
+    // reset the detector's rank to 0 and re-introduce the cross-rank ghost-creation misfire.
+    private int                                                  currentRank = 0;
+
     /**
      * Construct the ghost coordinator with an empty {@code GhostLayer(NONE)}. Subclasses subsequently call
      * {@link #setNeighborDetector} during their own initialization.
@@ -95,6 +100,7 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
             // Recreate GhostBoundaryDetector with new ghost type if we have a neighbor detector
             if (this.neighborDetector != null) {
                 this.ghostBoundaryDetector = new GhostBoundaryDetector<>(facade, neighborDetector, type, ghostAlgorithm);
+                this.ghostBoundaryDetector.setCurrentRank(currentRank); // preserve injected rank (Luciferase-8ggq)
             }
         } finally {
             core.lock().writeLock().unlock();
@@ -111,6 +117,7 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
             this.ghostAlgorithm = Objects.requireNonNull(algorithm);
             if (this.ghostBoundaryDetector != null) {
                 this.ghostBoundaryDetector = new GhostBoundaryDetector<>(facade, neighborDetector, ghostType, algorithm);
+                this.ghostBoundaryDetector.setCurrentRank(currentRank); // preserve injected rank (Luciferase-8ggq)
             }
             log.debug("Set ghost creation algorithm to: {}", algorithm);
         } finally {
@@ -264,6 +271,13 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
                 log.warn("Cannot setup distributed ghosts - local ghost manager not initialized");
                 return;
             }
+            // Inject the local rank into the lazily-built detector now that it is known (Luciferase-8ggq): the
+            // ghost-creation guard treats a neighbor as remote when its owner != currentRank. Without this the
+            // detector keeps its default rank 0 and misfires on every rank > 0. Persist it on the coordinator so a
+            // later setGhostType/setGhostCreationAlgorithm reconstruction re-applies the rank rather than resetting
+            // to 0.
+            this.currentRank = currentRank;
+            ghostBoundaryDetector.setCurrentRank(currentRank);
             this.distributedGhostManager = new DistributedGhostManager<>(facade, ghostChannel, ghostBoundaryDetector);
             log.info("Distributed ghost management enabled for rank {} tree {}", currentRank, treeId);
         } finally {

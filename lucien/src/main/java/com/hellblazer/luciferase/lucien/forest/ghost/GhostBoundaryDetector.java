@@ -87,6 +87,11 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     // Tree ID for distributed ghost requests (candidate-dead-field; flagged for follow-up review B6)
     private final long treeId;
 
+    // Rank of the local partition (Luciferase-8ggq). Defaults to 0; injected via setCurrentRank() from
+    // GhostCoordinator.setupDistributedGhosts once the rank is known. A neighbor is "remote" (needs a ghost)
+    // when its owner differs from this rank — so single-process use (rank 0) preserves the original != 0 guard.
+    private volatile int currentRank = 0;
+
     // ========================================
     // Tree-Level Detection (from GhostZoneManager)
     // ========================================
@@ -359,6 +364,26 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
      */
     public int getElementOwner(Key key) {
         return elementOwners.getOrDefault(key, 0);
+    }
+
+    /**
+     * Set the local partition rank (Luciferase-8ggq). A neighbor element is treated as remote — and thus gets a
+     * ghost created — when its owner rank differs from this value. Injected by
+     * {@code GhostCoordinator.setupDistributedGhosts} once the rank is known; defaults to 0 for single-process use.
+     *
+     * @param currentRank the rank of the local partition
+     */
+    public void setCurrentRank(int currentRank) {
+        this.currentRank = currentRank;
+    }
+
+    /**
+     * Get the local partition rank used by the remote-neighbor / ghost-creation guard.
+     *
+     * @return the current local partition rank (0 if not injected)
+     */
+    public int getCurrentRank() {
+        return currentRank;
     }
 
     // ========================================
@@ -658,7 +683,7 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
         for (var neighborKey : neighbors) {
             if (spatialIndex != null && !spatialIndex.containsSpatialKey(neighborKey)) {
                 var ownerRank = getElementOwner(neighborKey);
-                if (ownerRank != 0) {
+                if (ownerRank != currentRank) {
                     createGhostElement(neighborKey, ownerRank);
                 }
             }
