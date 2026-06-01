@@ -195,9 +195,15 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             // Get the Morton code of the neighbor position (independent of level)
             long neighborMortonCode = neighborAtSameLevel.getMortonCode();
 
-            // Check all possible levels (0-21) at this neighbor position
-            // This is necessary because local elements might be at any level
+            // Level-scan pruning (Luciferase-kd79): a 2:1 violation requires |localLevel - ghostLevel| > 1, so
+            // levels within 1 of the ghost (ghostLevel-1, ghostLevel, ghostLevel+1) can never be violations.
+            // Scan only [0, ghostLevel-2] U [ghostLevel+2, 21]; the skipped levels are behavior-equivalent (they
+            // would find an element but add no violation). This bounds the per-direction scan to the two
+            // violating bands instead of all 22 levels.
             for (byte level = 0; level <= 21; level++) {
+                if (Math.abs(level - ghostLevel) <= 1) {
+                    continue; // within 1 level of the ghost -> levelDiff <= 1 -> not a violation
+                }
                 MortonKey neighborAtLevel = new MortonKey(neighborMortonCode, level);
                 neighborsChecked++;
 
