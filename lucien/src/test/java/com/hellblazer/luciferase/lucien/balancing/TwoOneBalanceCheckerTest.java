@@ -286,6 +286,30 @@ public class TwoOneBalanceCheckerTest {
     }
 
     @Test
+    public void createRefinementRequests_localCoarserAcrossRounds_dedupedInQueue() {
+        // Luciferase-uhsn D3 (review HIGH-2): until m27q subdivides, the SAME local-coarser violation reappears every
+        // round; the local queue must NOT accumulate duplicates, or m27q would over-subdivide. Also covers one coarse
+        // element bordering two finer ghosts within a single round.
+        var localCoarse = new MortonKey(1L, (byte) 2);
+        var ghostFineA  = new MortonKey(2L, (byte) 4);
+        var ghostFineB  = new MortonKey(3L, (byte) 5);
+
+        // Round 1: same localKey appears in two violations.
+        checker.createRefinementRequests(List.of(
+            new TwoOneBalanceChecker.BalanceViolation<>(localCoarse, ghostFineA, 2, 4, 2, 1),
+            new TwoOneBalanceChecker.BalanceViolation<>(localCoarse, ghostFineB, 2, 5, 3, 1)
+        ), 0L, 7);
+        // Round 2 (not drained yet): the same violation persists since nothing subdivided.
+        checker.createRefinementRequests(List.of(
+            new TwoOneBalanceChecker.BalanceViolation<>(localCoarse, ghostFineA, 2, 4, 2, 1)
+        ), 0L, 7);
+
+        var drained = checker.drainLocalRefinements();
+        assertEquals(1, drained.size(), "duplicate local-coarser keys collapse to a single subdivide request");
+        assertTrue(drained.contains(localCoarse));
+    }
+
+    @Test
     public void testFindViolationsReturnsListType() {
         // Return type is always a list
         var mockForest = mock(Forest.class);

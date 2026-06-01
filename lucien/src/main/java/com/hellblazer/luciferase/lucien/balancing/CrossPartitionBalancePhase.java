@@ -63,8 +63,6 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     private final RefinementExchange<Key, ID, Content> exchange;
     private final ParallelBalancer.PartitionRegistry registry;
     private final BalanceConfiguration config;
-    private final RefinementRequestManager requestManager;
-    private volatile RefinementCoordinator<Key, ID, Content> coordinator;  // Initialized lazily in execute()
 
     // Forest context for violation detection and ghost element application
     private volatile Forest<Key, ID, Content> forest;
@@ -85,8 +83,6 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         this.exchange = Objects.requireNonNull(exchange, "exchange cannot be null");
         this.registry = Objects.requireNonNull(registry, "registry cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
-        this.requestManager = new RefinementRequestManager();
-        this.coordinator = null;  // Initialized lazily in execute() when rank/partition count known
     }
 
     /**
@@ -127,12 +123,10 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
 
         log.info("Starting cross-partition balance: initiator={}, partitions={}", initiatorRank, totalPartitions);
 
-        // Lazily initialize coordinator with rank and partition count
-        if (coordinator == null) {
-            coordinator = new RefinementCoordinator<>(exchange, requestManager, initiatorRank, totalPartitions);
-            log.debug("Initialized RefinementCoordinator for rank {} with {} total partitions",
-                     initiatorRank, totalPartitions);
-        }
+        // Luciferase-uhsn: execute() is the canonical LIVE path — it detects violations and sends per-target-rank
+        // requests inline via the exchange (see executeRefinementRound). RefinementCoordinator.coordinateRefinement
+        // is the separate unit-level convergence harness and is intentionally NOT on this path (driving it here would
+        // discard the response->ghostLayer application that executeRefinementRound performs).
 
         var metrics = new BalanceMetrics();
         var startTime = System.currentTimeMillis();
@@ -169,7 +163,10 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     log.warn("Interrupted during Allreduce convergence at round {}", round);
-                    break;
+                    // Convergence was abandoned — do NOT report success (which would mask the shortfall, since
+                    // BalanceResult has no converged flag of its own). Surface it as a failure.
+                    return BalanceResult.failure(metrics.snapshot(),
+                        "Interrupted during Allreduce convergence at round " + round);
                 }
                 if (globallyConverged) {
                     log.info("Converged after {} rounds (global Allreduce-LAND)", round);
@@ -219,7 +216,12 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                 return new RefinementRoundResult(0, true, elapsed0);
             }
 
-            // Phase 1: detect 2:1 violations. "Locally balanced" iff none remain (the Allreduce-LAND input).
+            // Phase 1: detect 2:1 violations. "Locally balanced" iff none remain (the Allreduce-LAND input). Every
+            // violation is either local-coarser (-> local queue) or ghost-coarser (-> remote request), so
+            // violations.isEmpty() is exactly the design's "produced no remote requests AND queued no local
+            // refinements this round". NOTE: this partition does not subdivide (m27q/B10c owns that), so a forest with
+            // unresolved violations stays locally-unbalanced every round and the loop runs to the maxRounds safety
+            // cap — convergence of a genuinely unbalanced forest only becomes reachable once m27q applies refinements.
             var violations = balanceChecker.findViolations(ghostLayer, forest);
             var locallyBalanced = violations.isEmpty();
 
@@ -364,9 +366,9 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         }
 
         // Step 4: Send async requests via coordinator using reflection.
-        // This 4-arg overload is a TEST-ONLY entry point (no production caller); the production round
-        // path is executeRefinementRound -> the private 1-arg identifyRefinementNeeds, which sends via
-        // the exchange directly. Tests pass a coordinator exposing a PUBLIC sendRequestsParallel, so
+        // This 4-arg overload is a TEST-ONLY entry point (no production caller); the production round path is
+        // execute() -> executeRefinementRound(int), which detects violations and sends per-target-rank requests
+        // directly via the exchange (Luciferase-uhsn). Tests pass a coordinator exposing a PUBLIC sendRequestsParallel, so
         // getMethod (public-only) resolves it — byte-identical to the pre-inversion behavior. We keep
         // getMethod (not getDeclaredMethod/setAccessible) precisely to preserve that behavior: against a
         // real RefinementCoordinator (private method) this throws NoSuchMethodException, exactly as before.

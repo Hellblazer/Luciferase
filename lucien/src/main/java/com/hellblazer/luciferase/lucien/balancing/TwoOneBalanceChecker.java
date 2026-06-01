@@ -54,12 +54,18 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
     private static final Logger log = LoggerFactory.getLogger(TwoOneBalanceChecker.class);
 
     /**
-     * Local refinement queue (Luciferase-uhsn, B10b — D3). Violations where the LOCAL element is the coarser side
+     * Local refinement set (Luciferase-uhsn, B10b — D3). Violations where the LOCAL element is the coarser side
      * ({@link BalanceViolation#localNeedsRefinement()}) are NOT sent to a remote partition; the local partition must
-     * subdivide its own element. Such localKeys are enqueued here by {@link #createRefinementRequests} and drained by
-     * the downstream local-refinement step (m27q/B10c, which owns the actual {@code SpatialIndex} subdivide).
+     * subdivide its own element. Such localKeys are accumulated here by {@link #createRefinementRequests} and drained
+     * by the downstream local-refinement step (m27q/B10c, which owns the actual {@code SpatialIndex} subdivide).
+     *
+     * <p><b>Deduplicated by design.</b> Until m27q subdivides between rounds, the same local-coarser violation
+     * reappears in {@code findViolations()} every round and would be enqueued repeatedly; a coarse element bordering
+     * several finer ghosts likewise yields the same localKey more than once in a single round. A set collapses both
+     * to one subdivide request, so {@link #drainLocalRefinements} never returns duplicates regardless of how many
+     * rounds run before the queue is drained.
      */
-    private final java.util.Queue<Key> localRefinementQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private final java.util.Set<Key> localRefinementQueue = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
      * Record representing a 2:1 balance constraint violation.
@@ -376,10 +382,8 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
      * @return the queued local refinement keys (empty if none); insertion order is not guaranteed
      */
     public List<Key> drainLocalRefinements() {
-        var drained = new ArrayList<Key>();
-        for (Key k; (k = localRefinementQueue.poll()) != null; ) {
-            drained.add(k);
-        }
+        var drained = new ArrayList<Key>(localRefinementQueue);
+        localRefinementQueue.removeAll(drained);
         return drained;
     }
 }

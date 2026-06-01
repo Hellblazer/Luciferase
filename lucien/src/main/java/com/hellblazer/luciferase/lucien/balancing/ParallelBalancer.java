@@ -219,8 +219,11 @@ public interface ParallelBalancer<Key extends SpatialKey<Key>, ID extends Entity
          * passed {@code true}.
          *
          * <p>The default is the degenerate single-partition identity — it returns the caller's own value, which is
-         * correct when there is no peer to reduce against. Distributed implementations (e.g.
-         * {@code FaultAwarePartitionRegistry}) override this to perform the real cross-rank AND.
+         * correct when there is no peer to reduce against. A genuine distributed implementation overrides this to
+         * perform the real cross-rank AND over the transport; no such implementor exists yet in this in-process
+         * setup (the cross-JVM override lands with the distributed transport work, m27q and beyond). Note that
+         * {@code FaultAwarePartitionRegistry} wraps its OWN unrelated inner registry interface and is NOT a
+         * {@link PartitionRegistry}, so it is not the override site.
          *
          * @param locallyConverged whether THIS partition is locally balanced this round
          * @return the global logical-AND across all partitions
