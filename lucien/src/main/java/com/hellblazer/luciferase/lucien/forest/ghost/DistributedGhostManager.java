@@ -176,7 +176,19 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
         if (targetRank == currentRank) {
             return; // No need to sync with ourselves
         }
+        // Synchronous single-rank sync: queue + flush, then wait for this rank's flush to complete.
+        queueAndFlush(targetRank).join();
+    }
 
+    /**
+     * Queue this rank's boundary ghosts for {@code targetRank} and start the flush, returning the flush future
+     * <em>without</em> blocking (Luciferase-9m31). Lets {@link #synchronizeWithAllProcesses()} fan out to all
+     * ranks concurrently and join the combined future once, instead of serializing one flush at a time.
+     *
+     * @param targetRank the rank of the target process
+     * @return a future that completes when the flush to {@code targetRank} finishes
+     */
+    private CompletableFuture<Void> queueAndFlush(int targetRank) {
         log.debug("Synchronizing ghost elements with rank {}", targetRank);
 
         // Get boundary elements from local ghost manager
@@ -190,8 +202,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
             }
         }
 
-        // Flush immediately for synchronous behavior
-        ghostChannel.flushToTarget(targetRank).join();
+        return ghostChannel.flushToTarget(targetRank);
     }
     
     /**
@@ -205,15 +216,19 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
 
         log.info("Synchronizing with {} known processes", knownRanks.size());
 
-        // Queue ghosts for all known processes
+        // Fan out to all known remote processes concurrently (Luciferase-9m31): queue + flush each rank, then
+        // wait on the combined future rather than blocking on each rank's flush in turn. Preserves the
+        // synchronous completion contract (the method returns once every rank's flush has completed).
+        var flushes = new ArrayList<CompletableFuture<Void>>();
         for (var rank : knownRanks) {
             if (rank != currentRank) {
-                synchronizeWithProcess(rank);
+                flushes.add(queueAndFlush(rank));
             }
         }
+        CompletableFuture.allOf(flushes.toArray(new CompletableFuture[0])).join();
 
         lastSyncTime = System.currentTimeMillis();
-        log.info("Synchronization queued for {} processes", knownRanks.size());
+        log.info("Synchronization complete for {} processes", flushes.size());
     }
     
     /**
