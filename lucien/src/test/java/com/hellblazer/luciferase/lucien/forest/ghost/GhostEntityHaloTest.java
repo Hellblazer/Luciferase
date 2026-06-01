@@ -5,6 +5,7 @@
  */
 package com.hellblazer.luciferase.lucien.forest.ghost;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import org.junit.jupiter.api.Test;
 
@@ -64,9 +65,9 @@ class GhostEntityHaloTest {
     @Test
     void clockBackedConstructorStampsFromSystemClock() {
         // The convenience constructor stamps from Clock.system() (not a direct System.currentTimeMillis call).
-        long before = com.hellblazer.luciferase.common.time.Clock.system().currentTimeMillis();
+        long before = Clock.system().currentTimeMillis();
         var h = new GhostEntityHalo<LongEntityID, String>(new LongEntityID(1), "c", new Point3f(), null, "t");
-        long after = com.hellblazer.luciferase.common.time.Clock.system().currentTimeMillis();
+        long after = Clock.system().currentTimeMillis();
         assertTrue(h.getTimestamp() >= before && h.getTimestamp() <= after,
                    "convenience constructor stamps a current timestamp via Clock.system()");
     }
