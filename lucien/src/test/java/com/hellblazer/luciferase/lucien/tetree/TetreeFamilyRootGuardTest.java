@@ -8,6 +8,7 @@ package com.hellblazer.luciferase.lucien.tetree;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
+// TetreeConnectivity is in the same package (com.hellblazer.luciferase.lucien.tetree) — no import needed.
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,17 +22,20 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class TetreeFamilyRootGuardTest {
 
-    // A single-tree Tetree's level 0 is a single type-0 root tet (the Tet constructor enforces
-    // level 0 => type 0), so a "family" of six distinct root tets is not constructible. Six references to the
-    // type-0 root suffice to exercise the CHILDREN_PER_TET-length, same-level path that reaches the l==0 guard.
-    private static Tet[] sixRootRefs() {
+    // A single-tree Tetree's level 0 is a single type-0 root tet (the Tet constructor enforces level 0 =>
+    // type 0), so a "family" of distinct root tets is not constructible. The array MUST be
+    // CHILDREN_PER_TET (== 8) long to pass isFamily's length gate and actually reach the l==0 guard; eight
+    // references to the type-0 root do that (the guard returns false before the duplicate-child check).
+    private static Tet[] eightRootRefs() {
         var root = new Tet(0, 0, 0, (byte) 0, (byte) 0);
-        return new Tet[] { root, root, root, root, root, root };
+        return new Tet[] { root, root, root, root, root, root, root, root };
     }
 
     @Test
     void isFamilyReturnsFalseAtRootInsteadOfThrowing() {
-        var roots = sixRootRefs();
+        var roots = eightRootRefs();
+        assertEquals(TetreeConnectivity.CHILDREN_PER_TET, roots.length,
+                     "array must be CHILDREN_PER_TET long to pass the length gate and reach the l==0 guard");
         assertFalse(assertDoesNotThrow(() -> TetreeFamily.isFamily(roots),
                                        "isFamily must guard level 0, not call parent() and throw"),
                     "level-0 tets are not a mergeable family (the root has no parent)");
@@ -39,14 +43,14 @@ class TetreeFamilyRootGuardTest {
 
     @Test
     void canMergeReturnsFalseAtRootInsteadOfThrowing() {
-        // A set dedupes the root references to one element; size != CHILDREN_PER_TET, so canMerge returns false
-        // at the size gate. To exercise the l==0 path through isFamily, call it directly with the 6-length array.
+        // canMerge takes a Set; eight identical root references dedupe to one, so canMerge returns false at its
+        // own size gate. Exercise the isFamily l==0 guard directly with the full-length array.
         var roots = new HashSet<Tet>();
         roots.add(new Tet(0, 0, 0, (byte) 0, (byte) 0));
         assertFalse(assertDoesNotThrow(() -> TetreeFamily.canMerge(roots),
                                        "canMerge must not throw at the root"),
                     "a single root tet is not a mergeable family");
-        assertFalse(assertDoesNotThrow(() -> TetreeFamily.isFamily(sixRootRefs()),
+        assertFalse(assertDoesNotThrow(() -> TetreeFamily.isFamily(eightRootRefs()),
                                        "isFamily must guard level 0, not throw"),
                     "level-0 tets cannot be merged (no parent at the root)");
     }
