@@ -132,6 +132,26 @@ public class EntityBounds {
         return width * height * depth;
     }
 
+    /**
+     * Value equality by {@code (min, max)} (Luciferase-tzcv). {@code EntityBounds} is an immutable value type;
+     * {@link Point3f} (javax.vecmath) compares by component, so two bounds with the same corners are equal.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof EntityBounds that)) {
+            return false;
+        }
+        return min.equals(that.min) && max.equals(that.max);
+    }
+
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash(min, max);
+    }
+
     @Override
     public String toString() {
         return String.format("EntityBounds[min=(%.2f,%.2f,%.2f), max=(%.2f,%.2f,%.2f)]", min.x, min.y, min.z, max.x,
