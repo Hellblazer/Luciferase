@@ -183,7 +183,53 @@ public class TwoOneBalanceCheckerTest {
         var requests = checker.createRefinementRequests(violations, 0, 0);
 
         assertNotNull(requests, "Should return refinement requests");
-        assertTrue(requests instanceof List, "Should return list type");
+        assertEquals(1, requests.size(), "one violation from one sourceRank -> one request");
+        assertEquals(0, requests.get(0).requesterRank(), "requesterRank must be the supplied local rank");
+    }
+
+    @Test
+    public void testCreateRefinementRequestsEmptyViolations() {
+        // Luciferase-w3lm: no violations -> no requests (NOT a butterfly fallback; that is the coordinator's job).
+        assertTrue(checker.createRefinementRequests(List.of(), 7L, 3).isEmpty(),
+                   "empty violations must yield no refinement requests");
+    }
+
+    @Test
+    public void testCreateRefinementRequestsGroupsBySourceRank() {
+        // Luciferase-w3lm: violations from two distinct ghost-owner ranks -> one request per rank, carrying both
+        // local and ghost keys, treeLevel = max level in the group, requesterRank = coordinatorId.
+        var localA1 = new MortonKey(1L, (byte) 2);
+        var ghostA1 = new MortonKey(2L, (byte) 5);   // rank 1, max level 5
+        var localA2 = new MortonKey(3L, (byte) 4);
+        var ghostA2 = new MortonKey(4L, (byte) 7);   // rank 1, max level 7
+        var localB = new MortonKey(5L, (byte) 1);
+        var ghostB = new MortonKey(6L, (byte) 3);    // rank 2, max level 3
+
+        var violations = List.of(
+            new TwoOneBalanceChecker.BalanceViolation<>(localA1, ghostA1, 2, 5, 3, 1),
+            new TwoOneBalanceChecker.BalanceViolation<>(localA2, ghostA2, 4, 7, 3, 1),
+            new TwoOneBalanceChecker.BalanceViolation<>(localB, ghostB, 1, 3, 2, 2)
+        );
+
+        var requests = checker.createRefinementRequests(violations, 99L, 42);
+
+        assertEquals(2, requests.size(), "one request per distinct sourceRank");
+        for (var req : requests) {
+            assertEquals(42, req.requesterRank(), "requesterRank must be the supplied local rank");
+            assertEquals(99L, req.timestamp(), "timestamp must be propagated");
+            assertEquals(0L, req.requesterTreeId(), "treeId is 0 until B10b wires the partner");
+            assertEquals(0, req.roundNumber(), "roundNumber is 0 until B10b supplies convergence rounds");
+        }
+
+        // Rank-1 group: 2 violations -> 4 boundary keys, treeLevel = max(5,7) = 7.
+        var rank1 = requests.stream().filter(r -> r.treeLevel() == 7).findFirst().orElseThrow();
+        assertEquals(4, rank1.boundaryKeys().size(), "two violations contribute local+ghost each");
+        assertTrue(rank1.boundaryKeys().containsAll(List.of(localA1, ghostA1, localA2, ghostA2)));
+
+        // Rank-2 group: 1 violation -> 2 boundary keys, treeLevel = max(1,3) = 3.
+        var rank2 = requests.stream().filter(r -> r.treeLevel() == 3).findFirst().orElseThrow();
+        assertEquals(2, rank2.boundaryKeys().size());
+        assertTrue(rank2.boundaryKeys().containsAll(List.of(localB, ghostB)));
     }
 
     @Test

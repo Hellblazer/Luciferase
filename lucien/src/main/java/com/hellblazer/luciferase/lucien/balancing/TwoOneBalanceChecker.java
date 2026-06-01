@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Detects 2:1 balance constraint violations at partition boundaries.
@@ -294,23 +295,51 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
     }
 
     /**
-     * Create refinement requests from detected violations.
+     * Create refinement requests from detected violations (Luciferase-w3lm, B10a).
      *
-     * <p>Groups violations by source partition rank and creates a refinement request
-     * for each group, asking the remote partition to send refined (subdivided) elements.
+     * <p>Groups violations by the rank owning the ghost element ({@link BalanceViolation#sourceRank}) and emits one
+     * refinement request per remote partition, each carrying the boundary keys and the maximum level seen in that
+     * group. Adapted from {@code CrossPartitionBalancePhase.identifyRefinementNeeds} and {@code t8_forest_balance.cxx}.
+     *
+     * <p><b>Placeholders deferred to B10b</b> ({@code Luciferase-uhsn}, {@code RefinementCoordinator}): each request
+     * is stamped {@code requesterTreeId=0L} and {@code roundNumber=0}. These are pre-coordinator placeholders — the
+     * coordinator overwrites them with the partner tree id and the actual Allreduce-LAND convergence round before the
+     * request goes on the wire. Do not interpret {@code roundNumber==0} from this method as a real round.
+     *
+     * <p><b>Refinement-direction semantics deferred to B10b/B10c:</b> {@code boundaryKeys} bundles both the local and
+     * ghost key of every violation (per the B10a design and matching {@code CrossPartitionBalancePhase}). Whether the
+     * remote should refine its (ghost) side, or only violations with {@code !localNeedsRefinement()} should produce a
+     * remote request at all, is a wire-protocol decision owned by B10b ({@code buildRequestsForPartner}) /
+     * B10c ({@code applyRefinementResponses}), not by this grouping step. See {@code Luciferase-uhsn}.
      *
      * @param violations list of balance violations to process
-     * @param timestamp current timestamp (for request metadata)
-     * @param coordinatorId coordinator partition rank
-     * @return list of refinement requests to send to remote partitions
+     * @param timestamp   current timestamp (for request metadata)
+     * @param localRank   the local partition rank making the request — becomes {@link RefinementRequest#requesterRank}
+     *                    so the remote knows who to reply to (NOT the coordinator/initiator rank)
+     * @return list of refinement requests to send to remote partitions; empty if there are no violations
      */
-    public List<?> createRefinementRequests(
+    public List<RefinementRequest<Key>> createRefinementRequests(
         List<BalanceViolation<Key>> violations,
         long timestamp,
-        long coordinatorId
+        int localRank
     ) {
-        // For now, return empty list - will be populated during refinement coordination
-        // In full implementation, would group violations by sourceRank and create requests
-        return new ArrayList<>();
+        if (violations == null || violations.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        var byRank = violations.stream().collect(Collectors.groupingBy(BalanceViolation::sourceRank));
+
+        var requests = new ArrayList<RefinementRequest<Key>>(byRank.size());
+        for (var group : byRank.values()) {
+            int treeLevel = 0;
+            var boundaryKeys = new ArrayList<Key>(group.size() * 2);
+            for (var v : group) {
+                treeLevel = Math.max(treeLevel, Math.max(v.localLevel(), v.ghostLevel()));
+                boundaryKeys.add(v.localKey());
+                boundaryKeys.add(v.ghostKey());
+            }
+            requests.add(new RefinementRequest<>(localRank, 0L, 0, treeLevel, boundaryKeys, timestamp));
+        }
+        return requests;
     }
 }
