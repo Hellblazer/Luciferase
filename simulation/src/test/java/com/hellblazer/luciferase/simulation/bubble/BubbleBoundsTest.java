@@ -30,13 +30,30 @@ public class BubbleBoundsTest {
     private static final float EPSILON = 0.001f;
 
     /**
+     * Build a structurally VALID TetreeKey by descending real {@link Tet} children from the root to
+     * {@code level}, so the decoded leaf type is always a tetrahedron type (0-5). Fabricating keys
+     * from arbitrary bit constants (the old {@code TetreeKey.create((byte) L, magic, 0L)} idiom) is
+     * unsafe under the coarsest-at-MSB encoding (Luciferase-tkvb): the leaf 6 bits sit at the LSB, so
+     * arbitrary low constants decode to pyramid types 6/7 and trip {@code Tet}'s type assertion.
+     */
+    private static TetreeKey<?> validKey(byte level, long seed) {
+        var tet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        for (int i = 0; i < level; i++) {
+            // Each level consumes a distinct 3-bit slice of the seed so distinct seeds yield
+            // distinct keys (the level-i child index is bits [3i, 3i+2] of the seed).
+            tet = tet.child((int) ((seed >> (3 * i)) & 0x7));
+        }
+        return tet.tmIndex();
+    }
+
+    /**
      * Test 1: fromTetreeKey at level 0 (root tetrahedron)
      * <p>
      * Validates: Root tetrahedron bounds creation
      */
     @Test
     public void testFromTetreeKeyLevel0() {
-        var rootKey = TetreeKey.create((byte) 0, 0L, 0L);
+        var rootKey = validKey((byte) 0, 0L);
         var bounds = BubbleBounds.fromTetreeKey(rootKey);
 
         assertNotNull(bounds, "Bounds should not be null");
@@ -56,7 +73,7 @@ public class BubbleBoundsTest {
      */
     @Test
     public void testFromTetreeKeyLevel10() {
-        var midLevelKey = TetreeKey.create((byte) 10, 0x123456L, 0L);
+        var midLevelKey = validKey((byte) 10, 0x123456L);
         var bounds = BubbleBounds.fromTetreeKey(midLevelKey);
 
         assertNotNull(bounds, "Bounds should not be null");
@@ -102,8 +119,8 @@ public class BubbleBoundsTest {
      */
     @Test
     public void testEncompassingTwoBounds() {
-        var key1 = TetreeKey.create((byte) 5, 0x100L, 0L);
-        var key2 = TetreeKey.create((byte) 5, 0x200L, 0L);
+        var key1 = validKey((byte) 5, 0x100L);
+        var key2 = validKey((byte) 5, 0x200L);
 
         var bounds1 = BubbleBounds.fromTetreeKey(key1);
         var bounds2 = BubbleBounds.fromTetreeKey(key2);
@@ -133,7 +150,7 @@ public class BubbleBoundsTest {
      */
     @Test
     public void testContainsCartesianPoint() {
-        var key = TetreeKey.create((byte) 0, 0L, 0L);
+        var key = validKey((byte) 0, 0L);
         var bounds = BubbleBounds.fromTetreeKey(key);
 
         // Get tetrahedron vertices to test containment
@@ -160,7 +177,7 @@ public class BubbleBoundsTest {
      */
     @Test
     public void testContainsRDGPoint() {
-        var key = TetreeKey.create((byte) 5, 0x50L, 0L);
+        var key = validKey((byte) 5, 0x50L);
         var bounds = BubbleBounds.fromTetreeKey(key);
 
         // Convert centroid to RDGCS and verify containment
@@ -182,8 +199,8 @@ public class BubbleBoundsTest {
     @Test
     public void testOverlapsAdjacent() {
         // Create two potentially adjacent tetrahedra
-        var key1 = TetreeKey.create((byte) 5, 0x10L, 0L);
-        var key2 = TetreeKey.create((byte) 5, 0x11L, 0L);
+        var key1 = validKey((byte) 5, 0x10L);
+        var key2 = validKey((byte) 5, 0x11L);
 
         var bounds1 = BubbleBounds.fromTetreeKey(key1);
         var bounds2 = BubbleBounds.fromTetreeKey(key2);
@@ -206,8 +223,8 @@ public class BubbleBoundsTest {
     @Test
     public void testOverlapsDisjoint() {
         // Create two tetrahedra that are far apart
-        var key1 = TetreeKey.create((byte) 10, 0x0L, 0L);
-        var key2 = TetreeKey.create((byte) 10, 0xFFFFFFL, 0L);
+        var key1 = validKey((byte) 10, 0x0L);
+        var key2 = validKey((byte) 10, 0xFFFFFFL);
 
         var bounds1 = BubbleBounds.fromTetreeKey(key1);
         var bounds2 = BubbleBounds.fromTetreeKey(key2);
@@ -224,7 +241,7 @@ public class BubbleBoundsTest {
      */
     @Test
     public void testExpandWithNewPoint() {
-        var key = TetreeKey.create((byte) 10, 0x100L, 0L);
+        var key = validKey((byte) 10, 0x100L);
         var bounds = BubbleBounds.fromTetreeKey(key);
 
         // Get a point that's definitely outside (far from centroid)
@@ -258,7 +275,7 @@ public class BubbleBoundsTest {
      */
     @Test
     public void testRecalculateFromPositions() {
-        var key = TetreeKey.create((byte) 5, 0x20L, 0L);
+        var key = validKey((byte) 5, 0x20L);
         var bounds = BubbleBounds.fromTetreeKey(key);
 
         // New set of positions (possibly outside original bounds)
@@ -286,7 +303,7 @@ public class BubbleBoundsTest {
      */
     @Test
     public void testCentroidCalculation() {
-        var key = TetreeKey.create((byte) 5, 0x42L, 0L);
+        var key = validKey((byte) 5, 0x42L);
         var bounds = BubbleBounds.fromTetreeKey(key);
 
         var centroid = bounds.centroid();
@@ -336,7 +353,7 @@ public class BubbleBoundsTest {
      */
     @Test
     public void testRDGToCartesianRoundTrip() {
-        var bounds = BubbleBounds.fromTetreeKey(TetreeKey.create((byte) 5, 0x30L, 0L));
+        var bounds = BubbleBounds.fromTetreeKey(validKey((byte) 5, 0x30L));
 
         var originalCartesian = new Point3f(10.5f, 20.3f, 30.7f);
 
