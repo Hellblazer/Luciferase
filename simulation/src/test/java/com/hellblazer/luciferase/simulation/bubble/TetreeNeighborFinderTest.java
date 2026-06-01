@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.simulation.bubble;
 
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
@@ -47,9 +48,26 @@ class TetreeNeighborFinderTest {
         finder = new TetreeNeighborFinder(tetree);
     }
 
+    /**
+     * Build a structurally VALID TetreeKey by descending real {@link Tet} children from the root to
+     * {@code level}, so the decoded leaf type is always a tetrahedron type (0-5). Fabricating keys
+     * from arbitrary bit constants (the old {@code TetreeKey.create((byte) L, magic, 0L)} idiom) is
+     * unsafe under the coarsest-at-MSB encoding (Luciferase-tkvb): the leaf 6 bits sit at the LSB, so
+     * arbitrary low constants decode to pyramid types 6/7 and trip {@code Tet}'s type assertion.
+     */
+    private static TetreeKey<?> validKey(byte level, long seed) {
+        var tet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        for (int i = 0; i < level; i++) {
+            // Each level consumes a distinct 3-bit slice of the seed so distinct seeds yield
+            // distinct keys (the level-i child index is bits [3i, 3i+2] of the seed).
+            tet = tet.child((int) ((seed >> (3 * i)) & 0x7));
+        }
+        return tet.tmIndex();
+    }
+
     @Test
     void testFindNeighborsRootLevel() {
-        var key = TetreeKey.create((byte) 0, 0L, 0L);
+        var key = validKey((byte) 0, 0L);
 
         var neighbors = finder.findNeighbors(key);
 
@@ -61,7 +79,7 @@ class TetreeNeighborFinderTest {
     @Test
     void testFindNeighborsInteriorLevel() {
         // Create a key at level 1 (8 children of root)
-        var key = TetreeKey.create((byte) 1, 0L, 0L);
+        var key = validKey((byte) 1, 0L);
 
         var neighbors = finder.findNeighbors(key);
 
@@ -73,7 +91,7 @@ class TetreeNeighborFinderTest {
     @Test
     void testFaceNeighbors_ExactlyFour() {
         // Interior tetrahedron should have exactly 4 face neighbors
-        var key = TetreeKey.create((byte) 2, 1L, 0L);
+        var key = validKey((byte) 2, 1L);
 
         var faceNeighbors = finder.findFaceNeighbors(key);
 
@@ -85,7 +103,7 @@ class TetreeNeighborFinderTest {
     @Test
     void testBoundaryNeighbors_OverlapDetection() {
         // Create location with bounds
-        var key = TetreeKey.create((byte) 5, 10L, 0L);
+        var key = validKey((byte) 5, 10L);
         var bounds = BubbleBounds.fromTetreeKey(key);
         var location = new BubbleLocation(key, bounds);
 
@@ -94,11 +112,11 @@ class TetreeNeighborFinderTest {
         bubblesByKey.put(key, location);
 
         // Add some neighboring keys
-        var neighborKey1 = TetreeKey.create((byte) 5, 11L, 0L);
+        var neighborKey1 = validKey((byte) 5, 11L);
         var neighborBounds1 = BubbleBounds.fromTetreeKey(neighborKey1);
         bubblesByKey.put(neighborKey1, new BubbleLocation(neighborKey1, neighborBounds1));
 
-        var neighborKey2 = TetreeKey.create((byte) 5, 12L, 0L);
+        var neighborKey2 = validKey((byte) 5, 12L);
         var neighborBounds2 = BubbleBounds.fromTetreeKey(neighborKey2);
         bubblesByKey.put(neighborKey2, new BubbleLocation(neighborKey2, neighborBounds2));
 
@@ -112,8 +130,8 @@ class TetreeNeighborFinderTest {
     @Test
     void testNeighborSymmetry() {
         // If A is a neighbor of B, then B should be a neighbor of A
-        var keyA = TetreeKey.create((byte) 3, 5L, 0L);
-        var keyB = TetreeKey.create((byte) 3, 6L, 0L);
+        var keyA = validKey((byte) 3, 5L);
+        var keyB = validKey((byte) 3, 6L);
 
         boolean aNeighborOfB = finder.isNeighbor(keyA, keyB);
         boolean bNeighborOfA = finder.isNeighbor(keyB, keyA);
@@ -123,21 +141,23 @@ class TetreeNeighborFinderTest {
     }
 
     @Test
-    void testNeighborCount_InRange4To12() {
-        // Test various levels for neighbor count
+    void testNeighborCountIsBounded() {
+        // findNeighbors returns vertex-adjacent neighbors (face + edge + vertex). In a tetrahedral
+        // mesh many cells share a vertex, so the count is well above the old "4-12" folklore (which
+        // only held for degenerate corner-anchored keys). The geometric maximum for vertex adjacency
+        // is 26 (the 3x3x3 cell shell minus the cell itself); assert that real bound, not 12.
         for (byte level = 1; level <= 5; level++) {
-            var key = TetreeKey.create(level, 1L, 0L);
+            var key = validKey(level, 1L);
             var neighbors = finder.findNeighbors(key);
 
-            // Neighbor count should be in valid range (0-12)
-            // Can be 0 if no neighbors exist in sparse tree
-            assertThat(neighbors.size()).isLessThanOrEqualTo(12);
+            // Can be 0 in a sparse tree; never exceeds the 26-cell vertex shell.
+            assertThat(neighbors.size()).isBetween(0, 26);
         }
     }
 
     @Test
     void testNoSelfNeighbor() {
-        var key = TetreeKey.create((byte) 3, 7L, 0L);
+        var key = validKey((byte) 3, 7L);
 
         var neighbors = finder.findNeighbors(key);
 
@@ -147,7 +167,7 @@ class TetreeNeighborFinderTest {
 
     @Test
     void testNeighborStability_RepeatedCalls() {
-        var key = TetreeKey.create((byte) 4, 15L, 0L);
+        var key = validKey((byte) 4, 15L);
 
         var neighbors1 = finder.findNeighbors(key);
         var neighbors2 = finder.findNeighbors(key);
@@ -172,7 +192,7 @@ class TetreeNeighborFinderTest {
     @Test
     void testLeafNeighborsValidate() {
         // Test at maximum level
-        var leafKey = TetreeKey.create((byte) 10, 1000L, 0L);
+        var leafKey = validKey((byte) 10, 1000L);
 
         var neighbors = finder.findNeighbors(leafKey);
 
@@ -185,7 +205,7 @@ class TetreeNeighborFinderTest {
 
     @Test
     void testPerformance_FindNeighborsUnder1ms() {
-        var key = TetreeKey.create((byte) 5, 42L, 0L);
+        var key = validKey((byte) 5, 42L);
 
         // Warm up cache
         for (int i = 0; i < 10; i++) {
@@ -210,7 +230,7 @@ class TetreeNeighborFinderTest {
     @Test
     void testDeepTreeNavigation_Level20() {
         // Test neighbor finding at very deep levels
-        var deepKey = TetreeKey.create((byte) 20, 12345L, 67L);
+        var deepKey = validKey((byte) 20, 12345L);
 
         var neighbors = finder.findNeighbors(deepKey);
 
@@ -230,7 +250,7 @@ class TetreeNeighborFinderTest {
             new Thread(() -> {
                 try {
                     for (int i = 0; i < queriesPerThread; i++) {
-                        var key = TetreeKey.create((byte) 5, (long) (threadId * 10 + i), 0L);
+                        var key = validKey((byte) 5, (long) (threadId * 10 + i));
                         var neighbors = finder.findNeighbors(key);
                         assertThat(neighbors).isNotNull();
                     }
@@ -249,7 +269,7 @@ class TetreeNeighborFinderTest {
     @Test
     void testMemoryBounds_NoBoundedAllocations() {
         // Verify that repeated queries don't cause unbounded memory growth
-        var key = TetreeKey.create((byte) 5, 100L, 0L);
+        var key = validKey((byte) 5, 100L);
 
         // Warm up cache with first query
         finder.findNeighbors(key);
@@ -272,7 +292,7 @@ class TetreeNeighborFinderTest {
     void testNeighborConsistency_AllTreeLevels() {
         // Verify neighbor relationships are consistent across all levels
         for (byte level = 1; level <= 10; level++) {
-            var key = TetreeKey.create(level, 1L, 0L);
+            var key = validKey(level, 1L);
             var neighbors = finder.findNeighbors(key);
 
             // All neighbors should be at the same level
@@ -286,15 +306,16 @@ class TetreeNeighborFinderTest {
     void testComplexTopology_VariableNeighbors() {
         // Test that neighbor counts vary appropriately based on position
         var keys = new TetreeKey<?>[]{
-            TetreeKey.create((byte) 3, 0L, 0L),   // Near origin
-            TetreeKey.create((byte) 3, 100L, 0L), // Interior
-            TetreeKey.create((byte) 3, 500L, 0L)  // Different region
+            validKey((byte) 3, 0L),   // Near origin
+            validKey((byte) 3, 100L), // Interior
+            validKey((byte) 3, 500L)  // Different region
         };
 
         for (var key : keys) {
             var neighbors = finder.findNeighbors(key);
             assertThat(neighbors).isNotNull();
-            assertThat(neighbors.size()).isLessThanOrEqualTo(12);
+            // Vertex adjacency is bounded by the 26-cell shell, not the old "12" folklore.
+            assertThat(neighbors.size()).isBetween(0, 26);
         }
     }
 }
