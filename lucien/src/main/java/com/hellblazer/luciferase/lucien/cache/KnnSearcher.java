@@ -69,7 +69,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p>{@link #performKNNSFCRangePruning} delegates to {@link SpatialKey#sfcRangesForKNN} on the index's first key,
  * which returns the iterable of SFC ranges this implementation should scan ({@code MortonKey} returns one range
- * per distinct storage level; {@code TetreeKey} returns a single range; key types without an estimator return
+ * per distinct storage level; {@code TetreeKey} likewise returns one range per distinct storage level
+ * (Luciferase-6gnb); key types without an estimator return
  * the default empty iterable, which signals a fall back to the legacy breadth-first
  * {@link #performKNNSFCBasedSearch}). RDR-008 P3 follow-up (bead Luciferase-vpl) replaced the prior
  * {@code instanceof MortonKey / TetreeKey} dispatch that coupled this class to the concrete key packages.
@@ -214,8 +215,8 @@ implements KnnProvider<Key, ID> {
      * Optimized SFC range-based k-NN search using range pruning. RDR-008 P3 follow-up (bead Luciferase-vpl)
      * removed the per-key-type {@code instanceof MortonKey / TetreeKey} dispatch by hoisting the per-key SFC range
      * estimator to {@link SpatialKey#sfcRangesForKNN}. Each {@code SpatialKey} implementation returns the
-     * appropriate iterable of SFC ranges (Morton returns one per distinct storage level; Tetree returns a single
-     * range; PrismKey or any other implementation without an estimator returns the default empty iterable,
+     * appropriate iterable of SFC ranges (Morton and Tetree each return one range per distinct storage level —
+     * Luciferase-6gnb; PrismKey or any other implementation without an estimator returns the default empty iterable,
      * signaling a fallback to the legacy breadth-first search). Any exception raised during range estimation also
      * falls back.
      */
