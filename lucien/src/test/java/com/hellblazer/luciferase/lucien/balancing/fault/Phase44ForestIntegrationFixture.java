@@ -162,7 +162,7 @@ public class Phase44ForestIntegrationFixture {
             octree,
             octree.getNeighborDetector(),
             com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES,
-            com.hellblazer.luciferase.lucien.forest.ghost.GhostAlgorithm.CONSERVATIVE
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostAlgorithm.DEEP_COVERAGE
         );
 
         // Create mock GrpcGhostChannel for testing (no actual network communication)

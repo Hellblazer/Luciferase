@@ -67,7 +67,7 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
     private final SpatialIndex<Key, ID, Content>     facade;
 
     private GhostType                                            ghostType        = GhostType.NONE;
-    private GhostAlgorithm                                       ghostAlgorithm   = GhostAlgorithm.CONSERVATIVE;
+    private GhostAlgorithm                                       ghostAlgorithm   = GhostAlgorithm.MINIMAL;
     private GhostLayer<Key, ID, Content>                         ghostLayer;
     private GhostBoundaryDetector<Key, ID, Content>              ghostBoundaryDetector;
     private DistributedGhostManager<Key, ID, Content>            distributedGhostManager;
