@@ -21,7 +21,8 @@ import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 
 import javax.vecmath.Point3f;
-import java.util.List;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.NavigableSet;
 import java.util.Objects;
 
@@ -409,22 +410,33 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
      * @return SFCRange covering the spherical region (conservative estimate)
      */
     public static SFCRange estimateSFCRange(Point3f center, float radius) {
+        return estimateSFCRange(center, radius, estimateSFCDepth(radius));
+    }
+
+    /**
+     * Estimate the SFC range covering a spherical region at a specific storage level. Because {@code TetreeKey}
+     * ordering is level-first (Luciferase-tkvb), a {@code subMap} bounded by keys at {@code storageLevel} only
+     * returns keys at that level — so callers covering a multi-level index must call this once per occupied level
+     * (see {@link #sfcRangesForKNN}), mirroring {@code MortonKey.estimateSFCRange}. Luciferase-6gnb.
+     *
+     * @param center       the center point of the search sphere
+     * @param radius       the search radius (positive)
+     * @param storageLevel the level at which the returned bounds are constructed
+     * @return SFCRange covering the spherical region at {@code storageLevel} (conservative estimate)
+     */
+    public static SFCRange estimateSFCRange(Point3f center, float radius, byte storageLevel) {
         if (radius <= 0) {
             throw new IllegalArgumentException("Search radius must be positive, got: " + radius);
         }
-        
-        // Step 1: Estimate appropriate depth for this radius
-        byte level = estimateSFCDepth(radius);
-        float cellSize = Constants.lengthAtLevel(level);
-        
-        // Step 2: Compute AABB around sphere
-        // Expand by cell size to ensure complete coverage (conservative)
+
+        float cellSize = Constants.lengthAtLevel(storageLevel);
+
+        // Compute AABB around sphere. Expand by one cell to ensure complete coverage (conservative).
         float expansion = cellSize;
-        
-        // Clamp coordinates to valid range [0, MAX_COORD]
-        // MAX_COORD = 2^21 - 1 = 2,097,151
+
+        // Clamp coordinates to valid range [0, MAX_COORD]. MAX_COORD = 2^21 - 1 = 2,097,151.
         float maxCoord = Constants.MAX_COORD;
-        
+
         Point3f min = new Point3f(
             Math.max(0, center.x - radius - expansion),
             Math.max(0, center.y - radius - expansion),
@@ -435,33 +447,30 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
             Math.min(maxCoord, center.y + radius + expansion),
             Math.min(maxCoord, center.z + radius + expansion)
         );
-        
-        // Step 3: Find tetrahedra containing the AABB corners
-        // Use Tet.locatePointBeyRefinementFromRoot to find the tetrahedral cell at this level
-        Tet minTet = Tet.locatePointBeyRefinementFromRoot(min.x, min.y, min.z, level);
-        Tet maxTet = Tet.locatePointBeyRefinementFromRoot(max.x, max.y, max.z, level);
-        
+
+        // Find tetrahedra containing the AABB corners at storageLevel.
+        Tet minTet = Tet.locatePointBeyRefinementFromRoot(min.x, min.y, min.z, storageLevel);
+        Tet maxTet = Tet.locatePointBeyRefinementFromRoot(max.x, max.y, max.z, storageLevel);
+
         if (minTet == null || maxTet == null) {
             // Fallback: use root tetrahedron range
             return new SFCRange(getRoot(), getRoot());
         }
-        
+
         // Convert to TetreeKeys
         TetreeKey<?> minKey = minTet.tmIndex();
         TetreeKey<?> maxKey = maxTet.tmIndex();
-        
+
         // Ensure proper ordering (min <= max)
         if (minKey.compareTo(maxKey) > 0) {
             var tmp = minKey;
             minKey = maxKey;
             maxKey = tmp;
         }
-        
-        // Step 4: Create inclusive range
-        // For subMap(), we need [lower, upper) 
-        // We need to increment the upper bound, which requires getting the next key
+
+        // Create inclusive range. For subMap() we need [lower, upper), so increment the upper bound.
         TetreeKey<?> upperBound = getNextKey(maxKey);
-        
+
         return new SFCRange(minKey, upperBound);
     }
     
@@ -496,33 +505,36 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
             return create(level, 0L, highBits + 1);
         }
 
-        // Both halves are all-ones (the maximum key at this level) - use a sentinel at parent level.
-        if (level > 0) {
-            var parent = key.parent();
-            if (parent != null) {
-                return getNextKey((TetreeKey<?>) parent);
-            }
-        }
-
-        // At root and overflowed - return maximum possible key.
+        // Both halves are all-ones: the maximum 128-bit value at this level. Saturate at the same-level all-ones
+        // sentinel, mirroring MortonKey.estimateSFCRange (which caps at Long.MAX_VALUE at the same level). A
+        // coarser-level sentinel would be wrong: ordering is level-first, so a level-(L-1) key sorts before every
+        // level-L key, making subMap(lower@L, sentinel@L-1) an empty range. (Unreachable from real coordinate
+        // inputs — a valid level-L key never sets all 128 bits — but kept correct as an exclusive upper bound.)
         return create(level, -1L, -1L);
     }
 
     /**
      * {@inheritDoc}
      *
-     * <p>{@code TetreeKey} currently returns a single range and ignores {@code indexKeys}. <strong>This
-     * under-covers a multi-level index:</strong> {@link #compareTo} is level-first (level, then 128-bit TM-index
-     * unsigned), so a {@code subMap} bounded at the single level chosen by {@link #estimateSFCRange} only returns
-     * keys at that level — entities stored at other levels within the radius are silently skipped. The correct
-     * behaviour mirrors {@code MortonKey.sfcRangesForKNN} (one range per occupied level); tracked by
-     * {@code Luciferase-6gnb}. RDR-008 P3 follow-up (bead Luciferase-vpl).
+     * <p>{@code TetreeKey} returns one range per distinct storage level present in {@code indexKeys} (Luciferase-6gnb).
+     * Because {@link #compareTo} is level-first (level, then 128-bit TM-index unsigned), a {@code subMap} bounded at
+     * level L only returns keys at level L — entities can be stored at different levels, so a single range covering
+     * one estimated level would silently skip the rest. The level set is collected from {@code indexKeys} and each
+     * range is built at that level via {@link #estimateSFCRange(Point3f, float, byte)}, mirroring
+     * {@code MortonKey.sfcRangesForKNN}. RDR-008 P3 follow-up (bead Luciferase-vpl).
      */
     @Override
     public Iterable<SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>> sfcRangesForKNN(
         Point3f center, float radius, NavigableSet<TetreeKey<? extends TetreeKey<?>>> indexKeys) {
-        var range = estimateSFCRange(center, radius);
-        return List.of(
-            new SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>(range.lower(), range.upper()));
+        var levels = new LinkedHashSet<Byte>();
+        for (var key : indexKeys) {
+            levels.add(key.getLevel());
+        }
+        var ranges = new ArrayList<SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>>(levels.size());
+        for (var level : levels) {
+            var range = estimateSFCRange(center, radius, level);
+            ranges.add(new SpatialKey.SFCRange<TetreeKey<? extends TetreeKey<?>>>(range.lower(), range.upper()));
+        }
+        return ranges;
     }
 }

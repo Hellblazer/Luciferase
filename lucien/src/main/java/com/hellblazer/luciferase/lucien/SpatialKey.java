@@ -66,10 +66,9 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
      *     <li>{@code MortonKey} returns one range per distinct storage level present in the index — required
      *         because {@code MortonKey.compareTo} orders keys by level first, so a subMap query at level L only
      *         returns keys at level L. The level set is collected from {@code indexKeys}.</li>
-     *     <li>{@code TetreeKey} currently returns a single range and ignores {@code indexKeys}. Note its ordering
-     *         <em>is</em> level-first (see the ordering contract above), so this single range under-covers an index
-     *         holding entities at multiple levels — a known bug tracked by {@code Luciferase-6gnb}, not a property of
-     *         the ordering.</li>
+     *     <li>{@code TetreeKey} also returns one range per distinct storage level in {@code indexKeys} — required
+     *         because its ordering is level-first (see the ordering contract above), so a {@code subMap} bounded at
+     *         level L only returns level-L keys. The level set is collected from {@code indexKeys} (Luciferase-6gnb).</li>
      *     <li>Implementations without an SFC range estimator (e.g. {@code PrismKey}) return the default empty
      *         iterable, signaling {@code KnnSearcher} to fall back to the breadth-first search path.</li>
      * </ul>
