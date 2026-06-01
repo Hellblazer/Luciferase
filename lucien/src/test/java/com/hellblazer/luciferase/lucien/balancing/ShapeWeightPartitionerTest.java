@@ -157,4 +157,55 @@ class ShapeWeightPartitionerTest {
         assertFalse(java.util.Arrays.equals(aware, blind),
                     "the pyramid tree's weight must shift a partition boundary vs shape-blind");
     }
+
+    // ---- S2 (Luciferase-3uwx): cut-points + ownerOf for owner-range descent ----
+
+    @Test
+    void cutPointsAreContiguousRankOffsets() {
+        // ranks = [0,0,0,1,1,1,2,2] → offsets[r] = first unit index owned by rank r; offsets[P]=n.
+        long[] w = { 5, 3, 8, 1, 4, 9, 2, 6 };
+        int p = 3;
+        int[] ranks = ShapeWeightPartitioner.assign(w, p);
+        int[] cp = ShapeWeightPartitioner.cutPoints(ranks, p);
+        assertArrayEquals(new int[] { 0, 3, 6, 8 }, cp, "offsets length P+1, non-decreasing, [0]=0, [P]=n");
+    }
+
+    @Test
+    void ownerOfRecoversTheRankOfEachUnit() {
+        long[] w = { 5, 3, 8, 1, 4, 9, 2, 6 };
+        int p = 3;
+        int[] ranks = ShapeWeightPartitioner.assign(w, p);
+        int[] cp = ShapeWeightPartitioner.cutPoints(ranks, p);
+        for (int i = 0; i < ranks.length; i++) {
+            assertEquals(ranks[i], ShapeWeightPartitioner.ownerOf(cp, i),
+                         "ownerOf(cutPoints, i) must equal ranks[i] at unit " + i);
+        }
+    }
+
+    @Test
+    void cutPointsHandleEmptyRanks() {
+        // All weight on the middle unit: ranks = [0,0,2], rank 1 is empty (zero-width band).
+        long[] w = { 0, 10, 0 };
+        int p = 3;
+        int[] ranks = ShapeWeightPartitioner.assign(w, p);
+        assertArrayEquals(new int[] { 0, 0, 2 }, ranks, "high weight on last unit clamps it to rank P-1");
+        int[] cp = ShapeWeightPartitioner.cutPoints(ranks, p);
+        assertArrayEquals(new int[] { 0, 2, 2, 3 }, cp, "empty rank 1 → offsets[1]==offsets[2]");
+        assertEquals(0, ShapeWeightPartitioner.ownerOf(cp, 0));
+        assertEquals(0, ShapeWeightPartitioner.ownerOf(cp, 1));
+        assertEquals(2, ShapeWeightPartitioner.ownerOf(cp, 2), "unit 2 owned by rank 2, skipping empty rank 1");
+    }
+
+    @Test
+    void ownerOfRejectsOutOfRangeUnitIndex() {
+        int[] cp = ShapeWeightPartitioner.cutPoints(new int[] { 0, 0, 1 }, 2);
+        assertThrows(IndexOutOfBoundsException.class, () -> ShapeWeightPartitioner.ownerOf(cp, -1));
+        assertThrows(IndexOutOfBoundsException.class, () -> ShapeWeightPartitioner.ownerOf(cp, 3));
+    }
+
+    @Test
+    void cutPointsOfEmptyAssignment() {
+        int[] cp = ShapeWeightPartitioner.cutPoints(new int[0], 3);
+        assertArrayEquals(new int[] { 0, 0, 0, 0 }, cp, "no units → all offsets zero");
+    }
 }
