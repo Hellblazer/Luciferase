@@ -19,6 +19,9 @@ package com.hellblazer.luciferase.lucien.collision;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape.CollisionResult;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 
@@ -28,6 +31,8 @@ import javax.vecmath.Vector3f;
  * @author hal.hildebrand
  */
 public class CollisionDetector {
+
+    private static final Logger log = LoggerFactory.getLogger(CollisionDetector.class);
 
     private static CollisionResult boxVsBox(BoxShape box1, BoxShape box2) {
         if (!CollisionShape.boundsIntersect(box1.getAABB(), box2.getAABB())) {
@@ -1322,6 +1327,8 @@ public class CollisionDetector {
                 return epaPenetration(shapeA, shapeB, simplex);
             }
         }
+        log.warn("GJK did not converge in 64 iterations for {} vs {}; reporting no collision",
+                 shapeA.getClass().getSimpleName(), shapeB.getClass().getSimpleName());
         return CollisionResult.noCollision();
     }
 
@@ -1400,6 +1407,10 @@ public class CollisionDetector {
             return gjkLine(simplex, dir);
         }
         if (cross(ab, abc).dot(ao) > 0) {           // origin outside edge ab
+            resetSimplex(simplex, b, a);
+            return gjkLine(simplex, dir);
+        }
+        if (abc.lengthSquared() < SAT_EPSILON) {     // degenerate (colinear) triangle — fall back to an edge
             resetSimplex(simplex, b, a);
             return gjkLine(simplex, dir);
         }
@@ -1499,6 +1510,11 @@ public class CollisionDetector {
             for (int f = faces.size() - 1; f >= 0; f--) {
                 var face = faces.get(f);
                 var n = faceNormal(verts, face);
+                // Orient n outward (away from the origin) — the same sign convention the closest-face loop uses —
+                // before the visibility test, else an inward-wound face inverts the test and corrupts the hull.
+                if (n.dot(verts.get(face[0])) < 0) {
+                    n.scale(-1);
+                }
                 var toSupport = sub(support, verts.get(face[0]));
                 if (n.dot(toSupport) > 0) {
                     addEdge(edges, face[0], face[1]);
@@ -1514,6 +1530,8 @@ public class CollisionDetector {
                 return CollisionResult.noCollision();
             }
         }
+        log.warn("EPA did not converge in 64 iterations for {} vs {}; reporting no collision",
+                 shapeA.getClass().getSimpleName(), shapeB.getClass().getSimpleName());
         return CollisionResult.noCollision();
     }
 
