@@ -134,9 +134,9 @@ class DefaultPartitionRecoveryGhostIntegrationTest {
         // Perform recovery - should work without ghost manager (uses mock)
         var result = recovery.recover(partitionId, faultHandler).get();
 
-        // Verify recovery completed (may use mock ghost layer)
-        assertTrue(result.success() || !result.success(),
-                  "Recovery should complete (success or failure) without ghost manager");
+        // With simulation enabled, the scaffolding pipeline completes even without a ghost manager.
+        assertTrue(result.success(),
+                  "Simulated recovery should complete without a ghost manager (scaffolding, not real state restoration)");
     }
 
     /**

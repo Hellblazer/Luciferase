@@ -27,18 +27,24 @@ import java.util.concurrent.CompletableFuture;
  *   <li>Complete or fail</li>
  * </ol>
  * <p>
+ * <p><b>Strategy selection (Luciferase-yogvu).</b> {@link NoOpRecoveryImpl} is the only honest production-ready
+ * strategy: it performs no recovery and reports that explicitly. {@link DefaultPartitionRecovery},
+ * {@link BarrierRecoveryImpl}, and {@link CascadingRecoveryImpl} are <b>SIMULATION-ONLY scaffolding</b> — their
+ * redistribution / state-transfer / rebalancing phases are stubs. By default their {@code recover()} is a no-op
+ * that returns {@link RecoveryResult#failure} ("not implemented"); the {@code Thread.sleep} simulation runs only
+ * after an explicit {@code enableSimulatedRecovery()} call, and even then it does NOT restore real partition state.
+ * Do not wire the simulation impls into production expecting real recovery.
+ *
  * <b>Example Usage</b>:
  * <pre>{@code
- * // Create recovery strategy
+ * // Honest production default: explicit no-op recovery.
  * var config = FaultConfiguration.defaultConfig();
- * PartitionRecovery recovery = new BarrierRecoveryImpl(config);
+ * PartitionRecovery recovery = new NoOpRecoveryImpl(config);
  *
- * // Register with fault handler
+ * // (Test/scaffolding only: new DefaultPartitionRecovery(...).enableSimulatedRecovery() runs the simulation.)
+ *
  * faultHandler.registerRecovery(partitionId, recovery);
- *
- * // Check if recovery is possible
  * if (recovery.canRecover(partitionId, faultHandler)) {
- *     // Initiate recovery
  *     recovery.recover(partitionId, faultHandler)
  *         .thenAccept(result -> {
  *             if (result.success()) {
@@ -51,9 +57,10 @@ import java.util.concurrent.CompletableFuture;
  * }
  * }</pre>
  *
+ * @see NoOpRecoveryImpl
+ * @see DefaultPartitionRecovery
  * @see BarrierRecoveryImpl
  * @see CascadingRecoveryImpl
- * @see NoOpRecoveryImpl
  */
 public interface PartitionRecovery {
 
