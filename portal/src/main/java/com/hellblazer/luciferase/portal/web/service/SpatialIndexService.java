@@ -5,6 +5,8 @@ import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.entity.UUIDEntityID;
 import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.prism.Prism;
+import com.hellblazer.luciferase.lucien.pyramid.PyramidIndex;
 import com.hellblazer.luciferase.lucien.sfc.SFCArrayIndex;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.portal.web.dto.*;
@@ -18,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Service for managing spatial indices via REST API.
- * Supports Octree, Tetree, and SFCArrayIndex types.
+ * Supports Octree, Tetree, SFCArrayIndex, Prism, and Pyramid types.
  */
 public class SpatialIndexService {
 
@@ -375,6 +377,20 @@ public class SpatialIndexService {
                     maxDepth,
                     maxEntitiesPerNode
             );
+            case PRISM -> new SpatialIndexHolder(
+                    // Prism normalizes coordinates by worldSize; the demo operates in the
+                    // unit cube, so worldSize=1.0 matches the inserted [0,1) coordinates.
+                    new Prism<UUIDEntityID, Object>(UUIDEntityID::new, 1.0f, maxDepth),
+                    IndexType.PRISM,
+                    maxDepth,
+                    maxEntitiesPerNode
+            );
+            case PYRAMID -> new SpatialIndexHolder(
+                    new PyramidIndex<UUIDEntityID, Object>(UUIDEntityID::new, maxEntitiesPerNode, maxDepth),
+                    IndexType.PYRAMID,
+                    maxDepth,
+                    maxEntitiesPerNode
+            );
         };
     }
 
@@ -382,7 +398,7 @@ public class SpatialIndexService {
      * Enum for spatial index types.
      */
     public enum IndexType {
-        OCTREE, TETREE, SFC
+        OCTREE, TETREE, SFC, PRISM, PYRAMID
     }
 
     /**

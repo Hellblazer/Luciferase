@@ -22,7 +22,9 @@ const ENTITY_SIZE = 0.015;    // Base entity size
 const INDEX_COLORS = {
     TETREE: new THREE.Color(0x34d399),  // Green
     OCTREE: new THREE.Color(0x60a5fa),  // Blue
-    SFC: new THREE.Color(0xfbbf24)       // Orange/Yellow
+    SFC: new THREE.Color(0xfbbf24),     // Orange/Yellow
+    PRISM: new THREE.Color(0xf472b6),   // Pink
+    PYRAMID: new THREE.Color(0xa78bfa)  // Purple
 };
 
 // Initialize color schemes from shared module
@@ -122,6 +124,13 @@ const cubeGeometry = new THREE.BoxGeometry(ENTITY_SIZE * 1.6, ENTITY_SIZE * 1.6,
 // Tetrahedron geometry for Tetree
 const tetGeometry = new THREE.TetrahedronGeometry(ENTITY_SIZE * 1.8, 0);
 
+// Triangular-prism geometry for Prism (CylinderGeometry with 3 radial segments)
+const prismGeometry = new THREE.CylinderGeometry(
+    ENTITY_SIZE * 1.4, ENTITY_SIZE * 1.4, ENTITY_SIZE * 2.0, 3);
+
+// Square-pyramid geometry for Pyramid (ConeGeometry with 4 radial segments)
+const pyramidGeometry = new THREE.ConeGeometry(ENTITY_SIZE * 1.6, ENTITY_SIZE * 2.0, 4);
+
 // Current primitive mode: 'sphere' or 'index'
 let currentPrimitive = 'sphere';
 
@@ -137,6 +146,10 @@ function getEntityGeometry() {
             return cubeGeometry;
         case 'TETREE':
             return tetGeometry;
+        case 'PRISM':
+            return prismGeometry;
+        case 'PYRAMID':
+            return pyramidGeometry;
         default:
             return sphereGeometry;
     }

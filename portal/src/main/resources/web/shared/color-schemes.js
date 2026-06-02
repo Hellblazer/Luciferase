@@ -44,6 +44,8 @@ export function createColorSchemes(THREE) {
                 case 'OCTREE': return new THREE.Color(0x3b82f6); // Blue
                 case 'TETREE': return new THREE.Color(0x22c55e); // Green
                 case 'SFC': return new THREE.Color(0xf59e0b); // Amber
+                case 'PRISM': return new THREE.Color(0xec4899); // Pink
+                case 'PYRAMID': return new THREE.Color(0x8b5cf6); // Purple
                 default: return new THREE.Color(0x9ca3af); // Gray
             }
         },
