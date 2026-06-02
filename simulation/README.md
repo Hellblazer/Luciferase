@@ -84,7 +84,7 @@ testClock.advance(500);  // Advance to T=1500ms
 
 - **Simulation Bubble**: Emergent connected components of interacting entities
 - **Causal Consistency**: Bounded rollback within interaction range (100-200ms window)
-- **Ghost Layer**: Boundary entity synchronization using Lucien's GhostZoneManager
+- **Ghost Layer**: Boundary entity synchronization using Lucien's GhostBoundaryDetector / GhostCoordinator
 - **Bucket Scheduler**: Time-based coordination for distributed animation
 - **Clock Interface**: Deterministic time control for testing (H3.7)
 
@@ -106,7 +106,7 @@ testClock.advance(500);  // Advance to T=1500ms
 ## Dependencies
 
 - **PrimeMover 1.0.6**: Discrete event simulation (`RealTimeController`, `Kronos`, `@Entity`) with improved virtual time, clock drift fixes, and enhanced bytecode transformation
-- **Lucien**: `Tetree` spatial indexing, `GhostZoneManager`, `Forest` multi-tree support
+- **Lucien**: `Tetree` spatial indexing, `GhostBoundaryDetector`/`GhostCoordinator` ghost layer, `Forest` multi-tree support
 
 ## Usage
 

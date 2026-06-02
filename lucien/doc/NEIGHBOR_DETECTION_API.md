@@ -270,11 +270,11 @@ for (MortonKey key : octree.getSpatialKeys()) {
 ```java
 
 // Use neighbor detection for ghost creation
-ElementGhostManager<MortonKey, ID, Content> ghostManager = 
-    new ElementGhostManager<>(octree, detector, GhostType.FACES);
+GhostBoundaryDetector<MortonKey, ID, Content> ghostDetector =
+    new GhostBoundaryDetector<>(octree, detector, GhostType.FACES, GhostAlgorithm.MINIMAL);
 
 // Detector is used internally to find ghost candidates
-ghostManager.createGhostLayer();
+ghostDetector.createGhostLayer();
 
 ```
 

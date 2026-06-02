@@ -238,22 +238,19 @@ BoundaryInfo boundary = connectivity.getSharedBoundary(treeId1, treeId2);
 
 ```
 
-### GhostZoneManager
+### Ghost coordination (element-level)
 
-Manages ghost entities across tree boundaries for seamless operations.
+> **Note (Luciferase-v9ro / 1q7u):** the former `GhostZoneManager` (distance-based, forest/tree-level ghost
+> zones) was **infrastructure-only and has been removed**. There is no forest-level ghost-zone API. The live
+> ghost API is **element-level**, via `GhostBoundaryDetector` (partition-boundary detection) and
+> `GhostCoordinator` (single-process and distributed coordination). See **GHOST_API.md** for the full surface.
 
 ```java
 
-GhostZoneManager<LongEntityID, String> ghostManager = 
-    new GhostZoneManager<>(forest, 5.0f); // 5-unit ghost zone width
-
-// Ghost zones automatically synchronized
-ghostManager.insertGhostEntity(sourceTreeId, targetTreeId, entityId);
-ghostManager.updateGhostZones(); // Sync all ghost zones
-
-// Query including ghost zones
-List<LongEntityID> withGhosts = ghostManager.queryWithGhostZones(
-    treeId, position, radius);
+// Element-level ghost detection on a tree's spatial index (see GHOST_API.md)
+GhostBoundaryDetector<Key, ID, Content> ghostDetector = new GhostBoundaryDetector<>(
+    spatialIndex, neighborDetector, GhostType.FACES, GhostAlgorithm.MINIMAL);
+ghostDetector.createGhostLayer();
 
 ```
 

@@ -65,7 +65,7 @@ Multi-tree coordination and specialized forest types:
 - **AdaptiveForest** - Dynamic density-based adaptation
 - **HierarchicalForest** - Level-of-detail management
 - **DynamicForestManager** - Runtime tree operations
-- **GhostZoneManager** - Boundary synchronization
+- **GhostBoundaryDetector / GhostCoordinator** - Element-level boundary ghost detection and coordination (replaced the removed forest-level GhostZoneManager)
 
 ## API Selection Guide
 

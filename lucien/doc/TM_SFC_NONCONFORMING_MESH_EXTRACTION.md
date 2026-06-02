@@ -53,7 +53,7 @@ public Tet child(int childIndex) {
 - **S0-S5 Subdivision**: The 6 tetrahedral types tile each cubic cell
 - **Face-Adjacent Neighbors**: Connected through shared faces in the partition
 - **Ghost Layers**: Non-local elements maintain neighbor info without explicit communication
-  - `ElementGhostManager`: Detects boundary elements
+  - `GhostBoundaryDetector`: Detects boundary elements (formerly `ElementGhostManager`)
   - `GhostLayer`: Stores ghost elements indexed by spatial key
   - `NeighborDetector`: Finds face/edge/vertex neighbors
 
@@ -222,8 +222,8 @@ public interface NeighborDetector<Key extends SpatialKey<Key>> {
     //   - Child-level neighbors (fully contained)
 }
 
-// ElementGhostManager handles the complexity
-public class ElementGhostManager<Key, ID, Content> {
+// GhostBoundaryDetector handles the complexity
+public class GhostBoundaryDetector<Key, ID, Content> {
     // Detect boundary elements
     Set<Key> boundaryElements = ghostManager.getBoundaryElements();
 
@@ -562,10 +562,11 @@ Before refinement:     After P refined (N not refined):
 ```java
 
 // GhostLayer automatically creates ghost copies
-ElementGhostManager ghostMgr = new ElementGhostManager<>(
+GhostBoundaryDetector ghostMgr = new GhostBoundaryDetector<>(
     spatialIndex,
     neighborDetector,
-    GhostType.FACES
+    GhostType.FACES,
+    GhostAlgorithm.MINIMAL
 );
 
 // For boundary elements (like refined P):
@@ -646,8 +647,8 @@ AdaptiveRefinementStrategy strategy = new AdaptiveRefinementStrategy() {
 };
 
 // Pattern 2: Ghost-based neighbor awareness
-ElementGhostManager<TetreeKey, LongEntityID, Content> ghostMgr =
-    new ElementGhostManager<>(tetree, neighborDetector, GhostType.FACES);
+GhostBoundaryDetector<TetreeKey, LongEntityID, Content> ghostMgr =
+    new GhostBoundaryDetector<>(tetree, neighborDetector, GhostType.FACES, GhostAlgorithm.MINIMAL);
 ghostMgr.createGhostLayer();
 ghostMgr.updateElementGhosts(modifiedKey);
 
@@ -678,7 +679,7 @@ spatialIndex.setAutoBalancingEnabled(true);
 - **Bey Refinement**: `/lucien/src/main/java/com/hellblazer/luciferase/lucien/tetree/Tet.java`
 - **TM-SFC Ordering**: `/lucien/src/main/java/com/hellblazer/luciferase/lucien/tetree/TetreeConnectivity.java`
 - **Ghost Layer**: `/lucien/src/main/java/com/hellblazer/luciferase/lucien/forest/ghost/GhostLayer.java`
-- **Ghost Manager**: `/lucien/src/main/java/com/hellblazer/luciferase/lucien/forest/ghost/ElementGhostManager.java`
+- **Ghost Boundary Detector**: `/lucien/src/main/java/com/hellblazer/luciferase/lucien/forest/ghost/GhostBoundaryDetector.java`
 - **Balancing API**: `/lucien/src/main/java/com/hellblazer/luciferase/lucien/tree/TreeBalancer.java`
 - **Adaptive Refinement**: `/dyada-java/src/main/java/com/dyada/refinement/AdaptiveRefinementStrategy.java`
 
