@@ -492,7 +492,12 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
             return t.intersects12DOP(volumeBounds.minX(), volumeBounds.minY(), volumeBounds.minZ(),
                                      volumeBounds.maxX(), volumeBounds.maxY(), volumeBounds.maxZ());
         }
-        // Pyramid leaf (type 6/7): exact 14-DOP pyramid test is pending separate work — keep cube result.
+        // Pyramid leaf (type 6/7): keep the conservative surrounding-cube result. This is REQUIRED, not a
+        // pending optimization (Luciferase-2lo3 / yye5): the two root pyramids (types 6/7 — the only dpyramid
+        // types) tile only 2/3 of the cube (a cube needs three Yangma pyramids), so points in the uncovered
+        // third are filed into a pyramid leaf by cube-AABB, not by exact shape. An exact pyramid test would
+        // then return a false negative for them. The conservative cube result never misses. See
+        // PyramidDomainCoverageTest, which pins the 2/3 coverage.
         return true;
     }
 
@@ -546,8 +551,10 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
             }
             return true;
         }
-        // Pyramid leaf (type 6/7): all 8 cube corners must be inside the volume's AABB.
-        // Exact 14-DOP pyramid containment test is pending separate work.
+        // Pyramid leaf (type 6/7): all 8 cube corners must be inside the volume's AABB. Conservative by
+        // necessity, not pending work (Luciferase-2lo3 / yye5): the type-6/7 root pyramids tile only 2/3 of
+        // the cube, so points in the uncovered third are filed into a pyramid leaf by cube, not exact shape;
+        // an exact containment test would drop them. See PyramidDomainCoverageTest.
         float minX = cube.originX();
         float minY = cube.originY();
         float minZ = cube.originZ();
