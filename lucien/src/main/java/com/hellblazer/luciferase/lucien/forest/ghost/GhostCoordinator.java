@@ -77,8 +77,10 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
 
     private GhostType                                            ghostType        = GhostType.NONE;
     private GhostAlgorithm                                       ghostAlgorithm   = GhostAlgorithm.MINIMAL;
-    private GhostLayer<Key, ID, Content>                         ghostLayer;
-    private GhostBoundaryDetector<Key, ID, Content>              ghostBoundaryDetector;
+    // volatile: read lock-free via the public getGhostLayer() façade and under the read lock in the combined
+    // queries; written under the write lock in setGhostType/setGhostCreationAlgorithm/setNeighborDetector
+    // (Luciferase-c1ka5 review HIGH-1).
+    private volatile GhostBoundaryDetector<Key, ID, Content>     ghostBoundaryDetector;
     private DistributedGhostManager<Key, ID, Content>            distributedGhostManager;
     private NeighborDetector<Key>                                neighborDetector;
 
@@ -96,7 +98,6 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
         this.core = core;
         this.knnProvider = knnProvider;
         this.facade = facade;
-        this.ghostLayer = new GhostLayer<>(GhostType.NONE);
     }
 
     // ---- Ghost type + algorithm ---------------------------------------------------------------------------------
@@ -106,7 +107,6 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
         try {
             requireNotDistributed("ghost type");
             this.ghostType = Objects.requireNonNull(type);
-            this.ghostLayer = new GhostLayer<>(type);
             // Recreate GhostBoundaryDetector with new ghost type if we have a neighbor detector
             if (this.neighborDetector != null) {
                 this.ghostBoundaryDetector = new GhostBoundaryDetector<>(facade, neighborDetector, type, ghostAlgorithm);
@@ -188,7 +188,17 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
     }
 
     public GhostLayer<Key, ID, Content> getGhostLayer() {
-        return ghostLayer;
+        return currentGhostLayer();
+    }
+
+    /**
+     * The single live ghost layer (Luciferase-c1ka5). Real ghosts are delivered (via gRPC into
+     * {@link DistributedGhostManager}) onto the {@link GhostBoundaryDetector}'s own layer; the coordinator must
+     * read that same instance, never a detached split copy. Before a neighbor detector is installed there is no
+     * detector yet — return an empty layer of the current type so callers see a non-null, correctly-typed layer.
+     */
+    private GhostLayer<Key, ID, Content> currentGhostLayer() {
+        return ghostBoundaryDetector != null ? ghostBoundaryDetector.getGhostLayer() : new GhostLayer<>(ghostType);
     }
 
     public NeighborDetector<Key> getNeighborDetector() {
@@ -200,9 +210,14 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
      * lazy creation of the {@link GhostBoundaryDetector} on first call.
      */
     public void setNeighborDetector(NeighborDetector<Key> detector) {
-        this.neighborDetector = detector;
-        if (detector != null && this.ghostBoundaryDetector == null) {
-            this.ghostBoundaryDetector = new GhostBoundaryDetector<>(facade, detector, ghostType, ghostAlgorithm);
+        core.lock().writeLock().lock();
+        try {
+            this.neighborDetector = detector;
+            if (detector != null && this.ghostBoundaryDetector == null) {
+                this.ghostBoundaryDetector = new GhostBoundaryDetector<>(facade, detector, ghostType, ghostAlgorithm);
+            }
+        } finally {
+            core.lock().writeLock().unlock();
         }
     }
 
@@ -219,7 +234,7 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
                     result.addAll(entityIds);
                 }
             }
-            var currentGhostLayer = ghostLayer; // capture to avoid race
+            var currentGhostLayer = currentGhostLayer(); // detector-owned live layer (Luciferase-c1ka5)
             if (currentGhostLayer != null) {
                 var ghostElements = currentGhostLayer.getGhostElements(key);
                 if (ghostElements != null) {
@@ -255,8 +270,9 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
                 }
             }
             // Ghost neighbors (linear scan for now; spatial range queries over ghosts are a future refinement).
-            if (ghostLayer != null && ghostBoundaryDetector != null) {
-                for (var entry : ghostLayer.getAllGhostElements()) {
+            var currentGhostLayer = currentGhostLayer(); // detector-owned live layer (Luciferase-c1ka5)
+            if (currentGhostLayer != null && ghostBoundaryDetector != null) {
+                for (var entry : currentGhostLayer.getAllGhostElements()) {
                     float distance = position.distance(entry.getPosition());
                     if (distance <= radius) {
                         result.add(new AbstractSpatialIndex.NeighborResult<>(entry.getEntityId(), entry.getContent(),
