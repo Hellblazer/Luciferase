@@ -16,7 +16,11 @@
  */
 package com.hellblazer.luciferase.lucien.balancing;
 
+import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
+import com.hellblazer.luciferase.lucien.VolumeBounds;
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
@@ -143,6 +147,14 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
 
         List<BalanceViolation<Key>> violations = new ArrayList<>();
 
+        // Forest spatial routing for MortonKey ghosts (Luciferase-36lp): precompute each non-empty tree's
+        // content-authoritative occupied bounds ONCE, so the per-(direction, level) probe can skip trees whose
+        // occupied region cannot overlap the probed cell instead of scanning all trees. Built lazily — only when
+        // a MortonKey ghost is actually present. Authoritative because it derives from getOccupiedBounds()
+        // (actual stored cells), NOT the forest's getGlobalBounds() (maintained only on the ForestEntityManager
+        // insert path); a null bounds entry means "cannot route — always probe", so routing never misses.
+        List<TreeProbe<Key, ID, Content>> routableTrees = null;
+
         // Iterate through all ghost elements
         for (var ghost : ghostLayer.getAllGhostElements()) {
             // Get ghost spatial key and level
@@ -154,7 +166,10 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             // Check each neighbor of this ghost element
             // For MortonKey, use Direction-based neighbor iteration
             if (ghostKey instanceof MortonKey mortonGhost) {
-                checkMortonNeighborsForViolations(mortonGhost, ghostLevel, forest,
+                if (routableTrees == null) {
+                    routableTrees = buildRoutableTrees(forest);
+                }
+                checkMortonNeighborsForViolations(mortonGhost, ghostLevel, routableTrees,
                                                  ghost.getOwnerRank(), violations);
             } else if (ghostKey instanceof TetreeKey<?> || ghostKey instanceof PyramidKey) {
                 // RDR-010 pi1.6: tetrahedral / pyramid (cross-shape) neighbor topology via the wired
@@ -175,13 +190,66 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
     }
 
     /**
-     * Check MortonKey neighbors for 2:1 balance violations.
+     * A tree's spatial index paired with its content-authoritative occupied bounds (Luciferase-36lp). A
+     * {@code null} bounds means the index could not report its extent and must always be probed (never skipped).
+     */
+    private record TreeProbe<K extends SpatialKey<K>, I extends EntityID, C>(SpatialIndex<K, I, C> index,
+                                                                            VolumeBounds bounds) {
+    }
+
+    /**
+     * Precompute the routable (non-empty) trees and their content-authoritative occupied bounds once per
+     * {@link #findViolations} call (Luciferase-36lp). Authoritatively-empty trees (entityCount == 0) are dropped
+     * entirely — they cannot hold any violating element.
+     *
+     * <p><b>Cost / when this wins.</b> Computing {@link SpatialIndex#getOccupiedBounds()} walks each tree's
+     * occupied keys, so the precompute is O(total occupied nodes in the forest) per {@code findViolations} call —
+     * NOT O(numTrees). It pays off only when probes can route trees out, i.e. a spatially-partitioned forest
+     * where each tree owns a disjoint region (the distributed-balancing case): the per-(direction, level) probe
+     * then skips the expensive index lookups for non-overlapping trees. For a single tree there is nothing to
+     * route, so the bounds precompute is skipped entirely (every probe hits the one tree regardless). For a
+     * forest of spatially-overlapping trees the bounds rarely prune, and the precompute is net overhead — a
+     * future cached/incremental {@code getOccupiedBounds} would remove that cost.
+     */
+    private List<TreeProbe<Key, ID, Content>> buildRoutableTrees(Forest<Key, ID, Content> forest) {
+        var allTrees = forest.getAllTrees();
+        // Routing can only help when there is more than one tree to choose between; for a single tree, skip the
+        // O(nodes) getOccupiedBounds precompute and just always-probe it (null bounds).
+        boolean routable = allTrees.size() > 1;
+        var result = new ArrayList<TreeProbe<Key, ID, Content>>();
+        for (var tree : allTrees) {
+            var index = tree.getSpatialIndex();
+            if (index.entityCount() == 0) {
+                continue; // authoritatively empty -> cannot contain a violating local element
+            }
+            // bounds may be null (no routing for this tree -> always probed): single-tree forest, or an index
+            // type that does not implement getOccupiedBounds.
+            result.add(new TreeProbe<>(index, routable ? index.getOccupiedBounds() : null));
+        }
+        return result;
+    }
+
+    /** World-space AABB of a Morton cell, derived directly from its absolute code and level. */
+    private static VolumeBounds cellBounds(long mortonCode, int level) {
+        int[] o = MortonCurve.decode(mortonCode);
+        int cs = Constants.lengthAtLevel((byte) level);
+        return new VolumeBounds(o[0], o[1], o[2], o[0] + cs, o[1] + cs, o[2] + cs);
+    }
+
+    /** A tree must be probed unless its (known) occupied bounds is spatially disjoint from the probe cell. */
+    private static boolean mustProbe(VolumeBounds treeBounds, VolumeBounds probeCell) {
+        return treeBounds == null || treeBounds.intersects(probeCell);
+    }
+
+    /**
+     * Check MortonKey neighbors for 2:1 balance violations, routing each probe to only the trees whose occupied
+     * region can overlap the probed cell (Luciferase-36lp).
      */
     @SuppressWarnings("unchecked")
     private void checkMortonNeighborsForViolations(
         MortonKey ghostKey,
         int ghostLevel,
-        Forest<Key, ID, Content> forest,
+        List<TreeProbe<Key, ID, Content>> trees,
         int sourceRank,
         List<BalanceViolation<Key>> violations
     ) {
@@ -221,9 +289,9 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             // level-first ordering the descendants of one cell at a fixed level form a CONTIGUOUS code range
             // [firstDescendantAtLevel, lastDescendantAtLevel], so probe the whole range via spatialKeysInRange.
             //
-            // KNOWN GAP still deferred: (3) the numTrees-axis scan (forest.getAllTrees) is not reduced: the
-            // bead's floorKey/ceilingKey is infeasible under MortonKey's level-first ordering; a real bound needs
-            // forest spatial routing (Luciferase-36lp).
+            // NUMTREES-AXIS ROUTING (Luciferase-36lp, fixed): each probe iterates only `trees` (precomputed,
+            // non-empty) and skips any tree whose content-authoritative occupied bounds is spatially disjoint
+            // from the probed cell — so the expensive index lookups are pruned to spatially-overlapping trees.
             for (byte level = 0; level <= maxLevel; level++) {
                 if (Math.abs(level - ghostLevel) <= 1) {
                     continue; // within 1 level of the ghost -> levelDiff <= 1 -> not a violation
@@ -234,9 +302,14 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
                 if (level < ghostLevel) {
                     // COARSE band: a single coarse-ancestor cell — mask the fine code to that cell's origin.
                     int dropBits = 3 * (maxLevel - level);
-                    var coarseKey = new MortonKey(neighborMortonCode & ~((1L << dropBits) - 1), level);
-                    for (var tree : forest.getAllTrees()) {
-                        if (tree.getSpatialIndex().containsSpatialKey((Key) coarseKey)) {
+                    long coarseCode = neighborMortonCode & ~((1L << dropBits) - 1);
+                    var coarseKey = new MortonKey(coarseCode, level);
+                    var probeCell = cellBounds(coarseCode, level); // the coarse ancestor cube
+                    for (var t : trees) {
+                        if (!mustProbe(t.bounds(), probeCell)) {
+                            continue; // tree's occupied region cannot overlap this coarse cell
+                        }
+                        if (t.index().containsSpatialKey((Key) coarseKey)) {
                             neighborsFound++;
                             violations.add(new BalanceViolation<>((Key) coarseKey, (Key) ghostKey, level, ghostLevel,
                                                                  levelDiff, sourceRank));
@@ -246,13 +319,18 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
                     }
                 } else {
                     // FINER band: any descendant of the neighbor cell at this level is a violating finer element.
+                    // All such descendants lie within the neighbor cell (at ghostLevel), so route by that cell.
                     var lo = neighborAtSameLevel.firstDescendantAtLevel(level);
                     var hi = neighborAtSameLevel.lastDescendantAtLevel(level);
+                    var probeCell = cellBounds(neighborMortonCode, ghostLevel);
                     // Dedup across trees so a key present in more than one tree's index yields a single
                     // violation per (level, direction), mirroring the coarse band's one-cell-per-position rule.
                     var reported = new java.util.HashSet<Key>();
-                    for (var tree : forest.getAllTrees()) {
-                        var found = tree.getSpatialIndex().spatialKeysInRange((Key) lo, true, (Key) hi, true);
+                    for (var t : trees) {
+                        if (!mustProbe(t.bounds(), probeCell)) {
+                            continue; // tree's occupied region cannot overlap the neighbor cell
+                        }
+                        var found = t.index().spatialKeysInRange((Key) lo, true, (Key) hi, true);
                         for (var localKey : found) {
                             if (reported.add(localKey)) {
                                 neighborsFound++;

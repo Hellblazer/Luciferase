@@ -2930,6 +2930,37 @@ implements SpatialIndex<Key, ID, Content>,
         // Subclasses (Octree, Tetree) should override this
         return null;
     }
+
+    /**
+     * Content-authoritative occupied-cell AABB (Luciferase-36lp): the union of {@link #getNodeBounds(Key)} over
+     * every occupied key. Independent of any forest-maintained tree bounds, so it is correct regardless of how
+     * entities were inserted. Returns {@code null} for an empty index or when no node bounds are resolvable
+     * (callers must treat {@code null} as "do not route / do not skip").
+     */
+    @Override
+    public VolumeBounds getOccupiedBounds() {
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
+        boolean any = false;
+        for (var key : spatialIndex.keySet()) {
+            var spatial = getNodeBounds(key);
+            if (spatial == null) {
+                continue;
+            }
+            var vb = VolumeBounds.from(spatial);
+            if (vb == null) {
+                continue;
+            }
+            any = true;
+            minX = Math.min(minX, vb.minX());
+            minY = Math.min(minY, vb.minY());
+            minZ = Math.min(minZ, vb.minZ());
+            maxX = Math.max(maxX, vb.maxX());
+            maxY = Math.max(maxY, vb.maxY());
+            maxZ = Math.max(maxZ, vb.maxZ());
+        }
+        return any ? new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ) : null;
+    }
     
     /**
      * Enable Dynamic Scene Occlusion Culling (DSOC) for this spatial index
