@@ -50,7 +50,9 @@ public record VolumeBounds(float minX, float minY, float minZ, float maxX, float
             case Spatial.Tetrahedron tet -> {
                 var vertices = new Tuple3f[] { tet.a(), tet.b(), tet.c(), tet.d() };
                 float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-                float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
+                // -Float.MAX_VALUE (most-negative float), NOT Float.MIN_VALUE (smallest POSITIVE), so a
+                // tetrahedron in negative space gets correct max bounds (Luciferase-2jf5).
+                float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
                 for (var vertex : vertices) {
                     minX = Math.min(minX, vertex.x);
                     minY = Math.min(minY, vertex.y);
