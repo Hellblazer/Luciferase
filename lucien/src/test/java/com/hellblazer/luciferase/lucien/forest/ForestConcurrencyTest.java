@@ -50,7 +50,6 @@ public class ForestConcurrencyTest {
     @BeforeEach
     void setUp() {
         var config = ForestConfig.builder()
-            .withGhostZones(10.0f)
             .build();
         forest = new Forest<>(config);
         idGenerator = new SequentialLongIDGenerator();

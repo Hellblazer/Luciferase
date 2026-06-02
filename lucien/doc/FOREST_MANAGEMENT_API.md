@@ -262,12 +262,9 @@ Configuration object for forest behavior and policies.
 
 ```java
 
-ForestConfig config = new ForestConfig()
-    .withOverlappingTrees(false)           // No tree overlap
-    .withGhostZones(true, 10.0f)          // 10-unit ghost zones
-    .withDefaultAssignmentStrategy(AssignmentStrategy.SPATIAL_BOUNDS)
-    .withLoadBalancing(true)               // Enable load balancing
-    .withBackgroundManagement(true, 30000) // Background ops every 30s
+ForestConfig config = ForestConfig.builder()
+    .withOverlappingTrees(false)                              // No tree overlap
+    .withPartitionStrategy(ForestConfig.PartitionStrategy.GRID)
     .build();
 
 Forest<MortonKey, LongEntityID, String> forest = new Forest<>(config);

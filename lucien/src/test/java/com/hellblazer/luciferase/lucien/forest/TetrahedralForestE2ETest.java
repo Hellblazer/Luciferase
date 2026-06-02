@@ -51,9 +51,6 @@ import static org.junit.jupiter.api.Assertions.*;
     disabledReason = "Class-level gate retained. Luciferase-tlb hardened the subdivision waits: waitForSubdivision now also requires child tree ids to be registered (not just the isSubdivided() flag, which flips first), and the 3 methods that asserted exactly 6 children (testGhostLayerWithBeySubdivision, testDistributedTwoServer, testEntityMovementAcrossSubdividedTrees) wait on that terminal condition via waitForCondition(5000ms). Gate stays on until validated green across several CI rounds. Local dev coverage retained.")
 class TetrahedralForestE2ETest {
 
-    /** Ghost zone width used in tests requiring ghost boundary detection. */
-    private static final float GHOST_ZONE_WIDTH = 10.0f;
-
     /**
      * Helper method to wait for tree subdivision to complete.
      *
@@ -679,9 +676,7 @@ class TetrahedralForestE2ETest {
     void testGhostLayerWithTetrahedralForest() {
         var bridge = new ForestToTumblerBridge();
 
-        // Enable ghost zones in forest config
         var forestConfig = ForestConfig.builder()
-            .withGhostZones(GHOST_ZONE_WIDTH)
             .build();
 
         var adaptationConfig = AdaptiveForest.AdaptationConfig.builder()
@@ -741,12 +736,7 @@ class TetrahedralForestE2ETest {
                            "Child should have TetrahedralBounds for ghost AABB calculation");
         }
 
-        // 6. Verify ghost zones are enabled in config
-        assertTrue(forestConfig.isGhostZonesEnabled(), "Ghost zones should be enabled");
-        assertEquals(GHOST_ZONE_WIDTH, forestConfig.getGhostZoneWidth(), 0.001f,
-                    "Ghost zone width should match configured value");
-
-        // 7. Verify tetrahedral AABB bounds are compatible with ghost boundary detection
+        // 6. Verify tetrahedral AABB bounds are compatible with ghost boundary detection
         // (Ghost detection uses AABB bounds, not precise tetrahedral containment)
         for (var childId : root.getChildTreeIds()) {
             var child = forest.getTree(childId);
@@ -996,9 +986,7 @@ class TetrahedralForestE2ETest {
     void testGhostLayerWithBeySubdivision() {
         var bridge = new ForestToTumblerBridge();
 
-        // Enable ghost zones in forest config
         var forestConfig = ForestConfig.builder()
-            .withGhostZones(GHOST_ZONE_WIDTH)
             .build();
 
         var adaptationConfig = AdaptiveForest.AdaptationConfig.builder()
@@ -1016,11 +1004,6 @@ class TetrahedralForestE2ETest {
         };
         var forest = new AdaptiveForest<>(forestConfig, adaptationConfig, idGenerator, "bey-ghost-forest");
         forest.addEventListener(bridge);
-
-        // Verify ghost zones are configured correctly (prerequisite for test)
-        assertTrue(forestConfig.isGhostZonesEnabled(), "Ghost zones should be enabled");
-        assertEquals(GHOST_ZONE_WIDTH, forestConfig.getGhostZoneWidth(), 0.001f,
-                    "Ghost zone width should match configured value");
 
         // 1. Create root tree with cubic bounds
         var spatialIndex = new Octree<>(idGenerator);
