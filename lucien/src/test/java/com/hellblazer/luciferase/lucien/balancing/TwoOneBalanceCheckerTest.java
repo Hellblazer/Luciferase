@@ -402,6 +402,56 @@ public class TwoOneBalanceCheckerTest {
     }
 
     @Test
+    public void testFinerDescendantViolationDetected_NonCorner() {
+        // Luciferase-a5nd — finer-band descendant-range correctness.
+        //
+        // A coarse ghost (level 2) whose neighbor position holds a FINER local element (level 5) is a 2:1
+        // violation (levelDiff = 3). The finer element can sit at ANY descendant of the neighbor cell, not just
+        // its min-corner (first-octant) descendant. The pre-fix code probed only the min-corner key, so a
+        // non-corner finer element was missed. The fix probes the whole descendant code range
+        // [firstDescendantAtLevel, lastDescendantAtLevel] (contiguous at a fixed level under MortonKey's
+        // level-first ordering) via spatialKeysInRange.
+        //
+        // Deterministic fixture (coords verified offline):
+        //   ghost    = cell (1,1,1) @ L2  -> origin (524288,524288,524288), cellSize(2)=524288
+        //   +X nbr   = cell origin (1048576,524288,524288) @ L2
+        //   finer    = world (1048576+3*65536, 524288+2*65536, 524288+65536) @ L5 -> a NON-corner descendant
+        var ghostKey = MortonKey.fromCellIndices(1, 1, 1, (byte) 2);
+
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        var finerPoint = new Point3f(1245184f, 655360f, 589824f); // inside the +X neighbor cell, not its corner
+        octree.insert(new LongEntityID(1L), finerPoint, (byte) 5, "finer-local");
+        var forest = new Forest<MortonKey, LongEntityID, String>();
+        forest.addTree(octree);
+
+        var nbr = ghostKey.neighbor(MortonKey.Direction.POSITIVE_X);
+        var finerKey = octree.calculateSpatialIndex(finerPoint, (byte) 5);
+        var minCorner = nbr.firstDescendantAtLevel((byte) 5);
+        // Non-vacuous control: the finer element is NOT at the min-corner the pre-fix probe checked, and is not
+        // stored under that key — so the old first-octant-only probe would have missed it entirely.
+        assertNotEquals(minCorner, finerKey, "fixture must place the finer element off the min-corner descendant");
+        assertFalse(octree.containsSpatialKey(minCorner),
+                    "the pre-fix probe only checked the min-corner key, which is empty here");
+        assertTrue(octree.containsSpatialKey(finerKey), "the finer element must be stored under its own L5 key");
+
+        var ghost = new GhostElement<MortonKey, LongEntityID, String>(
+            ghostKey, new LongEntityID(2L), "ghost",
+            new Point3f(524288f, 524288f, 524288f), 3, 0L);
+        when(mockGhostLayer.getAllGhostElements()).thenReturn(List.of(ghost));
+
+        var violations = checker.findViolations(mockGhostLayer, forest);
+
+        // The finer element lies in exactly one L2 neighbor cell (the +X neighbor), so exactly one violation.
+        assertEquals(1, violations.size(), "the non-corner finer descendant must be detected (missed pre-fix)");
+        var v = violations.get(0);
+        assertEquals(finerKey, v.localKey(), "violation must report the actual finer element key");
+        assertEquals(5, v.localLevel());
+        assertEquals(2, v.ghostLevel());
+        assertEquals(3, v.levelDifference());
+        assertEquals(3, v.sourceRank(), "sourceRank propagates the ghost owner rank");
+    }
+
+    @Test
     public void testFindViolations_WithRealForestData() {
         // Real integration test using Phase44ForestIntegrationFixture
         var fixture = new com.hellblazer.luciferase.lucien.balancing.fault.Phase44ForestIntegrationFixture();

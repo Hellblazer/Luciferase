@@ -119,15 +119,16 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
      * @param forest local forest containing local elements
      * @return list of violations found (empty if none)
      * @throws IllegalArgumentException if ghostLayer or forest is null
-     * @implNote MortonKey ghosts are probed in both directions (coarser ancestors AND finer
-     *           descendants) via the Morton level-scan. TetreeKey / PyramidKey ghosts (RDR-010 pi1.6)
-     *           are routed through the {@link NeighborDetector} and probe only the <em>coarser</em>
-     *           direction (ghost-fine / local-coarse). The ghost-coarse / local-fine arrangement is NOT
-     *           probed locally; detecting it relies on the partition that owns the finer element running
-     *           its own boundary-ghost balance check — an assumed distributed-protocol invariant, not a
-     *           guarantee enforced here (consistent with the chosen "Morton-behavior" scope; Morton does
-     *           not exhaustively probe finer either). Unhandled key types are logged, never silently
-     *           dropped.
+     * @implNote MortonKey ghosts are probed in both directions: coarser ancestors (single masked-ancestor
+     *           cell) AND finer descendants (the full descendant code range via {@code spatialKeysInRange};
+     *           exhaustive as of Luciferase-a5nd). TetreeKey / PyramidKey ghosts (RDR-010 pi1.6) are routed
+     *           through the {@link NeighborDetector} and probe only the <em>coarser</em> direction
+     *           (ghost-fine / local-coarse): the ghost-coarse / local-fine arrangement is NOT probed locally
+     *           for these key types, because they have no level-aware descendant-enumeration primitive (no
+     *           {@code neighbor(Direction)} / {@code spatialKeysInRange} descent). Detecting it relies on the
+     *           partition that owns the finer element running its own boundary-ghost balance check — an assumed
+     *           distributed-protocol invariant. This is a deliberate asymmetry: Morton exhaustively probes
+     *           finer locally; Tet/Pyramid do not. Unhandled key types are logged, never silently dropped.
      */
     public List<BalanceViolation<Key>> findViolations(
         GhostLayer<Key, ID, Content> ghostLayer,
@@ -214,51 +215,55 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             // for an absolute code the coarse ancestor is obtained by masking, not right-shifting — the same
             // mismatch makes MortonKey.parent()'s `>> 3` wrong for level < maxLevel; tracked in Luciferase-3avp).
             //
-            // KNOWN GAPS still deferred: (2) the finer band [ghostLevel+2, maxLevel] probes the neighbor code
-            // unchanged, i.e. only the first-octant descendant; exhaustive descendant enumeration is unsolved
-            // under MortonKey's level-first ordering (Luciferase-a5nd; cousin of Luciferase-701x). (3) The
-            // numTrees-axis scan (forest.getAllTrees) is not reduced: the bead's floorKey/ceilingKey is
-            // infeasible under MortonKey's level-first ordering; a real bound needs forest spatial routing
-            // (Luciferase-36lp).
+            // FINER-BAND DESCENDANT RANGE (Luciferase-a5nd, fixed): the finer band [ghostLevel+2, maxLevel]
+            // previously probed only the neighbor code unchanged (the first-octant / min-corner descendant), so
+            // a finer local element anywhere else inside the neighbor cell was missed. Under MortonKey's
+            // level-first ordering the descendants of one cell at a fixed level form a CONTIGUOUS code range
+            // [firstDescendantAtLevel, lastDescendantAtLevel], so probe the whole range via spatialKeysInRange.
+            //
+            // KNOWN GAP still deferred: (3) the numTrees-axis scan (forest.getAllTrees) is not reduced: the
+            // bead's floorKey/ceilingKey is infeasible under MortonKey's level-first ordering; a real bound needs
+            // forest spatial routing (Luciferase-36lp).
             for (byte level = 0; level <= maxLevel; level++) {
                 if (Math.abs(level - ghostLevel) <= 1) {
                     continue; // within 1 level of the ghost -> levelDiff <= 1 -> not a violation
                 }
-                // Coarse band: mask the fine code to the coarse-ancestor cell origin. Finer band: probe the
-                // neighbor code unchanged (first-octant descendant only — gap (2) above).
-                long probeCode = neighborMortonCode;
-                if (level < ghostLevel) {
-                    int dropBits = 3 * (maxLevel - level);
-                    probeCode = neighborMortonCode & ~((1L << dropBits) - 1);
-                }
-                MortonKey neighborAtLevel = new MortonKey(probeCode, level);
+                int levelDiff = Math.abs(level - ghostLevel); // > 1 here by the prune above
                 neighborsChecked++;
 
-                // Check if this key exists in any tree in the forest
-                boolean foundAtThisLevel = false;
-                for (var tree : forest.getAllTrees()) {
-                    var spatialIndex = tree.getSpatialIndex();
-                    if (spatialIndex.containsSpatialKey((Key) neighborAtLevel)) {
-                        foundAtThisLevel = true;
-                        neighborsFound++;
-                        log.debug("Found local element at neighbor position: key={}, level={}", neighborAtLevel, level);
-                        break;
+                if (level < ghostLevel) {
+                    // COARSE band: a single coarse-ancestor cell — mask the fine code to that cell's origin.
+                    int dropBits = 3 * (maxLevel - level);
+                    var coarseKey = new MortonKey(neighborMortonCode & ~((1L << dropBits) - 1), level);
+                    for (var tree : forest.getAllTrees()) {
+                        if (tree.getSpatialIndex().containsSpatialKey((Key) coarseKey)) {
+                            neighborsFound++;
+                            violations.add(new BalanceViolation<>((Key) coarseKey, (Key) ghostKey, level, ghostLevel,
+                                                                 levelDiff, sourceRank));
+                            log.debug("Coarse-local violation: local={} vs ghost level {}", coarseKey, ghostLevel);
+                            break; // one coarse ancestor cell per (level, direction)
+                        }
                     }
-                }
-
-                if (foundAtThisLevel) {
-                    int localLevel = level;  // Use the actual level we found
-                    int levelDiff = Math.abs(localLevel - ghostLevel);
-
-                    log.debug("Level difference: local={}, ghost={}, diff={}", localLevel, ghostLevel, levelDiff);
-
-                    // Violation detected if level difference > 1
-                    if (levelDiff > 1) {
-                        violations.add(new BalanceViolation<>((Key) neighborAtLevel, (Key) ghostKey,
-                                                             localLevel, ghostLevel,
-                                                             levelDiff, sourceRank));
-                        log.debug("VIOLATION DETECTED: local level {} vs ghost level {} (diff={})",
-                                 localLevel, ghostLevel, levelDiff);
+                } else {
+                    // FINER band: any descendant of the neighbor cell at this level is a violating finer element.
+                    var lo = neighborAtSameLevel.firstDescendantAtLevel(level);
+                    var hi = neighborAtSameLevel.lastDescendantAtLevel(level);
+                    // Dedup across trees so a key present in more than one tree's index yields a single
+                    // violation per (level, direction), mirroring the coarse band's one-cell-per-position rule.
+                    var reported = new java.util.HashSet<Key>();
+                    for (var tree : forest.getAllTrees()) {
+                        var found = tree.getSpatialIndex().spatialKeysInRange((Key) lo, true, (Key) hi, true);
+                        for (var localKey : found) {
+                            if (reported.add(localKey)) {
+                                neighborsFound++;
+                                violations.add(new BalanceViolation<>(localKey, (Key) ghostKey, level, ghostLevel,
+                                                                     levelDiff, sourceRank));
+                            }
+                        }
+                        if (!found.isEmpty()) {
+                            log.debug("Finer-local violation(s): {} descendant(s) at level {} vs ghost level {}",
+                                     found.size(), level, ghostLevel);
+                        }
                     }
                 }
             }
