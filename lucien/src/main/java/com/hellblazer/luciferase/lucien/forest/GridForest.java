@@ -23,7 +23,6 @@ import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
-import com.hellblazer.luciferase.lucien.forest.TreeConnectivityManager.ConnectivityType;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -155,11 +154,6 @@ public class GridForest<Key extends SpatialKey<Key>, ID extends EntityID, Conten
             }
         }
         
-        // Establish connectivity between adjacent trees if ghost zones are enabled
-        if (getConfig().isGhostZonesEnabled()) {
-            establishGridConnectivity();
-        }
-        
         log.info("Grid forest initialized with {} trees", totalTrees);
     }
     
@@ -209,88 +203,6 @@ public class GridForest<Key extends SpatialKey<Key>, ID extends EntityID, Conten
         // TODO: Cannot create tree without proper constructor support
         // The current Octree/Tetree constructors require EntityIDGenerator
         // log.trace("Would create tree at grid position ({},{},{})", x, y, z);
-    }
-    
-    /**
-     * Establish connectivity between adjacent trees in the grid
-     */
-    private void establishGridConnectivity() {
-        log.debug("Establishing grid connectivity");
-        
-        var trees = getAllTrees();
-        // Connectivity manager would need to be added to Forest base class
-        // For now, establish connections directly
-        
-        // For each tree, connect to its face neighbors
-        for (var tree : trees) {
-            var metadataObj = tree.getMetadata("metadata");
-            if (!(metadataObj instanceof TreeMetadata metadata)) continue;
-            
-            var x = metadata.getProperty("gridX", Integer.class);
-            var y = metadata.getProperty("gridY", Integer.class);
-            var z = metadata.getProperty("gridZ", Integer.class);
-            
-            if (x == null || y == null || z == null) continue;
-            
-            // Connect to neighbors in each direction
-            // Connect to neighbors in each direction
-            // TODO: Implement connectivity when TreeConnectivityManager is available in Forest
-        }
-    }
-    
-    /**
-     * Connect to a neighbor at the specified grid position if it exists
-     */
-    private void connectToNeighbor(TreeNode<Key, ID, Content> tree,
-                                  int neighborX, int neighborY, int neighborZ) {
-        // Check if neighbor is within grid bounds
-        if (neighborX < 0 || neighborX >= gridX ||
-            neighborY < 0 || neighborY >= gridY ||
-            neighborZ < 0 || neighborZ >= gridZ) {
-            return;
-        }
-        
-        // Find neighbor tree
-        var neighborName = String.format("Grid_%d_%d_%d", neighborX, neighborY, neighborZ);
-        for (var neighbor : getAllTrees()) {
-            var metadataObj = neighbor.getMetadata("metadata");
-            if (metadataObj instanceof TreeMetadata metadata && neighborName.equals(metadata.getName())) {
-                // TODO: Add connection when TreeConnectivityManager is available
-                log.trace("Would connect trees {} and {}", tree.getTreeId(), neighbor.getTreeId());
-                break;
-            }
-        }
-    }
-    
-    /**
-     * Calculate the shared boundary between two adjacent trees
-     */
-    private EntityBounds calculateSharedBoundary(TreeNode<Key, ID, Content> tree1,
-                                               TreeNode<Key, ID, Content> tree2) {
-        var bounds1 = tree1.getGlobalBounds();
-        var bounds2 = tree2.getGlobalBounds();
-        
-        if (bounds1 == null || bounds2 == null) {
-            return null;
-        }
-        
-        // Calculate intersection
-        var minX = Math.max(bounds1.getMinX(), bounds2.getMinX());
-        var minY = Math.max(bounds1.getMinY(), bounds2.getMinY());
-        var minZ = Math.max(bounds1.getMinZ(), bounds2.getMinZ());
-        var maxX = Math.min(bounds1.getMaxX(), bounds2.getMaxX());
-        var maxY = Math.min(bounds1.getMaxY(), bounds2.getMaxY());
-        var maxZ = Math.min(bounds1.getMaxZ(), bounds2.getMaxZ());
-        
-        // Check if there's a valid intersection
-        if (minX <= maxX && minY <= maxY && minZ <= maxZ) {
-            return new EntityBounds(
-                new Point3f(minX, minY, minZ),
-                new Point3f(maxX, maxY, maxZ)
-            );
-        }
-        
-        return null;
     }
     
     /**

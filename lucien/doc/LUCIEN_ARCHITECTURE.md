@@ -707,9 +707,7 @@ adaptive/hierarchical forests.
 
 **Configuration (2 classes):**
 
-- **ForestConfig** - Builder-pattern configuration (overlapping policies, ghost zones, partition strategies, background
-
-  management)
+- **ForestConfig** - Builder-pattern configuration (overlapping policies, partition strategies)
 
 - **AdaptiveForestEntityManager** - Enhanced entity manager for adaptive forests with integrated density tracking
 
@@ -718,7 +716,7 @@ adaptive/hierarchical forests.
 - **Multi-Tree Coordination**: Unified operations across collections of spatial index trees
 - **Dynamic Management**: Automatic tree splitting/merging based on configurable strategies
 - **Grid Partitioning**: Uniform spatial partitioning for large-scale applications
-- **Ghost Zones**: Boundary handling for seamless cross-tree queries
+- **Ghost Layer**: Element-level (partition-boundary) ghost detection via GhostBoundaryDetector/GhostCoordinator (the former forest-level ghost zones were infrastructure-only and removed in Luciferase-v9ro / 1q7u)
 - **Load Balancing**: Distribution strategies for optimal performance
 - **Entity Migration**: Transparent entity movement between trees during reorganization
 - **Neighbor Tracking**: Spatial relationship management between adjacent trees
@@ -1004,7 +1002,7 @@ require distributed spatial data management. The forest architecture enables:
 1. **Forest Management**: Central coordination of multiple spatial index trees with unified query interfaces
 2. **Tree Metadata**: Rich metadata support for tree identification, classification, and custom properties
 3. **Neighbor Relationships**: Explicit neighbor tracking between spatially adjacent trees
-4. **Ghost Zones**: Boundary region management for seamless cross-tree operations
+4. **Ghost Layer**: Element-level boundary ghost detection (GhostBoundaryDetector/GhostCoordinator); forest-level ghost zones were infrastructure-only and removed (Luciferase-v9ro / 1q7u)
 5. **Dynamic Operations**: Runtime tree splitting, merging, and entity migration
 6. **Grid Specialization**: Optimized uniform grid partitioning for regular spatial divisions
 7. **Load Balancing**: Configurable strategies for optimal entity distribution
