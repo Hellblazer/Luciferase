@@ -16,13 +16,15 @@
  */
 package com.hellblazer.luciferase.lucien.forest;
 
+import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
 import com.hellblazer.luciferase.lucien.octree.Octree;
-import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
+import com.hellblazer.luciferase.lucien.entity.EntityIDGenerator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +47,7 @@ public class GridForest<Key extends SpatialKey<Key>, ID extends EntityID, Conten
     private final Vector3f cellSize;
     private final Point3f origin;
     private final TreeType treeType;
+    private final EntityIDGenerator<ID> idGenerator;
     
     /**
      * Tree type for the grid
@@ -58,13 +61,15 @@ public class GridForest<Key extends SpatialKey<Key>, ID extends EntityID, Conten
      * Private constructor - use static factory methods
      */
     private GridForest(ForestConfig config, Point3f origin, Vector3f totalSize,
-                      int gridX, int gridY, int gridZ, TreeType treeType) {
+                      int gridX, int gridY, int gridZ, TreeType treeType,
+                      EntityIDGenerator<ID> idGenerator) {
         super(config);
         this.origin = new Point3f(origin);
         this.gridX = gridX;
         this.gridY = gridY;
         this.gridZ = gridZ;
         this.treeType = treeType;
+        this.idGenerator = idGenerator;
         
         // Calculate cell size
         this.cellSize = new Vector3f(
@@ -84,11 +89,12 @@ public class GridForest<Key extends SpatialKey<Key>, ID extends EntityID, Conten
      * @param gridX Number of trees in X direction
      * @param gridY Number of trees in Y direction  
      * @param gridZ Number of trees in Z direction
+     * @param idGenerator entity ID generator shared by every grid tree
      * @return A new grid forest
      */
-    public static <Key extends SpatialKey<Key>, ID extends EntityID, Content> GridForest<Key, ID, Content> createOctreeGrid(
-            Point3f origin, Vector3f totalSize, int gridX, int gridY, int gridZ) {
-        return createGrid(origin, totalSize, gridX, gridY, gridZ, TreeType.OCTREE, 
+    public static <ID extends EntityID, Content> GridForest<MortonKey, ID, Content> createOctreeGrid(
+            EntityIDGenerator<ID> idGenerator, Point3f origin, Vector3f totalSize, int gridX, int gridY, int gridZ) {
+        return createGrid(idGenerator, origin, totalSize, gridX, gridY, gridZ, TreeType.OCTREE,
                          ForestConfig.defaultConfig());
     }
     
@@ -100,11 +106,12 @@ public class GridForest<Key extends SpatialKey<Key>, ID extends EntityID, Conten
      * @param gridX Number of trees in X direction
      * @param gridY Number of trees in Y direction
      * @param gridZ Number of trees in Z direction
+     * @param idGenerator entity ID generator shared by every grid tree
      * @return A new grid forest
      */
-    public static <Key extends SpatialKey<Key>, ID extends EntityID, Content> GridForest<Key, ID, Content> createTetreeGrid(
-            Point3f origin, Vector3f totalSize, int gridX, int gridY, int gridZ) {
-        return createGrid(origin, totalSize, gridX, gridY, gridZ, TreeType.TETREE,
+    public static <ID extends EntityID, Content> GridForest<TetreeKey<? extends TetreeKey<?>>, ID, Content> createTetreeGrid(
+            EntityIDGenerator<ID> idGenerator, Point3f origin, Vector3f totalSize, int gridX, int gridY, int gridZ) {
+        return createGrid(idGenerator, origin, totalSize, gridX, gridY, gridZ, TreeType.TETREE,
                          ForestConfig.defaultConfig());
     }
     
@@ -119,23 +126,32 @@ public class GridForest<Key extends SpatialKey<Key>, ID extends EntityID, Conten
      * @param treeType Type of trees to use
      * @param config Forest configuration
      * @return A new grid forest
+     * @implNote Package-private and {@code Key}-unbound: the runtime tree built in {@link #createTreeAt} is fixed by
+     *           {@code treeType} (MortonKey for OCTREE, TetreeKey for TETREE), so a mismatched {@code Key} would defer
+     *           a {@code ClassCastException} to a routing call site. Callers must go through the type-pinned
+     *           {@link #createOctreeGrid}/{@link #createTetreeGrid} wrappers, which bind {@code Key} correctly
+     *           (Luciferase-8es5p review).
      */
-    public static <Key extends SpatialKey<Key>, ID extends EntityID, Content> GridForest<Key, ID, Content> createGrid(
-            Point3f origin, Vector3f totalSize, int gridX, int gridY, int gridZ,
+    static <Key extends SpatialKey<Key>, ID extends EntityID, Content> GridForest<Key, ID, Content> createGrid(
+            EntityIDGenerator<ID> idGenerator, Point3f origin, Vector3f totalSize, int gridX, int gridY, int gridZ,
             TreeType treeType, ForestConfig config) {
-        
+
+        if (idGenerator == null) {
+            throw new IllegalArgumentException("Entity ID generator must not be null");
+        }
+
         if (gridX <= 0 || gridY <= 0 || gridZ <= 0) {
             throw new IllegalArgumentException("Grid dimensions must be positive");
         }
-        
+
         if (totalSize.x <= 0 || totalSize.y <= 0 || totalSize.z <= 0) {
             throw new IllegalArgumentException("Total size must be positive in all dimensions");
         }
-        
-        log.info("Creating {} grid forest: {}x{}x{} cells, total size: {}", 
+
+        log.info("Creating {} grid forest: {}x{}x{} cells, total size: {}",
                 treeType, gridX, gridY, gridZ, totalSize);
-        
-        return new GridForest<>(config, origin, totalSize, gridX, gridY, gridZ, treeType);
+
+        return new GridForest<>(config, origin, totalSize, gridX, gridY, gridZ, treeType, idGenerator);
     }
     
     /**
@@ -158,8 +174,11 @@ public class GridForest<Key extends SpatialKey<Key>, ID extends EntityID, Conten
     }
     
     /**
-     * Create a tree at the specified grid position
+     * Create a tree at the specified grid position (Luciferase-8es5p). Builds the concrete spatial index for the
+     * configured {@link TreeType} with the shared {@link EntityIDGenerator}, registers it with grid-position
+     * metadata, and stamps the cell's spatial bounds so forest routing can prune to this cell.
      */
+    @SuppressWarnings("unchecked")
     private void createTreeAt(int x, int y, int z) {
         // Calculate tree origin
         var treeOrigin = new Point3f(
@@ -167,7 +186,7 @@ public class GridForest<Key extends SpatialKey<Key>, ID extends EntityID, Conten
             origin.y + y * cellSize.y,
             origin.z + z * cellSize.z
         );
-        
+
         // Create bounds for this tree
         var minPoint = new Point3f(treeOrigin);
         var maxPoint = new Point3f(
@@ -176,33 +195,35 @@ public class GridForest<Key extends SpatialKey<Key>, ID extends EntityID, Conten
             treeOrigin.z + cellSize.z
         );
         var bounds = new EntityBounds(minPoint, maxPoint);
-        
-        // Create the spatial index based on tree type
-        // Note: Both Octree and Tetree require an EntityIDGenerator, not origin/size
-        // This needs to be handled by the Forest base class which should provide
-        // the ID generator. For now, we'll throw an exception.
-        throw new UnsupportedOperationException(
-            "GridForest needs to be updated to work with current Octree/Tetree constructors. " +
-            "They require EntityIDGenerator, not origin/size parameters."
-        );
-        
-        // TODO: Complete implementation when Octree/Tetree constructor issue is resolved
-        // The following code is unreachable due to the throw statement above
-        /*
-        // Create tree metadata
+
+        // Tetree requires strictly non-negative coordinates (TetreeValidationUtils). A negative-origin tetree grid
+        // would construct here but throw on the first insert/query — fail fast at construction instead
+        // (Luciferase-8es5p review).
+        if (treeType == TreeType.TETREE && (minPoint.x < 0 || minPoint.y < 0 || minPoint.z < 0)) {
+            throw new IllegalArgumentException(
+                "Tetree grid requires non-negative coordinates; cell (" + x + "," + y + "," + z + ") origin "
+                + minPoint + " is negative. Use a non-negative grid origin for TETREE grids.");
+        }
+
+        // Create the concrete spatial index for the configured tree type. The grid's Key parameter is fixed by the
+        // factory (MortonKey for OCTREE, TetreeKey for TETREE), so the cast is sound for any well-formed caller.
+        var tree = (AbstractSpatialIndex<Key, ID, Content>) switch (treeType) {
+            case OCTREE -> new Octree<ID, Content>(idGenerator);
+            case TETREE -> new Tetree<ID, Content>(idGenerator);
+        };
+
         var metadata = TreeMetadata.builder()
             .name(String.format("Grid_%d_%d_%d", x, y, z))
-            .treeType(treeType == TreeType.OCTREE ? 
+            .treeType(treeType == TreeType.OCTREE ?
                      TreeMetadata.TreeType.OCTREE : TreeMetadata.TreeType.TETREE)
             .property("gridX", x)
             .property("gridY", y)
             .property("gridZ", z)
             .build();
-        */
-        
-        // TODO: Cannot create tree without proper constructor support
-        // The current Octree/Tetree constructors require EntityIDGenerator
-        // log.trace("Would create tree at grid position ({},{},{})", x, y, z);
+
+        var treeId = addTree(tree, metadata);
+        getTree(treeId).expandGlobalBounds(bounds);
+        log.trace("Created {} tree at grid position ({},{},{}) bounds [{} - {}]", treeType, x, y, z, minPoint, maxPoint);
     }
     
     /**
