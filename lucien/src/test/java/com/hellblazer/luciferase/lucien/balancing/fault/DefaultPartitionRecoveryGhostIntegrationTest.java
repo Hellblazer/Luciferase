@@ -54,7 +54,9 @@ class DefaultPartitionRecoveryGhostIntegrationTest {
         topology.register(partitionId, 2);
 
         // Create recovery coordinator
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
     }
 
     /**

@@ -14,6 +14,12 @@ import java.util.function.Consumer;
 /**
  * Default recovery coordinator implementing PartitionRecovery interface (Phase 4.3).
  * <p>
+ * <b>SIMULATION ONLY (Luciferase-yogvu):</b> this strategy does not perform real
+ * partition-state restoration — redistribution/state-transfer/rebalancing are stubs.
+ * {@link #recover(UUID, FaultHandler)} is an explicit no-op (returns failure) unless
+ * {@link #enableSimulatedRecovery()} is called. For production, implement real recovery
+ * or use NoOpRecoveryImpl.
+ * <p>
  * Manages recovery state machine and coordinates with ghost layer validation.
  * Recovery proceeds through these phases:
  * <pre>
@@ -39,6 +45,9 @@ import java.util.function.Consumer;
  *     log.info("Recovery phase: {}", phase);
  * });
  *
+ * // Enable simulation scaffolding (tests only — does not perform real recovery)
+ * recovery.enableSimulatedRecovery();
+ *
  * // Initiate recovery
  * var result = recovery.recover(partition0, faultHandler).get();
  * if (result.success()) {
@@ -60,6 +69,7 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
     private final FaultConfiguration configuration;
     private final GhostLayerValidator validator;
 
+    private volatile boolean simulatedRecoveryEnabled = false;
     private volatile RecoveryPhase currentPhase = RecoveryPhase.IDLE;
     private volatile long stateTransitionTime;
     private volatile int retryCount = 0;
@@ -100,6 +110,23 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
         this(partitionId, topology, FaultConfiguration.defaultConfig());
     }
 
+    /**
+     * Enable the simulation scaffolding for this recovery instance.
+     * <p>
+     * By default, {@link #recover(UUID, FaultHandler)} returns an explicit failure
+     * because entity redistribution, state transfer, and rebalancing are stubs —
+     * calling it would silently do nothing useful and report success. Call this
+     * method to opt into the simulation scaffolding (Thread.sleep phase delays +
+     * ghost layer validation stub). Intended for scaffolding tests only; it does
+     * NOT perform real partition-state restoration.
+     *
+     * @return this instance for fluent use
+     */
+    public DefaultPartitionRecovery enableSimulatedRecovery() {
+        this.simulatedRecoveryEnabled = true;
+        return this;
+    }
+
     @Override
     public CompletableFuture<RecoveryResult> recover(UUID partitionId, FaultHandler handler) {
         if (partitionId == null) {
@@ -119,6 +146,13 @@ public class DefaultPartitionRecovery implements PartitionRecovery {
                     null
                 )
             );
+        }
+        if (!simulatedRecoveryEnabled) {
+            return CompletableFuture.completedFuture(RecoveryResult.failure(
+                partitionId, 0L, STRATEGY_NAME, 1,
+                "Real partition recovery is not implemented (entity redistribution / state transfer / rebalancing are stubs). " +
+                "Call enableSimulatedRecovery() to run the scaffolding simulation, or use NoOpRecoveryImpl for an explicit no-op.",
+                null));
         }
 
         // If already complete, return success immediately

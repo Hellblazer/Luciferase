@@ -13,6 +13,12 @@ import java.util.concurrent.Executors;
 /**
  * Multi-level recovery with fallback strategies.
  * <p>
+ * <b>SIMULATION ONLY (Luciferase-yogvu):</b> this strategy does not perform real
+ * partition-state restoration — redistribution/state-transfer/rebalancing are stubs.
+ * {@link #recover(UUID, FaultHandler)} is an explicit no-op (returns failure) unless
+ * {@link #enableSimulatedRecovery()} is called. For production, implement real recovery
+ * or use NoOpRecoveryImpl.
+ * <p>
  * This strategy attempts recovery using progressively more aggressive approaches:
  * <ol>
  *   <li><b>Level 1: Barrier Sync</b> - Try barrier synchronization first (lightweight)</li>
@@ -42,6 +48,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
     private static final Logger log = LoggerFactory.getLogger(CascadingRecoveryImpl.class);
     private static final String STRATEGY_NAME = "cascading-recovery";
 
+    private volatile boolean simulatedRecoveryEnabled = false;
     private final FaultConfiguration config;
     private final ExecutorService executor;
     private final CopyOnWriteArrayList<RecoveryProgressObserver> observers;
@@ -105,6 +112,22 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
     }
 
     /**
+     * Enable the simulation scaffolding for this recovery instance.
+     * <p>
+     * By default, {@link #recover(UUID, FaultHandler)} returns an explicit failure
+     * because all recovery levels (barrier, state transfer, full rebuild) are stubs —
+     * calling it would silently do nothing useful and report success. Call this method
+     * to opt into the simulation scaffolding. Intended for scaffolding tests only;
+     * it does NOT perform real partition-state restoration.
+     *
+     * @return this instance for fluent use
+     */
+    public CascadingRecoveryImpl enableSimulatedRecovery() {
+        this.simulatedRecoveryEnabled = true;
+        return this;
+    }
+
+    /**
      * Add progress observer for monitoring recovery operations.
      *
      * @param observer observer to receive progress updates
@@ -127,6 +150,13 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
     public CompletableFuture<RecoveryResult> recover(UUID partitionId, FaultHandler handler) {
         Objects.requireNonNull(partitionId, "partitionId cannot be null");
         Objects.requireNonNull(handler, "handler cannot be null");
+        if (!simulatedRecoveryEnabled) {
+            return CompletableFuture.completedFuture(RecoveryResult.failure(
+                partitionId, 0L, STRATEGY_NAME, 1,
+                "Real partition recovery is not implemented (entity redistribution / state transfer / rebalancing are stubs). " +
+                "Call enableSimulatedRecovery() to run the scaffolding simulation, or use NoOpRecoveryImpl for an explicit no-op.",
+                null));
+        }
 
         log.info("Initiating cascading recovery for partition {}", partitionId);
         notifyEvent(partitionId, RecoveryEventType.RECOVERY_STARTED, "Cascading recovery initiated");

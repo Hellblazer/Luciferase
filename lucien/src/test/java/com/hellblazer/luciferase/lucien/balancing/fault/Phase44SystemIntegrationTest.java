@@ -670,8 +670,11 @@ class Phase44SystemIntegrationTest {
         }
 
         void setupRecoveries() {
+            // enableSimulatedRecovery() opts into the scaffolding phase machine.
+            // Real entity redistribution / state transfer are not implemented.
             for (var partition : partitions) {
                 var recovery = new DefaultPartitionRecovery(partition, topology);
+                recovery.enableSimulatedRecovery();
                 recoveries.put(partition, recovery);
             }
         }

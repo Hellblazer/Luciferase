@@ -43,8 +43,11 @@ class Phase43RecoveryIntegrationTest {
         topology.register(partition4, 4);
 
         // Create recovery coordinators for partitions 2 and 4
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery2 = new DefaultPartitionRecovery(partition2, topology);
+        recovery2.enableSimulatedRecovery();
         var recovery4 = new DefaultPartitionRecovery(partition4, topology);
+        recovery4.enableSimulatedRecovery();
 
         // Track phase changes
         var phases2 = new ArrayList<RecoveryPhase>();
@@ -128,7 +131,9 @@ class Phase43RecoveryIntegrationTest {
         topology.register(partition2, 2);
 
         // Partition 1 fails and needs recovery
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery = new DefaultPartitionRecovery(partition1, topology);
+        recovery.enableSimulatedRecovery();
 
         // Track all phases and timing
         var phaseHistory = new ArrayList<RecoveryPhase>();
@@ -194,10 +199,12 @@ class Phase43RecoveryIntegrationTest {
     @Test
     void testRecoveryRetry_AfterFailure() throws Exception {
         // Given: Recovery that will be retried
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var partitionId = UUID.randomUUID();
         topology.register(partitionId, 0);
 
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
 
         // Simulate a failure by manually transitioning to FAILED
         recovery.retryRecovery(); // This sets retry count to 1 and phase to IDLE
@@ -214,10 +221,12 @@ class Phase43RecoveryIntegrationTest {
     @Test
     void testConcurrentRecoveryAttempts_SamePartition() throws Exception {
         // Given: Single partition with recovery coordinator
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var partitionId = UUID.randomUUID();
         topology.register(partitionId, 0);
 
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
 
         // When: Attempt recovery twice concurrently (second should be idempotent)
         var future1 = recovery.recover(partitionId, handler);
@@ -237,10 +246,12 @@ class Phase43RecoveryIntegrationTest {
     @Test
     void testGhostLayerValidation_Integration() throws Exception {
         // Given: Recovery with ghost layer validation
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var partitionId = UUID.randomUUID();
         topology.register(partitionId, 0);
 
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
 
         // Track validation phase
         var validationReached = new AtomicInteger(0);
