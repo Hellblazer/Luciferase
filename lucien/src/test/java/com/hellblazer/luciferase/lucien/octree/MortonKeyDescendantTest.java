@@ -31,7 +31,10 @@ class MortonKeyDescendantTest {
 
     @Test
     void firstAndLastDescendant_boundTheSubtreeSfcRange() {
-        var node = new MortonKey(0b101L, (byte) 1); // arbitrary level-1 node
+        // Absolute Morton convention (Luciferase-3avp): a valid level-1 node carries its octant digit in the
+        // HIGH bits (low 3*(maxLevel-1) bits zero), matching the keys the index actually stores.
+        byte max = Constants.getMaxRefinementLevel();
+        var node = new MortonKey(0b101L << (3 * (max - 1)), (byte) 1); // octant 5 at level 1
 
         byte target = 4;
         var first = node.firstDescendantAtLevel(target);
@@ -39,11 +42,14 @@ class MortonKeyDescendantTest {
 
         assertEquals(target, first.getLevel());
         assertEquals(target, last.getLevel());
-        // 3 levels deeper => code shifted left by 9 bits; first appends zeros, last appends all-ones (0x1FF).
-        assertEquals(0b101L << 9, first.getMortonCode());
-        assertEquals((0b101L << 9) | 0x1FFL, last.getMortonCode());
+        // First descendant (child-0 chain) shares the node's origin corner: absolute code unchanged.
+        assertEquals(node.getMortonCode(), first.getMortonCode());
+        // Last descendant (child-7 chain) sets the level-2..4 octant digits to 7 at their absolute bit
+        // positions (9 one-bits starting at bit 3*(maxLevel-target)).
+        long appended = 0x1FFL << (3 * (max - target));
+        assertEquals(node.getMortonCode() | appended, last.getMortonCode());
         // The subrange is non-empty and ordered.
-        assertTrue(first.getMortonCode() <= last.getMortonCode());
+        assertTrue(Long.compareUnsigned(first.getMortonCode(), last.getMortonCode()) <= 0);
     }
 
     @Test
