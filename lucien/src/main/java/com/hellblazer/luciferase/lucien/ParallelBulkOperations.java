@@ -184,17 +184,34 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
     }
 
     /**
-     * Parallel remove operations
+     * Batch remove. Runs serially under one global write-lock critical section so the batch is atomic versus
+     * concurrent readers that take the global read lock (range queries, collision, {@code entityCount}). Despite the
+     * {@code Parallel} name (kept for API shape), the mutation is serial — writes already serialize on the single
+     * global lock. Note: kNN uses an independent fine-grained locking strategy and is NOT excluded by this lock
+     * (tracked separately, Luciferase-us4zr).
      */
     public CompletableFuture<Integer> removeBatchParallel(List<ID> entityIds) {
+        // Luciferase-aqx6x: the whole batch removes under a single write-lock critical section, serially. The
+        // previous per-entity parallel removes raced for spanning entities that share nodes, and exposed partial
+        // batch state to concurrent range/kNN/collision readers. One critical section makes the batch atomic vs
+        // readers (they observe the index before or after the batch, never mid-batch).
         return CompletableFuture.supplyAsync(() -> {
-            return entityIds.parallelStream().mapToInt(id -> {
-                try {
-                    return spatialIndex.removeEntity(id) ? 1 : 0;
-                } catch (Exception e) {
-                    return 0;
+            int removed = 0;
+            spatialIndex.lock.writeLock().lock();
+            try {
+                for (ID id : entityIds) {
+                    try {
+                        if (spatialIndex.removeEntity(id)) {
+                            removed++;
+                        }
+                    } catch (Exception e) {
+                        // skip individual failures, preserving the prior best-effort contract
+                    }
                 }
-            }).sum();
+            } finally {
+                spatialIndex.lock.writeLock().unlock();
+            }
+            return removed;
         }, getExecutor());
     }
 
@@ -212,29 +229,48 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
     }
 
     /**
-     * Parallel update operations
+     * Batch update (remove + reinsert each entity at its new position). Runs serially under one global write-lock
+     * critical section so the batch is atomic versus concurrent readers that take the global read lock (range
+     * queries, collision, {@code entityCount}); kNN's independent fine-grained path is not excluded
+     * (Luciferase-us4zr). Despite the {@code Parallel} name, the mutation is serial.
+     *
+     * <p><b>ID semantics (pre-existing):</b> each update reinserts via {@code insert}, which assigns a NEW entity id;
+     * the returned list holds the new ids and the input ids become stale after this call.
      */
     public CompletableFuture<List<ID>> updateBatchParallel(List<ID> entityIds, List<Point3f> newPositions, byte level) {
         if (entityIds.size() != newPositions.size()) {
             throw new IllegalArgumentException("Entity IDs and positions lists must have the same size");
         }
 
+        // Luciferase-aqx6x: perform every remove+reinsert under ONE write-lock critical section, serially. The
+        // previous parallel per-entity update took three separate locks (getEntity read, removeEntity write,
+        // insert write) per entity across parallel threads; between an entity's remove and its reinsert it was
+        // absent from the index, so concurrent range/kNN/collision queries missed it or saw partial batch state.
+        // Holding the write lock across the whole batch makes it atomic vs concurrent readers (the lock is
+        // reentrant, so the nested getEntity/removeEntity/insert calls re-acquire it safely).
         return CompletableFuture.supplyAsync(() -> {
-            return IntStream.range(0, entityIds.size()).parallel().mapToObj(i -> {
-                try {
-                    ID id = entityIds.get(i);
-                    Point3f newPos = newPositions.get(i);
-
-                    // For updates, we need to remove and re-insert
-                    Content content = spatialIndex.getEntity(id);
-                    if (content != null && spatialIndex.removeEntity(id)) {
-                        return spatialIndex.insert(newPos, level, content);
+            var updatedIds = new ArrayList<ID>(entityIds.size());
+            spatialIndex.lock.writeLock().lock();
+            try {
+                for (int i = 0; i < entityIds.size(); i++) {
+                    try {
+                        ID id = entityIds.get(i);
+                        Point3f newPos = newPositions.get(i);
+                        Content content = spatialIndex.getEntity(id);
+                        if (content != null && spatialIndex.removeEntity(id)) {
+                            ID newId = spatialIndex.insert(newPos, level, content);
+                            if (newId != null) {
+                                updatedIds.add(newId);
+                            }
+                        }
+                    } catch (Exception e) {
+                        // skip individual failures, preserving the prior best-effort contract
                     }
-                    return null;
-                } catch (Exception e) {
-                    return null;
                 }
-            }).filter(Objects::nonNull).collect(Collectors.toList());
+            } finally {
+                spatialIndex.lock.writeLock().unlock();
+            }
+            return updatedIds;
         }, getExecutor());
     }
 
