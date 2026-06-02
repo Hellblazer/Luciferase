@@ -122,6 +122,60 @@ public final class TetreeConnectivity {
     // Type 7
     { 1, 0, 1, 0, 4 } };
 
+    // ===== Pyramid hierarchical-face traversal tables (RDR-010 remediation P5, Luciferase-acfa) =====
+    // Faithful copies of t8code dpyramid connectivity (main@76a5347b), consumed directly (Luciferase
+    // type k IS t8code dtet/dpyramid type k — no translation). Pyramid types 6/7 are indexed as rows
+    // 0/1 (the t8code encoding). Pinned verbatim by PyramidFaceChildTablesPortTest.
+
+    /**
+     * Child-ids of the (up to four) children touching a given face of a pyramid: {@code childId =
+     * A[pyramidType-6][face][childIdAtFace]}. {@code face} is 0..4 (0–3 triangular, 4 quad base);
+     * the returned value is a child local index (Iloc) 0..9. t8code
+     * {@code t8_dpyramid_type_face_to_children_at_face}. NOTE (t8code): pyramid types 6/7 are encoded
+     * as rows 0/1 — this table is NOT valid for tets.
+     */
+    public static final byte[][][] PYRAMID_TYPE_FACE_TO_CHILDREN_AT_FACE = {
+    // Type 6
+    { { 0, 3, 4, 9 }, { 2, 5, 7, 9 }, { 0, 1, 2, 9 }, { 4, 6, 7, 9 }, { 0, 2, 4, 7 } },
+    // Type 7
+    { { 0, 7, 8, 9 }, { 0, 1, 4, 6 }, { 0, 5, 6, 9 }, { 0, 2, 4, 8 }, { 4, 6, 8, 9 } } };
+
+    /**
+     * The face-number of each child (from {@link #PYRAMID_TYPE_FACE_TO_CHILDREN_AT_FACE}) on the parent
+     * face: {@code childFace = A[pyramidType-6][face][childIdAtFace]}, value 0..4. t8code
+     * {@code t8_dpyramid_type_face_to_child_face}. Pyramid types 6/7 encoded as rows 0/1; not for tets.
+     */
+    public static final byte[][][] PYRAMID_TYPE_FACE_TO_CHILD_FACE = {
+    // Type 6
+    { { 0, 1, 0, 0 }, { 1, 0, 1, 1 }, { 2, 1, 2, 2 }, { 3, 0, 3, 3 }, { 4, 4, 4, 4 } },
+    // Type 7
+    { { 0, 2, 0, 0 }, { 1, 3, 1, 1 }, { 2, 2, 2, 2 }, { 3, 3, 3, 3 }, { 4, 4, 4, 4 } } };
+
+    /**
+     * Type of a boundary element with a <em>pyramid</em> parent, by (boundary-triangle type, root face):
+     * {@code type = A[triType][rootFace]}, triType 0..1, rootFace 0..3. Values are unified element types
+     * (6/7 = pyramid, 0..5 = tet). t8code {@code t8_dpyramid_tritype_rootface_to_pyratype}.
+     */
+    public static final byte[][] PYRAMID_TRITYPE_ROOTFACE_TO_PYRATYPE = {
+    { 6, 6, 6, 6 },
+    { 0, 0, 3, 3 } };
+
+    /**
+     * Type of a boundary element with a <em>tet</em> parent, by (boundary-triangle type, root face):
+     * {@code tetType = A[triType][rootFace]} (0..5). t8code {@code t8_dpyramid_tritype_rootface_to_tettype}.
+     */
+    public static final byte[][] PYRAMID_TRITYPE_ROOTFACE_TO_TETTYPE = {
+    { 2, 1, 1, 2 },
+    { 0, 0, 3, 3 } };
+
+    /**
+     * Face-number of a boundary element with a tet parent, by (boundary-triangle type, root face):
+     * {@code face = A[triType][rootFace]}. t8code {@code t8_dpyramid_tritype_rootface_to_face}.
+     */
+    public static final byte[][] PYRAMID_TRITYPE_ROOTFACE_TO_FACE = {
+    { 2, 0, 2, 0 },
+    { 1, 0, 1, 0 } };
+
     /**
      * Tetrahedral parent type by (cube-id, own type) — the inverse of {@link #PARENT_TYPE_TO_CHILD_TYPE}
      * used to walk a tet's type up the refinement tree (RDR-010 q3p face-neighbor ancestor walk).
