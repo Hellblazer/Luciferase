@@ -116,6 +116,20 @@ public final class ConvexHullShape extends CollisionShape {
         }
         cachedBounds = computeBounds();
     }
+
+    @Override
+    public ConvexHullShape copy() {
+        // Deep-copy the vertices: translate() mutates every vertex in place, so a shared list would corrupt the
+        // original (Luciferase-v2na8). The constructor re-adds position to its input, so back-transform the stored
+        // world-space vertices to local first to avoid double-applying the offset. The hull faces are recomputed.
+        var verticesCopy = new ArrayList<Point3f>(vertices.size());
+        for (var vertex : vertices) {
+            var local = new Point3f(vertex);
+            local.sub(position);
+            verticesCopy.add(local);
+        }
+        return new ConvexHullShape(new Point3f(position), verticesCopy);
+    }
     
     /**
      * Get the vertices of the convex hull

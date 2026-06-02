@@ -241,6 +241,11 @@ public final class CapsuleShape extends CollisionShape {
         endpoint2.add(delta);
     }
 
+    @Override
+    public CapsuleShape copy() {
+        return new CapsuleShape(new Point3f(endpoint1), new Point3f(endpoint2), radius);
+    }
+
     private float checkSphereCap(Ray3D ray, Point3f sphereCenter) {
         Vector3f oc = new Vector3f();
         oc.sub(ray.origin(), sphereCenter);

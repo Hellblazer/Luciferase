@@ -106,4 +106,9 @@ public final class SphereShape extends CollisionShape {
     public void translate(Vector3f delta) {
         position.add(delta);
     }
+
+    @Override
+    public SphereShape copy() {
+        return new SphereShape(new Point3f(position), radius);
+    }
 }

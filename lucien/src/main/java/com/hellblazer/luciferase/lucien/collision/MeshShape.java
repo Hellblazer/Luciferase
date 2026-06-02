@@ -88,6 +88,13 @@ public final class MeshShape extends CollisionShape {
         meshData.transform(new Point3f(delta));
         cachedBounds = meshData.getBounds();
     }
+
+    @Override
+    public MeshShape copy() {
+        // Deep-copy the mesh data: translate() mutates it via transform(), so a shared instance would corrupt the
+        // original (Luciferase-v2na8).
+        return new MeshShape(new Point3f(position), meshData.copy());
+    }
     
     /**
      * Get the BVH acceleration structure

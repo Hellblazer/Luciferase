@@ -38,6 +38,23 @@ public class TriangleMeshData {
         this.vertices = new ArrayList<>();
         this.triangles = new ArrayList<>();
     }
+
+    /**
+     * Deep copy: independent vertex list (so {@link #transform}/{@link #scale} on the copy cannot mutate the
+     * original) sharing the immutable {@link Triangle} index records (Luciferase-v2na8).
+     *
+     * @return an independent copy of this mesh
+     */
+    public TriangleMeshData copy() {
+        var result = new TriangleMeshData();
+        for (var vertex : vertices) {
+            result.vertices.add(new Point3f(vertex));
+        }
+        for (var triangle : triangles) {
+            result.triangles.add(new Triangle(triangle.v0, triangle.v1, triangle.v2));
+        }
+        return result;
+    }
     
     /**
      * Add a vertex to the mesh

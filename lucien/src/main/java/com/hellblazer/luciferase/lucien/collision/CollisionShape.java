@@ -71,6 +71,16 @@ public abstract sealed class CollisionShape
     public abstract void translate(Vector3f delta);
 
     /**
+     * Return an independent deep copy of this shape (Luciferase-v2na8). The copy shares no mutable state with this
+     * instance, so {@link #translate} (and other mutators) on the copy must not be observable through the original.
+     * Used by continuous collision detection to test shapes at interpolated positions without corrupting the live
+     * geometry owned by the simulation.
+     *
+     * @return an independent copy positioned identically to this shape
+     */
+    public abstract CollisionShape copy();
+
+    /**
      * Result of a collision test between two shapes
      */
     public static class CollisionResult {

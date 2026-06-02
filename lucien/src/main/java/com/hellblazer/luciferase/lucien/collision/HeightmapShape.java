@@ -133,6 +133,16 @@ public final class HeightmapShape extends CollisionShape {
         position.add(delta);
         cachedBounds = computeBounds();
     }
+
+    @Override
+    public HeightmapShape copy() {
+        // Deep-copy the height grid so mutators on the copy are not observable through the original (Luciferase-v2na8).
+        var heightsCopy = new float[heights.length][];
+        for (int i = 0; i < heights.length; i++) {
+            heightsCopy[i] = heights[i].clone();
+        }
+        return new HeightmapShape(new Point3f(position), heightsCopy, cellSize);
+    }
     
     /**
      * Get the height at a specific world position

@@ -167,32 +167,15 @@ public class ContinuousCollisionDetector {
         // Binary search for time of impact
         for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
             float midTime = (tMin + tMax) / 2.0f;
-            
-            // Get shapes at mid time
-            var pos1 = shape1.getPositionAtTime(midTime);
-            var pos2 = shape2.getPositionAtTime(midTime);
-            
-            // Translate shapes to test positions
-            var testShape1 = shape1.getShape();
-            var testShape2 = shape2.getShape();
-            
-            var delta1 = new Vector3f();
-            delta1.sub(pos1, shape1.getShape().getPosition());
-            testShape1.translate(delta1);
-            
-            var delta2 = new Vector3f();
-            delta2.sub(pos2, shape2.getShape().getPosition());
-            testShape2.translate(delta2);
-            
-            // Test collision
+
+            // Test independent copies positioned at midTime — never mutate the live shapes owned by the
+            // simulation. The previous translate-then-restore on the shared shapes corrupted geometry on the
+            // early-return path and raced under concurrent CCD (Luciferase-v2na8).
+            var testShape1 = shape1.getShapeAtTime(midTime);
+            var testShape2 = shape2.getShapeAtTime(midTime);
+
             var result = testShape1.collidesWith(testShape2);
-            
-            // Restore original positions
-            delta1.scale(-1);
-            delta2.scale(-1);
-            testShape1.translate(delta1);
-            testShape2.translate(delta2);
-            
+
             if (result.collides) {
                 tMax = midTime;
                 if (tMax - tMin < EPSILON) {
@@ -223,45 +206,98 @@ public class ContinuousCollisionDetector {
     }
     
     /**
-     * Ray vs moving sphere collision detection
+     * Ray vs moving sphere collision detection (closed-form, Luciferase-gojpy).
+     *
+     * <p>Tests proximity of the moving sphere centre to the ray's cylindrical volume (radius = sphere radius,
+     * length = {@code maxDistance}). A sphere whose centre is closest to a point beyond {@code maxDistance} but
+     * which physically contacts the ray's endpoint cap is not detected — the same cap limitation the previous
+     * sampling approach had; the fix removes the between-sample tunnelling, not the cap gap.
      */
     public static ContinuousCollisionResult rayVsMovingSphereCCD(Point3f rayOrigin, Vector3f rayDirection,
                                                                float maxDistance, MovingShape movingSphere) {
         var sphere = (SphereShape) movingSphere.getShape();
-        
-        // This is a simplified static approach - for a proper implementation
-        // we would need to solve the full ray vs moving sphere equation
-        var startPos = movingSphere.getStartPosition();
+        float radius = sphere.getRadius();
+
+        // Closed-form ray-vs-swept-sphere (Luciferase-gojpy): solve for the earliest time t in [0,1] at which the
+        // (perpendicular) distance from the moving sphere centre C(t)=C0+t*V to the fixed ray line drops to the
+        // radius. The previous 10-sample scan tunnelled whenever the sphere was smaller than motion_length/10.
+        var dir = new Vector3f(rayDirection);
+        float dirLen = dir.length();
+        if (dirLen < EPSILON) {
+            return ContinuousCollisionResult.noCollision();
+        }
+        dir.scale(1.0f / dirLen); // unit ray direction; maxDistance is measured along it
+
+        var c0 = movingSphere.getStartPosition();
         var endPos = movingSphere.getEndPosition();
-        
-        // Test at multiple time steps
-        int steps = 10;
-        for (int i = 0; i <= steps; i++) {
-            float t = i / (float)steps;
-            var spherePos = movingSphere.getPositionAtTime(t);
-            
-            // Ray-sphere intersection test
-            var toSphere = new Vector3f();
-            toSphere.sub(spherePos, rayOrigin);
-            float projLength = toSphere.dot(rayDirection);
-            
-            if (projLength >= 0 && projLength <= maxDistance) {
-                var projPoint = new Point3f(rayOrigin);
-                var delta = new Vector3f(rayDirection);
-                delta.scale(projLength);
-                projPoint.add(delta);
-                
-                var dist = new Vector3f();
-                dist.sub(spherePos, projPoint);
-                
-                if (dist.length() <= sphere.getRadius()) {
-                    var normal = new Vector3f(dist);
-                    normal.normalize();
-                    return ContinuousCollisionResult.collision(t, projPoint, normal, 0.0f);
+        var v = new Vector3f();
+        v.sub(endPos, c0);                       // sphere centre displacement over the interval
+
+        var a0 = new Vector3f();
+        a0.sub(c0, rayOrigin);                    // ray-origin -> sphere centre at t=0
+
+        // Perpendicular-distance-squared to the ray line as a function of t is quadratic: f(t) = A t^2 + B t + C,
+        // built from |W(t)|^2 - (W(t)·dir)^2 - radius^2 where W(t) = a0 + t*v.
+        float vDotDir = v.dot(dir);
+        float aDotDir = a0.dot(dir);
+        float A = v.dot(v) - vDotDir * vDotDir;
+        float B = 2.0f * (a0.dot(v) - aDotDir * vDotDir);
+        float C = a0.dot(a0) - aDotDir * aDotDir - radius * radius;
+
+        float toi = -1.0f;
+        if (Math.abs(A) < EPSILON) {
+            // Sphere stationary relative to the ray (or moving parallel to it): linear B t + C = 0.
+            if (Math.abs(B) >= EPSILON) {
+                float t = -C / B;
+                if (C <= 0) {
+                    toi = 0.0f;                  // already within radius at t=0
+                } else if (t >= 0 && t <= 1) {
+                    toi = t;
+                }
+            } else if (C <= 0) {
+                toi = 0.0f;
+            }
+        } else {
+            float disc = B * B - 4 * A * C;
+            if (disc >= 0) {
+                float sqrtDisc = (float) Math.sqrt(disc);
+                float t1 = (-B - sqrtDisc) / (2 * A);
+                float t2 = (-B + sqrtDisc) / (2 * A);
+                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                // Earliest entry time within [0,1]; if the interval starts already in contact, t=0.
+                if (t1 <= 0 && t2 >= 0) {
+                    toi = 0.0f;
+                } else if (t1 >= 0 && t1 <= 1) {
+                    toi = t1;
                 }
             }
         }
-        
-        return ContinuousCollisionResult.noCollision();
+
+        if (toi < 0) {
+            return ContinuousCollisionResult.noCollision();
+        }
+
+        // Contact point: closest point on the ray to the sphere centre at the time of impact, clamped to the ray.
+        var spherePos = movingSphere.getPositionAtTime(toi);
+        var toSphere = new Vector3f();
+        toSphere.sub(spherePos, rayOrigin);
+        float proj = toSphere.dot(dir);
+        if (proj < 0 || proj > maxDistance) {
+            return ContinuousCollisionResult.noCollision();   // contact lies off the ray's extent
+        }
+        var projPoint = new Point3f(rayOrigin);
+        var along = new Vector3f(dir);
+        along.scale(proj);
+        projPoint.add(along);
+
+        var normal = new Vector3f();
+        normal.sub(spherePos, projPoint);
+        if (normal.length() < EPSILON) {
+            normal.set(dir);
+            normal.scale(-1);
+        } else {
+            normal.normalize();
+        }
+        return ContinuousCollisionResult.collision(toi, projPoint, normal, 0.0f);
     }
 }

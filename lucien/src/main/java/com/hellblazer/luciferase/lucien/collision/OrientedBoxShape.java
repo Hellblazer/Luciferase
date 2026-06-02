@@ -203,6 +203,11 @@ public final class OrientedBoxShape extends CollisionShape {
         position.add(delta);
     }
 
+    @Override
+    public OrientedBoxShape copy() {
+        return new OrientedBoxShape(new Point3f(position), new Vector3f(halfExtents), new Matrix3f(orientation));
+    }
+
     /**
      * Transform point from world to local space
      */
