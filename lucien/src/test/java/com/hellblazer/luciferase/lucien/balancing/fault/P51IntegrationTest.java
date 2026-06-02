@@ -86,9 +86,11 @@ class P51IntegrationTest {
             topology.register(partitionIds.get(i), i);
         }
 
-        // Setup recovery coordinator for partition 0
+        // Setup recovery coordinator for partition 0.
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var partition0 = partitionIds.get(0);
         var recovery = new DefaultPartitionRecovery(partition0, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(clock);
 
         var phaseHistory = new CopyOnWriteArrayList<RecoveryPhase>();
@@ -168,8 +170,11 @@ class P51IntegrationTest {
         var partition1 = partitionIds.get(1);
         var partition3 = partitionIds.get(3);
 
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery1 = new DefaultPartitionRecovery(partition1, topology);
+        recovery1.enableSimulatedRecovery();
         var recovery3 = new DefaultPartitionRecovery(partition3, topology);
+        recovery3.enableSimulatedRecovery();
         recovery1.setClock(clock);
         recovery3.setClock(clock);
 
@@ -296,7 +301,9 @@ class P51IntegrationTest {
         }
 
         var partition0 = partitionIds.get(0);
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery = new DefaultPartitionRecovery(partition0, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(clock);
 
         // Register failure handler
@@ -347,7 +354,9 @@ class P51IntegrationTest {
         }
 
         var partition0 = partitionIds.get(0);
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery = new DefaultPartitionRecovery(partition0, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(clock);
 
         // Register failure handler
@@ -396,7 +405,9 @@ class P51IntegrationTest {
         }
 
         var partition0 = partitionIds.get(0);
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery = new DefaultPartitionRecovery(partition0, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(clock);
 
         // Register failure handler
@@ -445,7 +456,9 @@ class P51IntegrationTest {
         }
 
         var partition0 = partitionIds.get(0);
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery = new DefaultPartitionRecovery(partition0, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(clock);
 
         // Register failure handler
@@ -495,7 +508,9 @@ class P51IntegrationTest {
         }
 
         var partition0 = partitionIds.get(0);
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery = new DefaultPartitionRecovery(partition0, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(clock);
 
         // Register failure handler
@@ -548,7 +563,9 @@ class P51IntegrationTest {
         }
 
         var partition0 = partitionIds.get(0);
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery = new DefaultPartitionRecovery(partition0, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(clock);
 
         // Register failure handler
@@ -608,8 +625,11 @@ class P51IntegrationTest {
         var partition0 = partitionIds.get(0);
         var partition2 = partitionIds.get(2);
 
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery0 = new DefaultPartitionRecovery(partition0, topology);
+        recovery0.enableSimulatedRecovery();
         var recovery2 = new DefaultPartitionRecovery(partition2, topology);
+        recovery2.enableSimulatedRecovery();
         recovery0.setClock(clock);
         recovery2.setClock(clock);
 

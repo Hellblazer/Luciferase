@@ -92,8 +92,9 @@ class P43AdvancedRecoveryTest {
      */
     @Test
     void testConcurrentRecoveryRequests() throws Exception {
-        // Given: Single partition with recovery
+        // Given: Single partition with recovery (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         var startLatch = new CountDownLatch(1);
@@ -140,8 +141,9 @@ class P43AdvancedRecoveryTest {
      */
     @Test
     void testPhaseTransitionOrdering() throws Exception {
-        // Given: Recovery with strict phase tracking
+        // Given: Recovery with strict phase tracking (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         var phaseSequence = new CopyOnWriteArrayList<RecoveryPhase>();
@@ -185,8 +187,9 @@ class P43AdvancedRecoveryTest {
      */
     @Test
     void testListenerNotificationOrder() throws Exception {
-        // Given: Recovery with 3 independent listeners
+        // Given: Recovery with 3 independent listeners (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         var listener1Phases = new CopyOnWriteArrayList<RecoveryPhase>();
@@ -283,9 +286,10 @@ class P43AdvancedRecoveryTest {
      */
     @Test
     void testRecoveryWithConfigurationChanges() throws Exception {
-        // Given: Recovery with initial config
+        // Given: Recovery with initial config (simulation opted-in)
         var initialConfig = FaultConfiguration.defaultConfig().withMaxRetries(3);
         var recovery = new DefaultPartitionRecovery(partitionId, topology, initialConfig);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         // Verify initial config
@@ -325,8 +329,9 @@ class P43AdvancedRecoveryTest {
      */
     @Test
     void testValidationFailureAborts() throws Exception {
-        // Given: Recovery without ghost manager (validation skipped)
+        // Given: Recovery without ghost manager (validation skipped); simulation opted-in
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         var phaseHistory = new CopyOnWriteArrayList<RecoveryPhase>();
@@ -356,8 +361,9 @@ class P43AdvancedRecoveryTest {
      */
     @Test
     void testGhostManagerLifecycle() throws Exception {
-        // Given: Recovery without ghost manager initially
+        // Given: Recovery without ghost manager initially (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         // When: Execute recovery without ghost manager (should succeed - validation skipped)
@@ -366,10 +372,11 @@ class P43AdvancedRecoveryTest {
         // Then: Should succeed
         assertTrue(result1.success());
 
-        // When: Create second partition recovery
+        // When: Create second partition recovery (simulation opted-in)
         var partition2 = UUID.randomUUID();
         topology.register(partition2, 1);
         var recovery2 = new DefaultPartitionRecovery(partition2, topology);
+        recovery2.enableSimulatedRecovery();
         recovery2.setClock(testClock);
 
         // And: Execute recovery (also without ghost manager)
@@ -401,6 +408,7 @@ class P43AdvancedRecoveryTest {
         topology1.register(part2, 1);
 
         var recovery1 = new DefaultPartitionRecovery(part1, topology1);
+        recovery1.enableSimulatedRecovery();
         recovery1.setClock(testClock);
         // Note: Ghost manager injection requires actual DistributedGhostManager instance
         // Testing without ghost manager (validation passes by default)
@@ -417,6 +425,7 @@ class P43AdvancedRecoveryTest {
         topology2.register(targetPartition, 10);
 
         var recovery2 = new DefaultPartitionRecovery(targetPartition, topology2);
+        recovery2.enableSimulatedRecovery();
         recovery2.setClock(testClock);
         // Testing without ghost manager (validation passes by default)
 
@@ -434,8 +443,9 @@ class P43AdvancedRecoveryTest {
      */
     @Test
     void testRecoveryWithDegradedGhostLayer() throws Exception {
-        // Given: Recovery without ghost manager (simulating degraded state)
+        // Given: Recovery without ghost manager (simulating degraded state); simulation opted-in
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         // Note: Testing without actual ghost manager injection
@@ -630,8 +640,9 @@ class P43AdvancedRecoveryTest {
      */
     @Test
     void testRecoveryStateConsistency() throws Exception {
-        // Given: Recovery with state tracking
+        // Given: Recovery with state tracking (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         var stateSnapshots = new CopyOnWriteArrayList<StateSnapshot>();
@@ -677,8 +688,9 @@ class P43AdvancedRecoveryTest {
      */
     @Test
     void testClockSkewDuringRecovery() throws Exception {
-        // Given: Recovery with controlled clock
+        // Given: Recovery with controlled clock (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var controllableClock = new TestClock(1000L);
         recovery.setClock(controllableClock);
 
@@ -713,14 +725,16 @@ class P43AdvancedRecoveryTest {
      */
     @Test
     void testConcurrentFaultHandlerModifications() throws Exception {
-        // Given: Shared fault handler with concurrent access
+        // Given: Shared fault handler with concurrent access (simulation opted-in)
         var sharedHandler = new SimpleFaultHandler(FaultConfiguration.defaultConfig());
         var recovery1 = new DefaultPartitionRecovery(partitionId, topology);
+        recovery1.enableSimulatedRecovery();
         recovery1.setClock(testClock);
 
         var partition2 = UUID.randomUUID();
         topology.register(partition2, 1);
         var recovery2 = new DefaultPartitionRecovery(partition2, topology);
+        recovery2.enableSimulatedRecovery();
         recovery2.setClock(testClock);
 
         var modificationCount = new AtomicInteger(0);
@@ -770,6 +784,8 @@ class P43AdvancedRecoveryTest {
 
         public FailFirstTimeRecovery(UUID partitionId, PartitionTopology topology) {
             super(partitionId, topology);
+            // Opt into simulation scaffolding — real recovery is not implemented.
+            enableSimulatedRecovery();
         }
 
         @Override
@@ -802,6 +818,8 @@ class P43AdvancedRecoveryTest {
 
         public SlowPhaseRecovery(UUID partitionId, PartitionTopology topology, long phaseDelayMs) {
             super(partitionId, topology);
+            // Opt into simulation scaffolding — real recovery is not implemented.
+            enableSimulatedRecovery();
             this.phaseDelayMs = phaseDelayMs;
         }
 
@@ -830,6 +848,8 @@ class P43AdvancedRecoveryTest {
 
         public VerySlowRecovery(UUID partitionId, PartitionTopology topology, long delayMs) {
             super(partitionId, topology);
+            // Opt into simulation scaffolding — real recovery is not implemented.
+            enableSimulatedRecovery();
             this.delayMs = delayMs;
         }
 

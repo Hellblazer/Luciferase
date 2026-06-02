@@ -80,8 +80,9 @@ class P44ClockInjectionTest {
      */
     @Test
     void testStateTransitionTimestamps() throws Exception {
-        // Given: Recovery with TestClock at t=1000ms
+        // Given: Recovery with TestClock at t=1000ms (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         // Trigger initial phase transition to capture injected clock time
@@ -111,8 +112,9 @@ class P44ClockInjectionTest {
      */
     @Test
     void testRecoveryDurationWithInjectedClock() throws Exception {
-        // Given: Recovery with TestClock at t=1000ms
+        // Given: Recovery with TestClock at t=1000ms (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         // When: Execute recovery (simulated phases: 50+100+75 = 225ms)

@@ -78,8 +78,9 @@ class P445ClockDeterminismTest {
      */
     @Test
     void testFullCycleClockControlAdvance() throws Exception {
-        // Given: Recovery with TestClock at t=0
+        // Given: Recovery with TestClock at t=0 (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         var phaseTransitionTimes = new CopyOnWriteArrayList<Long>();
@@ -136,9 +137,10 @@ class P445ClockDeterminismTest {
 
         // ===== Reproducibility Test =====
 
-        // Given: Fresh recovery with new TestClock at t=0
+        // Given: Fresh recovery with new TestClock at t=0 (simulation opted-in)
         var testClock2 = new TestClock(0);
         var recovery2 = new DefaultPartitionRecovery(partitionId, topology);
+        recovery2.enableSimulatedRecovery();
         recovery2.setClock(testClock2);
 
         var phaseSequence2 = new CopyOnWriteArrayList<RecoveryPhase>();
@@ -188,8 +190,9 @@ class P445ClockDeterminismTest {
     void testBoundaryConditionsClockSkewDrift() throws Exception {
         // ===== Test 1: Clock Backward After Recovery Completes =====
 
-        // Given: Recovery with TestClock
+        // Given: Recovery with TestClock (simulation opted-in)
         var recovery1 = new DefaultPartitionRecovery(partitionId, topology);
+        recovery1.enableSimulatedRecovery();
         testClock.setTime(1000); // Start at t=1000
         recovery1.setClock(testClock);
 
@@ -216,10 +219,11 @@ class P445ClockDeterminismTest {
 
         // ===== Test 2: Positive Clock Jump Before Recovery =====
 
-        // Given: Fresh recovery with new partition
+        // Given: Fresh recovery with new partition (simulation opted-in)
         var partition2 = UUID.randomUUID();
         topology.register(partition2, 1);
         var recovery2 = new DefaultPartitionRecovery(partition2, topology);
+        recovery2.enableSimulatedRecovery();
         var testClock2 = new TestClock(1000);
         recovery2.setClock(testClock2);
 
@@ -246,10 +250,11 @@ class P445ClockDeterminismTest {
 
         // ===== Test 3: Multiple Recoveries with Stable Clock =====
 
-        // Given: Fresh recovery with new partition
+        // Given: Fresh recovery with new partition (simulation opted-in)
         var partition3 = UUID.randomUUID();
         topology.register(partition3, 2);
         var recovery3 = new DefaultPartitionRecovery(partition3, topology);
+        recovery3.enableSimulatedRecovery();
         var testClock3 = new TestClock(1000);
         recovery3.setClock(testClock3);
 
@@ -273,11 +278,12 @@ class P445ClockDeterminismTest {
 
         // ===== Test 4: Clock Jump Between Recoveries =====
 
-        // Given: New partition with clock at t=2000
+        // Given: New partition with clock at t=2000 (simulation opted-in)
         var partition4 = UUID.randomUUID();
         topology.register(partition4, 3);
         var testClock4 = new TestClock(2000);
         var recovery4 = new DefaultPartitionRecovery(partition4, topology);
+        recovery4.enableSimulatedRecovery();
         recovery4.setClock(testClock4);
 
         // When: Jump clock forward

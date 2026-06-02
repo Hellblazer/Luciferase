@@ -75,8 +75,12 @@ class P442FullSystemIntegrationTest {
         }
 
         // Setup recovery for partition 0 with event capture
+        // enableSimulatedRecovery() opts into scaffolding. This test validates the
+        // SCAFFOLDING simulation pipeline (phase transitions, event capture, VON topology),
+        // NOT real partition-state restoration — redistribution/rebalancing are stubs.
         var partition0 = partitionIds.get(0);
         var recovery = new DefaultPartitionRecovery(partition0, topology);
+        recovery.enableSimulatedRecovery();
         var phaseHistory = new ArrayList<RecoveryPhase>();
 
         recovery.subscribe(phase -> {
@@ -102,8 +106,11 @@ class P442FullSystemIntegrationTest {
         var endTime = System.currentTimeMillis();
         var duration = endTime - startTime;
 
-        // Then: Recovery should complete successfully
-        assertTrue(result.success(), "Recovery should succeed");
+        // Then: Simulation scaffolding should complete successfully.
+        // NOTE: result.success() here means the SIMULATION ran to completion,
+        // not that real entity redistribution or state transfer occurred —
+        // those remain unimplemented stubs. This test validates the scaffolding pipeline.
+        assertTrue(result.success(), "Simulation scaffolding should complete");
         assertEquals(partition0, result.partitionId());
 
         // Verify event sequence contains key phases
@@ -175,8 +182,11 @@ class P442FullSystemIntegrationTest {
         var partition1 = partitionIds.get(1);
         var partition3 = partitionIds.get(3);
 
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery1 = new DefaultPartitionRecovery(partition1, topology);
+        recovery1.enableSimulatedRecovery();
         var recovery3 = new DefaultPartitionRecovery(partition3, topology);
+        recovery3.enableSimulatedRecovery();
 
         var phases1 = new CopyOnWriteArrayList<RecoveryPhase>();
         var phases3 = new CopyOnWriteArrayList<RecoveryPhase>();
@@ -274,7 +284,9 @@ class P442FullSystemIntegrationTest {
         network.addNeighbor(partition0, partition1);
         network.addNeighbor(partition0, partition2);
 
+        // enableSimulatedRecovery() opts into scaffolding — real recovery is not implemented.
         var recovery = new DefaultPartitionRecovery(partition0, topology);
+        recovery.enableSimulatedRecovery();
         var phases = new CopyOnWriteArrayList<RecoveryPhase>();
         var rebalancingReached = new CountDownLatch(1);
 
