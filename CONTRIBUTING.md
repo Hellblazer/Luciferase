@@ -389,7 +389,7 @@ Document architecture decisions when:
 
 - **Deterministic testing**: Clock interface for reproducible scenarios
 - **Entity migration**: 2PC protocol for reliable cross-bubble migration
-- **Ghost layer**: Boundary synchronization using Lucien's GhostZoneManager
+- **Ghost layer**: Boundary synchronization using Lucien's GhostBoundaryDetector / GhostCoordinator
 - **Bucket scheduler**: Time-based coordination for distributed animation
 
 ### Performance Optimization

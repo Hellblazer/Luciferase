@@ -106,31 +106,37 @@ public interface SpatialIndex<Key, ID, Content> {
 
 ```
 
-### ElementGhostManager
+### GhostBoundaryDetector
 
-Manages element-level ghost detection and creation:
+Manages element-level (partition-boundary) ghost detection and creation. (Replaces the former
+`ElementGhostManager`, deleted in Luciferase-4jw8.)
 
 ```java
 
-// Create element ghost manager with algorithm selection
-ElementGhostManager<Key, ID, Content> ghostManager = new ElementGhostManager<>(
+// Create the element-level ghost boundary detector with algorithm selection
+GhostBoundaryDetector<Key, ID, Content> ghostDetector = new GhostBoundaryDetector<>(
     spatialIndex,
     neighborDetector,
     GhostType.FACES,
-    GhostAlgorithm.CONSERVATIVE
+    GhostAlgorithm.MINIMAL   // recommended default; DEEP_COVERAGE (formerly CONSERVATIVE) for depth-2 coverage
 );
 
 // Create ghost layer
-ghostManager.createGhostLayer();
+ghostDetector.createGhostLayer();
 
 // Update ghosts after element modification
-ghostManager.updateElementGhosts(modifiedKey);
+ghostDetector.updateElementGhosts(modifiedKey);
 
 // Check if element is at boundary
-boolean isBoundary = ghostManager.isBoundaryElement(key);
+boolean isBoundary = ghostDetector.isBoundaryElement(key);
 
 // Get all boundary elements
-Set<Key> boundaryElements = ghostManager.getBoundaryElements();
+Set<Key> boundaryElements = ghostDetector.getBoundaryElements();
+
+// Distributed support: declare the local rank and per-element owners (a neighbor owned by a
+// different rank gets a ghost). Defaults to single-process (rank 0).
+ghostDetector.setCurrentRank(myRank);
+ghostDetector.setElementOwner(remoteKey, otherRank);
 
 ```
 
@@ -302,7 +308,7 @@ GhostAlgorithm customAlgorithm = new GhostAlgorithm() {
     }
 };
 
-ElementGhostManager<Key, ID, Content> manager = new ElementGhostManager<>(
+GhostBoundaryDetector<Key, ID, Content> detector = new GhostBoundaryDetector<>(
     spatialIndex,
     neighborDetector,
     GhostType.FACES,
@@ -393,7 +399,7 @@ try {
 2. **Update Strategically**: Update ghosts after bulk operations, not individual inserts
 3. **Monitor Performance**: Use ghost statistics to tune algorithms
 4. **Handle Failures**: Implement fallback for network failures
-5. **Test Locally**: Use ElementGhostManager for single-process testing before distributed deployment
+5. **Test Locally**: Use GhostBoundaryDetector (single-process, rank 0) for testing before distributed deployment
 
 ## See Also
 

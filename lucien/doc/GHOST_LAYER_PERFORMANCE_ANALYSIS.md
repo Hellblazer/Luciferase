@@ -23,7 +23,7 @@ This document provides a comprehensive performance analysis of the ghost layer i
 The ghost layer implementation consists of multiple integrated components:
 
 1. **GhostLayer** - Core ghost element storage and management
-2. **ElementGhostManager** - Element-level ghost detection and creation
+2. **GhostBoundaryDetector** - Element-level ghost detection and creation (formerly ElementGhostManager)
 3. **DistributedGhostManager** - Multi-tree distributed coordination
 4. **GhostCommunicationManager** - gRPC-based distributed communication
 5. **GhostExchangeServiceImpl** - Server-side ghost service
@@ -54,19 +54,19 @@ public enum GhostType {
 ```java
 
 public enum GhostAlgorithm {
-    MINIMAL,      // Only direct neighbors (lowest memory)
-    CONSERVATIVE, // Direct + second-level neighbors (balanced) [DEFAULT]
-    AGGRESSIVE,   // Multiple levels for maximum performance
-    ADAPTIVE,     // Learns from usage patterns
-    CUSTOM        // User-provided algorithm
+    MINIMAL,       // Only direct neighbors (lowest memory) [recommended default]
+    DEEP_COVERAGE, // Direct + depth-2 neighbors (formerly CONSERVATIVE; over-aggressive on 2:1-balanced meshes)
+    AGGRESSIVE,    // Multiple levels for maximum performance
+    ADAPTIVE,      // Learns from usage patterns
+    CUSTOM         // User-provided algorithm
 }
 
 ```
 
 **Performance Characteristics:**
 
-- `MINIMAL`: Lowest memory footprint, suitable for memory-constrained environments
-- `CONSERVATIVE`: **Optimal balance** for most workloads (default choice)
+- `MINIMAL`: Lowest memory footprint and the **recommended default** — sufficient on 2:1-balanced meshes
+- `DEEP_COVERAGE`: Direct + depth-2 coverage (formerly `CONSERVATIVE`); higher overhead, rarely needed
 - `AGGRESSIVE`: Higher memory usage but better read performance for read-heavy workloads
 - `ADAPTIVE`: Dynamic adjustment based on usage patterns (experimental)
 
@@ -286,17 +286,17 @@ Ghost algorithm selection affects both memory usage and creation performance.
 
 | Algorithm    | Ghosts Created | Creation Time | Memory Usage | Query Coverage |
 | -------------- | ---------------- | --------------- | -------------- | ---------------- |
-| MINIMAL      | ~600           | 310 μs        | 6.0 KB       | Direct only    |
-| CONSERVATIVE | ~1,800         | 945 μs        | 18.5 KB      | 2-level        |
-| AGGRESSIVE   | ~5,400         | 2,834 μs      | 55.4 KB      | 3-level        |
-| ADAPTIVE     | ~1,850         | 972 μs        | 19.0 KB      | Dynamic        |
+| MINIMAL       | ~600           | 310 μs        | 6.0 KB       | Direct only    |
+| DEEP_COVERAGE | ~1,800         | 945 μs        | 18.5 KB      | 2-level        |
+| AGGRESSIVE    | ~5,400         | 2,834 μs      | 55.4 KB      | 3-level        |
+| ADAPTIVE      | ~1,850         | 972 μs        | 19.0 KB      | Dynamic        |
 
 **Trade-off Analysis:**
 
-- **MINIMAL**: Lowest overhead, use for memory-constrained or ghost-light applications
-- **CONSERVATIVE**: **Recommended default** - balanced overhead with good coverage
+- **MINIMAL**: **Recommended default** - lowest overhead, sufficient on 2:1-balanced meshes
+- **DEEP_COVERAGE**: Direct + depth-2 coverage (formerly CONSERVATIVE); higher overhead, rarely needed
 - **AGGRESSIVE**: Use for read-heavy workloads where query performance is critical
-- **ADAPTIVE**: Experimental, comparable to CONSERVATIVE with potential for runtime optimization
+- **ADAPTIVE**: Experimental, comparable to DEEP_COVERAGE with potential for runtime optimization
 
 ## Integration Performance
 
@@ -405,7 +405,7 @@ Based on application characteristics, use the following configurations:
 
 // Configuration for low-latency distributed simulation
 octree.setGhostType(GhostType.FACES);  // Minimal ghost set
-var manager = new ElementGhostManager<>(
+var detector = new GhostBoundaryDetector<>(
     octree, 
     neighborDetector, 
     GhostType.FACES,
@@ -422,7 +422,7 @@ var manager = new ElementGhostManager<>(
 
 // Configuration for throughput-optimized batch processing
 octree.setGhostType(GhostType.VERTICES);  // Complete coverage
-var manager = new ElementGhostManager<>(
+var detector = new GhostBoundaryDetector<>(
     octree, 
     neighborDetector, 
     GhostType.VERTICES,
@@ -439,11 +439,11 @@ var manager = new ElementGhostManager<>(
 
 // Default balanced configuration
 octree.setGhostType(GhostType.FACES);
-var manager = new ElementGhostManager<>(
+var detector = new GhostBoundaryDetector<>(
     octree, 
     neighborDetector, 
     GhostType.FACES,
-    GhostAlgorithm.CONSERVATIVE  // Recommended default
+    GhostAlgorithm.MINIMAL  // Recommended default (DEEP_COVERAGE = former CONSERVATIVE, depth-2)
 );
 
 ```

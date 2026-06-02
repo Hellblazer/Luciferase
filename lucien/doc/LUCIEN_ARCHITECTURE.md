@@ -94,8 +94,8 @@ com.hellblazer.luciferase.lucien/
 │   ├── Spatial Queries: ForestQuery, ForestSpatialQueries
 │   ├── Connectivity: TreeConnectivityManager
 │   └── ghost/ (11 classes)
-│       ├── Core: GhostElement, GhostType, GhostLayer, GhostZoneManager, GhostAlgorithm
-│       ├── Management: DistributedGhostManager, GhostBoundaryDetector
+│       ├── Core: GhostElement, GhostType, GhostLayer, GhostAlgorithm
+│       ├── Management: DistributedGhostManager, GhostBoundaryDetector, GhostCoordinator
 │       ├── Communication: GrpcGhostChannel
 │       └── Serialization: ContentSerializer, ContentSerializerRegistry
 ├── neighbor/ (3 classes)
@@ -703,7 +703,7 @@ adaptive/hierarchical forests.
   thread counts
 
 - **TreeConnectivityManager** - Spatial relationship management with adjacency detection and shared boundary analysis
-- **GhostZoneManager** - Boundary entity synchronization with configurable ghost zone widths and bulk update operations
+- **GhostBoundaryDetector / GhostCoordinator** - Element-level (partition-boundary) ghost detection and coordination. (The former distance-based, forest/tree-level `GhostZoneManager` was infrastructure-only and was removed in Luciferase-v9ro / 1q7u.)
 
 **Configuration (2 classes):**
 

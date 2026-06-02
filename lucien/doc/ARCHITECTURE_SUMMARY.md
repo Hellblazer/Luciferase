@@ -72,7 +72,7 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
 - **Performance**: HashMap-based O(1) node access for all implementations
 - **Type-Safe Keys**: SpatialKey architecture prevents mixing incompatible indices (MortonKey, TetreeKey with 21-level support, PrismKey)
 - **Ghost Layer**: Complete distributed support with neighbor detection and gRPC communication
-- **Dual Ghost Approach**: Both distance-based (forest) and topology-based (element) ghost detection
+- **Ghost Detection**: Topology-based, element-level (partition-boundary) detection via GhostBoundaryDetector/GhostCoordinator. (The earlier distance-based forest-level approach was infrastructure-only and was removed in Luciferase-v9ro / 1q7u.)
 
 ## What This Architecture Includes
 
