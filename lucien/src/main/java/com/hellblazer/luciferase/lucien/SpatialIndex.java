@@ -436,6 +436,25 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
     }
 
     /**
+     * The world-space AABB enclosing every occupied node's cell, derived from the actual stored contents
+     * (Luciferase-36lp). This is <em>content-authoritative</em>: unlike a forest's maintained tree bounds (which
+     * are only expanded on the {@code ForestEntityManager} insert path), this reflects whatever is actually in
+     * the index regardless of how it was inserted (including direct {@link #insert} calls). It is the sound basis
+     * for forest-level spatial routing — skipping trees whose occupied region cannot overlap a query cell.
+     *
+     * <p>The default returns {@code null} ("unknown bounds"); callers must treat {@code null} as "cannot route,
+     * do not skip" so an index that lacks this view is never silently excluded. Use {@link #entityCount()} to
+     * detect a genuinely empty index. An implementation that does NOT override this method therefore runs
+     * <em>without</em> the routing optimization: every non-empty tree backed by it is probed regardless of
+     * spatial position (correct, just unpruned). {@link AbstractSpatialIndex} provides a content-derived override.
+     *
+     * @return the occupied-cell AABB, or {@code null} if empty or unknown
+     */
+    default VolumeBounds getOccupiedBounds() {
+        return null;
+    }
+
+    /**
      * Find all entities intersected by a ray, sorted by distance
      *
      * @param ray the ray to test

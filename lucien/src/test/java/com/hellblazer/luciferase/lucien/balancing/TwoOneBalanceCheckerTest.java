@@ -452,6 +452,91 @@ public class TwoOneBalanceCheckerTest {
     }
 
     @Test
+    public void testGetOccupiedBounds_authoritativeAfterDirectInsert() {
+        // Luciferase-36lp — getOccupiedBounds() must reflect ACTUAL contents even when entities are inserted
+        // directly into the spatial index (bypassing ForestEntityManager / TreeNode.globalBounds). This is the
+        // soundness foundation for forest routing.
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        assertNull(octree.getOccupiedBounds(), "empty index has no occupied bounds");
+
+        var p = new Point3f(65537f, 65537f, 65537f);
+        octree.insert(new LongEntityID(1L), p, (byte) 5, "x"); // direct insert
+        var bounds = octree.getOccupiedBounds();
+        assertNotNull(bounds, "occupied bounds must be reported after a direct insert");
+        // The cell containing p at level 5 (cellSize 65536) is [65536, 131072) in each axis; bounds must cover p.
+        assertTrue(bounds.minX() <= p.x && p.x <= bounds.maxX()
+                   && bounds.minY() <= p.y && p.y <= bounds.maxY()
+                   && bounds.minZ() <= p.z && p.z <= bounds.maxZ(),
+                   "occupied bounds must contain the inserted element's cell");
+    }
+
+    /** Octree that counts index probe calls, to prove forest routing actually skips trees (Luciferase-36lp). */
+    private static final class CountingOctree extends Octree<LongEntityID, String> {
+        int probes = 0;
+
+        CountingOctree() {
+            super(new SequentialLongIDGenerator());
+        }
+
+        @Override
+        public boolean containsSpatialKey(MortonKey key) {
+            probes++;
+            return super.containsSpatialKey(key);
+        }
+
+        @Override
+        public java.util.NavigableSet<MortonKey> spatialKeysInRange(MortonKey fromKey, boolean fromInclusive,
+                                                                    MortonKey toKey, boolean toInclusive) {
+            probes++;
+            return super.spatialKeysInRange(fromKey, fromInclusive, toKey, toInclusive);
+        }
+    }
+
+    @Test
+    public void testRouting_distantTreeIsPrunedAndViolationsUnchanged() {
+        // Luciferase-36lp — a spatially-distant tree must be ROUTED OUT (probed far less than the near tree) and
+        // must not change the violation set. Reuses the coarse-ancestor fixture (ghost L10 cell (40,40,40);
+        // coarse L5 element at the +X neighbor's coarse cell origin (65536,65536,65536)).
+        var ghostKey = MortonKey.fromCellIndices(40, 40, 40, (byte) 10);
+
+        // Near tree: holds the coarse violating element near the ghost's neighborhood.
+        var nearTree = new CountingOctree();
+        nearTree.insert(new LongEntityID(1L), new Point3f(83968f, 81920f, 81920f), (byte) 5, "coarse-local");
+        // Distant tree: an element far away. Inserted directly (globalBounds stays null) — proving routing uses
+        // content-authoritative getOccupiedBounds(), not globalBounds. Its region overlaps only the very coarse
+        // (near-root) probe cells, so it is pruned from every finer probe.
+        var distantTree = new CountingOctree();
+        distantTree.insert(new LongEntityID(2L), new Point3f(1900000f, 1900000f, 1900000f), (byte) 5, "far-away");
+
+        var forest = new Forest<MortonKey, LongEntityID, String>();
+        forest.addTree(nearTree);
+        forest.addTree(distantTree);
+
+        long fineNbrCode = ghostKey.neighbor(MortonKey.Direction.POSITIVE_X).getMortonCode();
+        var coarseKey = new MortonKey(fineNbrCode & ~((1L << (3 * (21 - 5))) - 1), (byte) 5);
+
+        var ghost = new GhostElement<MortonKey, LongEntityID, String>(
+            ghostKey, new LongEntityID(3L), "ghost", new Point3f(81920f, 81920f, 81920f), 1, 0L);
+        when(mockGhostLayer.getAllGhostElements()).thenReturn(List.of(ghost));
+
+        var violations = checker.findViolations(mockGhostLayer, forest);
+
+        // Correctness: the violation set is exactly the coarse cell in the near tree, unaffected by the 2nd tree.
+        assertFalse(violations.isEmpty(), "the coarse-ancestor violation must still be detected with a 2nd tree");
+        for (var v : violations) {
+            assertEquals(coarseKey, v.localKey(), "every violation must be the coarse cell in the near tree");
+            assertEquals(5, v.localLevel());
+            assertEquals(10, v.ghostLevel());
+        }
+        // Routing fired: the distant tree is pruned from the many fine-level probes, so it is probed strictly
+        // fewer times than the near tree. Without routing both trees would be probed identically per
+        // (direction, level), giving equal counts.
+        assertTrue(distantTree.probes < nearTree.probes,
+                   "distant tree must be probed fewer times than the near tree (routing pruned it): distant="
+                   + distantTree.probes + " near=" + nearTree.probes);
+    }
+
+    @Test
     public void testFindViolations_WithRealForestData() {
         // Real integration test using Phase44ForestIntegrationFixture
         var fixture = new com.hellblazer.luciferase.lucien.balancing.fault.Phase44ForestIntegrationFixture();
