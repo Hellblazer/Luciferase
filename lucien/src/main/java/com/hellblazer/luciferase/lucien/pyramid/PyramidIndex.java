@@ -342,37 +342,33 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
     private static final int MAX_SPANNING_CELLS = 1_000_000;
 
     /**
-     * Distribute a bounded entity across the pyramid-SFC elements its bounds overlap (RDR-010, bead
-     * Luciferase-7eb), so {@code getEntitySpanCount > 1} for space-spanning bounds. Enumerates the cube
-     * grid at {@code level} clamped to {@code [0, MAX_COORD]}, and for each cube cell registers the entity
-     * in the one element returned by {@link #calculateSpatialIndex} for the cell <em>centre</em>.
+     * Distribute a bounded entity across the pyramid-SFC elements its bounds overlap (RDR-010, beads
+     * Luciferase-7eb / Luciferase-401t), so {@code getEntitySpanCount > 1} for space-spanning bounds.
      *
-     * <p><b>Coverage is cube-granular and conservative — NOT element-granular (weaker than {@code Tetree},
-     * looser than {@code Octree}).</b> Two consequences callers (range query, kNN, ghost/forest spanning)
-     * must account for:
-     * <ul>
-     *   <li><b>Under-coverage within a cube:</b> a cube cell holds several pyramid/tet elements, but only
-     *       the element containing the cell centre is registered. An entity overlapping a <em>different</em>
-     *       element of that cube is not registered there — unlike {@code Tetree.findIntersectingTetrahedra}
-     *       (element-level) or {@code Octree} (one node per cube). Element-level coverage is a registered
-     *       follow-on (bead Luciferase-401t).</li>
-     *   <li><b>Over-inclusion across cubes:</b> no per-cell geometric intersection test is applied (unlike
-     *       Octree's {@code bounds.intersectsCube} filter); the entity is registered in every cube whose
-     *       origin falls in the clamped bounding box — a conservative superset (possible false-positive
-     *       range membership, never a false negative at cube granularity).</li>
-     *   <li><b>Mixed-level keys:</b> when a cell centre falls in a tet sub-region, {@link #calculateSpatialIndex}
-     *       returns a key at a <em>shallower</em> level than {@code level} (its documented caveat), so the
-     *       entity is registered at coarser granularity for that cell.</li>
-     * </ul>
+     * <p><b>Element-level coverage (Luciferase-401t).</b> {@link #collectSpanningLeaves} descends the pyramid
+     * SFC from both root pyramids, pruning any subtree whose surrounding cube is disjoint from {@code bounds},
+     * and registers the entity in EVERY leaf (tet child, or pyramid at {@code level}) whose cube intersects —
+     * not just the one element containing each cube cell's centre. This fixes the prior cube-granular
+     * under-coverage (a cube can hold several pyramid/tet elements; the old centre-only registration missed
+     * all but one). Cube tiling makes the prune sound: a disjoint child cube contains no intersecting leaf.
      *
-     * <p>Spanning does not trigger subdivision (avoids cascading subdivisions across many cells). Inverted
-     * or empty clamped ranges (bounds entirely outside the domain) and grids exceeding
-     * {@link #MAX_SPANNING_CELLS} fall back to single-node insertion at the entity position (with a warning
-     * for the cap case) — never leaving the entity registered in zero nodes.
+     * <p><b>Conservative per element.</b> The per-leaf test is cube-vs-bounds (exact pyramid containment is
+     * intrinsically cube-conservative — only 2/3 of a cube is pyramid-covered; see PyramidDomainCoverageTest).
+     * Spanning may therefore <em>over</em>-cover (register a leaf whose exact shape the bounds graze), never
+     * <em>under</em>-cover; the over-coverage is filtered by the exact post-check in range/kNN. Insert and
+     * query are consistent (both cube-conservative for pyramid leaves) — no false negatives.
+     *
+     * <p><b>Fallbacks (never leaves the entity in zero nodes).</b> {@code null} bounds, {@code level == 0},
+     * inverted/empty clamped ranges (bounds outside the domain), an up-front cube-grid count exceeding
+     * {@link #MAX_SPANNING_CELLS}, a post-descent element count exceeding the same cap, and an empty leaf set
+     * (bounds entirely in the uncovered third — no root pyramid owns them) all fall back to single-node
+     * insertion at the entity position. Spanning does not trigger subdivision.
      */
     @Override
     protected void insertWithSpanning(ID entityId, EntityBounds bounds, byte level) {
-        if (bounds == null) {
+        if (bounds == null || level == 0) {
+            // No bounds, or level 0 (the whole domain is one cell — nothing to span, and the descent's
+            // coordBits[1] would be out of range for a level-0 key). Register at the position.
             super.insertWithSpanning(entityId, bounds, level);
             return;
         }
@@ -404,16 +400,34 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
             return;
         }
 
+        // Element-level coverage (Luciferase-401t): descend the pyramid SFC from both roots, pruning any
+        // subtree whose surrounding cube does not intersect the bounds, and collect EVERY leaf (tet child, or
+        // pyramid at `level`) whose cube intersects — not just the one element containing each cube's centre.
+        // The per-element test is cube-conservative (sound for spanning: it may over-cover, never under-cover;
+        // over-coverage is filtered by the exact post-check in range/kNN). Entities in the uncovered third of
+        // the cube (no root pyramid owns them — see PyramidDomainCoverageTest) collect no leaf and fall back to
+        // single-node insertion below, preserving the established conservative contract.
         var keys = new HashSet<PyramidKey>();
-        float half = cellSize / 2f;
-        for (int x = minX; x <= maxX; x += cellSize) {
-            for (int y = minY; y <= maxY; y += cellSize) {
-                for (int z = minZ; z <= maxZ; z += cellSize) {
-                    // Resolve the pyramid/tet element containing this cube cell's centre.
-                    var key = calculateSpatialIndex(new Point3f(x + half, y + half, z + half), level);
-                    keys.add(key);
-                }
-            }
+        int[] coordBits = new int[level + 1];
+        int[] typeBits = new int[level + 1];
+        for (var root : new Pyramid[] { new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_6),
+                                        new Pyramid(0, 0, 0, (byte) 0, Pyramid.TYPE_7) }) {
+            collectSpanningLeaves(root, coordBits, typeBits, 0, level, bounds, keys);
+        }
+
+        if (keys.size() > MAX_SPANNING_CELLS) {
+            // The descent can yield more leaves than cube cells (multiple elements per cube), so re-check the
+            // actual element count against the cap (the up-front cube-grid estimate is only a lower bound).
+            log.warn("Spanning produced {} elements exceeding cap {} at level {} — falling back to single-node "
+                     + "insert", keys.size(), MAX_SPANNING_CELLS, level);
+            super.insertWithSpanning(entityId, bounds, level);
+            return;
+        }
+
+        if (keys.isEmpty()) {
+            // Bounds lie in the uncovered third (no pyramid owner) — register conservatively at the position.
+            super.insertWithSpanning(entityId, bounds, level);
+            return;
         }
 
         for (var key : keys) {
@@ -421,6 +435,44 @@ public class PyramidIndex<ID extends EntityID, Content> extends AbstractSpatialI
             node.addEntity(entityId);
             entityManager.addEntityLocation(entityId, key);
         }
+    }
+
+    /**
+     * Recursively collect the pyramid-SFC leaf keys (tet children, and pyramids at {@code targetLevel}) whose
+     * surrounding cube intersects {@code bounds}, descending from {@code parent} (at {@code parentLevel}) and
+     * pruning subtrees whose cube is disjoint from the bounds (Luciferase-401t). The child cube tiling means a
+     * disjoint child cube contains no intersecting leaf, so pruning never drops a true overlap.
+     */
+    private void collectSpanningLeaves(Pyramid parent, int[] coordBits, int[] typeBits, int parentLevel,
+                                       byte targetLevel, EntityBounds bounds, Set<PyramidKey> out) {
+        if (out.size() > MAX_SPANNING_CELLS) {
+            return; // cap exceeded — stop descending; the caller detects the overflow and falls back
+        }
+        int row = parent.type() - Pyramid.TYPE_6;
+        int childLevel = parentLevel + 1;
+        for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_PYRAMID; i++) {
+            var child = parent.child(i);
+            if (!cubeIntersectsBounds(child, bounds)) {
+                continue; // pruned: this child's cube cannot overlap the bounds
+            }
+            coordBits[childLevel] = TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_CID[row][i];
+            typeBits[childLevel] = TetreeConnectivity.PYRAMID_PARENT_TO_CHILD_TYPE[row][i];
+            if (child instanceof Tet || childLevel == targetLevel) {
+                // Tet children are leaves of the pyramid SFC; pyramids terminate at targetLevel.
+                out.add(PyramidKey.fromLevels((byte) childLevel, coordBits, typeBits));
+            } else {
+                collectSpanningLeaves((Pyramid) child, coordBits, typeBits, childLevel, targetLevel, bounds, out);
+            }
+        }
+    }
+
+    /** True if the element's surrounding cube [origin, origin+length] intersects the bounds AABB. */
+    private static boolean cubeIntersectsBounds(HybridElement e, EntityBounds b) {
+        float ex = e.x(), ey = e.y(), ez = e.z();
+        float h = e.length();
+        return b.getMaxX() >= ex && b.getMinX() <= ex + h
+               && b.getMaxY() >= ey && b.getMinY() <= ey + h
+               && b.getMaxZ() >= ez && b.getMinZ() <= ez + h;
     }
 
     /**
