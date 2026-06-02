@@ -17,11 +17,14 @@
 package com.hellblazer.luciferase.lucien.balancing;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.forest.Forest;
 import com.hellblazer.luciferase.lucien.forest.ForestConfig;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.octree.Octree;
+import javax.vecmath.Point3f;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -337,6 +340,65 @@ public class TwoOneBalanceCheckerTest {
         assertEquals(5, violations.size(), "Should store 5 violations");
         assertTrue(violations.stream().allMatch(v -> v.levelDifference() == 2),
                   "All violations should have level difference 2");
+    }
+
+    @Test
+    public void testCoarseAncestorViolationDetected_MortonAligned() {
+        // Luciferase-3aut item (1) — coarse-band ancestor-code correctness.
+        //
+        // A fine ghost (level 10) whose neighbor position is occupied by a COARSE local element (level 5)
+        // is a 2:1 balance violation (levelDiff = 5). Local elements are stored under their ABSOLUTE Morton
+        // code (the low 3*(21-level) bits are zero), so to find the coarse cell at a neighbor position the
+        // probe must mask the neighbor's fine code down to the coarse-ancestor cell. The pre-fix code probed
+        // the FULL fine code at the coarse level, which is not a valid stored coarse key, so it MISSED the
+        // violation. This test pins the corrected (masked) behavior with a deterministic Morton-aligned
+        // fixture (critic recipe; coordinates verified offline against MortonCurve/Constants):
+        //
+        //   ghost      = cell (40,40,40) @ L10  -> world origin (81920,81920,81920), cellSize(10)=2048
+        //   +X neighbor= world (83968,81920,81920) @ L10
+        //   coarse L5 ancestor (cellSize(5)=65536) -> cell origin (65536,65536,65536)
+        var ghostKey = MortonKey.fromCellIndices(40, 40, 40, (byte) 10);
+
+        // Real forest with one Octree holding only the coarse (level 5) element at the +X neighbor's
+        // coarse-ancestor cell.
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        var coarsePoint = new Point3f(83968f, 81920f, 81920f); // inside L5 cell origin (65536,65536,65536)
+        octree.insert(new LongEntityID(1L), coarsePoint, (byte) 5, "coarse-local");
+        var forest = new Forest<MortonKey, LongEntityID, String>();
+        forest.addTree(octree);
+
+        // The coarse element is stored under the MASKED L5 ancestor code, not the full fine code. This is
+        // exactly why the pre-fix (unmasked) probe missed it — documented here as a non-vacuous control.
+        long fineNbrCode = ghostKey.neighbor(MortonKey.Direction.POSITIVE_X).getMortonCode();
+        long maskedL5 = fineNbrCode & ~((1L << (3 * (21 - 5))) - 1);
+        var coarseKey = new MortonKey(maskedL5, (byte) 5);
+        assertTrue(octree.containsSpatialKey(coarseKey),
+                   "coarse element must be stored under the masked L5 ancestor code");
+        assertFalse(octree.containsSpatialKey(new MortonKey(fineNbrCode, (byte) 5)),
+                    "the pre-fix probe used the full fine code at L5 — it must NOT match the stored coarse cell");
+
+        var ghost = new GhostElement<MortonKey, LongEntityID, String>(
+            ghostKey, new LongEntityID(2L), "ghost", new Point3f(81920f, 81920f, 81920f), 1, 0L);
+        when(mockGhostLayer.getAllGhostElements()).thenReturn(List.of(ghost));
+
+        var violations = checker.findViolations(mockGhostLayer, forest);
+
+        // Pre-fix this list is EMPTY (the unmasked probe never matched the coarse cell). Post-fix the
+        // coarse-ancestor violation is detected. (MortonKey.Direction has 26 entries — 6 face + 12 edge +
+        // 8 vertex — and all 26 neighbors of this ghost fall inside the same L5 cell, so the same coarse cell
+        // is reported per qualifying direction; assert on presence + correctness, not count.)
+        assertFalse(violations.isEmpty(), "coarse-ancestor 2:1 violation must be detected (was missed pre-fix)");
+        assertTrue(violations.stream().anyMatch(v ->
+                       v.localLevel() == 5 && v.ghostLevel() == 10 && v.levelDifference() == 5
+                       && v.localKey().equals(coarseKey)),
+                   "a violation must report the coarse L5 cell (local) vs the L10 ghost, levelDiff=5");
+        for (var v : violations) {
+            assertEquals(coarseKey, v.localKey(), "every violation here is the single coarse cell");
+            assertEquals(5, v.localLevel());
+            assertEquals(10, v.ghostLevel());
+            assertEquals(5, v.levelDifference());
+            assertEquals(1, v.sourceRank(), "sourceRank propagates the ghost owner rank");
+        }
     }
 
     @Test

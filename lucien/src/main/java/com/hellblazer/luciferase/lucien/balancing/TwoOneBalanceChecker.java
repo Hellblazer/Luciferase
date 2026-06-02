@@ -186,6 +186,7 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
     ) {
         int neighborsChecked = 0;
         int neighborsFound = 0;
+        final int maxLevel = com.hellblazer.luciferase.lucien.Constants.getMaxRefinementLevel();
 
         // Iterate through all possible directions
         for (var direction : MortonKey.Direction.values()) {
@@ -201,16 +202,36 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             // would find an element but add no violation). This bounds the per-direction scan to the two
             // violating bands instead of all 22 levels.
             //
-            // KNOWN GAPS (deferred to Luciferase-3aut): (1) the coarse-band probe below uses the full fine code
-            // at a coarse level; the correct coarse ancestor code is neighborMortonCode >>> (3*(ghostLevel-C)),
-            // so most coarse-local violations are currently missed (correctness). (2) The numTrees-axis scan
-            // (forest.getAllTrees) is not reduced: the bead's floorKey/ceilingKey is infeasible under MortonKey's
-            // level-first ordering; a real bound needs forest spatial routing.
-            for (byte level = 0; level <= 21; level++) {
+            // COARSE-BAND ANCESTOR CODE (Luciferase-3aut item 1, fixed): MortonKey stores ABSOLUTE Morton
+            // codes (the low 3*(maxLevel-level) bits of a level-`level` cell are zero — see
+            // MortonKey.fromCoordinates / Constants.calculateMortonIndex). To probe whether a COARSER local
+            // cell occupies this neighbor position, mask the neighbor's fine code down to that coarse cell's
+            // origin; the full fine code at a coarse level is NOT a valid stored key and matched only in the
+            // rare cell-aligned case, so coarse-local violations were previously missed.
+            //
+            // NOTE the bead's proposed `neighborMortonCode >>> (3*(ghostLevel-C))` is the *level-relative*
+            // (right-justified) convention and does NOT match the absolute codes this index stores (verified:
+            // for an absolute code the coarse ancestor is obtained by masking, not right-shifting — the same
+            // mismatch makes MortonKey.parent()'s `>> 3` wrong for level < maxLevel; tracked in Luciferase-3avp).
+            //
+            // KNOWN GAPS still deferred: (2) the finer band [ghostLevel+2, maxLevel] probes the neighbor code
+            // unchanged, i.e. only the first-octant descendant; exhaustive descendant enumeration is unsolved
+            // under MortonKey's level-first ordering (Luciferase-a5nd; cousin of Luciferase-701x). (3) The
+            // numTrees-axis scan (forest.getAllTrees) is not reduced: the bead's floorKey/ceilingKey is
+            // infeasible under MortonKey's level-first ordering; a real bound needs forest spatial routing
+            // (Luciferase-36lp).
+            for (byte level = 0; level <= maxLevel; level++) {
                 if (Math.abs(level - ghostLevel) <= 1) {
                     continue; // within 1 level of the ghost -> levelDiff <= 1 -> not a violation
                 }
-                MortonKey neighborAtLevel = new MortonKey(neighborMortonCode, level);
+                // Coarse band: mask the fine code to the coarse-ancestor cell origin. Finer band: probe the
+                // neighbor code unchanged (first-octant descendant only — gap (2) above).
+                long probeCode = neighborMortonCode;
+                if (level < ghostLevel) {
+                    int dropBits = 3 * (maxLevel - level);
+                    probeCode = neighborMortonCode & ~((1L << dropBits) - 1);
+                }
+                MortonKey neighborAtLevel = new MortonKey(probeCode, level);
                 neighborsChecked++;
 
                 // Check if this key exists in any tree in the forest
