@@ -138,6 +138,10 @@ For accurate architecture documentation, see:
 - `lucien/doc/PERFORMANCE_METRICS_MASTER.md` - Current performance metrics
 - `render/doc/ESVO_COMPLETION_SUMMARY.md` - ESVO implementation status
 
+Active remediation backlog:
+
+- `lucien/doc/SUBSTANTIVE_CRITIQUE_2026-06-02.md` - Full reference for the 2026-06-02 8-agent substantive critique of lucien (20 Critical / 38 Significant). Tracking epic `Luciferase-yzrg0`, bead label `critique-2026-06-02` (`bd list --label=critique-2026-06-02 --limit 0`). Cross-cutting themes: Clock-injection violations (~70+ sites, bead `mt7hi`), hollow balancing/fault recovery stubs (`yogvu`), vacuous tests, RDR-004-class ghost silent-data-loss (`c1ka5`/`7pias`). Indexed in T3 (knowledge) + catalog (tumbler 1.36.1).
+
 Historical reference:
 
 - `HISTORICAL_FIXES_REFERENCE.md` - Complete archive of bug fixes and optimizations from June-August 2025
