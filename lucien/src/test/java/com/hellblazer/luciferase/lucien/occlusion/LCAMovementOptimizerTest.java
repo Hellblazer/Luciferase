@@ -88,8 +88,30 @@ public class LCAMovementOptimizerTest {
         
         var lca = optimizer.findLCA(key1, key2);
         assertNotNull(lca);
-        // LCA should be at a low level (near root) - but might be higher with our test keys
-        assertTrue(lca.getLevel() < 15);
+        // Luciferase-3avp: parent() now follows the absolute Morton convention, so findLCA returns the TRUE
+        // geometric lowest common ancestor. Verify it is a genuine common ancestor of both keys (the previous
+        // `< 15` bound was tuned to the old level-relative parent() and is no longer the right invariant).
+        assertTrue(lca.getLevel() <= Math.min(key1.getLevel(), key2.getLevel()),
+                   "LCA must be at or above both keys");
+        assertEquals(lca, ancestorAtLevel(key1, lca.getLevel()), "LCA must be an ancestor of key1");
+        assertEquals(lca, ancestorAtLevel(key2, lca.getLevel()), "LCA must be an ancestor of key2");
+
+        // Fixed oracle (kills a "return root for everything" regression): two siblings share their immediate
+        // parent as LCA, NOT the root. Uses well-formed absolute keys via fromCoordinates.
+        var parent = MortonKey.fromCoordinates(8192, 8192, 8192, (byte) 10);
+        var siblingA = parent.getChild(0);
+        var siblingB = parent.getChild(7);
+        var siblingLca = optimizer.findLCA(siblingA, siblingB);
+        assertEquals(parent, siblingLca, "LCA of two children must be their parent, not the root");
+        assertEquals(10, siblingLca.getLevel(), "sibling LCA must be at the parent level, not near root");
+    }
+
+    private static MortonKey ancestorAtLevel(MortonKey key, int level) {
+        var current = key;
+        while (current.getLevel() > level) {
+            current = current.parent();
+        }
+        return current;
     }
     
     @Test

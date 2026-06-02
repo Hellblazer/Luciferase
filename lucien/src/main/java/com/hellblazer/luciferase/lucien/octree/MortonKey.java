@@ -187,9 +187,17 @@ public final class MortonKey implements SpatialKey<MortonKey> {
             return null; // Root has no parent
         }
 
-        // Calculate parent Morton code by shifting right by 3 bits (removing one octant level)
+        // ABSOLUTE convention (Luciferase-3avp): MortonKey stores absolute Morton codes (octant digits in the
+        // HIGH bits; the low 3*(maxLevel-level) bits of a level-`level` cell are zero — see fromCoordinates /
+        // Constants.calculateMortonIndex). The parent is this cell with its finest octant digit cleared, i.e.
+        // mask off the low 3*(maxLevel-parentLevel) bits. (The old `mortonCode >> 3` was the level-relative
+        // convention and did NOT match the absolute keys the index stores at any level < maxLevel.)
         var parentLevel = (byte) (level - 1);
-        var parentCode = mortonCode >> 3;
+        int dropBits = 3 * (Constants.getMaxRefinementLevel() - parentLevel);
+        // dropBits maxes at 63 (parentLevel 0). 1L<<63 = Long.MIN_VALUE and (1L<<63)-1 = Long.MAX_VALUE, so the
+        // mask becomes ~Long.MAX_VALUE = bit 63 only; valid Morton codes use bits 0..62, so parent of a level-1
+        // cell masks to 0 (root). Correct for the fixed maxLevel=21 (3*21=63).
+        long parentCode = mortonCode & ~((1L << dropBits) - 1);
         return new MortonKey(parentCode, parentLevel);
     }
     
@@ -208,16 +216,20 @@ public final class MortonKey implements SpatialKey<MortonKey> {
             return null; // Cannot subdivide further
         }
         
-        // Calculate child Morton code by shifting left by 3 bits and adding the child index
+        // ABSOLUTE convention (Luciferase-3avp): set the child's octant digit at the child level's bit
+        // position (3*(maxLevel-childLevel)); those bits are zero in the parent's absolute code. (The old
+        // `(mortonCode << 3) | childIndex` was the level-relative convention and produced codes that did not
+        // match the absolute keys the index stores.)
         var childLevel = (byte) (level + 1);
-        var childCode = (mortonCode << 3) | childIndex;
+        int shift = 3 * (Constants.getMaxRefinementLevel() - childLevel);
+        var childCode = mortonCode | ((long) childIndex << shift);
         return new MortonKey(childCode, childLevel);
     }
     
     /**
      * The first (SFC-smallest) descendant at {@code targetLevel} — repeatedly taking child 0 (Luciferase-3uwx).
-     * Morton child encoding is {@code childCode = (code << 3) | childIndex}, so the first descendant left-shifts the
-     * code by 3 bits per level with all appended bits zero.
+     * ABSOLUTE convention (Luciferase-3avp): taking child 0 appends only zero octant digits, so the first
+     * descendant shares this cell's origin corner and its absolute code is unchanged — only the level deepens.
      */
     @Override
     public MortonKey firstDescendantAtLevel(byte targetLevel) {
@@ -225,13 +237,14 @@ public final class MortonKey implements SpatialKey<MortonKey> {
             throw new IllegalArgumentException("targetLevel " + targetLevel + " out of range [" + level + ", "
                                                + Constants.getMaxRefinementLevel() + "]");
         }
-        var shift = 3 * (targetLevel - level);
-        return new MortonKey(mortonCode << shift, targetLevel);
+        return new MortonKey(mortonCode, targetLevel);
     }
 
     /**
-     * The last (SFC-largest) descendant at {@code targetLevel} — repeatedly taking child 7 (Luciferase-3uwx): the
-     * code left-shifted by 3 bits per level with all appended child bits set to 1.
+     * The last (SFC-largest) descendant at {@code targetLevel} — repeatedly taking child 7 (Luciferase-3uwx).
+     * ABSOLUTE convention (Luciferase-3avp): set every octant digit from this cell's child level down to
+     * {@code targetLevel} to 7 (the max corner). Those digits occupy bits
+     * [3*(maxLevel-targetLevel) .. 3*(maxLevel-level)-1] which are zero in this cell's absolute code.
      */
     @Override
     public MortonKey lastDescendantAtLevel(byte targetLevel) {
@@ -239,9 +252,10 @@ public final class MortonKey implements SpatialKey<MortonKey> {
             throw new IllegalArgumentException("targetLevel " + targetLevel + " out of range [" + level + ", "
                                                + Constants.getMaxRefinementLevel() + "]");
         }
-        var shift = 3 * (targetLevel - level);
-        var appended = shift == 0 ? 0L : (1L << shift) - 1L;
-        return new MortonKey((mortonCode << shift) | appended, targetLevel);
+        int fillBits = 3 * (targetLevel - level);
+        int shift = 3 * (Constants.getMaxRefinementLevel() - targetLevel);
+        long appended = fillBits == 0 ? 0L : (((1L << fillBits) - 1L) << shift);
+        return new MortonKey(mortonCode | appended, targetLevel);
     }
 
     /**
