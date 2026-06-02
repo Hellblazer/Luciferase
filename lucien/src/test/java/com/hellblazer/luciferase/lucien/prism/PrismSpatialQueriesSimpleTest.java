@@ -45,6 +45,11 @@ public class PrismSpatialQueriesSimpleTest {
     // root S0 search triangle. worldSize is 10, so a world Z of 2 normalizes to 0.2. (Luciferase-8sufr: these tests
     // were vacuous — they called the no-op Triangle.setBounds and asserted only assertNotNull. setBounds is now
     // removed and these assert real entity membership.)
+    //
+    // Semantics note: findInTriangularRegion filters at NODE granularity (trianglesIntersect on the prism node's
+    // triangle, then Z overlap) — it is a conservative pre-filter, not a strict per-entity point-in-triangle test.
+    // The S1-half fixtures are placed well away from the y=x diagonal so their level-5 nodes do not touch the S0
+    // root; near-diagonal entities could appear in a cross-half query because adjacent nodes share the diagonal edge.
 
     @Test
     public void testFindInTriangularRegion() {
