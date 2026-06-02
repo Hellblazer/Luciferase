@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +57,7 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
     // Performance tracking
     private final Map<String, Long>                                operationTimings    = new ConcurrentHashMap<>();
     private final Map<String, Integer>                             operationCounts     = new ConcurrentHashMap<>();
+    private volatile Clock                                         clock               = Clock.system(); // Luciferase-mt7hi
 
     public ParallelBulkOperations(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
                                   BulkOperationProcessor<Key, ID, Content> bulkProcessor, ParallelConfig config) {
@@ -101,6 +103,12 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
                                    .withTaskThreshold(200);
     }
 
+    /** Inject a deterministic clock for tests (Luciferase-mt7hi). Defaults to {@code Clock.system()}. */
+    public ParallelBulkOperations<Key, ID, Content> setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
+        return this;
+    }
+
     /**
      * Get performance statistics
      */
@@ -119,7 +127,7 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
      */
     public ParallelOperationResult<ID> insertBatchParallel(List<Point3f> positions, List<Content> contents, byte level)
     throws InterruptedException {
-        long startTime = System.currentTimeMillis();
+        long startTime = clock.currentTimeMillis();
 
         // Validate inputs
         if (positions.size() != contents.size()) {
@@ -134,10 +142,10 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
         // For small datasets, use single-threaded batch insertion
         if (positions.size() < config.getThreadCount() * config.getTaskThreshold()) {
             try {
-                long singleThreadStart = System.currentTimeMillis();
+                long singleThreadStart = clock.currentTimeMillis();
                 List<ID> ids = spatialIndex.insertBatch(positions, contents, level);
                 allInsertedIds.addAll(ids);
-                timings.put("singleThreadedBatch", System.currentTimeMillis() - singleThreadStart);
+                timings.put("singleThreadedBatch", clock.currentTimeMillis() - singleThreadStart);
                 statistics.put("totalEntities", positions.size());
                 statistics.put("partitionCount", 1);
                 statistics.put("threadsUsed", 1);
@@ -146,26 +154,26 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
             } catch (Exception e) {
                 errors.add(e);
             }
-            timings.put("total", System.currentTimeMillis() - startTime);
+            timings.put("total", clock.currentTimeMillis() - startTime);
             return new ParallelOperationResult<>(allInsertedIds, timings, statistics, errors);
         }
 
         try {
             // Phase 1: Parallel Morton code preprocessing (keep this parallel)
-            long preprocessStart = System.currentTimeMillis();
+            long preprocessStart = clock.currentTimeMillis();
             List<BulkOperationProcessor.SfcEntity<Key, Content>> mortonEntities = preprocessParallel(positions,
                                                                                                      contents, level);
-            timings.put("preprocessing", System.currentTimeMillis() - preprocessStart);
+            timings.put("preprocessing", clock.currentTimeMillis() - preprocessStart);
 
             // Phase 2: Adaptive spatial partitioning
-            long partitionStart = System.currentTimeMillis();
+            long partitionStart = clock.currentTimeMillis();
             var partitionedEntities = adaptivePartitioning(mortonEntities, level);
-            timings.put("partitioning", System.currentTimeMillis() - partitionStart);
+            timings.put("partitioning", clock.currentTimeMillis() - partitionStart);
 
             // Phase 3: Parallel batch insertion with coarse-grained locking
-            long insertionStart = System.currentTimeMillis();
+            long insertionStart = clock.currentTimeMillis();
             insertPartitionsParallel(partitionedEntities, level, allInsertedIds, errors);
-            timings.put("insertion", System.currentTimeMillis() - insertionStart);
+            timings.put("insertion", clock.currentTimeMillis() - insertionStart);
 
             // Collect statistics
             statistics.put("totalEntities", positions.size());
@@ -178,7 +186,7 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
             errors.add(e);
         }
 
-        timings.put("total", System.currentTimeMillis() - startTime);
+        timings.put("total", clock.currentTimeMillis() - startTime);
 
         return new ParallelOperationResult<>(allInsertedIds, timings, statistics, errors);
     }

@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +50,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
     private static final String STRATEGY_NAME = "cascading-recovery";
 
     private volatile boolean simulatedRecoveryEnabled = false;
+    private volatile Clock clock = Clock.system(); // Clock injection (Luciferase-mt7hi)
     private final FaultConfiguration config;
     private final ExecutorService executor;
     private final CopyOnWriteArrayList<RecoveryProgressObserver> observers;
@@ -127,6 +129,12 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         return this;
     }
 
+    /** Inject a deterministic clock for tests (Luciferase-mt7hi). Defaults to {@code Clock.system()}. */
+    public CascadingRecoveryImpl setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
+        return this;
+    }
+
     /**
      * Add progress observer for monitoring recovery operations.
      *
@@ -161,7 +169,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         log.info("Initiating cascading recovery for partition {}", partitionId);
         notifyEvent(partitionId, RecoveryEventType.RECOVERY_STARTED, "Cascading recovery initiated");
 
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
 
         return CompletableFuture.supplyAsync(() -> {
             try {
@@ -169,7 +177,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
             } catch (Exception e) {
                 log.error("Cascading recovery failed for partition {}: {}",
                     partitionId, e.getMessage(), e);
-                var duration = System.currentTimeMillis() - startTime;
+                var duration = clock.currentTimeMillis() - startTime;
                 notifyEvent(partitionId, RecoveryEventType.RECOVERY_FAILED,
                     "Recovery failed: " + e.getMessage());
                 return RecoveryResult.failure(
@@ -210,7 +218,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         }
 
         // All levels failed
-        var duration = System.currentTimeMillis() - startTime;
+        var duration = clock.currentTimeMillis() - startTime;
         log.error("Cascading recovery exhausted all levels for partition {} (total attempts: {})",
             partitionId, totalAttempts);
         notifyEvent(partitionId, RecoveryEventType.RECOVERY_FAILED,
@@ -257,7 +265,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
                     Thread.sleep(backoffMs);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    var duration = System.currentTimeMillis() - startTime;
+                    var duration = clock.currentTimeMillis() - startTime;
                     return RecoveryResult.failure(
                         partitionId,
                         duration,
@@ -271,7 +279,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         }
 
         // Level failed after all retries
-        var duration = System.currentTimeMillis() - startTime;
+        var duration = clock.currentTimeMillis() - startTime;
         return RecoveryResult.failure(
             partitionId,
             duration,
@@ -295,7 +303,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
 
         // Validate partition state
         if (!validatePartitionState(partitionId, handler)) {
-            var duration = System.currentTimeMillis() - startTime;
+            var duration = clock.currentTimeMillis() - startTime;
             return RecoveryResult.failure(
                 partitionId,
                 duration,
@@ -311,7 +319,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
 
         // Verify recovery
         if (verifyRecovery(partitionId, handler)) {
-            var duration = System.currentTimeMillis() - startTime;
+            var duration = clock.currentTimeMillis() - startTime;
             notifyProgress(partitionId, "complete", 100, startTime, "Recovery completed via barrier sync");
             notifyEvent(partitionId, RecoveryEventType.RECOVERY_COMPLETED,
                 "Recovery completed at barrier sync level");
@@ -324,7 +332,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
             );
         }
 
-        var duration = System.currentTimeMillis() - startTime;
+        var duration = clock.currentTimeMillis() - startTime;
         return RecoveryResult.failure(
             partitionId,
             duration,
@@ -351,7 +359,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         // Simulate state transfer (would involve ghost layer sync in real implementation)
 
         if (verifyRecovery(partitionId, handler)) {
-            var duration = System.currentTimeMillis() - startTime;
+            var duration = clock.currentTimeMillis() - startTime;
             notifyProgress(partitionId, "complete", 100, startTime, "Recovery completed via state transfer");
             notifyEvent(partitionId, RecoveryEventType.RECOVERY_COMPLETED,
                 "Recovery completed at state transfer level");
@@ -364,7 +372,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
             );
         }
 
-        var duration = System.currentTimeMillis() - startTime;
+        var duration = clock.currentTimeMillis() - startTime;
         return RecoveryResult.failure(
             partitionId,
             duration,
@@ -391,7 +399,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         // Simulate full rebuild (would trigger complete partition reconstruction)
 
         if (verifyRecovery(partitionId, handler)) {
-            var duration = System.currentTimeMillis() - startTime;
+            var duration = clock.currentTimeMillis() - startTime;
             notifyProgress(partitionId, "complete", 100, startTime, "Recovery completed via full rebuild");
             notifyEvent(partitionId, RecoveryEventType.RECOVERY_COMPLETED,
                 "Recovery completed at full rebuild level");
@@ -404,7 +412,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
             );
         }
 
-        var duration = System.currentTimeMillis() - startTime;
+        var duration = clock.currentTimeMillis() - startTime;
         return RecoveryResult.failure(
             partitionId,
             duration,
@@ -482,7 +490,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
             partitionId,
             phase,
             percent,
-            System.currentTimeMillis() - startTime,
+            clock.currentTimeMillis() - startTime,
             message
         );
 

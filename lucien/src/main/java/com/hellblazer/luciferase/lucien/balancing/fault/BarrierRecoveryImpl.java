@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +47,7 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
     private static final String STRATEGY_NAME = "barrier-recovery";
 
     private volatile boolean simulatedRecoveryEnabled = false;
+    private volatile Clock clock = Clock.system(); // Clock injection (Luciferase-mt7hi)
     private final FaultConfiguration config;
     private final ExecutorService executor;
     private final CopyOnWriteArrayList<RecoveryProgressObserver> observers;
@@ -104,6 +106,12 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
         return this;
     }
 
+    /** Inject a deterministic clock for tests (Luciferase-mt7hi). Defaults to {@code Clock.system()}. */
+    public BarrierRecoveryImpl setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
+        return this;
+    }
+
     /**
      * Add progress observer for monitoring recovery operations.
      *
@@ -138,7 +146,7 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
         log.info("Initiating barrier recovery for partition {}", partitionId);
         notifyEvent(partitionId, RecoveryEventType.RECOVERY_STARTED, "Barrier recovery initiated");
 
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
 
         return CompletableFuture.supplyAsync(() -> {
             try {
@@ -146,7 +154,7 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
             } catch (Exception e) {
                 log.error("Barrier recovery failed for partition {}: {}",
                     partitionId, e.getMessage(), e);
-                var duration = System.currentTimeMillis() - startTime;
+                var duration = clock.currentTimeMillis() - startTime;
                 notifyEvent(partitionId, RecoveryEventType.RECOVERY_FAILED,
                     "Recovery failed: " + e.getMessage());
                 return RecoveryResult.failure(
@@ -178,7 +186,7 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
             notifyEvent(partitionId, RecoveryEventType.RECOVERY_VALIDATION, "Validating partition state");
 
             if (!validatePartitionState(partitionId, handler)) {
-                var duration = System.currentTimeMillis() - startTime;
+                var duration = clock.currentTimeMillis() - startTime;
                 return RecoveryResult.failure(
                     partitionId,
                     duration,
@@ -202,7 +210,7 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
 
                 if (verifyRecovery(partitionId, handler)) {
                     // Success
-                    var duration = System.currentTimeMillis() - startTime;
+                    var duration = clock.currentTimeMillis() - startTime;
                     notifyProgress(partitionId, "complete", 100, startTime, "Recovery completed");
                     notifyEvent(partitionId, RecoveryEventType.RECOVERY_COMPLETED,
                         "Recovery completed successfully in " + duration + "ms");
@@ -228,7 +236,7 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
                     Thread.sleep(backoffMs);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    var duration = System.currentTimeMillis() - startTime;
+                    var duration = clock.currentTimeMillis() - startTime;
                     return RecoveryResult.failure(
                         partitionId,
                         duration,
@@ -244,7 +252,7 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
         }
 
         // All retries exhausted
-        var duration = System.currentTimeMillis() - startTime;
+        var duration = clock.currentTimeMillis() - startTime;
         log.warn("Barrier recovery failed for partition {} after {} attempts", partitionId, maxRetries);
         notifyEvent(partitionId, RecoveryEventType.RECOVERY_FAILED,
             "Recovery failed after " + maxRetries + " attempts");
@@ -338,7 +346,7 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
             partitionId,
             phase,
             percent,
-            System.currentTimeMillis() - startTime,
+            clock.currentTimeMillis() - startTime,
             message
         );
 

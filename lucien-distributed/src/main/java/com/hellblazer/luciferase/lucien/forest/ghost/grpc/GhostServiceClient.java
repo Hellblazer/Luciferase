@@ -297,9 +297,12 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
     public String startStreaming(int targetRank, 
                                Consumer<GhostUpdate> updateHandler,
                                Consumer<Throwable> errorHandler) {
-        streamCount.incrementAndGet();
-        
-        var streamId = "stream-" + targetRank + "-" + System.currentTimeMillis();
+        // Monotonic stream sequence for a collision-free id (within this client instance's lifetime; stream-id
+        // uniqueness is connection-scoped) — a wall-clock timestamp collides at sub-ms rates and violates the
+        // Clock-injection mandate (Luciferase-mt7hi).
+        long streamSeq = streamCount.incrementAndGet();
+
+        var streamId = "stream-" + targetRank + "-" + streamSeq;
         
         virtualExecutor.submit(() -> {
             try {
