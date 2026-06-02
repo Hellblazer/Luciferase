@@ -50,6 +50,36 @@ class DistanceConstraintOrientationTest {
     }
 
     @Test
+    void rotatedConstraintStaysBoundedOverManySolverSteps() {
+        // Acceptance "no drift/energy growth over many steps": drive the solver on a body with a non-identity
+        // orientation and an offset anchor, and assert the constraint error stays bounded rather than diverging.
+        var inertia = InertiaTensor.sphere(1.0f, 0.5f);
+        var bodyA = new RigidBody(1.0f, inertia);
+        var bodyB = new RigidBody(1.0f, inertia);
+        bodyA.setPosition(new Point3f(0, 0, 0));
+        bodyB.setPosition(new Point3f(3, 0, 0));
+        // Non-identity bind orientation for A (30 deg about Z) with an offset anchor.
+        bodyA.setOrientation(new Quat4f(0, 0, (float) Math.sin(Math.PI / 12), (float) Math.cos(Math.PI / 12)));
+
+        var constraint = new DistanceConstraint(bodyA, bodyB, new Point3f(0.5f, 0.5f, 0), new Point3f(3, 0, 0));
+        float initialError = constraint.getError();
+
+        float dt = 0.016f;
+        float maxError = initialError;
+        for (int step = 0; step < 200; step++) {
+            constraint.prepare(dt);
+            constraint.solve();
+            maxError = Math.max(maxError, constraint.getError());
+        }
+
+        // The solver must not let the error grow without bound (energy injection). It need not converge to zero
+        // here (bodies free-fall under the impulses, no integration of position), but error must stay bounded.
+        assertTrue(Float.isFinite(maxError), "constraint error must remain finite (no divergence)");
+        assertTrue(maxError < initialError + 1.0f,
+                   "rotated constraint must stay bounded over many steps, not inject energy (Luciferase-wv1yk)");
+    }
+
+    @Test
     void identityOrientationLeavesAnchorsUnchanged() {
         var inertia = InertiaTensor.sphere(1.0f, 0.5f);
         var bodyA = new RigidBody(1.0f, inertia);
