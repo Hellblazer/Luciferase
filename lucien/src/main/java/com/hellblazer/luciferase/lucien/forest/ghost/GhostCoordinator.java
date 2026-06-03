@@ -213,8 +213,13 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
         core.lock().writeLock().lock();
         try {
             this.neighborDetector = detector;
+            // Build the detector lazily if it wasn't built yet (e.g. setGhostType ran first, before a detector
+            // existed). It is built with whatever ghostType/ghostAlgorithm are currently set, so construction is
+            // order-independent (Luciferase-smaik). Propagate the persisted rank too — the sibling setters do, and
+            // omitting it here would leave a lazily-built detector at the default rank 0 if a rank was set first.
             if (detector != null && this.ghostBoundaryDetector == null) {
                 this.ghostBoundaryDetector = new GhostBoundaryDetector<>(facade, detector, ghostType, ghostAlgorithm);
+                this.ghostBoundaryDetector.setCurrentRank(currentRank);
             }
         } finally {
             core.lock().writeLock().unlock();
