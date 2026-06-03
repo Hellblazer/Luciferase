@@ -53,6 +53,11 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Prism.class);
 
+    // Warn-once guards for the unsupported query paths (Luciferase-h9r0z): getPlaneTraversalOrder is reachable via
+    // the Culler plane-query path, so a per-call warn would spam the log; warn once per JVM instead.
+    private final java.util.concurrent.atomic.AtomicBoolean planeTraversalWarned = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean enclosingVolumeWarned = new java.util.concurrent.atomic.AtomicBoolean();
+
     /** Maximum subdivision level */
     public static final int MAX_LEVEL = 21;
     
@@ -513,10 +518,12 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     @Override
     protected Stream<PrismKey> getPlaneTraversalOrder(Plane3D plane) {
         // UNSUPPORTED for Prism (Luciferase-h9r0z): plane-vs-prism traversal is not implemented. Returning an empty
-        // stream would silently mis-serve plane-cut queries, so warn loudly instead of failing silently. Implementing
-        // real plane-prism intersection traversal is deferred (no current consumer); callers should not rely on it.
-        log.warn("Prism.getPlaneTraversalOrder is unsupported (Luciferase-h9r0z): plane-cut queries on Prism return "
-                 + "no nodes. Do not rely on this result.");
+        // stream would silently mis-serve plane-cut queries (this path is reachable via the Culler plane query), so
+        // warn — once per JVM to avoid log spam. Real plane-prism traversal is deferred (no current consumer).
+        if (planeTraversalWarned.compareAndSet(false, true)) {
+            log.warn("Prism.getPlaneTraversalOrder is unsupported (Luciferase-h9r0z): plane-cut queries on Prism "
+                     + "return no nodes. Do not rely on this result. (warned once)");
+        }
         return Stream.empty();
     }
     
@@ -550,10 +557,12 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     @Override
     public SpatialIndex.SpatialNode<PrismKey, ID> enclosing(Spatial volume) {
         // UNSUPPORTED for Prism (Luciferase-h9r0z): minimum-enclosing-prism for an arbitrary volume is not
-        // implemented (the point/level overload below IS). Returning null silently mis-serves callers, so warn.
+        // implemented (the point/level overload below IS). Returning null silently mis-serves callers, so warn once.
         // Implementing volume enclosure is deferred (no current consumer).
-        log.warn("Prism.enclosing(Spatial) is unsupported (Luciferase-h9r0z): returns null. Use enclosing(point, "
-                 + "level) for point queries; do not rely on the volume overload.");
+        if (enclosingVolumeWarned.compareAndSet(false, true)) {
+            log.warn("Prism.enclosing(Spatial) is unsupported (Luciferase-h9r0z): returns null. Use enclosing(point, "
+                     + "level) for point queries; do not rely on the volume overload. (warned once)");
+        }
         return null;
     }
     

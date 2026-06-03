@@ -55,6 +55,36 @@ class BigminOracleTest {
     }
 
     @Test
+    void rangeQueryIsSubLinearOnLargeSparseSpace() {
+        // Luciferase-lield performance contract: a small query box high in a full 21-level Morton space. The Morton
+        // range spanned is astronomically large (~10^11 between start and the box), so the old current+1 scan would
+        // take ~10^11 iterations. Canonical BIGMIN must converge to the first in-box code in O(tree-depth*dims)
+        // jumps. We replicate findNextInRange's loop here to COUNT the bigmin jumps and bound them.
+        int lvl = MortonCurve.MAX_REFINEMENT_LEVEL; // 21 -> coords up to 2^21
+        int base = (1 << lvl) - 4;                  // box near the top corner: [base..base+1]^3
+        int minX = base, minY = base, minZ = base, maxX = base + 1, maxY = base + 1, maxZ = base + 1;
+        long maxMorton = MortonCurve.encode(maxX, maxY, maxZ);
+        long boxFirst = MortonCurve.encode(minX, minY, minZ);
+
+        long current = 0;
+        int jumps = 0;
+        long found = -1;
+        while (current <= maxMorton) {
+            var c = MortonCurve.decode(current);
+            if (c[0] >= minX && c[0] <= maxX && c[1] >= minY && c[1] <= maxY && c[2] >= minZ && c[2] <= maxZ) {
+                found = current;
+                break;
+            }
+            current = LitmaxBigmin.bigmin(current, minX, minY, minZ, maxX, maxY, maxZ);
+            jumps++;
+            assertTrue(jumps < 5000, "BIGMIN must converge in O(depth*dims) jumps, not O(morton-range); jumps=" + jumps);
+        }
+        assertEquals(boxFirst, found, "must locate the first in-box Morton code");
+        // The Morton range from 0 to the box is enormous; the jump count must be a tiny fraction of it.
+        assertTrue(jumps < 200, "expected far fewer than 200 jumps over a ~10^11 Morton range, got " + jumps);
+    }
+
+    @Test
     void aboveQueryBigminJumpsNotScans() {
         // A point far above the box on every axis: BIGMIN must NOT return current+1 (the old O(range) scan), it must
         // jump (here: past the box entirely -> Long.MAX_VALUE, since no in-box code is greater).

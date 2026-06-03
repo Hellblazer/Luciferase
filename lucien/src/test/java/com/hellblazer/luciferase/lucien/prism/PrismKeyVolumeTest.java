@@ -20,7 +20,7 @@ class PrismKeyVolumeTest {
 
     @Test
     void getVolumeMatchesPrismGeometryComputeVolume() {
-        for (int level = 1; level <= 6; level++) {
+        for (int level = 0; level <= 6; level++) {
             var key = PrismKey.fromWorldCoordinates(0.2f, 0.1f, 0.3f, level);
             assertEquals(PrismGeometry.computeVolume(key), key.getVolume(), 1e-9f,
                          "PrismKey.getVolume must equal PrismGeometry.computeVolume at level " + level
