@@ -4,10 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Tracks in-flight balance and sync operations to enable synchronous pause.
@@ -31,70 +30,79 @@ import java.util.concurrent.atomic.AtomicReference;
  * tracker.resume();
  * </pre>
  *
- * <p><b>Thread Safety</b>: Fully thread-safe using atomic operations and latches.
+ * <p><b>Thread Safety</b>: Fully thread-safe. A single {@link ReentrantLock} guards the active-operation count,
+ * the pause flag, and the completion {@link Condition}. Begin/end/pause/resume all mutate that state under the
+ * lock, so there is no publish-then-signal window (Luciferase-lere9): an {@code endOperation} that drops the
+ * count to zero always signals the same condition the paused waiter is parked on, eliminating the spurious
+ * timeout that the prior latch-publication design could stall on.
  */
 public class InFlightOperationTracker {
 
     private static final Logger log = LoggerFactory.getLogger(InFlightOperationTracker.class);
 
-    private final AtomicInteger activeOperations = new AtomicInteger(0);
-    private final AtomicReference<CountDownLatch> completionLatch = new AtomicReference<>();
-    private volatile boolean paused = false;
+    private final ReentrantLock lock = new ReentrantLock();
+    // Signalled when activeOperations reaches 0 while paused; awaited by pauseAndWait.
+    private final Condition allOperationsDone = lock.newCondition();
+    private int activeOperations = 0;   // guarded by lock
+    private boolean paused = false;     // guarded by lock
 
     /**
      * Begin tracking an operation. Call this at the START of balance()/sync().
-     *
-     * <p><b>TOCTOU Race Fix</b>: Increment FIRST, then check paused flag.
-     * This ensures that if pause thread runs between increment and check,
-     * it will see the non-zero activeOperations count.
      *
      * @return token that MUST be closed when operation completes
      * @throws IllegalStateException if operations are paused
      */
     public OperationToken beginOperation() {
-        int count = activeOperations.incrementAndGet();
-        if (paused) {
-            activeOperations.decrementAndGet();  // Rollback immediately
-            log.debug("Operation rejected: tracker is paused");
-            throw new IllegalStateException("Operations are paused for recovery");
+        lock.lock();
+        try {
+            if (paused) {
+                log.debug("Operation rejected: tracker is paused");
+                throw new IllegalStateException("Operations are paused for recovery");
+            }
+            activeOperations++;
+            log.debug("Operation started, active count: {}", activeOperations);
+            return new OperationToken(this);
+        } finally {
+            lock.unlock();
         }
-
-        log.debug("Operation started, active count: {}", count);
-        return new OperationToken(this);
     }
 
     /**
      * Try to begin an operation, returning empty if paused.
      * Use when caller wants to skip rather than throw.
-     *
-     * <p><b>TOCTOU Race Fix</b>: Increment FIRST, then check paused flag,
-     * same as beginOperation() but returns Optional instead of throwing.
      */
     public Optional<OperationToken> tryBeginOperation() {
-        int count = activeOperations.incrementAndGet();
-        if (paused) {
-            activeOperations.decrementAndGet();  // Rollback immediately
-            return Optional.empty();
+        lock.lock();
+        try {
+            if (paused) {
+                return Optional.empty();
+            }
+            activeOperations++;
+            log.debug("Operation started (try), active count: {}", activeOperations);
+            return Optional.of(new OperationToken(this));
+        } finally {
+            lock.unlock();
         }
-
-        log.debug("Operation started (try), active count: {}", count);
-        return Optional.of(new OperationToken(this));
     }
 
     /**
      * Called when an operation completes (via OperationToken.close()).
      */
     void endOperation() {
-        int remaining = activeOperations.decrementAndGet();
-        log.debug("Operation completed, active count: {}", remaining);
-
-        // Signal completion latch if this was the last operation
-        if (paused && remaining == 0) {
-            var latch = completionLatch.get();
-            if (latch != null) {
-                log.debug("Last operation completed, signaling pause barrier");
-                latch.countDown();
+        lock.lock();
+        try {
+            if (activeOperations > 0) {
+                activeOperations--;
             }
+            log.debug("Operation completed, active count: {}", activeOperations);
+            // Signal the pause barrier under the lock — no waiter can miss this, even if pauseAndWait has not yet
+            // begun awaiting (it holds the lock across the flag-set and the await loop).
+            if (paused && activeOperations == 0) {
+                log.debug("Last operation completed, signaling pause barrier");
+                allOperationsDone.signalAll();
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -114,63 +122,63 @@ public class InFlightOperationTracker {
      * @throws InterruptedException if interrupted while waiting
      */
     public boolean pauseAndWait(long timeout, TimeUnit unit) throws InterruptedException {
-        log.info("Pausing operations, waiting for {} in-flight to complete", activeOperations.get());
-
-        // Step 1: Set pause flag to reject new operations
-        paused = true;
-
-        // Step 2: Check if any operations are active
-        int active = activeOperations.get();
-        if (active == 0) {
-            log.debug("No in-flight operations, pause barrier clear immediately");
-            return true;
-        }
-
-        // Step 3: Create latch and wait for completion
-        var latch = new CountDownLatch(1);
-        completionLatch.set(latch);
-
-        // Re-check in case operations completed between check and latch setup
-        if (activeOperations.get() == 0) {
-            log.debug("Operations completed during latch setup");
-            return true;
-        }
-
-        log.info("Waiting up to {} {} for {} operations to complete", timeout, unit, activeOperations.get());
-
-        boolean completed = latch.await(timeout, unit);
-
-        if (completed) {
+        lock.lock();
+        try {
+            log.info("Pausing operations, waiting for {} in-flight to complete", activeOperations);
+            paused = true;
+            long nanos = unit.toNanos(timeout);
+            while (activeOperations > 0) {
+                if (nanos <= 0L) {
+                    log.warn("Pause barrier timeout - {} operations still active after {} {}", activeOperations,
+                             timeout, unit);
+                    return false;
+                }
+                // awaitNanos atomically releases the lock and re-acquires it on signal/timeout, so an endOperation
+                // signal cannot be lost between the activeOperations check and the wait.
+                nanos = allOperationsDone.awaitNanos(nanos);
+            }
             log.info("Pause barrier clear - all in-flight operations completed");
-        } else {
-            log.warn("Pause barrier timeout - {} operations still active after {} {}", activeOperations.get(), timeout,
-                     unit);
+            return true;
+        } finally {
+            lock.unlock();
         }
-
-        return completed;
     }
 
     /**
      * Resume operations after recovery.
      */
     public void resume() {
-        paused = false;
-        completionLatch.set(null);  // Clear latch for next pause cycle
-        log.info("Operations resumed");
+        lock.lock();
+        try {
+            paused = false;
+            log.info("Operations resumed");
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
      * Check if operations are currently paused.
      */
     public boolean isPaused() {
-        return paused;
+        lock.lock();
+        try {
+            return paused;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
      * Get count of active operations.
      */
     public int getActiveCount() {
-        return activeOperations.get();
+        lock.lock();
+        try {
+            return activeOperations;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
