@@ -422,9 +422,15 @@ public final class Triangle {
     
     /**
      * Find the neighbors of this triangle on its three edges.
-     * 
+     *
      * @return array of 3 neighbor triangles (may contain nulls for boundary edges)
+     * @deprecated Luciferase-mfe6y: this is a coordinate-shift approximation (±1 on x/y), NOT the t8code/Bey
+     *             face-neighbor topology that {@link #faceNeighbor(int)} computes — and it silently suppresses
+     *             cross-root (S0↔S1) neighbors. {@code Prism.addNeighboringNodes} correctly uses
+     *             {@link #faceNeighbor(int)}; external callers expecting t8code fidelity should use that. Retained
+     *             only for backward compatibility.
      */
+    @Deprecated
     public Triangle[] neighbors() {
         var neighbors = new Triangle[EDGES];
         
@@ -452,11 +458,14 @@ public final class Triangle {
     
     /**
      * Find the neighbor of this triangle across a specific edge.
-     * 
+     *
      * @param edge the edge index (0-2)
      * @return the neighbor triangle, or null if at boundary
      * @throws IllegalArgumentException if edge index is invalid
+     * @deprecated Luciferase-mfe6y: coordinate-shift approximation, not t8code face-neighbor topology — use
+     *             {@link #faceNeighbor(int)} (the documented, t8code-faithful path). See {@link #neighbors()}.
      */
+    @Deprecated
     public Triangle neighbor(int edge) {
         if (edge < 0 || edge >= EDGES) {
             throw new IllegalArgumentException("Edge index must be 0-2, got: " + edge);
