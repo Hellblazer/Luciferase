@@ -437,11 +437,81 @@ public class SweptSphere {
         return earliest;
     }
     
-    private static ContinuousCollisionResult sweptSphereVsLineSegment(Point3f sphereStart, Vector3f sphereVelocity,
-                                                                     float sphereRadius, Point3f p1, Point3f p2) {
-        // This is simplified - a full implementation would handle the swept sphere vs swept line segment case
-        var midPoint = new Point3f();
-        midPoint.interpolate(p1, p2, 0.5f);
-        return sweptSphereVsStaticSphere(sphereStart, sphereVelocity, sphereRadius, midPoint, 0);
+    // Package-private for direct unit testing of the edge-graze geometry (Luciferase-j8iqw).
+    static ContinuousCollisionResult sweptSphereVsLineSegment(Point3f sphereStart, Vector3f sphereVelocity,
+                                                              float sphereRadius, Point3f p1, Point3f p2) {
+        // Swept sphere vs a zero-radius segment (Luciferase-j8iqw): perpendicular-distance quadratic clamped to the
+        // segment interval, with the two endpoints handled as static spheres. This mirrors the cylinder part of
+        // sweptSphereVsCapsule (capsuleRadius = 0) and replaces the old midpoint-sphere reduction, which produced
+        // false negatives for grazes away from the midpoint and false positives near it.
+        var axis = new Vector3f();
+        axis.sub(p2, p1);
+        float segLength = axis.length();
+        if (segLength < EPSILON) {
+            return sweptSphereVsStaticSphere(sphereStart, sphereVelocity, sphereRadius, p1, 0);
+        }
+        axis.normalize();
+
+        var relPos = new Vector3f();
+        relPos.sub(sphereStart, p1);
+        float projPos = relPos.dot(axis);
+        float projVel = sphereVelocity.dot(axis);
+
+        // Components perpendicular to the segment axis — the sphere center closes on the infinite line in these.
+        var perpPos = new Vector3f(relPos);
+        var axisPart = new Vector3f(axis);
+        axisPart.scale(projPos);
+        perpPos.sub(axisPart);
+
+        var perpVel = new Vector3f(sphereVelocity);
+        axisPart.set(axis);
+        axisPart.scale(projVel);
+        perpVel.sub(axisPart);
+
+        float a = perpVel.dot(perpVel);
+        float b = 2.0f * perpPos.dot(perpVel);
+        float c = perpPos.dot(perpPos) - sphereRadius * sphereRadius;
+
+        if (Math.abs(a) >= EPSILON) {
+            float discriminant = b * b - 4 * a * c;
+            if (discriminant >= 0) {
+                float sqrtDisc = (float) Math.sqrt(discriminant);
+                float t1 = (-b - sqrtDisc) / (2 * a);
+                float t2 = (-b + sqrtDisc) / (2 * a);
+                float t = -1;
+                if (t1 >= 0 && t1 <= 1) {
+                    t = t1;
+                } else if (t2 >= 0 && t2 <= 1) {
+                    t = t2;
+                }
+                if (t >= 0) {
+                    float axialPos = projPos + projVel * t;
+                    if (axialPos >= 0 && axialPos <= segLength) {
+                        var contactPos = new Point3f(sphereStart);
+                        var motion = new Vector3f(sphereVelocity);
+                        motion.scale(t);
+                        contactPos.add(motion);
+
+                        var closestOnSeg = new Point3f(p1);
+                        var axisOffset = new Vector3f(axis);
+                        axisOffset.scale(axialPos);
+                        closestOnSeg.add(axisOffset);
+
+                        var normal = new Vector3f();
+                        normal.sub(contactPos, closestOnSeg);
+                        if (normal.length() >= EPSILON) {
+                            normal.normalize();
+                            return ContinuousCollisionResult.collision(t, new Point3f(closestOnSeg), normal, 0.0f);
+                        }
+                        // Center on the segment line — degenerate normal; fall through to the endpoint caps.
+                    }
+                }
+            }
+        }
+
+        // Endpoint caps (and the axis-parallel / center-on-line cases).
+        var rEnd1 = sweptSphereVsStaticSphere(sphereStart, sphereVelocity, sphereRadius, p1, 0);
+        var rEnd2 = sweptSphereVsStaticSphere(sphereStart, sphereVelocity, sphereRadius, p2, 0);
+        return rEnd1.happensBefore(rEnd2) ? rEnd1 : rEnd2;
     }
 }
