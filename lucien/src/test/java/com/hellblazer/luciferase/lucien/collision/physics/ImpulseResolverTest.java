@@ -125,6 +125,53 @@ public class ImpulseResolverTest {
     }
     
     @Test
+    void manifoldDistributesAngularArmsVsSinglePoint() {
+        // Luciferase-nm9dj/zz8xp: a 4-point contact manifold distributes the impulse across the true contact polygon
+        // so the angular arms reflect the corners, not a single representative point. A body spinning about x and
+        // descending onto a kinematic floor sees asymmetric per-corner approach speeds (z=+1 corners approach fast,
+        // z=-1 slow), so the manifold induces a change in spin about x that a single centroid contact (zero x-arm)
+        // cannot.
+        var inertia = InertiaTensor.sphere(10.0f, 1.0f);
+        var normal = new Vector3f(0, 1, 0);
+        var frictionless = new PhysicsMaterial(0.0f, 0.0f, 1000f);
+        var manifold = java.util.List.of(new Point3f(1, 0, 1), new Point3f(1, 0, -1),
+                                         new Point3f(-1, 0, -1), new Point3f(-1, 0, 1));
+
+        var aManifold = spinningDescender(inertia, frictionless);
+        ImpulseResolver.resolveCollision(aManifold, kinematicFloor(inertia, frictionless),
+                                         new CollisionResult(true, new Point3f(0, 0, 0), normal, 0.05f, manifold));
+
+        var aCentroid = spinningDescender(inertia, frictionless);
+        ImpulseResolver.resolveCollision(aCentroid, kinematicFloor(inertia, frictionless),
+                                         new CollisionResult(true, new Point3f(0, 0, 0), normal, 0.05f));
+
+        float manifoldSpinX = aManifold.getAngularVelocity().x;
+        float centroidSpinX = aCentroid.getAngularVelocity().x;
+
+        assertEquals(5.0f, centroidSpinX, 1e-3f, "a single centroid contact has zero x-arm -> spin about x unchanged");
+        assertTrue(Math.abs(manifoldSpinX - centroidSpinX) > 1e-2f,
+                   "the manifold's offset corners must change the spin about x (distributed arms, Luciferase-nm9dj); "
+                   + "manifold=" + manifoldSpinX + " centroid=" + centroidSpinX);
+    }
+
+    private static RigidBody spinningDescender(Matrix3f inertia, PhysicsMaterial m) {
+        var a = new RigidBody(10.0f, inertia);
+        a.setPosition(new Point3f(0, 1, 0));
+        a.setLinearVelocity(new Vector3f(0, -5, 0));
+        a.setAngularVelocity(new Vector3f(5, 0, 0));
+        a.setMaterial(m);
+        return a;
+    }
+
+    private static RigidBody kinematicFloor(Matrix3f inertia, PhysicsMaterial m) {
+        var b = new RigidBody(10.0f, inertia);
+        b.setPosition(new Point3f(0, -1, 0));
+        b.setKinematic(true);
+        b.setMaterial(m);
+        return b;
+    }
+
+    @Test
     void testFriction() {
         // Body sliding along another
         bodyA.setPosition(new Point3f(0, 1, 0));
