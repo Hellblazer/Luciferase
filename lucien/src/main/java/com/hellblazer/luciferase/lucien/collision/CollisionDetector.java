@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Matrix3f;
 import javax.vecmath.Vector3f;
 
 /**
@@ -158,25 +159,34 @@ public class CollisionDetector {
             var v2 = new Point3f();
             mesh.getMeshData().getTriangleVertices(triIndex, v0, v1, v2);
 
-            if (triangleIntersectsBox(v0, v1, v2, box)) {
-                var center = new Point3f(v0);
-                center.add(v1);
-                center.add(v2);
-                center.scale(1.0f / 3.0f);
-
-                var edge1 = new Vector3f();
-                edge1.sub(v1, v0);
-                var edge2 = new Vector3f();
-                edge2.sub(v2, v0);
-                var normal = new Vector3f();
-                normal.cross(edge1, edge2);
-                normal.normalize();
-
-                return CollisionResult.collision(center, normal, 0.1f);
+            var sat = triangleVsBox(v0, v1, v2, box);
+            if (sat.collides) {
+                // Real MTV penetration depth and SAT axis (Luciferase-bsibi) — no longer a fabricated 0.1f.
+                var center = triangleCentroid(v0, v1, v2);
+                return CollisionResult.collision(center, orientNormal(sat.axis, box.getPosition(), center),
+                                                 sat.penetration);
             }
         }
 
         return CollisionResult.noCollision();
+    }
+
+    private static Point3f triangleCentroid(Point3f v0, Point3f v1, Point3f v2) {
+        var c = new Point3f(v0);
+        c.add(v1);
+        c.add(v2);
+        c.scale(1.0f / 3.0f);
+        return c;
+    }
+
+    /** Orient a SAT axis to point from the box centre toward the contact (stable contact-normal sign). */
+    private static Vector3f orientNormal(Vector3f axis, Point3f boxCenter, Point3f contact) {
+        var n = new Vector3f(axis);
+        var toContact = new Vector3f(contact.x - boxCenter.x, contact.y - boxCenter.y, contact.z - boxCenter.z);
+        if (n.dot(toContact) < 0) {
+            n.negate();
+        }
+        return n;
     }
 
     private static CollisionResult boxVsOrientedBox(BoxShape box, OrientedBoxShape obb) {
@@ -566,21 +576,12 @@ public class CollisionDetector {
             var v2 = new Point3f();
             mesh.getMeshData().getTriangleVertices(triIndex, v0, v1, v2);
 
-            if (triangleIntersectsOBB(v0, v1, v2, obb)) {
-                var center = new Point3f(v0);
-                center.add(v1);
-                center.add(v2);
-                center.scale(1.0f / 3.0f);
-
-                var edge1 = new Vector3f();
-                edge1.sub(v1, v0);
-                var edge2 = new Vector3f();
-                edge2.sub(v2, v0);
-                var normal = new Vector3f();
-                normal.cross(edge1, edge2);
-                normal.normalize();
-
-                return CollisionResult.collision(center, normal, 0.1f);
+            var sat = triangleVsOBB(v0, v1, v2, obb);
+            if (sat.collides) {
+                // Orientation-correct SAT with real MTV penetration (Luciferase-bsibi).
+                var center = triangleCentroid(v0, v1, v2);
+                return CollisionResult.collision(center, orientNormal(sat.axis, obb.getPosition(), center),
+                                                 sat.penetration);
             }
         }
 
@@ -753,16 +754,17 @@ public class CollisionDetector {
         return CollisionResult.collision(contactPoint, normal, penetrationDepth);
     }
 
-    private static boolean triangleIntersectsBox(Point3f v0, Point3f v1, Point3f v2, BoxShape box) {
-        var boxBounds = box.getAABB();
+    static boolean triangleIntersectsBox(Point3f v0, Point3f v1, Point3f v2, BoxShape box) {
+        return triangleVsBox(v0, v1, v2, box).collides;
+    }
 
-        var triMin = new Point3f(Math.min(Math.min(v0.x, v1.x), v2.x), Math.min(Math.min(v0.y, v1.y), v2.y),
-                                 Math.min(Math.min(v0.z, v1.z), v2.z));
-        var triMax = new Point3f(Math.max(Math.max(v0.x, v1.x), v2.x), Math.max(Math.max(v0.y, v1.y), v2.y),
-                                 Math.max(Math.max(v0.z, v1.z), v2.z));
-
-        return !(triMax.x < boxBounds.getMinX() || triMin.x > boxBounds.getMaxX() || triMax.y < boxBounds.getMinY()
-                 || triMin.y > boxBounds.getMaxY() || triMax.z < boxBounds.getMinZ() || triMin.z > boxBounds.getMaxZ());
+    /** Triangle vs axis-aligned box via the real 13-axis SAT (Luciferase-bsibi), with MTV penetration in world. */
+    private static TriBoxSat triangleVsBox(Point3f v0, Point3f v1, Point3f v2, BoxShape box) {
+        var c = box.getPosition();
+        var u0 = new Point3f(v0.x - c.x, v0.y - c.y, v0.z - c.z);
+        var u1 = new Point3f(v1.x - c.x, v1.y - c.y, v1.z - c.z);
+        var u2 = new Point3f(v2.x - c.x, v2.y - c.y, v2.z - c.z);
+        return triangleBoxSAT(u0, u1, u2, box.getHalfExtents()); // box axes are world axes — MTV already in world
     }
 
     private static boolean triangleIntersectsCapsule(Point3f v0, Point3f v1, Point3f v2, CapsuleShape capsule) {
@@ -775,11 +777,115 @@ public class CollisionDetector {
         return closest.distance(capsule.getPosition()) <= capsule.getRadius();
     }
 
-    private static boolean triangleIntersectsOBB(Point3f v0, Point3f v1, Point3f v2, OrientedBoxShape obb) {
-        // Simplified test using AABB approximation
-        var boxShape = new BoxShape(obb.getPosition(), obb.getHalfExtents());
-        return triangleIntersectsBox(v0, v1, v2, boxShape);
+    // Package-private for direct unit testing of orientation-correct triangle-vs-OBB SAT (Luciferase-bsibi).
+    static boolean triangleIntersectsOBB(Point3f v0, Point3f v1, Point3f v2, OrientedBoxShape obb) {
+        return triangleVsOBB(v0, v1, v2, obb).collides;
     }
+
+    /**
+     * Triangle vs oriented box (Luciferase-bsibi): transform the triangle into the box's local frame (subtract the
+     * centre, rotate by the inverse orientation) and run the 13-axis triangle-vs-AABB SAT against {@code [-he, he]}.
+     * This replaces the previous AABB approximation that stripped the box orientation entirely.
+     *
+     * @return SAT result with collision flag and, when colliding, the minimal-translation penetration depth and the
+     *         contact normal in WORLD space (box surface toward the triangle).
+     */
+    private static TriBoxSat triangleVsOBB(Point3f v0, Point3f v1, Point3f v2, OrientedBoxShape obb) {
+        var center = obb.getPosition();
+        var inv = new Matrix3f(obb.getOrientation());
+        inv.transpose(); // rotation matrix: transpose == inverse
+
+        var u0 = toLocal(v0, center, inv);
+        var u1 = toLocal(v1, center, inv);
+        var u2 = toLocal(v2, center, inv);
+
+        var sat = triangleBoxSAT(u0, u1, u2, obb.getHalfExtents());
+        if (sat.collides && sat.axis != null) {
+            // Rotate the local-frame MTV axis back to world.
+            var worldAxis = new Vector3f();
+            obb.getOrientation().transform(sat.axis, worldAxis);
+            return new TriBoxSat(true, sat.penetration, worldAxis);
+        }
+        return sat;
+    }
+
+    private static Point3f toLocal(Point3f p, Point3f center, Matrix3f inverseOrientation) {
+        var rel = new Vector3f(p.x - center.x, p.y - center.y, p.z - center.z);
+        var local = new Vector3f();
+        inverseOrientation.transform(rel, local);
+        return new Point3f(local.x, local.y, local.z);
+    }
+
+    /** Result of a triangle-vs-box separating-axis test (Luciferase-bsibi). */
+    private record TriBoxSat(boolean collides, float penetration, Vector3f axis) {
+        static TriBoxSat noHit() {
+            return new TriBoxSat(false, 0.0f, null);
+        }
+    }
+
+    /**
+     * 13-axis triangle-vs-AABB separating-axis test for a box centred at the origin with the given half-extents
+     * (Akenine-Möller), extended to return the minimal-overlap translation vector (Luciferase-bsibi). Axes tested:
+     * 3 box face normals, the triangle normal, and the 9 cross products of the 3 box axes with the 3 triangle edges.
+     *
+     * @param u0 u1 u2 triangle vertices expressed relative to the box centre, in the box's axis frame
+     * @param h  box half-extents
+     */
+    private static TriBoxSat triangleBoxSAT(Point3f u0, Point3f u1, Point3f u2, Vector3f h) {
+        Vector3f[] verts = { new Vector3f(u0.x, u0.y, u0.z), new Vector3f(u1.x, u1.y, u1.z),
+                             new Vector3f(u2.x, u2.y, u2.z) };
+        Vector3f[] edges = { sub(verts[1], verts[0]), sub(verts[2], verts[1]), sub(verts[0], verts[2]) };
+        Vector3f[] boxAxes = { new Vector3f(1, 0, 0), new Vector3f(0, 1, 0), new Vector3f(0, 0, 1) };
+
+        float minOverlap = Float.MAX_VALUE;
+        Vector3f mtvAxis = null;
+
+        // 9 edge-cross axes + 3 box face normals + 1 triangle normal.
+        var axes = new java.util.ArrayList<Vector3f>(13);
+        for (var ba : boxAxes) {
+            for (var e : edges) {
+                var a = new Vector3f();
+                a.cross(ba, e);
+                axes.add(a);
+            }
+        }
+        axes.add(new Vector3f(1, 0, 0));
+        axes.add(new Vector3f(0, 1, 0));
+        axes.add(new Vector3f(0, 0, 1));
+        var triNormal = new Vector3f();
+        triNormal.cross(edges[0], sub(verts[2], verts[0]));
+        axes.add(triNormal);
+
+        for (var axis : axes) {
+            float len = axis.length();
+            if (len < 1e-7f) {
+                continue; // degenerate (parallel) axis — redundant
+            }
+            // Project triangle.
+            float p0 = verts[0].dot(axis), p1 = verts[1].dot(axis), p2 = verts[2].dot(axis);
+            float triMin = Math.min(p0, Math.min(p1, p2));
+            float triMax = Math.max(p0, Math.max(p1, p2));
+            // Project box (centred at origin): radius is the L1 combination of half-extents with |axis components|.
+            float r = h.x * Math.abs(axis.x) + h.y * Math.abs(axis.y) + h.z * Math.abs(axis.z);
+            // Penetration depth (minimum translation to separate) of the triangle interval [triMin,triMax] from the
+            // box interval [-r,r]: min(triMax-(-r), r-triMin). Correct even when the triangle projects to a zero-width
+            // interval on an axis (e.g. its own normal); the intersection-width formula gives 0 there and would
+            // wrongly report separation.
+            float overlap = Math.min(triMax + r, r - triMin);
+            if (overlap < 0.0f) {
+                return TriBoxSat.noHit(); // separating axis found
+            }
+            float normalizedOverlap = overlap / len;
+            if (normalizedOverlap < minOverlap) {
+                minOverlap = normalizedOverlap;
+                var unit = new Vector3f(axis);
+                unit.scale(1.0f / len);
+                mtvAxis = unit;
+            }
+        }
+        return new TriBoxSat(true, minOverlap, mtvAxis);
+    }
+
 
     private static boolean trianglesIntersect(Point3f a0, Point3f a1, Point3f a2, Point3f b0, Point3f b1, Point3f b2) {
         var aMin = new Point3f(Math.min(Math.min(a0.x, a1.x), a2.x), Math.min(Math.min(a0.y, a1.y), a2.y),
