@@ -32,7 +32,7 @@ class CollisionResolverFrictionTest {
         var b1 = new EntityBounds(new Point3f(0, 0, 0), 0.5f);
         var b2 = new EntityBounds(new Point3f(0, 1, 0), 0.5f);
         return new CollisionPair<>(new LongEntityID(1), "a", b1, new LongEntityID(2), "b", b2,
-                                   new Point3f(0, 0.5f, 0), normal, 0.0f);
+                                   new Point3f(0, 0.5f, 0), normal, 0.0f, java.util.List.of());
     }
 
     private static float momentumResidual(float mass1, float mass2, Vector3f impulse1, Vector3f impulse2) {

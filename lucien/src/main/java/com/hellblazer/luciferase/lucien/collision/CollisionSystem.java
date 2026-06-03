@@ -36,6 +36,16 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Complete collision detection and response system. Integrates spatial indexing, collision detection, and physics
  * response.
  *
+ * <p><b>Resolver choice</b> (Luciferase-zz8xp): this spatial-index-driven path uses the linear
+ * {@link CollisionResolver} (impulse along the contact normal, no angular term). The multi-point contact manifold
+ * is now propagated on {@link com.hellblazer.luciferase.lucien.SpatialIndex.CollisionPair#contactManifold()} (it
+ * was previously dropped here), so it is available to callers, but the default resolver ignores it. Wiring the
+ * angular {@code ImpulseResolver} (which distributes impulse across the manifold's contact arms) into this path
+ * is deliberately deferred: it requires per-entity rigid-body state — mass, inverse-inertia tensor, and angular
+ * velocity — that {@code CollisionSystem}/{@code PhysicsProperties} do not currently track. That is a rigid-body
+ * lifecycle change, not a remediation, and is left for a dedicated effort. The angular resolver is already wired
+ * and manifold-consuming on the shape-level path (portal CollisionDebugViewer, via nm9dj).
+ *
  * @param <ID>      The type of EntityID used for entity identification
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand

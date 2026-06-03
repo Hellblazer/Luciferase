@@ -537,8 +537,11 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
                                                                      EntityBounds bounds2, CollisionShape shape2) {
         var result = shape1.collidesWith(shape2);
         if (result.collides) {
+            // Luciferase-zz8xp: carry the narrow-phase contact manifold through to the CollisionPair instead of
+            // dropping it, so an angular resolver can distribute impulse across the contact area.
             return Optional.of(CollisionPair.create(id1, content1, bounds1, id2, content2, bounds2, result.contactPoint,
-                                                    result.contactNormal, result.penetrationDepth));
+                                                    result.contactNormal, result.penetrationDepth,
+                                                    result.contactManifold));
         }
         return Optional.empty();
     }
