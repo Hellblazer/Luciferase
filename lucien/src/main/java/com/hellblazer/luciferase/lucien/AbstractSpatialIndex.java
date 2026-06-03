@@ -2198,9 +2198,11 @@ implements SpatialIndex<Key, ID, Content>,
     }
 
     /**
-     * Check if a node has children (to be implemented by subclasses if needed)
+     * Check if a node has children (i.e. is an internal, subdivided node). Public per the {@link SpatialIndex}
+     * contract (Luciferase-hthxs); subclasses that track subdivision override it.
      */
-    protected boolean hasChildren(Key spatialIndex) {
+    @Override
+    public boolean hasChildren(Key spatialIndex) {
         return false; // Default: no children tracking
     }
 

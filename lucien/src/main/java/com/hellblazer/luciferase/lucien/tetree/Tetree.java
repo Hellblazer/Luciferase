@@ -1984,7 +1984,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
     }
 
     @Override
-    protected boolean hasChildren(TetreeKey<? extends TetreeKey<?>> tetIndex) {
+    public boolean hasChildren(TetreeKey<? extends TetreeKey<?>> tetIndex) {
         SpatialNodeImpl<ID> node = spatialIndex.get(tetIndex);
         return node != null && node.hasChildren();
     }

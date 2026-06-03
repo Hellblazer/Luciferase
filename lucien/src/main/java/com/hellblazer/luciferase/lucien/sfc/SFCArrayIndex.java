@@ -325,7 +325,7 @@ public class SFCArrayIndex<ID extends EntityID, Content> extends AbstractSpatial
     }
 
     @Override
-    protected boolean hasChildren(MortonKey spatialIndex) {
+    public boolean hasChildren(MortonKey spatialIndex) {
         // Flat structure has no children concept
         return false;
     }

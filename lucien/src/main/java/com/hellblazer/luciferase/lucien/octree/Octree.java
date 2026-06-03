@@ -520,7 +520,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     }
 
     @Override
-    protected boolean hasChildren(MortonKey spatialIndex) {
+    public boolean hasChildren(MortonKey spatialIndex) {
         var node = this.spatialIndex.get(spatialIndex);
         return node != null && node.hasChildren();
     }

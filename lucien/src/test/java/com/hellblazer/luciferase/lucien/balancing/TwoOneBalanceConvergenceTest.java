@@ -107,4 +107,40 @@ class TwoOneBalanceConvergenceTest {
         assertTrue(result.finalMetrics().roundCount() < BalanceConfiguration.DEFAULT_MAX_ROUNDS,
                    "convergence must happen before the maxRounds safety cap (not spin to the cap)");
     }
+
+    /**
+     * The leaf guard in BOTH balance-checker paths (Morton coarse-band and the Tetree/Pyramid detector path) keys
+     * off {@link com.hellblazer.luciferase.lucien.SpatialIndex#hasChildren}. This pins the discriminator it relies
+     * on: for Octree AND Tetree, a freshly inserted cell is a leaf (hasChildren==false), and after subdivision the
+     * retained parent reports hasChildren==true while its children are leaves. Without this, the detector-path fix
+     * for Tetree/Pyramid would silently no-op (Luciferase-hthxs).
+     */
+    @Test
+    void hasChildrenDistinguishesLeafFromSubdividedParent() {
+        // Octree
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        byte level = 10;
+        int len = Constants.lengthAtLevel(level);
+        int split = Constants.lengthAtLevel((byte) (level + 1));
+        int b = len * 5;
+        octree.insert(new Point3f(b + 50, b + 50, b + 50), level, "a");
+        octree.insert(new Point3f(b + split + 50, b + 50, b + 50), level, "b");
+        var oKey = octree.getSpatialKeys().iterator().next();
+        assertEquals(false, octree.hasChildren(oKey), "a fresh Octree cell is a leaf");
+        assertTrue(octree.subdivide(oKey), "the multi-octant cell must subdivide");
+        assertTrue(octree.hasChildren(oKey), "the retained Octree parent must report hasChildren after subdivide");
+
+        // Tetree (the detector-path index type)
+        var tetree = new com.hellblazer.luciferase.lucien.tetree.Tetree<LongEntityID, String>(
+            new SequentialLongIDGenerator());
+        int tb = len * 5;
+        tetree.insert(new Point3f(tb + 50, tb + 50, tb + 50), level, "a");
+        tetree.insert(new Point3f(tb + split + 50, tb + 50, tb + 50), level, "b");
+        var tKey = tetree.getSpatialKeys().iterator().next();
+        assertEquals(false, tetree.hasChildren(tKey), "a fresh Tetree cell is a leaf");
+        if (tetree.subdivide(tKey)) {
+            assertTrue(tetree.hasChildren(tKey),
+                       "the retained Tetree parent must report hasChildren after subdivide (detector-path leaf guard)");
+        }
+    }
 }
