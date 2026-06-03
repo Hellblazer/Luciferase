@@ -51,7 +51,13 @@ import java.util.stream.Collectors;
  *
  * <p>The owning {@code AbstractSpatialIndex} façade constructs one of these when DSOC is enabled and delegates its
  * public DSOC API and three integration seams (frustum-cull entry, entity-update visibility/TBV, occlusion-aware
- * node creation) to it. Shared storage and concurrency come from {@link SpatialIndexCore}; the four façade operations
+ * node creation) to it. Auto-disable methodology (Luciferase-vdv4p): the {@code > 20%} overhead safety valve does
+ * <em>not</em> compare the average DSOC frame against the average non-DSOC frame — those are different query
+ * populations (active occlusion frames vs cheap skip frames), which biases the ratio. Instead, on 1 in
+ * {@code SHADOW_SAMPLE_INTERVAL} DSOC frames it re-runs the standard cull on the <em>same</em> query and times both;
+ * the ratio is computed from those paired same-query measurements only.
+ *
+ * <p>Shared storage and concurrency come from {@link SpatialIndexCore}; the four façade operations
  * the DSOC machinery still needs (frustum traversal order, the subclass frustum-node test, node bounds, cached entity
  * position) arrive through {@link FrustumGeometry}. The standard non-DSOC cull fallback — the path that runs when
  * DSOC's Z-buffer is inactive or auto-disable engages — lives in the P4 cull cluster and arrives through a separate
@@ -71,6 +77,14 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
     private static final double PERFORMANCE_THRESHOLD_MULTIPLIER = 1.2; // 20% overhead tolerance
     private static final int    EVALUATION_INTERVAL             = 50;   // Check every 50 frames
     private static final int    MIN_ENTITIES_FOR_DSOC           = 50;
+    // Shadow-baseline sampling: on 1 in SHADOW_SAMPLE_INTERVAL DSOC frames, also run the standard path on the
+    // SAME query to build a comparable baseline (Luciferase-vdv4p). 16 keeps the added cost to ~6% of DSOC frames.
+    // Latency tradeoff: combined with MIN_FRAMES_FOR_EVALUATION (10 shadow samples), the earliest auto-disable can
+    // fire is 10*16 = 160 active DSOC frames (~2.7s at 60fps). Lower SHADOW_SAMPLE_INTERVAL to trade overhead for a
+    // faster safety-valve response. Known residual bias (conservative): the DSOC op runs first and warms caches the
+    // shadow standard op then benefits from, so the standard time skews low and the ratio skews high — auto-disable
+    // can false-positive but never false-negative.
+    private static final int    SHADOW_SAMPLE_INTERVAL          = 16;
 
     private final SpatialIndexCore<Key, ID, Content>     core;
     private final FrustumGeometry<Key, ID, Content>      callback;
@@ -91,6 +105,16 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
     private final java.util.concurrent.atomic.AtomicLong dsocTotalTime      = new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong standardFrameCount = new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong standardTotalTime  = new java.util.concurrent.atomic.AtomicLong();
+
+    // Shadow-baseline counters (Luciferase-vdv4p). The dsoc*/standard* counters above mix DIFFERENT query
+    // populations — standard* collects cheap skip frames (entities < MIN_ENTITIES_FOR_DSOC, inactive Z-buffer)
+    // while dsoc* collects only the expensive active frames — so dsocAvg/standardAvg is not apples-to-apples.
+    // These three accumulate, on a sampled fraction of DSOC frames, the DSOC-path time AND the standard-path time
+    // measured on the SAME query (same frustum + camera). The auto-disable ratio is computed from these, so it
+    // compares comparable populations. shadowSampleCount is the shared denominator for both totals.
+    private final java.util.concurrent.atomic.AtomicLong shadowSampleCount       = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong shadowDsocTotalTime     = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong shadowStandardTotalTime = new java.util.concurrent.atomic.AtomicLong();
     private volatile boolean autoDisabled       = false;
 
     // Injectable time source so the auto-disable path is deterministically testable (Luciferase-cvtaa). Defaults to
@@ -103,6 +127,13 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
         dsocTotalTime.set(dsocTimeNanos);
         standardFrameCount.set(standardFrames);
         standardTotalTime.set(standardTimeNanos);
+    }
+
+    /** Seed the shadow-baseline counters for tests (Luciferase-vdv4p) — the apples-to-apples auto-disable inputs. */
+    void setShadowCountersForTest(long samples, long shadowDsocTimeNanos, long shadowStandardTimeNanos) {
+        shadowSampleCount.set(samples);
+        shadowDsocTotalTime.set(shadowDsocTimeNanos);
+        shadowStandardTotalTime.set(shadowStandardTimeNanos);
     }
 
     /**
@@ -173,6 +204,10 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
             stats.put("currentFrame", getCurrentFrame());
             stats.put("dsocFrameCount", dsocFrameCount.get());
             stats.put("standardFrameCount", standardFrameCount.get());
+            // Shadow-baseline inputs to the auto-disable decision (Luciferase-vdv4p) — exposed for diagnosis.
+            stats.put("shadowSampleCount", shadowSampleCount.get());
+            stats.put("shadowDsocTotalTime", shadowDsocTotalTime.get());
+            stats.put("shadowStandardTotalTime", shadowStandardTotalTime.get());
             if (visibilityManager != null) {
                 stats.putAll(visibilityManager.getStatistics());
             }
@@ -267,7 +302,8 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
             if (shouldSkipDSOC()) {
                 return measureAndExecute(() -> cullProvider.frustumCullVisibleStandard(frustum, cameraPosition), false);
             }
-            return measureAndExecute(() -> frustumCullVisibleWithDSOC(frustum, cameraPosition), true);
+            return measureDsocFrame(() -> frustumCullVisibleWithDSOC(frustum, cameraPosition),
+                                    () -> cullProvider.frustumCullVisibleStandard(frustum, cameraPosition));
         }
 
         // Standard path, still measured so the perf comparison stays meaningful
@@ -401,37 +437,83 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
         }
     }
 
+    /**
+     * Run the authoritative DSOC cull and, on a sampled fraction of frames (Luciferase-vdv4p), also run the standard
+     * cull on the SAME query purely to time it. The shadow standard run's result is discarded — the DSOC result is
+     * authoritative — but its duration, paired with the DSOC duration for the same frame, feeds the shadow-baseline
+     * counters so the auto-disable ratio compares comparable query populations instead of the biased
+     * expensive-DSOC-vs-cheap-skip mix.
+     */
+    private List<FrustumIntersection<ID, Content>> measureDsocFrame(
+    Supplier<List<FrustumIntersection<ID, Content>>> dsocOp,
+    Supplier<List<FrustumIntersection<ID, Content>>> shadowStandardOp) {
+        // Deterministic sampling on the pre-increment frame index — no RNG (CLAUDE.md determinism mandate).
+        boolean sample = dsocFrameCount.get() % SHADOW_SAMPLE_INTERVAL == 0;
+
+        long startTime = nanoTimeSource.getAsLong();
+        long dsocDuration;
+        try {
+            return dsocOp.get();
+        } finally {
+            dsocDuration = nanoTimeSource.getAsLong() - startTime;
+            dsocFrameCount.incrementAndGet();
+            dsocTotalTime.addAndGet(dsocDuration);
+            if (sample) {
+                // try/CATCH, not try/finally: this runs inside the outer finally, so an exception escaping here would
+                // abandon the pending DSOC return and propagate to the caller. Swallow it — the shadow run is a
+                // best-effort measurement; a failed sample is simply skipped (the sample floor still protects).
+                long shadowStart = nanoTimeSource.getAsLong();
+                try {
+                    shadowStandardOp.get(); // measurement only — result discarded
+                    long shadowStandardDuration = nanoTimeSource.getAsLong() - shadowStart;
+                    // Pair the two same-query durations under one denominator (shadowSampleCount).
+                    shadowDsocTotalTime.addAndGet(dsocDuration);
+                    shadowStandardTotalTime.addAndGet(shadowStandardDuration);
+                    shadowSampleCount.incrementAndGet();
+                } catch (RuntimeException e) {
+                    log.debug("Shadow standard-baseline measurement failed; sample skipped", e);
+                }
+            }
+        }
+    }
+
     /** Inject a deterministic time source for tests (Luciferase-cvtaa). */
     void setNanoTimeSource(java.util.function.LongSupplier source) {
         this.nanoTimeSource = java.util.Objects.requireNonNull(source, "nanoTimeSource");
     }
 
     private boolean shouldEvaluatePerformance() {
+        // Cheap throttle on how often we *attempt* an evaluation; it is deliberately decoupled from the decision
+        // gate. The effective gate is the shadow-sample floor in shouldAutoDisableDSOC — an attempt with fewer than
+        // MIN_FRAMES_FOR_EVALUATION shadow samples is a no-op (e.g. a pure-skip workload never disables, correctly).
         return (dsocFrameCount.get() + standardFrameCount.get()) % EVALUATION_INTERVAL == 0;
     }
 
     private boolean shouldAutoDisableDSOC() {
-        // Snapshot each counter once. Separate AtomicLong.get() calls are NOT atomic together, so the average may be
-        // skewed by at most ±1 in-flight frame — negligible noise against the 20% threshold and the 10-frame floor.
-        long dFrames = dsocFrameCount.get();
-        long sFrames = standardFrameCount.get();
-        if (dFrames < MIN_FRAMES_FOR_EVALUATION || sFrames < MIN_FRAMES_FOR_EVALUATION) {
+        // Apples-to-apples comparison (Luciferase-vdv4p): both totals are measured on the SAME sampled DSOC frames,
+        // sharing the shadowSampleCount denominator, so this is the DSOC marginal cost vs the standard cost of the
+        // identical query — not the old biased expensive-DSOC-vs-cheap-skip mix. The sample floor gives warmup-spike
+        // protection (a transient early spike cannot trip auto-disable before enough comparable samples accrue).
+        long samples = shadowSampleCount.get();
+        if (samples < MIN_FRAMES_FOR_EVALUATION) {
             return false;
         }
-        double dsocAvgTime = (double) dsocTotalTime.get() / dFrames;
-        double standardAvgTime = (double) standardTotalTime.get() / sFrames;
+        double dsocAvgTime = (double) shadowDsocTotalTime.get() / samples;
+        double standardAvgTime = (double) shadowStandardTotalTime.get() / samples;
         return dsocAvgTime > PERFORMANCE_THRESHOLD_MULTIPLIER * standardAvgTime;
     }
 
     private double getOverheadMultiplier() {
-        long dFrames = dsocFrameCount.get();
-        long sFrames = standardFrameCount.get();
-        if (dFrames == 0 || sFrames == 0) {
+        long samples = shadowSampleCount.get();
+        if (samples == 0) {
             return 1.0;
         }
-        double dsocAvgTime = (double) dsocTotalTime.get() / dFrames;
-        double standardAvgTime = (double) standardTotalTime.get() / sFrames;
-        return dsocAvgTime / standardAvgTime;
+        long standardTotal = shadowStandardTotalTime.get();
+        if (standardTotal == 0) {
+            return 1.0;
+        }
+        // Equivalent to (dsocTotal/samples)/(standardTotal/samples); the shared denominator cancels.
+        return (double) shadowDsocTotalTime.get() / standardTotal;
     }
 
     private boolean shouldSkipDSOC() {
@@ -441,7 +523,8 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
         if (occlusionCuller != null && !occlusionCuller.isActivated()) {
             return true;
         }
-        return dsocFrameCount.get() >= 5 && getOverheadMultiplier() > PERFORMANCE_THRESHOLD_MULTIPLIER * 2;
+        // Use the shadow-baseline overhead (Luciferase-vdv4p); only meaningful once a few comparable samples exist.
+        return shadowSampleCount.get() >= 5 && getOverheadMultiplier() > PERFORMANCE_THRESHOLD_MULTIPLIER * 2;
     }
 
     private float[] createIdentityMatrix() {
