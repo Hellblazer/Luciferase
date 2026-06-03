@@ -50,7 +50,9 @@ import javax.vecmath.Vector3f;
  * @param <Content> The type of content stored with entities
  */
 public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content> {
-    
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Prism.class);
+
     /** Maximum subdivision level */
     public static final int MAX_LEVEL = 21;
     
@@ -510,7 +512,11 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     
     @Override
     protected Stream<PrismKey> getPlaneTraversalOrder(Plane3D plane) {
-        // Return empty stream for now - would need plane intersection implementation
+        // UNSUPPORTED for Prism (Luciferase-h9r0z): plane-vs-prism traversal is not implemented. Returning an empty
+        // stream would silently mis-serve plane-cut queries, so warn loudly instead of failing silently. Implementing
+        // real plane-prism intersection traversal is deferred (no current consumer); callers should not rely on it.
+        log.warn("Prism.getPlaneTraversalOrder is unsupported (Luciferase-h9r0z): plane-cut queries on Prism return "
+                 + "no nodes. Do not rely on this result.");
         return Stream.empty();
     }
     
@@ -543,8 +549,11 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     
     @Override
     public SpatialIndex.SpatialNode<PrismKey, ID> enclosing(Spatial volume) {
-        // Find the minimum enclosing prism for a volume
-        // For now, return null - would need volume enclosure calculation
+        // UNSUPPORTED for Prism (Luciferase-h9r0z): minimum-enclosing-prism for an arbitrary volume is not
+        // implemented (the point/level overload below IS). Returning null silently mis-serves callers, so warn.
+        // Implementing volume enclosure is deferred (no current consumer).
+        log.warn("Prism.enclosing(Spatial) is unsupported (Luciferase-h9r0z): returns null. Use enclosing(point, "
+                 + "level) for point queries; do not rely on the volume overload.");
         return null;
     }
     
