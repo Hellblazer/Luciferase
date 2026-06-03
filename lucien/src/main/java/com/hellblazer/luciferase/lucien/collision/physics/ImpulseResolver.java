@@ -35,15 +35,15 @@ public class ImpulseResolver {
         // Combine materials
         var combinedMaterial = PhysicsMaterial.combine(bodyA.getMaterial(), bodyB.getMaterial());
 
-        // Distribute the impulse across the contact manifold (Luciferase-nm9dj/zz8xp): applying a sequence of
-        // (1/N)-scaled impulses at each manifold point computes the angular arm at the TRUE contact polygon rather
-        // than only at the single representative point — fixing the wrong angular-impulse arms for face-face /
-        // face-edge contacts. Velocity is recomputed per point (sequential impulse), so later points see the updated
-        // state. Falls back to the single contactPoint when no manifold is present.
+        // Distribute the impulse across the contact manifold by true sequential impulse (Luciferase-nm9dj/zz8xp):
+        // solve each contact point at FULL magnitude against the body state left by the prior points (velocity is
+        // re-queried per point), so the angular arm is computed at the TRUE contact polygon rather than only at the
+        // single representative point — fixing the wrong angular-impulse arms for face-face / face-edge contacts. The
+        // per-point effective mass (including the inertia term) is respected because each point's impulse is solved
+        // independently against the current state. Falls back to the single contactPoint when no manifold is present.
         var points = (collision.contactManifold != null && !collision.contactManifold.isEmpty())
                      ? collision.contactManifold
                      : java.util.List.of(collision.contactPoint);
-        int n = points.size();
 
         for (var contactPoint : points) {
             var velA = bodyA.getVelocityAtPoint(contactPoint);
@@ -55,7 +55,7 @@ public class ImpulseResolver {
 
             float impulseMagnitude = calculateImpulseMagnitude(
                 bodyA, bodyB, contactPoint, collision.contactNormal,
-                velocityAlongNormal, combinedMaterial.restitution()) / n;
+                velocityAlongNormal, combinedMaterial.restitution());
 
             var impulse = new Vector3f(collision.contactNormal);
             impulse.scale(impulseMagnitude);
