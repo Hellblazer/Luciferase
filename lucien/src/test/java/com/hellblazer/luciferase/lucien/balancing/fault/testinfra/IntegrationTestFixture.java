@@ -204,11 +204,14 @@ public class IntegrationTestFixture {
             partitionTopology.register(partitionId, rank++);
         }
 
-        // Create recovery coordinator for each partition
+        // Create recovery coordinator for each partition.
+        // enableSimulatedRecovery() is called so tests can exercise the scaffolding
+        // phase machine. Real entity redistribution / state transfer are not implemented.
         recoveryCoordinators.clear();
         for (var partitionId : partitionIds) {
             var recovery = new DefaultPartitionRecovery(partitionId, partitionTopology);
             recovery.setClock(getClock());
+            recovery.enableSimulatedRecovery();
             recoveryCoordinators.put(partitionId, recovery);
         }
 

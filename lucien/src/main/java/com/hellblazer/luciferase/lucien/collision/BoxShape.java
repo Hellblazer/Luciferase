@@ -198,4 +198,9 @@ public final class BoxShape extends CollisionShape {
         position.add(delta);
         bounds = new EntityBounds(position, halfExtents.x, halfExtents.y, halfExtents.z);
     }
+
+    @Override
+    public BoxShape copy() {
+        return new BoxShape(new Point3f(position), new Vector3f(halfExtents));
+    }
 }

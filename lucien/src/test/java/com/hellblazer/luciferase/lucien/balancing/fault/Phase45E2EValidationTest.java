@@ -155,8 +155,9 @@ class Phase45E2EValidationTest {
                 handler.checkTimeouts();
             })
             .atTime(config.failureConfirmationMs() + 200, () -> {
-                // Initiate recovery
+                // Initiate recovery (enableSimulatedRecovery opts into scaffolding)
                 var recovery = new DefaultPartitionRecovery(failedPartition, topology, config);
+                recovery.enableSimulatedRecovery();
                 recovery.setClock(clock);
                 recovery.subscribe(phase -> {
                     phaseMap.put(failedPartition, phase);
@@ -270,8 +271,9 @@ class Phase45E2EValidationTest {
                 assertThat(detectionTime.get())
                     .isLessThan(100);
 
-                // Initiate recovery
+                // Initiate recovery (enableSimulatedRecovery opts into scaffolding)
                 var recovery = new DefaultPartitionRecovery(failedPartition, topology, config);
+                recovery.enableSimulatedRecovery();
                 recovery.setClock(clock);
                 recovery.subscribe(phase -> phaseMap.put(failedPartition, phase));
                 recoveryCoordinators.put(failedPartition, recovery);
@@ -326,8 +328,9 @@ class Phase45E2EValidationTest {
                 assertThat(handler.checkHealth(failedPartition))
                     .isEqualTo(PartitionStatus.FAILED);
 
-                // Start recovery
+                // Start recovery (enableSimulatedRecovery opts into scaffolding)
                 var recovery = new DefaultPartitionRecovery(failedPartition, topology, config);
+                recovery.enableSimulatedRecovery();
                 recovery.setClock(clock);
                 recovery.subscribe(phase -> {
                     phaseTransitions.add(phase);

@@ -84,12 +84,26 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
     private float[] currentViewMatrix;
     private float[] currentProjectionMatrix;
 
-    // Performance monitoring
-    private volatile long    dsocFrameCount     = 0;
-    private volatile long    dsocTotalTime      = 0;
-    private volatile long    standardFrameCount = 0;
-    private volatile long    standardTotalTime  = 0;
+    // Performance monitoring. AtomicLong (not volatile long ++/+=): concurrent frustumCullVisible calls otherwise
+    // lose counts and bias the totals, so the >20% auto-disable safety valve computes wrong averages
+    // (Luciferase-z3gvs).
+    private final java.util.concurrent.atomic.AtomicLong dsocFrameCount     = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong dsocTotalTime      = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong standardFrameCount = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong standardTotalTime  = new java.util.concurrent.atomic.AtomicLong();
     private volatile boolean autoDisabled       = false;
+
+    // Injectable time source so the auto-disable path is deterministically testable (Luciferase-cvtaa). Defaults to
+    // the wall clock; tests install a controlled clock via setNanoTimeSource.
+    private volatile java.util.function.LongSupplier nanoTimeSource = System::nanoTime;
+
+    /** Seed the performance counters for tests (Luciferase-cvtaa); avoids reflection coupling to field names. */
+    void setCountersForTest(long dsocFrames, long dsocTimeNanos, long standardFrames, long standardTimeNanos) {
+        dsocFrameCount.set(dsocFrames);
+        dsocTotalTime.set(dsocTimeNanos);
+        standardFrameCount.set(standardFrames);
+        standardTotalTime.set(standardTimeNanos);
+    }
 
     /**
      * Construct and, when the configuration is enabled, initialize the DSOC machinery and wire entity auto-dynamics.
@@ -157,8 +171,8 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
         if (isEnabled()) {
             stats.put("dsocEnabled", true);
             stats.put("currentFrame", getCurrentFrame());
-            stats.put("dsocFrameCount", dsocFrameCount);
-            stats.put("standardFrameCount", standardFrameCount);
+            stats.put("dsocFrameCount", dsocFrameCount.get());
+            stats.put("standardFrameCount", standardFrameCount.get());
             if (visibilityManager != null) {
                 stats.putAll(visibilityManager.getStatistics());
             }
@@ -372,40 +386,51 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
 
     private List<FrustumIntersection<ID, Content>> measureAndExecute(
     Supplier<List<FrustumIntersection<ID, Content>>> operation, boolean isDSOC) {
-        long startTime = System.nanoTime();
+        long startTime = nanoTimeSource.getAsLong();
         try {
             return operation.get();
         } finally {
-            long duration = System.nanoTime() - startTime;
+            long duration = nanoTimeSource.getAsLong() - startTime;
             if (isDSOC) {
-                dsocFrameCount++;
-                dsocTotalTime += duration;
+                dsocFrameCount.incrementAndGet();
+                dsocTotalTime.addAndGet(duration);
             } else {
-                standardFrameCount++;
-                standardTotalTime += duration;
+                standardFrameCount.incrementAndGet();
+                standardTotalTime.addAndGet(duration);
             }
         }
     }
 
+    /** Inject a deterministic time source for tests (Luciferase-cvtaa). */
+    void setNanoTimeSource(java.util.function.LongSupplier source) {
+        this.nanoTimeSource = java.util.Objects.requireNonNull(source, "nanoTimeSource");
+    }
+
     private boolean shouldEvaluatePerformance() {
-        return (dsocFrameCount + standardFrameCount) % EVALUATION_INTERVAL == 0;
+        return (dsocFrameCount.get() + standardFrameCount.get()) % EVALUATION_INTERVAL == 0;
     }
 
     private boolean shouldAutoDisableDSOC() {
-        if (dsocFrameCount < MIN_FRAMES_FOR_EVALUATION || standardFrameCount < MIN_FRAMES_FOR_EVALUATION) {
+        // Snapshot each counter once. Separate AtomicLong.get() calls are NOT atomic together, so the average may be
+        // skewed by at most ±1 in-flight frame — negligible noise against the 20% threshold and the 10-frame floor.
+        long dFrames = dsocFrameCount.get();
+        long sFrames = standardFrameCount.get();
+        if (dFrames < MIN_FRAMES_FOR_EVALUATION || sFrames < MIN_FRAMES_FOR_EVALUATION) {
             return false;
         }
-        double dsocAvgTime = (double) dsocTotalTime / dsocFrameCount;
-        double standardAvgTime = (double) standardTotalTime / standardFrameCount;
+        double dsocAvgTime = (double) dsocTotalTime.get() / dFrames;
+        double standardAvgTime = (double) standardTotalTime.get() / sFrames;
         return dsocAvgTime > PERFORMANCE_THRESHOLD_MULTIPLIER * standardAvgTime;
     }
 
     private double getOverheadMultiplier() {
-        if (dsocFrameCount == 0 || standardFrameCount == 0) {
+        long dFrames = dsocFrameCount.get();
+        long sFrames = standardFrameCount.get();
+        if (dFrames == 0 || sFrames == 0) {
             return 1.0;
         }
-        double dsocAvgTime = (double) dsocTotalTime / dsocFrameCount;
-        double standardAvgTime = (double) standardTotalTime / standardFrameCount;
+        double dsocAvgTime = (double) dsocTotalTime.get() / dFrames;
+        double standardAvgTime = (double) standardTotalTime.get() / sFrames;
         return dsocAvgTime / standardAvgTime;
     }
 
@@ -416,7 +441,7 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
         if (occlusionCuller != null && !occlusionCuller.isActivated()) {
             return true;
         }
-        return dsocFrameCount >= 5 && getOverheadMultiplier() > PERFORMANCE_THRESHOLD_MULTIPLIER * 2;
+        return dsocFrameCount.get() >= 5 && getOverheadMultiplier() > PERFORMANCE_THRESHOLD_MULTIPLIER * 2;
     }
 
     private float[] createIdentityMatrix() {

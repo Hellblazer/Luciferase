@@ -19,6 +19,9 @@ package com.hellblazer.luciferase.lucien.collision;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape.CollisionResult;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 
@@ -28,6 +31,8 @@ import javax.vecmath.Vector3f;
  * @author hal.hildebrand
  */
 public class CollisionDetector {
+
+    private static final Logger log = LoggerFactory.getLogger(CollisionDetector.class);
 
     private static CollisionResult boxVsBox(BoxShape box1, BoxShape box2) {
         if (!CollisionShape.boundsIntersect(box1.getAABB(), box2.getAABB())) {
@@ -175,26 +180,12 @@ public class CollisionDetector {
     }
 
     private static CollisionResult boxVsOrientedBox(BoxShape box, OrientedBoxShape obb) {
-        // Simplified SAT test - would need full implementation
         if (!CollisionShape.boundsIntersect(box.getAABB(), obb.getAABB())) {
             return CollisionResult.noCollision();
         }
-
-        // For now, use center-to-center approach
-        var delta = new Vector3f();
-        delta.sub(obb.getPosition(), box.getPosition());
-
-        var normal = new Vector3f(delta);
-        if (normal.length() > 0) {
-            normal.normalize();
-        } else {
-            normal.set(1, 0, 0);
-        }
-
-        var contactPoint = new Point3f();
-        contactPoint.interpolate(box.getPosition(), obb.getPosition(), 0.5f);
-
-        return CollisionResult.collision(contactPoint, normal, 0.1f);
+        // A box is an axis-aligned OBB: exact 15-axis SAT (Luciferase-i1mlg).
+        return satBoxes(box, box.getPosition(), aabbAxes(), box.getHalfExtents(),
+                        obb, obb.getPosition(), obbAxes(obb), obb.getHalfExtents());
     }
 
     private static CollisionResult capsuleVsCapsule(CapsuleShape capsule1, CapsuleShape capsule2) {
@@ -602,21 +593,9 @@ public class CollisionDetector {
         if (!CollisionShape.boundsIntersect(obb1.getAABB(), obb2.getAABB())) {
             return CollisionResult.noCollision();
         }
-
-        var delta = new Vector3f();
-        delta.sub(obb2.getPosition(), obb1.getPosition());
-
-        var normal = new Vector3f(delta);
-        if (normal.length() > 0) {
-            normal.normalize();
-        } else {
-            normal.set(1, 0, 0);
-        }
-
-        var contactPoint = new Point3f();
-        contactPoint.interpolate(obb1.getPosition(), obb2.getPosition(), 0.5f);
-
-        return CollisionResult.collision(contactPoint, normal, 0.1f);
+        // Exact 15-axis SAT respecting both orientations (Luciferase-i1mlg).
+        return satBoxes(obb1, obb1.getPosition(), obbAxes(obb1), obb1.getHalfExtents(),
+                        obb2, obb2.getPosition(), obbAxes(obb2), obb2.getHalfExtents());
     }
 
     private static CollisionResult sphereVsBox(SphereShape sphere, BoxShape box) {
@@ -893,48 +872,18 @@ public class CollisionDetector {
     }
     
     private static CollisionResult boxVsConvexHull(BoxShape box, ConvexHullShape hull) {
-        // Simplified SAT test
         if (!CollisionShape.boundsIntersect(box.getAABB(), hull.getAABB())) {
             return CollisionResult.noCollision();
         }
-        
-        // Use center-to-center approach for simplicity
-        var delta = new Vector3f();
-        delta.sub(hull.getCentroid(), box.getPosition());
-        
-        var normal = new Vector3f(delta);
-        if (normal.length() > 0) {
-            normal.normalize();
-        } else {
-            normal.set(1, 0, 0);
-        }
-        
-        var contactPoint = new Point3f();
-        contactPoint.interpolate(box.getPosition(), hull.getCentroid(), 0.5f);
-        
-        return CollisionResult.collision(contactPoint, normal, 0.1f);
+        // GJK intersection + EPA depth/normal via support functions (Luciferase-i1mlg).
+        return gjkEpa(box, hull);
     }
-    
+
     private static CollisionResult orientedBoxVsConvexHull(OrientedBoxShape obb, ConvexHullShape hull) {
-        // Simplified SAT test
         if (!CollisionShape.boundsIntersect(obb.getAABB(), hull.getAABB())) {
             return CollisionResult.noCollision();
         }
-        
-        var delta = new Vector3f();
-        delta.sub(hull.getCentroid(), obb.getPosition());
-        
-        var normal = new Vector3f(delta);
-        if (normal.length() > 0) {
-            normal.normalize();
-        } else {
-            normal.set(1, 0, 0);
-        }
-        
-        var contactPoint = new Point3f();
-        contactPoint.interpolate(obb.getPosition(), hull.getCentroid(), 0.5f);
-        
-        return CollisionResult.collision(contactPoint, normal, 0.1f);
+        return gjkEpa(obb, hull);
     }
     
     private static CollisionResult capsuleVsConvexHull(CapsuleShape capsule, ConvexHullShape hull) {
@@ -1050,25 +999,11 @@ public class CollisionDetector {
     }
     
     private static CollisionResult convexHullVsConvexHull(ConvexHullShape hull1, ConvexHullShape hull2) {
-        // Simplified GJK or SAT implementation
         if (!CollisionShape.boundsIntersect(hull1.getAABB(), hull2.getAABB())) {
             return CollisionResult.noCollision();
         }
-        
-        var delta = new Vector3f();
-        delta.sub(hull2.getCentroid(), hull1.getCentroid());
-        
-        var normal = new Vector3f(delta);
-        if (normal.length() > 0) {
-            normal.normalize();
-        } else {
-            normal.set(1, 0, 0);
-        }
-        
-        var contactPoint = new Point3f();
-        contactPoint.interpolate(hull1.getCentroid(), hull2.getCentroid(), 0.5f);
-        
-        return CollisionResult.collision(contactPoint, normal, 0.1f);
+        // GJK intersection + EPA depth/normal via support functions (Luciferase-i1mlg).
+        return gjkEpa(hull1, hull2);
     }
     
     private static boolean isPointInsideConvexHull(Point3f point, ConvexHullShape hull) {
@@ -1260,30 +1195,376 @@ public class CollisionDetector {
     }
     
     private static CollisionResult heightmapVsHeightmap(HeightmapShape heightmap1, HeightmapShape heightmap2) {
-        // Heightmap vs heightmap is complex - simplified implementation
-        var bounds1 = heightmap1.getAABB();
-        var bounds2 = heightmap2.getAABB();
-        
-        // Check if bounds intersect
-        boolean intersects = !(bounds1.getMaxX() < bounds2.getMinX() || bounds1.getMinX() > bounds2.getMaxX() ||
-                              bounds1.getMaxY() < bounds2.getMinY() || bounds1.getMinY() > bounds2.getMaxY() ||
-                              bounds1.getMaxZ() < bounds2.getMinZ() || bounds1.getMinZ() > bounds2.getMaxZ());
-        
-        if (!intersects) {
+        // Heightmap-vs-heightmap narrow phase is not implemented. Returning a fabricated overlap (the previous
+        // bounds-only "collision" with penetration=1.0) injected energy into the resolver. Report no collision
+        // explicitly until a real height-field-vs-height-field test exists (Luciferase-i1mlg).
+        return CollisionResult.noCollision();
+    }
+
+    // ---- Exact narrow-phase geometry (Luciferase-i1mlg) ----------------------------------------------------------
+
+    private static final float SAT_EPSILON = 1.0e-6f;
+
+    /**
+     * Unit world-space axes of an oriented box (columns of its orientation matrix).
+     */
+    private static Vector3f[] obbAxes(OrientedBoxShape obb) {
+        var m = obb.getOrientation();
+        var axes = new Vector3f[3];
+        for (int i = 0; i < 3; i++) {
+            var col = new Vector3f();
+            m.getColumn(i, col);
+            if (col.length() > SAT_EPSILON) {
+                col.normalize();
+            }
+            axes[i] = col;
+        }
+        return axes;
+    }
+
+    private static Vector3f[] aabbAxes() {
+        return new Vector3f[] { new Vector3f(1, 0, 0), new Vector3f(0, 1, 0), new Vector3f(0, 0, 1) };
+    }
+
+    /**
+     * Exact 15-axis separating-axis test for two oriented boxes (3 face normals of A, 3 of B, 9 edge-edge cross
+     * products). Returns the minimum-penetration axis as the contact normal and the overlap along it as the
+     * penetration depth — geometry-derived, not fabricated. A box is passed as an axis-aligned OBB.
+     *
+     * @param shapeA   shape A (for support-based contact point)
+     * @param cA       centre of A
+     * @param axesA    unit world axes of A
+     * @param halfA    half-extents of A along axesA
+     * @param shapeB   shape B
+     * @param cB       centre of B
+     * @param axesB    unit world axes of B
+     * @param halfB    half-extents of B along axesB
+     */
+    private static CollisionResult satBoxes(CollisionShape shapeA, Point3f cA, Vector3f[] axesA, Vector3f halfA,
+                                            CollisionShape shapeB, Point3f cB, Vector3f[] axesB, Vector3f halfB) {
+        var t = new Vector3f();
+        t.sub(cB, cA);
+
+        float[] hA = { halfA.x, halfA.y, halfA.z };
+        float[] hB = { halfB.x, halfB.y, halfB.z };
+
+        var candidates = new java.util.ArrayList<Vector3f>(15);
+        for (var a : axesA) candidates.add(a);
+        for (var b : axesB) candidates.add(b);
+        for (var a : axesA) {
+            for (var b : axesB) {
+                var cross = new Vector3f();
+                cross.cross(a, b);
+                if (cross.length() > SAT_EPSILON) {
+                    cross.normalize();
+                    candidates.add(cross);
+                }
+            }
+        }
+
+        float minOverlap = Float.MAX_VALUE;
+        Vector3f bestAxis = null;
+        for (var l : candidates) {
+            float rA = hA[0] * Math.abs(axesA[0].dot(l)) + hA[1] * Math.abs(axesA[1].dot(l))
+                     + hA[2] * Math.abs(axesA[2].dot(l));
+            float rB = hB[0] * Math.abs(axesB[0].dot(l)) + hB[1] * Math.abs(axesB[1].dot(l))
+                     + hB[2] * Math.abs(axesB[2].dot(l));
+            float dist = Math.abs(t.dot(l));
+            float overlap = rA + rB - dist;
+            if (overlap < 0) {
+                return CollisionResult.noCollision(); // separating axis found
+            }
+            if (overlap < minOverlap) {
+                minOverlap = overlap;
+                bestAxis = l;
+            }
+        }
+        if (bestAxis == null) {
             return CollisionResult.noCollision();
         }
-        
-        // For now, if the bounding boxes overlap, consider it a collision
-        // A more sophisticated implementation would check actual height values
-        var contactPoint = new Point3f(
-            (bounds1.getMaxX() + bounds2.getMinX()) / 2,
-            Math.min(bounds1.getMaxY(), bounds2.getMaxY()),
-            (bounds1.getMaxZ() + bounds2.getMinZ()) / 2
-        );
-        
-        var normal = new Vector3f(0, 1, 0); // Default to up normal
-        var penetration = 1.0f; // Simplified penetration depth
-        
-        return CollisionResult.collision(contactPoint, normal, penetration);
+
+        // Orient the contact normal from A toward B.
+        var normal = new Vector3f(bestAxis);
+        if (t.dot(normal) < 0) {
+            normal.scale(-1);
+        }
+
+        // Contact point: midpoint of the two surface support points along the contact normal.
+        var oppositeNormal = new Vector3f(normal);
+        oppositeNormal.scale(-1);
+        var supportA = shapeA.getSupport(normal);
+        var supportB = shapeB.getSupport(oppositeNormal);
+        var contactPoint = new Point3f();
+        contactPoint.interpolate(supportA, supportB, 0.5f);
+
+        return CollisionResult.collision(contactPoint, normal, minOverlap);
+    }
+
+    /**
+     * GJK intersection test followed by EPA penetration extraction for two convex shapes, using each shape's
+     * support function (the Minkowski-difference support is {@code A.getSupport(d) - B.getSupport(-d)}). Returns a
+     * geometry-derived penetration depth and contact normal — replacing the fabricated 0.1f for convex-hull pairs
+     * (Luciferase-i1mlg).
+     */
+    private static CollisionResult gjkEpa(CollisionShape shapeA, CollisionShape shapeB) {
+        var simplex = new java.util.ArrayList<Vector3f>(4);
+        var dir = new Vector3f();
+        dir.sub(shapeB.getPosition(), shapeA.getPosition());
+        if (dir.length() < SAT_EPSILON) {
+            dir.set(1, 0, 0);
+        }
+
+        simplex.add(minkowskiSupport(shapeA, shapeB, dir));
+        dir.scale(-1); // toward the origin
+
+        for (int iter = 0; iter < 64; iter++) {
+            var a = minkowskiSupport(shapeA, shapeB, dir);
+            if (a.dot(dir) < 0) {
+                return CollisionResult.noCollision(); // no overlap along the search direction
+            }
+            simplex.add(a);
+            if (gjkUpdateSimplex(simplex, dir)) {
+                return epaPenetration(shapeA, shapeB, simplex);
+            }
+        }
+        log.warn("GJK did not converge in 64 iterations for {} vs {}; reporting no collision",
+                 shapeA.getClass().getSimpleName(), shapeB.getClass().getSimpleName());
+        return CollisionResult.noCollision();
+    }
+
+    private static Vector3f minkowskiSupport(CollisionShape a, CollisionShape b, Vector3f dir) {
+        var negDir = new Vector3f(dir);
+        negDir.scale(-1);
+        var pa = a.getSupport(dir);
+        var pb = b.getSupport(negDir);
+        return new Vector3f(pa.x - pb.x, pa.y - pb.y, pa.z - pb.z);
+    }
+
+    /**
+     * Evolve the GJK simplex toward the origin (newest vertex stored last). Returns true once a tetrahedron
+     * encloses the origin; otherwise {@code dir} is updated to the next search direction and the simplex is
+     * reduced to its origin-facing Voronoi feature. Canonical line/triangle/tetrahedron region handling.
+     */
+    private static boolean gjkUpdateSimplex(java.util.List<Vector3f> simplex, Vector3f dir) {
+        return switch (simplex.size()) {
+            case 2 -> gjkLine(simplex, dir);
+            case 3 -> gjkTriangle(simplex, dir);
+            case 4 -> gjkTetra(simplex, dir);
+            default -> false;
+        };
+    }
+
+    private static void resetSimplex(java.util.List<Vector3f> simplex, Vector3f... verts) {
+        simplex.clear();
+        for (var v : verts) {
+            simplex.add(v);
+        }
+    }
+
+    /** Vector triple product (a x b) x c — points perpendicular to a, toward c's side. */
+    private static Vector3f tripleCross(Vector3f a, Vector3f b, Vector3f c) {
+        return cross(cross(a, b), c);
+    }
+
+    private static boolean gjkLine(java.util.List<Vector3f> simplex, Vector3f dir) {
+        var b = simplex.get(0);
+        var a = simplex.get(1); // newest
+        var ab = sub(b, a);
+        var ao = neg(a);
+        if (ab.dot(ao) > 0) {
+            var perp = tripleCross(ab, ao, ab);
+            if (perp.lengthSquared() < SAT_EPSILON) {
+                // Origin lies on the line through ab: any direction perpendicular to ab heads toward it.
+                perp = cross(ab, new Vector3f(1, 0, 0));
+                if (perp.lengthSquared() < SAT_EPSILON) {
+                    perp = cross(ab, new Vector3f(0, 1, 0));
+                }
+            }
+            setDir(dir, perp);
+        } else {
+            resetSimplex(simplex, a);
+            setDir(dir, ao);
+        }
+        return false;
+    }
+
+    private static boolean gjkTriangle(java.util.List<Vector3f> simplex, Vector3f dir) {
+        var c = simplex.get(0);
+        var b = simplex.get(1);
+        var a = simplex.get(2); // newest
+        var ab = sub(b, a);
+        var ac = sub(c, a);
+        var ao = neg(a);
+        var abc = cross(ab, ac);
+
+        if (cross(abc, ac).dot(ao) > 0) {           // origin outside edge ac
+            if (ac.dot(ao) > 0) {
+                resetSimplex(simplex, c, a);
+                setDir(dir, tripleCross(ac, ao, ac));
+                return false;
+            }
+            resetSimplex(simplex, b, a);
+            return gjkLine(simplex, dir);
+        }
+        if (cross(ab, abc).dot(ao) > 0) {           // origin outside edge ab
+            resetSimplex(simplex, b, a);
+            return gjkLine(simplex, dir);
+        }
+        if (abc.lengthSquared() < SAT_EPSILON) {     // degenerate (colinear) triangle — fall back to an edge
+            resetSimplex(simplex, b, a);
+            return gjkLine(simplex, dir);
+        }
+        if (abc.dot(ao) > 0) {                       // origin above the triangle
+            setDir(dir, abc);
+        } else {                                     // origin below — flip winding
+            resetSimplex(simplex, b, c, a);
+            setDir(dir, neg(abc));
+        }
+        return false;
+    }
+
+    private static boolean gjkTetra(java.util.List<Vector3f> simplex, Vector3f dir) {
+        var d = simplex.get(0);
+        var c = simplex.get(1);
+        var b = simplex.get(2);
+        var a = simplex.get(3); // newest
+        var ao = neg(a);
+        var abc = cross(sub(b, a), sub(c, a));
+        var acd = cross(sub(c, a), sub(d, a));
+        var adb = cross(sub(d, a), sub(b, a));
+
+        if (abc.dot(ao) > 0) {
+            resetSimplex(simplex, c, b, a);
+            return gjkTriangle(simplex, dir);
+        }
+        if (acd.dot(ao) > 0) {
+            resetSimplex(simplex, d, c, a);
+            return gjkTriangle(simplex, dir);
+        }
+        if (adb.dot(ao) > 0) {
+            resetSimplex(simplex, b, d, a);
+            return gjkTriangle(simplex, dir);
+        }
+        return true; // origin enclosed
+    }
+
+    /**
+     * Expanding Polytope Algorithm: grow the GJK tetrahedron toward the Minkowski-difference boundary to recover
+     * the minimum penetration depth and its normal.
+     */
+    private static CollisionResult epaPenetration(CollisionShape shapeA, CollisionShape shapeB,
+                                                  java.util.List<Vector3f> simplexVerts) {
+        var verts = new java.util.ArrayList<>(simplexVerts);
+        // Faces as index triples with outward-consistent winding relative to the polytope centroid.
+        var faces = new java.util.ArrayList<int[]>();
+        faces.add(new int[] { 0, 1, 2 });
+        faces.add(new int[] { 0, 2, 3 });
+        faces.add(new int[] { 0, 3, 1 });
+        faces.add(new int[] { 1, 3, 2 });
+
+        for (int iter = 0; iter < 64; iter++) {
+            // Find the face closest to the origin.
+            int closest = -1;
+            float minDist = Float.MAX_VALUE;
+            Vector3f minNormal = null;
+            for (int f = 0; f < faces.size(); f++) {
+                var face = faces.get(f);
+                var n = faceNormal(verts, face);
+                if (n.length() < SAT_EPSILON) {
+                    continue;
+                }
+                n.normalize();
+                float d = n.dot(verts.get(face[0]));
+                if (d < 0) { // ensure outward-facing
+                    n.scale(-1);
+                    d = -d;
+                }
+                if (d < minDist) {
+                    minDist = d;
+                    minNormal = n;
+                    closest = f;
+                }
+            }
+            if (closest < 0 || minNormal == null) {
+                return CollisionResult.noCollision();
+            }
+
+            var support = minkowskiSupport(shapeA, shapeB, minNormal);
+            float supportDist = support.dot(minNormal);
+            if (supportDist - minDist < 1.0e-4f) {
+                // Converged: minNormal is the penetration normal (A->B), minDist the depth.
+                var normal = new Vector3f(minNormal);
+                var oppositeNormal = new Vector3f(normal);
+                oppositeNormal.scale(-1);
+                var supportA = shapeA.getSupport(normal);
+                var supportB = shapeB.getSupport(oppositeNormal);
+                var contactPoint = new Point3f();
+                contactPoint.interpolate(supportA, supportB, 0.5f);
+                return CollisionResult.collision(contactPoint, normal, Math.max(minDist, 0));
+            }
+
+            // Expand: remove faces that the new support point can "see", re-triangulate the hole.
+            int newIndex = verts.size();
+            verts.add(support);
+            var edges = new java.util.ArrayList<int[]>();
+            for (int f = faces.size() - 1; f >= 0; f--) {
+                var face = faces.get(f);
+                var n = faceNormal(verts, face);
+                // Orient n outward (away from the origin) — the same sign convention the closest-face loop uses —
+                // before the visibility test, else an inward-wound face inverts the test and corrupts the hull.
+                if (n.dot(verts.get(face[0])) < 0) {
+                    n.scale(-1);
+                }
+                var toSupport = sub(support, verts.get(face[0]));
+                if (n.dot(toSupport) > 0) {
+                    addEdge(edges, face[0], face[1]);
+                    addEdge(edges, face[1], face[2]);
+                    addEdge(edges, face[2], face[0]);
+                    faces.remove(f);
+                }
+            }
+            for (var e : edges) {
+                faces.add(new int[] { e[0], e[1], newIndex });
+            }
+            if (faces.isEmpty()) {
+                return CollisionResult.noCollision();
+            }
+        }
+        log.warn("EPA did not converge in 64 iterations for {} vs {}; reporting no collision",
+                 shapeA.getClass().getSimpleName(), shapeB.getClass().getSimpleName());
+        return CollisionResult.noCollision();
+    }
+
+    private static void addEdge(java.util.List<int[]> edges, int a, int b) {
+        // Cancel a shared edge (the reverse direction already present) so only boundary edges remain.
+        for (int i = 0; i < edges.size(); i++) {
+            if (edges.get(i)[0] == b && edges.get(i)[1] == a) {
+                edges.remove(i);
+                return;
+            }
+        }
+        edges.add(new int[] { a, b });
+    }
+
+    private static Vector3f faceNormal(java.util.List<Vector3f> verts, int[] face) {
+        return cross(sub(verts.get(face[1]), verts.get(face[0])), sub(verts.get(face[2]), verts.get(face[0])));
+    }
+
+    private static Vector3f sub(Vector3f a, Vector3f b) {
+        return new Vector3f(a.x - b.x, a.y - b.y, a.z - b.z);
+    }
+
+    private static Vector3f neg(Vector3f a) {
+        return new Vector3f(-a.x, -a.y, -a.z);
+    }
+
+    private static Vector3f cross(Vector3f a, Vector3f b) {
+        var r = new Vector3f();
+        r.cross(a, b);
+        return r;
+    }
+
+    private static void setDir(Vector3f dir, Vector3f value) {
+        dir.set(value);
     }
 }

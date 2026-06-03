@@ -45,8 +45,9 @@ class Phase43DefaultPartitionRecoveryTest {
 
     @Test
     void testSubscribe_ReceivesPhaseUpdates() throws Exception {
-        // Given: Recovery with listener
+        // Given: Recovery with listener (simulation opted-in to exercise phase machine)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var phaseUpdates = new ArrayList<RecoveryPhase>();
         var latch = new CountDownLatch(5);  // Expect 5 phase transitions
 
@@ -74,8 +75,9 @@ class Phase43DefaultPartitionRecoveryTest {
 
     @Test
     void testRecover_TransitionsPhases() throws Exception {
-        // Given: Recovery coordinator
+        // Given: Recovery coordinator (simulation opted-in to exercise phase machine)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
 
         // When: Initiate recovery
         var result = recovery.recover(partitionId, mockHandler).get(5, TimeUnit.SECONDS);
@@ -89,8 +91,9 @@ class Phase43DefaultPartitionRecoveryTest {
 
     @Test
     void testRecover_CompletesSuccessfully() throws Exception {
-        // Given: Recovery coordinator
+        // Given: Recovery coordinator (simulation opted-in to exercise phase machine)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
 
         // When: Execute recovery
         var result = recovery.recover(partitionId, mockHandler).get(5, TimeUnit.SECONDS);
@@ -105,8 +108,9 @@ class Phase43DefaultPartitionRecoveryTest {
 
     @Test
     void testRecover_IdempotentWhenComplete() throws Exception {
-        // Given: Completed recovery
+        // Given: Completed recovery (simulation opted-in to exercise phase machine)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var firstResult = recovery.recover(partitionId, mockHandler).get(5, TimeUnit.SECONDS);
         assertTrue(firstResult.success());
 
@@ -178,8 +182,9 @@ class Phase43DefaultPartitionRecoveryTest {
 
     @Test
     void testSubscribe_MultipleListeners_AllNotified() throws Exception {
-        // Given: Recovery with multiple listeners
+        // Given: Recovery with multiple listeners (simulation opted-in to exercise phase machine)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var listener1Updates = new AtomicInteger(0);
         var listener2Updates = new AtomicInteger(0);
         var listener3Updates = new AtomicInteger(0);
@@ -299,8 +304,9 @@ class Phase43DefaultPartitionRecoveryTest {
 
     @Test
     void testGetStateTransitionTime_UpdatesOnPhaseChange() throws Exception {
-        // Given: Recovery coordinator
+        // Given: Recovery coordinator (simulation opted-in to exercise phase machine)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var initialTime = recovery.getStateTransitionTime();
 
         // When: Start recovery (causes phase transitions)

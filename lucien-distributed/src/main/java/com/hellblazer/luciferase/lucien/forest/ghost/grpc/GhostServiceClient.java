@@ -20,7 +20,6 @@ package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 import com.hellblazer.luciferase.common.grpc.GrpcCredentialFactory;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.entity.UUIDEntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostExchange;
@@ -28,9 +27,7 @@ import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
 import com.hellblazer.luciferase.lucien.forest.ghost.ServiceDiscovery;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
 
-import javax.vecmath.Point3f;
 import java.util.ArrayList;
-import java.util.UUID;
 import io.grpc.ChannelCredentials;
 import io.grpc.Grpc;
 import io.grpc.ManagedChannel;
@@ -208,6 +205,8 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
     @Override
     public List<GhostElement<Key, ID, Content>> requestGhostElements(
             int targetRank, long treeId, GhostType ghostType, List<Key> boundaryKeys) {
+        // treeId is the REQUESTER's tree id (threaded into the GhostRequest). Each returned element's globalTreeId
+        // is the element's own origin tree, taken from the proto by the converter — not this arg (Luciferase-7pias).
         var batch = requestGhosts(targetRank, treeId, ghostType, boundaryKeys);
         if (batch == null) {
             // Preserve old null-batch path so caller's "Failed to fetch" log fires identically.
@@ -218,16 +217,11 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
             // PER-ELEMENT try/catch is LOAD-BEARING: one malformed proto must NOT abort the whole
             // batch — log and continue.
             try {
-                var spatialKey = ProtobufConverters.spatialKeyFromProtobuf(proto.getSpatialKey());
-                var p = proto.getPosition();
-                var position = new Point3f(p.getX(), p.getY(), p.getZ());
-                @SuppressWarnings("unchecked")
-                ID id = (ID) new UUIDEntityID(UUID.fromString(proto.getEntityId()));
-                @SuppressWarnings("unchecked")
-                Content content = (Content) proto.getContent().toByteArray();
-                elements.add(new GhostElement<>(
-                        (Key) spatialKey, id, content, position,
-                        proto.getOwnerRank(), treeId)); // treeId: PASSED arg, not client state
+                // Luciferase-7pias (RDR-004 D3 class): dispatch entity-id by the injected entityIdClass and run
+                // contentSerializer via the shared converter — never hardcode UUIDEntityID / cast raw bytes, which
+                // silently drops every LongEntityID or non-byte[] element. Same path the server uses.
+                elements.add(ProtobufConverters.<Key, ID, Content>ghostElementFromProtobuf(
+                        proto, contentSerializer, entityIdClass));
             } catch (Exception e) {
                 log.error("Error processing received ghost element: {}", e.getMessage(), e);
             }
@@ -303,9 +297,12 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
     public String startStreaming(int targetRank, 
                                Consumer<GhostUpdate> updateHandler,
                                Consumer<Throwable> errorHandler) {
-        streamCount.incrementAndGet();
-        
-        var streamId = "stream-" + targetRank + "-" + System.currentTimeMillis();
+        // Monotonic stream sequence for a collision-free id (within this client instance's lifetime; stream-id
+        // uniqueness is connection-scoped) — a wall-clock timestamp collides at sub-ms rates and violates the
+        // Clock-injection mandate (Luciferase-mt7hi).
+        long streamSeq = streamCount.incrementAndGet();
+
+        var streamId = "stream-" + targetRank + "-" + streamSeq;
         
         virtualExecutor.submit(() -> {
             try {

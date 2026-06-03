@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests for Spatial Index REST API endpoints.
- * Tests all three index types: OCTREE, TETREE, SFC.
+ * Tests all index types: OCTREE, TETREE, SFC, PRISM, PYRAMID.
  */
 class SpatialIndexEndpointTest {
 

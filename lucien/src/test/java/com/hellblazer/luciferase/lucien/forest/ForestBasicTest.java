@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.forest;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityIDGenerator;
 import org.junit.jupiter.api.Test;
@@ -222,18 +223,67 @@ public class ForestBasicTest {
     
     @Test
     void testGridForestCreation() {
-        // GridForest is currently not fully implemented due to constructor issues
-        // This test demonstrates the limitation
+        // Luciferase-8es5p: GridForest.createTreeAt is implemented — a grid forest constructs a populated grid of
+        // trees rather than throwing UnsupportedOperationException.
         var origin = new Point3f(0, 0, 0);
-        var totalSize = new Vector3f(1000, 1000, 1000);
-        
-        // This should throw an UnsupportedOperationException as documented in GridForest
-        assertThrows(UnsupportedOperationException.class, () -> {
-            GridForest.<MortonKey, TestEntityID, TestContent>createOctreeGrid(
-                origin, totalSize, 10, 10, 10);
-        });
+        var totalSize = new Vector3f(900, 900, 900);
+
+        var grid = GridForest.<TestEntityID, TestContent>createOctreeGrid(
+            idGenerator, origin, totalSize, 3, 3, 3);
+
+        assertEquals(27, grid.getTreeCount(), "3x3x3 grid must create 27 trees");
+        assertEquals(new Vector3f(300, 300, 300), grid.getCellSize());
+
+        // Every grid cell is retrievable and carries grid-position metadata.
+        for (int z = 0; z < 3; z++) {
+            for (int y = 0; y < 3; y++) {
+                for (int x = 0; x < 3; x++) {
+                    var tree = grid.getTreeAt(x, y, z);
+                    assertNotNull(tree, "tree must exist at grid position (" + x + "," + y + "," + z + ")");
+                }
+            }
+        }
+
+        // Position routing resolves to the correct cell.
+        assertArrayEquals(new int[]{0, 0, 0}, grid.getGridCoordinates(new Point3f(10, 10, 10)));
+        assertArrayEquals(new int[]{2, 1, 0}, grid.getGridCoordinates(new Point3f(700, 400, 100)));
+        assertNull(grid.getGridCoordinates(new Point3f(-1, 0, 0)), "out-of-grid position routes to null");
     }
-    
+
+    @Test
+    void testGridForestRoutingAndEntityQuery() {
+        // Luciferase-8es5p review: prove the per-cell expandGlobalBounds actually drives Forest routing/pruning,
+        // not just construction counts.
+        var grid = GridForest.<TestEntityID, TestContent>createOctreeGrid(
+            idGenerator, new Point3f(0, 0, 0), new Vector3f(900, 900, 900), 3, 3, 3); // 300-unit cells
+
+        // routeQuery prunes by the stamped cell bounds: a query well inside one cell hits exactly that one tree.
+        var inOneCell = new EntityBounds(new Point3f(10, 10, 10), new Point3f(50, 50, 50));
+        assertEquals(1, grid.routeQuery(inOneCell).count(), "query inside a single cell must route to exactly one tree");
+
+        // A query straddling the x boundary at 300 hits two adjacent cells.
+        var straddle = new EntityBounds(new Point3f(250, 10, 10), new Point3f(350, 50, 50));
+        assertEquals(2, grid.routeQuery(straddle).count(), "query straddling a cell boundary must route to two trees");
+
+        // End-to-end: insert an entity into one cell's index, confirm a region query finds it and prunes other cells.
+        var cell000 = grid.getTreeAt(0, 0, 0).getSpatialIndex();
+        var id = cell000.insert(new Point3f(20, 20, 20), (byte) 10, new TestContent("in-cell-000", 1));
+        var found = grid.findEntitiesInRegion(new Spatial.Cube(0, 0, 0, 100));
+        assertTrue(found.contains(id), "entity inserted in cell (0,0,0) must be found by an overlapping region query");
+        assertTrue(grid.findEntitiesInRegion(new Spatial.Cube(600, 600, 600, 100)).isEmpty(),
+                   "region query over an empty far cell must return nothing (routing prunes populated cell)");
+    }
+
+    @Test
+    void testTetreeGridRejectsNegativeOrigin() {
+        // Luciferase-8es5p review: Tetree requires non-negative coordinates; a negative-origin tetree grid must
+        // fail fast at construction, not throw on first insert/query.
+        assertThrows(IllegalArgumentException.class, () ->
+            GridForest.<TestEntityID, TestContent>createTetreeGrid(
+                idGenerator, new Point3f(-100, 0, 0), new Vector3f(300, 300, 300), 3, 1, 1),
+            "negative-origin tetree grid must be rejected at construction");
+    }
+
     @Test
     void testRouteQuery() {
         // Create a grid of trees

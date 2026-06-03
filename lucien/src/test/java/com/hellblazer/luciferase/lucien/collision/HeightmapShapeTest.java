@@ -214,14 +214,16 @@ public class HeightmapShapeTest {
     
     @Test
     void testHeightmapVsHeightmapCollision() {
+        // Luciferase-i1mlg: heightmap-vs-heightmap narrow phase is not implemented. The previous behavior
+        // fabricated a bounds-overlap "collision" with penetration=1.0, injecting energy into the resolver.
+        // The honest contract is no collision until a real height-field-vs-height-field test exists.
         var heightmap1 = new HeightmapShape(new Point3f(0, 0, 0), flatTerrain, 1.0f);
-        // Place second heightmap at same Y level so bounds overlap
         var heightmap2 = new HeightmapShape(new Point3f(5, 0, 5), flatTerrain, 1.0f);
-        
+
         var result = heightmap1.collidesWith(heightmap2);
-        assertTrue(result.collides, "Overlapping heightmaps should collide");
-        
-        // Non-overlapping heightmaps
+        assertFalse(result.collides, "heightmap-vs-heightmap narrow phase is unimplemented — must not fabricate a hit");
+
+        // Non-overlapping heightmaps also report no collision.
         var heightmap3 = new HeightmapShape(new Point3f(50, 0, 50), flatTerrain, 1.0f);
         var result2 = heightmap1.collidesWith(heightmap3);
         assertFalse(result2.collides, "Distant heightmaps should not collide");

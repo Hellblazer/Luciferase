@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +57,7 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
     // Performance tracking
     private final Map<String, Long>                                operationTimings    = new ConcurrentHashMap<>();
     private final Map<String, Integer>                             operationCounts     = new ConcurrentHashMap<>();
+    private volatile Clock                                         clock               = Clock.system(); // Luciferase-mt7hi
 
     public ParallelBulkOperations(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
                                   BulkOperationProcessor<Key, ID, Content> bulkProcessor, ParallelConfig config) {
@@ -101,6 +103,12 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
                                    .withTaskThreshold(200);
     }
 
+    /** Inject a deterministic clock for tests (Luciferase-mt7hi). Defaults to {@code Clock.system()}. */
+    public ParallelBulkOperations<Key, ID, Content> setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
+        return this;
+    }
+
     /**
      * Get performance statistics
      */
@@ -119,7 +127,7 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
      */
     public ParallelOperationResult<ID> insertBatchParallel(List<Point3f> positions, List<Content> contents, byte level)
     throws InterruptedException {
-        long startTime = System.currentTimeMillis();
+        long startTime = clock.currentTimeMillis();
 
         // Validate inputs
         if (positions.size() != contents.size()) {
@@ -134,10 +142,10 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
         // For small datasets, use single-threaded batch insertion
         if (positions.size() < config.getThreadCount() * config.getTaskThreshold()) {
             try {
-                long singleThreadStart = System.currentTimeMillis();
+                long singleThreadStart = clock.currentTimeMillis();
                 List<ID> ids = spatialIndex.insertBatch(positions, contents, level);
                 allInsertedIds.addAll(ids);
-                timings.put("singleThreadedBatch", System.currentTimeMillis() - singleThreadStart);
+                timings.put("singleThreadedBatch", clock.currentTimeMillis() - singleThreadStart);
                 statistics.put("totalEntities", positions.size());
                 statistics.put("partitionCount", 1);
                 statistics.put("threadsUsed", 1);
@@ -146,26 +154,26 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
             } catch (Exception e) {
                 errors.add(e);
             }
-            timings.put("total", System.currentTimeMillis() - startTime);
+            timings.put("total", clock.currentTimeMillis() - startTime);
             return new ParallelOperationResult<>(allInsertedIds, timings, statistics, errors);
         }
 
         try {
             // Phase 1: Parallel Morton code preprocessing (keep this parallel)
-            long preprocessStart = System.currentTimeMillis();
+            long preprocessStart = clock.currentTimeMillis();
             List<BulkOperationProcessor.SfcEntity<Key, Content>> mortonEntities = preprocessParallel(positions,
                                                                                                      contents, level);
-            timings.put("preprocessing", System.currentTimeMillis() - preprocessStart);
+            timings.put("preprocessing", clock.currentTimeMillis() - preprocessStart);
 
             // Phase 2: Adaptive spatial partitioning
-            long partitionStart = System.currentTimeMillis();
+            long partitionStart = clock.currentTimeMillis();
             var partitionedEntities = adaptivePartitioning(mortonEntities, level);
-            timings.put("partitioning", System.currentTimeMillis() - partitionStart);
+            timings.put("partitioning", clock.currentTimeMillis() - partitionStart);
 
             // Phase 3: Parallel batch insertion with coarse-grained locking
-            long insertionStart = System.currentTimeMillis();
+            long insertionStart = clock.currentTimeMillis();
             insertPartitionsParallel(partitionedEntities, level, allInsertedIds, errors);
-            timings.put("insertion", System.currentTimeMillis() - insertionStart);
+            timings.put("insertion", clock.currentTimeMillis() - insertionStart);
 
             // Collect statistics
             statistics.put("totalEntities", positions.size());
@@ -178,23 +186,40 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
             errors.add(e);
         }
 
-        timings.put("total", System.currentTimeMillis() - startTime);
+        timings.put("total", clock.currentTimeMillis() - startTime);
 
         return new ParallelOperationResult<>(allInsertedIds, timings, statistics, errors);
     }
 
     /**
-     * Parallel remove operations
+     * Batch remove. Runs serially under one global write-lock critical section so the batch is atomic versus
+     * concurrent readers that take the global read lock (range queries, collision, {@code entityCount}). Despite the
+     * {@code Parallel} name (kept for API shape), the mutation is serial — writes already serialize on the single
+     * global lock. Note: kNN uses an independent fine-grained locking strategy and is NOT excluded by this lock
+     * (tracked separately, Luciferase-us4zr).
      */
     public CompletableFuture<Integer> removeBatchParallel(List<ID> entityIds) {
+        // Luciferase-aqx6x: the whole batch removes under a single write-lock critical section, serially. The
+        // previous per-entity parallel removes raced for spanning entities that share nodes, and exposed partial
+        // batch state to concurrent range/kNN/collision readers. One critical section makes the batch atomic vs
+        // readers (they observe the index before or after the batch, never mid-batch).
         return CompletableFuture.supplyAsync(() -> {
-            return entityIds.parallelStream().mapToInt(id -> {
-                try {
-                    return spatialIndex.removeEntity(id) ? 1 : 0;
-                } catch (Exception e) {
-                    return 0;
+            int removed = 0;
+            spatialIndex.lock.writeLock().lock();
+            try {
+                for (ID id : entityIds) {
+                    try {
+                        if (spatialIndex.removeEntity(id)) {
+                            removed++;
+                        }
+                    } catch (Exception e) {
+                        // skip individual failures, preserving the prior best-effort contract
+                    }
                 }
-            }).sum();
+            } finally {
+                spatialIndex.lock.writeLock().unlock();
+            }
+            return removed;
         }, getExecutor());
     }
 
@@ -212,29 +237,48 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
     }
 
     /**
-     * Parallel update operations
+     * Batch update (remove + reinsert each entity at its new position). Runs serially under one global write-lock
+     * critical section so the batch is atomic versus concurrent readers that take the global read lock (range
+     * queries, collision, {@code entityCount}); kNN's independent fine-grained path is not excluded
+     * (Luciferase-us4zr). Despite the {@code Parallel} name, the mutation is serial.
+     *
+     * <p><b>ID semantics (pre-existing):</b> each update reinserts via {@code insert}, which assigns a NEW entity id;
+     * the returned list holds the new ids and the input ids become stale after this call.
      */
     public CompletableFuture<List<ID>> updateBatchParallel(List<ID> entityIds, List<Point3f> newPositions, byte level) {
         if (entityIds.size() != newPositions.size()) {
             throw new IllegalArgumentException("Entity IDs and positions lists must have the same size");
         }
 
+        // Luciferase-aqx6x: perform every remove+reinsert under ONE write-lock critical section, serially. The
+        // previous parallel per-entity update took three separate locks (getEntity read, removeEntity write,
+        // insert write) per entity across parallel threads; between an entity's remove and its reinsert it was
+        // absent from the index, so concurrent range/kNN/collision queries missed it or saw partial batch state.
+        // Holding the write lock across the whole batch makes it atomic vs concurrent readers (the lock is
+        // reentrant, so the nested getEntity/removeEntity/insert calls re-acquire it safely).
         return CompletableFuture.supplyAsync(() -> {
-            return IntStream.range(0, entityIds.size()).parallel().mapToObj(i -> {
-                try {
-                    ID id = entityIds.get(i);
-                    Point3f newPos = newPositions.get(i);
-
-                    // For updates, we need to remove and re-insert
-                    Content content = spatialIndex.getEntity(id);
-                    if (content != null && spatialIndex.removeEntity(id)) {
-                        return spatialIndex.insert(newPos, level, content);
+            var updatedIds = new ArrayList<ID>(entityIds.size());
+            spatialIndex.lock.writeLock().lock();
+            try {
+                for (int i = 0; i < entityIds.size(); i++) {
+                    try {
+                        ID id = entityIds.get(i);
+                        Point3f newPos = newPositions.get(i);
+                        Content content = spatialIndex.getEntity(id);
+                        if (content != null && spatialIndex.removeEntity(id)) {
+                            ID newId = spatialIndex.insert(newPos, level, content);
+                            if (newId != null) {
+                                updatedIds.add(newId);
+                            }
+                        }
+                    } catch (Exception e) {
+                        // skip individual failures, preserving the prior best-effort contract
                     }
-                    return null;
-                } catch (Exception e) {
-                    return null;
                 }
-            }).filter(Objects::nonNull).collect(Collectors.toList());
+            } finally {
+                spatialIndex.lock.writeLock().unlock();
+            }
+            return updatedIds;
         }, getExecutor());
     }
 

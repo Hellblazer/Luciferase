@@ -5,7 +5,7 @@ import com.hellblazer.luciferase.portal.web.service.SpatialIndexService.IndexTyp
 /**
  * Request to create a new spatial index.
  *
- * @param indexType          Type of spatial index (OCTREE, TETREE, SFC)
+ * @param indexType          Type of spatial index (OCTREE, TETREE, SFC, PRISM, PYRAMID)
  * @param maxDepth           Maximum tree depth (default: 10)
  * @param maxEntitiesPerNode Maximum entities per node before subdivision (default: 10)
  */

@@ -92,10 +92,10 @@ public class MovingShape {
         Point3f position = getPositionAtTime(t);
         Vector3f delta = new Vector3f();
         delta.sub(position, shape.getPosition());
-        
-        // Create a copy of the shape at the new position
-        // Note: This is simplified - a full implementation would handle rotation
-        CollisionShape movedShape = shape; // Would need proper cloning
+
+        // Translate an independent copy — never the live shape owned by the simulation (Luciferase-v2na8).
+        // Note: rotation is still not interpolated; only the translational component is applied.
+        CollisionShape movedShape = shape.copy();
         movedShape.translate(delta);
         return movedShape;
     }

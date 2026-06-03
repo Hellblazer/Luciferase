@@ -4,7 +4,9 @@
 package com.hellblazer.luciferase.lucien.collision.physics.constraints;
 
 import com.hellblazer.luciferase.lucien.collision.physics.RigidBody;
+import javax.vecmath.Matrix3f;
 import javax.vecmath.Point3f;
+import javax.vecmath.Quat4f;
 import javax.vecmath.Vector3f;
 
 /**
@@ -36,14 +38,17 @@ public class DistanceConstraint implements Constraint {
                             Point3f worldAnchorA, Point3f worldAnchorB) {
         this.bodyA = bodyA;
         this.bodyB = bodyB;
-        
-        // Convert world anchors to local space
-        this.localAnchorA = new Vector3f(worldAnchorA);
-        this.localAnchorA.sub(bodyA.getPosition());
-        
-        this.localAnchorB = new Vector3f(worldAnchorB);
-        this.localAnchorB.sub(bodyB.getPosition());
-        
+
+        // Store anchors in each body's LOCAL (body-fixed) frame so they rotate with the body (Luciferase-wv1yk).
+        // world offset -> local = R^-1 * (worldAnchor - bodyPosition), using the body's orientation at bind time.
+        var worldOffsetA = new Vector3f(worldAnchorA);
+        worldOffsetA.sub(bodyA.getPosition());
+        this.localAnchorA = inverseRotate(bodyA.getOrientation(), worldOffsetA);
+
+        var worldOffsetB = new Vector3f(worldAnchorB);
+        worldOffsetB.sub(bodyB.getPosition());
+        this.localAnchorB = inverseRotate(bodyB.getOrientation(), worldOffsetB);
+
         // Calculate target distance
         var delta = new Vector3f(worldAnchorA);
         delta.sub(worldAnchorB);
@@ -76,10 +81,11 @@ public class DistanceConstraint implements Constraint {
         
         axis.scale(1.0f / currentDistance);
         
-        // Calculate effective mass
-        var rA = new Vector3f(localAnchorA);
-        var rB = new Vector3f(localAnchorB);
-        
+        // Calculate effective mass. The lever arms are the CURRENT world-space offsets (rotated by body
+        // orientation), not the bind-time local anchors (Luciferase-wv1yk).
+        var rA = worldOffsetA();
+        var rB = worldOffsetB();
+
         var rACrossAxis = new Vector3f();
         rACrossAxis.cross(rA, axis);
         var rBCrossAxis = new Vector3f();
@@ -153,14 +159,43 @@ public class DistanceConstraint implements Constraint {
     
     private Point3f getWorldAnchorA() {
         var world = new Point3f(bodyA.getPosition());
-        world.add(localAnchorA);
+        world.add(worldOffsetA());
         return world;
     }
-    
+
     private Point3f getWorldAnchorB() {
         var world = new Point3f(bodyB.getPosition());
-        world.add(localAnchorB);
+        world.add(worldOffsetB());
         return world;
+    }
+
+    /** Current world-space lever arm from body A's centre of mass to its anchor (rotated by body orientation). */
+    private Vector3f worldOffsetA() {
+        return rotate(bodyA.getOrientation(), localAnchorA);
+    }
+
+    /** Current world-space lever arm from body B's centre of mass to its anchor (rotated by body orientation). */
+    private Vector3f worldOffsetB() {
+        return rotate(bodyB.getOrientation(), localAnchorB);
+    }
+
+    /** Rotate a vector by a unit quaternion. */
+    private static Vector3f rotate(Quat4f q, Vector3f v) {
+        var m = new Matrix3f();
+        m.set(q);
+        var out = new Vector3f();
+        m.transform(v, out);
+        return out;
+    }
+
+    /** Rotate a vector by the inverse of a unit quaternion (transpose of the rotation matrix). */
+    private static Vector3f inverseRotate(Quat4f q, Vector3f v) {
+        var m = new Matrix3f();
+        m.set(q);
+        m.transpose();
+        var out = new Vector3f();
+        m.transform(v, out);
+        return out;
     }
     
     @Override

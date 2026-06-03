@@ -25,8 +25,8 @@ import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SubdivisionStrategy;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityManager;
+import com.hellblazer.luciferase.lucien.balancing.NoOpTreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
-import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.geometry.AABBIntersector;
 import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
 
@@ -56,7 +56,6 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     
     private final float worldSize;
     private final int maxLevel;
-    private final TreeBalancer<PrismKey, ID> balancer;
     private final PrismSubdivisionStrategy<ID, Content> subdivisionStrategy;
     
     /**
@@ -94,7 +93,6 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
         super(idGenerator, 100, (byte)maxLevel, com.hellblazer.luciferase.lucien.entity.EntitySpanningPolicy.withSpanning());
         this.worldSize = worldSize;
         this.maxLevel = maxLevel;
-        this.balancer = new NoOpTreeBalancer();
         this.subdivisionStrategy = strategy;
     }
     
@@ -320,8 +318,15 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     // dead getChildIndex/getAllChildren helpers here used an incompatible line-major order and were
     // removed (RDR-009 GATE-B) so P7 serialization cannot accidentally traverse in the wrong order.
     
-    protected TreeBalancer<PrismKey, ID> getTreeBalancer() {
-        return balancer;
+    /**
+     * Prism subdivision is calibrated for triangular/linear PrismKey geometry, not the cube-calibrated merge/split
+     * of {@link com.hellblazer.luciferase.lucien.balancing.DefaultTreeBalancer}. Override the base factory so the
+     * auto-balance path runs a NoOp balancer rather than silently reorganizing (and potentially corrupting) Prism
+     * entities (Luciferase-qrxy4).
+     */
+    @Override
+    protected TreeBalancer<PrismKey, ID> createTreeBalancer() {
+        return new NoOpTreeBalancer<>();
     }
     
     @Override
@@ -695,54 +700,4 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     
     
     
-    /**
-     * No-op tree balancer that disables automatic balancing.
-     */
-    private class NoOpTreeBalancer implements TreeBalancer<PrismKey, ID> {
-        
-        @Override
-        public BalancingAction checkNodeBalance(PrismKey nodeIndex) {
-            return BalancingAction.NONE;
-        }
-        
-        @Override
-        public TreeBalancingStrategy.TreeBalancingStats getBalancingStats() {
-            return new TreeBalancingStrategy.TreeBalancingStats(0, 0, 0, 0, 0, 0.0, 0.0);
-        }
-        
-        @Override
-        public boolean isAutoBalancingEnabled() {
-            return false;
-        }
-        
-        @Override
-        public boolean mergeNodes(Set<PrismKey> nodeIndices, PrismKey parentIndex) {
-            return false; // No-op
-        }
-        
-        @Override
-        public int rebalanceSubtree(PrismKey rootNodeIndex) {
-            return 0; // No-op
-        }
-        
-        @Override
-        public RebalancingResult rebalanceTree() {
-            return new RebalancingResult(0, 0, 0, 0, 0, 0L, true);
-        }
-        
-        @Override
-        public void setAutoBalancingEnabled(boolean enabled) {
-            // No-op
-        }
-        
-        @Override
-        public void setBalancingStrategy(TreeBalancingStrategy<ID> strategy) {
-            // No-op
-        }
-        
-        @Override
-        public List<PrismKey> splitNode(PrismKey nodeIndex, byte nodeLevel) {
-            return List.of(); // No-op
-        }
-    }
 }

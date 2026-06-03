@@ -74,8 +74,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testCompletePhaseSequence() throws Exception {
-        // Given: Recovery coordinator with phase tracking
+        // Given: Recovery coordinator with phase tracking (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var phaseSequence = new ArrayList<RecoveryPhase>();
         var latch = new CountDownLatch(5);  // 5 phase transitions after IDLE
 
@@ -110,8 +111,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testPhaseOrderIsStrictlySequential() throws Exception {
-        // Given: Recovery with phase order tracking
+        // Given: Recovery with phase order tracking (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var phaseIndices = new ArrayList<Integer>();
         var expectedOrder = List.of(
             RecoveryPhase.DETECTING,
@@ -146,8 +148,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testListenerNotificationsOnEveryPhaseChange() throws Exception {
-        // Given: Recovery with multiple listeners
+        // Given: Recovery with multiple listeners (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var listener1Phases = new ArrayList<RecoveryPhase>();
         var listener2Phases = new ArrayList<RecoveryPhase>();
         var latch = new CountDownLatch(10); // 5 phases × 2 listeners
@@ -185,7 +188,7 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testPhaseTransitionToFailedOnError() throws Exception {
-        // Given: Recovery that will fail due to wrong partition ID
+        // Given: Recovery that will fail due to wrong partition ID (simulation not needed for mismatch path)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
         var wrongPartitionId = UUID.randomUUID();
 
@@ -207,8 +210,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testEndToEndSuccessfulRecovery() throws Exception {
-        // Given: Recovery coordinator
+        // Given: Recovery coordinator (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var startPhase = recovery.getCurrentPhase();
 
         // When: Execute recovery
@@ -234,8 +238,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testRecoveryWithGhostLayerValidation() throws Exception {
-        // Given: Recovery coordinator (no ghost manager = validation skipped)
+        // Given: Recovery coordinator (no ghost manager = validation skipped); simulation opted-in
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var phasesSeen = new ArrayList<RecoveryPhase>();
 
         recovery.subscribe(phasesSeen::add);
@@ -256,7 +261,7 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testRecoveryFailureScenario() throws Exception {
-        // Given: Recovery with mismatched partition ID (triggers failure)
+        // Given: Recovery with mismatched partition ID (simulation not needed for mismatch path)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
         var wrongId = UUID.randomUUID();
 
@@ -277,8 +282,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testRetryCoordination() throws Exception {
-        // Given: Recovery that completed
+        // Given: Recovery that completed (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.recover(partitionId, mockHandler).get(5, TimeUnit.SECONDS);
         assertEquals(RecoveryPhase.COMPLETE, recovery.getCurrentPhase());
 
@@ -304,8 +310,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testDeterministicTimingWithTestClock() throws Exception {
-        // Given: Recovery with TestClock
+        // Given: Recovery with TestClock (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         // Record initial time via phase transition
@@ -330,8 +337,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testDurationCalculationAccuracy() throws Exception {
-        // Given: Recovery with TestClock at known time
+        // Given: Recovery with TestClock at known time (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
         testClock.setTime(5000L); // Set to t=5000ms
 
@@ -351,8 +359,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testStateTransitionTimestampsUseInjectedClock() throws Exception {
-        // Given: Recovery with TestClock
+        // Given: Recovery with TestClock (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         recovery.setClock(testClock);
 
         // Record timestamps at different clock values
@@ -381,8 +390,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testMultipleListenersReceiveAllNotifications() throws Exception {
-        // Given: Recovery with 3 listeners
+        // Given: Recovery with 3 listeners (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var listener1Count = new AtomicInteger(0);
         var listener2Count = new AtomicInteger(0);
         var listener3Count = new AtomicInteger(0);
@@ -413,8 +423,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testListenerExceptionsDontBreakRecovery() throws Exception {
-        // Given: Recovery with failing listener
+        // Given: Recovery with failing listener (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
         var goodListenerCalled = new AtomicInteger(0);
 
         // Subscribe failing listener
@@ -444,8 +455,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testIdempotentBehaviorOnConcurrentRecovery() throws Exception {
-        // Given: Recovery coordinator
+        // Given: Recovery coordinator (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
 
         // When: First recovery completes
         var firstResult = recovery.recover(partitionId, mockHandler).get(5, TimeUnit.SECONDS);
@@ -467,8 +479,9 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testRecoveryStateMachineIntegrityUnderRetries() throws Exception {
-        // Given: Recovery coordinator
+        // Given: Recovery coordinator (simulation opted-in)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
+        recovery.enableSimulatedRecovery();
 
         // When: Execute multiple recovery cycles with retries
         for (int i = 0; i < 3; i++) {
@@ -496,7 +509,7 @@ class P43RecoveryCoordinatorTest {
      */
     @Test
     void testNullParameterHandling() {
-        // Given: Recovery coordinator
+        // Given: Recovery coordinator (null-arg tests throw before reaching simulation guard)
         var recovery = new DefaultPartitionRecovery(partitionId, topology);
 
         // Then: Null partition ID should throw

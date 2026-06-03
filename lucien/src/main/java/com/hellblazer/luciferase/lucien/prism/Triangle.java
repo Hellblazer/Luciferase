@@ -653,19 +653,4 @@ public final class Triangle {
         }
         return v;
     }
-    
-    
-    /**
-     * Set the bounds of this triangle (stub for API compatibility).
-     * Note: This is a simplified implementation.
-     * 
-     * @param minX minimum X
-     * @param minY minimum Y  
-     * @param maxX maximum X
-     * @param maxY maximum Y
-     */
-    public void setBounds(float minX, float minY, float maxX, float maxY) {
-        // This is a stub - in a full implementation, this would
-        // update the triangle's coordinates based on the bounds
-    }
 }
