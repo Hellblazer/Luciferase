@@ -307,11 +307,16 @@ public class SpatialIndexProfiler<Key extends SpatialKey<Key>, ID extends Entity
                 report.minTimeMillis = TimeUnit.NANOSECONDS.toMillis(minTimeNanos.get());
                 report.maxTimeMillis = TimeUnit.NANOSECONDS.toMillis(maxTimeNanos.get());
                 
-                // Calculate percentiles if we have samples
-                if (!samples.isEmpty()) {
-                    var sortedSamples = new ArrayList<>(samples);
+                // Calculate percentiles if we have samples. Collections.synchronizedList requires the caller to
+                // hold the wrapper's monitor while iterating it — the ArrayList copy-constructor iterates, so a
+                // concurrent recordOperation() add would otherwise throw ConcurrentModificationException (eu4dc).
+                List<Long> sortedSamples;
+                synchronized (samples) {
+                    sortedSamples = new ArrayList<>(samples);
+                }
+                if (!sortedSamples.isEmpty()) {
                     Collections.sort(sortedSamples);
-                    
+
                     int p50Index = sortedSamples.size() / 2;
                     int p95Index = (int) (sortedSamples.size() * 0.95);
                     int p99Index = (int) (sortedSamples.size() * 0.99);
