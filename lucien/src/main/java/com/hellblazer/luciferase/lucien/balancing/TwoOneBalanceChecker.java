@@ -242,6 +242,33 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
     }
 
     /**
+     * Whether the stored coarse cell {@code coarseKey} (level {@code level}) is an INTERNAL node — i.e. it has at
+     * least one stored child at {@code level+1} (Luciferase-hthxs). Subdivision always creates direct children at
+     * the next finer level, so a single same-level range query over the coarse cell's level+1 descendant band
+     * decides leaf-vs-internal. Used to skip retained-parent false positives so the 2:1 loop can converge.
+     *
+     * <p>Range queries here are intentionally single-level: {@code MortonKey.compareTo} orders level-first, so
+     * the {@code [firstDescendantAtLevel, lastDescendantAtLevel]} band at {@code level+1} captures exactly that
+     * level's children. Index types without a navigable SFC view ({@code spatialKeysInRange} unsupported) are
+     * treated as leaves, preserving the prior behavior for them.
+     */
+    @SuppressWarnings("unchecked")
+    private boolean hasStoredChild(SpatialIndex<Key, ID, Content> index, MortonKey coarseKey, int level,
+                                   int maxLevel) {
+        if (level >= maxLevel) {
+            return false; // cannot subdivide past the max level
+        }
+        byte childLevel = (byte) (level + 1);
+        var lo = (Key) coarseKey.firstDescendantAtLevel(childLevel);
+        var hi = (Key) coarseKey.lastDescendantAtLevel(childLevel);
+        try {
+            return !index.spatialKeysInRange(lo, true, hi, true).isEmpty();
+        } catch (UnsupportedOperationException e) {
+            return false; // no navigable view -> cannot detect children -> treat as leaf (no behavior change)
+        }
+    }
+
+    /**
      * Check MortonKey neighbors for 2:1 balance violations, routing each probe to only the trees whose occupied
      * region can overlap the probed cell (Luciferase-36lp).
      */
@@ -310,6 +337,14 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
                             continue; // tree's occupied region cannot overlap this coarse cell
                         }
                         if (t.index().containsSpatialKey((Key) coarseKey)) {
+                            // hthxs: the 2:1 constraint applies to LEAF elements. A retained internal parent — one
+                            // that has already been subdivided, so its finer children cover this boundary and
+                            // satisfy 2:1 — is NOT a violation. Octree.subdivide keeps the parent key in the index,
+                            // so containsSpatialKey alone would re-report the same boundary every round and the
+                            // balance loop would never converge (it would burn maxRounds). Skip subdivided parents.
+                            if (hasStoredChild(t.index(), coarseKey, level, maxLevel)) {
+                                break; // internal parent; covered by finer children -> already 2:1-balanced here
+                            }
                             neighborsFound++;
                             violations.add(new BalanceViolation<>((Key) coarseKey, (Key) ghostKey, level, ghostLevel,
                                                                  levelDiff, sourceRank));
