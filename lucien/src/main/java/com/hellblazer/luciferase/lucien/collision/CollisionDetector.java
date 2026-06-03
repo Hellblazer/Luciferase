@@ -970,7 +970,11 @@ public class CollisionDetector {
         return p + (q - p) * (dp / (dp - dq));
     }
 
-    /** Coplanar triangle overlap: project to 2D on the dominant plane axis, then edge-edge + containment tests. */
+    /**
+     * Coplanar triangle overlap: project to 2D on the dominant plane axis, then edge-edge + containment tests.
+     * Note: like Möller 1997, this reports area overlap; purely collinear shared-edge contact (zero overlap area,
+     * no vertex of one triangle inside the other) is intentionally treated as non-intersecting.
+     */
     private static boolean coplanarTrianglesOverlap(Vector3f nA, Point3f a0, Point3f a1, Point3f a2, Point3f b0,
                                                     Point3f b1, Point3f b2) {
         int ax = dominantAxis(new Vector3f(Math.abs(nA.x), Math.abs(nA.y), Math.abs(nA.z)));
@@ -1039,6 +1043,8 @@ public class CollisionDetector {
      * Geometry-derived penetration for two intersecting triangles (Luciferase-p6e5g): the contact plane is
      * triangle B's plane, and penetration is how far triangle A's deepest vertex sits behind it. Returns a
      * positive depth (clamped to a small floor so the contact is non-degenerate) and the oriented contact normal.
+     * <p>The depth is the MINIMUM-TRANSLATION distance along B's normal (the smaller of A's two protrusions), not
+     * the worst-vertex interpenetration; a resolver wanting worst-case depth should account for that.
      */
     private static float triTriPenetration(Point3f a0, Point3f a1, Point3f a2, Point3f b0, Point3f b1, Point3f b2,
                                             Vector3f outNormal) {
@@ -1064,9 +1070,6 @@ public class CollisionDetector {
         outNormal.set(unit);
         return Math.max(depth, TRI_EPS);
     }
-
-    /** Proximity threshold for treating a hull vertex as resting on a mesh triangle (Luciferase-p6e5g). */
-    private static final float HULL_TRI_CONTACT_EPS = 0.05f;
 
     /**
      * A point inside a convex hull is pushed out along the nearest face: the penetration depth is the distance to
@@ -1255,34 +1258,32 @@ public class CollisionDetector {
                 }
             }
 
-            // Hull vertex resting on/through this triangle: penetration is the (small) distance from the hull
-            // vertex to the triangle surface, normal is the triangle normal. Uses a real closest-point-on-triangle
-            // proximity test instead of the prior unsound edge-projection (which fired for far vertices that merely
-            // projected within the triangle). Exact tri-vs-hull min-translation (EPA/SAT) is deferred; this gives a
-            // geometry-derived contact for the resting-vertex case.
-            var triNormal = new Vector3f();
-            {
-                var e1 = new Vector3f();
-                e1.sub(v1, v0);
-                var e2 = new Vector3f();
-                e2.sub(v2, v0);
-                triNormal.cross(e1, e2);
-                if (triNormal.lengthSquared() > TRI_EPS * TRI_EPS) {
-                    triNormal.normalize();
-                }
-            }
-            for (var hullVertex : hull.getVertices()) {
-                var closest = closestPointOnTriangle(hullVertex, v0, v1, v2);
-                var diff = new Vector3f();
-                diff.sub(hullVertex, closest);
-                float dist = diff.length();
-                if (dist <= HULL_TRI_CONTACT_EPS) {
-                    return CollisionResult.collision(new Point3f(hullVertex), triNormal,
-                                                     Math.max(HULL_TRI_CONTACT_EPS - dist, TRI_EPS));
+            // Surface crossing with no embedded mesh vertex: the mesh triangle slices through the hull boundary
+            // (a mesh edge crossing a hull face, or a hull edge piercing the mesh triangle). The hull is stored as
+            // triangular faces (HullFace), so a real triangle-triangle test of the mesh triangle against each hull
+            // face catches every such crossing — closing the edge-penetration false-negative that a vertex-only
+            // test misses (Luciferase-p6e5g). Penetration/normal are derived from the crossed hull face's plane.
+            var faces = hull.getFaces();
+            var verts = hull.getVertices();
+            for (var face : faces) {
+                var f0 = verts.get(face.v0);
+                var f1 = verts.get(face.v1);
+                var f2 = verts.get(face.v2);
+                if (trianglesIntersect(v0, v1, v2, f0, f1, f2)) {
+                    var center = new Point3f(v0);
+                    center.add(v1);
+                    center.add(v2);
+                    center.add(f0);
+                    center.add(f1);
+                    center.add(f2);
+                    center.scale(1.0f / 6.0f);
+                    var normal = new Vector3f();
+                    var penetration = triTriPenetration(v0, v1, v2, f0, f1, f2, normal);
+                    return CollisionResult.collision(center, normal, penetration);
                 }
             }
         }
-        
+
         return CollisionResult.noCollision();
     }
     

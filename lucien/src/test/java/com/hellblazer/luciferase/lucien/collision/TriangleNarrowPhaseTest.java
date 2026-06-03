@@ -88,6 +88,35 @@ class TriangleNarrowPhaseTest {
                    + shallow + " deep=" + deep);
     }
 
+    @Test
+    void meshVsConvexHullDetectsEdgePenetrationWithNoVertexInside() {
+        // A unit cube hull centred at the origin (spans [-1,1] on each axis).
+        var corners = new java.util.ArrayList<Point3f>();
+        for (int sx = -1; sx <= 1; sx += 2) {
+            for (int sy = -1; sy <= 1; sy += 2) {
+                for (int sz = -1; sz <= 1; sz += 2) {
+                    corners.add(new Point3f(sx, sy, sz));
+                }
+            }
+        }
+        var hull = new ConvexHullShape(new Point3f(0, 0, 0), corners);
+
+        // A large triangle in the y=0 plane that slices straight through the cube. All three of its vertices are
+        // far OUTSIDE the cube, so no mesh vertex is inside the hull — the old vertex-only detection missed this
+        // edge-penetration case entirely (Luciferase-p6e5g). The tri-vs-hull-face test must catch it.
+        var meshData = new TriangleMeshData();
+        meshData.addVertex(new Point3f(-5, 0, -5));
+        meshData.addVertex(new Point3f(5, 0, -5));
+        meshData.addVertex(new Point3f(0, 0, 5));
+        meshData.addTriangle(0, 1, 2);
+        var mesh = new MeshShape(new Point3f(0, 0, 0), meshData);
+
+        var result = mesh.collidesWith(hull);
+        assertTrue(result.collides,
+                   "a mesh triangle slicing through the hull (no vertex inside) must be detected (Luciferase-p6e5g)");
+        assertTrue(result.penetrationDepth > 0f, "edge-penetration contact must have positive penetration");
+    }
+
     /**
      * Build mesh A = triangle A in z=0 and mesh B = a triangle straddling z=0 by +/- {@code depth} (so it pokes
      * {@code depth} below A's plane), centred inside A; return the meshVsMesh penetration.

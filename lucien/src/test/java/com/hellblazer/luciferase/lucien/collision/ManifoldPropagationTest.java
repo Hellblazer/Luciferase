@@ -59,5 +59,11 @@ class ManifoldPropagationTest {
                     "CollisionPair must carry the narrow-phase contact manifold, not drop it (Luciferase-zz8xp)");
         assertEquals(direct.contactManifold.size(), pair.contactManifold().size(),
                      "propagated manifold must match the narrow-phase result");
+        // The points must be the real contact geometry, not garbage/stale: for this face-to-face X overlap each
+        // manifold point sits on the contact interface near x≈100.75 (midway between the box faces at 101 and 100.5).
+        for (var p : pair.contactManifold()) {
+            assertTrue(p.x > 100.0f && p.x < 101.5f,
+                       "manifold point x=" + p.x + " is outside the contact interface — points not propagated intact");
+        }
     }
 }

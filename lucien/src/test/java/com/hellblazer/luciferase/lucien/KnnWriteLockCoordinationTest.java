@@ -54,7 +54,7 @@ class KnnWriteLockCoordinationTest {
 
         var writeHeld = new AtomicBoolean(false);
         var writeAcquired = new CountDownLatch(1);
-        long holdMillis = 1000;
+        long holdMillis = 250;
 
         var writer = new Thread(() -> {
             lock.writeLock().lock();
