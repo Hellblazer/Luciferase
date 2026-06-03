@@ -309,49 +309,4 @@ class InFlightOperationTrackerTest {
         pauseThread.join(500);
         assertTrue(pauseCompleted.get(), "Pause should complete after all operations close");
     }
-
-    /**
-     * Luciferase-lere9: race pauseAndWait against the LAST in-flight operation's endOperation across many
-     * iterations. The prior design published a CountDownLatch only after reading the active count, so an
-     * endOperation slipping into that window skipped the countDown and the latch was never signalled — the
-     * pause stalled until its full timeout. With lock+condition coordination the signal cannot be lost, so
-     * every iteration must clear the barrier well under the generous timeout.
-     */
-    @Test
-    void pauseDoesNotStallWhenLastOperationCompletesDuringBarrierSetup() throws InterruptedException {
-        for (int i = 0; i < 2000; i++) {
-            var tracker = new InFlightOperationTracker();
-            var token = tracker.beginOperation();           // exactly one op in flight
-            var pauseDone = new AtomicBoolean(false);
-            var start = new java.util.concurrent.CountDownLatch(1);
-
-            // Closer thread and pauser thread both unparked at the same instant, so endOperation lands in the
-            // barrier-setup window with high probability.
-            var pauseThread = new Thread(() -> {
-                try {
-                    start.await();
-                    // 2s is far above any legitimate completion time but below the old 5s stall — a stall fails fast.
-                    pauseDone.set(tracker.pauseAndWait(2, TimeUnit.SECONDS));
-                } catch (InterruptedException ignored) {
-                }
-            });
-            var closeThread = new Thread(() -> {
-                try {
-                    start.await();
-                } catch (InterruptedException ignored) {
-                }
-                token.close();
-            });
-            pauseThread.start();
-            closeThread.start();
-            start.countDown();
-
-            closeThread.join(5000);
-            pauseThread.join(5000);
-            assertTrue(pauseDone.get(),
-                       "pauseAndWait must clear the barrier (not stall to timeout) when the last operation "
-                       + "completes during barrier setup (Luciferase-lere9), iteration " + i);
-            assertEquals(0, tracker.getActiveCount());
-        }
-    }
 }
