@@ -183,8 +183,12 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
     }
 
     /**
-     * Find collisions using fine-grained locking for better concurrency. Alternative to {@link #findCollisions}
-     * when high read concurrency is needed.
+     * Find collisions for a single entity using per-node fine-grained locking for the node traversal.
+     * <p>Since Luciferase-kvdto this method takes the global read lock as an outer guard (like every other read
+     * path), so it is serialized against writes exactly as {@link #findCollisions} is — it does NOT offer extra
+     * concurrency with respect to global writes. The fine-grained per-node strategy only reduces contention among
+     * the node accesses within the read-locked traversal; choose this over {@link #findCollisions} only for that
+     * intra-traversal property, not for global write concurrency.
      */
     public List<CollisionPair<ID, Content>> findCollisionsFineGrained(ID entityId) {
         // Luciferase-kvdto: take the global read lock as an outer guard, like every other read path

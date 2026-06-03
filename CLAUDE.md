@@ -95,9 +95,9 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 - **Prism** (9 classes): Anisotropic spatial subdivision with triangular/linear elements
 - **SFC** (5 classes): SFCArrayIndex flat Morton-sorted array, LITMAX/BIGMIN optimization
 - **Collision** (18 + ccd/4 + physics/4 + physics/constraints/3 = 29 classes): Comprehensive collision detection with CCD and physics+constraints subpackages
-- **Balancing** (22 + fault/40 = 62 classes): Tree balancing strategies, fault-recovery subsystem. The gRPC balancing client (`balancing/grpc`, 3 classes: `GrpcBalanceExchange`, `BalanceCoordinatorClient`, `BalanceCoordinatorServer`) lives in the **lucien-distributed** module, not lucien.
+- **Balancing** (32 + fault/40 = 72 classes; counted 2026-06-03): Tree balancing strategies, fault-recovery subsystem. The gRPC balancing client (`balancing/grpc`, 3 classes: `GrpcBalanceExchange`, `BalanceCoordinatorClient`, `BalanceCoordinatorServer`) lives in the **lucien-distributed** module, not lucien.
 - **Visitor** (6 classes): Tree traversal visitor pattern
-- **Forest** (22 + ghost/11 = 33 classes): Multi-tree coordination, ghost layer, distributed support. The gRPC ghost client (`forest/ghost/grpc`, 9 classes incl. serdes + `ProtobufConverters` + service impl/client) lives in the **lucien-distributed** module, not lucien.
+- **Forest** (22 + ghost/13 = 35 classes; counted 2026-06-03): Multi-tree coordination, ghost layer, distributed support. The gRPC ghost client (`forest/ghost/grpc`, 9 classes incl. serdes + `ProtobufConverters` + service impl/client) lives in the **lucien-distributed** module, not lucien.
 - **Neighbor** (3 classes): Topological neighbor detection
 - **Cache** (2 classes): KNN result cache with version-tracked invalidation
 - **Occlusion** (11 classes): Dynamic Scene Occlusion Culling (DSOC) with adaptive Z-buffer
