@@ -49,37 +49,6 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
 public class Tet implements Spatial.aabt, HybridElement {
     public static final  TetreeKey<?> ROOT_TET      = TetreeKey.getRoot();
     /**
-     * Default root tetrahedron type (follows t8code standard)
-     */
-    private static final byte DEFAULT_ROOT_TET_TYPE = 0;
-    
-    /**
-     * Get the root tetrahedron type. Can be configured via system property
-     * or defaults to type 0 (S0 tetrahedron in standard t8code).
-     */
-    private static byte getRootTetrahedronType() {
-        String rootTypeStr = System.getProperty("tetree.root.type");
-        if (rootTypeStr != null) {
-            try {
-                byte rootType = Byte.parseByte(rootTypeStr);
-                if (rootType >= 0 && rootType <= 5) {
-                    return rootType;
-                }
-            } catch (NumberFormatException e) {
-                // Fall through to default
-            }
-        }
-        return DEFAULT_ROOT_TET_TYPE;
-    }    // Table 2: Local indices - Iloc(parent_type, bey_child_index)
-    // Note: Different from TetreeConnectivity.INDEX_TO_BEY_NUMBER due to different indexing scheme
-    private static final byte[][]     LOCAL_INDICES = { { 0, 1, 4, 7, 2, 3, 6, 5 }, // Parent type 0
-                                                        { 0, 1, 5, 7, 2, 3, 6, 4 }, // Parent type 1
-                                                        { 0, 3, 4, 7, 1, 2, 6, 5 }, // Parent type 2
-                                                        { 0, 1, 6, 7, 2, 3, 4, 5 }, // Parent type 3
-                                                        { 0, 3, 5, 7, 1, 2, 4, 6 }, // Parent type 4
-                                                        { 0, 3, 6, 7, 2, 1, 4, 5 }  // Parent type 5
-    };
-    /**
      * Sentinel for {@link #minTetLevel}: this tetrahedron has no pyramidal ancestor (pure-Tetree, or
      * a tet whose whole ancestor chain is tetrahedral). RDR-010 pi1.2 / Knapp 2026 Algorithm 4.1.
      */

@@ -27,10 +27,10 @@ import java.util.function.LongSupplier;
  * this scheduler delegates timing decisions to an injected LongSupplier.
  * This enables deterministic testing via TestClock.
  *
- * <p><b>Clock Injection</b>: Uses LongSupplier reflection pattern to support
- * both TestClock (from simulation) and java.time.Clock without creating a
- * compile-time dependency on simulation module. This breaks the cyclic
- * dependency between lucien and simulation.
+ * <p><b>Clock Injection</b>: Takes a {@link java.util.function.LongSupplier} time source — pass
+ * {@code testClock::currentTimeMillis} (the common-module {@code Clock}) in tests, or
+ * {@code System::currentTimeMillis} in production. The supplier is the leaf time primitive; the rest of
+ * balancing/fault standardizes on the common {@code Clock} type (Luciferase-d2nxe).
  *
  * <p><b>Usage Pattern</b>:
  * <pre>
@@ -56,7 +56,10 @@ public class ClockAwareScheduler {
     private final LongSupplier timeSource;
     private final long intervalMs;
     private final Runnable task;
-    private volatile long lastExecutionTime;
+    // AtomicLong + CAS (Luciferase-1dcx7): tick() is read-compare-assign-run; a plain volatile let two concurrent
+    // callers both pass the interval gate and both run the task (double recovery-check). The CAS makes exactly one
+    // caller win the interval advance.
+    private final java.util.concurrent.atomic.AtomicLong lastExecutionTime = new java.util.concurrent.atomic.AtomicLong();
     private volatile boolean running = false;
 
     /**
@@ -77,7 +80,7 @@ public class ClockAwareScheduler {
         }
 
         this.intervalMs = intervalMs;
-        this.lastExecutionTime = timeSource.getAsLong();
+        this.lastExecutionTime.set(timeSource.getAsLong());
     }
 
     /**
@@ -100,8 +103,10 @@ public class ClockAwareScheduler {
         }
 
         long now = timeSource.getAsLong();
-        if (now - lastExecutionTime >= intervalMs) {
-            lastExecutionTime = now;
+        long last = lastExecutionTime.get();
+        // CAS the interval advance: only the caller that wins the gate runs the task, so concurrent ticks within one
+        // interval execute it at most once (Luciferase-1dcx7).
+        if (now - last >= intervalMs && lastExecutionTime.compareAndSet(last, now)) {
             task.run();
             return true;
         }
@@ -116,7 +121,7 @@ public class ClockAwareScheduler {
      */
     public void start() {
         running = true;
-        lastExecutionTime = timeSource.getAsLong();
+        lastExecutionTime.set(timeSource.getAsLong());
     }
 
     /**

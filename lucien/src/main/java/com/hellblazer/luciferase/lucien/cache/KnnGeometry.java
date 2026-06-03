@@ -46,7 +46,9 @@ import java.util.Set;
  * @param <ID>  the entity identifier type
  * @author hal.hildebrand
  */
-public interface KnnGeometry<Key extends SpatialKey<Key>, ID extends EntityID> {
+public interface KnnGeometry<Key extends SpatialKey<Key>, ID extends EntityID>
+extends com.hellblazer.luciferase.lucien.SpatialIndexGeometry<ID>,
+        com.hellblazer.luciferase.lucien.NodeBoundsQueryGeometry<Key> {
 
     // ---- Subclass-overridden geometry hooks -----------------------------------------------------------------------
 
@@ -70,12 +72,6 @@ public interface KnnGeometry<Key extends SpatialKey<Key>, ID extends EntityID> {
     float getCellSizeAtLevel(byte level);
 
     /**
-     * Spatial keys of all nodes intersecting {@code bounds}. Subclasses provide an efficient implementation using
-     * their concrete SFC structure (e.g. Morton/TM interval walks via LITMAX/BIGMIN, or an O(n) scan for Prism).
-     */
-    Set<Key> findNodesIntersectingBounds(VolumeBounds bounds);
-
-    /**
      * Whether {@code kNearestNeighbors} must perform a final full-domain sweep when the expanding-radius fallback
      * leaves it short of {@code k}. Default {@code false} for integer-SFC indices (Octree/Tetree/SFCArrayIndex) whose
      * SFC range-pruning path already covers the whole {@code maxDistance} sphere; Prism returns {@code true} because
@@ -83,16 +79,14 @@ public interface KnnGeometry<Key extends SpatialKey<Key>, ID extends EntityID> {
      */
     boolean knnRequiresFullDomainSweep();
 
-    /** Push the neighbors of {@code nodeIndex} into {@code toVisit}, respecting {@code visitedNodes}. */
-    void addNeighboringNodes(Key nodeIndex, Queue<Key> toVisit, Set<Key> visitedNodes);
+    // findNodesIntersectingBounds + addNeighboringNodes inherited from NodeBoundsQueryGeometry (Luciferase-rk8hv).
 
     // ---- Façade helpers -------------------------------------------------------------------------------------------
 
     /** Validate that {@code position} satisfies the façade's spatial constraints (range, positivity, etc.). */
     void validateSpatialConstraints(Point3f position);
 
-    /** Cached world position of the entity, or {@code null} if unknown. */
-    Point3f getCachedEntityPosition(ID entityId);
+    // getCachedEntityPosition is inherited from SpatialIndexGeometry (Luciferase-rk8hv).
 
     /** The façade's maximum subdivision depth (constant for the lifetime of the index). */
     byte maxDepth();

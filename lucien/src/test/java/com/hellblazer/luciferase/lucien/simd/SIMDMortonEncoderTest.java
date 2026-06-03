@@ -279,7 +279,50 @@ class SIMDMortonEncoderTest {
         
         long expected = MortonCurve.encode(x, y, z);
         long actual = SIMDMortonEncoder.encode(x, y, z);
-        
+
         assertEquals(expected, actual, "Bit interleaving incorrect");
+    }
+
+    /**
+     * Luciferase-lsy13: the other correctness tests call {@code SIMDMortonEncoder.encode}, which routes to the
+     * actual SIMD kernel only when {@code VectorAPISupport.isAvailable()} (Vector API module present AND enabled).
+     * With SIMD disabled both the SIMD wrapper and the scalar reference call {@code MortonCurve.encode}, so those
+     * assertions are vacuous w.r.t. the SIMD bit-interleaving code. This test FORCES the SIMD path on (the build
+     * runs with --add-modules jdk.incubator.vector) and validates the real kernel — single + batch — against the
+     * scalar reference over a broad sample. If the Vector API module is absent, it is skipped with a documented
+     * reason rather than passing vacuously.
+     */
+    @Test
+    void forcedSimdPathMatchesScalarReference() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            VectorAPISupport.isVectorAPIPresent(),
+            "Vector API module not on the classpath (no --add-modules jdk.incubator.vector) — SIMD kernel cannot "
+            + "be exercised here; documented coverage gap (Luciferase-lsy13)");
+
+        boolean priorEnabled = VectorAPISupport.isAvailable();
+        try {
+            assertTrue(VectorAPISupport.setEnabled(true), "should be able to enable SIMD when the module is present");
+            assertTrue(SIMDMortonEncoder.isSIMDAvailable(), "encode() must now route through the SIMD kernel");
+
+            var rng = new Random(0xC0FFEE);
+            int max = (1 << 21) - 1;  // 21-bit coordinate domain
+            int n = 4096;
+            int[] xs = new int[n], ys = new int[n], zs = new int[n];
+            long[] expected = new long[n];
+            for (int i = 0; i < n; i++) {
+                int x = rng.nextInt(max + 1), y = rng.nextInt(max + 1), z = rng.nextInt(max + 1);
+                xs[i] = x; ys[i] = y; zs[i] = z;
+                expected[i] = MortonCurve.encode(x, y, z);
+                // Single-coordinate SIMD path
+                assertEquals(expected[i], SIMDMortonEncoder.encode(x, y, z),
+                             "SIMD single encode diverged from scalar at (" + x + "," + y + "," + z + ")");
+            }
+            // Batch SIMD path (exercises encodeBatchSIMD full-vector loop + scalar tail)
+            long[] batch = new long[n];
+            SIMDMortonEncoder.encodeBatch(xs, ys, zs, batch, n);
+            assertArrayEquals(expected, batch, "SIMD batch encode diverged from scalar reference");
+        } finally {
+            VectorAPISupport.setEnabled(priorEnabled);
+        }
     }
 }

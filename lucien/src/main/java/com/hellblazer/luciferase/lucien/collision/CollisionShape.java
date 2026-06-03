@@ -88,16 +88,36 @@ public abstract sealed class CollisionShape
         public final Point3f  contactPoint;
         public final Vector3f contactNormal;
         public final float    penetrationDepth;
+        /**
+         * Contact manifold (Luciferase-nm9dj): the set of contact points for this collision. Face-face / face-edge
+         * contacts produce a polygon of 2-4 points; point contacts (sphere, edge-edge) produce a single point. Never
+         * null — empty for no-collision, otherwise at least the {@link #contactPoint}. Resolvers needing correct
+         * angular-impulse arms should distribute the impulse across these points rather than the single representative.
+         */
+        public final java.util.List<Point3f> contactManifold;
 
         public CollisionResult(boolean collides, Point3f contactPoint, Vector3f contactNormal, float penetrationDepth) {
+            this(collides, contactPoint, contactNormal, penetrationDepth,
+                 contactPoint != null ? java.util.List.of(new Point3f(contactPoint)) : java.util.List.of());
+        }
+
+        public CollisionResult(boolean collides, Point3f contactPoint, Vector3f contactNormal, float penetrationDepth,
+                               java.util.List<Point3f> contactManifold) {
             this.collides = collides;
             this.contactPoint = contactPoint;
             this.contactNormal = contactNormal;
             this.penetrationDepth = penetrationDepth;
+            this.contactManifold = contactManifold != null ? java.util.List.copyOf(contactManifold) : java.util.List.of();
         }
 
         public static CollisionResult collision(Point3f contactPoint, Vector3f contactNormal, float penetrationDepth) {
             return new CollisionResult(true, contactPoint, contactNormal, penetrationDepth);
+        }
+
+        /** Collision with an explicit contact manifold (Luciferase-nm9dj); {@code contactPoint} is the representative. */
+        public static CollisionResult collision(Point3f contactPoint, Vector3f contactNormal, float penetrationDepth,
+                                                java.util.List<Point3f> contactManifold) {
+            return new CollisionResult(true, contactPoint, contactNormal, penetrationDepth, contactManifold);
         }
 
         public static CollisionResult noCollision() {

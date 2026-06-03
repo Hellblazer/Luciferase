@@ -47,15 +47,6 @@ public class PrismNeighborFinder {
     /** Total number of faces on a triangular prism */
     public static final int NUM_FACES = 5;
     
-    /** Face corners lookup table - which corners belong to each face */
-    private static final int[][] FACE_CORNERS = {
-        {1, 2, 4, 5},   // Face 0 (quad): corners 1,2,4,5
-        {0, 2, 3, 5},   // Face 1 (quad): corners 0,2,3,5
-        {0, 1, 3, 4},   // Face 2 (quad): corners 0,1,3,4
-        {0, 1, 2, -1},  // Face 3 (bottom triangle): corners 0,1,2
-        {3, 4, 5, -1}   // Face 4 (top triangle): corners 3,4,5
-    };
-    
     /**
      * Find the face neighbor of a prism across a given face.
      * Following t8code's algorithm for prism face neighbors.
@@ -178,155 +169,11 @@ public class PrismNeighborFinder {
         }
     }
     
-    /**
-     * Find edge neighbors of a prism.
-     * A triangular prism has 9 edges: 3 vertical, 3 on bottom, 3 on top.
-     * 
-     * @param prism The prism to find edge neighbors for
-     * @return Set of neighboring prisms that share an edge
-     */
-    public static Set<PrismKey> findEdgeNeighbors(PrismKey prism) {
-        Set<PrismKey> edgeNeighbors = new HashSet<>();
-        
-        // For each pair of faces, find neighbors that share the edge
-        for (int face1 = 0; face1 < NUM_FACES; face1++) {
-            for (int face2 = face1 + 1; face2 < NUM_FACES; face2++) {
-                // Check if these faces share an edge
-                if (facesShareEdge(face1, face2)) {
-                    // Find the neighbor across face1, then its neighbor across the corresponding face
-                    PrismKey neighbor1 = findFaceNeighbor(prism, face1);
-                    if (neighbor1 != null) {
-                        int neighborFace = getCorrespondingEdgeFace(face1, face2);
-                        if (neighborFace >= 0) {
-                            PrismKey edgeNeighbor = findFaceNeighbor(neighbor1, neighborFace);
-                            if (edgeNeighbor != null && !edgeNeighbor.equals(prism)) {
-                                edgeNeighbors.add(edgeNeighbor);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        return edgeNeighbors;
-    }
-    
-    /**
-     * Find vertex (corner) neighbors of a prism.
-     * A triangular prism has 6 vertices.
-     * 
-     * @param prism The prism to find vertex neighbors for
-     * @return Set of neighboring prisms that share a vertex
-     */
-    public static Set<PrismKey> findVertexNeighbors(PrismKey prism) {
-        Set<PrismKey> vertexNeighbors = new HashSet<>();
-        
-        // For each vertex, find all prisms that share it
-        // This is done by following chains of face neighbors
-        for (int vertex = 0; vertex < 6; vertex++) {
-            Set<PrismKey> vertexRing = findVertexRing(prism, vertex);
-            vertexNeighbors.addAll(vertexRing);
-        }
-        
-        // Remove the original prism
-        vertexNeighbors.remove(prism);
-        
-        return vertexNeighbors;
-    }
-    
-    /**
-     * Find all prisms that share a specific vertex with the given prism.
-     * 
-     * @param prism The prism
-     * @param vertex The vertex index (0-5)
-     * @return Set of prisms sharing this vertex
-     */
-    private static Set<PrismKey> findVertexRing(PrismKey prism, int vertex) {
-        Set<PrismKey> ring = new HashSet<>();
-        
-        // Find which faces contain this vertex
-        List<Integer> facesWithVertex = new ArrayList<>();
-        for (int face = 0; face < NUM_FACES; face++) {
-            if (faceContainsVertex(face, vertex)) {
-                facesWithVertex.add(face);
-            }
-        }
-        
-        // Follow face neighbors and their neighbors to find vertex ring
-        for (int face : facesWithVertex) {
-            PrismKey neighbor = findFaceNeighbor(prism, face);
-            if (neighbor != null) {
-                ring.add(neighbor);
-                // Continue around the vertex by following more face neighbors
-                for (int otherFace : facesWithVertex) {
-                    if (otherFace != face) {
-                        int neighborFace = getNeighborFace(face);
-                        PrismKey nextNeighbor = findFaceNeighbor(neighbor, neighborFace);
-                        if (nextNeighbor != null) {
-                            ring.add(nextNeighbor);
-                        }
-                    }
-                }
-            }
-        }
-        
-        return ring;
-    }
-    
-    /**
-     * Check if two faces share an edge.
-     * 
-     * @param face1 First face index
-     * @param face2 Second face index
-     * @return true if the faces share an edge
-     */
-    private static boolean facesShareEdge(int face1, int face2) {
-        // Count shared corners between the two faces
-        int sharedCorners = 0;
-        for (int corner1 : FACE_CORNERS[face1]) {
-            if (corner1 < 0) break;
-            for (int corner2 : FACE_CORNERS[face2]) {
-                if (corner2 < 0) break;
-                if (corner1 == corner2) {
-                    sharedCorners++;
-                }
-            }
-        }
-        // Two faces share an edge if they have exactly 2 corners in common
-        return sharedCorners == 2;
-    }
-    
-    /**
-     * Get the face on a face-neighbor that would lead to an edge neighbor.
-     * 
-     * @param face1 First face of the edge
-     * @param face2 Second face of the edge
-     * @return The face index to follow from the face1 neighbor, or -1 if invalid
-     */
-    private static int getCorrespondingEdgeFace(int face1, int face2) {
-        // This is complex and depends on the specific edge
-        // For now, return a simplified version
-        // In a full implementation, this would use a lookup table
-        return face2;
-    }
-    
-    /**
-     * Check if a face contains a specific vertex.
-     * 
-     * @param face Face index
-     * @param vertex Vertex index
-     * @return true if the face contains the vertex
-     */
-    private static boolean faceContainsVertex(int face, int vertex) {
-        for (int corner : FACE_CORNERS[face]) {
-            if (corner == vertex) {
-                return true;
-            }
-            if (corner < 0) break; // -1 marks end of corners for triangular faces
-        }
-        return false;
-    }
-    
+    // Luciferase-ef43s: findEdgeNeighbors/findVertexNeighbors (and helpers findVertexRing, facesShareEdge,
+    // getCorrespondingEdgeFace, faceContainsVertex + the FACE_CORNERS table) were removed — they had NO
+    // callers and getCorrespondingEdgeFace was a structurally-wrong stub (returned face2 with a 'would use a
+    // lookup table' TODO). findFaceNeighbor/findAllFaceNeighbors and cross-level neighbors remain. Re-add
+    // edge/vertex neighbors with a real lookup table + involution test when a consumer needs them.
     /**
      * Find neighbors at different levels (cross-level neighbors).
      * This includes both coarser neighbors (parents) and finer neighbors (children).

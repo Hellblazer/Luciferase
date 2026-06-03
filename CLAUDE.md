@@ -95,9 +95,9 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 - **Prism** (9 classes): Anisotropic spatial subdivision with triangular/linear elements
 - **SFC** (5 classes): SFCArrayIndex flat Morton-sorted array, LITMAX/BIGMIN optimization
 - **Collision** (18 + ccd/4 + physics/4 + physics/constraints/3 = 29 classes): Comprehensive collision detection with CCD and physics+constraints subpackages
-- **Balancing** (22 + fault/40 + grpc/2 = 64 classes): Tree balancing strategies, fault-recovery subsystem, gRPC balancing client
+- **Balancing** (32 + fault/40 = 72 classes; counted 2026-06-03): Tree balancing strategies, fault-recovery subsystem. The gRPC balancing client (`balancing/grpc`, 3 classes: `GrpcBalanceExchange`, `BalanceCoordinatorClient`, `BalanceCoordinatorServer`) lives in the **lucien-distributed** module, not lucien.
 - **Visitor** (6 classes): Tree traversal visitor pattern
-- **Forest** (22 + ghost/11 + ghost/grpc/7 = 40 classes): Multi-tree coordination, ghost layer, distributed support, gRPC ghost client
+- **Forest** (22 + ghost/13 = 35 classes; counted 2026-06-03): Multi-tree coordination, ghost layer, distributed support. The gRPC ghost client (`forest/ghost/grpc`, 9 classes incl. serdes + `ProtobufConverters` + service impl/client) lives in the **lucien-distributed** module, not lucien.
 - **Neighbor** (3 classes): Topological neighbor detection
 - **Cache** (2 classes): KNN result cache with version-tracked invalidation
 - **Occlusion** (11 classes): Dynamic Scene Occlusion Culling (DSOC) with adaptive Z-buffer
@@ -116,7 +116,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 - **Thread-Safe**: ConcurrentSkipListMap for O(log n) operations with concurrent access
 - **Multi-Entity Support**: Multiple entities per spatial location with CopyOnWriteArrayList
 - **Feature Complete**: Ray intersection, collision detection, frustum culling, spatial range queries, k-NN search
-- **12-DOP Exact Containment**: `contains12DOP` (11 ops), `intersects12DOP` (18 ops), `intersectsTet12DOP` (18 ops, 27.5x faster than old SAT); see `lucien/doc/AABT_12DOP_EXACT_CONTAINMENT.md` and `lucien/doc/12DOP_SLAB_RANGES.md`
+- **12-DOP Exact Containment**: `contains12DOP` (11 ops), `intersects12DOP` (~21 ops), `intersectsTet12DOP` (~21 ops, 27.5x faster than old SAT); see `lucien/doc/AABT_12DOP_EXACT_CONTAINMENT.md` and `lucien/doc/12DOP_SLAB_RANGES.md`
 
 ### Critical Context Files
 

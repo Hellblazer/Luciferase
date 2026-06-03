@@ -282,10 +282,12 @@ public final class PrismKey implements SpatialKey<PrismKey> {
      * @return the prism volume
      */
     public float getVolume() {
-        // Simplified volume calculation
         var level = getLevel();
-        var baseArea = 1.0f / (1 << (level * 2));  // Triangle area approximation
-        var height = 1.0f / (1 << level);          // Line segment height
+        // Kuhn half-cell triangle area is 0.5/4^level, NOT the full bbox 1/4^level (Luciferase-6hqr4): the latter
+        // double-counted the volume, giving load-balancing / partition-weight callers 2x. Consistent with
+        // PrismGeometry.computeVolume (true triangle area * line height).
+        var baseArea = 0.5f / (1 << (level * 2));  // triangle (half the bbox)
+        var height = 1.0f / (1 << level);          // line segment height
         return baseArea * height;
     }
     

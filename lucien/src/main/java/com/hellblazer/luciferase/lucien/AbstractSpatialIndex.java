@@ -103,7 +103,6 @@ implements SpatialIndex<Key, ID, Content>,
     protected final ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>> spatialIndex;
     // Read-write lock for thread safety (still needed for complex operations)
     protected final ReadWriteLock                                    lock;
-    protected final Set<Long>                                        deferredSubdivisionNodes = new HashSet<>();
     private final   TreeBalancer<Key, ID>                            treeBalancer;
     // Entity data cache for performance. RDR-008: protected so all four structural-nucleus fields
     // (spatialIndex, lock, entityManager, entityCache) share uniform visibility; reached by feature objects via core.
@@ -113,13 +112,17 @@ implements SpatialIndex<Key, ID, Content>,
     // core.setLockingStrategy(...). The migration discharged the P3 substantive-critic Significant#1; KnnSearcher
     // and CollisionEngine no longer take a Supplier<FineGrainedLockingStrategy> ctor arg.
     // Bulk operation support
-    protected       BulkOperationConfig                              bulkConfig               = new BulkOperationConfig();
+    // volatile (Luciferase-3vwqb): reconfigured at runtime via configureBulkOperations while readers (bulk ops)
+    // may run without holding the write lock; volatile gives atomic publication + visibility of the swapped ref.
+    protected volatile BulkOperationConfig                           bulkConfig               = new BulkOperationConfig();
     protected       boolean                                          bulkLoadingMode          = false;
     protected       BulkOperationProcessor<Key, ID, Content>         bulkProcessor;
     protected       DeferredSubdivisionManager<Key, ID>              subdivisionManager;
     protected       SpatialNodePool<ID>                              nodePool;
 
-    protected       ParallelBulkOperations<Key, ID, Content>         parallelOperations;
+    // volatile (Luciferase-3vwqb): swapped at runtime via configureParallelOperations; volatile publishes the
+    // fully-constructed ParallelBulkOperations atomically to readers that don't hold the write lock.
+    protected volatile ParallelBulkOperations<Key, ID, Content>      parallelOperations;
 
     protected       SubdivisionStrategy<Key, ID, Content>            subdivisionStrategy;
     protected       StackBasedTreeBuilder<Key, ID, Content>          treeBuilder;
@@ -401,7 +404,6 @@ implements SpatialIndex<Key, ID, Content>,
         lock.writeLock().lock();
         try {
             this.bulkLoadingMode = true;
-            this.deferredSubdivisionNodes.clear();
         } finally {
             lock.writeLock().unlock();
         }
@@ -538,8 +540,6 @@ implements SpatialIndex<Key, ID, Content>,
                 }
             }
 
-            deferredSubdivisionNodes.clear();
-            
             // Trigger ghost updates after tree adaptation
             triggerGhostUpdateAfterAdaptation();
         } finally {
@@ -758,10 +758,21 @@ implements SpatialIndex<Key, ID, Content>,
     /**
      * The spatial keys at which an entity is stored (Luciferase-fhc9), delegating to the entity manager. Each
      * key carries the entity's refinement level; used by load balancing to preserve level on migration.
+     *
+     * <p>Read-lock guarded (Luciferase-1q51y): the sibling accessors all go through the entity-lifecycle read lock,
+     * but this one delegated straight to the entity manager. A concurrent {@code updateEntity} (which clears then
+     * re-inserts the location set under the write lock) could otherwise be observed mid-move, returning a
+     * transiently EMPTY set — which load balancing / ghost range queries would route on. The entity manager already
+     * returns a defensive snapshot, so the lock only needs to bracket the read.</p>
      */
     @Override
     public Set<Key> getEntityLocations(ID entityId) {
-        return entityManager.getEntityLocations(entityId);
+        lock.readLock().lock();
+        try {
+            return entityManager.getEntityLocations(entityId);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
@@ -909,9 +920,19 @@ implements SpatialIndex<Key, ID, Content>,
      * Find k nearest neighbors to a query point using spatial locality optimization.
      * <p>RDR-008 P3: delegates to {@link KnnSearcher}; the cluster (cache, version pinning, SFC range pruning,
      * expanding-radius fallback, full-domain sweep, legacy BFS fallback) lives there.
+     * <p>Luciferase-us4zr: held under the global read lock. {@link KnnSearcher} traverses the index via the
+     * fine-grained per-node locking strategy, which is independent of this {@code lock}; all write paths (single
+     * insert/remove and batch) take {@code lock.writeLock()}, so without this outer read guard a concurrent kNN
+     * could observe torn/partial state mid-write. Range queries ({@link #entitiesInRegion}) and collision already
+     * take this read lock — kNN was the outlier. The lock is reentrant, so KnnSearcher's nested reads are fine.
      */
     public List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance) {
-        return knn.kNearestNeighbors(queryPoint, k, maxDistance);
+        lock.readLock().lock();
+        try {
+            return knn.kNearestNeighbors(queryPoint, k, maxDistance);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
@@ -1261,7 +1282,14 @@ implements SpatialIndex<Key, ID, Content>,
      * @return the number of non-empty nodes
      */
     public int size() {
-        return (int) spatialIndex.values().stream().filter(node -> !node.isEmpty()).count();
+        // Read-lock for a consistent count (Luciferase-xiv5u): the class documents consistent reads, but this
+        // streamed values() with no lock, so a concurrent mutation could be counted half-applied.
+        lock.readLock().lock();
+        try {
+            return (int) spatialIndex.values().stream().filter(node -> !node.isEmpty()).count();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
@@ -1732,11 +1760,6 @@ implements SpatialIndex<Key, ID, Content>,
         @Override
         public void setBulkLoadingMode(boolean value) {
             AbstractSpatialIndex.this.bulkLoadingMode = value;
-        }
-
-        @Override
-        public java.util.Set<Long> deferredSubdivisionNodes() {
-            return AbstractSpatialIndex.this.deferredSubdivisionNodes;
         }
 
         @Override
@@ -2262,12 +2285,12 @@ implements SpatialIndex<Key, ID, Content>,
      * @param entityProcessor function to process each entity ID with its containing node index
      */
     protected void processEntitiesInSFCOrder(java.util.function.BiConsumer<Key, ID> entityProcessor) {
-        for (var nodeIndex : spatialIndex.keySet()) {
-            SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
-            if (node != null && !node.isEmpty()) {
-                for (ID entityId : node.getEntityIds()) {
-                    entityProcessor.accept(nodeIndex, entityId);
-                }
+        // Snapshot (key,node) under the read lock (Luciferase-xiv5u) to avoid the keySet()+per-key get() TOCTOU: a
+        // concurrent remove would otherwise null the node and silently skip work. Process the snapshot outside the
+        // lock so user consumers don't run under it. SFC order is preserved (ConcurrentSkipListMap keySet is sorted).
+        for (var entry : snapshotNonEmptyNodesInSFCOrder()) {
+            for (ID entityId : entry.getValue().getEntityIds()) {
+                entityProcessor.accept(entry.getKey(), entityId);
             }
         }
     }
@@ -2279,11 +2302,35 @@ implements SpatialIndex<Key, ID, Content>,
      * @param nodeProcessor function to process each non-empty node
      */
     protected void processNodesInSFCOrder(java.util.function.BiConsumer<Key, SpatialNodeImpl<ID>> nodeProcessor) {
-        for (var nodeIndex : spatialIndex.keySet()) {
-            SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
-            if (node != null && !node.isEmpty()) {
-                nodeProcessor.accept(nodeIndex, node);
+        // Consistent snapshot under the read lock (Luciferase-xiv5u) — see processEntitiesInSFCOrder.
+        for (var entry : snapshotNonEmptyNodesInSFCOrder()) {
+            nodeProcessor.accept(entry.getKey(), entry.getValue());
+        }
+    }
+
+    /**
+     * An SFC-ordered snapshot of the non-empty (key, node) <em>references</em>, taken under the read lock so the
+     * key set is consistent against concurrent writers — fixing the keySet()+per-key get() TOCTOU (Luciferase-xiv5u).
+     * Returned so callers can process without holding the lock during user-supplied consumers.
+     *
+     * <p>Scope of the guarantee: only the set of node references is frozen. Entity membership within each node is read
+     * later via {@code getEntityIds()} (a CopyOnWriteArrayList view), so it reflects the node's state at iteration
+     * time, not at snapshot time — a node emptied or removed by a concurrent writer after the snapshot simply yields
+     * zero entities (silently skipped), never a null-node skip or a CME.</p>
+     */
+    private java.util.List<java.util.Map.Entry<Key, SpatialNodeImpl<ID>>> snapshotNonEmptyNodesInSFCOrder() {
+        lock.readLock().lock();
+        try {
+            var out = new java.util.ArrayList<java.util.Map.Entry<Key, SpatialNodeImpl<ID>>>();
+            for (var nodeIndex : spatialIndex.keySet()) {
+                SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
+                if (node != null && !node.isEmpty()) {
+                    out.add(java.util.Map.entry(nodeIndex, node));
+                }
             }
+            return out;
+        } finally {
+            lock.readLock().unlock();
         }
     }
 

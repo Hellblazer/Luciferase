@@ -623,11 +623,19 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
     record CollisionPair<ID extends EntityID, Content>(ID entityId1, Content content1, EntityBounds bounds1,
                                                        ID entityId2, Content content2, EntityBounds bounds2,
                                                        Point3f contactPoint, Vector3f contactNormal,
-                                                       float penetrationDepth)
+                                                       float penetrationDepth, List<Point3f> contactManifold)
     implements Comparable<CollisionPair<ID, Content>> {
 
+        // Luciferase-zz8xp: the multi-point contact manifold (from CollisionShape.CollisionResult.contactManifold)
+        // is carried through the spatial-index collision path so an angular resolver can distribute impulse across
+        // the real contact area. The default CollisionSystem resolver is linear and ignores it; see CollisionSystem.
+        // Manifold contact points are positions, so the create() swap does NOT negate them (only the normal flips).
+        public CollisionPair {
+            contactManifold = contactManifold != null ? List.copyOf(contactManifold) : List.of();
+        }
+
         /**
-         * Create a collision pair ensuring consistent ordering (smaller ID first)
+         * Create a collision pair ensuring consistent ordering (smaller ID first), with an empty contact manifold.
          */
         public static <ID extends EntityID, Content> CollisionPair<ID, Content> create(ID id1, Content content1,
                                                                                        EntityBounds bounds1, ID id2,
@@ -636,16 +644,31 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
                                                                                        Point3f contactPoint,
                                                                                        Vector3f contactNormal,
                                                                                        float penetrationDepth) {
+            return create(id1, content1, bounds1, id2, content2, bounds2, contactPoint, contactNormal,
+                          penetrationDepth, List.of());
+        }
+
+        /**
+         * Create a collision pair ensuring consistent ordering (smaller ID first), carrying a contact manifold.
+         */
+        public static <ID extends EntityID, Content> CollisionPair<ID, Content> create(ID id1, Content content1,
+                                                                                       EntityBounds bounds1, ID id2,
+                                                                                       Content content2,
+                                                                                       EntityBounds bounds2,
+                                                                                       Point3f contactPoint,
+                                                                                       Vector3f contactNormal,
+                                                                                       float penetrationDepth,
+                                                                                       List<Point3f> contactManifold) {
             // Ensure consistent ordering for deduplication
             if (id1.compareTo(id2) > 0) {
-                // Swap entities and invert normal
+                // Swap entities and invert normal (manifold points are positions — left unchanged)
                 Vector3f invertedNormal = new Vector3f(contactNormal);
                 invertedNormal.negate();
                 return new CollisionPair<>(id2, content2, bounds2, id1, content1, bounds1, contactPoint, invertedNormal,
-                                           penetrationDepth);
+                                           penetrationDepth, contactManifold);
             }
             return new CollisionPair<>(id1, content1, bounds1, id2, content2, bounds2, contactPoint, contactNormal,
-                                       penetrationDepth);
+                                       penetrationDepth, contactManifold);
         }
 
         /**

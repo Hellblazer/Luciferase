@@ -20,10 +20,9 @@ package com.hellblazer.luciferase.lucien.balancing.fault;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
-import java.time.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -55,7 +54,7 @@ public class FaultDetectionBenchmark {
 
     @Setup(Level.Trial)
     public void setupTrial() {
-        testClock = Clock.fixed(Instant.EPOCH, ZoneId.systemDefault());
+        testClock = new TestClock(0L);  // fixed at epoch; common-module Clock (Luciferase-d2nxe)
         faultHandler = new SimpleFaultHandler(FaultConfiguration.defaultConfig());
         faultHandler.start();
 

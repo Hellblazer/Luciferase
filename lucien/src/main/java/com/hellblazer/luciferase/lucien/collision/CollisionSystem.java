@@ -36,6 +36,16 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Complete collision detection and response system. Integrates spatial indexing, collision detection, and physics
  * response.
  *
+ * <p><b>Resolver choice</b> (Luciferase-zz8xp): this spatial-index-driven path uses the linear
+ * {@link CollisionResolver} (impulse along the contact normal, no angular term). The multi-point contact manifold
+ * is now propagated on {@link com.hellblazer.luciferase.lucien.SpatialIndex.CollisionPair#contactManifold()} (it
+ * was previously dropped here), so it is available to callers, but the default resolver ignores it. Wiring the
+ * angular {@code ImpulseResolver} (which distributes impulse across the manifold's contact arms) into this path
+ * is deliberately deferred: it requires per-entity rigid-body state — mass, inverse-inertia tensor, and angular
+ * velocity — that {@code CollisionSystem}/{@code PhysicsProperties} do not currently track. That is a rigid-body
+ * lifecycle change, not a remediation, and is left for a dedicated effort. The angular resolver is already wired
+ * and manifold-consuming on the shape-level path (portal CollisionDebugViewer, via nm9dj).
+ *
  * @param <ID>      The type of EntityID used for entity identification
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
@@ -45,9 +55,15 @@ public class CollisionSystem<ID extends EntityID, Content> {
     protected final SpatialIndex<?, ID, Content>         spatialIndex;
     protected final CollisionResolver                    resolver;
     protected final Map<ID, PhysicsProperties>           physicsProperties;
+    protected final Map<ID, CollisionShape>              entityShapes;
     protected final List<CollisionListener<ID, Content>> listeners;
     protected final CollisionFilter<ID, Content>         globalFilter;
     private         CollisionStats                       lastStats = new CollisionStats(0, 0, 0, 0, 0);
+
+    /** Default extra reach added to the CCD broad-phase search radius beyond the swept distance. */
+    public static final float DEFAULT_CCD_SEARCH_RADIUS_BUFFER = 10.0f;
+    // Configurable so callers can tune the broad-phase reach to their world scale (Luciferase-s62fr).
+    private volatile float ccdSearchRadiusBuffer = DEFAULT_CCD_SEARCH_RADIUS_BUFFER;
 
     public CollisionSystem(SpatialIndex<?, ID, Content> spatialIndex) {
         this(spatialIndex, new CollisionResolver(), CollisionFilter.all());
@@ -58,8 +74,37 @@ public class CollisionSystem<ID extends EntityID, Content> {
         this.spatialIndex = spatialIndex;
         this.resolver = resolver;
         this.physicsProperties = new ConcurrentHashMap<>();
+        this.entityShapes = new ConcurrentHashMap<>();
         this.listeners = new CopyOnWriteArrayList<>();
         this.globalFilter = globalFilter;
+    }
+
+    /**
+     * Register the collision shape used for an entity in narrow-phase / CCD. When registered, this shape (its size
+     * and orientation) is used instead of a sphere derived from the entity's AABB (Luciferase-s62fr). The shape is
+     * re-centred on the entity's current position by the moving-shape machinery, so its own position is not
+     * significant.
+     */
+    public void registerCollisionShape(ID entityId, CollisionShape shape) {
+        entityShapes.put(entityId, shape);
+    }
+
+    /** Remove a previously registered collision shape; CCD falls back to the AABB-derived sphere. */
+    public void unregisterCollisionShape(ID entityId) {
+        entityShapes.remove(entityId);
+    }
+
+    /** The extra reach added to the CCD broad-phase search radius beyond the swept distance (Luciferase-s62fr). */
+    public float getCcdSearchRadiusBuffer() {
+        return ccdSearchRadiusBuffer;
+    }
+
+    /** Tune the CCD broad-phase search-radius buffer to the world scale (must be non-negative). */
+    public void setCcdSearchRadiusBuffer(float buffer) {
+        if (buffer < 0) {
+            throw new IllegalArgumentException("ccdSearchRadiusBuffer must be non-negative, got: " + buffer);
+        }
+        this.ccdSearchRadiusBuffer = buffer;
     }
 
     /**
@@ -379,8 +424,8 @@ public class CollisionSystem<ID extends EntityID, Content> {
         
         MovingShape movingShape = new MovingShape(shape, startPos, endPos, 0, deltaTime);
         
-        // Find potential collisions using broad phase
-        float searchRadius = props.getVelocity().length() * deltaTime + 10.0f; // Add some buffer
+        // Find potential collisions using broad phase. Buffer is configurable to the world scale (Luciferase-s62fr).
+        float searchRadius = props.getVelocity().length() * deltaTime + ccdSearchRadiusBuffer;
         List<ID> nearbyEntities = spatialIndex.kNearestNeighbors(startPos, 100, searchRadius);
         
         // Check CCD against each nearby entity
@@ -417,8 +462,13 @@ public class CollisionSystem<ID extends EntityID, Content> {
      * Get collision shape for an entity
      */
     private CollisionShape getEntityShape(ID entityId) {
-        // This would need to be implemented based on your entity system
-        // For now, return a simple sphere shape based on bounds
+        // Prefer a registered shape (its true size/orientation); the moving-shape machinery re-centres it on the
+        // entity position and only ever operates on copies, so returning the live instance is safe (Luciferase-s62fr).
+        CollisionShape registered = entityShapes.get(entityId);
+        if (registered != null) {
+            return registered;
+        }
+        // Fallback: a sphere derived from the entity's AABB.
         EntityBounds bounds = spatialIndex.getEntityBounds(entityId);
         if (bounds == null) return null;
         

@@ -79,6 +79,67 @@ public class SpatialIndexProfilerTest {
         System.out.println(report);
     }
 
+    /**
+     * Luciferase-eu4dc: generateReport() must not throw while profiling is active concurrently. The original code
+     * checked {@code !samples.isEmpty()}, then in a SEPARATE access copied the list, then indexed
+     * {@code sortedSamples.get(p50Index)}. A concurrent {@code reset()} clearing the samples between the isEmpty
+     * check and the copy left an empty copy that was then indexed at p50 — an IndexOutOfBoundsException. (The
+     * copy itself is safe: ArrayList's copy-constructor routes through the synchronizedList's synchronized
+     * toArray(), so the bead's CME framing did not apply; the live defect was the isEmpty/copy/index TOCTOU.)
+     * The fix copies once under the wrapper's monitor and checks emptiness on the copy. Hammer report generation
+     * against a writer that fills then resets, and require generateReport never throws.
+     */
+    @Test
+    public void testGenerateReportRacingResetNeverThrows() throws InterruptedException {
+        var idGenerator = new SequentialLongIDGenerator();
+        var octree = new Octree<LongEntityID, String>(idGenerator);
+        var profiler = new SpatialIndexProfiler<>(octree);
+
+        var stop = new java.util.concurrent.atomic.AtomicBoolean(false);
+        var failure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        var started = new java.util.concurrent.CountDownLatch(1);
+
+        // Writer: fill the INSERT samples list, then reset() to clear it — repeatedly, so the list oscillates
+        // between non-empty and empty, keeping the isEmpty-vs-copy window live.
+        var writer = new Thread(() -> {
+            started.countDown();
+            while (!stop.get()) {
+                for (int i = 0; i < 64 && !stop.get(); i++) {
+                    profiler.profileVoid(SpatialIndexProfiler.OperationType.INSERT, () -> { });
+                }
+                profiler.reset();
+            }
+        });
+        // Reader: repeatedly generate the report (copy + percentile-index the same samples list).
+        int iterations = 100_000;
+        var done = new java.util.concurrent.atomic.AtomicInteger(0);
+        var reader = new Thread(() -> {
+            try {
+                started.await();
+                for (int i = 0; i < iterations && failure.get() == null; i++) {
+                    profiler.generateReport();
+                    done.incrementAndGet();
+                }
+            } catch (Throwable t) {
+                failure.set(t);
+            }
+        });
+
+        writer.start();
+        reader.start();
+        reader.join(30_000);
+        stop.set(true);
+        writer.join(5_000);
+
+        assertNull(failure.get(),
+                   "generateReport() must not throw during active profiling+reset (Luciferase-eu4dc): "
+                   + failure.get());
+        // Distinguish "completed cleanly" from "reader stalled past the join timeout" — the latter would also
+        // leave failure==null and pass vacuously.
+        assertEquals(iterations, done.get(),
+                     "reader must complete all report iterations (not stall to the join timeout)");
+    }
+
     @Test
     public void testCustomCounters() {
         var idGenerator = new SequentialLongIDGenerator();

@@ -213,8 +213,13 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
         core.lock().writeLock().lock();
         try {
             this.neighborDetector = detector;
+            // Build the detector lazily if it wasn't built yet (e.g. setGhostType ran first, before a detector
+            // existed). It is built with whatever ghostType/ghostAlgorithm are currently set, so construction is
+            // order-independent (Luciferase-smaik). Propagate the persisted rank too — the sibling setters do, and
+            // omitting it here would leave a lazily-built detector at the default rank 0 if a rank was set first.
             if (detector != null && this.ghostBoundaryDetector == null) {
                 this.ghostBoundaryDetector = new GhostBoundaryDetector<>(facade, detector, ghostType, ghostAlgorithm);
+                this.ghostBoundaryDetector.setCurrentRank(currentRank);
             }
         } finally {
             core.lock().writeLock().unlock();
@@ -295,13 +300,33 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
         }
     }
 
+    /**
+     * Rebuild the ghost boundary set (atomically, under the write lock) and then flush it to peers (outside the
+     * lock). Note (Luciferase-cfg4o): the network flush reflects the boundary set as of the lock release —
+     * mutations made between unlock and flush are captured by the next adaptation cycle, not this one.
+     */
     public void triggerGhostUpdateAfterAdaptation() {
-        if (ghostType != GhostType.NONE && ghostBoundaryDetector != null) {
-            log.debug("Triggering ghost update after tree adaptation");
-            updateGhostLayer();
+        if (ghostType == GhostType.NONE || ghostBoundaryDetector == null) {
+            return;
+        }
+        // Rebuild the ghost boundary set UNDER the write lock, but run the (blocking) network sync OUTSIDE it
+        // (Luciferase-cfg4o). Previously updateGhostLayer() locked its rebuild but
+        // distributedGhostManager.updateDistributedGhostLayer() ran unlocked, so its two-phase clear-then-populate
+        // could tear under concurrent mutation. Holding the lock across the whole distributed update would instead
+        // freeze ALL index readers/writers for a network round-trip (the auto-sync .join()) — a liveness hazard.
+        // Split it: the rebuild (atomic, needs the lock) then the sync (network I/O, must NOT hold the lock).
+        log.debug("Triggering ghost update after tree adaptation");
+        core.lock().writeLock().lock();
+        try {
+            updateGhostLayer(); // reentrant; rebuilds the shared detector's boundary set atomically
             if (distributedGhostManager != null) {
-                distributedGhostManager.updateDistributedGhostLayer();
+                distributedGhostManager.rebuildLocalGhostLayer();
             }
+        } finally {
+            core.lock().writeLock().unlock();
+        }
+        if (distributedGhostManager != null) {
+            distributedGhostManager.synchronizeIfDue(); // network flush, no lock held
         }
     }
 

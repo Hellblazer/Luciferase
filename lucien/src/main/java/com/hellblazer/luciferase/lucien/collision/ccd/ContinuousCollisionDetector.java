@@ -30,6 +30,10 @@ public class ContinuousCollisionDetector {
     
     private static final float EPSILON = 0.0001f;
     private static final int MAX_ITERATIONS = 20;
+    // Fixed scan resolution for the general-shape fallback (Luciferase-fglgp): finds a colliding bracket to bisect.
+    // The scan gap is 1/SAMPLE_STEPS in normalized time, so a collision window narrower than (motion length)/32 can
+    // still be tunnelled (see conservativeCCD). Worst-case shape-pair tests per call ~ SAMPLE_STEPS + MAX_ITERATIONS.
+    private static final int SAMPLE_STEPS   = 32;
     
     /**
      * Detect collision between two moving shapes
@@ -159,35 +163,60 @@ public class ContinuousCollisionDetector {
     /**
      * Conservative advancement algorithm for general shapes
      */
-    private static ContinuousCollisionResult conservativeCCD(MovingShape shape1, MovingShape shape2) {
-        float tMin = 0.0f;
-        float tMax = 1.0f;
-        float currentTime = 0.0f;
-        
-        // Binary search for time of impact
-        for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
-            float midTime = (tMin + tMax) / 2.0f;
+    // Package-private for direct unit testing of the bracket / exhaustion behaviour (Luciferase-fglgp).
+    static ContinuousCollisionResult conservativeCCD(MovingShape shape1, MovingShape shape2) {
+        // No separation-distance (GJK) query exists for arbitrary shapes, so genuine conservative advancement is
+        // not available here. Instead scan [0,1] at a fixed resolution to find the FIRST colliding sample, then
+        // bisect within that bracket for a precise time of impact (Luciferase-fglgp). This fixes two defects in the
+        // previous blind bisection of [0,1]: (1) a brief mid-interval through-collision whose window excluded the
+        // first bisection midpoint was never found (the search only ever narrowed the half containing t=0.5);
+        // (2) iteration exhaustion returned noCollision() even when a real hit had already been bracketed.
+        //
+        // Residual limitation (honest): a collision whose entire window falls strictly between two adjacent scan
+        // samples (a shape thinner than its per-step motion) can still be tunnelled. SAMPLE_STEPS bounds that gap;
+        // closed-form paths such as rayVsMovingSphereCCD avoid it entirely.
 
-            // Test independent copies positioned at midTime — never mutate the live shapes owned by the
-            // simulation. The previous translate-then-restore on the shared shapes corrupted geometry on the
-            // early-return path and raced under concurrent CCD (Luciferase-v2na8).
-            var testShape1 = shape1.getShapeAtTime(midTime);
-            var testShape2 = shape2.getShapeAtTime(midTime);
+        var atZero = collideAt(shape1, shape2, 0.0f);
+        if (atZero.collides) {
+            return ContinuousCollisionResult.collision(0.0f, atZero.contactPoint, atZero.contactNormal,
+                                                       atZero.penetrationDepth);
+        }
 
-            var result = testShape1.collidesWith(testShape2);
+        float lastClear = 0.0f;
+        for (int i = 1; i <= SAMPLE_STEPS; i++) {
+            float t = (float) i / SAMPLE_STEPS;
+            var res = collideAt(shape1, shape2, t);
+            if (res.collides) {
+                return bisectTimeOfImpact(shape1, shape2, lastClear, t); // bracket [lastClear, t]
+            }
+            lastClear = t;
+        }
+        return ContinuousCollisionResult.noCollision();
+    }
 
-            if (result.collides) {
-                tMax = midTime;
-                if (tMax - tMin < EPSILON) {
-                    return ContinuousCollisionResult.collision(midTime, result.contactPoint,
-                                                             result.contactNormal, result.penetrationDepth);
-                }
+    /** Independent positioned copies at fraction {@code t} (never mutate the live shapes — Luciferase-v2na8). */
+    private static CollisionShape.CollisionResult collideAt(MovingShape shape1, MovingShape shape2, float t) {
+        return shape1.getShapeAtTime(t).collidesWith(shape2.getShapeAtTime(t));
+    }
+
+    /**
+     * Bisect within a bracket whose upper end {@code tHit} collides, returning the collision at the converged hit
+     * side. Never returns noCollision — a bracketed hit always yields a collision result (Luciferase-fglgp).
+     */
+    private static ContinuousCollisionResult bisectTimeOfImpact(MovingShape shape1, MovingShape shape2,
+                                                                float tClear, float tHit) {
+        var hit = collideAt(shape1, shape2, tHit);
+        for (int iter = 0; iter < MAX_ITERATIONS && (tHit - tClear) > EPSILON; iter++) {
+            float mid = (tClear + tHit) / 2.0f;
+            var res = collideAt(shape1, shape2, mid);
+            if (res.collides) {
+                tHit = mid;
+                hit = res;
             } else {
-                tMin = midTime;
+                tClear = mid;
             }
         }
-        
-        return ContinuousCollisionResult.noCollision();
+        return ContinuousCollisionResult.collision(tHit, hit.contactPoint, hit.contactNormal, hit.penetrationDepth);
     }
     
     /**

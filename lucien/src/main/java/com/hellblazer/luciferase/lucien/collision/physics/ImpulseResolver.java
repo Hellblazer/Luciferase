@@ -32,40 +32,45 @@ public class ImpulseResolver {
             return;
         }
         
-        // Calculate relative velocity at contact point
-        var contactPoint = collision.contactPoint;
-        var velA = bodyA.getVelocityAtPoint(contactPoint);
-        var velB = bodyB.getVelocityAtPoint(contactPoint);
-        var relativeVelocity = new Vector3f(velA);
-        relativeVelocity.sub(velB);
-        
-        // Calculate velocity along collision normal
-        float velocityAlongNormal = relativeVelocity.dot(collision.contactNormal);
-        
         // Combine materials
         var combinedMaterial = PhysicsMaterial.combine(bodyA.getMaterial(), bodyB.getMaterial());
-        
-        // Calculate impulse magnitude
-        float impulseMagnitude = calculateImpulseMagnitude(
-            bodyA, bodyB, contactPoint, collision.contactNormal, 
-            velocityAlongNormal, combinedMaterial.restitution()
-        );
-        
-        // Apply impulse
-        var impulse = new Vector3f(collision.contactNormal);
-        impulse.scale(impulseMagnitude);
-        
-        bodyA.applyImpulse(impulse, contactPoint);
-        impulse.negate();
-        bodyB.applyImpulse(impulse, contactPoint);
-        
-        // Apply friction
-        applyFriction(bodyA, bodyB, contactPoint, collision.contactNormal, 
-                     relativeVelocity, impulseMagnitude, combinedMaterial.friction());
-        
-        // Position correction to resolve penetration
+
+        // Distribute the impulse across the contact manifold by true sequential impulse (Luciferase-nm9dj/zz8xp):
+        // solve each contact point at FULL magnitude against the body state left by the prior points (velocity is
+        // re-queried per point), so the angular arm is computed at the TRUE contact polygon rather than only at the
+        // single representative point — fixing the wrong angular-impulse arms for face-face / face-edge contacts. The
+        // per-point effective mass (including the inertia term) is respected because each point's impulse is solved
+        // independently against the current state. Falls back to the single contactPoint when no manifold is present.
+        var points = (collision.contactManifold != null && !collision.contactManifold.isEmpty())
+                     ? collision.contactManifold
+                     : java.util.List.of(collision.contactPoint);
+
+        for (var contactPoint : points) {
+            var velA = bodyA.getVelocityAtPoint(contactPoint);
+            var velB = bodyB.getVelocityAtPoint(contactPoint);
+            var relativeVelocity = new Vector3f(velA);
+            relativeVelocity.sub(velB);
+
+            float velocityAlongNormal = relativeVelocity.dot(collision.contactNormal);
+
+            float impulseMagnitude = calculateImpulseMagnitude(
+                bodyA, bodyB, contactPoint, collision.contactNormal,
+                velocityAlongNormal, combinedMaterial.restitution());
+
+            var impulse = new Vector3f(collision.contactNormal);
+            impulse.scale(impulseMagnitude);
+
+            bodyA.applyImpulse(impulse, contactPoint);
+            impulse.negate();
+            bodyB.applyImpulse(impulse, contactPoint);
+
+            applyFriction(bodyA, bodyB, contactPoint, collision.contactNormal,
+                          relativeVelocity, impulseMagnitude, combinedMaterial.friction());
+        }
+
+        // Position correction to resolve penetration (once, along the contact normal).
         if (collision.penetrationDepth > PENETRATION_SLOP) {
-            applyPositionCorrection(bodyA, bodyB, collision.contactNormal, 
+            applyPositionCorrection(bodyA, bodyB, collision.contactNormal,
                                    collision.penetrationDepth);
         }
     }

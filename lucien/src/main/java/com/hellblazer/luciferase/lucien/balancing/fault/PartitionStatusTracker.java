@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
-import java.time.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -78,8 +78,8 @@ public interface PartitionStatusTracker extends FaultHandler {
     /**
      * Set the clock for deterministic testing.
      *
-     * <p>Allows tests to inject a fixed or controlled clock (e.g., Clock.fixed(),
-     * Clock.offset()) for deterministic timestamp generation.
+     * <p>Allows tests to inject a fixed or controlled clock (e.g., a TestClock or
+     * {@link Clock#fixed(long)}) for deterministic timestamp generation.
      *
      * @param clock the clock to use for timestamp generation
      * @throws NullPointerException if clock is null
@@ -89,8 +89,13 @@ public interface PartitionStatusTracker extends FaultHandler {
     /**
      * Record of a single partition status transition.
      *
+     * <p><b>Clock note</b> (Luciferase-d2nxe): {@code timestamp} is sourced from the tracker's injected
+     * {@link Clock} at write time ({@code Instant.ofEpochMilli(clock.currentTimeMillis())}). Callers reading it
+     * back for elapsed-time arithmetic MUST diff against the same injected clock — do NOT compare against
+     * {@code Instant.now()}, which bypasses the test clock.
+     *
      * @param status the status after this transition
-     * @param timestamp when the transition occurred
+     * @param timestamp when the transition occurred (epoch-millis instant from the injected clock)
      * @param reason description of why the transition occurred
      */
     record StatusHistoryEntry(

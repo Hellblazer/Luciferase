@@ -24,7 +24,8 @@ import java.util.Objects;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.LongSupplier;
+
+import com.hellblazer.luciferase.common.time.Clock;
 
 /**
  * Decorator that adds timeout detection to partition barrier operations.
@@ -32,10 +33,8 @@ import java.util.function.LongSupplier;
  * <p>Wraps a PartitionRegistry and monitors barrier operations for timeouts.
  * Reports failures to FaultHandler when barrier timeout thresholds are exceeded.
  *
- * <p><b>Clock Injection</b>: Uses LongSupplier reflection pattern to support
- * both TestClock (from simulation) and java.time.Clock without creating a
- * compile-time dependency on simulation module. This breaks the cyclic
- * dependency between lucien and simulation.
+ * <p><b>Clock Injection</b>: Uses {@link Clock} (common module) so a single clock type drives all of
+ * balancing/fault (Luciferase-d2nxe), replacing the prior LongSupplier reflection duck-typing.
  *
  * <p><b>Issue #4 Fix</b>: Uses direct barrier.await(timeout, unit) instead of
  * CompletableFuture.get() wrapper to prevent thread leaks on timeout.
@@ -61,7 +60,7 @@ public class FaultAwarePartitionRegistry {
     private final PartitionRegistry delegate;
     private final FaultHandler faultHandler;
     private final long barrierTimeoutMs;
-    private volatile LongSupplier timeSource;
+    private volatile Clock clock;
 
     /**
      * Create a fault-aware partition registry decorator.
@@ -82,38 +81,18 @@ public class FaultAwarePartitionRegistry {
         }
 
         this.barrierTimeoutMs = barrierTimeoutMs;
-        this.timeSource = System::currentTimeMillis;
+        this.clock = Clock.system();
     }
 
     /**
-     * Set the clock for deterministic testing.
+     * Set the clock for deterministic testing (Luciferase-d2nxe: single {@link Clock} type across
+     * balancing/fault, replacing the prior reflection duck-typing on {@code Object}).
      *
-     * <p>Accepts any object with currentTimeMillis() method (e.g., TestClock,
-     * java.time.Clock). Uses reflection duck-typing for maximum compatibility
-     * without compile-time dependencies.
-     *
-     * @param clock the clock to use (must have currentTimeMillis() method)
+     * @param clock the clock to use
      * @throws NullPointerException if clock is null
-     * @throws IllegalArgumentException if clock doesn't have currentTimeMillis() method
      */
-    public void setClock(Object clock) {
-        if (clock == null) {
-            throw new NullPointerException("clock must not be null");
-        }
-
-        // Support both simulation.Clock and java.time.Clock via duck typing
-        try {
-            var method = clock.getClass().getMethod("currentTimeMillis");
-            this.timeSource = () -> {
-                try {
-                    return (long) method.invoke(clock);
-                } catch (Exception e) {
-                    throw new RuntimeException("Clock invocation failed", e);
-                }
-            };
-        } catch (NoSuchMethodException e) {
-            throw new IllegalArgumentException("Clock must have currentTimeMillis() method", e);
-        }
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     /**

@@ -222,6 +222,10 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
                 // silently drops every LongEntityID or non-byte[] element. Same path the server uses.
                 elements.add(ProtobufConverters.<Key, ID, Content>ghostElementFromProtobuf(
                         proto, contentSerializer, entityIdClass));
+            } catch (ProtobufConverters.UnsupportedEntityIdTypeException e) {
+                // Whole-batch config error (Luciferase-m2k3u): every element would fail identically, so surface it
+                // loudly rather than silently dropping the entire batch one swallowed element at a time.
+                throw e;
             } catch (Exception e) {
                 log.error("Error processing received ghost element: {}", e.getMessage(), e);
             }

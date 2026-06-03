@@ -192,6 +192,9 @@ class TriangleTmSfcTest {
 
     @Test
     @DisplayName("neighbors() only return S0 (y<=x) triangles — no cross-diagonal compareTo collision")
+    @SuppressWarnings("deprecation") // intentionally exercises the deprecated S0-bounded neighbors()/neighbor()
+                                     // (Luciferase-mfe6y): they are the legacy S0-suppression path, distinct from
+                                     // faceNeighbor() which crosses the diagonal.
     void neighborsStayInS0() {
         // Regression guard (review finding): a y>x neighbor (e.g. the top neighbor of a diagonal
         // cell) is an S1 triangle that would collide with a coordinate-swapped S0 key under the

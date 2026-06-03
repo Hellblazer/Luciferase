@@ -48,8 +48,11 @@ public enum TraversalStrategy {
     POST_ORDER,
 
     /**
-     * In-order traversal (for binary trees). Visit left children, node, then right children. For octrees/tetrees,
-     * visits half children, node, then remaining children.
+     * In-order traversal — meaningful only for binary trees. The Octree/Tetree spatial indices are not binary
+     * trees, so {@code AbstractSpatialIndex} treats IN_ORDER identically to {@link #PRE_ORDER} (visit node, then
+     * recurse children); the "half children, node, remaining children" split is NOT implemented (Luciferase-lsy13).
+     * Retained as a public API value for callers/visitors that distinguish strategies, but it carries no distinct
+     * spatial-traversal behavior today.
      */
     IN_ORDER
 }
