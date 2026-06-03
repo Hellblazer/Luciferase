@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
 import com.hellblazer.luciferase.common.grpc.GrpcCredentialFactory;
+import com.hellblazer.luciferase.common.grpc.GrpcServerHardening;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
@@ -117,6 +118,30 @@ public class GhostCommunicationManager<Key extends SpatialKey<Key>, ID extends E
                                    ServiceDiscovery serviceDiscovery,
                                    GrpcCredentialFactory.ServerAuth serverAuth,
                                    ChannelCredentials channelCredentials) {
+        this(currentRank, bindAddress, port, contentSerializer, entityIdClass, serviceDiscovery, serverAuth,
+             channelCredentials, GrpcServerHardening.DEFAULT_MAX_INBOUND_MESSAGE_BYTES);
+    }
+
+    /**
+     * Creates a new ghost communication manager with explicit transport credentials (RDR-005) and an explicit
+     * inbound message-size bound (RDR-013, Luciferase-06ujn).
+     *
+     * @param serverAuth server transport credentials + matching {@code PeerAuthInterceptor}, or {@code null} for
+     *        an insecure (plaintext, no auth) server
+     * @param channelCredentials outbound channel credentials for the embedded client
+     * @param maxInboundMessageBytes explicit inbound message-size limit applied to the gRPC server (DoS bound);
+     *        must be positive — use {@link GrpcServerHardening#DEFAULT_MAX_INBOUND_MESSAGE_BYTES} unless a tighter
+     *        bound is required on a hostile network
+     */
+    public GhostCommunicationManager(int currentRank,
+                                   String bindAddress,
+                                   int port,
+                                   ContentSerializer<Content> contentSerializer,
+                                   Class<ID> entityIdClass,
+                                   ServiceDiscovery serviceDiscovery,
+                                   GrpcCredentialFactory.ServerAuth serverAuth,
+                                   ChannelCredentials channelCredentials,
+                                   int maxInboundMessageBytes) {
         this.currentRank = currentRank;
         this.bindAddress = bindAddress;
         this.port = port;
@@ -146,6 +171,9 @@ public class GhostCommunicationManager<Key extends SpatialKey<Key>, ID extends E
         if (serverAuth != null) {
             serverBuilder.intercept(serverAuth.interceptor());
         }
+        // RDR-013 / Luciferase-06ujn: explicit, tunable inbound size bound (DoS surface) instead of relying on
+        // gRPC's invisible 4 MiB default.
+        GrpcServerHardening.applyInboundLimit(serverBuilder, maxInboundMessageBytes);
         this.server = serverBuilder.build();
 
         // Create client with the outbound channel credentials

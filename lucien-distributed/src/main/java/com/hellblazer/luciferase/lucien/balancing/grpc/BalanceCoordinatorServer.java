@@ -37,6 +37,13 @@ import java.util.Map;
  * in a spatial index system. It uses virtual threads for scalable concurrent
  * processing and synchronous call patterns for simplified logic.
  *
+ * <p><b>Hardening contract</b> (RDR-013, Luciferase-06ujn): this is only the {@code BindableService} impl; it has
+ * <b>no production server host today</b> — the only sites that stand up a gRPC server for it are tests, using
+ * {@code InProcessServerBuilder}. Any future production host MUST (a) apply an explicit inbound size bound via
+ * {@code GrpcServerHardening.applyInboundLimit(builder, ...)} (DoS surface) and (b) apply authentication via the
+ * RDR-005 {@code GrpcCredentialFactory.ServerAuth} unit, exactly as {@code GhostCommunicationManager} does. Do not
+ * ship a wire-facing Balance server without both.
+ *
  * @author Hal Hildebrand
  */
 public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoordinatorImplBase {

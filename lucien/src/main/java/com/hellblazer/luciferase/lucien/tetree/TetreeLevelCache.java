@@ -231,7 +231,10 @@ public final class TetreeLevelCache {
      */
     private static long generateCacheKey(int x, int y, int z, byte level, byte type) {
         // Fast path for small coordinates (common case ~80% in most spatial workloads)
-        // This avoids expensive multiplication and bit mixing for the common case
+        // This avoids expensive multiplication and bit mixing for the common case.
+        // NOTE (Luciferase-egjwk): the (x|y|z) >= 0 test is NOT redundant — it routes any negative coordinate to
+        // the hash path. The x<1024 bounds are also true for negatives (e.g. -5 < 1024), so without the sign
+        // guard a negative coord would enter the pack and ((long) x << 28) would corrupt the key. Load-bearing.
         if ((x | y | z) >= 0 && x < 1024 && y < 1024 && z < 1024) {
             // Pack directly into long for small coordinates
             // 10 bits each for x,y,z (0-1023), 5 bits for level (0-31), 3 bits for type (0-7)

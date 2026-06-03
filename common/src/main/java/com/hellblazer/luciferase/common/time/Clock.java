@@ -34,6 +34,7 @@ package com.hellblazer.luciferase.common.time;
  *
  * @author hal.hildebrand
  */
+@FunctionalInterface
 public interface Clock {
 
     /**

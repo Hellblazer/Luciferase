@@ -23,6 +23,7 @@ import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
+import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +60,11 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     
     // Entity ID class for deserialization
     private final Class<ID> entityIdClass;
+
+    // RDR-013 / Luciferase-06ujn: cap concurrent streaming sessions. maxInboundMessageSize bounds each message,
+    // but does not limit the NUMBER of open StreamGhostUpdates streams — many cheap streams would otherwise pin
+    // unbounded virtual-thread tasks + activeStreams entries (connection-level DoS).
+    private static final int MAX_ACTIVE_STREAMS = 1024;
     
     // Virtual thread executor for concurrent operations
     private final ExecutorService virtualExecutor;
@@ -145,6 +151,18 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
      */
     @Override
     public StreamObserver<GhostUpdate> streamGhostUpdates(StreamObserver<GhostAck> responseObserver) {
+        // RDR-013 / Luciferase-06ujn: reject new streams once the concurrent-session cap is reached (DoS).
+        if (activeStreams.size() >= MAX_ACTIVE_STREAMS) {
+            log.warn("Rejecting ghost stream: {} active streams at cap {}", activeStreams.size(), MAX_ACTIVE_STREAMS);
+            responseObserver.onError(Status.RESOURCE_EXHAUSTED
+                                         .withDescription("too many concurrent ghost streams")
+                                         .asRuntimeException());
+            return new StreamObserver<GhostUpdate>() {
+                @Override public void onNext(GhostUpdate update) { }
+                @Override public void onError(Throwable t) { }
+                @Override public void onCompleted() { }
+            };
+        }
         var sessionId = "stream-" + System.currentTimeMillis() + "-" + streamUpdateCount.incrementAndGet();
         var session = new StreamSession(sessionId, responseObserver);
         activeStreams.put(sessionId, session);
@@ -330,17 +348,27 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 .build();
             
             session.responseObserver.onNext(ack);
-            
+
+        } catch (ProtobufConverters.UnsupportedEntityIdTypeException e) {
+            // Whole-stream configuration error (Luciferase-m2k3u): the misconfigured entityIdClass fails EVERY
+            // element identically, so surface it loudly via onError and terminate the stream rather than emitting a
+            // silent per-element NACK loop that drops the whole batch (RDR-004 D3 / 7pias class).
+            log.error("Unsupported EntityID type in stream session {}: {}", session.sessionId, e.getMessage(), e);
+            session.responseObserver.onError(e);
+            // Remove the terminated session (Luciferase-m2k3u review): this server-originated onError does not
+            // trigger the client-callback removal path, so without this the session leaks in activeStreams and
+            // shutdown() would call onCompleted() on an already-errored observer (gRPC terminal-event violation).
+            activeStreams.remove(session.sessionId);
         } catch (Exception e) {
-            log.error("Error processing stream update in session {}: {}", 
+            log.error("Error processing stream update in session {}: {}",
                      session.sessionId, e.getMessage(), e);
-            
+
             var ack = GhostAck.newBuilder()
                 .setEntityId("unknown")
                 .setSuccess(false)
                 .setErrorMessage(e.getMessage())
                 .build();
-            
+
             session.responseObserver.onNext(ack);
         }
     }

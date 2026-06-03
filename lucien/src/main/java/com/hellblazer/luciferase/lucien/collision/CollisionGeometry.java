@@ -51,20 +51,14 @@ import java.util.stream.Stream;
  * @param <Content> the entity content type
  * @author hal.hildebrand
  */
-public interface CollisionGeometry<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
+public interface CollisionGeometry<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+extends com.hellblazer.luciferase.lucien.SpatialIndexGeometry<ID>,
+        com.hellblazer.luciferase.lucien.CachedEntityBoundsGeometry<ID>,
+        com.hellblazer.luciferase.lucien.NodeBoundsQueryGeometry<Key> {
 
     // ===== Subclass hooks =====
 
-    /**
-     * Spatial keys of nodes potentially intersecting the given volume bounds (subclass-specific spatial query).
-     */
-    Set<Key> findNodesIntersectingBounds(VolumeBounds bounds);
-
-    /**
-     * Expand the neighbor frontier from the given node into {@code toVisit}, tracking visited keys in
-     * {@code visitedNodes} (subclass-specific topology).
-     */
-    void addNeighboringNodes(Key nodeIndex, Queue<Key> toVisit, Set<Key> visitedNodes);
+    // findNodesIntersectingBounds + addNeighboringNodes inherited from NodeBoundsQueryGeometry (Luciferase-rk8hv).
 
     // ===== Façade-resident composed query =====
 
@@ -77,9 +71,7 @@ public interface CollisionGeometry<Key extends SpatialKey<Key>, ID extends Entit
 
     // ===== Cached accessors =====
 
-    /** Cached world position of the entity, or {@code null} if unknown. */
-    Point3f getCachedEntityPosition(ID entityId);
+    // getCachedEntityPosition is inherited from SpatialIndexGeometry (Luciferase-rk8hv).
 
-    /** Cached world bounds of the entity, or {@code null} for point entities. */
-    EntityBounds getCachedEntityBounds(ID entityId);
+    // getCachedEntityBounds is inherited from CachedEntityBoundsGeometry (Luciferase-rk8hv).
 }

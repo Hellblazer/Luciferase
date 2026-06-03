@@ -25,7 +25,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Thread-safe cache for frequently accessed entity data to reduce repeated lookups.
- * Uses a simple LRU-style eviction when cache size exceeds limit.
+ * <p>
+ * <b>Eviction is NOT LRU</b> (Luciferase-lsy13): the backing store is a {@link java.util.concurrent.ConcurrentHashMap},
+ * which tracks neither access nor insertion order. When the cache exceeds its limit, {@code evictOldest()} bulk-removes
+ * roughly 25% of entries in the map's (arbitrary) iteration order — there is no recency information, so "oldest" is a
+ * misnomer. This is a cheap pressure-relief valve, not a recency policy. Implementing real LRU would require an
+ * access-ordered structure (e.g. a synchronized access-order LinkedHashMap) and per-entry access tracking.
  *
  * @param <ID> The entity ID type
  * @author hal.hildebrand
@@ -122,7 +127,8 @@ public class EntityCache<ID extends EntityID> {
     }
     
     private void evictOldest() {
-        // Simple eviction - remove approximately 25% of entries
+        // NOT LRU (Luciferase-lsy13): ConcurrentHashMap has no access/insertion order, so this removes ~25% of
+        // entries in arbitrary iteration order — a pressure-relief valve, not a recency eviction.
         int toRemove = maxSize / 4;
         var iterator = cache.entrySet().iterator();
         while (iterator.hasNext() && toRemove > 0) {

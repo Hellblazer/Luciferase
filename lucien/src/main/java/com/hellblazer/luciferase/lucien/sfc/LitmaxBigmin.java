@@ -225,27 +225,65 @@ public final class LitmaxBigmin {
      */
     public static long bigmin(long current, int minX, int minY, int minZ,
                                int maxX, int maxY, int maxZ) {
-        var coords = MortonCurve.decode(current);
-        var x = coords[0];
-        var y = coords[1];
-        var z = coords[2];
+        // Canonical Tropf-Herzog BIGMIN by bit manipulation (Luciferase-lield): walk the interleaved Morton bits
+        // MSB->LSB, refining a per-dimension [min,max] window, and compute the smallest in-box Morton code strictly
+        // greater than `current`. This replaces the old fallthrough that, for the above-query case (coord > max),
+        // returned current+1 and linearly scanned through potentially millions of out-of-box codes — O(morton-range)
+        // instead of O(interval-count). Returns Long.MAX_VALUE when no in-box code exists above `current` (callers
+        // bound the search by maxMorton, so this terminates findNextInRange).
+        //
+        // Dimension/level mapping matches MortonCurve's interleave (encodeLUT: x is the low bit, then y, then z):
+        // Morton bit position p -> dimension p%3 (0=x,1=y,2=z), level p/3.
+        final int[] min = { minX, minY, minZ };
+        final int[] max = { maxX, maxY, maxZ };
 
-        long nextMorton = current + 1;
+        long bigmin = Long.MAX_VALUE;
+        final int highestBit = 3 * MortonCurve.MAX_REFINEMENT_LEVEL - 1; // 62 for 21 levels
 
-        if (x < minX || y < minY || z < minZ) {
-            // Current is before query in some dimension - jump to query corner
-            nextMorton = MortonCurve.encode(
-                Math.max(x, minX),
-                Math.max(y, minY),
-                Math.max(z, minZ)
-            );
-            if (nextMorton <= current) {
-                nextMorton = current + 1;
+        for (int pos = highestBit; pos >= 0; pos--) {
+            int d = pos % 3;
+            int level = pos / 3;
+
+            int curBit = (int) ((current >>> pos) & 1L);
+            int minBit = (min[d] >>> level) & 1;
+            int maxBit = (max[d] >>> level) & 1;
+
+            if (curBit == 0 && minBit == 0 && maxBit == 0) {
+                // both ends below; nothing to do
+            } else if (curBit == 0 && minBit == 0 && maxBit == 1) {
+                // candidate: min[d] loaded to "max" at this bit (set bit, clear lower), then continue with max lowered
+                int[] cand = min.clone();
+                cand[d] = loadMax(cand[d], level);
+                bigmin = MortonCurve.encode(cand[0], cand[1], cand[2]);
+                max[d] = loadMin(max[d], level);
+            } else if (curBit == 0 && minBit == 1 && maxBit == 1) {
+                // current is below the whole window in this prefix: the min corner is the answer
+                bigmin = MortonCurve.encode(min[0], min[1], min[2]);
+                break;
+            } else if (curBit == 1 && minBit == 0 && maxBit == 0) {
+                // current is above the whole window in this prefix: best candidate so far stands
+                break;
+            } else if (curBit == 1 && minBit == 0 && maxBit == 1) {
+                min[d] = loadMax(min[d], level);
+            } else {
+                // (curBit == 1 && minBit == 1 && maxBit == 1): in-window, descend.
+                // (minBit == 1 && maxBit == 0) is impossible since min <= max.
             }
         }
-        // Note: When x > maxX || y > maxY || z > maxZ, we just increment.
-        // Due to Morton curve structure, valid codes can appear later in the sequence.
 
-        return nextMorton;
+        // Guarantee forward progress for the search loop even in degenerate cases.
+        return bigmin > current ? bigmin : Long.MAX_VALUE;
+    }
+
+    /** Set bit {@code level} to 1 and all lower bits to 0 (Tropf-Herzog "load max"). */
+    private static int loadMax(int value, int level) {
+        int below = (1 << (level + 1)) - 1; // bits level..0
+        return (value & ~below) | (1 << level);
+    }
+
+    /** Set bit {@code level} to 0 and all lower bits to 1 (Tropf-Herzog "load min"). */
+    private static int loadMin(int value, int level) {
+        int below = (1 << (level + 1)) - 1; // bits level..0
+        return (value & ~below) | ((1 << level) - 1);
     }
 }

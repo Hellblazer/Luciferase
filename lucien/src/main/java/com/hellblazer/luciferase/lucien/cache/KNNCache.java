@@ -35,8 +35,7 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
     public record CachedResult<ID>(
         List<ID> entityIds,
         List<Float> distances,
-        long version,
-        long timestamp
+        long version
     ) {
         public CachedResult {
             entityIds = List.copyOf(entityIds);
@@ -146,7 +145,7 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
 
         lock.lock();
         try {
-            var result = new CachedResult<>(entityIds, distances, version, System.nanoTime());
+            var result = new CachedResult<>(entityIds, distances, version);
             cache.put(queryKey, result);
         } finally {
             lock.unlock();

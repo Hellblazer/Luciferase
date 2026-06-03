@@ -20,9 +20,7 @@ package com.hellblazer.luciferase.lucien.balancing.fault;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
+import com.hellblazer.luciferase.common.time.Clock;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -46,9 +44,10 @@ public class DefaultFailureDetector implements FailureDetector {
 
     private final FailureDetectionConfig config;
     private final FaultHandler faultHandler;
-    private volatile Clock clock = Clock.systemDefaultZone();
+    private volatile Clock clock = Clock.system();
 
-    private final Map<UUID, Instant> lastHeartbeat = new ConcurrentHashMap<>();
+    // Epoch-millis of the last heartbeat per partition (Luciferase-d2nxe: was Instant under java.time.Clock).
+    private final Map<UUID, Long> lastHeartbeat = new ConcurrentHashMap<>();
     private final Map<UUID, PartitionStatus> detectorState = new ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile ScheduledExecutorService executor;
@@ -119,7 +118,7 @@ public class DefaultFailureDetector implements FailureDetector {
             throw new IllegalStateException("FailureDetector is not running");
         }
 
-        lastHeartbeat.put(partitionId, clock.instant());
+        lastHeartbeat.put(partitionId, clock.currentTimeMillis());
         detectorState.put(partitionId, PartitionStatus.HEALTHY);
         log.debug("Registered partition {} for monitoring", partitionId);
     }
@@ -137,7 +136,7 @@ public class DefaultFailureDetector implements FailureDetector {
     public void recordHeartbeat(UUID partitionId) {
         Objects.requireNonNull(partitionId, "partitionId must not be null");
 
-        lastHeartbeat.put(partitionId, clock.instant());
+        lastHeartbeat.put(partitionId, clock.currentTimeMillis());
         log.trace("Recorded heartbeat for partition {}", partitionId);
     }
 
@@ -160,7 +159,7 @@ public class DefaultFailureDetector implements FailureDetector {
      * <p>Package-visible for testing purposes.
      */
     void checkHealth() {
-        var now = clock.instant();
+        var now = clock.currentTimeMillis();
 
         for (var partitionId : new HashSet<>(lastHeartbeat.keySet())) {
             var lastHb = lastHeartbeat.get(partitionId);
@@ -168,26 +167,26 @@ public class DefaultFailureDetector implements FailureDetector {
                 continue;
             }
 
-            var timeSinceHeartbeat = Duration.between(lastHb, now);
+            var timeSinceHeartbeat = now - lastHb;  // elapsed millis
             var currentState = detectorState.get(partitionId);
 
             // Transition based on timeouts
-            if (timeSinceHeartbeat.compareTo(config.failureTimeout()) > 0) {
+            if (timeSinceHeartbeat > config.failureTimeout().toMillis()) {
                 // Exceeded failure timeout
                 if (currentState != PartitionStatus.FAILED) {
                     detectorState.put(partitionId, PartitionStatus.FAILED);
                     faultHandler.reportBarrierTimeout(partitionId);
                     log.warn("Partition {} marked FAILED (timeout: {}ms)",
-                            partitionId, timeSinceHeartbeat.toMillis());
+                            partitionId, timeSinceHeartbeat);
                 }
-            } else if (timeSinceHeartbeat.compareTo(config.suspectTimeout()) > 0) {
+            } else if (timeSinceHeartbeat > config.suspectTimeout().toMillis()) {
                 // Exceeded suspect timeout
                 if (currentState != PartitionStatus.SUSPECTED &&
                     currentState != PartitionStatus.FAILED) {
                     detectorState.put(partitionId, PartitionStatus.SUSPECTED);
                     faultHandler.reportHeartbeatFailure(partitionId, UUID.randomUUID());
                     log.warn("Partition {} marked SUSPECTED (timeout: {}ms)",
-                            partitionId, timeSinceHeartbeat.toMillis());
+                            partitionId, timeSinceHeartbeat);
                 }
             } else {
                 // Within timeout - mark as healthy

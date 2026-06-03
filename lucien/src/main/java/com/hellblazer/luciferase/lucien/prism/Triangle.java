@@ -422,9 +422,16 @@ public final class Triangle {
     
     /**
      * Find the neighbors of this triangle on its three edges.
-     * 
+     *
      * @return array of 3 neighbor triangles (may contain nulls for boundary edges)
+     * @deprecated Luciferase-mfe6y: this is a coordinate-shift approximation (±1 on x/y) that stays within the S0
+     *             root (suppresses y&gt;x / S1 neighbors). It is NOT the t8code/Bey face-neighbor topology. Note
+     *             {@link #faceNeighbor(int)} is the t8code-faithful path but a <em>different operation</em> — it
+     *             crosses the S0↔S1 diagonal by design and is NOT a behavioral drop-in for the S0-bounded result
+     *             here. Callers expecting t8code fidelity should use {@code faceNeighbor}; this method is retained
+     *             only for the legacy S0-bounded same-type approximation (see {@code TriangleTmSfcTest}).
      */
+    @Deprecated
     public Triangle[] neighbors() {
         var neighbors = new Triangle[EDGES];
         
@@ -452,11 +459,15 @@ public final class Triangle {
     
     /**
      * Find the neighbor of this triangle across a specific edge.
-     * 
+     *
      * @param edge the edge index (0-2)
      * @return the neighbor triangle, or null if at boundary
      * @throws IllegalArgumentException if edge index is invalid
+     * @deprecated Luciferase-mfe6y: coordinate-shift, S0-bounded approximation — NOT t8code face-neighbor topology.
+     *             {@link #faceNeighbor(int)} is the t8code-faithful path but a different operation (crosses the
+     *             S0↔S1 diagonal), not a drop-in. See {@link #neighbors()}.
      */
+    @Deprecated
     public Triangle neighbor(int edge) {
         if (edge < 0 || edge >= EDGES) {
             throw new IllegalArgumentException("Edge index must be 0-2, got: " + edge);

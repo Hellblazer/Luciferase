@@ -307,11 +307,20 @@ public class SpatialIndexProfiler<Key extends SpatialKey<Key>, ID extends Entity
                 report.minTimeMillis = TimeUnit.NANOSECONDS.toMillis(minTimeNanos.get());
                 report.maxTimeMillis = TimeUnit.NANOSECONDS.toMillis(maxTimeNanos.get());
                 
-                // Calculate percentiles if we have samples
-                if (!samples.isEmpty()) {
-                    var sortedSamples = new ArrayList<>(samples);
+                // Copy the samples ONCE under the wrapper's monitor, then test emptiness on the copy (eu4dc).
+                // The real fix is making check+copy atomic: the prior code called !samples.isEmpty() and then, in
+                // a SEPARATE access, new ArrayList<>(samples) — a concurrent reset() draining the list between
+                // them left an empty copy that was still indexed at p50 => IndexOutOfBoundsException. (The copy
+                // itself was already CME-safe: ArrayList's copy-constructor issues one synchronized toArray() on
+                // the synchronizedList wrapper. The synchronized block also keeps that guarantee explicit if the
+                // copy is ever refactored away from toArray().)
+                List<Long> sortedSamples;
+                synchronized (samples) {
+                    sortedSamples = new ArrayList<>(samples);
+                }
+                if (!sortedSamples.isEmpty()) {
                     Collections.sort(sortedSamples);
-                    
+
                     int p50Index = sortedSamples.size() / 2;
                     int p95Index = (int) (sortedSamples.size() * 0.95);
                     int p99Index = (int) (sortedSamples.size() * 0.99);

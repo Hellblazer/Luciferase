@@ -95,9 +95,6 @@ public interface EntityLifecycleHost<Key extends SpatialKey<Key>, ID extends Ent
     /** Replace the bulk-loading-mode flag in place (low-level — most callers use the enable/finalize pair). */
     void setBulkLoadingMode(boolean value);
 
-    /** The shared set of deferred-subdivision spatial keys (cleared during bulk-loading finalization). */
-    Set<Long> deferredSubdivisionNodes();
-
     // ===== Lifecycle methods that delegate to facade state =====
 
     /** Toggle the bulk-loading mode on (writes the flag under the facade write lock; clears the deferred-set). */

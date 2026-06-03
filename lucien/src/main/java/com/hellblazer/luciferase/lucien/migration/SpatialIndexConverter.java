@@ -211,8 +211,11 @@ public class SpatialIndexConverter {
             ConversionStats stats) {
         
         var processedCount = new AtomicInteger(0);
-        var errors = new ArrayList<String>();
-        
+        // Luciferase-2qpd2: atomic failure counter mirroring processedCount, so the tally is correct even if the
+        // iteration is ever parallelized (Map.forEach is sequential today). errors is collected sequentially.
+        var failedCount = new AtomicInteger(0);
+        var errors = java.util.Collections.synchronizedList(new ArrayList<String>());
+
         entitiesWithPositions.forEach((entityId, position) -> {
             try {
                 // Get entity content from source
@@ -240,13 +243,14 @@ public class SpatialIndexConverter {
                 
                 processedCount.incrementAndGet();
             } catch (Exception e) {
-                stats.failedEntities++;
-                errors.add(String.format("Failed to migrate entity %s: %s", 
+                failedCount.incrementAndGet();
+                errors.add(String.format("Failed to migrate entity %s: %s",
                                        entityId, e.getMessage()));
             }
         });
-        
+
         stats.successfulEntities = processedCount.get();
+        stats.failedEntities = failedCount.get();
         
         if (!errors.isEmpty()) {
             log.warn("Migration completed with {} errors", errors.size());
@@ -285,16 +289,11 @@ public class SpatialIndexConverter {
         
         if (!nodes.isEmpty()) {
             // Return the deepest level where entity exists
+            // Luciferase-2qpd2: call SpatialKey.getLevel() directly (TetreeKey implements it) instead of a reflective
+            // getMethod("getLevel") with a swallowing catch — the reflection silently returned level 0 for every
+            // entity if the method were ever renamed; a direct call makes a rename a compile error.
             return (byte) nodes.stream()
-                       .mapToInt(node -> {
-                           // Extract level from TetreeKey
-                           try {
-                               var method = node.sfcIndex().getClass().getMethod("getLevel");
-                               return (byte) method.invoke(node.sfcIndex());
-                           } catch (Exception e) {
-                               return 0;
-                           }
-                       })
+                       .mapToInt(node -> node.sfcIndex().getLevel())
                        .max()
                        .orElse(0);
         }

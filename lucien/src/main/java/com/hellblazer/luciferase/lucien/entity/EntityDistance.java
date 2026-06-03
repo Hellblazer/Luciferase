@@ -28,18 +28,29 @@ package com.hellblazer.luciferase.lucien.entity;
 public record EntityDistance<ID extends EntityID>(ID entityId, float distance)
 implements Comparable<EntityDistance<ID>> {
 
+    // Cached singletons (Luciferase-up7uz): the ordering depends only on `distance`, not on ID, so one instance
+    // serves every ID type. Returning the SAME instance each call avoids per-call allocation AND lets the
+    // PriorityQueue pool reuse queues by comparator identity on the hot k-NN path.
+    private static final java.util.Comparator<EntityDistance<?>> MAX_HEAP = (a, b) -> Float.compare(b.distance,
+                                                                                                    a.distance);
+    private static final java.util.Comparator<EntityDistance<?>> MIN_HEAP = (a, b) -> Float.compare(a.distance,
+                                                                                                    b.distance);
+
     /**
-     * Create a comparator for max heap (descending order) Used in k-NN searches to maintain the k closest entities
+     * The shared max-heap (descending-distance) comparator — used in k-NN searches to maintain the k closest
+     * entities. Returns a cached singleton instance (Luciferase-up7uz).
      */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     public static <ID extends EntityID> java.util.Comparator<EntityDistance<ID>> maxHeapComparator() {
-        return (a, b) -> Float.compare(b.distance, a.distance);
+        return (java.util.Comparator) MAX_HEAP;
     }
 
     /**
-     * Create a comparator for min heap (ascending order)
+     * The shared min-heap (ascending-distance) comparator. Returns a cached singleton instance (Luciferase-up7uz).
      */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     public static <ID extends EntityID> java.util.Comparator<EntityDistance<ID>> minHeapComparator() {
-        return (a, b) -> Float.compare(a.distance, b.distance);
+        return (java.util.Comparator) MIN_HEAP;
     }
 
     /**

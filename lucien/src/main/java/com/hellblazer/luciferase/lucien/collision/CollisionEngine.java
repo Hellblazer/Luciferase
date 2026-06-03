@@ -30,6 +30,7 @@ import com.hellblazer.luciferase.lucien.internal.UnorderedPair;
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -68,6 +69,12 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
 
     private final SpatialIndexCore<Key, ID, Content>  core;
     private final CollisionGeometry<Key, ID, Content> callback;
+
+    // Narrow-phase invocation counter for the last findAllCollisions() pass (Luciferase-ig4yi). AtomicInteger
+    // because findAllCollisions runs under a (shared) read lock, so concurrent passes would otherwise race on it.
+    // Lets tests assert the sweep-and-prune broad-phase keeps distant bounded pairs out of the narrow phase.
+    private final java.util.concurrent.atomic.AtomicInteger lastNarrowPhaseChecks =
+        new java.util.concurrent.atomic.AtomicInteger();
 
     public CollisionEngine(SpatialIndexCore<Key, ID, Content> core, CollisionGeometry<Key, ID, Content> callback) {
         this.core = core;
@@ -122,6 +129,7 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
         try {
             var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
             var checkedPairs = ObjectPools.<UnorderedPair<ID>>borrowHashSet();
+            lastNarrowPhaseChecks.set(0);
             try {
                 // Perform four phases of collision detection
                 findIntraNodeCollisions(collisions, checkedPairs);
@@ -175,37 +183,51 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
     }
 
     /**
-     * Find collisions using fine-grained locking for better concurrency. Alternative to {@link #findCollisions}
-     * when high read concurrency is needed.
+     * Find collisions for a single entity using per-node fine-grained locking for the node traversal.
+     * <p>Since Luciferase-kvdto this method takes the global read lock as an outer guard (like every other read
+     * path), so it is serialized against writes exactly as {@link #findCollisions} is — it does NOT offer extra
+     * concurrency with respect to global writes. The fine-grained per-node strategy only reduces contention among
+     * the node accesses within the read-locked traversal; choose this over {@link #findCollisions} only for that
+     * intra-traversal property, not for global write concurrency.
      */
     public List<CollisionPair<ID, Content>> findCollisionsFineGrained(ID entityId) {
-        var locations = core.entityManager().getEntityLocations(entityId);
-        if (locations.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        // Use fine-grained locking for each node access — re-read the volatile strategy reference at each call so
-        // a concurrent configureFineGrainedLocking is observed (mirrors KnnSearcher's pattern).
-        return core.lockingStrategy().executeRead(0L, () -> {
-            var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
-            var checkedEntities = ObjectPools.<ID>borrowHashSet();
-            try {
-                checkedEntities.add(entityId);
-
-                var entityBounds = callback.getCachedEntityBounds(entityId);
-                if (entityBounds != null) {
-                    findBoundedEntityCollisions(entityId, entityBounds, checkedEntities, collisions);
-                } else {
-                    findPointEntityCollisions(entityId, locations, checkedEntities, collisions);
-                }
-
-                Collections.sort(collisions);
-                return new ArrayList<>(collisions);
-            } finally {
-                ObjectPools.returnArrayList(collisions);
-                ObjectPools.returnHashSet(checkedEntities);
+        // Luciferase-kvdto: take the global read lock as an outer guard, like every other read path
+        // (findAllCollisions, findCollisions, findCollisionsInRegion, kNN). The per-node fine-grained strategy is
+        // independent of core.lock(); all write paths take core.lock().writeLock(), so without this guard a
+        // fine-grained collision query could traverse mid-write and observe torn results. The lock is reentrant,
+        // so the inner per-node reads are fine.
+        core.lock().readLock().lock();
+        try {
+            var locations = core.entityManager().getEntityLocations(entityId);
+            if (locations.isEmpty()) {
+                return Collections.emptyList();
             }
-        });
+
+            // Use fine-grained locking for each node access — re-read the volatile strategy reference at each call
+            // so a concurrent configureFineGrainedLocking is observed (mirrors KnnSearcher's pattern).
+            return core.lockingStrategy().executeRead(0L, () -> {
+                var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
+                var checkedEntities = ObjectPools.<ID>borrowHashSet();
+                try {
+                    checkedEntities.add(entityId);
+
+                    var entityBounds = callback.getCachedEntityBounds(entityId);
+                    if (entityBounds != null) {
+                        findBoundedEntityCollisions(entityId, entityBounds, checkedEntities, collisions);
+                    } else {
+                        findPointEntityCollisions(entityId, locations, checkedEntities, collisions);
+                    }
+
+                    Collections.sort(collisions);
+                    return new ArrayList<>(collisions);
+                } finally {
+                    ObjectPools.returnArrayList(collisions);
+                    ObjectPools.returnHashSet(checkedEntities);
+                }
+            });
+        } finally {
+            core.lock().readLock().unlock();
+        }
     }
 
     /** Find all collisions in the given region. */
@@ -424,11 +446,17 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
         return Optional.empty();
     }
 
+    /** Narrow-phase invocations during the last {@link #findAllCollisions()} (Luciferase-ig4yi test seam). */
+    int lastNarrowPhaseChecks() {
+        return lastNarrowPhaseChecks.get();
+    }
+
     private void checkAndAddCollision(ID id1, ID id2, List<CollisionPair<ID, Content>> collisions) {
         if (id1.equals(id2)) {
             return;
         }
 
+        lastNarrowPhaseChecks.incrementAndGet();
         var collision = performDetailedCollisionCheck(id1, id2);
         collision.ifPresent(collisions::add);
     }
@@ -523,8 +551,11 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
                                                                      EntityBounds bounds2, CollisionShape shape2) {
         var result = shape1.collidesWith(shape2);
         if (result.collides) {
+            // Luciferase-zz8xp: carry the narrow-phase contact manifold through to the CollisionPair instead of
+            // dropping it, so an angular resolver can distribute impulse across the contact area.
             return Optional.of(CollisionPair.create(id1, content1, bounds1, id2, content2, bounds2, result.contactPoint,
-                                                    result.contactNormal, result.penetrationDepth));
+                                                    result.contactNormal, result.penetrationDepth,
+                                                    result.contactManifold));
         }
         return Optional.empty();
     }
@@ -589,23 +620,45 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
 
     private void findBoundedEntityCollisions(List<CollisionPair<ID, Content>> collisions,
                                              Set<UnorderedPair<ID>> checkedPairs) {
-        var boundedEntities = new ArrayList<ID>();
+        // Sweep-and-prune on the X axis (Luciferase-ig4yi). The previous code tested every pair of bounded entities
+        // (O(n^2)). A node-membership broad-phase is UNSOUND here: bounded entities are stored only in their
+        // position node (SINGLE_NODE_ONLY), so two large AABBs overlapping in the gap between their position nodes
+        // would be silently missed. SAP is EXACT — it prunes only pairs that cannot overlap on X — and
+        // sub-quadratic for spatially distributed scenes. Each X-overlapping survivor still gets the full
+        // narrow-phase AABB test in checkAndAddCollision.
+        var bounded = new ArrayList<BoundedEntry<ID>>();
         for (var entityId : core.entityManager().getAllEntityIds()) {
-            if (core.entityManager().getEntityBounds(entityId) != null) {
-                boundedEntities.add(entityId);
+            var bounds = core.entityManager().getEntityBounds(entityId);
+            if (bounds != null) {
+                bounded.add(new BoundedEntry<>(entityId, bounds));
             }
         }
+        bounded.sort(Comparator.comparingDouble(e -> e.minX));
 
-        // Check bounded entities against each other
-        for (int i = 0; i < boundedEntities.size() - 1; i++) {
-            for (int j = i + 1; j < boundedEntities.size(); j++) {
-                var id1 = boundedEntities.get(i);
-                var id2 = boundedEntities.get(j);
-                var pair = new UnorderedPair<>(id1, id2);
+        var active = new ArrayList<BoundedEntry<ID>>();
+        for (var e : bounded) {
+            // Drop actives whose X span ends before e begins — they cannot overlap e or anything after it on X.
+            active.removeIf(f -> f.maxX < e.minX);
+            for (var f : active) {
+                var pair = new UnorderedPair<>(e.id, f.id);
                 if (checkedPairs.add(pair)) {
-                    checkAndAddCollision(id1, id2, collisions);
+                    checkAndAddCollision(e.id, f.id, collisions);
                 }
             }
+            active.add(e);
+        }
+    }
+
+    /** X-axis sweep-and-prune entry for bounded-entity broad-phase (Luciferase-ig4yi). */
+    private static final class BoundedEntry<I> {
+        final I     id;
+        final float minX;
+        final float maxX;
+
+        BoundedEntry(I id, EntityBounds bounds) {
+            this.id = id;
+            this.minX = bounds.getMinX();
+            this.maxX = bounds.getMaxX();
         }
     }
 

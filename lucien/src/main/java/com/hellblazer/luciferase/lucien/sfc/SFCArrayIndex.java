@@ -307,8 +307,9 @@ public class SFCArrayIndex<ID extends EntityID, Content> extends AbstractSpatial
 
     @Override
     protected SubdivisionStrategy<MortonKey, ID, Content> createDefaultSubdivisionStrategy() {
-        // No subdivision for flat array - return null or no-op strategy
-        return null;
+        // NoOp rather than null (Luciferase-5oruk): getSubdivisionStrategy() must never return null, so callers that
+        // invoke a method on it don't NPE. A flat SFC array never subdivides. Mirrors the NoOpTreeBalancer fix.
+        return new com.hellblazer.luciferase.lucien.NoOpSubdivisionStrategy<>();
     }
 
     @Override

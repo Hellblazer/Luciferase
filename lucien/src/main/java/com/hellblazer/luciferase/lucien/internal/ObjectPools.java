@@ -17,8 +17,6 @@
 package com.hellblazer.luciferase.lucien.internal;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.function.Supplier;
 
 /**
  * Object pools for frequently allocated objects to reduce GC pressure.
@@ -31,11 +29,7 @@ public class ObjectPools {
     private static final ThreadLocal<ArrayListPool> ARRAY_LIST_POOL = ThreadLocal.withInitial(ArrayListPool::new);
     private static final ThreadLocal<HashSetPool> HASH_SET_POOL = ThreadLocal.withInitial(HashSetPool::new);
     private static final ThreadLocal<PriorityQueuePool> PRIORITY_QUEUE_POOL = ThreadLocal.withInitial(PriorityQueuePool::new);
-    
-    // Concurrent pools for multi-threaded access
-    private static final ConcurrentPool<ArrayList<?>> CONCURRENT_LIST_POOL = new ConcurrentPool<>(ArrayList::new, 100);
-    private static final ConcurrentPool<HashSet<?>> CONCURRENT_SET_POOL = new ConcurrentPool<>(HashSet::new, 100);
-    
+
     /**
      * Borrow an ArrayList from the thread-local pool
      */
@@ -173,53 +167,48 @@ public class ObjectPools {
     }
     
     /**
-     * Concurrent pool for thread-safe access
-     */
-    private static class ConcurrentPool<T> {
-        private final ConcurrentLinkedQueue<T> pool = new ConcurrentLinkedQueue<>();
-        private final Supplier<T> factory;
-        private final int maxSize;
-        
-        public ConcurrentPool(Supplier<T> factory, int maxSize) {
-            this.factory = factory;
-            this.maxSize = maxSize;
-        }
-        
-        public T borrow() {
-            var item = pool.poll();
-            return item != null ? item : factory.get();
-        }
-        
-        public void returnToPool(T item) {
-            if (pool.size() < maxSize) {
-                pool.offer(item);
-            }
-        }
-    }
-    
-    /**
-     * Thread-local pool for PriorityQueues
+     * Thread-local pool for PriorityQueues (Luciferase-up7uz). Separate deques for plain (no-comparator) and
+     * fixed-comparator queues: a PriorityQueue's comparator is immutable after construction, so the comparator path
+     * can only reuse a queue built with the SAME comparator instance — which the k-NN hot path provides via the
+     * cached {@code EntityDistance.maxHeapComparator()} singleton. This replaces the previous
+     * {@code borrowWithComparator} that always allocated a new queue (zero pooling on the highest-frequency caller)
+     * and the single mixed deque that could hand a comparator-bearing queue to a plain {@code borrow()}.
      */
     private static class PriorityQueuePool {
-        private final Deque<PriorityQueue<?>> pool = new ArrayDeque<>(10);
+        private final Deque<PriorityQueue<?>> plainPool      = new ArrayDeque<>(10);
+        private final Deque<PriorityQueue<?>> comparatorPool = new ArrayDeque<>(10);
         private static final int MAX_POOL_SIZE = 10;
-        
+
         @SuppressWarnings("unchecked")
         public <T> PriorityQueue<T> borrow() {
-            var queue = pool.pollFirst();
+            var queue = plainPool.pollFirst();
             return queue != null ? (PriorityQueue<T>) queue : new PriorityQueue<T>();
         }
-        
+
         @SuppressWarnings("unchecked")
         public <T> PriorityQueue<T> borrowWithComparator(Comparator<? super T> comparator) {
-            // For queues with custom comparators, we can't reuse from pool safely
-            // because we can't change the comparator after construction
+            var queue = comparatorPool.pollFirst();
+            if (queue != null) {
+                if (queue.comparator() == comparator) {
+                    return (PriorityQueue<T>) queue; // same comparator instance, already empty — genuine reuse
+                }
+                // Different comparator instance: put the polled queue back so the pool does not bleed capacity
+                // (Luciferase-up7uz review), then build a fresh queue for this comparator.
+                comparatorPool.offerFirst(queue);
+            }
             return new PriorityQueue<T>(comparator);
         }
-        
+
         public void returnToPool(PriorityQueue<?> queue) {
-            if (pool.size() < MAX_POOL_SIZE && queue.size() == 0) {
-                pool.offerLast(queue);
+            if (queue.size() != 0) {
+                return;
+            }
+            if (queue.comparator() == null) {
+                if (plainPool.size() < MAX_POOL_SIZE) {
+                    plainPool.offerLast(queue);
+                }
+            } else if (comparatorPool.size() < MAX_POOL_SIZE) {
+                comparatorPool.offerLast(queue);
             }
         }
     }

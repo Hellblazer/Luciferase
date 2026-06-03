@@ -2368,59 +2368,6 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
         return candidates;
     }
 
-
-    /**
-     * Determine which of the 6 characteristic tetrahedra contains a point within a cube.
-     *
-     * A cube is divided into 6 tetrahedra (S0-S5) that share the main diagonal from (0,0,0) to
-     * (cellSize,cellSize,cellSize). We test which tetrahedron contains the point by checking on which side of the
-     * dividing planes the point falls.
-     *
-     * Based on the SIMPLEX definitions in Constants: - S0: c0(0,0,0), c1(1,0,0), c5(1,0,1), c7(1,1,1) - S1: c0(0,0,0),
-     * c1(1,0,0), c3(1,1,0), c7(1,1,1) - S2: c0(0,0,0), c2(0,1,0), c3(1,1,0), c7(1,1,1) - S3: c0(0,0,0), c2(0,1,0),
-     * c6(0,1,1), c7(1,1,1) - S4: c0(0,0,0), c4(0,0,1), c6(0,1,1), c7(1,1,1) - S5: c0(0,0,0), c4(0,0,1), c5(1,0,1),
-     * c7(1,1,1)
-     */
-    protected byte determineTetrahedronType(float relX, float relY, float relZ, float cellSize) {
-        // CRITICAL: The coordinate comparison logic below is based on the SIMPLEX_STANDARD
-        // tetrahedra definitions and how they partition the unit cube. This algorithm
-        // has been validated against the actual Tet.contains() method.
-        
-        // Scale to unit cube coordinates for the comparison
-        var px = relX / cellSize;
-        var py = relY / cellSize;
-        var pz = relZ / cellSize;
-
-        // The 6 tetrahedra partition the cube around the main diagonal from (0,0,0) to (1,1,1).
-        // This decision tree is based on which side of three key planes the point falls on:
-        // Plane 1: x = y (divides types 0,4,5 from types 1,2,3)
-        // Plane 2: y = z (divides types 0,1,2 from types 3,4,5)
-        // Plane 3: x = z (divides types 0,2,3 from types 1,4,5)
-        
-        // The logic below correctly maps the 6 regions to tetrahedron types
-        // based on the SIMPLEX_STANDARD vertex definitions:
-        // RDR-010 Luciferase-4pd: t8code dtet labeling — t0 x>z>y, t1 x>y>z, t2 y>x>z, t3 y>z>x,
-        // t4 z>y>x, t5 z>x>y (matches Tet.contains12DOP / coordinates()).
-        if (px <= py) {
-            if (py <= pz) {
-                return 4; // z >= y >= x
-            } else if (px <= pz) {
-                return 3; // y > z >= x
-            } else {
-                return 2; // y >= x > z
-            }
-        } else {
-            // px > py
-            if (px <= pz) {
-                return 5; // z >= x > y
-            } else if (py <= pz) {
-                return 0; // x > z >= y
-            } else {
-                return 1; // x > y > z
-            }
-        }
-    }
-
     /**
      * Expand search around a known intersection point to find nearby candidates.
      */
@@ -2902,58 +2849,6 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
         // Fallback: if no tetrahedron contains the point (rare floating-point edge case),
         // return type 0 at this anchor
         return new Tet(anchorX, anchorY, anchorZ, level, (byte) 0);
-    }
-
-    /**
-     * Deterministic S0-S5 point classification using distance to tetrahedron centroids.
-     * 
-     * This method replaces the non-deterministic "test all 6" approach with a geometric
-     * algorithm that directly computes which S0-S5 tetrahedron should contain a point.
-     * 
-     * Research showed this distance-based approach achieves 100% accuracy while being
-     * significantly faster than containment testing.
-     * 
-     * @param x normalized coordinate [0,1] within cube
-     * @param y normalized coordinate [0,1] within cube  
-     * @param z normalized coordinate [0,1] within cube
-     * @return tetrahedron type [0-5] for S0-S5 subdivision
-     */
-    private static byte classifyPointInS0S5Cube(double x, double y, double z) {
-        // S0-S5 tetrahedron centroids (calculated from vertex averages)
-        // S0: (0,0,0), (1,0,0), (1,1,0), (1,1,1) -> centroid (0.75, 0.5, 0.25)
-        // S1: (0,0,0), (0,1,0), (1,1,0), (1,1,1) -> centroid (0.5, 0.75, 0.25)  
-        // S2: (0,0,0), (0,0,1), (1,0,1), (1,1,1) -> centroid (0.5, 0.25, 0.75)
-        // S3: (0,0,0), (0,0,1), (0,1,1), (1,1,1) -> centroid (0.25, 0.5, 0.75)
-        // S4: (0,0,0), (1,0,0), (1,0,1), (1,1,1) -> centroid (0.75, 0.25, 0.5)
-        // S5: (0,0,0), (0,1,0), (0,1,1), (1,1,1) -> centroid (0.25, 0.75, 0.5)
-        
-        double[][] centroids = {
-            {0.75, 0.5,  0.25}, // S0
-            {0.5,  0.75, 0.25}, // S1
-            {0.5,  0.25, 0.75}, // S2
-            {0.25, 0.5,  0.75}, // S3
-            {0.75, 0.25, 0.5 }, // S4
-            {0.25, 0.75, 0.5 }  // S5
-        };
-        
-        byte closestType = 0;
-        double minDistanceSquared = Double.MAX_VALUE;
-        
-        for (byte type = 0; type < 6; type++) {
-            double cx = centroids[type][0];
-            double cy = centroids[type][1];
-            double cz = centroids[type][2];
-            
-            // Use squared distance (faster, same relative ordering)
-            double distanceSquared = (x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz);
-            
-            if (distanceSquared < minDistanceSquared) {
-                minDistanceSquared = distanceSquared;
-                closestType = type;
-            }
-        }
-        
-        return closestType;
     }
 
     /**

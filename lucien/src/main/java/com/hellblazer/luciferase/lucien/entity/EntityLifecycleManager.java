@@ -640,10 +640,6 @@ public final class EntityLifecycleManager<Key extends SpatialKey<Key>, ID extend
         try {
             core.spatialIndex().clear();
             core.entityManager().clear();
-            var deferred = host.deferredSubdivisionNodes();
-            if (deferred != null) {
-                deferred.clear();
-            }
             var subdivisionManager = host.subdivisionManager();
             if (subdivisionManager != null) {
                 subdivisionManager.clear();
@@ -825,8 +821,11 @@ public final class EntityLifecycleManager<Key extends SpatialKey<Key>, ID extend
     }
 
     private boolean determineMortonSortStrategy(List<Point3f> positions, byte level) {
-        var shouldUseMortonSort = host.bulkConfig().isPreSortByMorton();
-        if (host.bulkConfig().isUseDynamicLevelSelection()) {
+        // Snapshot the volatile config reference once (Luciferase-3vwqb): both flags belong to the SAME decision,
+        // so reading host.bulkConfig() twice could otherwise mix two configs if a reconfigure interleaves.
+        var cfg = host.bulkConfig();
+        var shouldUseMortonSort = cfg.isPreSortByMorton();
+        if (cfg.isUseDynamicLevelSelection()) {
             shouldUseMortonSort = shouldUseMortonSort && LevelSelector.shouldUseMortonSort(positions, level);
         }
         return shouldUseMortonSort;

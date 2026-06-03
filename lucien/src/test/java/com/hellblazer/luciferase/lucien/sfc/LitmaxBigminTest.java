@@ -45,14 +45,18 @@ class LitmaxBigminTest {
 
     @Test
     void testBigminInsideQuery() {
-        // Current is inside the query box - should return current + 1
+        // Canonical BIGMIN (Luciferase-lield): returns the smallest IN-BOX Morton code strictly greater than
+        // current — NOT a blind current+1 (current+1 may be outside the box). It must advance and stay in-box.
         int minX = 2, minY = 2, minZ = 2;
         int maxX = 5, maxY = 5, maxZ = 5;
 
         long current = MortonCurve.encode(3, 3, 3);
         long next = LitmaxBigmin.bigmin(current, minX, minY, minZ, maxX, maxY, maxZ);
 
-        assertEquals(current + 1, next, "Should return current + 1 when inside query");
+        assertTrue(next > current, "BIGMIN must advance past current");
+        var c = MortonCurve.decode(next);
+        assertTrue(c[0] >= minX && c[0] <= maxX && c[1] >= minY && c[1] <= maxY && c[2] >= minZ && c[2] <= maxZ,
+                   "BIGMIN result must be inside the query box (Luciferase-lield)");
     }
 
     @Test
@@ -85,14 +89,15 @@ class LitmaxBigminTest {
 
     @Test
     void testBigminAtBoundary() {
-        // Current is exactly at query boundary
+        // Single-cell box; current IS that cell (the only in-box code). There is no in-box code greater than current,
+        // so canonical BIGMIN reports "no further" rather than scanning forward (Luciferase-lield).
         int minX = 5, minY = 5, minZ = 5;
-        int maxX = 5, maxY = 5, maxZ = 5;  // Single cell query
+        int maxX = 5, maxY = 5, maxZ = 5;  // single cell
 
         long current = MortonCurve.encode(5, 5, 5);
         long next = LitmaxBigmin.bigmin(current, minX, minY, minZ, maxX, maxY, maxZ);
 
-        assertEquals(current + 1, next, "Should return current + 1 at boundary");
+        assertEquals(Long.MAX_VALUE, next, "no in-box code exists above the single cell -> BIGMIN terminates");
     }
 
     // ================================

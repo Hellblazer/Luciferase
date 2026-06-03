@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
-import java.time.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import java.util.UUID;
 
 /**
@@ -104,8 +104,8 @@ public interface FailureDetector {
     /**
      * Set the clock for deterministic testing.
      *
-     * <p>Allows tests to inject a fixed or controlled clock (e.g., Clock.fixed(),
-     * Clock.offset()) for deterministic timing.
+     * <p>Allows tests to inject a fixed or controlled clock (e.g., a TestClock or
+     * {@link Clock#fixed(long)}) for deterministic timing.
      *
      * @param clock the clock to use for timeout calculations
      * @throws NullPointerException if clock is null

@@ -139,7 +139,25 @@ public final class ProtobufConverters {
         } else if (entityIdClass == UUIDEntityID.class) {
             return (I) new UUIDEntityID(UUID.fromString(entityIdString));
         } else {
-            throw new IllegalArgumentException("Unsupported EntityID class: " + entityIdClass);
+            // Whole-batch configuration error, not a per-element data error (Luciferase-m2k3u): the same
+            // entityIdClass applies to every element, so an unsupported type fails ALL of them. The previous
+            // IllegalArgumentException was swallowed by the per-element catch in GhostServiceClient /
+            // GhostExchangeServiceImpl, silently dropping the entire batch (RDR-004 D3 / 7pias class). Throw a
+            // dedicated unchecked type those catches re-throw, so the misconfiguration surfaces loudly.
+            throw new UnsupportedEntityIdTypeException(entityIdClass);
+        }
+    }
+
+    /**
+     * Signals an unsupported configured {@link EntityID} type in ghost (de)serialization (Luciferase-m2k3u). This is
+     * a configuration/programming error affecting the whole batch — per-element catches must re-throw it rather than
+     * log-and-continue (which would silently drop every element). Extend {@link #createEntityId} (or migrate to an
+     * SPI registry) to add a type.
+     */
+    public static final class UnsupportedEntityIdTypeException extends RuntimeException {
+        public UnsupportedEntityIdTypeException(Class<?> entityIdClass) {
+            super("Unsupported EntityID class for ghost serialization: " + entityIdClass
+                  + " (supported: LongEntityID, UUIDEntityID)");
         }
     }
     

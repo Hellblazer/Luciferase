@@ -155,16 +155,36 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
      */
     public void updateDistributedGhostLayer() {
         log.info("Updating distributed ghost layer for rank {}", currentRank);
-        
+
         // Update local ghost layer
         localGhostManager.createGhostLayer(); // Recreate for now
-        
+
         // Synchronize with other processes if auto-sync is enabled
         if (autoSyncEnabled && shouldPerformSync()) {
             synchronizeWithAllProcesses();
         }
-        
+
         log.info("Distributed ghost layer update complete");
+    }
+
+    /**
+     * Rebuild ONLY the local ghost layer (the two-phase clear-then-populate over the spatial index), without any
+     * network sync (Luciferase-cfg4o). The caller is expected to hold the spatial-index write lock so the rebuild is
+     * atomic against concurrent mutation; the (potentially blocking) sync is split out into {@link #synchronizeIfDue()}
+     * so it never runs under the lock.
+     */
+    public void rebuildLocalGhostLayer() {
+        localGhostManager.createGhostLayer();
+    }
+
+    /**
+     * Run the auto-sync flush if enabled and due — intended to be called WITHOUT the index lock held
+     * (Luciferase-cfg4o), since it blocks on network round-trips.
+     */
+    public void synchronizeIfDue() {
+        if (autoSyncEnabled && shouldPerformSync()) {
+            synchronizeWithAllProcesses();
+        }
     }
     
     /**
@@ -202,7 +222,28 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
             }
         }
 
-        return ghostChannel.flushToTarget(targetRank);
+        // Fire the fault-detection sync callback on completion (Luciferase-963vw): it was registered via
+        // registerSyncCallback but never invoked, so the integration was dead. Hooking it here covers both the
+        // single-target (synchronizeWithProcess) and the fan-out (synchronizeWithAllProcesses) paths.
+        return ghostChannel.flushToTarget(targetRank).whenComplete((result, ex) -> {
+            var cb = syncCallback;
+            if (cb == null) {
+                return;
+            }
+            // Isolate callback exceptions (Luciferase-963vw review): whenComplete swallows them, so a buggy callback
+            // would otherwise appear as a silent no-op while the flush future still completes normally. Log instead.
+            try {
+                if (ex == null) {
+                    cb.onSyncSuccess(targetRank);
+                } else {
+                    var cause = ex instanceof java.util.concurrent.CompletionException && ex.getCause() != null
+                                ? ex.getCause() : ex;
+                    cb.onSyncFailure(targetRank, cause instanceof Exception e ? e : new RuntimeException(cause));
+                }
+            } catch (RuntimeException callbackEx) {
+                log.error("GhostSyncCallback threw for rank {}: {}", targetRank, callbackEx.getMessage(), callbackEx);
+            }
+        });
     }
     
     /**
