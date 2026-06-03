@@ -77,8 +77,9 @@ public class ESVTBuilder {
         }
         log.debug("After buildTreeFromLeaves: {} nodes", allNodes.size());
 
-        // Phase 2: Sort nodes in breadth-first order (by level, then by key)
-        var nodeList = sortBreadthFirst(allNodes);
+        // Phase 2: Lay nodes out child-contiguous (parent, then its Morton-ordered child block, then recurse)
+        // so child-pointer offsets stay subtree-local — keeps far pointers rare (Luciferase-yhue6)
+        var nodeList = sortChildContiguous(allNodes);
 
         // Phase 3: Build index map for pointer computation
         var indexMap = buildIndexMap(nodeList);
@@ -273,8 +274,9 @@ public class ESVTBuilder {
         }
         log.debug("After buildTreeFromLeaves: {} nodes", allNodes.size());
 
-        // Phase 2: Sort nodes in breadth-first order (by level, then by key)
-        var nodeList = sortBreadthFirst(allNodes);
+        // Phase 2: Lay nodes out child-contiguous (parent, then its Morton-ordered child block, then recurse)
+        // so child-pointer offsets stay subtree-local — keeps far pointers rare (Luciferase-yhue6)
+        var nodeList = sortChildContiguous(allNodes);
 
         // Phase 3: Build index map for pointer computation
         var indexMap = buildIndexMap(nodeList);
@@ -462,13 +464,18 @@ public class ESVTBuilder {
     }
 
     /**
-     * Sort nodes in breadth-first order with siblings CONTIGUOUS in Morton order.
+     * Lay nodes out child-contiguous: a parent is immediately followed by its Morton-ordered child block, then
+     * each child's subtree is emitted (depth-first). Siblings stay CONTIGUOUS in Morton order (required by the
+     * childMask + childPtr addressing), while child-pointer offsets stay subtree-local — so only a handful of
+     * near-root nodes (whose earlier siblings have huge subtrees) need far pointers, instead of nearly every
+     * internal node as in the old breadth-first layout (Luciferase-yhue6). Parents always precede their children,
+     * so the downstream top-down type propagation remains valid.
      *
-     * <p>Uses explicit parent-child relationships from tree building, not recomputed
-     * via child(). Children are sorted by their Morton child index within the parent.</p>
+     * <p>Uses explicit parent-child relationships from tree building, not recomputed via child(). Children are
+     * sorted by their Morton child index within the parent.</p>
      */
     @SuppressWarnings("unchecked")
-    private List<NodeEntry> sortBreadthFirst(Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> allNodes) {
+    private List<NodeEntry> sortChildContiguous(Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> allNodes) {
         if (allNodes.isEmpty()) {
             return new ArrayList<>();
         }
@@ -502,33 +509,40 @@ public class ESVTBuilder {
             return list;
         }
 
-        // BFS traversal using explicit parent-child relationships
+        // Child-contiguous depth-first layout: emit each node's children as one Morton-ordered block, then recurse
+        // into each child's subtree. An explicit stack avoids recursion depth concerns on deep trees.
         var result = new ArrayList<NodeEntry>(allNodes.size());
         var processed = new HashSet<TetreeKey<?>>();
 
         result.add(root);
         processed.add(root.key);
 
-        int currentIdx = 0;
-        while (currentIdx < result.size()) {
-            var parent = result.get(currentIdx);
+        var stack = new ArrayDeque<NodeEntry>();
+        stack.push(root);
+        while (!stack.isEmpty()) {
+            var parent = stack.pop();
             var children = parentToChildren.get(parent.key);
-
-            if (children != null) {
-                for (var child : children) {
-                    if (!processed.contains(child.key)) {
-                        result.add(child);
-                        processed.add(child.key);
-                    }
+            if (children == null) {
+                continue;
+            }
+            // Append this parent's children as a contiguous block (already Morton-sorted above).
+            var freshChildren = new ArrayList<NodeEntry>(children.size());
+            for (var child : children) {
+                if (processed.add(child.key)) {
+                    result.add(child);
+                    freshChildren.add(child);
                 }
             }
-
-            currentIdx++;
+            // Recurse into the children left-to-right: push in reverse so child 0's subtree is laid out first,
+            // keeping its child block closest to it (smallest offset).
+            for (int j = freshChildren.size() - 1; j >= 0; j--) {
+                stack.push(freshChildren.get(j));
+            }
         }
 
         // Verify all nodes were placed
         if (result.size() != allNodes.size()) {
-            log.warn("BFS placed {} of {} nodes - {} orphaned nodes not connected to root",
+            log.warn("Child-contiguous layout placed {} of {} nodes - {} orphaned nodes not connected to root",
                 result.size(), allNodes.size(), allNodes.size() - result.size());
             for (var entry : allNodes.values()) {
                 if (!processed.contains(entry.key)) {
