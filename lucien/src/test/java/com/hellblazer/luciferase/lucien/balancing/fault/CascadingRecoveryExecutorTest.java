@@ -7,11 +7,11 @@ package com.hellblazer.luciferase.lucien.balancing.fault;
 
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -23,17 +23,45 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class CascadingRecoveryExecutorTest {
 
+    /**
+     * Submit far more concurrently-parked tasks than any sane platform-thread pool would tolerate, and require
+     * every one of them to (a) actually start and (b) run on a virtual thread. A cached platform-thread pool would
+     * either exhaust OS threads or run on non-virtual carriers — either way this assertion fails.
+     */
     @Test
-    void defaultRecoveryExecutorRunsTasksOnVirtualThreads() throws Exception {
+    void recoveryTasksRunOnCheapVirtualThreads() throws Exception {
         var recovery = new CascadingRecoveryImpl();
-        Field f = CascadingRecoveryImpl.class.getDeclaredField("executor");
-        f.setAccessible(true);
-        var executor = (ExecutorService) f.get(recovery);
+        var executor = recovery.executor();   // package-private accessor (no reflection)
 
-        var onVirtual = new AtomicBoolean(false);
-        executor.submit(() -> onVirtual.set(Thread.currentThread().isVirtual())).get(5, TimeUnit.SECONDS);
+        int tasks = 1_000;
+        var allVirtual = new AtomicInteger(0);
+        var release = new CountDownLatch(1);
+        var started = new CountDownLatch(tasks);
+        var finished = new CountDownLatch(tasks);
 
-        assertTrue(onVirtual.get(),
-                   "cascading-recovery tasks must run on virtual threads, not an unbounded cached pool (Luciferase-h08sd)");
+        for (int i = 0; i < tasks; i++) {
+            executor.submit(() -> {
+                if (Thread.currentThread().isVirtual()) {
+                    allVirtual.incrementAndGet();
+                }
+                started.countDown();
+                try {
+                    release.await();   // park all 1000 simultaneously — cheap only on virtual threads
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    finished.countDown();
+                }
+            });
+        }
+
+        assertTrue(started.await(10, TimeUnit.SECONDS),
+                   "all " + tasks + " recovery tasks must start concurrently — a bounded platform pool would stall "
+                   + "(Luciferase-h08sd)");
+        release.countDown();
+        assertTrue(finished.await(10, TimeUnit.SECONDS), "all tasks must finish");
+        assertEquals(tasks, allVirtual.get(),
+                     "every recovery task must run on a virtual thread, not an unbounded cached platform pool "
+                     + "(Luciferase-h08sd)");
     }
 }

@@ -32,6 +32,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 
+import com.hellblazer.luciferase.common.time.Clock;
+
 /**
  * Centralized monitoring aggregator for Forest health and fault tolerance metrics.
  * <p>
@@ -471,10 +473,21 @@ public class ForestMonitor {
         }
 
         /**
-         * Set custom time source for testing.
+         * Set custom time source for testing. {@code timeSource} is the leaf time primitive; prefer
+         * {@link #withClock(Clock)} when you already have a {@link Clock} so a single clock drives both the
+         * monitor and the injected {@link FaultHandler} (Luciferase-d2nxe).
          */
         public Builder withTimeSource(LongSupplier timeSource) {
             this.timeSource = timeSource;
+            return this;
+        }
+
+        /**
+         * Set the time source from a common-module {@link Clock} so one clock can drive the whole fault stack
+         * (monitor + fault handler + failure detector) in deterministic tests (Luciferase-d2nxe).
+         */
+        public Builder withClock(Clock clock) {
+            this.timeSource = clock::currentTimeMillis;
             return this;
         }
 

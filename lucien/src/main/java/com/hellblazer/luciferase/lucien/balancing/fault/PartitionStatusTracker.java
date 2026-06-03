@@ -89,8 +89,13 @@ public interface PartitionStatusTracker extends FaultHandler {
     /**
      * Record of a single partition status transition.
      *
+     * <p><b>Clock note</b> (Luciferase-d2nxe): {@code timestamp} is sourced from the tracker's injected
+     * {@link Clock} at write time ({@code Instant.ofEpochMilli(clock.currentTimeMillis())}). Callers reading it
+     * back for elapsed-time arithmetic MUST diff against the same injected clock — do NOT compare against
+     * {@code Instant.now()}, which bypasses the test clock.
+     *
      * @param status the status after this transition
-     * @param timestamp when the transition occurred
+     * @param timestamp when the transition occurred (epoch-millis instant from the injected clock)
      * @param reason description of why the transition occurred
      */
     record StatusHistoryEntry(

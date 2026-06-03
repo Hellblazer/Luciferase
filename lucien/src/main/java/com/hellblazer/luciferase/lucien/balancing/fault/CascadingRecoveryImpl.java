@@ -115,6 +115,14 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
     }
 
     /**
+     * The executor backing async recovery operations. Package-private for tests that need to verify the
+     * threading model (Luciferase-h08sd) without reflection.
+     */
+    ExecutorService executor() {
+        return executor;
+    }
+
+    /**
      * Enable the simulation scaffolding for this recovery instance.
      * <p>
      * By default, {@link #recover(UUID, FaultHandler)} returns an explicit failure
