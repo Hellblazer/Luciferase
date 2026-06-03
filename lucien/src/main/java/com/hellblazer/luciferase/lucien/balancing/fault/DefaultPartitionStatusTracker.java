@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
-import java.time.Clock;
+import com.hellblazer.luciferase.common.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -37,7 +37,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class DefaultPartitionStatusTracker extends SimpleFaultHandler
         implements PartitionStatusTracker {
 
-    private volatile Clock clock = Clock.systemDefaultZone();
+    private volatile Clock clock = Clock.system();
 
     // Per-partition tracking
     private final Map<UUID, List<StatusHistoryEntry>> statusHistory =
@@ -76,7 +76,7 @@ public class DefaultPartitionStatusTracker extends SimpleFaultHandler
             return Duration.ZERO;
         }
 
-        var now = clock.instant();
+        var now = Instant.ofEpochMilli(clock.currentTimeMillis());
         return Duration.between(lastHealthy, now);
     }
 
@@ -108,7 +108,7 @@ public class DefaultPartitionStatusTracker extends SimpleFaultHandler
         super.markHealthy(partitionId);
 
         // Record timestamp
-        var now = clock.instant();
+        var now = Instant.ofEpochMilli(clock.currentTimeMillis());
         lastHealthyTime.put(partitionId, now);
 
         // Record in history
@@ -149,7 +149,7 @@ public class DefaultPartitionStatusTracker extends SimpleFaultHandler
      */
     private void recordStatusTransition(UUID partitionId, PartitionStatus status,
                                         String reason) {
-        var now = clock.instant();
+        var now = Instant.ofEpochMilli(clock.currentTimeMillis());
         var entry = new StatusHistoryEntry(status, now, reason);
 
         // Add to history

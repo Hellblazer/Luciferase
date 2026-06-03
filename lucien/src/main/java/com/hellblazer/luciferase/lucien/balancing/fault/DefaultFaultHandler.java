@@ -25,7 +25,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
-import java.util.function.LongSupplier;
+
+import com.hellblazer.luciferase.common.time.Clock;
 
 /**
  * Default FaultHandler implementation with Clock injection.
@@ -39,8 +40,8 @@ import java.util.function.LongSupplier;
  *   <li>SUSPECTED → FAILED: After failureConfirmationMs elapses</li>
  * </ul>
  *
- * <p><b>Clock Injection</b>: Uses LongSupplier for time source, enabling
- * deterministic testing. In tests, inject TestClock::currentTimeMillis.
+ * <p><b>Clock Injection</b>: Uses the common-module {@link Clock} type, enabling deterministic testing.
+ * In tests, inject a TestClock (Luciferase-d2nxe).
  *
  * <p><b>Thread-Safe</b>: Uses ConcurrentHashMap and CopyOnWriteArrayList
  * for concurrent access.
@@ -58,7 +59,7 @@ public class DefaultFaultHandler implements FaultHandler {
     private final Map<UUID, PartitionHealthState> healthStates;
     private final Map<UUID, PartitionRecovery> recoveryStrategies;
     private final List<Consumer<PartitionChangeEvent>> listeners;
-    private volatile LongSupplier timeSource;
+    private volatile Clock clock;
     private volatile boolean monitoring;
 
     /**
@@ -132,36 +133,18 @@ public class DefaultFaultHandler implements FaultHandler {
         this.healthStates = new ConcurrentHashMap<>();
         this.recoveryStrategies = new ConcurrentHashMap<>();
         this.listeners = new CopyOnWriteArrayList<>();
-        this.timeSource = System::currentTimeMillis;
+        this.clock = Clock.system();
         this.monitoring = false;
     }
 
     /**
-     * Set clock for deterministic testing.
+     * Set clock for deterministic testing (Luciferase-d2nxe: single {@link Clock} type across balancing/fault,
+     * replacing the prior reflection duck-typing on {@code Object}).
      *
-     * <p>Accepts any object with currentTimeMillis() method (e.g., TestClock).
-     * Uses reflection-free lambda approach for performance.
-     *
-     * @param clock the clock to use (must have currentTimeMillis() method)
+     * @param clock the clock to use
      */
-    public void setClock(Object clock) {
-        if (clock == null) {
-            throw new NullPointerException("clock must not be null");
-        }
-
-        // Support both simulation.Clock and java.time.Clock via duck typing
-        try {
-            var method = clock.getClass().getMethod("currentTimeMillis");
-            this.timeSource = () -> {
-                try {
-                    return (long) method.invoke(clock);
-                } catch (Exception e) {
-                    throw new RuntimeException("Clock invocation failed", e);
-                }
-            };
-        } catch (NoSuchMethodException e) {
-            throw new IllegalArgumentException("Clock must have currentTimeMillis() method", e);
-        }
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     @Override
@@ -617,6 +600,6 @@ public class DefaultFaultHandler implements FaultHandler {
      * Get current time from injected time source.
      */
     private long now() {
-        return timeSource.getAsLong();
+        return clock.currentTimeMillis();
     }
 }

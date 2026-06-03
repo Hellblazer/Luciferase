@@ -71,12 +71,8 @@ class ForestMonitorTest {
         );
         faultHandler = new DefaultFaultHandler(config, topology);
 
-        // Inject deterministic clock
-        faultHandler.setClock(new Object() {
-            public long currentTimeMillis() {
-                return clock.get();
-            }
-        });
+        // Inject deterministic clock (Luciferase-d2nxe: setClock now takes the common Clock type)
+        faultHandler.setClock((com.hellblazer.luciferase.common.time.Clock) clock::get);
 
         executor = Executors.newSingleThreadScheduledExecutor();
     }

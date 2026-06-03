@@ -27,10 +27,10 @@ import java.util.function.LongSupplier;
  * this scheduler delegates timing decisions to an injected LongSupplier.
  * This enables deterministic testing via TestClock.
  *
- * <p><b>Clock Injection</b>: Uses LongSupplier reflection pattern to support
- * both TestClock (from simulation) and java.time.Clock without creating a
- * compile-time dependency on simulation module. This breaks the cyclic
- * dependency between lucien and simulation.
+ * <p><b>Clock Injection</b>: Takes a {@link java.util.function.LongSupplier} time source — pass
+ * {@code testClock::currentTimeMillis} (the common-module {@code Clock}) in tests, or
+ * {@code System::currentTimeMillis} in production. The supplier is the leaf time primitive; the rest of
+ * balancing/fault standardizes on the common {@code Clock} type (Luciferase-d2nxe).
  *
  * <p><b>Usage Pattern</b>:
  * <pre>
