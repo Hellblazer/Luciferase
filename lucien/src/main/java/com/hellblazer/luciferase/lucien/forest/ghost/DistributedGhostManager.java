@@ -202,7 +202,22 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
             }
         }
 
-        return ghostChannel.flushToTarget(targetRank);
+        // Fire the fault-detection sync callback on completion (Luciferase-963vw): it was registered via
+        // registerSyncCallback but never invoked, so the integration was dead. Hooking it here covers both the
+        // single-target (synchronizeWithProcess) and the fan-out (synchronizeWithAllProcesses) paths.
+        return ghostChannel.flushToTarget(targetRank).whenComplete((result, ex) -> {
+            var cb = syncCallback;
+            if (cb == null) {
+                return;
+            }
+            if (ex == null) {
+                cb.onSyncSuccess(targetRank);
+            } else {
+                var cause = ex instanceof java.util.concurrent.CompletionException && ex.getCause() != null
+                            ? ex.getCause() : ex;
+                cb.onSyncFailure(targetRank, cause instanceof Exception e ? e : new RuntimeException(cause));
+            }
+        });
     }
     
     /**
