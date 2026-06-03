@@ -241,6 +241,7 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
         return treeBounds == null || treeBounds.intersects(probeCell);
     }
 
+
     /**
      * Check MortonKey neighbors for 2:1 balance violations, routing each probe to only the trees whose occupied
      * region can overlap the probed cell (Luciferase-36lp).
@@ -310,6 +311,16 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
                             continue; // tree's occupied region cannot overlap this coarse cell
                         }
                         if (t.index().containsSpatialKey((Key) coarseKey)) {
+                            // hthxs: the 2:1 constraint applies to LEAF elements. A retained internal parent — one
+                            // that has already been subdivided, so its finer children cover this boundary and
+                            // satisfy 2:1 — is NOT a violation. Octree/Tetree keep the parent key in the index on
+                            // subdivide, so containsSpatialKey alone re-reports the same boundary every round and
+                            // the balance loop never converges (it burns maxRounds). Skip subdivided parents, but
+                            // `continue` (not break) so a different tree's genuine LEAF at this coarse cell is
+                            // still checked in an overlapping multi-tree forest.
+                            if (t.index().hasChildren((Key) coarseKey)) {
+                                continue;
+                            }
                             neighborsFound++;
                             violations.add(new BalanceViolation<>((Key) coarseKey, (Key) ghostKey, level, ghostLevel,
                                                                  levelDiff, sourceRank));
@@ -388,7 +399,10 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
             // Same-level neighbor plus its coarser ancestors (mirrors Morton's coarser level-scan).
             Key probe = neighbor;
             while (probe != null) {
-                if (probed.add(probe) && forestContains(forest, probe)) {
+                // hthxs: only a LEAF local cell is a real 2:1 element. Tetree/Pyramid retain the parent key on
+                // subdivide (like Octree), so a retained internal parent here would re-report forever and block
+                // convergence — match only leaves.
+                if (probed.add(probe) && forestContainsLeaf(forest, probe)) {
                     int localLevel = probe.getLevel();
                     int levelDiff = Math.abs(localLevel - ghostLevel);
                     if (levelDiff > 1) {
@@ -418,6 +432,20 @@ public class TwoOneBalanceChecker<Key extends SpatialKey<Key>, ID extends Entity
     private boolean forestContains(Forest<Key, ID, Content> forest, Key key) {
         for (var tree : forest.getAllTrees()) {
             if (tree.getSpatialIndex().containsSpatialKey(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether some tree holds {@code key} as a LEAF (present and not subdivided). A retained internal parent is
+     * not a 2:1 element — matching it would block convergence (Luciferase-hthxs).
+     */
+    private boolean forestContainsLeaf(Forest<Key, ID, Content> forest, Key key) {
+        for (var tree : forest.getAllTrees()) {
+            var index = tree.getSpatialIndex();
+            if (index.containsSpatialKey(key) && !index.hasChildren(key)) {
                 return true;
             }
         }

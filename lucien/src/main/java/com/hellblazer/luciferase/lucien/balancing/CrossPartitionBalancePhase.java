@@ -346,10 +346,10 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                     if (index.subdivide(key)) {
                         subdivided++;
                     } else {
-                        // The node could not be refined (e.g. all its entities map to one child cell, or the index
-                        // does not support on-demand subdivision such as SFCArrayIndex — review MEDIUM-2). The
-                        // violation cannot be resolved locally, so the Allreduce-LAND loop will run to maxRounds for
-                        // it; surface that rather than spinning silently.
+                        // subdivide() forces geometric refinement (Luciferase-7gnh2), so the single-octant case is
+                        // now resolvable. A false here means the key is absent, already at maxDepth, or the index
+                        // has no on-demand subdivision (e.g. SFCArrayIndex). The violation can't be resolved
+                        // locally, so the Allreduce-LAND loop would run to maxRounds for it; surface it.
                         log.warn("Round {}: local refinement key {} could not be subdivided (unresolvable local "
                                  + "violation for index {})", roundNumber, key, index.getClass().getSimpleName());
                     }

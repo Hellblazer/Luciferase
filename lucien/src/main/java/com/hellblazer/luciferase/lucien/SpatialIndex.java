@@ -87,6 +87,20 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
     boolean containsEntity(ID entityId);
 
     /**
+     * Whether the node at {@code spatialIndex} is INTERNAL — i.e. it has been subdivided and has child nodes.
+     * A stored key with no children is a leaf. Used by 2:1-balance checking to distinguish a real leaf element
+     * from a retained internal parent (Luciferase-hthxs): a parent that has already been subdivided so its finer
+     * children cover the boundary is not itself a 2:1 element. The default returns {@code false} (flat / no
+     * child tracking); tree indices that retain parents on subdivision override it.
+     *
+     * @param spatialIndex the spatial key to test
+     * @return true if the node exists and has children (internal); false if it is a leaf or absent
+     */
+    default boolean hasChildren(Key spatialIndex) {
+        return false;
+    }
+
+    /**
      * Enable bulk loading mode. In this mode, node subdivisions are deferred until finalizeBulkLoading() is called.
      */
     void enableBulkLoading();

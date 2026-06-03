@@ -440,9 +440,23 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
 
     @Override
     protected void handleNodeSubdivision(MortonKey parentMorton, byte parentLevel, SpatialNodeImpl<ID> parentNode) {
+        doSubdivision(parentMorton, parentLevel, parentNode, false);
+    }
+
+    @Override
+    protected void handleNodeSubdivision(MortonKey parentMorton, byte parentLevel, SpatialNodeImpl<ID> parentNode,
+                                         boolean forceGeometric) {
+        doSubdivision(parentMorton, parentLevel, parentNode, forceGeometric);
+    }
+
+    private void doSubdivision(MortonKey parentMorton, byte parentLevel, SpatialNodeImpl<ID> parentNode,
+                               boolean forceGeometric) {
         // Can't subdivide beyond max depth
         if (parentLevel >= maxDepth) {
             return;
+        }
+        if (parentNode.hasChildren()) {
+            return; // already subdivided (idempotent; mirrors Tetree)
         }
 
         var childLevel = (byte) (parentLevel + 1);
@@ -466,11 +480,11 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
             }
         }
 
-        // Check if subdivision would actually distribute entities
-        if (childEntityMap.size() == 1) {
-            // All entities map to the same cell at the child level
-            // This happens when entities are very close together
-            // Don't subdivide - it won't help distribute the load
+        // Check if subdivision would actually distribute entities. The load-balancing path declines a split that
+        // wouldn't redistribute (all entities in one child octant). The 2:1-balance geometric path (forceGeometric)
+        // proceeds anyway: it must create the finer child cell so the boundary is one level finer, even though the
+        // entities just move down one level into a single child (Luciferase-7gnh2).
+        if (childEntityMap.size() == 1 && !forceGeometric) {
             return;
         }
 
@@ -484,27 +498,17 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
             var childEntities = entry.getValue();
 
             if (!childEntities.isEmpty()) {
-                SpatialNodeImpl<ID> childNode;
+                // childMorton is a level-(parentLevel+1) key, never equal to the level-parentLevel parentMorton,
+                // so a child node is always created (the former `childMorton == parentMorton` reference-equality
+                // branch was dead code and was removed — review follow-up).
+                var childNode = spatialIndex.computeIfAbsent(childMorton, k -> nodePool.acquire());
 
-                if (childMorton == parentMorton) {
-                    // Special case: child has same Morton code as parent
-                    // The entities can stay in the parent node - don't redistribute them
-                    // Don't mark these entities for removal from parent
-                    continue;
-                } else {
-                    // Create or get child node
-                    childNode = spatialIndex.computeIfAbsent(childMorton, k -> {
-                        // childMorton is already added to spatialIndex above
-                        return nodePool.acquire();
-                    });
-
-                    // Add entities to child and mark for removal from parent
-                    for (var entityId : childEntities) {
-                        childNode.addEntity(entityId);
-                        // Update entity locations - add child location
-                        entityManager.addEntityLocation(entityId, childMorton);
-                        entitiesToRemoveFromParent.add(entityId);
-                    }
+                // Add entities to child and mark for removal from parent
+                for (var entityId : childEntities) {
+                    childNode.addEntity(entityId);
+                    // Update entity locations - add child location
+                    entityManager.addEntityLocation(entityId, childMorton);
+                    entitiesToRemoveFromParent.add(entityId);
                 }
             }
         }
@@ -520,7 +524,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     }
 
     @Override
-    protected boolean hasChildren(MortonKey spatialIndex) {
+    public boolean hasChildren(MortonKey spatialIndex) {
         var node = this.spatialIndex.get(spatialIndex);
         return node != null && node.hasChildren();
     }
