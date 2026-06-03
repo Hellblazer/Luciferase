@@ -31,6 +31,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -138,24 +139,21 @@ class BunnyTwoOneBalanceDemoTest {
                           + "  violations (naive re-scan): %d%n",
                           result.successful(), result.finalMetrics().roundCount(), nodesBefore, nodesAfter,
                           nodesAfter - nodesBefore, finerBefore, finerAfter, ghostResyncs.get(), after.size());
-        System.out.printf("  NOTE: with the leaf-aware checker (Luciferase-hthxs) the re-scan DROPS as cells are "
-                          + "refined — it no longer false-positives on retained internal parents. The residual "
-                          + "violations are dense-region coarse cells whose entities don't subdivide toward the "
-                          + "boundary; the clean coarse->fine cell converges fully to 0 (see "
-                          + "TwoOneBalanceConvergenceTest).%n%n");
+        System.out.printf("  -> 2:1 balance FULLY converged on the bunny: %d violations resolved to %d.%n%n",
+                          before.size(), after.size());
 
-        // Real outcomes proven here: detection fired on real bunny geometry, the balance phase completed, coarse
-        // cells were genuinely subdivided into finer (level-7) children, the ghost re-sync hook ran, and — with
-        // the leaf-aware fix — refining cells REDUCES the violation set (it previously stayed pinned at 15).
+        // Full convergence on real bunny geometry: detection fired (15 real violations), the balance phase
+        // refined the coarse cells into finer children (geometric refinement now creates the finer cell even
+        // where entities don't redistribute — Luciferase-7gnh2), the ghost re-sync hook ran, and a fresh REAL
+        // re-scan finds ZERO remaining 2:1 violations (Luciferase-hthxs eliminated the retained-parent false
+        // positives that previously pinned it at 15).
         assertNotNull(result);
         assertTrue(result.successful(), "the 2:1 balance phase must complete");
-        assertTrue(nodesAfter > nodesBefore,
-                   "the coarse bunny cells must have been subdivided (2:1 refinement actually happened)");
-        assertTrue(finerAfter > finerBefore,
-                   "subdivision must create finer-than-coarse child cells covering the boundary");
+        assertTrue(nodesAfter > nodesBefore, "coarse bunny cells must have been subdivided (2:1 refinement)");
+        assertTrue(finerAfter > finerBefore, "subdivision must create finer-than-coarse child cells");
         assertTrue(ghostResyncs.get() >= 1, "ghost re-sync must fire after the local adapt");
-        assertTrue(after.size() < before.size(),
-                   "the leaf-aware checker must let refinement REDUCE the 2:1 violation set (Luciferase-hthxs); "
-                   + "before=" + before.size() + " after=" + after.size());
+        assertEquals(0, after.size(),
+                     "2:1 balance must FULLY converge to zero violations on the real bunny; before=" + before.size()
+                     + " after=" + after.size());
     }
 }

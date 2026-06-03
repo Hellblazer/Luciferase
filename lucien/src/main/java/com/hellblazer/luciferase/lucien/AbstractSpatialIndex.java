@@ -2181,7 +2181,12 @@ implements SpatialIndex<Key, ID, Content>,
                 return false;
             }
             var before = spatialIndex.size();
-            handleNodeSubdivision(key, level, node);
+            // 2:1 balance (Luciferase-7gnh2) needs a GEOMETRIC one-level refine: it must create the finer child
+            // cell even when every entity maps to a single child octant (where the load-balancing path declines,
+            // since splitting wouldn't redistribute). Otherwise such a cell can never satisfy 2:1 against a finer
+            // neighbour and the balance loop spins to maxRounds. Force geometric here; the auto-balance/insert
+            // paths still call the unforced 3-arg hook.
+            handleNodeSubdivision(key, level, node, true);
             var created = spatialIndex.size() - before;
             log.debug("subdivide: refined node at key {} (level {}); {} child node(s) created", key, level, created);
             return created > 0;
@@ -2195,6 +2200,19 @@ implements SpatialIndex<Key, ID, Content>,
      */
     protected void handleNodeSubdivision(Key spatialIndex, byte level, SpatialNodeImpl<ID> node) {
         // Default: no subdivision. Subclasses can override
+    }
+
+    /**
+     * Subdivision hook with an explicit geometric-force flag (Luciferase-7gnh2). When {@code forceGeometric} is
+     * true (the on-demand 2:1-balance {@link #subdivide(SpatialKey)} path), the node must be refined one level
+     * even if every entity maps to a single child octant — so the finer child cell exists to satisfy the 2:1
+     * constraint against a finer neighbour. When false (auto-balance / insert), subclasses keep their
+     * load-balancing semantics (decline a split that wouldn't redistribute). The default delegates to the
+     * unforced 3-arg hook; tree subclasses override to honour the flag.
+     */
+    protected void handleNodeSubdivision(Key spatialIndex, byte level, SpatialNodeImpl<ID> node,
+                                         boolean forceGeometric) {
+        handleNodeSubdivision(spatialIndex, level, node);
     }
 
     /**

@@ -440,6 +440,17 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
 
     @Override
     protected void handleNodeSubdivision(MortonKey parentMorton, byte parentLevel, SpatialNodeImpl<ID> parentNode) {
+        doSubdivision(parentMorton, parentLevel, parentNode, false);
+    }
+
+    @Override
+    protected void handleNodeSubdivision(MortonKey parentMorton, byte parentLevel, SpatialNodeImpl<ID> parentNode,
+                                         boolean forceGeometric) {
+        doSubdivision(parentMorton, parentLevel, parentNode, forceGeometric);
+    }
+
+    private void doSubdivision(MortonKey parentMorton, byte parentLevel, SpatialNodeImpl<ID> parentNode,
+                               boolean forceGeometric) {
         // Can't subdivide beyond max depth
         if (parentLevel >= maxDepth) {
             return;
@@ -466,11 +477,11 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
             }
         }
 
-        // Check if subdivision would actually distribute entities
-        if (childEntityMap.size() == 1) {
-            // All entities map to the same cell at the child level
-            // This happens when entities are very close together
-            // Don't subdivide - it won't help distribute the load
+        // Check if subdivision would actually distribute entities. The load-balancing path declines a split that
+        // wouldn't redistribute (all entities in one child octant). The 2:1-balance geometric path (forceGeometric)
+        // proceeds anyway: it must create the finer child cell so the boundary is one level finer, even though the
+        // entities just move down one level into a single child (Luciferase-7gnh2).
+        if (childEntityMap.size() == 1 && !forceGeometric) {
             return;
         }
 

@@ -1866,6 +1866,17 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
     @Override
     protected void handleNodeSubdivision(TetreeKey<? extends TetreeKey<?>> parentTetIndex, byte parentLevel,
                                          SpatialNodeImpl<ID> parentNode) {
+        doSubdivision(parentTetIndex, parentLevel, parentNode, false);
+    }
+
+    @Override
+    protected void handleNodeSubdivision(TetreeKey<? extends TetreeKey<?>> parentTetIndex, byte parentLevel,
+                                         SpatialNodeImpl<ID> parentNode, boolean forceGeometric) {
+        doSubdivision(parentTetIndex, parentLevel, parentNode, forceGeometric);
+    }
+
+    private void doSubdivision(TetreeKey<? extends TetreeKey<?>> parentTetIndex, byte parentLevel,
+                               SpatialNodeImpl<ID> parentNode, boolean forceGeometric) {
         // Can't subdivide beyond max depth
         if (parentLevel >= maxDepth) {
             return;
@@ -1931,11 +1942,9 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
             }
         }
 
-        // Check if subdivision would actually distribute entities
-        if (childEntityMap.size() == 1) {
-            // All entities map to the same child tetrahedron
-            // This can happen when all entities are at the same position
-            // Don't subdivide - it won't help distribute the load
+        // Load-balancing declines a split that wouldn't redistribute; the 2:1-balance geometric path proceeds so
+        // the finer child cell exists to satisfy the constraint against a finer neighbour (Luciferase-7gnh2).
+        if (childEntityMap.size() == 1 && !forceGeometric) {
             return;
         }
 
