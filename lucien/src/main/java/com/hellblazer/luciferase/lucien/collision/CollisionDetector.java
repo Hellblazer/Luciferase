@@ -511,20 +511,19 @@ public class CollisionDetector {
                 mesh2.getMeshData().getTriangleVertices(otherTriIndex, ov0, ov1, ov2);
 
                 if (trianglesIntersect(v0, v1, v2, ov0, ov1, ov2)) {
+                    // Contact at the midpoint of the two triangle centroids; real geometry-derived penetration and
+                    // oriented normal from the other triangle's plane (Luciferase-p6e5g) — no longer a fabricated 0.1f.
                     var center = new Point3f(v0);
                     center.add(v1);
                     center.add(v2);
-                    center.scale(1.0f / 3.0f);
+                    center.add(ov0);
+                    center.add(ov1);
+                    center.add(ov2);
+                    center.scale(1.0f / 6.0f);
 
-                    var edge1 = new Vector3f();
-                    edge1.sub(v1, v0);
-                    var edge2 = new Vector3f();
-                    edge2.sub(v2, v0);
                     var normal = new Vector3f();
-                    normal.cross(edge1, edge2);
-                    normal.normalize();
-
-                    return CollisionResult.collision(center, normal, 0.1f);
+                    var penetration = triTriPenetration(v0, v1, v2, ov0, ov1, ov2, normal);
+                    return CollisionResult.collision(center, normal, penetration);
                 }
             }
         }
@@ -899,19 +898,200 @@ public class CollisionDetector {
     }
 
 
-    private static boolean trianglesIntersect(Point3f a0, Point3f a1, Point3f a2, Point3f b0, Point3f b1, Point3f b2) {
-        var aMin = new Point3f(Math.min(Math.min(a0.x, a1.x), a2.x), Math.min(Math.min(a0.y, a1.y), a2.y),
-                               Math.min(Math.min(a0.z, a1.z), a2.z));
-        var aMax = new Point3f(Math.max(Math.max(a0.x, a1.x), a2.x), Math.max(Math.max(a0.y, a1.y), a2.y),
-                               Math.max(Math.max(a0.z, a1.z), a2.z));
+    private static final float TRI_EPS = 1e-6f;
 
-        var bMin = new Point3f(Math.min(Math.min(b0.x, b1.x), b2.x), Math.min(Math.min(b0.y, b1.y), b2.y),
-                               Math.min(Math.min(b0.z, b1.z), b2.z));
-        var bMax = new Point3f(Math.max(Math.max(b0.x, b1.x), b2.x), Math.max(Math.max(b0.y, b1.y), b2.y),
-                               Math.max(Math.max(b0.z, b1.z), b2.z));
+    /**
+     * Real triangle-triangle intersection test (Möller, "A Fast Triangle-Triangle Intersection Test", 1997),
+     * replacing the prior triangle-AABB-vs-triangle-AABB approximation that produced false positives whenever the
+     * two triangles' bounding boxes overlapped (Luciferase-p6e5g). Handles the coplanar case via 2D projection.
+     */
+    static boolean trianglesIntersect(Point3f a0, Point3f a1, Point3f a2, Point3f b0, Point3f b1, Point3f b2) {
+        // Plane of triangle B
+        var nB = triNormalRaw(b0, b1, b2);
+        float dB = -dot(nB, b0);
+        float da0 = dot(nB, a0) + dB, da1 = dot(nB, a1) + dB, da2 = dot(nB, a2) + dB;
+        if (Math.abs(da0) < TRI_EPS) da0 = 0;
+        if (Math.abs(da1) < TRI_EPS) da1 = 0;
+        if (Math.abs(da2) < TRI_EPS) da2 = 0;
+        if (da0 * da1 > 0 && da0 * da2 > 0) {
+            return false;   // triangle A entirely on one side of B's plane
+        }
 
-        return !(aMax.x < bMin.x || aMin.x > bMax.x || aMax.y < bMin.y || aMin.y > bMax.y || aMax.z < bMin.z
-                 || aMin.z > bMax.z);
+        // Plane of triangle A
+        var nA = triNormalRaw(a0, a1, a2);
+        float dA = -dot(nA, a0);
+        float db0 = dot(nA, b0) + dA, db1 = dot(nA, b1) + dA, db2 = dot(nA, b2) + dA;
+        if (Math.abs(db0) < TRI_EPS) db0 = 0;
+        if (Math.abs(db1) < TRI_EPS) db1 = 0;
+        if (Math.abs(db2) < TRI_EPS) db2 = 0;
+        if (db0 * db1 > 0 && db0 * db2 > 0) {
+            return false;   // triangle B entirely on one side of A's plane
+        }
+
+        // Direction of the line of intersection of the two planes; project onto its dominant axis.
+        var dir = new Vector3f();
+        dir.cross(nA, nB);
+        if (dir.lengthSquared() < TRI_EPS * TRI_EPS) {
+            return coplanarTrianglesOverlap(nA, a0, a1, a2, b0, b1, b2);   // planes parallel -> coplanar case
+        }
+        int axis = dominantAxis(dir);
+
+        float[] isectA = triPlaneInterval(comp(a0, axis), comp(a1, axis), comp(a2, axis), da0, da1, da2);
+        float[] isectB = triPlaneInterval(comp(b0, axis), comp(b1, axis), comp(b2, axis), db0, db1, db2);
+        // Overlap of the two scalar intervals along the intersection line == triangles intersect.
+        return isectA[0] <= isectB[1] && isectB[0] <= isectA[1];
+    }
+
+    /** Möller interval: where a triangle crosses the intersection line, as [min,max] along the projection axis. */
+    private static float[] triPlaneInterval(float p0, float p1, float p2, float d0, float d1, float d2) {
+        // Reorder so the odd-one-out vertex (opposite sign) is vertex 1.
+        float t0, t1;
+        if (d0 * d1 > 0) {                 // 0 and 1 same side -> 2 is the odd one
+            t0 = isectPoint(p0, p2, d0, d2);
+            t1 = isectPoint(p1, p2, d1, d2);
+        } else if (d0 * d2 > 0) {          // 0 and 2 same side -> 1 is the odd one
+            t0 = isectPoint(p0, p1, d0, d1);
+            t1 = isectPoint(p2, p1, d2, d1);
+        } else if (d1 * d2 > 0 || d0 != 0) {
+            t0 = isectPoint(p1, p0, d1, d0);
+            t1 = isectPoint(p2, p0, d2, d0);
+        } else if (d1 != 0) {
+            t0 = isectPoint(p0, p1, d0, d1);
+            t1 = isectPoint(p2, p1, d2, d1);
+        } else {                            // d2 != 0
+            t0 = isectPoint(p0, p2, d0, d2);
+            t1 = isectPoint(p1, p2, d1, d2);
+        }
+        return t0 <= t1 ? new float[] { t0, t1 } : new float[] { t1, t0 };
+    }
+
+    /** Parametric crossing point along the projection axis where the segment (p,dp)-(q,dq) crosses the plane. */
+    private static float isectPoint(float p, float q, float dp, float dq) {
+        return p + (q - p) * (dp / (dp - dq));
+    }
+
+    /** Coplanar triangle overlap: project to 2D on the dominant plane axis, then edge-edge + containment tests. */
+    private static boolean coplanarTrianglesOverlap(Vector3f nA, Point3f a0, Point3f a1, Point3f a2, Point3f b0,
+                                                    Point3f b1, Point3f b2) {
+        int ax = dominantAxis(new Vector3f(Math.abs(nA.x), Math.abs(nA.y), Math.abs(nA.z)));
+        int i0 = (ax == 0) ? 1 : 0;
+        int i1 = (ax == 2) ? 1 : 2;
+        float[] A0 = { comp(a0, i0), comp(a0, i1) }, A1 = { comp(a1, i0), comp(a1, i1) }, A2 = { comp(a2, i0),
+                                                                                                 comp(a2, i1) };
+        float[] B0 = { comp(b0, i0), comp(b0, i1) }, B1 = { comp(b1, i0), comp(b1, i1) }, B2 = { comp(b2, i0),
+                                                                                                 comp(b2, i1) };
+        float[][] ta = { A0, A1, A2 }, tb = { B0, B1, B2 };
+        // Any edge pair crossing?
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                if (seg2DIntersect(ta[i], ta[(i + 1) % 3], tb[j], tb[(j + 1) % 3])) {
+                    return true;
+                }
+            }
+        }
+        // Containment either way (one triangle fully inside the other).
+        return pointInTri2D(A0, B0, B1, B2) || pointInTri2D(B0, A0, A1, A2);
+    }
+
+    private static boolean seg2DIntersect(float[] p1, float[] p2, float[] p3, float[] p4) {
+        float d1 = cross2D(p3, p4, p1), d2 = cross2D(p3, p4, p2), d3 = cross2D(p1, p2, p3), d4 = cross2D(p1, p2, p4);
+        if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+            return true;
+        }
+        return false;
+    }
+
+    private static float cross2D(float[] a, float[] b, float[] c) {
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    }
+
+    private static boolean pointInTri2D(float[] p, float[] a, float[] b, float[] c) {
+        float d1 = cross2D(a, b, p), d2 = cross2D(b, c, p), d3 = cross2D(c, a, p);
+        boolean hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+        boolean hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+        return !(hasNeg && hasPos);
+    }
+
+    private static Vector3f triNormalRaw(Point3f v0, Point3f v1, Point3f v2) {
+        var e1 = new Vector3f();
+        e1.sub(v1, v0);
+        var e2 = new Vector3f();
+        e2.sub(v2, v0);
+        var n = new Vector3f();
+        n.cross(e1, e2);
+        return n;
+    }
+
+    private static float dot(Vector3f n, Point3f p) {
+        return n.x * p.x + n.y * p.y + n.z * p.z;
+    }
+
+    private static int dominantAxis(Vector3f d) {
+        float ax = Math.abs(d.x), ay = Math.abs(d.y), az = Math.abs(d.z);
+        return ax >= ay ? (ax >= az ? 0 : 2) : (ay >= az ? 1 : 2);
+    }
+
+    private static float comp(Point3f p, int axis) {
+        return axis == 0 ? p.x : axis == 1 ? p.y : p.z;
+    }
+
+    /**
+     * Geometry-derived penetration for two intersecting triangles (Luciferase-p6e5g): the contact plane is
+     * triangle B's plane, and penetration is how far triangle A's deepest vertex sits behind it. Returns a
+     * positive depth (clamped to a small floor so the contact is non-degenerate) and the oriented contact normal.
+     */
+    private static float triTriPenetration(Point3f a0, Point3f a1, Point3f a2, Point3f b0, Point3f b1, Point3f b2,
+                                            Vector3f outNormal) {
+        var nB = triNormalRaw(b0, b1, b2);
+        var unit = new Vector3f(nB.x, nB.y, nB.z);
+        if (unit.lengthSquared() < TRI_EPS * TRI_EPS) {
+            outNormal.set(0, 1, 0);
+            return TRI_EPS;
+        }
+        unit.normalize();
+        float dB = -dot(nB, b0);
+        // Signed distances of A's vertices to B's (unnormalized) plane, normalized to true distance.
+        float invLen = 1.0f / (float) Math.sqrt(nB.x * nB.x + nB.y * nB.y + nB.z * nB.z);
+        float s0 = (dot(nB, a0) + dB) * invLen, s1 = (dot(nB, a1) + dB) * invLen, s2 = (dot(nB, a2) + dB) * invLen;
+        float maxAbove = Math.max(s0, Math.max(s1, s2));
+        float minBelow = Math.min(s0, Math.min(s1, s2));
+        // The triangle straddles the plane; penetration is the smaller of the two protrusions (true overlap depth).
+        float depth = Math.min(Math.abs(minBelow), Math.abs(maxAbove));
+        // Orient the normal from B toward A (use the side A protrudes furthest).
+        if (Math.abs(minBelow) > Math.abs(maxAbove)) {
+            unit.negate();
+        }
+        outNormal.set(unit);
+        return Math.max(depth, TRI_EPS);
+    }
+
+    /** Proximity threshold for treating a hull vertex as resting on a mesh triangle (Luciferase-p6e5g). */
+    private static final float HULL_TRI_CONTACT_EPS = 0.05f;
+
+    /**
+     * A point inside a convex hull is pushed out along the nearest face: the penetration depth is the distance to
+     * that face and the contact normal is the face's outward normal (Luciferase-p6e5g). Geometry-derived, replacing
+     * the fabricated 0.1f; mirrors the inside-hull handling already used by sphereVsConvexHull.
+     */
+    private static CollisionResult hullInteriorPush(Point3f point, ConvexHullShape hull) {
+        int closest = -1;
+        float minDist = Float.MAX_VALUE;
+        for (int i = 0; i < hull.getFaces().size(); i++) {
+            var face = hull.getFaces().get(i);
+            var fv0 = hull.getVertices().get(face.v0);
+            var toPoint = new Vector3f();
+            toPoint.sub(point, fv0);
+            float dist = Math.abs(toPoint.dot(face.normal));
+            if (dist < minDist) {
+                minDist = dist;
+                closest = i;
+            }
+        }
+        if (closest < 0) {
+            return CollisionResult.collision(new Point3f(point), new Vector3f(0, 1, 0), TRI_EPS);
+        }
+        var normal = new Vector3f(hull.getFaces().get(closest).normal);   // outward
+        return CollisionResult.collision(new Point3f(point), normal, Math.max(minDist, TRI_EPS));
     }
     
     // ConvexHull collision methods
@@ -1067,48 +1247,38 @@ public class CollisionDetector {
             v1.add(mesh.getPosition());
             v2.add(mesh.getPosition());
             
-            // Check if any vertex is inside hull or if triangle intersects hull
-            if (isPointInsideConvexHull(v0, hull) || 
-                isPointInsideConvexHull(v1, hull) || 
-                isPointInsideConvexHull(v2, hull)) {
-                
-                var edge1 = new Vector3f();
-                edge1.sub(v1, v0);
-                var edge2 = new Vector3f();
-                edge2.sub(v2, v0);
-                var normal = new Vector3f();
-                normal.cross(edge1, edge2);
-                normal.normalize();
-                
-                var center = new Point3f(v0);
-                center.add(v1);
-                center.add(v2);
-                center.scale(1.0f / 3.0f);
-                
-                return CollisionResult.collision(center, normal, 0.1f);
+            // Mesh vertex embedded in the hull: real penetration is the depth to the nearest hull face, with the
+            // outward face normal as the contact normal (Luciferase-p6e5g) — not a fabricated 0.1f.
+            for (var meshVertex : new Point3f[] { v0, v1, v2 }) {
+                if (isPointInsideConvexHull(meshVertex, hull)) {
+                    return hullInteriorPush(meshVertex, hull);
+                }
             }
-            
-            // Also check if hull vertices are inside this triangle
+
+            // Hull vertex resting on/through this triangle: penetration is the (small) distance from the hull
+            // vertex to the triangle surface, normal is the triangle normal. Uses a real closest-point-on-triangle
+            // proximity test instead of the prior unsound edge-projection (which fired for far vertices that merely
+            // projected within the triangle). Exact tri-vs-hull min-translation (EPA/SAT) is deferred; this gives a
+            // geometry-derived contact for the resting-vertex case.
+            var triNormal = new Vector3f();
+            {
+                var e1 = new Vector3f();
+                e1.sub(v1, v0);
+                var e2 = new Vector3f();
+                e2.sub(v2, v0);
+                triNormal.cross(e1, e2);
+                if (triNormal.lengthSquared() > TRI_EPS * TRI_EPS) {
+                    triNormal.normalize();
+                }
+            }
             for (var hullVertex : hull.getVertices()) {
-                // Simple check - project onto triangle plane
-                var toVertex = new Vector3f();
-                toVertex.sub(hullVertex, v0);
-                
-                var edge1 = new Vector3f();
-                edge1.sub(v1, v0);
-                var edge2 = new Vector3f();
-                edge2.sub(v2, v0);
-                
-                // Check if point projects inside triangle (simplified)
-                var u = toVertex.dot(edge1) / edge1.lengthSquared();
-                var v = toVertex.dot(edge2) / edge2.lengthSquared();
-                
-                if (u >= 0 && v >= 0 && u + v <= 1) {
-                    var normal = new Vector3f();
-                    normal.cross(edge1, edge2);
-                    normal.normalize();
-                    
-                    return CollisionResult.collision(hullVertex, normal, 0.1f);
+                var closest = closestPointOnTriangle(hullVertex, v0, v1, v2);
+                var diff = new Vector3f();
+                diff.sub(hullVertex, closest);
+                float dist = diff.length();
+                if (dist <= HULL_TRI_CONTACT_EPS) {
+                    return CollisionResult.collision(new Point3f(hullVertex), triNormal,
+                                                     Math.max(HULL_TRI_CONTACT_EPS - dist, TRI_EPS));
                 }
             }
         }
