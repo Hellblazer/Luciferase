@@ -112,13 +112,17 @@ implements SpatialIndex<Key, ID, Content>,
     // core.setLockingStrategy(...). The migration discharged the P3 substantive-critic Significant#1; KnnSearcher
     // and CollisionEngine no longer take a Supplier<FineGrainedLockingStrategy> ctor arg.
     // Bulk operation support
-    protected       BulkOperationConfig                              bulkConfig               = new BulkOperationConfig();
+    // volatile (Luciferase-3vwqb): reconfigured at runtime via configureBulkOperations while readers (bulk ops)
+    // may run without holding the write lock; volatile gives atomic publication + visibility of the swapped ref.
+    protected volatile BulkOperationConfig                           bulkConfig               = new BulkOperationConfig();
     protected       boolean                                          bulkLoadingMode          = false;
     protected       BulkOperationProcessor<Key, ID, Content>         bulkProcessor;
     protected       DeferredSubdivisionManager<Key, ID>              subdivisionManager;
     protected       SpatialNodePool<ID>                              nodePool;
 
-    protected       ParallelBulkOperations<Key, ID, Content>         parallelOperations;
+    // volatile (Luciferase-3vwqb): swapped at runtime via configureParallelOperations; volatile publishes the
+    // fully-constructed ParallelBulkOperations atomically to readers that don't hold the write lock.
+    protected volatile ParallelBulkOperations<Key, ID, Content>      parallelOperations;
 
     protected       SubdivisionStrategy<Key, ID, Content>            subdivisionStrategy;
     protected       StackBasedTreeBuilder<Key, ID, Content>          treeBuilder;
