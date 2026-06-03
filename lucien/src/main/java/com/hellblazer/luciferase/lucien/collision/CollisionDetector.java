@@ -1410,7 +1410,7 @@ public class CollisionDetector {
             normal.scale(-1);
         }
 
-        // Candidate ordering: [0,2] = A face axes, [3,5] = B face axes, [6+] = edge-edge cross products.
+        // Candidate ordering: [0..2] = A face axes, [3..5] = B face axes, [6+] = edge-edge cross products.
         // Face contacts (face-face / face-edge) yield a contact manifold via incident-face clipping (Luciferase-nm9dj);
         // edge-edge contacts are a single point.
         if (bestIndex < 6) {
@@ -1493,12 +1493,16 @@ public class CollisionDetector {
         poly = clipToPlane(poly, ref.center(), ref.v(), ref.hv(), +1);
         poly = clipToPlane(poly, ref.center(), ref.v(), ref.hv(), -1);
 
-        // Keep only points on or below the reference face (penetrating side).
+        // Keep points on or below the reference face (penetrating side), then PROJECT each onto the reference face
+        // plane (standard contact-manifold convention, Bullet/Box2D): all manifold points share the contact plane so
+        // moment arms are computed at the true contact surface, not the incident face.
         var manifold = new java.util.ArrayList<Point3f>(poly.size());
         for (var p : poly) {
             var rel = new Vector3f(p.x - ref.center().x, p.y - ref.center().y, p.z - ref.center().z);
-            if (rel.dot(ref.normal()) <= 1e-4f) {
-                manifold.add(p);
+            float depth = rel.dot(ref.normal());
+            if (depth <= 1e-4f) {
+                manifold.add(new Point3f(p.x - depth * ref.normal().x, p.y - depth * ref.normal().y,
+                                         p.z - depth * ref.normal().z));
             }
         }
         return manifold;

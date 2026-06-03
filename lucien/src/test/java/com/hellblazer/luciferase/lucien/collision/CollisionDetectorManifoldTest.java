@@ -44,12 +44,30 @@ class CollisionDetectorManifoldTest {
         assertEquals(0.5f, result.penetrationDepth, 1e-3f, "penetration along x");
         assertTrue(Math.abs(result.contactNormal.x) > 0.9f, "contact normal is ~x, got " + result.contactNormal);
 
-        // All manifold points lie on the contact plane (x ~ 0.5, the incident face) at the y/z box corners.
+        // All manifold points are projected onto the reference face plane (A's +x face at x=1.0) at the y/z corners.
         for (var p : result.contactManifold) {
-            assertEquals(0.5f, p.x, 1e-3f, "manifold point on the contact plane");
+            assertEquals(1.0f, p.x, 1e-3f, "manifold point projected onto the reference face plane");
             assertEquals(1.0f, Math.abs(p.y), 1e-3f, "manifold corner in y");
             assertEquals(1.0f, Math.abs(p.z), 1e-3f, "manifold corner in z");
         }
+    }
+
+    @Test
+    void rotatedBoxFaceContactClipsToManifold() {
+        // Exercise the actual S-H clipping (and the refIsA=false branch): a 45-degree Z-rotated box A overlapping an
+        // axis-aligned box B. The contact still yields a multi-point manifold (not a single point), with all points
+        // on the shared contact plane. Pins that clipping produces >= 2 points without over-claiming the exact count.
+        var rot = new Matrix3f();
+        rot.rotZ((float) Math.toRadians(45));
+        var a = new OrientedBoxShape(new Point3f(0, 0, 0), new Vector3f(1, 1, 1), rot);
+        var b = obb(new Point3f(1.6f, 0, 0), 1, 1, 1);
+
+        var result = a.collidesWith(b);
+
+        assertTrue(result.collides, "rotated box overlaps");
+        assertTrue(result.contactManifold.size() >= 2,
+                   "face contact must yield a manifold (>=2 points), not a single point (Luciferase-nm9dj), got "
+                   + result.contactManifold.size());
     }
 
     @Test
@@ -61,7 +79,7 @@ class CollisionDetectorManifoldTest {
 
         // contactPoint is the manifold centroid; manifold is non-empty for a collision.
         assertTrue(!result.contactManifold.isEmpty(), "manifold non-empty on collision");
-        assertEquals(0.5f, result.contactPoint.x, 1e-3f, "representative contactPoint is the manifold centroid");
+        assertEquals(1.0f, result.contactPoint.x, 1e-3f, "representative contactPoint is the manifold centroid");
         assertEquals(0.0f, result.contactPoint.y, 1e-3f);
     }
 }
