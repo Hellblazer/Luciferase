@@ -13,6 +13,7 @@ import com.hellblazer.luciferase.lucien.distributed.migration.proto.MigrationRes
 
 // Domain event classes
 import com.hellblazer.luciferase.simulation.causality.EntityMigrationState;
+import com.hellblazer.luciferase.common.grpc.GrpcServerHardening;
 import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.events.EntityDepartureEvent;
 import com.hellblazer.luciferase.simulation.events.EntityRollbackEvent;
@@ -81,9 +82,13 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
             var port = parsePort(nodeAddress);
 
             // Build and start gRPC server on specified port (0 = dynamic)
-            server = NettyServerBuilder.forPort(port)
+            var bubbleServerBuilder = NettyServerBuilder.forPort(port)
                 .addService(new BubbleMigrationServiceImpl())
-                .executor(executorService)
+                .executor(executorService);
+            // RDR-013 / Luciferase-06ujn: explicit inbound size + metadata bounds (DoS surface) — this is the
+            // third production gRPC server (alongside Ghost), enumerated in RDR-005's inventory.
+            GrpcServerHardening.applyInboundLimits(bubbleServerBuilder);
+            server = bubbleServerBuilder
                 .build()
                 .start();
 

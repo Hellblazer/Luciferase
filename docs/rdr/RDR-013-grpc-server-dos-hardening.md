@@ -37,6 +37,11 @@ Code investigation (2026-06-03) refined the picture:
   sites that stand up a server for it are tests, using `InProcessServerBuilder` (which does not transit the
   wire). There is therefore no production seam to harden for Balance today — only a future one to guard against.
 
+- **A third production server exists.** RDR-005's research inventory enumerated `GrpcBubbleNetworkChannel`
+  (`simulation`, `NettyServerBuilder.forPort`, consumed by `TwoNodeExample`/`SimpleCapacityNode`/
+  `SimpleMigrationNode`). It also set no inbound bound. The first revision of this RDR omitted it; it is now in
+  scope and hardened with the same helper. (Stacked-review catch, 2026-06-03.)
+
 ## Decision
 
 1. **Make the Ghost server's inbound message-size bound explicit and configurable.** Apply
@@ -45,10 +50,12 @@ Code investigation (2026-06-03) refined the picture:
    overloaded constructor that accepts the bound so operators on hostile networks can tune it; existing
    constructors delegate with the default (non-breaking).
 
-2. **Provide a tiny reusable `GrpcServerHardening` helper** that applies the inbound size bound to any
-   `ServerBuilder<?>` (validating the value) and documents that auth is applied separately via the RDR-005
-   `ServerAuth` unit. This is the single place future server-construction (including a future Balance server)
-   applies the DoS bound consistently.
+2. **Provide a tiny reusable `GrpcServerHardening` helper** that applies the inbound message bound AND an explicit
+   inbound metadata (header) bound to any `ServerBuilder<?>` (validating the value), and documents that auth is
+   applied separately via the RDR-005 `ServerAuth` unit. This is the single place ALL production server
+   construction applies the DoS bounds consistently — the Ghost server, `GrpcBubbleNetworkChannel`, and any
+   future Balance server. Also caps concurrent `StreamGhostUpdates` sessions (`MAX_ACTIVE_STREAMS`), since the
+   message-size bound does not limit the NUMBER of open streams.
 
 3. **Reuse RDR-005 auth for Ghost; do not invent new auth.** The insecure-by-default posture is unchanged and
    remains RDR-005's decision.
@@ -57,8 +64,11 @@ Code investigation (2026-06-03) refined the picture:
    note: it has no production host today; any future host MUST apply `GrpcServerHardening` for the size bound and
    an RDR-005 `ServerAuth` for authentication. No production code is added for a server that does not exist.
 
-**Out of scope:** per-method authorization / RBAC, rate limiting, and request quotas. This RDR is strictly the
-inbound size-bound DoS surface plus the shared helper; auth mechanism is RDR-005's.
+**Out of scope (deferred, tracked separately):** per-method authorization / RBAC; rate limiting and request
+quotas; the `SyncGhosts` response-amplification path (a small `SyncRequest` can ask the server to build a large
+`SyncResponse` — the *inbound* bound does not cap *outbound* size) and the matching client-side
+`maxInboundMessageSize`; and changing Ghost's insecure-by-default posture (that is RDR-005's accepted decision,
+not reopened here). Auth mechanism is RDR-005's.
 
 ## Approach
 

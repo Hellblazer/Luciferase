@@ -5,9 +5,11 @@
  */
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
+import com.hellblazer.luciferase.common.grpc.GrpcCredentialFactory;
 import com.hellblazer.luciferase.common.grpc.GrpcServerHardening;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
+import com.hellblazer.luciferase.lucien.forest.ghost.ServiceDiscovery;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostElement;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
@@ -54,9 +56,15 @@ class GhostMessageSizeLimitTest {
     private ManagedChannel channel;
 
     @AfterEach
-    void tearDown() {
-        if (channel != null) channel.shutdownNow();
-        if (server != null) server.shutdownNow();
+    void tearDown() throws InterruptedException {
+        if (channel != null) {
+            channel.shutdownNow();
+            channel.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        if (server != null) {
+            server.shutdownNow();
+            server.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
     }
 
     private static final class FixedProvider
@@ -105,6 +113,34 @@ class GhostMessageSizeLimitTest {
         var stub = startServer(GrpcServerHardening.DEFAULT_MAX_INBOUND_MESSAGE_BYTES);
         var batch = stub.requestGhosts(request());
         assertNotNull(batch, "a request within the inbound bound must be served normally");
+    }
+
+    @Test
+    void boundIsAppliedThroughGhostCommunicationManagerConstructor() throws Exception {
+        // Regression tripwire on the PRODUCTION wiring (the ctor delegation chain -> applyInboundLimit), not just
+        // the helper in isolation. Builds the manager with a 1-byte bound and confirms its embedded server enforces.
+        var discovery = new ServiceDiscovery() {
+            @Override public String getEndpoint(int rank) { return "localhost:0"; }
+            @Override public void registerEndpoint(int rank, String endpoint) { }
+            @Override public java.util.Map<Integer, String> getAllEndpoints() { return java.util.Map.of(); }
+        };
+        var mgr = new GhostCommunicationManager<MortonKey, LongEntityID, String>(
+            0, "localhost", 0, SERIALIZER, LongEntityID.class, discovery, null,
+            GrpcCredentialFactory.insecureChannel(), 1);   // 1-byte bound THROUGH the production ctor
+        try {
+            mgr.start();
+            var sf = GhostCommunicationManager.class.getDeclaredField("server");
+            sf.setAccessible(true);
+            var srv = (Server) sf.get(mgr);
+            channel = Grpc.newChannelBuilderForAddress("localhost", srv.getPort(), InsecureChannelCredentials.create())
+                          .build();
+            var stub = GhostExchangeGrpc.newBlockingStub(channel);
+            var ex = assertThrows(StatusRuntimeException.class, () -> stub.requestGhosts(request()),
+                                  "the manager's server must enforce the ctor-supplied inbound bound");
+            assertEquals(Status.Code.RESOURCE_EXHAUSTED, ex.getStatus().getCode());
+        } finally {
+            mgr.shutdown();
+        }
     }
 
     @Test
