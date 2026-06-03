@@ -301,12 +301,25 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
     }
 
     public void triggerGhostUpdateAfterAdaptation() {
-        if (ghostType != GhostType.NONE && ghostBoundaryDetector != null) {
+        if (ghostType == GhostType.NONE || ghostBoundaryDetector == null) {
+            return;
+        }
+        // Hold the coordinator write lock across BOTH the local and the distributed rebuild (Luciferase-cfg4o).
+        // Previously updateGhostLayer() locked its rebuild but distributedGhostManager.updateDistributedGhostLayer()
+        // ran unlocked, and its two-phase clear-then-populate (GhostBoundaryDetector.createGhostLayer) could
+        // interleave with a concurrent spatial-index mutation, producing a torn boundary set. The lock is reentrant,
+        // so the inner updateGhostLayer() write-lock is fine. This is the post-adaptation path (not a hot per-op
+        // path); the distributed update's auto-sync flush runs under the lock here, which is acceptable for
+        // adaptation — writers are already quiesced during tree adaptation.
+        core.lock().writeLock().lock();
+        try {
             log.debug("Triggering ghost update after tree adaptation");
             updateGhostLayer();
             if (distributedGhostManager != null) {
                 distributedGhostManager.updateDistributedGhostLayer();
             }
+        } finally {
+            core.lock().writeLock().unlock();
         }
     }
 
