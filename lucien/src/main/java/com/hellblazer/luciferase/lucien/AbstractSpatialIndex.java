@@ -103,7 +103,6 @@ implements SpatialIndex<Key, ID, Content>,
     protected final ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>> spatialIndex;
     // Read-write lock for thread safety (still needed for complex operations)
     protected final ReadWriteLock                                    lock;
-    protected final Set<Long>                                        deferredSubdivisionNodes = new HashSet<>();
     private final   TreeBalancer<Key, ID>                            treeBalancer;
     // Entity data cache for performance. RDR-008: protected so all four structural-nucleus fields
     // (spatialIndex, lock, entityManager, entityCache) share uniform visibility; reached by feature objects via core.
@@ -401,7 +400,6 @@ implements SpatialIndex<Key, ID, Content>,
         lock.writeLock().lock();
         try {
             this.bulkLoadingMode = true;
-            this.deferredSubdivisionNodes.clear();
         } finally {
             lock.writeLock().unlock();
         }
@@ -538,8 +536,6 @@ implements SpatialIndex<Key, ID, Content>,
                 }
             }
 
-            deferredSubdivisionNodes.clear();
-            
             // Trigger ghost updates after tree adaptation
             triggerGhostUpdateAfterAdaptation();
         } finally {
@@ -1732,11 +1728,6 @@ implements SpatialIndex<Key, ID, Content>,
         @Override
         public void setBulkLoadingMode(boolean value) {
             AbstractSpatialIndex.this.bulkLoadingMode = value;
-        }
-
-        @Override
-        public java.util.Set<Long> deferredSubdivisionNodes() {
-            return AbstractSpatialIndex.this.deferredSubdivisionNodes;
         }
 
         @Override

@@ -640,10 +640,6 @@ public final class EntityLifecycleManager<Key extends SpatialKey<Key>, ID extend
         try {
             core.spatialIndex().clear();
             core.entityManager().clear();
-            var deferred = host.deferredSubdivisionNodes();
-            if (deferred != null) {
-                deferred.clear();
-            }
             var subdivisionManager = host.subdivisionManager();
             if (subdivisionManager != null) {
                 subdivisionManager.clear();
