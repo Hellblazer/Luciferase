@@ -43,6 +43,20 @@ class SweptSphereSegmentTest {
     }
 
     @Test
+    void alreadyOverlappingAtStartReportsTimeZero() {
+        // Sphere centre starts on the segment (within radius), moving away: this is an at-start overlap, so the
+        // time of impact is 0 — not the quadratic's exit root.
+        var start = new Point3f(5, 0, 0);
+        var velocity = new Vector3f(0, 3, 0);
+        float radius = 0.5f;
+
+        var result = SweptSphere.sweptSphereVsLineSegment(start, velocity, radius, P1, P2);
+
+        assertTrue(result.collides(), "an at-start overlap must be detected");
+        assertEquals(0.0f, result.timeOfImpact(), 1e-6f, "at-start overlap is t=0, not the exit time (Luciferase-j8iqw)");
+    }
+
+    @Test
     void missesWhenPassingOutsideTheSegmentSpan() {
         // Same descent but at x = 13, beyond the segment end (10) by more than the radius: no contact with the
         // finite segment. The old midpoint reduction would also miss, but for the wrong reason; assert the correct

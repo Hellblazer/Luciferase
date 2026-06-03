@@ -45,9 +45,10 @@ class CollisionSystemCCDTest {
 
         system.getPhysicsProperties(new LongEntityID(1)).setVelocity(new Vector3f(4, 0, 0));
 
-        // Without a registered shape, the AABB-derived radius-0 sphere misses the off-axis target.
+        // Without a registered shape, point entities have no bounds, so getEntityShape returns null and CCD is a
+        // no-op for the pair — there is no narrow-phase collision.
         assertTrue(system.processCCDForEntity(new LongEntityID(1), 1.0f).isEmpty(),
-                   "AABB fallback (radius 0) must miss the 0.4-offset target");
+                   "no registered shape (and no bounds) => CCD finds nothing");
 
         // Register real shapes: now the swept radius-0.5 sphere grazes the radius-0.5 target.
         system.registerCollisionShape(new LongEntityID(1), new SphereShape(mover, 0.5f));

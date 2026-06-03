@@ -21,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Luciferase-ig4yi: the bounded-vs-bounded phase of {@link CollisionEngine#findAllCollisions} tested every pair of
  * bounded entities (O(n^2)) regardless of proximity, ignoring the spatial index used by the single-entity path. The
- * fix routes the broad-phase through {@code findNodesIntersectingBounds} so distant pairs are never narrow-phase
- * tested, while overlapping pairs are still found.
+ * fix replaces the all-pairs loop with X-axis sweep-and-prune so distant pairs are never narrow-phase tested,
+ * while overlapping pairs (including large AABBs overlapping across node boundaries) are still found.
  *
  * @author hal.hildebrand
  */
@@ -52,6 +52,24 @@ class CollisionEngineBroadPhaseTest {
         // O(n^2) would be n*(n-1)/2 = 276 narrow-phase checks; the broad-phase keeps it far below that.
         assertTrue(narrowChecks < n, "distant bounded pairs must be excluded by the broad-phase, got " + narrowChecks
                                      + " (n^2/2 = " + (n * (n - 1) / 2) + ", Luciferase-ig4yi)");
+    }
+
+    @Test
+    void crossNodeOverlappingBoundsAreDetected() {
+        // Critic's counter-example to a node-membership broad-phase: two entities whose POSITION nodes are different
+        // level-10 cells (cellSize 2048) but whose large AABBs overlap in the gap between those cells. A node-based
+        // broad-phase would miss this; sweep-and-prune (X-axis) finds it because the AABBs overlap on X.
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        var cA = new Point3f(3000.0f, 3000.0f, 3000.0f);   // position node ~ [2048,4096]
+        var cB = new Point3f(7000.0f, 3000.0f, 3000.0f);   // position node ~ [6144,8192]
+        // AABBs overlap around x in [5000,5500] (and on y,z) — the cell [4096,6144] between both position nodes.
+        octree.insert(new LongEntityID(1), cA, (byte) 10, "a", new EntityBounds(cA, 2500.0f)); // x in [500,5500]
+        octree.insert(new LongEntityID(2), cB, (byte) 10, "b", new EntityBounds(cB, 2000.0f)); // x in [5000,9000]
+
+        var collisions = octree.findAllCollisions();
+
+        assertEquals(1, collisions.size(),
+                     "cross-node overlapping bounds must be detected by sweep-and-prune (Luciferase-ig4yi)");
     }
 
     @Test

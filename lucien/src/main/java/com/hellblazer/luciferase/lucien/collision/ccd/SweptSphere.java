@@ -444,6 +444,9 @@ public class SweptSphere {
         // segment interval, with the two endpoints handled as static spheres. This mirrors the cylinder part of
         // sweptSphereVsCapsule (capsuleRadius = 0) and replaces the old midpoint-sphere reduction, which produced
         // false negatives for grazes away from the midpoint and false positives near it.
+        // Contact-point convention: the returned contactPoint is the closest point ON THE SEGMENT, and the normal
+        // points from the segment toward the sphere centre (consistent with sweptSphereVsCapsule). A resolver that
+        // needs the point on the sphere surface should use contactPoint shifted by +radius along the normal.
         var axis = new Vector3f();
         axis.sub(p2, p1);
         float segLength = axis.length();
@@ -471,6 +474,23 @@ public class SweptSphere {
         float a = perpVel.dot(perpVel);
         float b = 2.0f * perpPos.dot(perpVel);
         float c = perpPos.dot(perpPos) - sphereRadius * sphereRadius;
+
+        // Already overlapping the segment body at t=0 (within radius of the line AND within the span): report t=0
+        // rather than the quadratic's exit root. The endpoint-overlap-at-t=0 case is handled by the caps below.
+        if (c <= 0.0f && projPos >= 0.0f && projPos <= segLength) {
+            var closestOnSeg = new Point3f(p1);
+            var axisOffset = new Vector3f(axis);
+            axisOffset.scale(projPos);
+            closestOnSeg.add(axisOffset);
+            var normal = new Vector3f();
+            normal.sub(sphereStart, closestOnSeg);
+            if (normal.length() >= EPSILON) {
+                normal.normalize();
+            } else {
+                normal.set(0, 1, 0); // center exactly on the segment line; arbitrary unit normal
+            }
+            return ContinuousCollisionResult.collision(0.0f, new Point3f(closestOnSeg), normal, 0.0f);
+        }
 
         if (Math.abs(a) >= EPSILON) {
             float discriminant = b * b - 4 * a * c;

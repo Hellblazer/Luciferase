@@ -31,6 +31,8 @@ public class ContinuousCollisionDetector {
     private static final float EPSILON = 0.0001f;
     private static final int MAX_ITERATIONS = 20;
     // Fixed scan resolution for the general-shape fallback (Luciferase-fglgp): finds a colliding bracket to bisect.
+    // The scan gap is 1/SAMPLE_STEPS in normalized time, so a collision window narrower than (motion length)/32 can
+    // still be tunnelled (see conservativeCCD). Worst-case shape-pair tests per call ~ SAMPLE_STEPS + MAX_ITERATIONS.
     private static final int SAMPLE_STEPS   = 32;
     
     /**

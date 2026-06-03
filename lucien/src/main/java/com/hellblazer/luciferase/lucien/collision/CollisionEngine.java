@@ -30,6 +30,7 @@ import com.hellblazer.luciferase.lucien.internal.UnorderedPair;
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -69,9 +70,11 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
     private final SpatialIndexCore<Key, ID, Content>  core;
     private final CollisionGeometry<Key, ID, Content> callback;
 
-    // Narrow-phase invocation counter for the last findAllCollisions() pass (Luciferase-ig4yi). Package-private:
-    // lets tests assert the spatial-index broad-phase keeps distant bounded pairs out of the narrow phase.
-    private int lastNarrowPhaseChecks = 0;
+    // Narrow-phase invocation counter for the last findAllCollisions() pass (Luciferase-ig4yi). AtomicInteger
+    // because findAllCollisions runs under a (shared) read lock, so concurrent passes would otherwise race on it.
+    // Lets tests assert the sweep-and-prune broad-phase keeps distant bounded pairs out of the narrow phase.
+    private final java.util.concurrent.atomic.AtomicInteger lastNarrowPhaseChecks =
+        new java.util.concurrent.atomic.AtomicInteger();
 
     public CollisionEngine(SpatialIndexCore<Key, ID, Content> core, CollisionGeometry<Key, ID, Content> callback) {
         this.core = core;
@@ -126,7 +129,7 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
         try {
             var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
             var checkedPairs = ObjectPools.<UnorderedPair<ID>>borrowHashSet();
-            lastNarrowPhaseChecks = 0;
+            lastNarrowPhaseChecks.set(0);
             try {
                 // Perform four phases of collision detection
                 findIntraNodeCollisions(collisions, checkedPairs);
@@ -431,7 +434,7 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
 
     /** Narrow-phase invocations during the last {@link #findAllCollisions()} (Luciferase-ig4yi test seam). */
     int lastNarrowPhaseChecks() {
-        return lastNarrowPhaseChecks;
+        return lastNarrowPhaseChecks.get();
     }
 
     private void checkAndAddCollision(ID id1, ID id2, List<CollisionPair<ID, Content>> collisions) {
@@ -439,7 +442,7 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
             return;
         }
 
-        lastNarrowPhaseChecks++;
+        lastNarrowPhaseChecks.incrementAndGet();
         var collision = performDetailedCollisionCheck(id1, id2);
         collision.ifPresent(collisions::add);
     }
@@ -600,31 +603,45 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
 
     private void findBoundedEntityCollisions(List<CollisionPair<ID, Content>> collisions,
                                              Set<UnorderedPair<ID>> checkedPairs) {
-        // Use the spatial index as broad-phase (Luciferase-ig4yi): for each bounded entity, only test it against
-        // other bounded entities sharing a node its bounds intersect, rather than every other bounded entity. Two
-        // overlapping AABBs always share at least one such node, so no real collision is lost; distant pairs are
-        // never narrow-phase tested. The pair set still matches the old bounded-vs-bounded scope (point entities are
-        // handled by the point/adjacent phases); checkedPairs dedups across the multiple nodes an entity spans.
+        // Sweep-and-prune on the X axis (Luciferase-ig4yi). The previous code tested every pair of bounded entities
+        // (O(n^2)). A node-membership broad-phase is UNSOUND here: bounded entities are stored only in their
+        // position node (SINGLE_NODE_ONLY), so two large AABBs overlapping in the gap between their position nodes
+        // would be silently missed. SAP is EXACT — it prunes only pairs that cannot overlap on X — and
+        // sub-quadratic for spatially distributed scenes. Each X-overlapping survivor still gets the full
+        // narrow-phase AABB test in checkAndAddCollision.
+        var bounded = new ArrayList<BoundedEntry<ID>>();
         for (var entityId : core.entityManager().getAllEntityIds()) {
             var bounds = core.entityManager().getEntityBounds(entityId);
-            if (bounds == null) {
-                continue;
+            if (bounds != null) {
+                bounded.add(new BoundedEntry<>(entityId, bounds));
             }
-            for (var nodeIndex : findNodesIntersectingBounds(bounds)) {
-                var node = core.spatialIndex().get(nodeIndex);
-                if (node == null || node.isEmpty()) {
-                    continue;
-                }
-                for (var other : node.getEntityIds()) {
-                    if (entityId.equals(other) || core.entityManager().getEntityBounds(other) == null) {
-                        continue; // bounded-vs-bounded only, matching the previous scope
-                    }
-                    var pair = new UnorderedPair<>(entityId, other);
-                    if (checkedPairs.add(pair)) {
-                        checkAndAddCollision(entityId, other, collisions);
-                    }
+        }
+        bounded.sort(Comparator.comparingDouble(e -> e.minX));
+
+        var active = new ArrayList<BoundedEntry<ID>>();
+        for (var e : bounded) {
+            // Drop actives whose X span ends before e begins — they cannot overlap e or anything after it on X.
+            active.removeIf(f -> f.maxX < e.minX);
+            for (var f : active) {
+                var pair = new UnorderedPair<>(e.id, f.id);
+                if (checkedPairs.add(pair)) {
+                    checkAndAddCollision(e.id, f.id, collisions);
                 }
             }
+            active.add(e);
+        }
+    }
+
+    /** X-axis sweep-and-prune entry for bounded-entity broad-phase (Luciferase-ig4yi). */
+    private static final class BoundedEntry<I> {
+        final I     id;
+        final float minX;
+        final float maxX;
+
+        BoundedEntry(I id, EntityBounds bounds) {
+            this.id = id;
+            this.minX = bounds.getMinX();
+            this.maxX = bounds.getMaxX();
         }
     }
 
