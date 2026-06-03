@@ -21,11 +21,21 @@ public final class TetreeBits {
      * Find the level of the lowest common ancestor of two tetrahedra. Based on t8code's t8_dtri_nearest_common_ancestor
      * algorithm.
      *
+     * <p>Pyramid-rooted tetrahedra ({@code minTetLevel != }{@link Tet#NO_TET_ANCESTOR}) are not
+     * supported: the type comparison below relies on {@link Tet#computeType(byte)}, whose ancestor
+     * walk is undefined above the tet/pyramid boundary (deferred to Luciferase-q3p). This method
+     * rejects such inputs up front with an attributable {@link IllegalArgumentException} rather than
+     * letting the failure surface as a deep, unattributed throw from {@code computeType}.</p>
+     *
      * @param tet1 first tetrahedron
      * @param tet2 second tetrahedron
      * @return level of lowest common ancestor
+     * @throws IllegalArgumentException if either tetrahedron is pyramid-rooted
      */
     public static byte lowestCommonAncestorLevel(Tet tet1, Tet tet2) {
+        requirePureTetree(tet1, "tet1");
+        requirePureTetree(tet2, "tet2");
+
         // Find the level of the NCA using XOR to find differing bits
         int exclorx = tet1.x() ^ tet2.x();
         int exclory = tet1.y() ^ tet2.y();
@@ -61,5 +71,19 @@ public final class TetreeBits {
 
         assert r_level >= 0 : "Failed to find common ancestor level";
         return r_level;
+    }
+
+    /**
+     * Guard against pyramid-rooted tetrahedra reaching {@link Tet#computeType(byte)} unattributed.
+     * The deep tet/pyramid path is infrastructure-only (RDR-012) and ancestor-type resolution above
+     * the boundary is deferred to Luciferase-q3p; fail loud here, naming the operation.
+     */
+    private static void requirePureTetree(Tet tet, String arg) {
+        if (tet.minTetLevel() != Tet.NO_TET_ANCESTOR) {
+            throw new IllegalArgumentException(
+            "TetreeBits.lowestCommonAncestorLevel does not support pyramid-rooted tetrahedra: " + arg
+            + " has minTetLevel=" + tet.minTetLevel() + " (!= NO_TET_ANCESTOR). Pyramid ancestor-type "
+            + "resolution is deferred to Luciferase-q3p.");
+        }
     }
 }
