@@ -69,6 +69,10 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
     private final SpatialIndexCore<Key, ID, Content>  core;
     private final CollisionGeometry<Key, ID, Content> callback;
 
+    // Narrow-phase invocation counter for the last findAllCollisions() pass (Luciferase-ig4yi). Package-private:
+    // lets tests assert the spatial-index broad-phase keeps distant bounded pairs out of the narrow phase.
+    private int lastNarrowPhaseChecks = 0;
+
     public CollisionEngine(SpatialIndexCore<Key, ID, Content> core, CollisionGeometry<Key, ID, Content> callback) {
         this.core = core;
         this.callback = callback;
@@ -122,6 +126,7 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
         try {
             var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
             var checkedPairs = ObjectPools.<UnorderedPair<ID>>borrowHashSet();
+            lastNarrowPhaseChecks = 0;
             try {
                 // Perform four phases of collision detection
                 findIntraNodeCollisions(collisions, checkedPairs);
@@ -424,11 +429,17 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
         return Optional.empty();
     }
 
+    /** Narrow-phase invocations during the last {@link #findAllCollisions()} (Luciferase-ig4yi test seam). */
+    int lastNarrowPhaseChecks() {
+        return lastNarrowPhaseChecks;
+    }
+
     private void checkAndAddCollision(ID id1, ID id2, List<CollisionPair<ID, Content>> collisions) {
         if (id1.equals(id2)) {
             return;
         }
 
+        lastNarrowPhaseChecks++;
         var collision = performDetailedCollisionCheck(id1, id2);
         collision.ifPresent(collisions::add);
     }
@@ -589,21 +600,29 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
 
     private void findBoundedEntityCollisions(List<CollisionPair<ID, Content>> collisions,
                                              Set<UnorderedPair<ID>> checkedPairs) {
-        var boundedEntities = new ArrayList<ID>();
+        // Use the spatial index as broad-phase (Luciferase-ig4yi): for each bounded entity, only test it against
+        // other bounded entities sharing a node its bounds intersect, rather than every other bounded entity. Two
+        // overlapping AABBs always share at least one such node, so no real collision is lost; distant pairs are
+        // never narrow-phase tested. The pair set still matches the old bounded-vs-bounded scope (point entities are
+        // handled by the point/adjacent phases); checkedPairs dedups across the multiple nodes an entity spans.
         for (var entityId : core.entityManager().getAllEntityIds()) {
-            if (core.entityManager().getEntityBounds(entityId) != null) {
-                boundedEntities.add(entityId);
+            var bounds = core.entityManager().getEntityBounds(entityId);
+            if (bounds == null) {
+                continue;
             }
-        }
-
-        // Check bounded entities against each other
-        for (int i = 0; i < boundedEntities.size() - 1; i++) {
-            for (int j = i + 1; j < boundedEntities.size(); j++) {
-                var id1 = boundedEntities.get(i);
-                var id2 = boundedEntities.get(j);
-                var pair = new UnorderedPair<>(id1, id2);
-                if (checkedPairs.add(pair)) {
-                    checkAndAddCollision(id1, id2, collisions);
+            for (var nodeIndex : findNodesIntersectingBounds(bounds)) {
+                var node = core.spatialIndex().get(nodeIndex);
+                if (node == null || node.isEmpty()) {
+                    continue;
+                }
+                for (var other : node.getEntityIds()) {
+                    if (entityId.equals(other) || core.entityManager().getEntityBounds(other) == null) {
+                        continue; // bounded-vs-bounded only, matching the previous scope
+                    }
+                    var pair = new UnorderedPair<>(entityId, other);
+                    if (checkedPairs.add(pair)) {
+                        checkAndAddCollision(entityId, other, collisions);
+                    }
                 }
             }
         }
