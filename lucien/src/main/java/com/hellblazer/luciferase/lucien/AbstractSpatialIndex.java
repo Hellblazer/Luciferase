@@ -758,10 +758,21 @@ implements SpatialIndex<Key, ID, Content>,
     /**
      * The spatial keys at which an entity is stored (Luciferase-fhc9), delegating to the entity manager. Each
      * key carries the entity's refinement level; used by load balancing to preserve level on migration.
+     *
+     * <p>Read-lock guarded (Luciferase-1q51y): the sibling accessors all go through the entity-lifecycle read lock,
+     * but this one delegated straight to the entity manager. A concurrent {@code updateEntity} (which clears then
+     * re-inserts the location set under the write lock) could otherwise be observed mid-move, returning a
+     * transiently EMPTY set — which load balancing / ghost range queries would route on. The entity manager already
+     * returns a defensive snapshot, so the lock only needs to bracket the read.</p>
      */
     @Override
     public Set<Key> getEntityLocations(ID entityId) {
-        return entityManager.getEntityLocations(entityId);
+        lock.readLock().lock();
+        try {
+            return entityManager.getEntityLocations(entityId);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
