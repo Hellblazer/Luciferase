@@ -111,11 +111,14 @@ public class SpatialIndexProfilerTest {
             }
         });
         // Reader: repeatedly generate the report (copy + percentile-index the same samples list).
+        int iterations = 100_000;
+        var done = new java.util.concurrent.atomic.AtomicInteger(0);
         var reader = new Thread(() -> {
             try {
                 started.await();
-                for (int i = 0; i < 100_000 && failure.get() == null; i++) {
+                for (int i = 0; i < iterations && failure.get() == null; i++) {
                     profiler.generateReport();
+                    done.incrementAndGet();
                 }
             } catch (Throwable t) {
                 failure.set(t);
@@ -131,6 +134,10 @@ public class SpatialIndexProfilerTest {
         assertNull(failure.get(),
                    "generateReport() must not throw during active profiling+reset (Luciferase-eu4dc): "
                    + failure.get());
+        // Distinguish "completed cleanly" from "reader stalled past the join timeout" — the latter would also
+        // leave failure==null and pass vacuously.
+        assertEquals(iterations, done.get(),
+                     "reader must complete all report iterations (not stall to the join timeout)");
     }
 
     @Test

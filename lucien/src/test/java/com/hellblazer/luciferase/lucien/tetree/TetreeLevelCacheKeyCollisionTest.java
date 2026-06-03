@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -41,6 +42,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * @author hal.hildebrand
  */
 public class TetreeLevelCacheKeyCollisionTest {
+
+    // TetreeLevelCache is JVM-global static state; isolate from residue written by other tests in the fork so the
+    // round-trip / collision assertions are airtight (review follow-up, Luciferase-egjwk).
+    @BeforeEach
+    void clearCache() {
+        TetreeLevelCache.clearCaches();
+    }
 
     /** A tuple's cached value is its own identity, so any wrong-value serve is detectable. */
     private static long valueFor(int x, int y, int z, byte level, byte type) {

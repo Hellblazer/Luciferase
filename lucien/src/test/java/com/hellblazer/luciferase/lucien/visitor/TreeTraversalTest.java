@@ -221,6 +221,37 @@ public class TreeTraversalTest {
         assertTrue(callOrder.stream().anyMatch(s -> s.startsWith("leaveNode")), "Should have leave node calls");
     }
 
+    /**
+     * Luciferase-lsy13: IN_ORDER is documented as carrying no distinct spatial-traversal behavior — for the
+     * (non-binary) Octree/Tetree it is treated identically to PRE_ORDER. Lock that contract so the documented
+     * alias can't silently drift: the node visit order under IN_ORDER must equal the order under PRE_ORDER.
+     */
+    @Test
+    public void inOrderTraversalEqualsPreOrderForSpatialTrees() {
+        insertTestEntities(150);
+
+        var preOrder = collectVisitOrder(TraversalStrategy.PRE_ORDER);
+        var inOrder = collectVisitOrder(TraversalStrategy.IN_ORDER);
+
+        assertFalse(preOrder.isEmpty(), "expected some node visits");
+        assertEquals(preOrder, inOrder,
+                     "IN_ORDER must visit nodes in the same order as PRE_ORDER for spatial trees (Luciferase-lsy13)");
+    }
+
+    private List<MortonKey> collectVisitOrder(TraversalStrategy strategy) {
+        var order = new ArrayList<MortonKey>();
+        var visitor = new AbstractTreeVisitor<MortonKey, LongEntityID, String>() {
+            @Override
+            public boolean visitNode(SpatialIndex.SpatialNode<MortonKey, LongEntityID> node, int level,
+                                     MortonKey parentIndex) {
+                order.add(node.sfcIndex());
+                return true;
+            }
+        };
+        octree.traverse(visitor, strategy);
+        return order;
+    }
+
     private void insertTestEntities(int count) {
         Random rand = new Random(42);
         for (int i = 0; i < count; i++) {

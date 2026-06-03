@@ -307,9 +307,13 @@ public class SpatialIndexProfiler<Key extends SpatialKey<Key>, ID extends Entity
                 report.minTimeMillis = TimeUnit.NANOSECONDS.toMillis(minTimeNanos.get());
                 report.maxTimeMillis = TimeUnit.NANOSECONDS.toMillis(maxTimeNanos.get());
                 
-                // Calculate percentiles if we have samples. Collections.synchronizedList requires the caller to
-                // hold the wrapper's monitor while iterating it — the ArrayList copy-constructor iterates, so a
-                // concurrent recordOperation() add would otherwise throw ConcurrentModificationException (eu4dc).
+                // Copy the samples ONCE under the wrapper's monitor, then test emptiness on the copy (eu4dc).
+                // The real fix is making check+copy atomic: the prior code called !samples.isEmpty() and then, in
+                // a SEPARATE access, new ArrayList<>(samples) — a concurrent reset() draining the list between
+                // them left an empty copy that was still indexed at p50 => IndexOutOfBoundsException. (The copy
+                // itself was already CME-safe: ArrayList's copy-constructor issues one synchronized toArray() on
+                // the synchronizedList wrapper. The synchronized block also keeps that guarantee explicit if the
+                // copy is ever refactored away from toArray().)
                 List<Long> sortedSamples;
                 synchronized (samples) {
                     sortedSamples = new ArrayList<>(samples);
