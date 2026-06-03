@@ -210,19 +210,24 @@ public class CollisionResolver {
         float maxFriction = Math.abs(normalImpulse) * config.defaultFriction;
         frictionImpulse = Math.max(-maxFriction, Math.min(maxFriction, frictionImpulse));
 
-        // Apply friction impulse
+        // Friction impulse vector (Luciferase-fyb22): compute each body's contribution independently from the
+        // unscaled direction. The previous code reused the already-scaled vector for body 2 — scale(mass2/mass1)
+        // does NOT undo scale(-1/mass1) — yielding -frictionImpulse/mass1^2 instead of frictionImpulse/mass2.
+        // Convention matches the normal impulse above: body 1 gets -J/mass1, body 2 gets +J/mass2, so the equal-
+        // and-opposite friction conserves momentum (mass1*impulse1 + mass2*impulse2 == 0).
         Vector3f friction = new Vector3f(tangent);
         friction.scale(frictionImpulse);
 
         if (!Float.isInfinite(mass1)) {
-            friction.scale(-1 / mass1);
-            impulse1.add(friction);
+            var i1 = new Vector3f(friction);
+            i1.scale(-1 / mass1);
+            impulse1.add(i1);
         }
 
         if (!Float.isInfinite(mass2)) {
-            friction.scale(mass2 / mass1); // Undo previous scale
-            friction.scale(1 / mass2);
-            impulse2.add(friction);
+            var i2 = new Vector3f(friction);
+            i2.scale(1 / mass2);
+            impulse2.add(i2);
         }
     }
 
