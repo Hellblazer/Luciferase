@@ -38,7 +38,8 @@ import java.util.*;
  *
  * <p>The builder collects all nodes with entities from the Tetree and constructs
  * the full tree hierarchy by creating virtual parent nodes. Nodes are allocated
- * in breadth-first order for GPU cache efficiency. Each node is converted to an
+ * in a child-contiguous depth-first order (parent, then its Morton-ordered child block, then each child's
+ * subtree) so child-pointer offsets stay subtree-local and far pointers stay rare. Each node is converted to an
  * 8-byte ESVTNodeUnified with:
  * <ul>
  *   <li>Child mask (8 bits for Bey 8-way subdivision)</li>
@@ -632,7 +633,8 @@ public class ESVTBuilder {
                 i, e.tet.l(), e.tet.type(), e.key.getLevel());
         }
 
-        // Process nodes in BFS order (already sorted this way)
+        // Process nodes parent-first: the child-contiguous layout guarantees parents precede their children,
+        // so types[i] is set before any child reads it.
         for (int i = 0; i < nodeList.size(); i++) {
             var entry = nodeList.get(i);
             byte parentType = types[i];
@@ -680,7 +682,7 @@ public class ESVTBuilder {
      * the actual pointer is stored in a separate array and the node's childPtr
      * becomes an index into that array with the far flag set.</p>
      *
-     * @param nodeList List of node entries in breadth-first order
+     * @param nodeList List of node entries in child-contiguous order (parents precede their children)
      * @param correctedTypes Array of types corrected via top-down propagation
      * @param indexMap Map from TetreeKey to node index
      * @param nodeMap Map from TetreeKey to NodeEntry
@@ -754,16 +756,26 @@ public class ESVTBuilder {
                 }
 
                 if (minChildIdx != Integer.MAX_VALUE) {
-                    // Use relative offset from current node index (not absolute index)
-                    // This keeps pointers small in BFS-ordered trees
+                    // Relative offset from the current node index. The child-contiguous layout keeps children
+                    // after their parent, so this is always >= 1 and stays subtree-local (Luciferase-yhue6).
                     int relativeOffset = minChildIdx - i;
 
-                    if (relativeOffset >= 0 && relativeOffset <= MAX_CHILD_PTR) {
-                        // Relative offset fits in 15 bits
+                    if (relativeOffset <= MAX_CHILD_PTR) {
+                        // Relative offset fits in 15 bits (the common case under the child-contiguous layout)
                         node.setChildPtr(relativeOffset);
                     } else {
-                        // Need far pointer for unusual tree structure
+                        // Far pointer: the actual offset goes in a side array; the node stores the far-array INDEX
+                        // in its 15-bit child-ptr field. That index must itself fit in 15 bits, so the far table is
+                        // capped at MAX_CHILD_PTR entries. Fail loud and attributable if a pathologically wide tree
+                        // exhausts it, rather than surfacing the opaque setChildPtr overflow (Luciferase-yhue6).
                         int farIndex = farPointersList.size();
+                        if (farIndex > MAX_CHILD_PTR) {
+                            throw new IllegalStateException(
+                                "ESVT far-pointer table overflow: " + (farIndex + 1) + " far pointers needed but the "
+                                + "15-bit far index caps at " + MAX_CHILD_PTR + ". The tree is too wide for the "
+                                + "current far-pointer encoding (node " + i + ", relativeOffset " + relativeOffset
+                                + "). A wider far index or a paged layout is required for models this large.");
+                        }
                         farPointersList.add(relativeOffset);
                         node.setChildPtr(farIndex);
                         node.setFar(true);

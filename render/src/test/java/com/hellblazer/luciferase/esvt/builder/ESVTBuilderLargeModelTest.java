@@ -56,5 +56,14 @@ class ESVTBuilderLargeModelTest {
         assertTrue(data.farPointerCount() < 32_767,
                    "far pointers must stay well under the 15-bit cap with the child-contiguous layout, got "
                    + data.farPointerCount());
+        assertTrue(data.farPointerCount() > 0,
+                   "this model is expected to exercise the far-pointer path (otherwise the test is vacuous)");
+
+        // Traversal correctness (childMask + relative/far child-pointer addressing) is unchanged by this fix —
+        // the layout change only reorders nodes and recomputes pointers against the SAME ESVTData contract that
+        // ESVTTraversal consumes — and is covered by the maintained esvt.traversal / esvt.core suites, which pass
+        // on builder-produced multi-level trees with the new layout. This test pins the previously-unbuildable
+        // large/far-pointer regime: it must build without the 15-bit overflow, and the far table must stay a
+        // small fraction of the 32767 cap.
     }
 }
