@@ -88,11 +88,12 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
      * @param config fault configuration
      */
     public CascadingRecoveryImpl(FaultConfiguration config) {
-        this(config, Executors.newCachedThreadPool(r -> {
-            var t = new Thread(r, "cascading-recovery");
-            t.setDaemon(true);
-            return t;
-        }), true);
+        // Virtual-thread-per-task (Luciferase-h08sd), matching BalanceCoordinatorServer: cascading recovery is
+        // invoked when many partitions fail at once and each task parks on a Thread.sleep backoff. A cached platform
+        // pool would spawn N unbounded OS threads (thread explosion); virtual threads make N concurrent parked
+        // backoffs cheap. Virtual threads are daemon-equivalent (never block JVM shutdown).
+        this(config, Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("cascading-recovery-", 0).factory()),
+             true);
     }
 
     /**
