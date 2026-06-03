@@ -330,17 +330,23 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 .build();
             
             session.responseObserver.onNext(ack);
-            
+
+        } catch (ProtobufConverters.UnsupportedEntityIdTypeException e) {
+            // Whole-stream configuration error (Luciferase-m2k3u): the misconfigured entityIdClass fails EVERY
+            // element identically, so surface it loudly via onError and terminate the stream rather than emitting a
+            // silent per-element NACK loop that drops the whole batch (RDR-004 D3 / 7pias class).
+            log.error("Unsupported EntityID type in stream session {}: {}", session.sessionId, e.getMessage(), e);
+            session.responseObserver.onError(e);
         } catch (Exception e) {
-            log.error("Error processing stream update in session {}: {}", 
+            log.error("Error processing stream update in session {}: {}",
                      session.sessionId, e.getMessage(), e);
-            
+
             var ack = GhostAck.newBuilder()
                 .setEntityId("unknown")
                 .setSuccess(false)
                 .setErrorMessage(e.getMessage())
                 .build();
-            
+
             session.responseObserver.onNext(ack);
         }
     }

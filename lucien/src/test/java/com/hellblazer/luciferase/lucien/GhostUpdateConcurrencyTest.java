@@ -20,6 +20,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -90,5 +92,15 @@ class GhostUpdateConcurrencyTest {
         assertTrue(done.await(60, TimeUnit.SECONDS), "threads must finish");
         assertNull(error.get(), "concurrent mutate + ghost rebuild must not tear / throw (Luciferase-cfg4o): "
                                 + error.get());
+
+        // After the storm, a final quiescent rebuild must yield a coherent (non-torn) ghost layer: a complete,
+        // non-null boundary set with no half-cleared state. (No exception above only proves no CME; this proves the
+        // layer is consistent.)
+        octree.triggerGhostUpdateAfterAdaptation();
+        var layer = octree.getGhostLayer();
+        assertNotNull(layer, "ghost layer present after rebuild");
+        assertNotNull(layer.getAllGhostElements(), "ghost element set must be coherent, not half-populated");
+        assertEquals(layer.getNumGhostElements(), layer.getAllGhostElements().size(),
+                     "ghost count and element list must agree — no torn clear/populate (Luciferase-cfg4o)");
     }
 }

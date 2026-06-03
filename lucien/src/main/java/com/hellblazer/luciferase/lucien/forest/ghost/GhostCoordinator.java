@@ -304,22 +304,24 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
         if (ghostType == GhostType.NONE || ghostBoundaryDetector == null) {
             return;
         }
-        // Hold the coordinator write lock across BOTH the local and the distributed rebuild (Luciferase-cfg4o).
-        // Previously updateGhostLayer() locked its rebuild but distributedGhostManager.updateDistributedGhostLayer()
-        // ran unlocked, and its two-phase clear-then-populate (GhostBoundaryDetector.createGhostLayer) could
-        // interleave with a concurrent spatial-index mutation, producing a torn boundary set. The lock is reentrant,
-        // so the inner updateGhostLayer() write-lock is fine. This is the post-adaptation path (not a hot per-op
-        // path); the distributed update's auto-sync flush runs under the lock here, which is acceptable for
-        // adaptation — writers are already quiesced during tree adaptation.
+        // Rebuild the ghost boundary set UNDER the write lock, but run the (blocking) network sync OUTSIDE it
+        // (Luciferase-cfg4o). Previously updateGhostLayer() locked its rebuild but
+        // distributedGhostManager.updateDistributedGhostLayer() ran unlocked, so its two-phase clear-then-populate
+        // could tear under concurrent mutation. Holding the lock across the whole distributed update would instead
+        // freeze ALL index readers/writers for a network round-trip (the auto-sync .join()) — a liveness hazard.
+        // Split it: the rebuild (atomic, needs the lock) then the sync (network I/O, must NOT hold the lock).
+        log.debug("Triggering ghost update after tree adaptation");
         core.lock().writeLock().lock();
         try {
-            log.debug("Triggering ghost update after tree adaptation");
-            updateGhostLayer();
+            updateGhostLayer(); // reentrant; rebuilds the shared detector's boundary set atomically
             if (distributedGhostManager != null) {
-                distributedGhostManager.updateDistributedGhostLayer();
+                distributedGhostManager.rebuildLocalGhostLayer();
             }
         } finally {
             core.lock().writeLock().unlock();
+        }
+        if (distributedGhostManager != null) {
+            distributedGhostManager.synchronizeIfDue(); // network flush, no lock held
         }
     }
 
