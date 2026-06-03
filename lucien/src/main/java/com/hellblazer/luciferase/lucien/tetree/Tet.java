@@ -352,34 +352,30 @@ public class Tet implements Spatial.aabt, HybridElement {
     }
 
     /**
-     * Locate a point in the S0 Bey subdivision tree using O(1) per-level traversal.
+     * Locate the t8code dtet at {@code targetLevel} whose Kuhn-simplex region contains the point.
      *
-     * <p>This method implements proper top-down traversal through the S0-rooted Bey
-     * subdivision tree. Unlike the S0-S5 cube partition approach, this ensures that
-     * child types are derived correctly from parent types using the Bey refinement
-     * tables.</p>
+     * <p><b>Algorithm (RDR-010 Luciferase-4pd):</b> the type at any level is a pure function of the
+     * point's coordinate <em>ordering</em> within that level's grid cell (the t8code/Kuhn partition),
+     * so the type is classified <em>directly at the target level</em> — there is no per-level parent→child
+     * walk. Snap the point to the target-level grid anchor, then map the local-coordinate ordering to a
+     * type via {@link #typeForOrdering(double, double, double)} (t0 x&ge;z&ge;y, t1 x&ge;y&ge;z,
+     * t2 y&ge;x&ge;z, t3 y&ge;z&ge;x, t4 z&ge;y&ge;x, t5 z&ge;x&ge;y). This is provably consistent
+     * with {@link #coordinates()} and {@link #contains12DOP}, and agrees with the SFC locate methods
+     * (proven by {@code T8codeDtetOracleTest.locateMethodsAgreeAndContainPoint}).</p>
      *
-     * <p><b>Algorithm:</b></p>
-     * <ol>
-     *   <li>Start at root (level 0, type 0)</li>
-     *   <li>For each level down to target:
-     *     <ul>
-     *       <li>Compute cube ID (which octant) from point position</li>
-     *       <li>Get Bey child ID: TYPE_CID_TO_BEYID[parentType][cubeId]</li>
-     *       <li>Get child type: PARENT_TYPE_TO_CHILD_TYPE[parentType][beyId]</li>
-     *     </ul>
-     *   </li>
-     *   <li>Return tetrahedron at target level with computed type</li>
-     * </ol>
+     * <p><b>Superseded:</b> the earlier implementation traced down from the root via
+     * {@code TYPE_CID_TO_BEYID} → {@code PARENT_TYPE_TO_CHILD_TYPE} and assumed the Bey-tree types did
+     * not match the S0-S5 geometry. That downward root-trace mis-indexed the Bey table by parent type,
+     * was not t8code-consistent (wrong types at depth &ge; 2), and has been <em>deleted</em>. The current
+     * t8code type numbering <em>does</em> match the geometry; do not reintroduce a downward Bey trace.</p>
      *
-     * <p>This is O(targetLevel) with O(1) per level, compared to O(8) per level
-     * for the brute-force containment-checking approach.</p>
+     * <p>Cost: O(1) — direct classification, independent of {@code targetLevel}.</p>
      *
      * @param px          x-coordinate (must be non-negative)
      * @param py          y-coordinate (must be non-negative)
      * @param pz          z-coordinate (must be non-negative)
      * @param targetLevel the target level (0-21)
-     * @return the tetrahedron at targetLevel in the S0 tree containing the point
+     * @return the tetrahedron at targetLevel containing the point
      */
     public static Tet locatePointS0Tree(float px, float py, float pz, byte targetLevel) {
         // Validate inputs
@@ -1100,7 +1096,7 @@ public class Tet implements Spatial.aabt, HybridElement {
      * 12-DOP exact containment test using the permutohedron ordering structure. AABB check (6 comparisons) + local
      * coordinate subtraction (3 ops) + type-specific ordering test (2 comparisons) = 11 ops total.
      * <p>
-     * The ordering for each S-type is derived from the Kuhn simplex vertex paths in {@link #coordinates()}. Uses
+     * The ordering for each type is derived from the Kuhn simplex vertex paths in {@link #coordinates()}. Uses
      * closed-simplex convention ({@code >=}) — points on shared faces may be contained by adjacent types.
      *
      * @param px X coordinate of the point to test
@@ -1116,8 +1112,8 @@ public class Tet implements Spatial.aabt, HybridElement {
         // Local coordinates (3 subtractions)
         float u = px - x, v = py - y, w = pz - z;
         // Ordering test (2 comparisons) — t8code dtet vertex geometry (Kuhn simplex edge paths).
-        // RDR-010 Luciferase-4pd: type k IS t8code dtet type k; constants re-permuted from the old
-        // S0-S5 labeling via T8_TO_LUC={4,0,1,5,3,2} (same 6 Kuhn simplices, same 6 axes, same op count).
+        // RDR-010 Luciferase-4pd: type k IS t8code dtet type k. These orderings are the canonical
+        // per-type interior orderings of the 6 Kuhn simplices (6 axes, same op count).
         return switch (type) {
             case 0 -> u >= w && w >= v;  // x ≥ z ≥ y
             case 1 -> u >= v && v >= w;  // x ≥ y ≥ z
@@ -1133,14 +1129,16 @@ public class Tet implements Spatial.aabt, HybridElement {
      * 12-DOP tet-vs-tet intersection test. Two tetrahedra intersect iff their projections overlap
      * on all 6 axes: 3 AABB axes and 3 difference axes (d_xy, d_xz, d_yz).
      * <p>
-     * Each S-type's difference-axis slab is either [0,h] (sign=0) or [-h,0] (sign=1):
+     * Each t8code dtet type's difference-axis slab is either {@code [0,h]} (+, sign 0) or
+     * {@code [-h,0]} (-, sign 1). RDR-010 Luciferase-4pd type numbering — this table mirrors
+     * {@link #slabBounds12DOP} exactly (the old pre-migration S0-S5 sign table was wrong here):
      * <pre>
-     *   S0: d_xy=+, d_xz=+, d_yz=+
-     *   S1: d_xy=-, d_xz=+, d_yz=+
-     *   S2: d_xy=+, d_xz=-, d_yz=-
-     *   S3: d_xy=-, d_xz=-, d_yz=-
-     *   S4: d_xy=+, d_xz=+, d_yz=-
-     *   S5: d_xy=-, d_xz=-, d_yz=+
+     *   t0: d_xy=+, d_xz=+, d_yz=-
+     *   t1: d_xy=+, d_xz=+, d_yz=+
+     *   t2: d_xy=-, d_xz=+, d_yz=+
+     *   t3: d_xy=-, d_xz=-, d_yz=+
+     *   t4: d_xy=-, d_xz=-, d_yz=-
+     *   t5: d_xy=+, d_xz=-, d_yz=-
      * </pre>
      * Global slab for axis diff = anchor_diff, sign s, size h:
      * {@code lo = diff - s*h,  hi = diff + (1-s)*h}.
@@ -1182,7 +1180,7 @@ public class Tet implements Spatial.aabt, HybridElement {
      * @param ay    anchor y
      * @param az    anchor z
      * @param level refinement level
-     * @param type  S-type (0-5)
+     * @param type  t8code dtet type (0-5)
      * @return int[6] of global slab bounds
      */
     private static int[] slabBounds12DOP(int ax, int ay, int az, byte level, byte type) {
@@ -1192,8 +1190,8 @@ public class Tet implements Spatial.aabt, HybridElement {
         final int dyz = ay - az;
         // sign encoding: 0 means slab [0,h] (lo=diff, hi=diff+h)
         //                1 means slab [-h,0] (lo=diff-h, hi=diff)
-        // RDR-010 Luciferase-4pd: t8code dtet typing; per-type signs re-permuted from old S0-S5 via
-        // T8_TO_LUC={4,0,1,5,3,2}.
+        // RDR-010 Luciferase-4pd: t8code dtet typing — per-type signs are the canonical t8code dtet
+        // type-k slab signs (see the table on intersectsTet12DOP).
         return switch (type) {
             case 0 -> // d_xy=+, d_xz=+, d_yz=-
                 new int[]{ dxy,     dxy + h, dxz,     dxz + h, dyz - h, dyz     };
@@ -1237,8 +1235,8 @@ public class Tet implements Spatial.aabt, HybridElement {
         // Step 3: Compute tet's global slab ranges and check overlap (6 comparisons)
         // Local slab [0,h] or [-h,0] is shifted by anchor differences (axy = x-y, etc.)
         int axy = x - y, axz = x - z, ayz = y - z;
-        // RDR-010 Luciferase-4pd: t8code dtet typing; per-type slabs re-permuted from old S0-S5 via
-        // T8_TO_LUC={4,0,1,5,3,2}.
+        // RDR-010 Luciferase-4pd: t8code dtet typing — per-type slabs are the canonical t8code dtet
+        // type-k slabs (see the table on intersectsTet12DOP).
         return switch (type) {
             case 0 ->
                 dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz - h
@@ -1294,8 +1292,8 @@ public class Tet implements Spatial.aabt, HybridElement {
         float dyzMin = eyMin - ezMax, dyzMax = eyMax - ezMin;
         // Step 3: Compute tet's global slab ranges and check overlap (6 comparisons)
         int axy = x - y, axz = x - z, ayz = y - z;
-        // RDR-010 Luciferase-4pd: t8code dtet typing; per-type slabs re-permuted from old S0-S5 via
-        // T8_TO_LUC={4,0,1,5,3,2}.
+        // RDR-010 Luciferase-4pd: t8code dtet typing — per-type slabs are the canonical t8code dtet
+        // type-k slabs (see the table on intersectsTet12DOP).
         return switch (type) {
             case 0 ->
                 dxyMax >= axy && dxyMin <= axy + h && dxzMax >= axz && dxzMin <= axz + h && dyzMax >= ayz - h
@@ -2295,14 +2293,17 @@ public class Tet implements Spatial.aabt, HybridElement {
     }
 
     /**
-     * Compute parent type by tracing from root through S0 Bey tree.
+     * Compute the parent's type via t8code's canonical O(1) parent-type lookup (RDR-010 Luciferase-4pd,
+     * {@code t8_dtet_parent}).
      *
-     * <p><b>Key Insight:</b> The CUBE_ID_TYPE_TO_PARENT_TYPE reverse lookup table
-     * is NOT a unique inverse - multiple parent types can produce the same child type
-     * at the same cubeId. For consistency with the S0-rooted Bey tree, we must trace
-     * from root to determine the correct parent type.</p>
+     * <p>The parent is exactly one level above this tet, so its type is
+     * {@code CID_TYPE_TO_PARENTTYPE[childCubeId][childType]} keyed by THIS tet's cube-id and type —
+     * a single table lookup, no per-level walk. This is the same upward step used by {@link #parent()},
+     * {@link #computeType(byte)}, and {@link #consecutiveIndex()}.</p>
      *
-     * <p>This is O(parentLevel) but ensures consistency with locatePointS0Tree.</p>
+     * <p><b>Superseded:</b> the deleted implementation traced down from the root through the Bey tree
+     * (O(parentLevel)) on the false premise that the reverse lookup was not a unique inverse; the t8code
+     * {@code CID_TYPE_TO_PARENTTYPE} table keyed by (cubeId, childType) is the correct O(1) inverse.</p>
      */
     private byte computeParentType(int parentX, int parentY, int parentZ, byte parentLevel) {
         if (parentLevel == 0) {

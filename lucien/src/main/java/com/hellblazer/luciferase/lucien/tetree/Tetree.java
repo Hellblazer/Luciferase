@@ -2868,17 +2868,17 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
     /**
      * Locate the tetrahedron containing a point at a given level.
      *
-     * <p><b>CRITICAL:</b> This method uses S0-S5 cube partitioning geometry to find the
-     * tetrahedron type. This is required because the {@link Tet#contains(Tuple3f)} method
-     * uses S0-S5 cube partitioning for containment testing.</p>
+     * <p>Snaps the point to the level's grid anchor, then returns the first of the 6 Kuhn
+     * tetrahedron types (0-5) whose region contains the point per {@link Tet#contains(Tuple3f)}
+     * (which uses {@link Tet#contains12DOP}). This brute-force "test all 6" form is O(6) per call
+     * but needs no type tables; it agrees with the direct O(1) classification in
+     * {@link Tet#locatePointS0Tree} (both are validated against each other and the SFC locate by
+     * {@code T8codeDtetOracleTest.locateMethodsAgreeAndContainPoint}).</p>
      *
-     * <p>The algorithm tests all 6 tetrahedron types (S0-S5) at the computed grid cell
-     * and returns the first one that contains the point. This ensures consistency with
-     * the containment geometry used by Tet.contains().</p>
-     *
-     * <p><b>Note:</b> The Bey tree traversal approach (Tet.locatePointS0Tree) produces
-     * types based on parent-child relationships which do NOT match S0-S5 cube partitioning
-     * geometry and should not be used for locate operations.</p>
+     * <p><b>Note (RDR-010 Luciferase-4pd):</b> the current t8code dtet type numbering <em>does</em>
+     * match the {@code coordinates()}/{@code contains12DOP} geometry, so {@link Tet#locatePointS0Tree}
+     * is interchangeable here. The deleted downward Bey root-trace (which produced types that did not
+     * match the geometry at depth &ge; 2) must not be reintroduced.</p>
      */
     protected Tet locate(Tuple3f point, byte level) {
         // Special case: level 0 is always the root tetrahedron of type 0

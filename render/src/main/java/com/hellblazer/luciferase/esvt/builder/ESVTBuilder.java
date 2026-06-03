@@ -550,9 +550,19 @@ public class ESVTBuilder {
      *   <li>beyId + parentType → Morton index (via BEY_NUMBER_TO_INDEX)</li>
      * </ol>
      */
-    private byte computeMortonChildIndex(Tet tet) {
+    // Package-private for direct unit testing of the pyramid-rooted precondition guard (Luciferase-rzn79).
+    byte computeMortonChildIndex(Tet tet) {
         if (tet.l() == 0) {
             return 0; // Root has no parent, return 0
+        }
+        if (tet.minTetLevel() != Tet.NO_TET_ANCESTOR) {
+            // Pyramid-rooted tet: computeType's ancestor walk is undefined above the tet/pyramid
+            // boundary (deferred to Luciferase-q3p). Fail loud at the call site rather than let a
+            // deep, unattributed IllegalStateException surface from Tet.computeType.
+            throw new IllegalArgumentException(
+            "ESVTBuilder.computeMortonChildIndex does not support pyramid-rooted tetrahedra: tet has "
+            + "minTetLevel=" + tet.minTetLevel() + " (!= NO_TET_ANCESTOR). Pyramid ancestor-type "
+            + "resolution is deferred to Luciferase-q3p.");
         }
         byte childCubeId = tet.cubeId(tet.l());
         byte parentType = tet.computeType((byte) (tet.l() - 1));

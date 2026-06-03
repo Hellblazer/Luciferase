@@ -112,9 +112,11 @@ class DsocAutoDisableDeterministicTest {
         var controller = controllerOf(octree);
         assertTrue(octree.isDSOCEnabled(), "DSOC starts enabled");
 
-        // 25 DSOC frames averaging 1000ns vs 25 standard averaging 100ns -> 10x overhead, far above the 1.2x (20%)
-        // tolerance. Total = 50 so shouldEvaluatePerformance (every 50 frames) fires on the next cull.
+        // dsoc+standard total = 50 so shouldEvaluatePerformance (every 50 frames) fires on the next cull.
         controller.setCountersForTest(25, 25 * 1000L, 25, 25 * 100L);
+        // Auto-disable now reads the apples-to-apples shadow baseline (Luciferase-vdv4p): 10 sampled frames at
+        // 1000ns DSOC vs 100ns same-query standard -> 10x overhead, far above the 1.2x (20%) tolerance.
+        controller.setShadowCountersForTest(10, 10 * 1000L, 10 * 100L);
 
         octree.frustumCullVisible(frustum(), new Point3f(0.5f, 0.5f, -1));
 
@@ -128,8 +130,9 @@ class DsocAutoDisableDeterministicTest {
         octree.enableDSOC(config(), 256, 256);
         var controller = controllerOf(octree);
 
-        // 1.1x overhead, within the 1.2x tolerance: must NOT auto-disable.
-        controller.setCountersForTest(25, 25 * 110L, 25, 25 * 100L);
+        controller.setCountersForTest(25, 25 * 110L, 25, 25 * 100L); // trigger evaluation (total 50)
+        // Shadow baseline at 1.1x overhead, within the 1.2x tolerance: must NOT auto-disable (Luciferase-vdv4p).
+        controller.setShadowCountersForTest(10, 10 * 110L, 10 * 100L);
 
         octree.frustumCullVisible(frustum(), new Point3f(0.5f, 0.5f, -1));
 

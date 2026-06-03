@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -144,5 +145,34 @@ class TetreeBitsTest {
         assertTrue(ncaLevel >= 0, "NCA level should be non-negative");
         assertTrue(ncaLevel <= Math.min(tet1.l(), tet2.l()),
                    "NCA level should not exceed minimum of the two input levels");
+    }
+
+    @Test
+    void testLowestCommonAncestorLevel_RejectsPyramidRootedFirstArg() {
+        // Luciferase-rzn79: a pyramid-rooted Tet (minTetLevel != NO_TET_ANCESTOR) must be rejected
+        // with an attributable IllegalArgumentException at the call site, not a deep IllegalStateException
+        // from Tet.computeType. Build a pyramid-rooted tet via the 6-arg constructor.
+        int cellSize = Constants.lengthAtLevel((byte) 5);
+        Tet pure = new Tet(2 * cellSize, 2 * cellSize, 2 * cellSize, (byte) 5, (byte) 0);
+        Tet pyramidRooted = new Tet(2 * cellSize, 2 * cellSize, 2 * cellSize, (byte) 5, (byte) 0, (byte) 2);
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                              () -> TetreeBits.lowestCommonAncestorLevel(pyramidRooted, pure));
+        assertTrue(ex.getMessage().contains("lowestCommonAncestorLevel"),
+                   "message must name the operation, got: " + ex.getMessage());
+        assertTrue(ex.getMessage().contains("Luciferase-q3p"),
+                   "message must reference the deferral, got: " + ex.getMessage());
+        assertTrue(ex.getMessage().contains("tet1"), "message must name the offending arg");
+    }
+
+    @Test
+    void testLowestCommonAncestorLevel_RejectsPyramidRootedSecondArg() {
+        int cellSize = Constants.lengthAtLevel((byte) 5);
+        Tet pure = new Tet(2 * cellSize, 2 * cellSize, 2 * cellSize, (byte) 5, (byte) 0);
+        Tet pyramidRooted = new Tet(2 * cellSize, 2 * cellSize, 2 * cellSize, (byte) 5, (byte) 0, (byte) 2);
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                              () -> TetreeBits.lowestCommonAncestorLevel(pure, pyramidRooted));
+        assertTrue(ex.getMessage().contains("tet2"), "message must name the offending arg");
     }
 }
