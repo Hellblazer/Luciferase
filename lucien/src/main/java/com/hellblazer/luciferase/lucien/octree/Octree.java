@@ -455,6 +455,9 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         if (parentLevel >= maxDepth) {
             return;
         }
+        if (parentNode.hasChildren()) {
+            return; // already subdivided (idempotent; mirrors Tetree)
+        }
 
         var childLevel = (byte) (parentLevel + 1);
 
@@ -495,27 +498,17 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
             var childEntities = entry.getValue();
 
             if (!childEntities.isEmpty()) {
-                SpatialNodeImpl<ID> childNode;
+                // childMorton is a level-(parentLevel+1) key, never equal to the level-parentLevel parentMorton,
+                // so a child node is always created (the former `childMorton == parentMorton` reference-equality
+                // branch was dead code and was removed — review follow-up).
+                var childNode = spatialIndex.computeIfAbsent(childMorton, k -> nodePool.acquire());
 
-                if (childMorton == parentMorton) {
-                    // Special case: child has same Morton code as parent
-                    // The entities can stay in the parent node - don't redistribute them
-                    // Don't mark these entities for removal from parent
-                    continue;
-                } else {
-                    // Create or get child node
-                    childNode = spatialIndex.computeIfAbsent(childMorton, k -> {
-                        // childMorton is already added to spatialIndex above
-                        return nodePool.acquire();
-                    });
-
-                    // Add entities to child and mark for removal from parent
-                    for (var entityId : childEntities) {
-                        childNode.addEntity(entityId);
-                        // Update entity locations - add child location
-                        entityManager.addEntityLocation(entityId, childMorton);
-                        entitiesToRemoveFromParent.add(entityId);
-                    }
+                // Add entities to child and mark for removal from parent
+                for (var entityId : childEntities) {
+                    childNode.addEntity(entityId);
+                    // Update entity locations - add child location
+                    entityManager.addEntityLocation(entityId, childMorton);
+                    entitiesToRemoveFromParent.add(entityId);
                 }
             }
         }

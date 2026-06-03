@@ -2159,12 +2159,13 @@ implements SpatialIndex<Key, ID, Content>,
     /**
      * Refine the node at {@code key} by one level on demand (Luciferase-m27q, 2:1 balance B10c).
      *
-     * <p>Locates the node and invokes the subclass {@link #handleNodeSubdivision} hook under the write lock,
-     * independent of the entity-count threshold and the deferred bulk-loading queue. Returns whether the
-     * subdivision actually produced finer nodes (it is a no-op when the key is absent, already at {@link #maxDepth},
-     * or when every entity maps to the same child cell so refining cannot distribute them). Ghost re-synchronization
-     * is the caller's responsibility (the 2:1-balance round triggers it once per round after draining all local
-     * refinements).
+     * <p>Locates the node and invokes the subclass {@link #handleNodeSubdivision} hook with geometric force under
+     * the write lock, independent of the entity-count threshold and the deferred bulk-loading queue. Returns
+     * whether the subdivision produced finer nodes (a no-op only when the key is absent or already at
+     * {@link #maxDepth}). Unlike the load-balancing path, this FORCES a one-level refine even when every entity
+     * maps to a single child octant — the 2:1 constraint is geometric, so the finer child cell must exist
+     * (Luciferase-7gnh2). Ghost re-synchronization is the caller's responsibility (the 2:1-balance round triggers
+     * it once per round after draining all local refinements).
      */
     @Override
     public boolean subdivide(Key key) {
@@ -2428,9 +2429,12 @@ implements SpatialIndex<Key, ID, Content>,
             return;
         }
 
-        // Get node
+        // Get node. An empty node with NO children is a dead leaf -> skip. But an empty INTERNAL node (its
+        // entities were redistributed to children on subdivision — including the forced single-child 2:1 case,
+        // Luciferase-7gnh2) must still be descended into, or its children and their entities are silently dropped
+        // from visitor-based traversal.
         SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
-        if (node == null || node.isEmpty()) {
+        if (node == null || (node.isEmpty() && !hasChildren(nodeIndex))) {
             return;
         }
 

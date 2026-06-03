@@ -143,4 +143,41 @@ class TwoOneBalanceConvergenceTest {
                        "the retained Tetree parent must report hasChildren after subdivide (detector-path leaf guard)");
         }
     }
+
+    /**
+     * Luciferase-7gnh2: the on-demand subdivide(Key) must FORCE a one-level geometric refine even when all
+     * entities map to a single child octant (the load-balancing path declines that split). It must create the
+     * finer child, mark the parent internal, AND visitor-based traversal must still reach the relocated entities
+     * (the empty-but-internal parent must be descended into, not skipped).
+     */
+    @Test
+    void forcedSubdivideOfSingleOctantCellCreatesChildAndStaysTraversable() {
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        byte level = 10;
+        int b = Constants.lengthAtLevel(level) * 4;
+        // Two entities in the SAME level-(11) octant of one level-10 cell -> childEntityMap.size()==1 -> the
+        // load-balancing path would decline; the forced 2:1 path must subdivide anyway.
+        var id1 = octree.insert(new Point3f(b + 50, b + 50, b + 50), level, "x");
+        var id2 = octree.insert(new Point3f(b + 51, b + 50, b + 50), level, "y");
+        assertEquals(1, octree.getNodeCount(), "both entities share one coarse leaf");
+        var key = octree.getSpatialKeys().iterator().next();
+
+        assertTrue(octree.subdivide(key),
+                   "forced subdivide must create a finer child even for a single-octant cell (Luciferase-7gnh2)");
+        assertTrue(octree.getNodeCount() > 1, "a finer child node must exist");
+        assertTrue(octree.hasChildren(key), "the parent must be marked internal");
+
+        // Visitor traversal must still reach the entities now living in the (single) child — the empty internal
+        // parent must not short-circuit traversal.
+        var visited = new java.util.HashSet<LongEntityID>();
+        octree.traverse(new com.hellblazer.luciferase.lucien.visitor.AbstractTreeVisitor<MortonKey, LongEntityID,
+                            String>() {
+            @Override
+            public void visitEntity(LongEntityID entityId, String content, MortonKey nodeIndex, int lvl) {
+                visited.add(entityId);
+            }
+        }, com.hellblazer.luciferase.lucien.visitor.TraversalStrategy.PRE_ORDER);
+        assertTrue(visited.contains(id1) && visited.contains(id2),
+                   "visitor traversal must reach entities under the forced child (no skipped empty-internal parent)");
+    }
 }
