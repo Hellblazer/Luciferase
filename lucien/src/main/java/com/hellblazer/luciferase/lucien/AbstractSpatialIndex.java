@@ -1272,7 +1272,14 @@ implements SpatialIndex<Key, ID, Content>,
      * @return the number of non-empty nodes
      */
     public int size() {
-        return (int) spatialIndex.values().stream().filter(node -> !node.isEmpty()).count();
+        // Read-lock for a consistent count (Luciferase-xiv5u): the class documents consistent reads, but this
+        // streamed values() with no lock, so a concurrent mutation could be counted half-applied.
+        lock.readLock().lock();
+        try {
+            return (int) spatialIndex.values().stream().filter(node -> !node.isEmpty()).count();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
@@ -2247,12 +2254,12 @@ implements SpatialIndex<Key, ID, Content>,
      * @param entityProcessor function to process each entity ID with its containing node index
      */
     protected void processEntitiesInSFCOrder(java.util.function.BiConsumer<Key, ID> entityProcessor) {
-        for (var nodeIndex : spatialIndex.keySet()) {
-            SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
-            if (node != null && !node.isEmpty()) {
-                for (ID entityId : node.getEntityIds()) {
-                    entityProcessor.accept(nodeIndex, entityId);
-                }
+        // Snapshot (key,node) under the read lock (Luciferase-xiv5u) to avoid the keySet()+per-key get() TOCTOU: a
+        // concurrent remove would otherwise null the node and silently skip work. Process the snapshot outside the
+        // lock so user consumers don't run under it. SFC order is preserved (ConcurrentSkipListMap keySet is sorted).
+        for (var entry : snapshotNonEmptyNodesInSFCOrder()) {
+            for (ID entityId : entry.getValue().getEntityIds()) {
+                entityProcessor.accept(entry.getKey(), entityId);
             }
         }
     }
@@ -2264,11 +2271,30 @@ implements SpatialIndex<Key, ID, Content>,
      * @param nodeProcessor function to process each non-empty node
      */
     protected void processNodesInSFCOrder(java.util.function.BiConsumer<Key, SpatialNodeImpl<ID>> nodeProcessor) {
-        for (var nodeIndex : spatialIndex.keySet()) {
-            SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
-            if (node != null && !node.isEmpty()) {
-                nodeProcessor.accept(nodeIndex, node);
+        // Consistent snapshot under the read lock (Luciferase-xiv5u) — see processEntitiesInSFCOrder.
+        for (var entry : snapshotNonEmptyNodesInSFCOrder()) {
+            nodeProcessor.accept(entry.getKey(), entry.getValue());
+        }
+    }
+
+    /**
+     * A point-in-time, SFC-ordered snapshot of the non-empty (key, node) pairs, taken under the read lock so it is
+     * consistent against concurrent writers (Luciferase-xiv5u). Returned so callers can process without holding the
+     * lock during user-supplied consumers.
+     */
+    private java.util.List<java.util.Map.Entry<Key, SpatialNodeImpl<ID>>> snapshotNonEmptyNodesInSFCOrder() {
+        lock.readLock().lock();
+        try {
+            var out = new java.util.ArrayList<java.util.Map.Entry<Key, SpatialNodeImpl<ID>>>();
+            for (var nodeIndex : spatialIndex.keySet()) {
+                SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
+                if (node != null && !node.isEmpty()) {
+                    out.add(java.util.Map.entry(nodeIndex, node));
+                }
             }
+            return out;
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
