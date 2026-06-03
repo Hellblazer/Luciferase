@@ -337,6 +337,10 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
             // silent per-element NACK loop that drops the whole batch (RDR-004 D3 / 7pias class).
             log.error("Unsupported EntityID type in stream session {}: {}", session.sessionId, e.getMessage(), e);
             session.responseObserver.onError(e);
+            // Remove the terminated session (Luciferase-m2k3u review): this server-originated onError does not
+            // trigger the client-callback removal path, so without this the session leaks in activeStreams and
+            // shutdown() would call onCompleted() on an already-errored observer (gRPC terminal-event violation).
+            activeStreams.remove(session.sessionId);
         } catch (Exception e) {
             log.error("Error processing stream update in session {}: {}",
                      session.sessionId, e.getMessage(), e);

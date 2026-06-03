@@ -300,6 +300,11 @@ public final class GhostCoordinator<Key extends SpatialKey<Key>, ID extends Enti
         }
     }
 
+    /**
+     * Rebuild the ghost boundary set (atomically, under the write lock) and then flush it to peers (outside the
+     * lock). Note (Luciferase-cfg4o): the network flush reflects the boundary set as of the lock release —
+     * mutations made between unlock and flush are captured by the next adaptation cycle, not this one.
+     */
     public void triggerGhostUpdateAfterAdaptation() {
         if (ghostType == GhostType.NONE || ghostBoundaryDetector == null) {
             return;
