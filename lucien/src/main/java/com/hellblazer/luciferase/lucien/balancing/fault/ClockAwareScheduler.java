@@ -56,7 +56,10 @@ public class ClockAwareScheduler {
     private final LongSupplier timeSource;
     private final long intervalMs;
     private final Runnable task;
-    private volatile long lastExecutionTime;
+    // AtomicLong + CAS (Luciferase-1dcx7): tick() is read-compare-assign-run; a plain volatile let two concurrent
+    // callers both pass the interval gate and both run the task (double recovery-check). The CAS makes exactly one
+    // caller win the interval advance.
+    private final java.util.concurrent.atomic.AtomicLong lastExecutionTime = new java.util.concurrent.atomic.AtomicLong();
     private volatile boolean running = false;
 
     /**
@@ -77,7 +80,7 @@ public class ClockAwareScheduler {
         }
 
         this.intervalMs = intervalMs;
-        this.lastExecutionTime = timeSource.getAsLong();
+        this.lastExecutionTime.set(timeSource.getAsLong());
     }
 
     /**
@@ -100,8 +103,10 @@ public class ClockAwareScheduler {
         }
 
         long now = timeSource.getAsLong();
-        if (now - lastExecutionTime >= intervalMs) {
-            lastExecutionTime = now;
+        long last = lastExecutionTime.get();
+        // CAS the interval advance: only the caller that wins the gate runs the task, so concurrent ticks within one
+        // interval execute it at most once (Luciferase-1dcx7).
+        if (now - last >= intervalMs && lastExecutionTime.compareAndSet(last, now)) {
             task.run();
             return true;
         }
@@ -116,7 +121,7 @@ public class ClockAwareScheduler {
      */
     public void start() {
         running = true;
-        lastExecutionTime = timeSource.getAsLong();
+        lastExecutionTime.set(timeSource.getAsLong());
     }
 
     /**
