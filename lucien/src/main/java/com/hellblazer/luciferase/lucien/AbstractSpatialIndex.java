@@ -920,9 +920,19 @@ implements SpatialIndex<Key, ID, Content>,
      * Find k nearest neighbors to a query point using spatial locality optimization.
      * <p>RDR-008 P3: delegates to {@link KnnSearcher}; the cluster (cache, version pinning, SFC range pruning,
      * expanding-radius fallback, full-domain sweep, legacy BFS fallback) lives there.
+     * <p>Luciferase-us4zr: held under the global read lock. {@link KnnSearcher} traverses the index via the
+     * fine-grained per-node locking strategy, which is independent of this {@code lock}; all write paths (single
+     * insert/remove and batch) take {@code lock.writeLock()}, so without this outer read guard a concurrent kNN
+     * could observe torn/partial state mid-write. Range queries ({@link #entitiesInRegion}) and collision already
+     * take this read lock — kNN was the outlier. The lock is reentrant, so KnnSearcher's nested reads are fine.
      */
     public List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance) {
-        return knn.kNearestNeighbors(queryPoint, k, maxDistance);
+        lock.readLock().lock();
+        try {
+            return knn.kNearestNeighbors(queryPoint, k, maxDistance);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
