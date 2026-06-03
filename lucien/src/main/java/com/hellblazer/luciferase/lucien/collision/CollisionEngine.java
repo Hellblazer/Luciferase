@@ -187,33 +187,43 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
      * when high read concurrency is needed.
      */
     public List<CollisionPair<ID, Content>> findCollisionsFineGrained(ID entityId) {
-        var locations = core.entityManager().getEntityLocations(entityId);
-        if (locations.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        // Use fine-grained locking for each node access — re-read the volatile strategy reference at each call so
-        // a concurrent configureFineGrainedLocking is observed (mirrors KnnSearcher's pattern).
-        return core.lockingStrategy().executeRead(0L, () -> {
-            var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
-            var checkedEntities = ObjectPools.<ID>borrowHashSet();
-            try {
-                checkedEntities.add(entityId);
-
-                var entityBounds = callback.getCachedEntityBounds(entityId);
-                if (entityBounds != null) {
-                    findBoundedEntityCollisions(entityId, entityBounds, checkedEntities, collisions);
-                } else {
-                    findPointEntityCollisions(entityId, locations, checkedEntities, collisions);
-                }
-
-                Collections.sort(collisions);
-                return new ArrayList<>(collisions);
-            } finally {
-                ObjectPools.returnArrayList(collisions);
-                ObjectPools.returnHashSet(checkedEntities);
+        // Luciferase-kvdto: take the global read lock as an outer guard, like every other read path
+        // (findAllCollisions, findCollisions, findCollisionsInRegion, kNN). The per-node fine-grained strategy is
+        // independent of core.lock(); all write paths take core.lock().writeLock(), so without this guard a
+        // fine-grained collision query could traverse mid-write and observe torn results. The lock is reentrant,
+        // so the inner per-node reads are fine.
+        core.lock().readLock().lock();
+        try {
+            var locations = core.entityManager().getEntityLocations(entityId);
+            if (locations.isEmpty()) {
+                return Collections.emptyList();
             }
-        });
+
+            // Use fine-grained locking for each node access — re-read the volatile strategy reference at each call
+            // so a concurrent configureFineGrainedLocking is observed (mirrors KnnSearcher's pattern).
+            return core.lockingStrategy().executeRead(0L, () -> {
+                var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
+                var checkedEntities = ObjectPools.<ID>borrowHashSet();
+                try {
+                    checkedEntities.add(entityId);
+
+                    var entityBounds = callback.getCachedEntityBounds(entityId);
+                    if (entityBounds != null) {
+                        findBoundedEntityCollisions(entityId, entityBounds, checkedEntities, collisions);
+                    } else {
+                        findPointEntityCollisions(entityId, locations, checkedEntities, collisions);
+                    }
+
+                    Collections.sort(collisions);
+                    return new ArrayList<>(collisions);
+                } finally {
+                    ObjectPools.returnArrayList(collisions);
+                    ObjectPools.returnHashSet(checkedEntities);
+                }
+            });
+        } finally {
+            core.lock().readLock().unlock();
+        }
     }
 
     /** Find all collisions in the given region. */
