@@ -43,7 +43,8 @@ import java.util.stream.Stream;
  * @param <Content> the entity content type
  * @author hal.hildebrand
  */
-public interface FrustumGeometry<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
+public interface FrustumGeometry<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+extends com.hellblazer.luciferase.lucien.SpatialIndexGeometry<ID> {
 
     /** Spatial keys of nodes potentially intersecting the frustum, in front-to-back traversal order. */
     Stream<Key> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition);
@@ -54,6 +55,5 @@ public interface FrustumGeometry<Key extends SpatialKey<Key>, ID extends EntityI
     /** World-space bounds of the node at the given key, or {@code null} if not computable. */
     EntityBounds computeNodeBounds(Key nodeIndex);
 
-    /** Cached world position of the entity, or {@code null} if unknown. */
-    Point3f getCachedEntityPosition(ID entityId);
+    // getCachedEntityPosition is inherited from SpatialIndexGeometry (Luciferase-rk8hv).
 }

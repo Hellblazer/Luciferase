@@ -40,7 +40,8 @@ import java.util.stream.Stream;
  * @param <Content> the entity content type
  * @author hal.hildebrand
  */
-public interface CullGeometry<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
+public interface CullGeometry<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+extends com.hellblazer.luciferase.lucien.SpatialIndexGeometry<ID> {
 
     // ===== Frustum subclass hooks =====
 
@@ -71,8 +72,7 @@ public interface CullGeometry<Key extends SpatialKey<Key>, ID extends EntityID, 
 
     // ===== Cached accessors + spanning =====
 
-    /** Cached world position of the entity, or {@code null} if unknown. */
-    Point3f getCachedEntityPosition(ID entityId);
+    // getCachedEntityPosition is inherited from SpatialIndexGeometry (Luciferase-rk8hv).
 
     /** Cached world bounds of the entity, or {@code null} for point entities. */
     EntityBounds getCachedEntityBounds(ID entityId);

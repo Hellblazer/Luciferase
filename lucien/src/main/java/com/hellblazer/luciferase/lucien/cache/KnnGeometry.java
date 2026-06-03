@@ -46,7 +46,8 @@ import java.util.Set;
  * @param <ID>  the entity identifier type
  * @author hal.hildebrand
  */
-public interface KnnGeometry<Key extends SpatialKey<Key>, ID extends EntityID> {
+public interface KnnGeometry<Key extends SpatialKey<Key>, ID extends EntityID>
+extends com.hellblazer.luciferase.lucien.SpatialIndexGeometry<ID> {
 
     // ---- Subclass-overridden geometry hooks -----------------------------------------------------------------------
 
@@ -91,8 +92,7 @@ public interface KnnGeometry<Key extends SpatialKey<Key>, ID extends EntityID> {
     /** Validate that {@code position} satisfies the façade's spatial constraints (range, positivity, etc.). */
     void validateSpatialConstraints(Point3f position);
 
-    /** Cached world position of the entity, or {@code null} if unknown. */
-    Point3f getCachedEntityPosition(ID entityId);
+    // getCachedEntityPosition is inherited from SpatialIndexGeometry (Luciferase-rk8hv).
 
     /** The façade's maximum subdivision depth (constant for the lifetime of the index). */
     byte maxDepth();
