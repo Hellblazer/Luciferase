@@ -11,6 +11,7 @@ import javax.vecmath.Matrix3f;
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -52,6 +53,24 @@ class CollisionDetectorTriangleOBBTest {
 
         assertTrue(CollisionDetector.triangleIntersectsOBB(v0, v1, v2, obb),
                    "triangle through the box centre must collide");
+    }
+
+    @Test
+    void penetrationDepthIsTheRealMtvNotFabricated() {
+        // The core bsibi deliverable: a real penetration depth (was a fabricated 0.1f). Flat triangle at z=0.5,
+        // laterally inside a unit box at the origin. The minimum-translation axis is the triangle normal (z); the
+        // box reaches z=1, so separating depth = 1 - 0.5 = 0.5. (A fabricated 0.1f would fail this.)
+        var box = new BoxShape(new Point3f(0, 0, 0), new Vector3f(1, 1, 1));
+        var v0 = new Point3f(-0.5f, -0.5f, 0.5f);
+        var v1 = new Point3f(0.5f, -0.5f, 0.5f);
+        var v2 = new Point3f(0.0f, 0.5f, 0.5f);
+
+        float penetration = CollisionDetector.triangleBoxPenetrationForTest(v0, v1, v2, box);
+        assertEquals(0.5f, penetration, 1e-4f, "real MTV penetration depth, not 0.1f (Luciferase-bsibi)");
+
+        var axis = CollisionDetector.triangleBoxAxisForTest(v0, v1, v2, box);
+        assertTrue(axis != null && Math.abs(axis.z) > Math.abs(axis.x) && Math.abs(axis.z) > Math.abs(axis.y),
+                   "the MTV axis for a flat z=0.5 triangle must be z-dominant, got " + axis);
     }
 
     @Test

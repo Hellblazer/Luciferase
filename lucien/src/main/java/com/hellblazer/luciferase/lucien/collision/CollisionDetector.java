@@ -816,6 +816,18 @@ public class CollisionDetector {
         return new Point3f(local.x, local.y, local.z);
     }
 
+    /** Test seam (Luciferase-bsibi): MTV penetration depth of an axis-aligned triangle-vs-box hit, -1 if none. */
+    static float triangleBoxPenetrationForTest(Point3f v0, Point3f v1, Point3f v2, BoxShape box) {
+        var sat = triangleVsBox(v0, v1, v2, box);
+        return sat.collides ? sat.penetration : -1.0f;
+    }
+
+    /** Test seam (Luciferase-bsibi): world-space MTV axis of an axis-aligned triangle-vs-box hit, null if none. */
+    static Vector3f triangleBoxAxisForTest(Point3f v0, Point3f v1, Point3f v2, BoxShape box) {
+        var sat = triangleVsBox(v0, v1, v2, box);
+        return sat.collides ? sat.axis : null;
+    }
+
     /** Result of a triangle-vs-box separating-axis test (Luciferase-bsibi). */
     private record TriBoxSat(boolean collides, float penetration, Vector3f axis) {
         static TriBoxSat noHit() {
