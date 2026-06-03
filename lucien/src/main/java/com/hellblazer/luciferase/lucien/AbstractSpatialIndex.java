@@ -2278,9 +2278,14 @@ implements SpatialIndex<Key, ID, Content>,
     }
 
     /**
-     * A point-in-time, SFC-ordered snapshot of the non-empty (key, node) pairs, taken under the read lock so it is
-     * consistent against concurrent writers (Luciferase-xiv5u). Returned so callers can process without holding the
-     * lock during user-supplied consumers.
+     * An SFC-ordered snapshot of the non-empty (key, node) <em>references</em>, taken under the read lock so the
+     * key set is consistent against concurrent writers — fixing the keySet()+per-key get() TOCTOU (Luciferase-xiv5u).
+     * Returned so callers can process without holding the lock during user-supplied consumers.
+     *
+     * <p>Scope of the guarantee: only the set of node references is frozen. Entity membership within each node is read
+     * later via {@code getEntityIds()} (a CopyOnWriteArrayList view), so it reflects the node's state at iteration
+     * time, not at snapshot time — a node emptied or removed by a concurrent writer after the snapshot simply yields
+     * zero entities (silently skipped), never a null-node skip or a CME.</p>
      */
     private java.util.List<java.util.Map.Entry<Key, SpatialNodeImpl<ID>>> snapshotNonEmptyNodesInSFCOrder() {
         lock.readLock().lock();

@@ -41,7 +41,8 @@ import java.util.stream.Stream;
  * @author hal.hildebrand
  */
 public interface CullGeometry<Key extends SpatialKey<Key>, ID extends EntityID, Content>
-extends com.hellblazer.luciferase.lucien.SpatialIndexGeometry<ID> {
+extends com.hellblazer.luciferase.lucien.SpatialIndexGeometry<ID>,
+        com.hellblazer.luciferase.lucien.CachedEntityBoundsGeometry<ID> {
 
     // ===== Frustum subclass hooks =====
 
@@ -74,8 +75,7 @@ extends com.hellblazer.luciferase.lucien.SpatialIndexGeometry<ID> {
 
     // getCachedEntityPosition is inherited from SpatialIndexGeometry (Luciferase-rk8hv).
 
-    /** Cached world bounds of the entity, or {@code null} for point entities. */
-    EntityBounds getCachedEntityBounds(ID entityId);
+    // getCachedEntityBounds is inherited from CachedEntityBoundsGeometry (Luciferase-rk8hv).
 
     /** Whether the spanning policy is enabled — drives the bounded-entity sweep in ray queries. */
     boolean isSpanningEnabled();

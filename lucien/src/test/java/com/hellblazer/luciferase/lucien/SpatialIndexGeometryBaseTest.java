@@ -34,4 +34,17 @@ class SpatialIndexGeometryBaseTest {
         assertTrue(SpatialIndexGeometry.class.isAssignableFrom(KnnGeometry.class),
                    "KnnGeometry must extend SpatialIndexGeometry");
     }
+
+    @Test
+    void pairwiseSharedSeamsAlsoShareACommonBase() {
+        // getCachedEntityBounds: cull + collision; findNodesIntersectingBounds/addNeighboringNodes: collision + knn.
+        assertTrue(CachedEntityBoundsGeometry.class.isAssignableFrom(CullGeometry.class),
+                   "CullGeometry must extend CachedEntityBoundsGeometry (Luciferase-rk8hv)");
+        assertTrue(CachedEntityBoundsGeometry.class.isAssignableFrom(CollisionGeometry.class),
+                   "CollisionGeometry must extend CachedEntityBoundsGeometry");
+        assertTrue(NodeBoundsQueryGeometry.class.isAssignableFrom(CollisionGeometry.class),
+                   "CollisionGeometry must extend NodeBoundsQueryGeometry");
+        assertTrue(NodeBoundsQueryGeometry.class.isAssignableFrom(KnnGeometry.class),
+                   "KnnGeometry must extend NodeBoundsQueryGeometry");
+    }
 }

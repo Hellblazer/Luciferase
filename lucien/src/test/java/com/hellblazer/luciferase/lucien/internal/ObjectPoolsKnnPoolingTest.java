@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.PriorityQueue;
 
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -48,5 +49,21 @@ class ObjectPoolsKnnPoolingTest {
 
         PriorityQueue<EntityDistance<LongEntityID>> plain = ObjectPools.borrowPriorityQueue();
         assertNull(plain.comparator(), "a plain borrow must never receive a comparator-bearing queue (Luciferase-up7uz)");
+    }
+
+    @Test
+    void mismatchedComparatorDoesNotBleedThePool() {
+        var a = EntityDistance.<LongEntityID>maxHeapComparator();
+        PriorityQueue<EntityDistance<LongEntityID>> q = ObjectPools.borrowPriorityQueue(a);
+        ObjectPools.returnPriorityQueue(q);
+
+        // Borrow with a DIFFERENT comparator instance (a fresh lambda): must not consume the pooled 'a' queue.
+        java.util.Comparator<EntityDistance<LongEntityID>> b = (x, y) -> Float.compare(x.distance(), y.distance());
+        PriorityQueue<EntityDistance<LongEntityID>> fresh = ObjectPools.borrowPriorityQueue(b);
+        assertNotSame(q, fresh, "a mismatched-comparator borrow must not reuse the pooled queue");
+
+        // The original pooled queue must still be available — the mismatch path must put it back, not drop it.
+        PriorityQueue<EntityDistance<LongEntityID>> again = ObjectPools.borrowPriorityQueue(a);
+        assertSame(q, again, "the comparator pool must not bleed capacity on a comparator mismatch (Luciferase-up7uz)");
     }
 }

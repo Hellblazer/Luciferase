@@ -188,10 +188,14 @@ public class ObjectPools {
         @SuppressWarnings("unchecked")
         public <T> PriorityQueue<T> borrowWithComparator(Comparator<? super T> comparator) {
             var queue = comparatorPool.pollFirst();
-            if (queue != null && queue.comparator() == comparator) {
-                return (PriorityQueue<T>) queue; // same comparator instance, already empty — genuine reuse
+            if (queue != null) {
+                if (queue.comparator() == comparator) {
+                    return (PriorityQueue<T>) queue; // same comparator instance, already empty — genuine reuse
+                }
+                // Different comparator instance: put the polled queue back so the pool does not bleed capacity
+                // (Luciferase-up7uz review), then build a fresh queue for this comparator.
+                comparatorPool.offerFirst(queue);
             }
-            // Empty pool or (defensively) a different comparator instance: build a fresh queue.
             return new PriorityQueue<T>(comparator);
         }
 
