@@ -1382,7 +1382,9 @@ public class CollisionDetector {
 
         float minOverlap = Float.MAX_VALUE;
         Vector3f bestAxis = null;
-        for (var l : candidates) {
+        int bestIndex = -1;
+        for (int ci = 0; ci < candidates.size(); ci++) {
+            var l = candidates.get(ci);
             float rA = hA[0] * Math.abs(axesA[0].dot(l)) + hA[1] * Math.abs(axesA[1].dot(l))
                      + hA[2] * Math.abs(axesA[2].dot(l));
             float rB = hB[0] * Math.abs(axesB[0].dot(l)) + hB[1] * Math.abs(axesB[1].dot(l))
@@ -1395,6 +1397,7 @@ public class CollisionDetector {
             if (overlap < minOverlap) {
                 minOverlap = overlap;
                 bestAxis = l;
+                bestIndex = ci;
             }
         }
         if (bestAxis == null) {
@@ -1407,7 +1410,30 @@ public class CollisionDetector {
             normal.scale(-1);
         }
 
-        // Contact point: midpoint of the two surface support points along the contact normal.
+        // Candidate ordering: [0,2] = A face axes, [3,5] = B face axes, [6+] = edge-edge cross products.
+        // Face contacts (face-face / face-edge) yield a contact manifold via incident-face clipping (Luciferase-nm9dj);
+        // edge-edge contacts are a single point.
+        if (bestIndex < 6) {
+            boolean refIsA = bestIndex < 3;
+            var refC = refIsA ? cA : cB;
+            var refAxes = refIsA ? axesA : axesB;
+            var refH = refIsA ? hA : hB;
+            var incC = refIsA ? cB : cA;
+            var incAxes = refIsA ? axesB : axesA;
+            var incH = refIsA ? hB : hA;
+            // Reference face points toward the other box: +normal if A is reference, -normal if B is reference.
+            var refDir = new Vector3f(normal);
+            if (!refIsA) {
+                refDir.scale(-1);
+            }
+            var manifold = clipFaceManifold(refC, refAxes, refH, incC, incAxes, incH, refDir);
+            if (!manifold.isEmpty()) {
+                var rep = centroid(manifold);
+                return CollisionResult.collision(rep, normal, minOverlap, manifold);
+            }
+        }
+
+        // Edge-edge (or degenerate) contact: single point = midpoint of the two surface support points.
         var oppositeNormal = new Vector3f(normal);
         oppositeNormal.scale(-1);
         var supportA = shapeA.getSupport(normal);
@@ -1416,6 +1442,116 @@ public class CollisionDetector {
         contactPoint.interpolate(supportA, supportB, 0.5f);
 
         return CollisionResult.collision(contactPoint, normal, minOverlap);
+    }
+
+    /** A box face: outward normal, centre, and the two lateral (in-plane) unit axes with their half-extents. */
+    private record BoxFace(Vector3f normal, Point3f center, Vector3f u, float hu, Vector3f v, float hv) {}
+
+    /** Pick the face of a box (centre, unit axes, half-extents) whose outward normal is most aligned with {@code dir}. */
+    private static BoxFace pickFace(Point3f c, Vector3f[] axes, float[] h, Vector3f dir) {
+        int bi = 0;
+        float bestDot = -Float.MAX_VALUE;
+        float sign = 1;
+        for (int i = 0; i < 3; i++) {
+            float d = axes[i].dot(dir);
+            if (Math.abs(d) > bestDot) {
+                bestDot = Math.abs(d);
+                bi = i;
+                sign = d >= 0 ? 1 : -1;
+            }
+        }
+        var normal = new Vector3f(axes[bi]);
+        normal.scale(sign);
+        var center = new Point3f(c.x + normal.x * h[bi], c.y + normal.y * h[bi], c.z + normal.z * h[bi]);
+        int j = (bi + 1) % 3, k = (bi + 2) % 3;
+        return new BoxFace(normal, center, new Vector3f(axes[j]), h[j], new Vector3f(axes[k]), h[k]);
+    }
+
+    /**
+     * Build the contact manifold (Luciferase-nm9dj) by clipping the incident box's face against the side planes of
+     * the reference box's face (Sutherland-Hodgman), keeping the points on or below the reference face.
+     */
+    private static java.util.List<Point3f> clipFaceManifold(Point3f refC, Vector3f[] refAxes, float[] refH,
+                                                            Point3f incC, Vector3f[] incAxes, float[] incH,
+                                                            Vector3f refDir) {
+        var ref = pickFace(refC, refAxes, refH, refDir);
+        // Incident face: the incident box face most anti-parallel to the reference face normal.
+        var antiRef = new Vector3f(ref.normal());
+        antiRef.scale(-1);
+        var inc = pickFace(incC, incAxes, incH, antiRef);
+
+        // Incident face quad (loop order).
+        var poly = new java.util.ArrayList<Point3f>(8);
+        poly.add(faceVertex(inc.center(), inc.u(), inc.hu(), inc.v(), inc.hv(), +1, +1));
+        poly.add(faceVertex(inc.center(), inc.u(), inc.hu(), inc.v(), inc.hv(), +1, -1));
+        poly.add(faceVertex(inc.center(), inc.u(), inc.hu(), inc.v(), inc.hv(), -1, -1));
+        poly.add(faceVertex(inc.center(), inc.u(), inc.hu(), inc.v(), inc.hv(), -1, +1));
+
+        // Clip against the 4 side planes of the reference face (inward normals).
+        poly = clipToPlane(poly, ref.center(), ref.u(), ref.hu(), +1);
+        poly = clipToPlane(poly, ref.center(), ref.u(), ref.hu(), -1);
+        poly = clipToPlane(poly, ref.center(), ref.v(), ref.hv(), +1);
+        poly = clipToPlane(poly, ref.center(), ref.v(), ref.hv(), -1);
+
+        // Keep only points on or below the reference face (penetrating side).
+        var manifold = new java.util.ArrayList<Point3f>(poly.size());
+        for (var p : poly) {
+            var rel = new Vector3f(p.x - ref.center().x, p.y - ref.center().y, p.z - ref.center().z);
+            if (rel.dot(ref.normal()) <= 1e-4f) {
+                manifold.add(p);
+            }
+        }
+        return manifold;
+    }
+
+    private static Point3f faceVertex(Point3f c, Vector3f u, float hu, Vector3f v, float hv, float su, float sv) {
+        return new Point3f(c.x + su * hu * u.x + sv * hv * v.x, c.y + su * hu * u.y + sv * hv * v.y,
+                           c.z + su * hu * u.z + sv * hv * v.z);
+    }
+
+    /**
+     * Sutherland-Hodgman clip of a convex polygon to the half-space bounded by the plane {@code planePoint ± h*axis}
+     * (side selected by {@code sideSign}) with the inward normal pointing into the face extent.
+     */
+    private static java.util.ArrayList<Point3f> clipToPlane(java.util.List<Point3f> poly, Point3f center,
+                                                            Vector3f axis, float h, float sideSign) {
+        // Plane through center + sideSign*h*axis; inward normal = -sideSign*axis (points toward the face interior).
+        var planePoint = new Point3f(center.x + sideSign * h * axis.x, center.y + sideSign * h * axis.y,
+                                     center.z + sideSign * h * axis.z);
+        var inward = new Vector3f(axis);
+        inward.scale(-sideSign);
+
+        var out = new java.util.ArrayList<Point3f>(poly.size() + 1);
+        int n = poly.size();
+        for (int i = 0; i < n; i++) {
+            var cur = poly.get(i);
+            var nxt = poly.get((i + 1) % n);
+            float dc = signedDist(cur, planePoint, inward);
+            float dn = signedDist(nxt, planePoint, inward);
+            if (dc >= 0) {
+                out.add(cur);
+            }
+            if ((dc >= 0) != (dn >= 0)) {
+                float tt = dc / (dc - dn); // intersection parameter
+                out.add(new Point3f(cur.x + tt * (nxt.x - cur.x), cur.y + tt * (nxt.y - cur.y),
+                                    cur.z + tt * (nxt.z - cur.z)));
+            }
+        }
+        return out;
+    }
+
+    private static float signedDist(Point3f p, Point3f planePoint, Vector3f inwardNormal) {
+        return (p.x - planePoint.x) * inwardNormal.x + (p.y - planePoint.y) * inwardNormal.y
+               + (p.z - planePoint.z) * inwardNormal.z;
+    }
+
+    private static Point3f centroid(java.util.List<Point3f> pts) {
+        var c = new Point3f();
+        for (var p : pts) {
+            c.add(p);
+        }
+        c.scale(1.0f / pts.size());
+        return c;
     }
 
     /**
