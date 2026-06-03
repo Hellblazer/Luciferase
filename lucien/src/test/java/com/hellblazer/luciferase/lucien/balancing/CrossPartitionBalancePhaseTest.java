@@ -674,16 +674,17 @@ public class CrossPartitionBalancePhaseTest {
         public int getBarrierCount() { return barrierCount.get(); }
     }
 
-    /** Mock coordinator for D.5 tests — works via reflection from identifyRefinementNeeds(). */
+    /** Mock sender for D.5 tests — implements {@link RefinementRequestSender} for direct typed dispatch (Luciferase-ln6wu). */
     private static class MockRefinementCoordinator<K extends SpatialKey<K>,
                                                     I extends EntityID,
-                                                    C> {
+                                                    C> implements RefinementRequestSender<K, I, C> {
         private final AtomicInteger requestsSent = new AtomicInteger(0);
         private final List<RefinementRequest<K>> capturedRequests =
             Collections.synchronizedList(new ArrayList<>());
         private boolean shouldTimeout = false;
         private boolean shouldThrowException = false;
 
+        @Override
         public List<CompletableFuture<RefinementResponse<K, I, C>>> sendRequestsParallel(
                 List<RefinementRequest<K>> requests) {
             requestsSent.addAndGet(requests.size());

@@ -380,17 +380,16 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
      * @param roundNumber the current round number
      * @param targetRounds the target number of rounds
      * @param balanceChecker the checker to detect violations
-     * @param coordinator the coordinator to send requests (accessed via reflection for sendRequestsParallel)
-     * @param <Coord> the coordinator type parameter
+     * @param sender the {@link RefinementRequestSender} seam that dispatches the requests
      * @return RoundResult with violations processed, round status, and timing
      * @throws java.util.concurrent.TimeoutException if requests timeout
      * @throws InterruptedException if interrupted while waiting
      */
-    public <Coord> RefinementCoordinator.RoundResult identifyRefinementNeeds(
+    public RefinementCoordinator.RoundResult identifyRefinementNeeds(
         int roundNumber,
         int targetRounds,
         TwoOneBalanceChecker<Key, ID, Content> balanceChecker,
-        Coord coordinator
+        RefinementRequestSender<Key, ID, Content> sender
     ) throws java.util.concurrent.TimeoutException, InterruptedException {
         var startTime = System.currentTimeMillis();
 
@@ -451,33 +450,13 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                      roundNumber, sourceRank, groupViolations.size(), maxLevel);
         }
 
-        // Step 4: Send async requests via coordinator using reflection.
-        // This 4-arg overload is a TEST-ONLY entry point (no production caller); the production round path is
-        // execute() -> executeRefinementRound(int), which detects violations and sends per-target-rank requests
-        // directly via the exchange (Luciferase-uhsn). Tests pass a coordinator exposing a PUBLIC sendRequestsParallel, so
-        // getMethod (public-only) resolves it — byte-identical to the pre-inversion behavior. We keep
-        // getMethod (not getDeclaredMethod/setAccessible) precisely to preserve that behavior: against a
-        // real RefinementCoordinator (private method) this throws NoSuchMethodException, exactly as before.
-        // Erasure-matched: List.class covers the generic List<RefinementRequest<Key>> at the call site.
-        List<java.util.concurrent.CompletableFuture<RefinementResponse<Key, ID, Content>>> futures;
-        try {
-            var method = coordinator.getClass().getMethod("sendRequestsParallel", List.class);
-            @SuppressWarnings("unchecked")
-            var result = (List<java.util.concurrent.CompletableFuture<RefinementResponse<Key, ID, Content>>>) method.invoke(coordinator, requests);
-            futures = result;
-        } catch (java.lang.reflect.InvocationTargetException e) {
-            // Unwrap exceptions thrown by sendRequestsParallel()
-            var cause = e.getCause();
-            if (cause instanceof RuntimeException rte) {
-                log.warn("Round {}: Coordinator threw exception: {}", roundNumber, rte.getMessage());
-                throw rte;  // Propagate RuntimeException directly
-            }
-            log.error("Failed to send requests via coordinator", e);
-            throw new RuntimeException("Coordinator sendRequestsParallel failed", cause);
-        } catch (Exception e) {
-            log.error("Failed to send requests via coordinator (reflection)", e);
-            throw new RuntimeException("Coordinator sendRequestsParallel failed", e);
-        }
+        // Step 4: Send async requests via the RefinementRequestSender seam (Luciferase-ln6wu — was a
+        // reflective getMethod("sendRequestsParallel") lookup, a runtime-only failure mode). This 4-arg
+        // form is a TEST-ONLY entry point (no production caller); the production round path is
+        // execute() -> executeRefinementRound(int), which sends per-target-rank requests directly via the
+        // exchange (Luciferase-uhsn). A RuntimeException from the sender propagates directly to the caller.
+        List<java.util.concurrent.CompletableFuture<RefinementResponse<Key, ID, Content>>> futures =
+            sender.sendRequestsParallel(requests);
 
         // Step 5: Await all futures with timeout
         var responses = new java.util.ArrayList<RefinementResponse<Key, ID, Content>>();
