@@ -23,8 +23,11 @@ import com.hellblazer.delos.fireflies.View;
 import com.hellblazer.delos.membership.Member;
 import com.hellblazer.luciferase.simulation.delos.MembershipView;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -42,6 +45,11 @@ public class FirefliesMembershipView implements MembershipView<Member> {
 
     private final View                               view;
     private final List<Consumer<ViewChange<Member>>> listeners = new CopyOnWriteArrayList<>();
+    // Luciferase-0frcy.36: Digest→Member cache of previously-seen members. A leaving member is no
+    // longer present in the NEW post-change DynamicContext, so it cannot be resolved via
+    // context.getMember(digest). We resolve leaving Digests from this cache (the previous-view
+    // snapshot) instead, otherwise ViewChange.left is always empty in production.
+    private final Map<Digest, Member>                knownMembers = new ConcurrentHashMap<>();
 
     /**
      * Create a new FirefliesMembershipView wrapping a Delos Fireflies View.
@@ -106,23 +114,37 @@ public class FirefliesMembershipView implements MembershipView<Member> {
         // Context is DynamicContext<Participant> where Participant implements Member
         var context = delosChange.context();
 
-        // Convert joining Digests to Members
-        // Participants extend Member, so we cast the list
-        var joinedMembers = (List<Member>) (List<? extends Member>) delosChange.joining()
-                                       .stream()
-                                       .map(context::getMember)
-                                       .filter(m -> m != null)
-                                       .toList();
+        // Convert joining Digests to Members from the NEW context (joiners ARE present there).
+        // Cache each joiner so a future departure can be resolved after it leaves the context.
+        var joinedMembers = new ArrayList<Member>();
+        for (var digest : delosChange.joining()) {
+            var member = (Member) context.getMember(digest);
+            if (member != null) {
+                joinedMembers.add(member);
+                // Cache by the leaving Digest key. Prefer the member's own id, but fall back to
+                // the join Digest so departures still resolve even if getId() is unavailable.
+                var key = member.getId() != null ? member.getId() : digest;
+                knownMembers.put(key, member);
+            }
+        }
 
-        // Convert leaving Digests to Members
-        var leftMembers = (List<Member>) (List<? extends Member>) delosChange.leaving()
-                                     .stream()
-                                     .map(context::getMember)
-                                     .filter(m -> m != null)
-                                     .toList();
+        // Luciferase-0frcy.36: resolve leaving Digests from the previous-view cache, NOT from the
+        // new context (which no longer contains them — that was the bug that made `left` always
+        // empty). Remove each resolved member from the cache after teardown.
+        var leftMembers = new ArrayList<Member>();
+        for (var digest : delosChange.leaving()) {
+            var member = knownMembers.remove(digest);
+            if (member == null) {
+                // Fall back to the new context in case the member is somehow still resolvable.
+                member = (Member) context.getMember(digest);
+            }
+            if (member != null) {
+                leftMembers.add(member);
+            }
+        }
 
         // Notify all our listeners
-        var change = new ViewChange<>(joinedMembers, leftMembers);
+        var change = new ViewChange<Member>(joinedMembers, leftMembers);
         listeners.forEach(listener -> listener.accept(change));
     }
 }

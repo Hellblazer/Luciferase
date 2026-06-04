@@ -124,14 +124,19 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
         Objects.requireNonNull(entityId, "entityId must not be null");
         Objects.requireNonNull(targetBubble, "targetBubble must not be null");
 
-        // Phase 7G.3: Delegate to committee consensus if integration set
+        // Phase 7G.3 / Luciferase-0frcy.35: when a consensus integration is wired, the caller
+        // expects the committee-quorum gate to actually run. The integration's
+        // requestMigrationApproval requires Digest source/target node identities, but this impl
+        // only has UUID bubble ids and no UUID→Digest mapping. Previously this branch silently
+        // returned `true`, bypassing the quorum check entirely while logging "Delegating ...".
+        // That is a safety hazard: a caller relying on the gate would skip it without any signal.
+        // Fail loud instead of silently approving until a real UUID→Digest mapping is wired.
         if (consensusIntegration != null) {
-            log.debug("Delegating migration approval to consensus: entity={}, target={}",
-                    entityId, targetBubble);
-            // Note: This assumes targetBubble is UUID, but consensus needs Digest
-            // In production, this would use proper node ID → Digest mapping
-            // For now, default to approved when Digest conversion not available
-            return java.util.concurrent.CompletableFuture.completedFuture(true);
+            throw new UnsupportedOperationException(
+                "Consensus-gated migration approval is configured but the UUID→Digest mapping "
+                + "required to delegate to committee consensus is not available "
+                + "(entity=" + entityId + ", target=" + targetBubble + "). Refusing to silently "
+                + "approve and bypass the quorum gate.");
         }
 
         // Backward compatibility: default to approved when consensus not configured

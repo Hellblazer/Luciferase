@@ -281,8 +281,11 @@ public class SpatialNeighborIndex {
      * @return Set of nodes whose bounds overlap {@code queryBounds}
      */
     public Set<Node> findOverlapping(BubbleBounds queryBounds) {
+        if (queryBounds == null) {
+            return Set.of();
+        }
         return nodes.values().stream()
-            .filter(n -> n.bounds().overlaps(queryBounds))
+            .filter(n -> n.bounds() != null && n.bounds().overlaps(queryBounds))
             .collect(Collectors.toSet());
     }
 
@@ -332,7 +335,8 @@ public class SpatialNeighborIndex {
      * Check if target is an enclosing neighbor of source (bounds overlap).
      */
     public boolean isEnclosingNeighbor(Node source, Node target) {
-        return source.bounds().overlaps(target.bounds());
+        return source.bounds() != null && target.bounds() != null
+            && source.bounds().overlaps(target.bounds());
     }
 
     /**

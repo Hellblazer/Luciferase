@@ -17,6 +17,8 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Map;
@@ -58,6 +60,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author hal.hildebrand
  */
 public class TetrahedralMigration {
+
+    private static final Logger log = LoggerFactory.getLogger(TetrahedralMigration.class);
 
     /**
      * Cooldown period: minimum ticks between migrations for same entity.
@@ -248,8 +252,12 @@ public class TetrahedralMigration {
                 try {
                     dstBubble.removeEntity(entityId);
                 } catch (Exception rollbackEx) {
-                    // Rollback failed - log but don't crash
-                    System.err.println("Rollback failed for entity " + entityId + ": " + rollbackEx.getMessage());
+                    // Rollback failed: the entity now exists in BOTH source and destination
+                    // bubbles (duplicate-entity state). This is unrecoverable here and must be
+                    // observable for downstream reconciliation, so log at ERROR.
+                    log.error("Rollback failed for entity {} migrating {}->{}: entity now exists in "
+                              + "both source and destination (duplicate state)",
+                              entityId, srcBubble.id(), dstBubble.id(), rollbackEx);
                 }
                 metrics.recordFailedMigration();
                 return false;

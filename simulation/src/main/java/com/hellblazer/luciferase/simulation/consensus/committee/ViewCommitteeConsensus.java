@@ -87,6 +87,30 @@ public class ViewCommitteeConsensus {
     private final ConcurrentHashMap<UUID, ProposalTracking> pendingProposals = new ConcurrentHashMap<>();
 
     /**
+     * No-arg constructor for setter-based dependency injection. Callers MUST invoke
+     * {@link #setViewMonitor}, {@link #setCommitteeSelector} and {@link #setVotingProtocol} before
+     * {@link #requestConsensus}; {@code requestConsensus} fails fast with {@link IllegalStateException}
+     * otherwise (Luciferase-0frcy.20).
+     */
+    public ViewCommitteeConsensus() {
+    }
+
+    /**
+     * All-args constructor (preferred). Wires all collaborators up front so the instance is fully
+     * initialized at construction time.
+     *
+     * @param viewMonitor       view monitor for tracking the current view ID
+     * @param committeeSelector BFT committee selector
+     * @param votingProtocol    voting protocol for vote aggregation
+     */
+    public ViewCommitteeConsensus(FirefliesViewMonitor viewMonitor, ViewCommitteeSelector committeeSelector,
+                                  CommitteeVotingProtocol votingProtocol) {
+        this.viewMonitor = Objects.requireNonNull(viewMonitor, "viewMonitor must not be null");
+        this.committeeSelector = Objects.requireNonNull(committeeSelector, "committeeSelector must not be null");
+        this.votingProtocol = Objects.requireNonNull(votingProtocol, "votingProtocol must not be null");
+    }
+
+    /**
      * Set dependencies via dependency injection.
      *
      * @param monitor ViewMonitor for tracking current view
@@ -131,6 +155,9 @@ public class ViewCommitteeConsensus {
      */
     public CompletableFuture<Boolean> requestConsensus(MigrationProposal proposal) {
         Objects.requireNonNull(proposal, "proposal must not be null");
+
+        // Lifecycle guard - all collaborators must be wired before use (Luciferase-0frcy.20)
+        checkInitialized();
 
         // Byzantine input validation - protect against malicious proposals
         if (!validateProposal(proposal)) {
@@ -249,6 +276,29 @@ public class ViewCommitteeConsensus {
      * @param proposal migration proposal to validate
      * @return true if valid, false if invalid (rejects Byzantine attacks)
      */
+    /**
+     * Verify all injected collaborators are present before processing a request.
+     * <p>
+     * Setter injection leaves a window where {@code requestConsensus} could be invoked before the
+     * dependencies are wired (e.g. a race between service startup and the first migration request).
+     * This guard converts what would be an opaque {@link NullPointerException} deep in the call into a
+     * fail-fast {@link IllegalStateException} naming the missing dependency.
+     */
+    private void checkInitialized() {
+        if (viewMonitor == null) {
+            throw new IllegalStateException(
+                "ViewCommitteeConsensus not initialized: viewMonitor is null (call setViewMonitor or use the all-args constructor)");
+        }
+        if (committeeSelector == null) {
+            throw new IllegalStateException(
+                "ViewCommitteeConsensus not initialized: committeeSelector is null (call setCommitteeSelector or use the all-args constructor)");
+        }
+        if (votingProtocol == null) {
+            throw new IllegalStateException(
+                "ViewCommitteeConsensus not initialized: votingProtocol is null (call setVotingProtocol or use the all-args constructor)");
+        }
+    }
+
     private boolean validateProposal(MigrationProposal proposal) {
         // Validate proposal ID (UUID format enforced by type system)
         if (proposal.proposalId() == null) {
@@ -271,6 +321,13 @@ public class ViewCommitteeConsensus {
         // Validate target node ID
         if (proposal.targetNodeId() == null) {
             log.warn("Rejected proposal {} with null targetNodeId", proposal.proposalId());
+            return false;
+        }
+
+        // Validate view ID - a null viewId cannot be matched against the current view and would NPE
+        // downstream on proposal.viewId().equals(...) and the vote path (Luciferase-0frcy.18).
+        if (proposal.viewId() == null) {
+            log.warn("Rejected proposal {} with null viewId", proposal.proposalId());
             return false;
         }
 

@@ -43,6 +43,10 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
 
     private static final Logger log = LoggerFactory.getLogger(GrpcBubbleNetworkChannel.class);
     private static final int DEFAULT_TIMEOUT_SECONDS = 5;
+    // Bounded retry for transient gRPC failures (Luciferase-0frcy.23). Exponential backoff;
+    // a partition outlasting the budget still drops the event (documented on the interface).
+    private static final int MAX_RPC_RETRIES = 3;
+    private static final long INITIAL_RETRY_BACKOFF_MS = 50;
 
     private UUID localNodeId;
     private String localAddress;
@@ -50,6 +54,13 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
     private final Map<UUID, ManagedChannel> remoteChannels = new ConcurrentHashMap<>();
     private final Map<UUID, String> nodeAddresses = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newCachedThreadPool();
+    // Schedules retry attempts for transient RPC failures (Luciferase-0frcy.23).
+    private final ScheduledExecutorService retryScheduler =
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            var t = new Thread(r, "grpc-bubble-retry");
+            t.setDaemon(true);
+            return t;
+        });
 
     private volatile EntityDepartureListener departureListener;
     private volatile ViewSynchronyAckListener ackListener;
@@ -129,30 +140,14 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
         }
 
         try {
-            var channel = getOrCreateChannel(targetNodeId);
-            var stub = BubbleMigrationServiceGrpc.newStub(channel)
-                .withDeadlineAfter(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
             var protoEvent = convertToProto(event);
 
-            // Async RPC call (fire-and-forget)
-            stub.initiateMigration(protoEvent, new StreamObserver<MigrationResponse>() {
-                @Override
-                public void onNext(MigrationResponse response) {
-                    log.debug("Migration initiated: {}", response.getEntityId());
-                }
-
-                @Override
-                public void onError(Throwable t) {
-                    log.error("Error sending EntityDepartureEvent to {}: {}",
-                             targetNodeId, t.getMessage());
-                }
-
-                @Override
-                public void onCompleted() {
-                    // Success
-                }
-            });
+            // Async RPC with bounded transient-failure retry (Luciferase-0frcy.23).
+            sendWithRetry("EntityDepartureEvent", targetNodeId, 0, observer ->
+                BubbleMigrationServiceGrpc.newStub(getOrCreateChannel(targetNodeId))
+                    .withDeadlineAfter(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .initiateMigration(protoEvent, observer),
+                r -> log.debug("Migration initiated: {}", ((MigrationResponse) r).getEntityId()));
 
             return true;
 
@@ -160,6 +155,61 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
             log.error("Failed to send EntityDepartureEvent to {}", targetNodeId, e);
             return false;
         }
+    }
+
+    /**
+     * Dispatch an async unary RPC and retry transient failures (UNAVAILABLE / DEADLINE_EXCEEDED)
+     * with exponential backoff up to {@link #MAX_RPC_RETRIES} (Luciferase-0frcy.23). Non-transient
+     * failures and exhausted retries are logged at error level — the boolean returned by the caller
+     * is a queued/dispatched signal only, never a delivery guarantee (see interface javadoc).
+     *
+     * @param label    human-readable RPC label for logging
+     * @param peerId   target/source node id (for logging)
+     * @param attempt  current 0-based attempt number
+     * @param rpc      invokes the stub method with the supplied response observer
+     * @param onNext   handler for a successful response
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void sendWithRetry(String label, UUID peerId, int attempt,
+                               java.util.function.Consumer<StreamObserver> rpc,
+                               java.util.function.Consumer<Object> onNext) {
+        StreamObserver<Object> observer = new StreamObserver<>() {
+            @Override
+            public void onNext(Object response) {
+                try {
+                    onNext.accept(response);
+                } catch (Exception ignored) {
+                    // logging convenience only
+                }
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                var code = Status.fromThrowable(t).getCode();
+                var transient_ = code == Status.Code.UNAVAILABLE || code == Status.Code.DEADLINE_EXCEEDED;
+                if (transient_ && attempt < MAX_RPC_RETRIES) {
+                    long backoff = INITIAL_RETRY_BACKOFF_MS * (1L << attempt);
+                    log.warn("Transient failure sending {} to {} (attempt {}/{}, {}); retrying in {}ms",
+                             label, peerId, attempt + 1, MAX_RPC_RETRIES, code, backoff);
+                    try {
+                        retryScheduler.schedule(
+                            () -> sendWithRetry(label, peerId, attempt + 1, rpc, onNext),
+                            backoff, TimeUnit.MILLISECONDS);
+                    } catch (RejectedExecutionException rejected) {
+                        log.warn("Retry scheduler unavailable (shutting down) for {} to {}", label, peerId);
+                    }
+                } else {
+                    log.error("Failed to send {} to {} after {} attempt(s): {} ({})",
+                              label, peerId, attempt + 1, t.getMessage(), code);
+                }
+            }
+
+            @Override
+            public void onCompleted() {
+                // Success
+            }
+        };
+        rpc.accept(observer);
     }
 
     @Override
@@ -170,30 +220,15 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
         }
 
         try {
-            var channel = getOrCreateChannel(sourceNodeId);
-            var stub = BubbleMigrationServiceGrpc.newStub(channel)
-                .withDeadlineAfter(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
             var protoAck = convertToProto(event);
 
-            // Async RPC call (fire-and-forget)
-            stub.acknowledgeViewSynchrony(protoAck, new StreamObserver<com.hellblazer.luciferase.lucien.distributed.migration.proto.ViewSynchronyAck>() {
-                @Override
-                public void onNext(com.hellblazer.luciferase.lucien.distributed.migration.proto.ViewSynchronyAck response) {
-                    log.debug("View synchrony acknowledged: {}", response.getEntityId());
-                }
-
-                @Override
-                public void onError(Throwable t) {
-                    log.error("Error sending ViewSynchronyAck to {}: {}",
-                             sourceNodeId, t.getMessage());
-                }
-
-                @Override
-                public void onCompleted() {
-                    // Success
-                }
-            });
+            // Async RPC with bounded transient-failure retry (Luciferase-0frcy.23).
+            sendWithRetry("ViewSynchronyAck", sourceNodeId, 0, observer ->
+                BubbleMigrationServiceGrpc.newStub(getOrCreateChannel(sourceNodeId))
+                    .withDeadlineAfter(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .acknowledgeViewSynchrony(protoAck, observer),
+                r -> log.debug("View synchrony acknowledged: {}",
+                    ((com.hellblazer.luciferase.lucien.distributed.migration.proto.ViewSynchronyAck) r).getEntityId()));
 
             return true;
 
@@ -211,30 +246,15 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
         }
 
         try {
-            var channel = getOrCreateChannel(targetNodeId);
-            var stub = BubbleMigrationServiceGrpc.newStub(channel)
-                .withDeadlineAfter(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
             var protoRollback = convertToProto(event);
 
-            // Async RPC call (fire-and-forget)
-            stub.rollbackMigration(protoRollback, new StreamObserver<com.hellblazer.luciferase.lucien.distributed.migration.proto.EntityRollbackEvent>() {
-                @Override
-                public void onNext(com.hellblazer.luciferase.lucien.distributed.migration.proto.EntityRollbackEvent response) {
-                    log.debug("Rollback completed: {}", response.getEntityId());
-                }
-
-                @Override
-                public void onError(Throwable t) {
-                    log.error("Error sending EntityRollbackEvent to {}: {}",
-                             targetNodeId, t.getMessage());
-                }
-
-                @Override
-                public void onCompleted() {
-                    // Success
-                }
-            });
+            // Async RPC with bounded transient-failure retry (Luciferase-0frcy.23).
+            sendWithRetry("EntityRollbackEvent", targetNodeId, 0, observer ->
+                BubbleMigrationServiceGrpc.newStub(getOrCreateChannel(targetNodeId))
+                    .withDeadlineAfter(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .rollbackMigration(protoRollback, observer),
+                r -> log.debug("Rollback completed: {}",
+                    ((com.hellblazer.luciferase.lucien.distributed.migration.proto.EntityRollbackEvent) r).getEntityId()));
 
             return true;
 
@@ -320,6 +340,9 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
                 Thread.currentThread().interrupt();
             }
         }
+
+        // Shutdown retry scheduler (Luciferase-0frcy.23)
+        retryScheduler.shutdownNow();
 
         // Shutdown executor
         executorService.shutdown();

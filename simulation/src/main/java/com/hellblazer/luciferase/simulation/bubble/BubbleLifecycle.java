@@ -6,6 +6,7 @@ import com.hellblazer.luciferase.common.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Handles bubble merge (join) based on interaction affinity.
@@ -28,6 +29,7 @@ public class BubbleLifecycle {
 
     private final Consumer<BubbleEvent> eventEmitter;
     private volatile Clock clock = Clock.system();
+    private volatile Supplier<UUID> uuidSupplier = UUID::randomUUID;
 
     public BubbleLifecycle(Consumer<BubbleEvent> eventEmitter) {
         this.eventEmitter = eventEmitter;
@@ -40,6 +42,15 @@ public class BubbleLifecycle {
      */
     public void setClock(Clock clock) {
         this.clock = clock;
+    }
+
+    /**
+     * Inject a UUID supplier for deterministic merged-bubble IDs in tests.
+     *
+     * @param uuidSupplier supplier of merged-bubble IDs
+     */
+    public void setUuidSupplier(Supplier<UUID> uuidSupplier) {
+        this.uuidSupplier = uuidSupplier;
     }
 
     /**
@@ -69,9 +80,13 @@ public class BubbleLifecycle {
         // Calculate merged bounds BEFORE transferring (while both have bounds)
         BubbleBounds mergedBounds = calculateMergedBounds(b1.bounds(), b2.bounds());
 
-        // Create a new merged bubble with a new ID
-        // Use the same spatial level and target frame time as the first bubble
-        var merged = new EnhancedBubble(UUID.randomUUID(), (byte) 10, 10L);
+        // Create a new merged bubble with a (possibly injected) ID.
+        // Use the finer (min) spatial level and the larger frame budget of the
+        // source bubbles so the merge never coarsens spatial resolution and the
+        // result has enough frame time to cover the combined entity load.
+        byte mergedLevel = (byte) Math.min(b1.getSpatialLevel(), b2.getSpatialLevel());
+        long mergedFrameMs = Math.max(b1.getTargetFrameMs(), b2.getTargetFrameMs());
+        var merged = new EnhancedBubble(uuidSupplier.get(), mergedLevel, mergedFrameMs);
 
         // Transfer all entities from both bubbles to the new merged bubble
         transferEntities(b1, merged);

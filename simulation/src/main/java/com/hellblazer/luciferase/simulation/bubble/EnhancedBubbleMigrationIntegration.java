@@ -324,18 +324,23 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
      */
     private void processTimeouts(long simulationTime) {
         try {
+            // checkTimeouts() reports the timed-out entities WITHOUT mutating FSM state.
+            // Drive the FSM rollback once per timed-out entity via an explicit per-entity
+            // transition. (Calling migrationFsm.processTimeouts() here would re-run
+            // checkTimeouts() internally and reprocess ALL timed-out entities once per
+            // iteration — N+1 processing per tick, triggering spurious rollbacks. See
+            // Luciferase-0frcy.13.)
             var timedOutEntities = migrationFsm.checkTimeouts(simulationTime);
 
             for (var entityId : timedOutEntities) {
-                // Rollback the migration if entity is a UUID
-                if (entityId instanceof UUID) {
-                    optimisticMigrator.rollbackMigration((UUID) entityId, "timeout");
+                if (entityId instanceof UUID uuid) {
+                    optimisticMigrator.rollbackMigration(uuid, "timeout");
 
-                    // Transition FSM to handle timeout
-                    migrationFsm.processTimeouts(simulationTime);
+                    // Drive the FSM rollback for THIS entity only.
+                    migrationFsm.transition(uuid, EntityMigrationState.ROLLBACK_OWNED);
 
                     // Send rollback event
-                    sendEntityRollbackEvent((UUID) entityId, "timeout");
+                    sendEntityRollbackEvent(uuid, "timeout");
 
                     totalTimeoutsProcessed++;
                 }
@@ -369,27 +374,35 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
 
         log.debug("Entity {} transitioned: {} → {}", entityId, fromState, toState);
 
+        // This integration keys the FSM exclusively on UUID (see detectAndInitiateMigrations,
+        // which parses the oracle's String ids back to UUID). The stability map is therefore
+        // UUID-keyed. A non-UUID key reaching here means an upstream contract was violated;
+        // surface it loudly rather than silently dropping the MIGRATING_IN→OWNED commit path
+        // (the only path by which a migration completes on the target bubble). See
+        // Luciferase-0frcy.12.
+        if (!(entityId instanceof UUID uuid)) {
+            log.error("Migration FSM emitted non-UUID entity id {} ({}) for transition {}→{}; "
+                      + "stability/commit tracking requires UUID keys and will be skipped",
+                      entityId, entityId == null ? "null" : entityId.getClass().getName(),
+                      fromState, toState);
+            return;
+        }
+
         // Handle specific transitions
         if (toState == EntityMigrationState.MIGRATING_OUT) {
             // Entity is leaving this bubble - freeze physics
-            freezeEntityPhysics(entityId.toString());
+            freezeEntityPhysics(uuid.toString());
         } else if (toState == EntityMigrationState.MIGRATING_IN) {
             // Entity arriving - start deferring physics updates
-            startDeferringUpdates(entityId.toString());
-            if (entityId instanceof UUID) {
-                entityStabilityTicks.put((UUID) entityId, 0);
-            }
+            startDeferringUpdates(uuid.toString());
+            entityStabilityTicks.put(uuid, 0);
         } else if (toState == EntityMigrationState.ROLLBACK_OWNED) {
             // Migration rolled back - thaw physics
-            thawEntityPhysics(entityId.toString());
-            if (entityId instanceof UUID) {
-                entityStabilityTicks.remove(entityId);
-            }
+            thawEntityPhysics(uuid.toString());
+            entityStabilityTicks.remove(uuid);
         } else if (toState == EntityMigrationState.GHOST) {
             // Target abandoned migration - forget this entity
-            if (entityId instanceof UUID) {
-                entityStabilityTicks.remove(entityId);
-            }
+            entityStabilityTicks.remove(uuid);
         }
     }
 

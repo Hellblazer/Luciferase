@@ -221,31 +221,45 @@ public class TopologyExecutor implements OperationTracker {
             log.debug("Snapshot captured: {} entities across {} bubbles",
                      totalBefore, snapshot.size());
 
-            // Execute based on proposal type
+            // Execute based on proposal type.
+            //
+            // Metrics ownership (Luciferase-0frcy.42/.45): operation-level split metrics
+            // (recordSplitSuccess/recordSplitFailure) are recorded by BubbleSplitter, the
+            // owner of the split's categorized failure reasons. The executor must NOT record
+            // them again or every split counter doubles. Merge/move success/failure are NOT
+            // recorded by their executors, so the executor records those.
+            //
+            // Event ordering (Luciferase-0frcy.47): events are NOT fired inside this switch.
+            // We compute a deferred event factory and fire it only AFTER the post-operation
+            // conservation/validation checks decide the final committed/rolled-back outcome.
+            // Firing here would broadcast success=true to listeners before a possible rollback,
+            // leaving downstream consumers diverged from the actual grid state.
             boolean success;
             String message;
+            // Factory takes the FINAL success flag (post-validation) and produces the event.
+            java.util.function.Function<Boolean, TopologyEvent> eventFactory;
 
             switch (proposal) {
                 case SplitProposal split -> {
                     var result = splitter.execute(split);
                     success = result.success();
                     message = result.message();
-                    if (success) {
-                        metrics.recordSplitSuccess();
-                    } else {
-                        metrics.recordSplitFailure();
+                    if (!success) {
                         rollback(snapshot, "Split failed: " + message);
                     }
-                    // Fire split event (calculate entities moved)
-                    int entitiesMoved = result.entitiesAfter() - result.entitiesBefore();
-                    fireEvent(new SplitEvent(
+                    // entitiesMoved must come from the actual relocation count, not
+                    // (after - before): a conserving split has after == before, so that
+                    // difference is always zero (Luciferase-0frcy.46).
+                    int entitiesMoved = result.entitiesMovedToNewBubble();
+                    var newBubbleId = result.newBubbleId();
+                    eventFactory = committed -> new SplitEvent(
                         uuidSupplier.get(),
                         clock.currentTimeMillis(),
                         split.sourceBubble(),
-                        result.newBubbleId(),
-                        Math.abs(entitiesMoved),
-                        success
-                    ));
+                        newBubbleId,
+                        entitiesMoved,
+                        committed
+                    );
                 }
                 case MergeProposal merge -> {
                     var result = merger.execute(merge);
@@ -257,16 +271,17 @@ public class TopologyExecutor implements OperationTracker {
                         metrics.recordMergeFailure();
                         rollback(snapshot, "Merge failed: " + message);
                     }
-                    // Fire merge event (calculate entities moved)
-                    int entitiesMoved = Math.abs(result.entitiesAfter() - result.entitiesBefore());
-                    fireEvent(new MergeEvent(
+                    // Use the merger's actual relocation count, not (after - before)
+                    // (Luciferase-0frcy.46).
+                    int entitiesMoved = result.entitiesMoved();
+                    eventFactory = committed -> new MergeEvent(
                         uuidSupplier.get(),
                         clock.currentTimeMillis(),
                         merge.bubble1(),
                         merge.bubble2(),
                         entitiesMoved,
-                        success
-                    ));
+                        committed
+                    );
                 }
                 case MoveProposal move -> {
                     var result = mover.execute(move);
@@ -278,25 +293,39 @@ public class TopologyExecutor implements OperationTracker {
                         metrics.recordMoveFailure();
                         rollback(snapshot, "Move failed: " + message);
                     }
-                    // Fire move event (using current bubble centroid)
+                    // Capture the centroid defensively: on a failed move the source bubble may
+                    // be absent (getBubbleById returns null) or have no bounds (Luciferase-0frcy.48).
                     var bubble = bubbleGrid.getBubbleById(move.sourceBubble());
-                    var centroid = bubble.bounds().centroid();
+                    float cx = 0f, cy = 0f, cz = 0f;
+                    UUID eventBubbleId = move.sourceBubble();
+                    if (bubble != null && bubble.bounds() != null) {
+                        var centroid = bubble.bounds().centroid();
+                        cx = (float) centroid.getX();
+                        cy = (float) centroid.getY();
+                        cz = (float) centroid.getZ();
+                        eventBubbleId = bubble.id();
+                    }
+                    final float fcx = cx, fcy = cy, fcz = cz;
+                    final UUID fBubbleId = eventBubbleId;
                     // Note: We don't have the old centroid, so using current for both (visualization will handle)
-                    fireEvent(new MoveEvent(
+                    eventFactory = committed -> new MoveEvent(
                         uuidSupplier.get(),
                         clock.currentTimeMillis(),
-                        bubble.id(),
-                        (float) centroid.getX(), (float) centroid.getY(), (float) centroid.getZ(),
-                        (float) centroid.getX(), (float) centroid.getY(), (float) centroid.getZ(),
-                        success
-                    ));
+                        fBubbleId,
+                        fcx, fcy, fcz,
+                        fcx, fcy, fcz,
+                        committed
+                    );
                 }
+                default -> throw new IllegalStateException("Unknown proposal type: " + proposal.getClass());
             }
 
-            // Validate entity conservation
+            // Validate entity conservation. If validation fails we roll back and fire the event
+            // with success=false so listeners observe the actual (reverted) outcome.
             var validation = accountant.validate();
             if (!validation.success()) {
                 rollback(snapshot, "Entity validation failed: " + validation.details());
+                fireEvent(eventFactory.apply(false));
                 return new TopologyExecutionResult(false,
                                                   "Entity validation failed: " + validation.details().get(0),
                                                   totalBefore, getTotalEntityCount());
@@ -305,10 +334,15 @@ public class TopologyExecutor implements OperationTracker {
             int totalAfter = getTotalEntityCount();
             if (totalAfter != totalBefore) {
                 rollback(snapshot, "Entity count mismatch: before=" + totalBefore + ", after=" + totalAfter);
+                fireEvent(eventFactory.apply(false));
                 return new TopologyExecutionResult(false,
                                                   "Entity count mismatch: before=" + totalBefore + ", after=" + totalAfter,
                                                   totalBefore, totalAfter);
             }
+
+            // Conservation holds and no rollback occurred: the operation outcome is now committed.
+            // Fire the event with the operation's own success flag (Luciferase-0frcy.47).
+            fireEvent(eventFactory.apply(success));
 
             log.info("Topology change successful: {} entities retained", totalAfter);
             return new TopologyExecutionResult(success, message, totalBefore, totalAfter);

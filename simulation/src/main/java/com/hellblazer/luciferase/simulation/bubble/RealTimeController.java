@@ -200,12 +200,20 @@ public class RealTimeController {
      */
     public void stop() {
         if (running.compareAndSet(true, false)) {
-            if (tickThread != null) {
+            // Interrupt the tick thread so a thread blocked in sleep wakes immediately
+            // and so a self-stop from within a TickListener does not join itself.
+            if (tickThread != null && Thread.currentThread() != tickThread) {
+                tickThread.interrupt();
                 try {
                     tickThread.join(1000); // Wait up to 1 second for thread to stop
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
+            } else if (tickThread != null) {
+                // Called synchronously from the tick thread (e.g. a TickListener invoking
+                // stop()): running=false already set; just self-interrupt so the loop exits
+                // after the listener returns. Do NOT join (would deadlock).
+                tickThread.interrupt();
             }
             log.info("RealTimeController stopped: bubble={}, name={}, finalTime={}, finalClock={}",
                    bubbleId, name, simulationTime.get(), clockGenerator.getLamportClock());

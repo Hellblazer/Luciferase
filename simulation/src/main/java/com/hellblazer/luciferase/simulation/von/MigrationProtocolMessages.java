@@ -56,6 +56,13 @@ import java.util.UUID;
 public sealed interface MigrationProtocolMessages extends Message {
 
     /**
+     * Transaction UUID correlating this 2PC message with its migration. Common to all subtypes.
+     *
+     * @return the transaction id
+     */
+    UUID transactionId();
+
+    /**
      * PREPARE phase request: Initiate migration.
      * <p>
      * Sent from coordinator to source process.

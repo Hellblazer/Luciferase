@@ -160,4 +160,65 @@ class BoundaryStressAnalyzerTest {
         assertTrue(rate >= 9.0f && rate <= 11.0f,
                   "Should only count recent migrations, got rate: " + rate);
     }
+
+    /**
+     * Luciferase-0frcy.49: recordMigration() appended to the per-bubble ArrayList without
+     * holding the same monitor that getMigrationRate()/cleanOldEntries() synchronize on.
+     * The unsynchronized add() races with the synchronized iteration/removeIf, producing
+     * ConcurrentModificationException or lost records. With a wide window (no eviction) and a
+     * synchronized add, every recorded migration must survive and no exception may escape.
+     */
+    @Test
+    void concurrentRecordAndReadDoesNotRaceOrLoseRecords() throws Exception {
+        // Large window so cleanOldEntries never evicts during the test (counts stay exact).
+        var wideAnalyzer = new BoundaryStressAnalyzer(Long.MAX_VALUE / 4);
+        var bubble = UUID.randomUUID();
+
+        final int writerThreads = 8;
+        final int perThread = 2000;
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(writerThreads + 1);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var done = new java.util.concurrent.CountDownLatch(writerThreads);
+        var failure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        var stopReader = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        // Concurrent reader that iterates the same list under its monitor.
+        pool.submit(() -> {
+            try {
+                start.await();
+                while (!stopReader.get()) {
+                    wideAnalyzer.getMigrationRate(bubble);
+                    wideAnalyzer.getTotalEventCount();
+                }
+            } catch (Throwable t) {
+                failure.compareAndSet(null, t);
+            }
+        });
+
+        for (int w = 0; w < writerThreads; w++) {
+            final int base = w * perThread;
+            pool.submit(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < perThread; i++) {
+                        // Use distinct, non-evictable timestamps so counts are exact.
+                        wideAnalyzer.recordMigration(bubble, 1_000_000L + base + i);
+                    }
+                } catch (Throwable t) {
+                    failure.compareAndSet(null, t);
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+
+        start.countDown();
+        assertTrue(done.await(30, java.util.concurrent.TimeUnit.SECONDS), "writers should finish");
+        stopReader.set(true);
+        pool.shutdownNow();
+
+        assertNull(failure.get(), () -> "No exception expected under concurrent add/read: " + failure.get());
+        assertEquals(writerThreads * perThread, wideAnalyzer.getTotalEventCount(),
+                     "Every recorded migration must be retained (no lost records under contention)");
+    }
 }

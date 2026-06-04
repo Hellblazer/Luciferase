@@ -396,6 +396,120 @@ class TopologyConsensusCoordinatorTest {
         }
     }
 
+    /**
+     * Luciferase-0frcy.43/.44: the cooldown check-then-update was a non-atomic
+     * ConcurrentHashMap read-then-write. Two threads proposing changes for the same bubble
+     * concurrently could both pass the cooldown gate before either recorded a timestamp,
+     * bypassing the cooldown entirely. With the atomic compute() test-and-set reservation,
+     * at most one of two concurrent proposals on the same bubble may be approved.
+     */
+    @Test
+    void concurrentProposalsCannotBothBypassCooldown() throws Exception {
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+        addEntities(bubble, 5100);
+
+        final int threads = 16;
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        var startGate = new java.util.concurrent.CountDownLatch(1);
+        var approvals = new java.util.concurrent.atomic.AtomicInteger(0);
+        var done = new java.util.concurrent.CountDownLatch(threads);
+
+        // Consensus approves any proposal that reaches it. Whether it reaches consensus is
+        // gated by the (now atomic) cooldown reservation under contention.
+        when(mockConsensus.requestConsensus(any()))
+            .thenReturn(CompletableFuture.completedFuture(true));
+
+        for (int i = 0; i < threads; i++) {
+            pool.submit(() -> {
+                try {
+                    var proposal = createSplitProposal(bubble.id());
+                    startGate.await();
+                    if (Boolean.TRUE.equals(coordinator.requestConsensus(proposal).join())) {
+                        approvals.incrementAndGet();
+                    }
+                } catch (Exception e) {
+                    // count as no-approval
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+
+        startGate.countDown();
+        assertTrue(done.await(30, java.util.concurrent.TimeUnit.SECONDS), "threads should finish");
+        pool.shutdownNow();
+
+        assertEquals(1, approvals.get(),
+                     "Exactly one concurrent proposal for the same bubble may pass the atomic cooldown");
+    }
+
+    /**
+     * Luciferase-0frcy M2/C1 (ABA): a rejected loser's restore must never wipe a concurrent
+     * winner's live cooldown reservation.
+     * <p>
+     * Scenario, with a 10s cooldown and deterministic clock:
+     * <ol>
+     *   <li>Proposal A reserves the bubble at t=1000 (writes timestamp 1000). A has no prior entry,
+     *       so its restore would naively {@code remove(bubble)}.</li>
+     *   <li>Clock advances past the cooldown to t=12000; proposal B reserves the SAME bubble,
+     *       overwriting the timestamp to 12000 — B is the live winner.</li>
+     *   <li>A is then rejected (committee votes NO) and its restore runs. With the bug, A blindly
+     *       removes the bubble entry, wiping B's live 12000 reservation. With the conditional
+     *       (ABA-safe) restore, A sees the current value is 12000 (not the 1000 it wrote) and leaves
+     *       it untouched.</li>
+     *   <li>A third proposal at t=13000 (only 1s after B's reservation) must therefore still be
+     *       inside B's cooldown and be refused. Under the bug it would pass spuriously.</li>
+     * </ol>
+     * The interleaving is made deterministic by holding A's consensus future open: A reserves, then
+     * B reserves the same bubble (winning), and only then is A's rejection released — reproducing
+     * the exact A-reserves / B-reserves / A-restores ordering that triggers the ABA clobber, without
+     * the flakiness of a wall-clock thread race.
+     */
+    @Test
+    void rejectedLoserRestoreDoesNotWipeConcurrentWinnerReservation() throws Exception {
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+        addEntities(bubble, 5100);
+        var bubbleId = bubble.id();
+
+        // Per-proposal consensus control: A's future (first call) is held so we can reject A at a
+        // chosen instant; every later call auto-approves.
+        var aConsensus = new CompletableFuture<Boolean>();
+        var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
+        when(mockConsensus.requestConsensus(any())).thenAnswer(inv ->
+            callCount.getAndIncrement() == 0
+                ? aConsensus
+                : CompletableFuture.completedFuture(true));
+
+        // Stage 1: A reserves at t=1000 and parks awaiting consensus.
+        testClock.setMillis(1000L);
+        var proposalA = createSplitProposal(bubbleId);
+        var resultA = coordinator.requestConsensus(proposalA);
+
+        // Stage 2: advance past the cooldown so B can reserve the same bubble (writes 12000).
+        testClock.setMillis(12_000L);
+        var proposalB = createSplitProposal(bubbleId);
+        var resultB = coordinator.requestConsensus(proposalB).join();
+        assertTrue(resultB, "B must be approved and hold the live reservation at t=12000");
+        assertTrue(coordinator.getRemainingCooldown(bubbleId) > 0,
+                   "B's reservation must be live before A's rejection");
+
+        // Stage 3: now reject A. A's restore must NOT clobber B's reservation.
+        aConsensus.complete(false);
+        assertFalse(resultA.join(), "A must be rejected by the committee");
+
+        // Stage 4: B's reservation (t=12000) must survive. A third proposal 1s later is still inside
+        // B's 10s cooldown and must be refused — proving B's reservation was not wiped by A.
+        testClock.setMillis(13_000L);
+        var proposalC = createSplitProposal(bubbleId);
+        assertFalse(coordinator.canProposeTopologyChange(proposalC),
+                    "Third proposal must be refused: B's live reservation must survive A's restore "
+                    + "(ABA guard). A spurious pass means A's restore wiped B's reservation.");
+        assertEquals(9000L, coordinator.getRemainingCooldown(bubbleId),
+                     "Remaining cooldown must reflect B's t=12000 reservation, not a wiped/absent entry");
+    }
+
     private SplitProposal createSplitProposal(UUID bubbleId) {
         var bubble = bubbleGrid.getBubbleById(bubbleId);
 

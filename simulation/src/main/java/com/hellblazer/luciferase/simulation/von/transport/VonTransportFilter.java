@@ -49,6 +49,7 @@ final class VonTransportFilter {
         + "com.hellblazer.luciferase.simulation.von.TransportGhostData;"
         + "com.hellblazer.luciferase.simulation.von.TransportNeighborInfo;"
         + "com.hellblazer.luciferase.simulation.von.TransportBubbleBounds;"
+        + "com.hellblazer.luciferase.simulation.von.TransportMigrationMessage;"
         + "java.util.ArrayList;"
         + "java.util.Collections$UnmodifiableList;"
         + "java.util.Arrays$ArrayList;"

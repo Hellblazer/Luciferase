@@ -54,6 +54,7 @@ public class RegionBuilder implements AutoCloseable {
     private final ConcurrentHashMap<RegionId, CircuitBreakerState> circuitBreakers; // C3
     private final ExecutorService buildPool;
     private final AtomicInteger queueSize;
+    private final Object admissionLock = new Object(); // C1: serializes queue admission (check-evict-offer)
     private final AtomicInteger totalBuilds;
     private final AtomicInteger failedBuilds;
     private final AtomicLong totalBuildTimeNs;
@@ -223,29 +224,35 @@ public class RegionBuilder implements AutoCloseable {
                     "Circuit breaker open for region " + request.regionId());
         }
 
-        // C1: Backpressure handling
-        if (queueSize.get() >= maxQueueDepth) {
-            if (request.visible()) {
-                // Visible build when full: evict lowest-priority invisible build
-                if (!evictLowestPriority()) {
-                    // No invisible builds to evict - queue is all visible
+        // C1: Backpressure admission. The check (queueSize >= maxQueueDepth), the optional
+        // eviction, and the offer+increment must be atomic relative to each other, otherwise
+        // N concurrent callers can all observe queueSize < maxQueueDepth and all enqueue,
+        // overshooting maxQueueDepth (Luciferase-0frcy.39). The worker's decrement keeps
+        // queueSize as a fast non-blocking stat; only admission is serialized here.
+        synchronized (admissionLock) {
+            if (queueSize.get() >= maxQueueDepth) {
+                if (request.visible()) {
+                    // Visible build when full: evict lowest-priority invisible build
+                    if (!evictLowestPriority()) {
+                        // No invisible builds to evict - queue is all visible
+                        throw new BuildQueueFullException(
+                                "Build queue full with all visible builds");
+                    }
+                } else {
+                    // Invisible build when full: reject
                     throw new BuildQueueFullException(
-                            "Build queue full with all visible builds");
+                            "Build queue full, rejecting invisible build");
                 }
-            } else {
-                // Invisible build when full: reject
-                throw new BuildQueueFullException(
-                        "Build queue full, rejecting invisible build");
             }
-        }
 
-        // Add to queue
-        buildQueue.offer(request);
-        queueSize.incrementAndGet();
+            // Add to queue (still under the admission lock so the check-then-act is atomic)
+            buildQueue.offer(request);
+            queueSize.incrementAndGet();
 
-        // Track invisible builds for O(log n) eviction (S2)
-        if (!request.visible()) {
-            invisibleBuilds.add(request);
+            // Track invisible builds for O(log n) eviction (S2)
+            if (!request.visible()) {
+                invisibleBuilds.add(request);
+            }
         }
 
         // Return future that will be completed by worker thread

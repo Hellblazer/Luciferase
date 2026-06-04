@@ -126,6 +126,9 @@ public class SimulationTickOrchestrator {
             for (int row = 0; row < gridConfig.rows(); row++) {
                 for (int col = 0; col < gridConfig.columns(); col++) {
                     var bubble = bubbleGrid.getBubble(new BubbleCoordinate(row, col));
+                    if (bubble == null) {
+                        continue; // Empty grid cell — getBubble() returns null (see getTotalEntityCount).
+                    }
                     entityUpdater.updateEntities(bubble, deltaTime);
                 }
             }

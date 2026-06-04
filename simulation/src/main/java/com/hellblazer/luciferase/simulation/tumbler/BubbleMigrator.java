@@ -103,14 +103,7 @@ public class BubbleMigrator {
     public CompletableFuture<MigrationResult> migrate(Bubble bubble, UUID targetServerId) {
         var bubbleId = bubble.id();
 
-        // Check if already migrating
-        if (inFlightMigrations.containsKey(bubbleId)) {
-            return CompletableFuture.completedFuture(
-                new MigrationResult(bubbleId, targetServerId, false, "Already migrating", 0)
-            );
-        }
-
-        // Check cooldown
+        // Check cooldown (read-only, safe before reservation)
         var lastMigration = migrationCooldowns.get(bubbleId);
         if (lastMigration != null) {
             var elapsed = clock.currentTimeMillis() - lastMigration;
@@ -122,28 +115,45 @@ public class BubbleMigrator {
             }
         }
 
-        // Check concurrent migration limit
-        if (inFlightMigrations.size() >= maxConcurrentMigrations) {
+        // Luciferase-0frcy.38: atomically reserve the in-flight slot. The previous code did a
+        // containsKey() check, a size() check, and a put() as three separate operations on the
+        // ConcurrentHashMap — two threads racing on the same bubbleId could both observe
+        // containsKey=false and both proceed, the second put() silently overwriting the first
+        // (duplicate migration). putIfAbsent makes the duplicate guard atomic.
+        long startTime = clock.nanoTime();
+        var state = new MigrationState(bubbleId, targetServerId, startTime);
+        var existing = inFlightMigrations.putIfAbsent(bubbleId, state);
+        if (existing != null) {
+            return CompletableFuture.completedFuture(
+                new MigrationResult(bubbleId, targetServerId, false, "Already migrating", 0)
+            );
+        }
+
+        // Check concurrent migration limit AFTER reserving, then back out if we exceeded it. Our
+        // own entry is included in size(), so the limit is honored: the (maxConcurrent+1)-th
+        // concurrent reservation removes itself and is rejected.
+        if (inFlightMigrations.size() > maxConcurrentMigrations) {
+            inFlightMigrations.remove(bubbleId, state);
             return CompletableFuture.completedFuture(
                 new MigrationResult(bubbleId, targetServerId, false,
                                     "Max concurrent migrations reached", 0)
             );
         }
 
-        // Start migration
-        long startTime = clock.nanoTime();
-        var state = new MigrationState(bubbleId, targetServerId, startTime);
-        inFlightMigrations.put(bubbleId, state);
-
         return CompletableFuture.supplyAsync(() -> {
             try {
                 return executeMigration(bubble, targetServerId, startTime);
             } finally {
-                inFlightMigrations.remove(bubbleId);
+                // Luciferase-0frcy.38: value-conditional removal so we only clear OUR reservation,
+                // never a subsequent re-reservation of the same bubbleId by another thread.
+                inFlightMigrations.remove(bubbleId, state);
             }
         }).orTimeout(migrationTimeout.toMillis(), TimeUnit.MILLISECONDS)
           .exceptionally(ex -> {
-              inFlightMigrations.remove(bubbleId);
+              // The supplyAsync body's finally already removed our entry on normal completion; this
+              // value-conditional removal covers the timeout path (orTimeout completes the stage
+              // exceptionally without running the body's finally).
+              inFlightMigrations.remove(bubbleId, state);
               return new MigrationResult(bubbleId, targetServerId, false,
                                          "Timeout or error: " + ex.getMessage(), 0);
           });

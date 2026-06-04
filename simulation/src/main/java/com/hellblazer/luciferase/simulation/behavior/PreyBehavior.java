@@ -73,9 +73,13 @@ public class PreyBehavior implements EntityBehavior {
     private final WorldBounds worldBounds;
     private final Random random;
 
-    // Double-buffered velocity cache for alignment
-    private volatile Map<String, Vector3f> previousVelocities = new ConcurrentHashMap<>();
-    private volatile Map<String, Vector3f> currentVelocities = new ConcurrentHashMap<>();
+    // Double-buffered velocity cache for alignment. Both maps live behind a single volatile
+    // reference so the tick-boundary swap is one atomic write — no aliasing window where
+    // previous and current transiently point at the same map (Luciferase-0frcy.2).
+    private record VelocityBuffers(Map<String, Vector3f> previous, Map<String, Vector3f> current) {}
+
+    private volatile VelocityBuffers buffers =
+        new VelocityBuffers(new ConcurrentHashMap<>(), new ConcurrentHashMap<>());
 
     /**
      * Create prey behavior with default parameters.
@@ -133,15 +137,15 @@ public class PreyBehavior implements EntityBehavior {
      * Swap velocity buffers at tick start.
      */
     public void swapVelocityBuffers() {
-        previousVelocities = currentVelocities;
-        currentVelocities = new ConcurrentHashMap<>();
+        var completed = buffers.current();
+        buffers = new VelocityBuffers(completed, new ConcurrentHashMap<>());
     }
 
     @Override
     public Vector3f computeVelocity(String entityId, Point3f position, Vector3f velocity,
                                     EnhancedBubble bubble, float deltaTime) {
         // Store current velocity for alignment
-        currentVelocities.put(entityId, new Vector3f(velocity));
+        buffers.current().put(entityId, new Vector3f(velocity));
 
         // Query all neighbors within extended predator detection range
         var neighbors = bubble.queryRange(position, predatorDetectionRadius);
@@ -285,7 +289,7 @@ public class PreyBehavior implements EntityBehavior {
         int count = 0;
 
         for (var other : prey) {
-            var neighborVel = previousVelocities.get(other.id());
+            var neighborVel = buffers.previous().get(other.id());
             if (neighborVel != null) {
                 avgVelocity.add(neighborVel);
                 count++;
@@ -386,7 +390,8 @@ public class PreyBehavior implements EntityBehavior {
      * Clear velocity caches.
      */
     public void clearCache() {
-        previousVelocities.clear();
-        currentVelocities.clear();
+        var snapshot = buffers;
+        snapshot.previous().clear();
+        snapshot.current().clear();
     }
 }

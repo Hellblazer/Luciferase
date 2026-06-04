@@ -169,8 +169,13 @@ public class DuplicateEntityDetector {
         var entityId = duplicate.entityId();
         var locations = duplicate.locations();
 
-        // Determine source bubble
-        var sourceBubbleOpt = duplicate.getSourceBubble();
+        // Re-query the MigrationLog at reconcile time (Luciferase-0frcy.24). The DuplicateEntity
+        // snapshot was built during scan() at time T1; between T1 and now (T2) the entity may have
+        // migrated again, so duplicate.getSourceBubble() can be stale. Acting on a stale source
+        // could delete the entity from its current authoritative bubble (C) while retaining a stale
+        // copy in the old source (B) — effectively losing the entity. Re-resolve fresh.
+        var freshMigration = migrationLog.getLatestMigration(new StringEntityID(entityId));
+        var sourceBubbleOpt = freshMigration.map(MigrationLog.MigrationRecord::targetBubble);
 
         if (sourceBubbleOpt.isEmpty()) {
             // Fallback: No migration history, cannot determine source
@@ -182,6 +187,19 @@ public class DuplicateEntityDetector {
         }
 
         var sourceBubble = sourceBubbleOpt.get();
+
+        // Verify the authoritative source still holds the entity before pruning the others. If the
+        // entity has already left the expected source (another concurrent migration), deleting from
+        // the other locations risks erasing the live copy — abort and let the next cycle re-resolve.
+        var sourceBubbleInstance = findBubbleById(sourceBubble);
+        if (sourceBubbleInstance == null || !sourceBubbleInstance.getEntities().contains(entityId)) {
+            if (config.logLevel() != DuplicateDetectionConfig.LogLevel.ERROR) {
+                log.warn("Reconciliation deferred: entity={} expected source={} no longer holds the entity "
+                         + "(concurrent migration); skipping to avoid entity loss", entityId, sourceBubble);
+            }
+            return 0;  // No removal — re-resolve on the next cycle
+        }
+
         var removedCount = 0;
 
         // Remove from all non-source bubbles

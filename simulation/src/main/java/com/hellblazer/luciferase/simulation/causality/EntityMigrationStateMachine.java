@@ -846,9 +846,21 @@ public class EntityMigrationStateMachine {
      * @return Number of entities rolled back
      */
     public int processTimeouts(long currentTimeMs) {
+        // Luciferase-0frcy.17: collect the timed-out entity IDs UNDER the lock, then release it
+        // BEFORE driving any transition. transition() calls notifyListeners() synchronously
+        // (GhostStateListener, MigrationCoordinator, ...); previously those listener callbacks ran
+        // while the write lock was held, so a blocking listener (I/O, another lock) would pin the
+        // lock indefinitely. The lock only ever gated concurrent processTimeouts() calls — it
+        // provides no inter-path protection — so narrowing its scope to the snapshot keeps that
+        // mutual exclusion while removing the lock-held-across-callback inversion.
+        List<Object> timedOut;
         long stamp = timeoutLock.writeLock();
         try {
-            var timedOut = checkTimeouts(currentTimeMs);
+            timedOut = checkTimeouts(currentTimeMs);
+        } finally {
+            timeoutLock.unlockWrite(stamp);
+        }
+
         int rolledBack = 0;
 
         for (var entityId : timedOut) {
@@ -894,10 +906,7 @@ public class EntityMigrationStateMachine {
             }
         }
 
-            return rolledBack;
-        } finally {
-            timeoutLock.unlockWrite(stamp);
-        }
+        return rolledBack;
     }
 
     /**

@@ -187,6 +187,20 @@ public class BubbleSplitter {
             return new SplitExecutionResult(false, "No entities to move based on split plane", null, entitiesBeforeSplit, entitiesBeforeSplit);
         }
 
+        // Validate the strategy-computed plane produces a non-empty partition on BOTH sides
+        // before committing to execution. The proposal's embedded plane was certified by
+        // consensus, but execute() recomputes a fresh plane from current entity positions;
+        // a concurrent position mutation could yield a degenerate one-sided partition (all
+        // entities moved, none retained). Fail fast rather than create an empty source bubble.
+        if (entitiesToMove.size() == allRecords.size()) {
+            log.error("[SPLIT-{}] Bubble {}: Strategy-computed split plane is degenerate (all {} entities on one side)",
+                     correlationId, sourceBubbleId, allRecords.size());
+            metrics.recordSplitFailure("DEGENERATE_SPLIT_PLANE");
+            return new SplitExecutionResult(false,
+                                           "Strategy-computed split plane produces a one-sided partition (all entities on one side)",
+                                           null, entitiesBeforeSplit, entitiesBeforeSplit);
+        }
+
         // Create new child bubble
         // Child bubble should be one level deeper in the tetree hierarchy
         UUID newBubbleId = uuidSupplier.get();
@@ -226,6 +240,18 @@ public class BubbleSplitter {
                  correlationId, targetKey, childLevel);
 
         var newBubble = new EnhancedBubble(newBubbleId, childLevel, targetFrameMs);
+
+        // Add the new bubble to the grid BEFORE moving any entities into it. This makes the
+        // accountant move and the grid insertion recoverable as a single unit: if an unchecked
+        // exception is thrown during the move loop, the executor's rollback (BubbleAdded.undo =
+        // grid.removeBubble) removes the now-empty bubble, and the accountant move is the only
+        // structure carrying the entities. Inserting the bubble afterwards left a window where
+        // entities were recorded under newBubbleId in the accountant but the grid had no bubble
+        // for them, making them unreachable.
+        bubbleGrid.addBubble(newBubble, targetKey);
+        operationTracker.recordBubbleAdded(newBubbleId);
+        log.debug("[{}] Added new bubble {} to grid at level {} key {} (pre-move)",
+                 correlationId, newBubbleId, childLevel, targetKey);
 
         // Move entities to new bubble atomically
         int entitiesMoved = 0;
@@ -276,14 +302,14 @@ public class BubbleSplitter {
                                            newBubbleId, entitiesBeforeSplit, entitiesAfterSplit);
         }
 
-        // Add new bubble to grid using pre-computed targetKey (collision already checked)
-        if (entitiesMoved > 0) {
-            bubbleGrid.addBubble(newBubble, targetKey);
-            operationTracker.recordBubbleAdded(newBubbleId);
-            log.debug("[{}] Added new bubble {} to grid at level {} key {}",
-                     correlationId, newBubbleId, childLevel, targetKey);
-        } else {
-            log.warn("New bubble {} has no entities, not adding to grid", newBubbleId);
+        // The new bubble was already added to the grid before the move loop (see above). If no
+        // entities actually moved, remove the empty bubble so we do not leak it into the grid.
+        if (entitiesMoved == 0) {
+            log.warn("New bubble {} has no entities after move loop, removing from grid", newBubbleId);
+            bubbleGrid.removeBubble(newBubbleId);
+            metrics.recordSplitFailure("NO_ENTITIES_TO_MOVE");
+            return new SplitExecutionResult(false, "No entities were moved to new bubble", null,
+                                           entitiesBeforeSplit, entitiesBeforeSplit);
         }
 
         log.info("[{}] Split successful: bubble {} split into {} (source: {} entities, new: {} entities)",
@@ -295,7 +321,7 @@ public class BubbleSplitter {
         metrics.recordSplitSuccess();
 
         return new SplitExecutionResult(true, "Split successful",
-                                       newBubbleId, entitiesBeforeSplit, entitiesAfterSplit);
+                                       newBubbleId, entitiesBeforeSplit, entitiesAfterSplit, entitiesMoved);
     }
 
     /**
@@ -411,12 +437,21 @@ record KeyLevel(
  * @param newBubbleId       ID of newly created bubble (null if failed)
  * @param entitiesBefore    entity count before split
  * @param entitiesAfter     total entity count after split (source + new)
+ * @param entitiesMovedToNewBubble number of entities actually relocated to the new bubble
  */
 record SplitExecutionResult(
     boolean success,
     String message,
     UUID newBubbleId,
     int entitiesBefore,
-    int entitiesAfter
+    int entitiesAfter,
+    int entitiesMovedToNewBubble
 ) {
+    /**
+     * Backward-compatible constructor that defaults {@code entitiesMovedToNewBubble} to 0.
+     * Used by failure paths where no entities were relocated.
+     */
+    SplitExecutionResult(boolean success, String message, UUID newBubbleId, int entitiesBefore, int entitiesAfter) {
+        this(success, message, newBubbleId, entitiesBefore, entitiesAfter, 0);
+    }
 }

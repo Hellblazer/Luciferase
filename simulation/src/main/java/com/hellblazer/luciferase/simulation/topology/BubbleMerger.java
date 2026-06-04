@@ -226,7 +226,7 @@ public class BubbleMerger {
                 correlationId, bubble2Id, bubble1Id, entities1After);
 
         return new MergeExecutionResult(true, "Merge successful",
-                                       totalBefore, totalAfter, duplicates.size());
+                                       totalBefore, totalAfter, duplicates.size(), entitiesMoved);
     }
 }
 
@@ -238,12 +238,21 @@ public class BubbleMerger {
  * @param entitiesBefore   total entity count before merge (bubble1 + bubble2)
  * @param entitiesAfter    entity count after merge (should equal entitiesBefore)
  * @param duplicatesFound  number of duplicate entities detected
+ * @param entitiesMoved    number of entities relocated from bubble2 into bubble1
  */
 record MergeExecutionResult(
     boolean success,
     String message,
     int entitiesBefore,
     int entitiesAfter,
-    int duplicatesFound
+    int duplicatesFound,
+    int entitiesMoved
 ) {
+    /**
+     * Backward-compatible constructor that defaults {@code entitiesMoved} to 0.
+     * Used by failure paths where no entities were relocated.
+     */
+    MergeExecutionResult(boolean success, String message, int entitiesBefore, int entitiesAfter, int duplicatesFound) {
+        this(success, message, entitiesBefore, entitiesAfter, duplicatesFound, 0);
+    }
 }

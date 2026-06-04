@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * <ul>
  *   <li>start(): CREATED/STOPPED/FAILED → STARTING → RUNNING</li>
  *   <li>stop(): RUNNING → STOPPING → STOPPED</li>
+ *   <li>stop(): STARTING → STOPPING → STOPPED (cancellation during startup rollback)</li>
  * </ul>
  * <p>
  * Thread-safe via AtomicReference for state management.
@@ -103,9 +104,34 @@ public abstract class AbstractLifecycleAdapter implements LifecycleComponent {
                 // Template method: delegate to subclass
                 doStart();
 
-                // Transition to RUNNING
-                state.set(LifecycleState.RUNNING);
-                log.info("{} started", getComponentName());
+                // Transition to RUNNING — but ONLY if a concurrent stop() (startup-rollback
+                // cancellation) has not already moved us out of STARTING. Blindly setting
+                // RUNNING here would resurrect a component the coordinator already tore down
+                // (Luciferase-0frcy.27). If the CAS fails, the component was cancelled; undo
+                // the partial start best-effort and leave it stopped.
+                if (state.compareAndSet(LifecycleState.STARTING, LifecycleState.RUNNING)) {
+                    log.info("{} started", getComponentName());
+                } else {
+                    // The CAS failed: a concurrent stop() moved us out of STARTING. stop() reserves
+                    // the STARTING->STOPPING transition and OWNS the doStop() cleanup for this
+                    // start/stop cycle. We must NOT call doStop() here — doing so would double-invoke
+                    // doStop() and double-close resources in subclasses (Luciferase-0frcy M2). Only
+                    // run the best-effort teardown if we actually claimed STOPPING ourselves (a state
+                    // other than STARTING/STOPPING/STOPPED that nonetheless lost the RUNNING CAS).
+                    var observed = state.get();
+                    log.info("{} start cancelled before completion (state={})",
+                             getComponentName(), observed);
+                    if (observed != LifecycleState.STOPPING && observed != LifecycleState.STOPPED
+                        && state.compareAndSet(observed, LifecycleState.STOPPING)) {
+                        try {
+                            doStop();
+                        } catch (Exception stopEx) {
+                            log.warn("Best-effort doStop() after cancelled start of {} failed: {}",
+                                     getComponentName(), stopEx.getMessage());
+                        }
+                        state.set(LifecycleState.STOPPED);
+                    }
+                }
 
             } catch (Exception e) {
                 state.set(LifecycleState.FAILED);
@@ -122,6 +148,40 @@ public abstract class AbstractLifecycleAdapter implements LifecycleComponent {
             // Idempotent: already stopped
             if (currentState == LifecycleState.STOPPED) {
                 log.debug("{} already stopped - idempotent no-op", getComponentName());
+                return;
+            }
+
+            // Cancellation during startup rollback: a component caught in STARTING (e.g. when
+            // a layer fails and the coordinator stops STARTING|RUNNING components) must be torn
+            // down rather than rejected. Rejecting would leave it half-initialized in STARTING
+            // with its start in flight, possibly transitioning to RUNNING after rollback
+            // completed (Luciferase-0frcy.27). Run doStop() best-effort to release any partially
+            // acquired resources, then settle in STOPPED.
+            if (currentState == LifecycleState.STARTING) {
+                if (!state.compareAndSet(currentState, LifecycleState.STOPPING)) {
+                    // The in-flight start() advanced the state (most likely to RUNNING or FAILED).
+                    // Re-read and fall through to the normal validation below.
+                    currentState = state.get();
+                    if (currentState == LifecycleState.STOPPED) {
+                        return;
+                    }
+                    if (currentState != LifecycleState.RUNNING) {
+                        throw new LifecycleException(
+                            "Cannot stop " + getComponentName() + " from state: " + currentState);
+                    }
+                    state.set(LifecycleState.STOPPING);
+                }
+                log.debug("Cancelling start of {} (was STARTING)", getComponentName());
+                try {
+                    doStop();
+                } catch (Exception e) {
+                    // Best-effort cleanup of a partial start; settle in STOPPED regardless so the
+                    // component is not left dangling in STARTING.
+                    log.warn("Best-effort doStop() during startup cancellation of {} failed: {}",
+                             getComponentName(), e.getMessage());
+                }
+                state.set(LifecycleState.STOPPED);
+                log.info("{} start cancelled and stopped", getComponentName());
                 return;
             }
 

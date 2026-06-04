@@ -75,9 +75,17 @@ public class EventRecovery {
         // Load last checkpoint
         var checkpoint = getLastCheckpoint(nodeId);
 
-        // Read all events from log
+        // Luciferase-0frcy.37: replay only events AFTER the last checkpoint. Previously this read
+        // ALL events unconditionally, making the checkpoint mechanism a no-op for recovery (a crash
+        // at seq=15000 after a checkpoint at seq=10000 would re-replay all 15000 events). When no
+        // checkpoint exists, fall back to the full log.
         var wal = new WriteAheadLog(nodeId, logDirectory);
-        var allEvents = wal.readAllEvents();
+        List<Map<String, Object>> allEvents;
+        if (checkpoint != null) {
+            allEvents = wal.readEventsSince(checkpoint.sequenceNumber());
+        } else {
+            allEvents = wal.readAllEvents();
+        }
         wal.close();
 
         // Replay events with validation
@@ -108,7 +116,19 @@ public class EventRecovery {
         // Replay valid events
         replayEvents(validEvents);
 
-        return new RecoveredState(checkpoint, validEvents, validEvents.size(), skippedCount);
+        // Luciferase-0frcy.37 fix: a checkpoint at seq=N means the first N events are already
+        // durably captured BY the checkpoint; recovery only re-reads the post-checkpoint tail
+        // (readEventsSince, exclusive). The total number of events represented in the recovered
+        // state is therefore the checkpointed prefix PLUS the freshly-replayed tail. Counting only
+        // validEvents.size() (the tail) dropped the checkpointed prefix and reported 0 whenever the
+        // checkpoint sat at the final sequence (the common "checkpoint everything then recover" case).
+        var checkpointedPrefix = checkpoint != null ? checkpoint.sequenceNumber() : 0L;
+        // Keep the running total as a long end-to-end: checkpointedPrefix is a long sequence number
+        // and on a long-lived log the prefix + tail can exceed Integer.MAX_VALUE. Narrowing to int
+        // here (the prior behavior) would silently overflow to a negative/wrong count.
+        var totalReplayed = checkpointedPrefix + validEvents.size();
+
+        return new RecoveredState(checkpoint, validEvents, totalReplayed, skippedCount);
     }
 
     /**

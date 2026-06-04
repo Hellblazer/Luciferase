@@ -151,9 +151,12 @@ public class GhostStateManager {
     }
 
     /**
-     * Spatial bounds for ghost position clamping (dead reckoning boundary).
+     * Supplier of the current spatial bounds for ghost position clamping (dead reckoning
+     * boundary). A supplier (rather than a captured value) ensures clamping always uses the
+     * bubble's <em>current</em> bounds as entities are added/moved, instead of the stale
+     * snapshot captured at construction time.
      */
-    private final BubbleBounds bounds;
+    private final java.util.function.Supplier<BubbleBounds> boundsSupplier;
 
     /**
      * Maximum number of ghosts to track (memory limit).
@@ -200,13 +203,33 @@ public class GhostStateManager {
      * @param maxGhosts  Maximum number of ghosts to track
      */
     public GhostStateManager(BubbleBounds bounds, int maxGhosts) {
-        this.bounds = Objects.requireNonNull(bounds, "bounds must not be null");
+        this(asSupplier(bounds), maxGhosts);
+    }
+
+    /**
+     * Create GhostStateManager with a live bounds supplier and ghost limit.
+     * <p>
+     * Prefer this constructor when bounds change over the bubble's lifetime (e.g. as entities
+     * are added/moved): the supplier is re-read on every clamp so dead-reckoned ghost positions
+     * are clamped to the current bounds rather than a stale construction-time snapshot.
+     *
+     * @param boundsSupplier supplier of the current spatial bounds for extrapolation clamping
+     * @param maxGhosts      maximum number of ghosts to track
+     */
+    public GhostStateManager(java.util.function.Supplier<BubbleBounds> boundsSupplier, int maxGhosts) {
+        this.boundsSupplier = Objects.requireNonNull(boundsSupplier, "boundsSupplier must not be null");
+        Objects.requireNonNull(boundsSupplier.get(), "bounds must not be null");
         this.maxGhosts = maxGhosts;
         this.deadReckoning = new DeadReckoningEstimator();
         this.lifecycle = new GhostLifecycleStateMachine(); // 500ms TTL, 300ms staleness threshold
         this.ghostStates = new ConcurrentHashMap<>();
 
-        log.debug("GhostStateManager initialized with bounds {} and max ghosts {}", bounds, maxGhosts);
+        log.debug("GhostStateManager initialized with bounds {} and max ghosts {}", boundsSupplier.get(), maxGhosts);
+    }
+
+    private static java.util.function.Supplier<BubbleBounds> asSupplier(BubbleBounds bounds) {
+        Objects.requireNonNull(bounds, "bounds must not be null");
+        return () -> bounds;
     }
 
     /**
@@ -450,6 +473,7 @@ public class GhostStateManager {
      * If outside bounds, clamps to RDGCS min/max in Cartesian space.
      */
     private Point3f clampToBounds(Point3f position) {
+        var bounds = boundsSupplier.get();
         // Check if already within bounds
         if (bounds.contains(position)) {
             return position;
@@ -497,6 +521,6 @@ public class GhostStateManager {
     @Override
     public String toString() {
         return String.format("GhostStateManager{ghosts=%d, maxGhosts=%d, bounds=%s}",
-                            ghostStates.size(), maxGhosts, bounds);
+                            ghostStates.size(), maxGhosts, boundsSupplier.get());
     }
 }

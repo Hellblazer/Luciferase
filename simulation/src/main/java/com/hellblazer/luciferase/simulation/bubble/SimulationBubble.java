@@ -57,6 +57,17 @@ import java.util.concurrent.TimeUnit;
  *   <li>Memory: No unbounded growth</li>
  * </ul>
  *
+ * <p>
+ * <b>Global controller limitation</b>: the constructor registers its Prime-Mover
+ * {@code RealTimeController} via {@link com.hellblazer.primeMover.Kairos#setController}, which
+ * mutates <em>global static</em> Prime-Mover state. {@code Kairos} exposes no per-entity or
+ * per-thread controller scoping, so constructing more than one {@code SimulationBubble} in the
+ * same JVM context is unsafe: the most recently constructed instance's controller wins for
+ * <em>all</em> {@code @Entity} scheduling, silently breaking earlier instances. Construct at most
+ * one live {@code SimulationBubble} per JVM context. When a second instance is constructed while a
+ * different controller is already registered, a warning is logged (see {@link #ACTIVE_CONTROLLER})
+ * so the otherwise-silent last-writer-wins overwrite is observable.
+ *
  * @author hal.hildebrand
  * @see com.hellblazer.luciferase.simulation.loop.SimulationLoop
  * @see com.hellblazer.luciferase.simulation.animation.VolumeAnimator.AnimationFrame
@@ -64,6 +75,14 @@ import java.util.concurrent.TimeUnit;
 public class SimulationBubble {
 
     private static final Logger log = LoggerFactory.getLogger(SimulationBubble.class);
+
+    /**
+     * Tracks the controller most recently registered with the global {@link com.hellblazer.primeMover.Kairos}
+     * state. Used solely to detect and warn on the last-writer-wins overwrite described in the class
+     * documentation — it does not make multi-instance construction safe.
+     */
+    private static final java.util.concurrent.atomic.AtomicReference<com.hellblazer.primeMover.controllers.RealTimeController> ACTIVE_CONTROLLER =
+        new java.util.concurrent.atomic.AtomicReference<>();
 
     /**
      * Default tick rate: 60 ticks per second (16.67ms per tick).
@@ -141,6 +160,16 @@ public class SimulationBubble {
         this.worldBounds = worldBounds;
         this.controller = new com.hellblazer.primeMover.controllers.RealTimeController("SimBubble-" + bubble.id());
         this.entity = new SimulationBubbleEntity(tickIntervalMs);
+        // Kairos.setController mutates GLOBAL static Prime-Mover state (last-writer-wins).
+        // Detect overwriting a different, already-registered controller and warn so the
+        // otherwise-silent multi-instance hazard is observable. See class documentation.
+        var previous = ACTIVE_CONTROLLER.getAndSet(controller);
+        if (previous != null && previous != controller) {
+            log.warn("SimulationBubble {} is overwriting the global Kairos controller previously "
+                     + "registered by another SimulationBubble; only one live SimulationBubble is "
+                     + "supported per JVM context — earlier instances' @Entity scheduling is now broken",
+                     bubble.id());
+        }
         Kairos.setController(controller);
 
         log.debug("Created SimulationBubble: bubble={}, tickIntervalMs={}, worldBounds={}",
@@ -399,6 +428,12 @@ public class SimulationBubble {
                 if (tickCount % CLEANUP_INTERVAL_TICKS == 0) {
                     cleanupRemovedEntities();
                 }
+            }
+
+            // Stop rescheduling once the bubble has been stopped, so the entity does not
+            // re-queue itself indefinitely (and never schedules a tick on a stopped controller).
+            if (!SimulationBubble.this.running) {
+                return;
             }
 
             // Schedule next tick (recursive event scheduling)

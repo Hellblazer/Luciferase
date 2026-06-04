@@ -46,29 +46,44 @@ public final class CommitteeProtoConverter {
 
     /**
      * Convert Digest to hex string for proto serialization.
+     * <p>
+     * The algorithm code is encoded as the first byte of the hex string so that {@link #hexToDigest} can
+     * reconstruct the Digest with its original algorithm. {@code Digest.getBytes()} returns only the raw hash
+     * bytes (no algorithm tag); hardcoding an algorithm on the way back silently breaks algorithm-aware
+     * {@code Digest.equals()} for any non-DEFAULT cluster, causing votes to be discarded (Luciferase-0frcy.19).
      *
      * @param digest Digest to convert
-     * @return Hex string representation
+     * @return Hex string representation: 1-byte algorithm code prefix followed by the raw hash bytes
      */
     public static String digestToHex(Digest digest) {
         if (digest == null) {
             throw new IllegalArgumentException("Digest cannot be null");
         }
-        return Hex.hex(digest.getBytes());
+        var hash = digest.getBytes();
+        var tagged = new byte[hash.length + 1];
+        tagged[0] = digest.getAlgorithm().digestCode();
+        System.arraycopy(hash, 0, tagged, 1, hash.length);
+        return Hex.hex(tagged);
     }
 
     /**
-     * Convert hex string back to Digest.
+     * Convert hex string back to Digest, restoring the algorithm encoded by {@link #digestToHex}.
      *
-     * @param hex Hex string from proto
-     * @return Digest instance
+     * @param hex Hex string from proto (1-byte algorithm code prefix followed by raw hash bytes)
+     * @return Digest instance carrying the original algorithm
      */
     public static Digest hexToDigest(String hex) {
         if (hex == null || hex.isEmpty()) {
             throw new IllegalArgumentException("Hex string cannot be null or empty");
         }
-        var bytes = Hex.unhex(hex);
-        return new Digest(DigestAlgorithm.DEFAULT, bytes);
+        var tagged = Hex.unhex(hex);
+        if (tagged.length < 1) {
+            throw new IllegalArgumentException("Hex string too short to contain an algorithm code prefix");
+        }
+        var algorithm = DigestAlgorithm.fromDigestCode(tagged[0]);
+        var hash = new byte[tagged.length - 1];
+        System.arraycopy(tagged, 1, hash, 0, hash.length);
+        return new Digest(algorithm, hash);
     }
 
     /**

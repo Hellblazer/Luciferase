@@ -17,6 +17,10 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
+import com.hellblazer.luciferase.simulation.distributed.migration.EntitySnapshot;
+import com.hellblazer.luciferase.simulation.distributed.migration.IdempotencyToken;
+
+import javax.vecmath.Point3d;
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.UUID;
@@ -63,6 +67,8 @@ public class MessageConverter {
                 queryToTransport(query);
             case Message.QueryResponse queryResp ->
                 queryResponseToTransport(queryResp);
+            case MigrationProtocolMessages migration ->
+                migrationToTransport(migration);
             default ->
                 throw new IllegalArgumentException("Unknown Message type: " + message.getClass().getSimpleName());
         };
@@ -96,6 +102,8 @@ public class MessageConverter {
                 queryFromTransport(transport);
             case "QueryResponse" ->
                 queryResponseFromTransport(transport);
+            case "Migration" ->
+                migrationFromTransport(transport);
             default ->
                 throw new IllegalArgumentException("Unknown message type: " + transport.type());
         };
@@ -354,5 +362,147 @@ public class MessageConverter {
             responseData,
             transport.timestamp()
         );
+    }
+
+    // ==================== Migration 2PC Conversion (Luciferase-l5gr9) ====================
+    //
+    // The 2PC subtypes carry rich domain types (IdempotencyToken, EntitySnapshot). They are
+    // decomposed into a primitive-only TransportMigrationMessage so the VonTransportFilter
+    // deserialization allow-list never has to admit a domain type (RDR-004 hygiene). Every
+    // subtype's control fields round-trip non-null; EntitySnapshot.content is carried as a
+    // String only (see TransportMigrationMessage javadoc).
+
+    private static TransportVonMessage migrationToTransport(MigrationProtocolMessages msg) {
+        var tm = switch (msg) {
+            case MigrationProtocolMessages.PrepareRequest m -> new TransportMigrationMessage(
+                "PrepareRequest", m.transactionId().toString(), m.timestamp(),
+                tokEntityId(m.idempotencyToken()), tokSource(m.idempotencyToken()),
+                tokDest(m.idempotencyToken()), tokTs(m.idempotencyToken()), tokNonce(m.idempotencyToken()),
+                snapEntityId(m.entitySnapshot()), snapX(m.entitySnapshot()), snapY(m.entitySnapshot()),
+                snapZ(m.entitySnapshot()), snapContent(m.entitySnapshot()), snapAuthority(m.entitySnapshot()),
+                snapEpoch(m.entitySnapshot()), snapVersion(m.entitySnapshot()), snapTs(m.entitySnapshot()),
+                uuidStr(m.sourceId()), uuidStr(m.destId()),
+                null, null, null, null);
+            case MigrationProtocolMessages.PrepareResponse m -> new TransportMigrationMessage(
+                "PrepareResponse", m.transactionId().toString(), m.timestamp(),
+                null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null,
+                null, null,
+                m.success(), m.reason(), uuidStr(m.destProcessId()), null);
+            case MigrationProtocolMessages.CommitRequest m -> new TransportMigrationMessage(
+                "CommitRequest", m.transactionId().toString(), m.timestamp(),
+                null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null,
+                null, null,
+                null, null, null, m.confirmed());
+            case MigrationProtocolMessages.CommitResponse m -> new TransportMigrationMessage(
+                "CommitResponse", m.transactionId().toString(), m.timestamp(),
+                null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null,
+                null, null,
+                m.success(), m.reason(), null, null);
+            case MigrationProtocolMessages.AbortRequest m -> new TransportMigrationMessage(
+                "AbortRequest", m.transactionId().toString(), m.timestamp(),
+                null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null,
+                null, null,
+                null, m.reason(), null, null);
+            case MigrationProtocolMessages.AbortResponse m -> new TransportMigrationMessage(
+                "AbortResponse", m.transactionId().toString(), m.timestamp(),
+                null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null,
+                null, null,
+                m.rolledBack(), null, null, null);
+        };
+
+        return new TransportVonMessage(
+            "Migration",
+            tm.transactionId(),
+            tm.transactionId(),
+            0f, 0f, 0f,
+            "",
+            tm.timestamp(),
+            null, null, null, null, null,
+            tm
+        );
+    }
+
+    private static Message migrationFromTransport(TransportVonMessage transport) {
+        var tm = transport.migration();
+        if (tm == null) {
+            throw new IllegalArgumentException("Migration message missing migration payload");
+        }
+        var txId = UUID.fromString(tm.transactionId());
+        return switch (tm.subtype()) {
+            case "PrepareRequest" -> new MigrationProtocolMessages.PrepareRequest(
+                txId, reconstructToken(tm), reconstructSnapshot(tm),
+                strUuid(tm.sourceId()), strUuid(tm.destId()), tm.timestamp());
+            case "PrepareResponse" -> new MigrationProtocolMessages.PrepareResponse(
+                txId, Boolean.TRUE.equals(tm.success()), tm.reason(), strUuid(tm.destProcessId()), tm.timestamp());
+            case "CommitRequest" -> new MigrationProtocolMessages.CommitRequest(
+                txId, Boolean.TRUE.equals(tm.confirmed()), tm.timestamp());
+            case "CommitResponse" -> new MigrationProtocolMessages.CommitResponse(
+                txId, Boolean.TRUE.equals(tm.success()), tm.reason(), tm.timestamp());
+            case "AbortRequest" -> new MigrationProtocolMessages.AbortRequest(
+                txId, tm.reason(), tm.timestamp());
+            case "AbortResponse" -> new MigrationProtocolMessages.AbortResponse(
+                txId, Boolean.TRUE.equals(tm.success()), tm.timestamp());
+            default -> throw new IllegalArgumentException("Unknown migration subtype: " + tm.subtype());
+        };
+    }
+
+    // ---- decomposition helpers (null-safe over optional groups) ----
+
+    private static String uuidStr(UUID u) { return u == null ? null : u.toString(); }
+    private static UUID strUuid(String s) { return s == null ? null : UUID.fromString(s); }
+
+    private static String tokEntityId(IdempotencyToken t) { return t == null ? null : t.entityId(); }
+    private static String tokSource(IdempotencyToken t) { return t == null ? null : uuidStr(t.sourceProcessId()); }
+    private static String tokDest(IdempotencyToken t) { return t == null ? null : uuidStr(t.destProcessId()); }
+    private static Long tokTs(IdempotencyToken t) { return t == null ? null : t.timestamp(); }
+    private static String tokNonce(IdempotencyToken t) { return t == null ? null : uuidStr(t.nonce()); }
+
+    private static IdempotencyToken reconstructToken(TransportMigrationMessage tm) {
+        if (tm.tokEntityId() == null && tm.tokSourceProcessId() == null && tm.tokNonce() == null) {
+            return null;
+        }
+        return new IdempotencyToken(
+            tm.tokEntityId(),
+            strUuid(tm.tokSourceProcessId()),
+            strUuid(tm.tokDestProcessId()),
+            tm.tokTimestamp() == null ? 0L : tm.tokTimestamp(),
+            strUuid(tm.tokNonce()));
+    }
+
+    private static String snapEntityId(EntitySnapshot s) { return s == null ? null : s.entityId(); }
+    private static Double snapX(EntitySnapshot s) { return (s == null || s.position() == null) ? null : s.position().getX(); }
+    private static Double snapY(EntitySnapshot s) { return (s == null || s.position() == null) ? null : s.position().getY(); }
+    private static Double snapZ(EntitySnapshot s) { return (s == null || s.position() == null) ? null : s.position().getZ(); }
+    private static String snapContent(EntitySnapshot s) {
+        return (s == null || s.content() == null) ? null : s.content().toString();
+    }
+    private static String snapAuthority(EntitySnapshot s) { return s == null ? null : uuidStr(s.authorityBubbleId()); }
+    private static Long snapEpoch(EntitySnapshot s) { return s == null ? null : s.epoch(); }
+    private static Long snapVersion(EntitySnapshot s) { return s == null ? null : s.version(); }
+    private static Long snapTs(EntitySnapshot s) { return s == null ? null : s.timestamp(); }
+
+    // NOTE: EntitySnapshot.content is String-only on the wire. TransportMigrationMessage carries
+    // snapContent() as a String, so any richer in-memory content type is collapsed to its String
+    // form when serialized and reconstructed here. Callers must not assume non-String content
+    // survives a transport round-trip (RDR-004 wire-hygiene constraint).
+    private static EntitySnapshot reconstructSnapshot(TransportMigrationMessage tm) {
+        if (tm.snapEntityId() == null && tm.snapAuthorityBubbleId() == null) {
+            return null;
+        }
+        Point3d pos = (tm.snapPosX() == null) ? null
+            : new Point3d(tm.snapPosX(), tm.snapPosY(), tm.snapPosZ());
+        return new EntitySnapshot(
+            tm.snapEntityId(),
+            pos,
+            tm.snapContent(),  // content carried as String only (RDR-004 hygiene)
+            strUuid(tm.snapAuthorityBubbleId()),
+            tm.snapEpoch() == null ? 0L : tm.snapEpoch(),
+            tm.snapVersion() == null ? 0L : tm.snapVersion(),
+            tm.snapTimestamp() == null ? 0L : tm.snapTimestamp());
     }
 }

@@ -23,6 +23,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -66,7 +68,7 @@ public class MigrationLogPersistence {
     private final Path walFile;
     private final ObjectMapper mapper;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-    private PrintWriter writer;
+    private FileChannel channel;
 
     /**
      * Create a new MigrationLogPersistence instance.
@@ -97,15 +99,28 @@ public class MigrationLogPersistence {
         // Create directory if not exists
         Files.createDirectories(walDirectory);
 
-        // Open writer in append mode
-        this.writer = new PrintWriter(
-            new OutputStreamWriter(
-                Files.newOutputStream(walFile, StandardOpenOption.CREATE, StandardOpenOption.APPEND),
-                StandardCharsets.UTF_8
-            )
-        );
+        // Open an append-mode FileChannel so each WAL record can be fsync'd via force(true)
+        // (Luciferase-0frcy.33). PrintWriter.flush() only pushed bytes to the OS page cache and
+        // could lose a record on crash; force(true) guarantees the record is on stable storage
+        // before the write call returns.
+        this.channel = FileChannel.open(walFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
+                                        StandardOpenOption.APPEND);
 
         log.debug("MigrationLogPersistence initialized: {}", walFile);
+    }
+
+    /**
+     * Durably append a single JSONL line to the WAL: write the bytes, then fsync the channel
+     * (and its metadata) via {@link FileChannel#force(boolean)} before returning. Caller must
+     * hold the write lock.
+     */
+    private void appendDurable(String json) throws IOException {
+        var bytes = (json + System.lineSeparator()).getBytes(StandardCharsets.UTF_8);
+        var buf = ByteBuffer.wrap(bytes);
+        while (buf.hasRemaining()) {
+            channel.write(buf);
+        }
+        channel.force(true);
     }
 
     /**
@@ -127,8 +142,7 @@ public class MigrationLogPersistence {
         lock.writeLock().lock();
         try {
             String json = mapper.writeValueAsString(state);
-            writer.println(json);
-            writer.flush();
+            appendDurable(json);
             log.trace("Recorded PREPARE for transaction {}", state.transactionId());
         } finally {
             lock.writeLock().unlock();
@@ -152,8 +166,7 @@ public class MigrationLogPersistence {
                 "{\"transactionId\":\"%s\",\"phase\":\"COMMIT\"}",
                 transactionId
             );
-            writer.println(json);
-            writer.flush();
+            appendDurable(json);
             log.trace("Recorded COMMIT for transaction {}", transactionId);
         } finally {
             lock.writeLock().unlock();
@@ -175,8 +188,7 @@ public class MigrationLogPersistence {
                 "{\"transactionId\":\"%s\",\"phase\":\"ABORT\"}",
                 transactionId
             );
-            writer.println(json);
-            writer.flush();
+            appendDurable(json);
             log.trace("Recorded ABORT for transaction {}", transactionId);
         } finally {
             lock.writeLock().unlock();
@@ -261,8 +273,12 @@ public class MigrationLogPersistence {
     public void close() {
         lock.writeLock().lock();
         try {
-            if (writer != null) {
-                writer.close();
+            if (channel != null) {
+                try {
+                    channel.close();
+                } catch (IOException e) {
+                    log.warn("Error closing WAL channel {}: {}", walFile, e.getMessage());
+                }
                 log.debug("MigrationLogPersistence closed: {}", walFile);
             }
         } finally {

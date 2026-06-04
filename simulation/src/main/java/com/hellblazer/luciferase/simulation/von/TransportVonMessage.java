@@ -58,10 +58,11 @@ public record TransportVonMessage(
     Long bucket,                           // Simulation bucket for GhostSync (null for other types)
     List<TransportNeighborInfo> neighbors, // Neighbor list for JoinResponse (null for other types)
     String queryId,                        // Query correlation ID (null for non-query types)
-    TransportBubbleBounds bounds           // Spatial bounds for JoinRequest/Move (null for other types)
+    TransportBubbleBounds bounds,          // Spatial bounds for JoinRequest/Move (null for other types)
+    TransportMigrationMessage migration    // 2PC payload for MigrationProtocolMessages (null for other types)
 ) implements Serializable {
     @java.io.Serial
-    private static final long serialVersionUID = 4L; // Incremented: added bounds (Luciferase-vzyrf)
+    private static final long serialVersionUID = 5L; // Incremented: added migration 2PC payload (Luciferase-l5gr9)
 
     /**
      * Compact constructor with validation.
@@ -91,7 +92,7 @@ public record TransportVonMessage(
         String queryId
     ) {
         this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp,
-             ghosts, bucket, neighbors, queryId, null);
+             ghosts, bucket, neighbors, queryId, null, null);
     }
 
     /**
@@ -116,7 +117,31 @@ public record TransportVonMessage(
         String entityId,
         long timestamp
     ) {
-        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp, null, null, null, null, null);
+        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp,
+             null, null, null, null, null, null);
+    }
+
+    /**
+     * 13-argument constructor (bounds wire shape, pre-migration). Defaults {@code migration} to
+     * {@code null}. Used by JoinRequest/Move conversions which carry spatial bounds.
+     */
+    public TransportVonMessage(
+        String type,
+        String sourceBubbleId,
+        String targetBubbleId,
+        float posX,
+        float posY,
+        float posZ,
+        String entityId,
+        long timestamp,
+        List<TransportGhostData> ghosts,
+        Long bucket,
+        List<TransportNeighborInfo> neighbors,
+        String queryId,
+        TransportBubbleBounds bounds
+    ) {
+        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp,
+             ghosts, bucket, neighbors, queryId, bounds, null);
     }
 
     /**

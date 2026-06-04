@@ -91,7 +91,15 @@ public class InMemoryGhostChannel<ID extends EntityID, Content> implements Ghost
     public void queueGhost(UUID targetBubbleId, SimulationGhostEntity<ID, Content> ghost) {
         Objects.requireNonNull(targetBubbleId, "targetBubbleId must not be null");
         Objects.requireNonNull(ghost, "ghost must not be null");
-        pendingBatches.computeIfAbsent(targetBubbleId, k -> new CopyOnWriteArrayList<>()).add(ghost);
+        // Add inside compute() so the append is mutually exclusive (same ConcurrentHashMap bin lock)
+        // with flush()'s atomic swap (Luciferase-0frcy.25). Doing computeIfAbsent(...).add() OUTSIDE
+        // the compute leaves a window where the returned list is swapped out by flush() before .add()
+        // runs, silently dropping the ghost.
+        pendingBatches.compute(targetBubbleId, (k, list) -> {
+            var batch = (list == null) ? new CopyOnWriteArrayList<SimulationGhostEntity<ID, Content>>() : list;
+            batch.add(ghost);
+            return batch;
+        });
     }
 
     @Override
@@ -122,13 +130,14 @@ public class InMemoryGhostChannel<ID extends EntityID, Content> implements Ghost
 
     @Override
     public void flush(long bucket) {
-        for (var entry : pendingBatches.entrySet()) {
-            var targetId = entry.getKey();
-            var ghosts = entry.getValue(); // CopyOnWriteArrayList - clear() won't affect concurrent adds
-            if (!ghosts.isEmpty()) {
-                // Send copy to avoid concurrent modification
-                sendBatch(targetId, new ArrayList<>(ghosts));
-                ghosts.clear(); // Safe: creates new list, concurrent adds go to new list
+        // Atomic swap (Luciferase-0frcy.25): install a fresh list per target so any queueGhost()
+        // running concurrently with flush() appends to the NEW list. The snapshot-then-clear pattern
+        // dropped ghosts queued in the window between snapshot and clear(): CopyOnWriteArrayList.clear()
+        // does NOT install a new instance, so concurrent adds landed in the same instance being cleared.
+        for (var targetId : pendingBatches.keySet()) {
+            var ghostsToSend = pendingBatches.put(targetId, new CopyOnWriteArrayList<>());
+            if (ghostsToSend != null && !ghostsToSend.isEmpty()) {
+                sendBatch(targetId, new ArrayList<>(ghostsToSend));
             }
         }
     }

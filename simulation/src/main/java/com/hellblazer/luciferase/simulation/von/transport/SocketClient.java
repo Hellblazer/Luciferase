@@ -147,7 +147,7 @@ public class SocketClient {
      *
      * @throws IOException if socket close fails
      */
-    public void close() throws IOException {
+    public synchronized void close() throws IOException {
         log.info("Closing connection to {}", remoteAddress.toUrl());
         connected = false;
 

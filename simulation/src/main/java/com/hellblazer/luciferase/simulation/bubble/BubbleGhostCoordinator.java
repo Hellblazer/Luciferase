@@ -27,14 +27,16 @@ public class BubbleGhostCoordinator {
      * Create a ghost coordinator with channel and state manager.
      *
      * @param ghostChannel        GhostChannel for cross-bubble ghost transmission
-     * @param bounds              Initial bubble bounds for ghost state manager
+     * @param boundsSupplier      Supplier of the bubble's current bounds; re-read on every
+     *                            dead-reckoning clamp so ghosts track live bounds rather than a
+     *                            stale construction-time snapshot
      * @param realTimeController  RealTimeController for tick listener registration
      */
     public BubbleGhostCoordinator(GhostChannel<StringEntityID, EntityData> ghostChannel,
-                                  BubbleBounds bounds,
+                                  java.util.function.Supplier<BubbleBounds> boundsSupplier,
                                   RealTimeController realTimeController) {
         this.ghostChannel = ghostChannel;
-        this.ghostStateManager = new GhostStateManager(bounds, 1000); // max 1000 ghosts
+        this.ghostStateManager = new GhostStateManager(boundsSupplier, 1000); // max 1000 ghosts
 
         // Register ghost reception handler using GhostChannel interface
         ghostChannel.onReceive((sourceBubbleId, ghosts) -> {

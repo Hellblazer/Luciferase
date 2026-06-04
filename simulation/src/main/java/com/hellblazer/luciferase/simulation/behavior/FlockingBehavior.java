@@ -69,11 +69,16 @@ public class FlockingBehavior implements EntityBehavior {
     private final float boundaryMargin;
     private final Random random;
 
-    // Double-buffered velocity cache for thread-safe alignment calculations
-    // previousVelocities: read from during computation (last tick's values)
-    // currentVelocities: write to during computation (this tick's values)
-    private volatile Map<String, Vector3f> previousVelocities = new ConcurrentHashMap<>();
-    private volatile Map<String, Vector3f> currentVelocities = new ConcurrentHashMap<>();
+    // Double-buffered velocity cache for thread-safe alignment calculations.
+    // previous: read from during computation (last tick's values)
+    // current:  write to during computation (this tick's values)
+    // Both maps are held in a single immutable record behind one volatile reference so the
+    // tick-boundary swap is a SINGLE atomic write — there is no window where previous and
+    // current transiently alias the same map (Luciferase-0frcy.2).
+    private record VelocityBuffers(Map<String, Vector3f> previous, Map<String, Vector3f> current) {}
+
+    private volatile VelocityBuffers buffers =
+        new VelocityBuffers(new ConcurrentHashMap<>(), new ConcurrentHashMap<>());
 
     /**
      * Create flocking behavior with default parameters.
@@ -156,8 +161,10 @@ public class FlockingBehavior implements EntityBehavior {
      * while writing to the current tick's buffer.
      */
     public void swapVelocityBuffers() {
-        previousVelocities = currentVelocities;
-        currentVelocities = new ConcurrentHashMap<>();
+        // Single atomic volatile write: the just-completed tick's current map becomes the new
+        // previous, and a fresh empty map becomes current. No intermediate aliasing window.
+        var completed = buffers.current();
+        buffers = new VelocityBuffers(completed, new ConcurrentHashMap<>());
     }
 
     /**
@@ -168,15 +175,16 @@ public class FlockingBehavior implements EntityBehavior {
      * @param activeEntityIds Set of currently active entity IDs
      */
     public void cleanupRemovedEntities(Set<String> activeEntityIds) {
-        previousVelocities.keySet().retainAll(activeEntityIds);
-        currentVelocities.keySet().retainAll(activeEntityIds);
+        var snapshot = buffers;
+        snapshot.previous().keySet().retainAll(activeEntityIds);
+        snapshot.current().keySet().retainAll(activeEntityIds);
     }
 
     @Override
     public Vector3f computeVelocity(String entityId, Point3f position, Vector3f velocity,
                                     EnhancedBubble bubble, float deltaTime) {
         // Store current velocity for next tick's alignment calculations
-        currentVelocities.put(entityId, new Vector3f(velocity));
+        buffers.current().put(entityId, new Vector3f(velocity));
 
         // Query neighbors within AOI
         var neighbors = bubble.queryRange(position, aoiRadius);
@@ -284,7 +292,7 @@ public class FlockingBehavior implements EntityBehavior {
             if (neighbor.id().equals(entityId)) continue;
 
             // Read from previous tick's velocities (thread-safe)
-            var neighborVel = previousVelocities.get(neighbor.id());
+            var neighborVel = buffers.previous().get(neighbor.id());
             if (neighborVel != null) {
                 avgVelocity.add(neighborVel);
                 count++;
@@ -421,7 +429,8 @@ public class FlockingBehavior implements EntityBehavior {
      * Clear velocity caches (call when resetting simulation).
      */
     public void clearCache() {
-        previousVelocities.clear();
-        currentVelocities.clear();
+        var snapshot = buffers;
+        snapshot.previous().clear();
+        snapshot.current().clear();
     }
 }

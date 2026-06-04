@@ -108,8 +108,11 @@ public class OptimisticMigratorIntegration {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
         Objects.requireNonNull(targetNodeId, "targetNodeId must not be null");
 
-        // Create proposal with current view ID (CRITICAL for race prevention)
-        var currentViewId = getCurrentViewId();
+        // Create proposal with current view ID (CRITICAL for race prevention).
+        // A null view ID means the monitor has no real Fireflies view yet; proceeding would tag the proposal
+        // with a null viewId and NPE downstream on the vote path (Luciferase-0frcy.18). Fail fast instead.
+        var currentViewId = Objects.requireNonNull(getCurrentViewId(),
+            "Current view ID is null - cannot request migration approval without a real Fireflies view");
         var proposal = new MigrationProposal(
             UUID.randomUUID(),
             entityId,

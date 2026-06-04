@@ -246,17 +246,14 @@ public class EntityDistribution {
      * @return TetreeKey or null if not found
      */
     private TetreeKey<?> findKeyForBubble(EnhancedBubble bubble) {
-        // This is inefficient but works for small bubble counts
-        // In production, we'd maintain a reverse map
-        var allBubbles = bubbleGrid.getAllBubbles();
-        for (var candidate : allBubbles) {
-            if (candidate.id().equals(bubble.id())) {
-                // Extract key from spatial index (approximation)
-                // For now, return a placeholder - this would need proper implementation
-                return TetreeKey.create((byte) 0, 0L, 0L);
-            }
-        }
-        return null;
+        // Reverse-lookup the grid's key→bubble map by bubble id.
+        // This is inefficient but works for small bubble counts; in production we'd
+        // maintain a reverse map.
+        return bubbleGrid.getBubblesWithKeys().entrySet().stream()
+                         .filter(e -> e.getValue().id().equals(bubble.id()))
+                         .map(Map.Entry::getKey)
+                         .findFirst()
+                         .orElse(null);
     }
 
     /**
@@ -331,31 +328,19 @@ public class EntityDistribution {
     }
 
     /**
-     * Check if two TetreeKeys are compatible (same or nearby in hierarchy).
+     * Check if two TetreeKeys identify the same tetrahedron.
      * <p>
-     * Keys are compatible if:
-     * <ul>
-     *   <li>They are equal</li>
-     *   <li>One is an ancestor of the other</li>
-     *   <li>They are siblings at the same level</li>
-     * </ul>
+     * TetreeKey high/low bits encode a space-filling-curve path from the root, so arithmetic
+     * differences on the packed bit-fields have no geometric meaning (a delta of 1 can map to
+     * a spatially distant tetrahedron). Validation therefore uses exact equality rather than a
+     * meaningless bit-distance tolerance.
      *
      * @param key1 First key
      * @param key2 Second key
-     * @return true if keys are compatible, false otherwise
+     * @return true if the keys are equal, false otherwise
      */
     private boolean keysAreCompatible(TetreeKey<?> key1, TetreeKey<?> key2) {
-        // Simple check: same level and close in SFC order
-        if (key1.getLevel() != key2.getLevel()) {
-            return false;
-        }
-
-        // Check if high/low bits are close (within reasonable tolerance)
-        long highDiff = Math.abs(key1.getHighBits() - key2.getHighBits());
-        long lowDiff = Math.abs(key1.getLowBits() - key2.getLowBits());
-
-        // Allow small differences (neighboring keys)
-        return highDiff <= 8 && lowDiff <= 8;
+        return key1.equals(key2);
     }
 
     /**
