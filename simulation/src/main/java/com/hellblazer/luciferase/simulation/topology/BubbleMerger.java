@@ -16,12 +16,14 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -143,7 +145,19 @@ public class BubbleMerger {
         // Get entity records from bubble2 for positions/content
         var records2 = bubble2.getAllEntityRecords();
 
-        // Move all entities from bubble2 to bubble1
+        // Move all entities from bubble2 to bubble1.
+        //
+        // INVARIANT: any moveBetweenBubbles failure is fatal for the whole merge.
+        //
+        // The old code used `continue` on failure, which silently skipped entities,
+        // leaving them half-moved: present in bubble1's EnhancedBubble structure but
+        // no longer in the accountant's source set — a form of the same TOCTOU
+        // conservation bug fixed in BubbleSplitter (Luciferase-7wzml.70).
+        //
+        // The fix: on any failure, undo the entities already moved this invocation
+        // (reverse accountant moves + bubble membership) and return failure.
+        var movedRecords = new ArrayList<>(records2);
+        movedRecords.clear(); // reuse var as accumulator of successfully-moved records
         int entitiesMoved = 0;
         for (var record : records2) {
             var entityId = UUID.fromString(record.id());
@@ -157,17 +171,38 @@ public class BubbleMerger {
             // Add entity to bubble1 first
             bubble1.addEntity(record.id(), record.position(), record.content());
 
-            // Move in accountant (atomic)
+            // Move in accountant (atomic under its internal lock)
             boolean moved = accountant.moveBetweenBubbles(entityId, bubble2Id, bubble1Id);
             if (!moved) {
-                log.error("Failed to move entity {} from {} to {}", entityId, bubble2Id, bubble1Id);
-                // Rollback: remove entity from bubble1
-                bubble1.removeEntity(record.id());
-                continue;
+                // FAIL FAST: undo all in-progress moves and abort the merge.
+                log.error("[{}] Failed to move entity {} from {} to {} — aborting merge, rolling back {} partial moves",
+                          correlationId, entityId, bubble2Id, bubble1Id, entitiesMoved);
+                // Undo: move already-moved entities back to bubble2.
+                // Rollback is best-effort: if a rollback move itself fails, the entity is
+                // logged as an orphan but we continue reversing the rest.  Full 2PC
+                // (rollback-of-rollback) is out of scope; the log.error below makes
+                // any orphan diagnosable.
+                bubble1.removeEntity(record.id()); // undo bubble-side add for this entity
+                for (var done : movedRecords) {
+                    var doneId = UUID.fromString(done.id());
+                    boolean rolledBack = accountant.moveBetweenBubbles(doneId, bubble1Id, bubble2Id);
+                    if (!rolledBack) {
+                        log.error("[{}] Rollback move FAILED for entity {} (from bubble1 {} back to bubble2 {}) — entity may be orphaned",
+                                  correlationId, doneId, bubble1Id, bubble2Id);
+                    }
+                    bubble2.addEntity(done.id(), done.position(), done.content());
+                    bubble1.removeEntity(done.id());
+                }
+                metrics.recordMergeFailure();
+                return new MergeExecutionResult(false,
+                                               "moveBetweenBubbles failed for entity " + entityId
+                                               + "; merge aborted and rolled back",
+                                               totalBefore, totalBefore, duplicates.size());
             }
 
-            // Remove from bubble2
+            // Remove from bubble2 only after accountant confirms the move
             bubble2.removeEntity(record.id());
+            movedRecords.add(record);
             entitiesMoved++;
         }
 

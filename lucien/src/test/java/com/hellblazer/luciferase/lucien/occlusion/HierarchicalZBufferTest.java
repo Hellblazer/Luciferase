@@ -21,6 +21,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -158,10 +162,10 @@ public class HierarchicalZBufferTest {
         float[] viewMatrix = createIdentityMatrix();
         float[] projMatrix = createOrthographicMatrix(-100, 100, -100, 100, 0.1f, 1000);
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000);
-        
+
         int numThreads = 10;
         Thread[] threads = new Thread[numThreads];
-        
+
         // Create threads that render occluders
         for (int i = 0; i < numThreads; i++) {
             final int threadId = i;
@@ -176,21 +180,75 @@ public class HierarchicalZBufferTest {
                 }
             });
         }
-        
-        // Start all threads
+
         for (Thread thread : threads) {
             thread.start();
         }
-        
-        // Wait for completion
         for (Thread thread : threads) {
             thread.join();
         }
-        
+
         // Should complete without errors
-        assertDoesNotThrow(() -> {
-            zBuffer.updateHierarchy();
-        });
+        assertDoesNotThrow(() -> zBuffer.updateHierarchy());
+    }
+
+    /**
+     * Concurrency / visibility: concurrent renderOccluder (write path) and
+     * updateHierarchy (simulating endFrame from HierarchicalOcclusionCuller) must
+     * not produce a torn pyramid. We verify by running both for 500 ms and
+     * asserting no exception is thrown and no thread observes an error.
+     */
+    @Test
+    void testConcurrentRenderAndUpdateHierarchyNoTornPyramid() throws InterruptedException {
+        float[] viewMatrix = createIdentityMatrix();
+        float[] projMatrix = createOrthographicMatrix(-100, 100, -100, 100, 0.1f, 1000);
+        zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000);
+
+        AtomicBoolean failed = new AtomicBoolean(false);
+        AtomicBoolean stop   = new AtomicBoolean(false);
+        List<Thread> threads = new ArrayList<>();
+
+        // 4 writer threads calling renderOccluder
+        for (int i = 0; i < 4; i++) {
+            final float offset = i * 15f;
+            Thread t = new Thread(() -> {
+                try {
+                    while (!stop.get()) {
+                        var b = new EntityBounds(
+                            new Point3f(offset, offset, 5f),
+                            new Point3f(offset + 10f, offset + 10f, 15f)
+                        );
+                        zBuffer.renderOccluder(b);
+                    }
+                } catch (Exception e) {
+                    failed.set(true);
+                }
+            }, "writer-" + i);
+            threads.add(t);
+        }
+
+        // 4 endFrame-simulation threads calling the public updateHierarchy()
+        for (int i = 0; i < 4; i++) {
+            Thread t = new Thread(() -> {
+                try {
+                    while (!stop.get()) {
+                        zBuffer.updateHierarchy();
+                    }
+                } catch (Exception e) {
+                    failed.set(true);
+                }
+            }, "updater-" + i);
+            threads.add(t);
+        }
+
+        threads.forEach(Thread::start);
+        Thread.sleep(500);
+        stop.set(true);
+        for (Thread t : threads) {
+            t.join(2000);
+        }
+
+        assertFalse(failed.get(), "Concurrent renderOccluder + updateHierarchy threw an exception (torn pyramid)");
     }
     
     // Helper methods

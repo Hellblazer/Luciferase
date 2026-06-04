@@ -21,10 +21,17 @@ import com.hellblazer.luciferase.lucien.Constants;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
  * High-performance caching and lookup tables for Tetree operations. Converts O(log n) operations to O(1) through
  * precomputation.
+ *
+ * <p>Publication-order safety (Luciferase-7wzml.19): all five direct-mapped caches store an immutable
+ * {@link Holder} record per slot via {@link AtomicReferenceArray}. A single volatile write publishes the
+ * (key, value) pair atomically, so a reader can never observe a key with a stale or mismatched value from a
+ * different tuple.  Readers load the holder once and verify {@code holder.key == wantedKey} before using
+ * {@code holder.value}.
  *
  * @author hal.hildebrand
  */
@@ -44,40 +51,45 @@ public final class TetreeLevelCache {
     // Type transition cache: packed(startType, startLevel, endLevel) -> endType
     // Maximum value: (5 << 16) | (21 << 8) | 21 = 327680 + 5376 + 21 = 333077
     private static final byte[] TYPE_TRANSITION_CACHE = new byte[6 * 256 * 256]; // 6 types * 256 levels * 256 levels
+
     /**
      * Cache an SFC index computation result. For frequently accessed tetrahedra, this converts O(level) to O(1).
+     * Stores Holder<Long> to guarantee atomic key+value publication.
      */
-    private static final int    INDEX_CACHE_SIZE      = 4096;
-    private static final long[] INDEX_CACHE_KEYS      = new long[INDEX_CACHE_SIZE];
-    private static final long[] INDEX_CACHE_VALUES    = new long[INDEX_CACHE_SIZE];
+    private static final int                                INDEX_CACHE_SIZE = 4096;
+    private static final AtomicReferenceArray<Holder<Long>> INDEX_CACHE      =
+    new AtomicReferenceArray<>(INDEX_CACHE_SIZE);
 
     /**
      * Cache complete ExtendedTetreeKey objects to convert O(level) tmIndex() operations to O(1). This is critical for
      * performance as tmIndex() requires parent chain traversal.
+     * Stores Holder<TetreeKey> to guarantee atomic key+value publication.
      */
-    private static final int         TETREE_KEY_CACHE_SIZE   = 1048576; // 1M entries (~32MB) for production workloads
-    private static final long[]      TETREE_KEY_CACHE_KEYS   = new long[TETREE_KEY_CACHE_SIZE];
-    private static final TetreeKey[] TETREE_KEY_CACHE_VALUES = new TetreeKey[TETREE_KEY_CACHE_SIZE];
+    private static final int                                    TETREE_KEY_CACHE_SIZE = 1048576; // 1M entries for production workloads
+    private static final AtomicReferenceArray<Holder<TetreeKey>> TETREE_KEY_CACHE      =
+    new AtomicReferenceArray<>(TETREE_KEY_CACHE_SIZE);
+
     // Parent chain cache - Phase 3
-    private static final int         PARENT_CHAIN_CACHE_SIZE = 65536; // Increased from 4096 for better hit rate
-    private static final long[]      PARENT_CHAIN_KEYS       = new long[PARENT_CHAIN_CACHE_SIZE];
-    private static final Tet[][]     PARENT_CHAIN_VALUES     = new Tet[PARENT_CHAIN_CACHE_SIZE][];
+    private static final int                                 PARENT_CHAIN_CACHE_SIZE = 65536;
+    private static final AtomicReferenceArray<Holder<Tet[]>> PARENT_CHAIN_CACHE      =
+    new AtomicReferenceArray<>(PARENT_CHAIN_CACHE_SIZE);
 
     // Direct parent cache for faster parent() calls
-    private static final int    PARENT_CACHE_SIZE   = 131072; // Increased from 16384 for production workloads
-    private static final long[] PARENT_CACHE_KEYS   = new long[PARENT_CACHE_SIZE];
-    private static final Tet[]  PARENT_CACHE_VALUES = new Tet[PARENT_CACHE_SIZE];
+    private static final int                               PARENT_CACHE_SIZE = 131072;
+    private static final AtomicReferenceArray<Holder<Tet>> PARENT_CACHE      =
+    new AtomicReferenceArray<>(PARENT_CACHE_SIZE);
 
     // Parent type cache for computeParentType optimization
-    private static final int    PARENT_TYPE_CACHE_SIZE   = 65536;
-    private static final long[] PARENT_TYPE_CACHE_KEYS   = new long[PARENT_TYPE_CACHE_SIZE];
-    private static final byte[] PARENT_TYPE_CACHE_VALUES = new byte[PARENT_TYPE_CACHE_SIZE];
+    // Stores Holder<Byte>; -1 is the "miss" sentinel so we never store -1 as a real value.
+    private static final int                                PARENT_TYPE_CACHE_SIZE = 65536;
+    private static final AtomicReferenceArray<Holder<Byte>> PARENT_TYPE_CACHE      =
+    new AtomicReferenceArray<>(PARENT_TYPE_CACHE_SIZE);
 
     // Shallow level pre-computation tables for levels 0-5 (most frequent operations)
     private static final int                        MAX_SHALLOW_LEVEL   = 5;
     private static final Map<Integer, TetreeKey<?>> SHALLOW_LEVEL_CACHE = new HashMap<>();
 
-    // Cache statistics for monitoring
+    // Cache statistics for monitoring (advisory; non-atomic is intentional — reads are consistent enough)
     private static long cacheHits         = 0;
     private static long cacheMisses       = 0;
     private static long parentChainHits   = 0;
@@ -89,19 +101,29 @@ public final class TetreeLevelCache {
         initializeLevelTables();
         initializeTypeCaches();
         initializeShallowLevelCache();
-
-        // Initialize parent type cache to -1 (cache miss)
-        for (int i = 0; i < PARENT_TYPE_CACHE_SIZE; i++) {
-            PARENT_TYPE_CACHE_VALUES[i] = -1;
-        }
+        // AtomicReferenceArrays initialise their elements to null — no extra fill needed.
     }
 
+    // -------------------------------------------------------------------------
+    // Immutable key+value holder for atomic per-slot publication
+    // -------------------------------------------------------------------------
+
+    /**
+     * Immutable holder pairing a cache key with its associated value.  A single volatile write of a Holder
+     * reference to an {@link AtomicReferenceArray} slot publishes both fields simultaneously, eliminating the
+     * publication-order race that existed when key and value were written to separate arrays.
+     */
+    record Holder<V>(long key, V value) {
+    }
+
+    // -------------------------------------------------------------------------
+    // Public cache write methods
+    // -------------------------------------------------------------------------
+
     public static void cacheIndex(int x, int y, int z, byte level, byte type, long index) {
-        // Use hash function for full 32-bit coordinate support
         var key = generateCacheKey(x, y, z, level, type);
         var slot = (int) (key & (INDEX_CACHE_SIZE - 1));
-        INDEX_CACHE_KEYS[slot] = key;
-        INDEX_CACHE_VALUES[slot] = index;
+        INDEX_CACHE.set(slot, new Holder<>(key, index));
     }
 
     /**
@@ -117,8 +139,7 @@ public final class TetreeLevelCache {
     public static void cacheParent(int x, int y, int z, byte level, byte type, Tet parent) {
         var key = generateCacheKey(x, y, z, level, type);
         var slot = (int) (key & (PARENT_CACHE_SIZE - 1));
-        PARENT_CACHE_KEYS[slot] = key;
-        PARENT_CACHE_VALUES[slot] = parent;
+        PARENT_CACHE.set(slot, new Holder<>(key, parent));
     }
 
     /**
@@ -130,9 +151,7 @@ public final class TetreeLevelCache {
     public static void cacheParentChain(Tet tet, Tet[] chain) {
         var key = generateCacheKey(tet.x(), tet.y(), tet.z(), tet.l(), tet.type());
         var slot = (int) (key & (PARENT_CHAIN_CACHE_SIZE - 1));
-
-        PARENT_CHAIN_KEYS[slot] = key;
-        PARENT_CHAIN_VALUES[slot] = chain;
+        PARENT_CHAIN_CACHE.set(slot, new Holder<>(key, chain));
     }
 
     /**
@@ -148,8 +167,7 @@ public final class TetreeLevelCache {
     public static void cacheParentType(int x, int y, int z, byte level, byte type, byte parentType) {
         var key = generateCacheKey(x, y, z, level, type);
         var slot = (int) (key & (PARENT_TYPE_CACHE_SIZE - 1));
-        PARENT_TYPE_CACHE_KEYS[slot] = key;
-        PARENT_TYPE_CACHE_VALUES[slot] = parentType;
+        PARENT_TYPE_CACHE.set(slot, new Holder<>(key, parentType));
     }
 
     /**
@@ -165,8 +183,7 @@ public final class TetreeLevelCache {
     public static void cacheTetreeKey(int x, int y, int z, byte level, byte type, TetreeKey tetreeKey) {
         var key = generateCacheKey(x, y, z, level, type);
         var slot = (int) (key & (TETREE_KEY_CACHE_SIZE - 1));
-        TETREE_KEY_CACHE_KEYS[slot] = key;
-        TETREE_KEY_CACHE_VALUES[slot] = tetreeKey;
+        TETREE_KEY_CACHE.set(slot, new Holder<>(key, tetreeKey));
     }
 
     /**
@@ -174,34 +191,20 @@ public final class TetreeLevelCache {
      * static lookup tables which are computed once at initialization.
      */
     public static void clearCaches() {
-        // Clear index cache
         for (var i = 0; i < INDEX_CACHE_SIZE; i++) {
-            INDEX_CACHE_KEYS[i] = 0;
-            INDEX_CACHE_VALUES[i] = 0;
+            INDEX_CACHE.set(i, null);
         }
-
-        // Clear ExtendedTetreeKey cache
         for (var i = 0; i < TETREE_KEY_CACHE_SIZE; i++) {
-            TETREE_KEY_CACHE_KEYS[i] = 0;
-            TETREE_KEY_CACHE_VALUES[i] = null;
+            TETREE_KEY_CACHE.set(i, null);
         }
-
-        // Clear parent chain cache
         for (var i = 0; i < PARENT_CHAIN_CACHE_SIZE; i++) {
-            PARENT_CHAIN_KEYS[i] = 0;
-            PARENT_CHAIN_VALUES[i] = null;
+            PARENT_CHAIN_CACHE.set(i, null);
         }
-
-        // Clear parent cache
         for (var i = 0; i < PARENT_CACHE_SIZE; i++) {
-            PARENT_CACHE_KEYS[i] = 0;
-            PARENT_CACHE_VALUES[i] = null;
+            PARENT_CACHE.set(i, null);
         }
-
-        // Clear parent type cache
         for (var i = 0; i < PARENT_TYPE_CACHE_SIZE; i++) {
-            PARENT_TYPE_CACHE_KEYS[i] = 0;
-            PARENT_TYPE_CACHE_VALUES[i] = -1;
+            PARENT_TYPE_CACHE.set(i, null);
         }
     }
 
@@ -216,7 +219,6 @@ public final class TetreeLevelCache {
             return 0; // Root is always type 0
         }
 
-        // We need to walk up the tree to find the ancestor type
         // This is a simplified version that doesn't have access to actual coordinates
         // In a real implementation, we would need the actual tetrahedron to compute this
         // For now, return -1 to indicate we can't compute this without more information
@@ -271,16 +273,12 @@ public final class TetreeLevelCache {
     }
 
     public static long getCachedIndex(int x, int y, int z, byte level, byte type) {
-        // Use hash function for full 32-bit coordinate support
         var key = generateCacheKey(x, y, z, level, type);
         var slot = (int) (key & (INDEX_CACHE_SIZE - 1));
-
-        // Check cache hit
-        if (INDEX_CACHE_KEYS[slot] == key) {
-            return INDEX_CACHE_VALUES[slot];
+        var holder = INDEX_CACHE.get(slot);
+        if (holder != null && holder.key() == key) {
+            return holder.value();
         }
-
-        // Cache miss - would compute actual index here
         return -1; // Indicates cache miss
     }
 
@@ -301,12 +299,11 @@ public final class TetreeLevelCache {
 
         var key = generateCacheKey(x, y, z, level, type);
         var slot = (int) (key & (PARENT_CACHE_SIZE - 1));
-
-        if (PARENT_CACHE_KEYS[slot] == key) {
+        var holder = PARENT_CACHE.get(slot);
+        if (holder != null && holder.key() == key) {
             parentCacheHits++;
-            return PARENT_CACHE_VALUES[slot];
+            return holder.value();
         }
-
         parentCacheMisses++;
         return null;
     }
@@ -320,12 +317,11 @@ public final class TetreeLevelCache {
     public static Tet[] getCachedParentChain(Tet tet) {
         var key = generateCacheKey(tet.x(), tet.y(), tet.z(), tet.l(), tet.type());
         var slot = (int) (key & (PARENT_CHAIN_CACHE_SIZE - 1));
-
-        if (PARENT_CHAIN_KEYS[slot] == key) {
+        var holder = PARENT_CHAIN_CACHE.get(slot);
+        if (holder != null && holder.key() == key) {
             parentChainHits++;
-            return PARENT_CHAIN_VALUES[slot];
+            return holder.value();
         }
-
         parentChainMisses++;
         return null;
     }
@@ -343,11 +339,10 @@ public final class TetreeLevelCache {
     public static byte getCachedParentType(int x, int y, int z, byte level, byte type) {
         var key = generateCacheKey(x, y, z, level, type);
         var slot = (int) (key & (PARENT_TYPE_CACHE_SIZE - 1));
-
-        if (PARENT_TYPE_CACHE_KEYS[slot] == key) {
-            return PARENT_TYPE_CACHE_VALUES[slot];
+        var holder = PARENT_TYPE_CACHE.get(slot);
+        if (holder != null && holder.key() == key) {
+            return holder.value();
         }
-
         return -1; // Cache miss
     }
 
@@ -364,12 +359,11 @@ public final class TetreeLevelCache {
     public static TetreeKey getCachedTetreeKey(int x, int y, int z, byte level, byte type) {
         var key = generateCacheKey(x, y, z, level, type);
         var slot = (int) (key & (TETREE_KEY_CACHE_SIZE - 1));
-
-        if (TETREE_KEY_CACHE_KEYS[slot] == key) {
+        var holder = TETREE_KEY_CACHE.get(slot);
+        if (holder != null && holder.key() == key) {
             cacheHits++;
-            return TETREE_KEY_CACHE_VALUES[slot];
+            return holder.value();
         }
-
         cacheMisses++;
         return null;
     }

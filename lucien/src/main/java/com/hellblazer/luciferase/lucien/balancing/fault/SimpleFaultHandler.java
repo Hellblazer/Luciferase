@@ -72,6 +72,36 @@ public class SimpleFaultHandler implements FaultHandler {
             this.lastSeenMs = System.currentTimeMillis();
         }
 
+        /**
+         * Atomically escalate fault status: HEALTHY→SUSPECTED or SUSPECTED→FAILED.
+         * Reads and updates status under this object's monitor to close the TOCTOU
+         * window where two concurrent callers both observe HEALTHY and both transition
+         * to SUSPECTED (or both skip the SUSPECTED→FAILED step).
+         *
+         * @param firstStepReason  reason used when HEALTHY→SUSPECTED
+         * @param secondStepReason reason used when SUSPECTED→FAILED
+         * @return a PartitionChangeEvent describing the transition, or {@code null}
+         *         if no transition was needed (status already FAILED)
+         */
+        synchronized PartitionChangeEvent escalate(String firstStepReason, String secondStepReason) {
+            var oldStatus = this.status;
+            PartitionStatus newStatus;
+            String reason;
+            if (oldStatus == PartitionStatus.HEALTHY) {
+                newStatus = PartitionStatus.SUSPECTED;
+                reason = firstStepReason;
+            } else if (oldStatus == PartitionStatus.SUSPECTED) {
+                newStatus = PartitionStatus.FAILED;
+                reason = secondStepReason;
+            } else {
+                return null; // already FAILED, no further escalation
+            }
+            this.status = newStatus;
+            this.lastSeenMs = System.currentTimeMillis();
+            this.metrics = metrics.withIncrementedFailureCount();
+            return new PartitionChangeEvent(partitionId, oldStatus, newStatus, this.lastSeenMs, reason);
+        }
+
         synchronized void recordFailure() {
             this.metrics = metrics.withIncrementedFailureCount();
         }
@@ -260,45 +290,24 @@ public class SimpleFaultHandler implements FaultHandler {
     @Override
     public void reportBarrierTimeout(UUID partitionId) {
         Objects.requireNonNull(partitionId, "partitionId must not be null");
-
         var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
-        var oldStatus = state.status;
-
-        if (oldStatus == PartitionStatus.HEALTHY) {
-            transitionToSuspected(state, "Barrier timeout detected");
-        } else if (oldStatus == PartitionStatus.SUSPECTED) {
-            transitionToFailed(state, "Repeated barrier timeout");
-        }
+        applyEscalation(state, "Barrier timeout detected", "Repeated barrier timeout");
     }
 
     @Override
     public void reportSyncFailure(UUID partitionId) {
         Objects.requireNonNull(partitionId, "partitionId must not be null");
-
         var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
-        var oldStatus = state.status;
-
-        if (oldStatus == PartitionStatus.HEALTHY) {
-            transitionToSuspected(state, "Ghost sync failure");
-        } else if (oldStatus == PartitionStatus.SUSPECTED) {
-            transitionToFailed(state, "Repeated sync failure");
-        }
+        applyEscalation(state, "Ghost sync failure", "Repeated sync failure");
     }
 
     @Override
     public void reportHeartbeatFailure(UUID partitionId, UUID nodeId) {
         Objects.requireNonNull(partitionId, "partitionId must not be null");
         Objects.requireNonNull(nodeId, "nodeId must not be null");
-
         var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
         state.failedNodes.add(nodeId);
-
-        var oldStatus = state.status;
-        if (oldStatus == PartitionStatus.HEALTHY) {
-            transitionToSuspected(state, "Heartbeat failure for node " + nodeId);
-        } else if (oldStatus == PartitionStatus.SUSPECTED) {
-            transitionToFailed(state, "Multiple heartbeat failures");
-        }
+        applyEscalation(state, "Heartbeat failure for node " + nodeId, "Multiple heartbeat failures");
     }
 
     // ===== Recovery Coordination =====
@@ -421,38 +430,28 @@ public class SimpleFaultHandler implements FaultHandler {
 
     // ===== Internal Helpers =====
 
-    private void transitionToSuspected(PartitionState state, String reason) {
-        var oldStatus = state.status;
-        state.updateStatus(PartitionStatus.SUSPECTED);
-        state.recordFailure();
-
-        notifySubscribers(new PartitionChangeEvent(
-            state.partitionId,
-            oldStatus,
-            PartitionStatus.SUSPECTED,
-            System.currentTimeMillis(),
-            reason
-        ));
-
-        log.warn("Partition {} transitioned {} -> SUSPECTED: {}",
-            state.partitionId, oldStatus, reason);
-    }
-
-    private void transitionToFailed(PartitionState state, String reason) {
-        var oldStatus = state.status;
-        state.updateStatus(PartitionStatus.FAILED);
-        state.recordFailure();
-
-        notifySubscribers(new PartitionChangeEvent(
-            state.partitionId,
-            oldStatus,
-            PartitionStatus.FAILED,
-            System.currentTimeMillis(),
-            reason
-        ));
-
-        log.error("Partition {} transitioned {} -> FAILED: {}",
-            state.partitionId, oldStatus, reason);
+    /**
+     * Atomically escalate {@code state} by one fault level (HEALTHY→SUSPECTED or
+     * SUSPECTED→FAILED) under {@code state}'s monitor, then notify subscribers and log.
+     * If the state is already FAILED, this is a no-op.
+     *
+     * @param state             the partition to escalate
+     * @param firstStepReason   reason string for the HEALTHY→SUSPECTED transition
+     * @param secondStepReason  reason string for the SUSPECTED→FAILED transition
+     */
+    private void applyEscalation(PartitionState state, String firstStepReason, String secondStepReason) {
+        var event = state.escalate(firstStepReason, secondStepReason);
+        if (event == null) {
+            return; // already FAILED, no further escalation
+        }
+        notifySubscribers(event);
+        if (event.newStatus() == PartitionStatus.SUSPECTED) {
+            log.warn("Partition {} transitioned {} -> SUSPECTED: {}",
+                state.partitionId, event.oldStatus(), event.reason());
+        } else {
+            log.error("Partition {} transitioned {} -> FAILED: {}",
+                state.partitionId, event.oldStatus(), event.reason());
+        }
     }
 
     private void notifySubscribers(PartitionChangeEvent event) {

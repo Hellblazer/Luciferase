@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -270,6 +271,46 @@ class BubbleMergerTest {
         }, "Should reject null metrics");
     }
 
+    /**
+     * Verifies that when BOTH the forward merge move AND the corresponding rollback move
+     * fail, the merger:
+     * <ul>
+     *   <li>does NOT throw</li>
+     *   <li>returns a failure result</li>
+     *   <li>continues the rollback loop for remaining entities (best-effort)</li>
+     * </ul>
+     * The orphaned-entity log.error is the diagnosability contract; we cannot assert
+     * log output without a capturing appender, so we assert no-throw + failure result.
+     */
+    @Test
+    void testRollbackMoveFailureLogsAndContinues() {
+        bubbleGrid.createBubbles(2, (byte) 1, 10);
+        var bubbles = bubbleGrid.getAllBubbles().stream().toList();
+        var bubble1 = bubbles.get(0);
+        var bubble2 = bubbles.get(1);
+
+        addEntities(bubble1, 20);
+        addEntities(bubble2, 60);
+
+        // Fail forward moves from bubble2→bubble1 after 20 successes, AND fail rollbacks.
+        var failBoth = new FailBothMovesAccountant(accountant, 20, bubble2.id(), bubble1.id());
+        var failingMerger = new BubbleMerger(bubbleGrid, failBoth, OperationTracker.NOOP, metrics);
+
+        var proposal = new MergeProposal(
+            UUID.randomUUID(),
+            bubble1.id(),
+            bubble2.id(),
+            DigestAlgorithm.DEFAULT.getOrigin(),
+            System.currentTimeMillis()
+        );
+
+        // Must NOT throw even though rollback moves also fail.
+        var result = assertDoesNotThrow(() -> failingMerger.execute(proposal),
+            "Merger must not throw when rollback moves fail");
+
+        assertFalse(result.success(), "Merge must report failure when forward move fails");
+    }
+
     // Helper method
 
     private void addEntities(com.hellblazer.luciferase.simulation.bubble.EnhancedBubble bubble, int count) {
@@ -281,6 +322,61 @@ class BubbleMergerTest {
                 null
             );
             accountant.register(bubble.id(), entityId);
+        }
+    }
+
+    /**
+     * Delegating wrapper that fails forward moves (from bubble2 to bubble1) after
+     * {@code failAfter} successes AND fails all rollback moves (from bubble1 back to
+     * bubble2).  Used to exercise the "rollback itself fails" diagnostic path.
+     */
+    static final class FailBothMovesAccountant extends EntityAccountant {
+
+        private final EntityAccountant delegate;
+        private final int              failAfter;
+        private final UUID             forwardFrom;
+        private final UUID             forwardTo;
+        private final AtomicInteger    successCount = new AtomicInteger(0);
+
+        FailBothMovesAccountant(EntityAccountant delegate, int failAfter, UUID forwardFrom, UUID forwardTo) {
+            this.delegate    = delegate;
+            this.failAfter   = failAfter;
+            this.forwardFrom = forwardFrom;
+            this.forwardTo   = forwardTo;
+        }
+
+        @Override
+        public boolean moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
+            boolean isForward  = forwardFrom.equals(fromBubble) && forwardTo.equals(toBubble);
+            boolean isRollback = forwardTo.equals(fromBubble) && forwardFrom.equals(toBubble);
+            // Fail forward moves once threshold reached.
+            if (isForward && successCount.get() >= failAfter) {
+                return false;
+            }
+            // Fail rollback moves (simulates rollback-of-move failure).
+            if (isRollback) {
+                return false;
+            }
+            boolean result = delegate.moveBetweenBubbles(entityId, fromBubble, toBubble);
+            if (result && isForward) {
+                successCount.incrementAndGet();
+            }
+            return result;
+        }
+
+        @Override
+        public void register(UUID bubbleId, UUID entityId) {
+            delegate.register(bubbleId, entityId);
+        }
+
+        @Override
+        public java.util.Set<UUID> entitiesInBubble(UUID bubbleId) {
+            return delegate.entitiesInBubble(bubbleId);
+        }
+
+        @Override
+        public com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult validate() {
+            return delegate.validate();
         }
     }
 }

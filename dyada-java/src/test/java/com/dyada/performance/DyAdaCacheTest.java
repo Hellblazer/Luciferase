@@ -354,38 +354,107 @@ class DyAdaCacheTest {
         }
 
         @Test
-        @DisplayName("Concurrent get with loader")
+        @DisplayName("Concurrent get with loader — single load under contention")
         void testConcurrentGetWithLoader() throws InterruptedException {
             var loaderCache = DyAdaCache.<String, String>createLRU(100);
             int numThreads = 20;
-            CountDownLatch latch = new CountDownLatch(numThreads);
+            CountDownLatch ready  = new CountDownLatch(numThreads);
+            CountDownLatch start  = new CountDownLatch(1);
+            CountDownLatch done   = new CountDownLatch(numThreads);
             AtomicInteger loaderCallCount = new AtomicInteger(0);
-            
+            CopyOnWriteArrayList<String> results = new CopyOnWriteArrayList<>();
+
             ExecutorService executor = Executors.newFixedThreadPool(numThreads);
-            
+
             for (int t = 0; t < numThreads; t++) {
                 executor.submit(() -> {
                     try {
-                        // All threads try to load the same key
+                        ready.countDown();
+                        start.await(); // all threads start simultaneously
                         String result = loaderCache.get("shared-key", key -> {
                             loaderCallCount.incrementAndGet();
                             return "loaded-value";
                         });
-                        assertEquals("loaded-value", result);
+                        results.add(result);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
                     } finally {
-                        latch.countDown();
+                        done.countDown();
                     }
                 });
             }
-            
-            assertTrue(latch.await(5, TimeUnit.SECONDS));
-            
-            // Loader should be called multiple times due to race conditions
-            // but all should get consistent results
-            assertEquals("loaded-value", loaderCache.get("shared-key"));
-            
+
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown(); // release all threads at once
+            assertTrue(done.await(10, TimeUnit.SECONDS));
             executor.shutdown();
-            assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS));
+            assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS));
+
+            // Every thread must see the loaded value
+            assertEquals(numThreads, results.size());
+            assertTrue(results.stream().allMatch("loaded-value"::equals),
+                "Not all results were 'loaded-value': " + results);
+
+            // Loader must have been invoked exactly once — the lock serialises misses
+            assertEquals(1, loaderCallCount.get(),
+                "Loader was called " + loaderCallCount.get() + " times; expected 1 (cache-stampede prevention)");
+
+            assertEquals("loaded-value", loaderCache.get("shared-key"));
+        }
+
+        @Test
+        @DisplayName("Concurrent puts never exceed maxSize and cause no NPE")
+        void testConcurrentPutsBoundedSize() throws InterruptedException {
+            final int maxSize = 50;
+            final int numThreads = 16;
+            final int opsPerThread = 500;
+            var stressCache = DyAdaCache.<Integer, String>createLRU(maxSize);
+
+            ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+            CountDownLatch start = new CountDownLatch(1);
+            CountDownLatch done  = new CountDownLatch(numThreads);
+            AtomicInteger errors = new AtomicInteger(0);
+
+            for (int t = 0; t < numThreads; t++) {
+                final int tid = t;
+                executor.submit(() -> {
+                    try {
+                        start.await();
+                        for (int i = 0; i < opsPerThread; i++) {
+                            int key = (tid * opsPerThread + i) % (maxSize * 4);
+                            stressCache.put(key, "v-" + key);
+                            // size must never exceed maxSize — race with eviction
+                            // allows a brief +1 in the old code; new code is atomic
+                            int sz = stressCache.size();
+                            if (sz > maxSize) {
+                                errors.incrementAndGet();
+                            }
+                            // get must not throw NPE
+                            try {
+                                stressCache.get(key);
+                            } catch (NullPointerException npe) {
+                                errors.incrementAndGet();
+                            }
+                        }
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+
+            start.countDown(); // release all threads simultaneously
+            assertTrue(done.await(15, TimeUnit.SECONDS), "stress test timed out");
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS));
+
+            assertEquals(0, errors.get(), "size exceeded maxSize or NPE occurred under concurrent puts");
+            assertTrue(stressCache.size() <= maxSize, "final size " + stressCache.size() + " exceeds maxSize " + maxSize);
+
+            // LRU eviction count must be positive (we put far more than maxSize entries)
+            var stats = stressCache.getStats();
+            assertTrue(stats.evictions() > 0, "expected evictions under stress, got 0");
         }
     }
 

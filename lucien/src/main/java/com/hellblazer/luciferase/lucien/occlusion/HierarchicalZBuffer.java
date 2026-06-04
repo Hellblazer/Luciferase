@@ -168,17 +168,30 @@ public class HierarchicalZBuffer {
             // Rasterize at base level
             rasterizeBounds(screenBounds, 0);
             
-            // Update hierarchy
-            updateHierarchy();
+            // Update hierarchy (already holds writeLock — call unlocked variant)
+            updateHierarchyUnlocked();
         } finally {
             lock.writeLock().unlock();
         }
     }
     
     /**
-     * Builds the Z-pyramid from the base level
+     * Builds the Z-pyramid from the base level.
+     * Acquires writeLock so external callers (e.g. HierarchicalOcclusionCuller.endFrame)
+     * are safe; ReentrantReadWriteLock re-entry keeps the renderOccluder→updateHierarchy
+     * path safe (renderOccluder already holds writeLock).
      */
     public void updateHierarchy() {
+        lock.writeLock().lock();
+        try {
+            updateHierarchyUnlocked();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /** Pyramid build — caller must hold writeLock. */
+    private void updateHierarchyUnlocked() {
         for (int level = 1; level < levels; level++) {
             int srcWidth = getWidthAtLevel(level - 1);
             int srcHeight = getHeightAtLevel(level - 1);

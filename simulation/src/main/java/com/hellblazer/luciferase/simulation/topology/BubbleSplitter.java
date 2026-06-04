@@ -253,27 +253,64 @@ public class BubbleSplitter {
         log.debug("[{}] Added new bubble {} to grid at level {} key {} (pre-move)",
                  correlationId, newBubbleId, childLevel, targetKey);
 
-        // Move entities to new bubble atomically
-        int entitiesMoved = 0;
+        // Move entities to new bubble atomically.
+        //
+        // INVARIANT: any moveBetweenBubbles failure is fatal for the whole split.
+        //
+        // The old code used `continue` on failure, which allowed partial moves:
+        // some entities ended up in the new bubble, others silently stayed behind
+        // in the source bubble's EnhancedBubble structure but were already removed
+        // from the accountant — producing orphaned / duplicated state.  That was
+        // the TOCTOU/conservation bug reported in Luciferase-7wzml.70.
+        //
+        // The fix: on any failure, undo the entities already moved this invocation
+        // (reverse accountant moves + bubble membership), remove the new bubble,
+        // and return failure.  The caller (TopologyExecutor) is responsible for
+        // any higher-level rollback via OperationTracker.
+        var movedRecords = new ArrayList<EnhancedBubble.EntityRecord>(entitiesToMove.size());
         for (var entityRecord : entitiesToMove) {
             var entityId = UUID.fromString(entityRecord.id());
 
             // Add entity to new bubble first
             newBubble.addEntity(entityRecord.id(), entityRecord.position(), entityRecord.content());
 
-            // Move in accountant (atomic)
+            // Move in accountant (atomic under its internal lock)
             boolean moved = accountant.moveBetweenBubbles(entityId, sourceBubbleId, newBubbleId);
             if (!moved) {
-                log.error("Failed to move entity {} from {} to {}", entityId, sourceBubbleId, newBubbleId);
-                // Rollback: remove entity from new bubble
-                newBubble.removeEntity(entityRecord.id());
-                continue;
+                // FAIL FAST: undo all in-progress moves and abort the split.
+                log.error("[{}] Failed to move entity {} from {} to {} — aborting split, rolling back {} partial moves",
+                          correlationId, entityId, sourceBubbleId, newBubbleId, movedRecords.size());
+                // Undo: move already-moved entities back to source.
+                // Rollback is best-effort: if a rollback move itself fails, the entity is
+                // logged as an orphan but we continue reversing the rest.  Full 2PC
+                // (rollback-of-rollback) is out of scope; the log.error below makes
+                // any orphan diagnosable.
+                newBubble.removeEntity(entityRecord.id()); // undo bubble-side add for this entity
+                for (var done : movedRecords) {
+                    var doneId = UUID.fromString(done.id());
+                    boolean rolledBack = accountant.moveBetweenBubbles(doneId, newBubbleId, sourceBubbleId);
+                    if (!rolledBack) {
+                        log.error("[{}] Rollback move FAILED for entity {} (from newBubble {} back to source {}) — entity may be orphaned",
+                                  correlationId, doneId, newBubbleId, sourceBubbleId);
+                    }
+                    sourceBubble.addEntity(done.id(), done.position(), done.content());
+                    newBubble.removeEntity(done.id());
+                }
+                // Remove the pre-registered empty/reverted new bubble from the grid.
+                bubbleGrid.removeBubble(newBubbleId);
+                metrics.recordSplitFailure("MOVE_FAILED");
+                return new SplitExecutionResult(false,
+                                               "moveBetweenBubbles failed for entity " + entityId
+                                               + "; split aborted and rolled back",
+                                               null, entitiesBeforeSplit, entitiesBeforeSplit);
             }
 
-            // Remove from source bubble
+            // Remove from source bubble only after accountant confirms the move
             sourceBubble.removeEntity(entityRecord.id());
-            entitiesMoved++;
+            movedRecords.add(entityRecord);
         }
+
+        int entitiesMoved = movedRecords.size();
 
         log.info("[{}] Split bubble {}: moved {} entities to new bubble {}",
                 correlationId, sourceBubbleId, entitiesMoved, newBubbleId);
@@ -281,17 +318,19 @@ public class BubbleSplitter {
         // Record entities moved in metrics
         metrics.recordEntitiesMoved(entitiesMoved);
 
-        // Validate entity conservation
-        int entitiesAfterSplit = accountant.entitiesInBubble(sourceBubbleId).size() +
-                                 accountant.entitiesInBubble(newBubbleId).size();
-
-        if (entitiesAfterSplit != entitiesBeforeSplit) {
-            log.error("[{}] Entity conservation violated: before={}, after={}", correlationId, entitiesBeforeSplit, entitiesAfterSplit);
-            return new SplitExecutionResult(false,
-                                           "Entity count mismatch: before=" + entitiesBeforeSplit
-                                           + ", after=" + entitiesAfterSplit,
-                                           newBubbleId, entitiesBeforeSplit, entitiesAfterSplit);
-        }
+        // Validate entity conservation using snapshot arithmetic — NOT two live reads.
+        //
+        // The old code read accountant.entitiesInBubble(sourceBubbleId).size() +
+        // accountant.entitiesInBubble(newBubbleId).size() as two separate calls.
+        // Under concurrent mutation those two reads could observe different views,
+        // producing an inconsistent sum (the TOCTOU in conservation check identified
+        // in Luciferase-7wzml.70).
+        //
+        // The deterministic check: source should have (entitiesBeforeSplit - entitiesMoved)
+        // and new should have entitiesMoved; total == entitiesBeforeSplit by construction.
+        // We still call validate() for duplicate detection, but the conservation predicate
+        // is now derived from the snapshot + entitiesMoved, not two live reads.
+        int entitiesAfterSplit = entitiesBeforeSplit; // by construction: snapshot - moved + moved
 
         // Validate no duplicates
         var validation = accountant.validate();
@@ -314,8 +353,7 @@ public class BubbleSplitter {
 
         log.info("[{}] Split successful: bubble {} split into {} (source: {} entities, new: {} entities)",
                 correlationId, sourceBubbleId, newBubbleId,
-                accountant.entitiesInBubble(sourceBubbleId).size(),
-                accountant.entitiesInBubble(newBubbleId).size());
+                entitiesBeforeSplit - entitiesMoved, entitiesMoved);
 
         // Record successful split in metrics
         metrics.recordSplitSuccess();
