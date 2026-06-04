@@ -261,25 +261,25 @@ implements AutoCloseable {
     }
 
     /**
-     * Batch update (remove + reinsert each entity at its new position). Runs serially under one global write-lock
+     * Batch update each entity to a new position, preserving its entity ID. Runs serially under one global write-lock
      * critical section so the batch is atomic versus concurrent readers that take the global read lock (range
      * queries, collision, {@code entityCount}); kNN's independent fine-grained path is not excluded
      * (Luciferase-us4zr). Despite the {@code Parallel} name, the mutation is serial.
      *
-     * <p><b>ID semantics (pre-existing):</b> each update reinserts via {@code insert}, which assigns a NEW entity id;
-     * the returned list holds the new ids and the input ids become stale after this call.
+     * <p><b>ID semantics:</b> uses {@code updateEntity} which moves each entity in-place; the entity ID is
+     * preserved across the call. The returned list contains the same IDs as the input list (in the same order,
+     * skipping any entity that was absent or threw). Callers' held IDs remain valid after this call
+     * (Luciferase-7wzml.61).
      */
     public CompletableFuture<List<ID>> updateBatchParallel(List<ID> entityIds, List<Point3f> newPositions, byte level) {
         if (entityIds.size() != newPositions.size()) {
             throw new IllegalArgumentException("Entity IDs and positions lists must have the same size");
         }
 
-        // Luciferase-aqx6x: perform every remove+reinsert under ONE write-lock critical section, serially. The
-        // previous parallel per-entity update took three separate locks (getEntity read, removeEntity write,
-        // insert write) per entity across parallel threads; between an entity's remove and its reinsert it was
-        // absent from the index, so concurrent range/kNN/collision queries missed it or saw partial batch state.
-        // Holding the write lock across the whole batch makes it atomic vs concurrent readers (the lock is
-        // reentrant, so the nested getEntity/removeEntity/insert calls re-acquire it safely).
+        // Luciferase-aqx6x: hold ONE write-lock critical section across the whole batch so the update is atomic
+        // versus concurrent readers. The write lock is reentrant; spatialIndex.updateEntity() re-acquires it safely.
+        // Luciferase-7wzml.61: use updateEntity (id-preserving) instead of the old remove+insert pattern which
+        // silently assigned new IDs, invalidating every caller-held ID after the batch.
         return CompletableFuture.supplyAsync(() -> {
             var updatedIds = new ArrayList<ID>(entityIds.size());
             spatialIndex.lock.writeLock().lock();
@@ -288,15 +288,11 @@ implements AutoCloseable {
                     try {
                         ID id = entityIds.get(i);
                         Point3f newPos = newPositions.get(i);
-                        Content content = spatialIndex.getEntity(id);
-                        if (content != null && spatialIndex.removeEntity(id)) {
-                            ID newId = spatialIndex.insert(newPos, level, content);
-                            if (newId != null) {
-                                updatedIds.add(newId);
-                            }
-                        }
+                        spatialIndex.updateEntity(id, newPos, level);
+                        updatedIds.add(id);
                     } catch (Exception e) {
                         // skip individual failures, preserving the prior best-effort contract
+                        log.debug("updateBatchParallel: skipping entity {} — {}", entityIds.get(i), e.getMessage());
                     }
                 }
             } finally {

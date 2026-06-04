@@ -30,9 +30,43 @@ import static org.junit.jupiter.api.Assertions.*;
  * Also covers Luciferase-7wzml.60: AutoCloseable lifecycle, daemon-thread factory for the fixed pool, and
  * configureParallelOperations closing the old pool before the volatile swap.
  *
+ * Also covers Luciferase-7wzml.61: updateBatchParallel was reinsert via insert() which assigned NEW entity IDs,
+ * silently invalidating caller-held IDs. Fixed to use updateEntity() which preserves the entity ID in-place.
+ *
  * @author hal.hildebrand
  */
 class ParallelBulkOperationsAtomicityTest {
+
+    @Test
+    void updateBatchPreservesEntityIds() throws Exception {
+        // Luciferase-7wzml.61: the old impl called insert() which assigned NEW ids; callers silently held stale ids.
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        final int n = 50;
+        final byte level = 10;
+        var rnd = new Random(99);
+
+        var ids = new ArrayList<LongEntityID>(n);
+        var newPositions = new ArrayList<Point3f>(n);
+        for (int i = 0; i < n; i++) {
+            var p = new Point3f(1 + rnd.nextFloat() * 800, 1 + rnd.nextFloat() * 800, 1 + rnd.nextFloat() * 800);
+            ids.add(octree.insert(p, level, "e" + i));
+            newPositions.add(new Point3f(1 + rnd.nextFloat() * 800, 1 + rnd.nextFloat() * 800, 1 + rnd.nextFloat() * 800));
+        }
+
+        var bulkProcessor = new BulkOperationProcessor<>(octree);
+        var pbo = new ParallelBulkOperations<>(octree, bulkProcessor, ParallelBulkOperations.defaultConfig());
+
+        var result = pbo.updateBatchParallel(ids, newPositions, level).get(30, TimeUnit.SECONDS);
+
+        // (a) returned list == input list (same ids, same order)
+        assertEquals(ids, result, "updateBatchParallel must return the same entity IDs (id-preserving update, Luciferase-7wzml.61)");
+        // (b) every original id is still resolvable at its new position
+        for (int i = 0; i < n; i++) {
+            assertNotNull(octree.getEntity(ids.get(i)), "entity " + ids.get(i) + " must still be accessible after update");
+        }
+        // (c) entity count unchanged
+        assertEquals(n, octree.entityCount(), "entity count must be unchanged after id-preserving update");
+    }
 
     @Test
     void updateBatchIsAtomicVersusConcurrentReaders() throws Exception {
@@ -53,9 +87,8 @@ class ParallelBulkOperationsAtomicityTest {
         var bulkProcessor = new BulkOperationProcessor<>(octree);
         var pbo = new ParallelBulkOperations<>(octree, bulkProcessor, ParallelBulkOperations.defaultConfig());
 
-        // A reader samples the entity count throughout the update. update = per-entity remove+reinsert, so the
-        // count must stay exactly n at every instant the reader can observe. The pre-fix interleaving let the
-        // reader catch an entity removed-but-not-yet-reinserted (count < n).
+        // A reader samples the entity count throughout the update. update = per-entity updateEntity (id-preserving),
+        // so the count must stay exactly n at every instant the reader can observe.
         var minObserved = new AtomicInteger(Integer.MAX_VALUE);
         var stop = new AtomicBoolean(false);
         var readerReady = new java.util.concurrent.CountDownLatch(1);
@@ -75,6 +108,7 @@ class ParallelBulkOperationsAtomicityTest {
         reader.join(5000);
 
         assertEquals(n, result.size(), "every entity was updated");
+        assertEquals(ids, result, "returned ids must equal input ids (id-preserving, Luciferase-7wzml.61)");
         assertEquals(n, octree.entityCount(), "count unchanged after atomic batch update");
         assertEquals(n, minObserved.get(),
                      "concurrent reader must never observe a sub-n (mid-batch) count (Luciferase-aqx6x)");

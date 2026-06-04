@@ -236,4 +236,54 @@ class LinearTransformationTest extends InvertibleTransformationTestBase {
     void testNullMatrix() {
         assertThrows(IllegalArgumentException.class, () -> new LinearTransformation(null));
     }
+
+    // --- Bead Luciferase-7wzml.59: no-reflection inverse constructor tests ---
+
+    @Test
+    @DisplayName("Inverse-of-inverse round-trip returns original transform result")
+    void testInverseOfInverseRoundTrip() throws TransformationException {
+        var matrix = new double[][]{
+            {2.0, 1.0},
+            {1.0, 1.0}
+        };
+        var t = new LinearTransformation(matrix);
+        var inv = t.inverse().orElseThrow();
+        var invInv = inv.inverse().orElseThrow();
+
+        // inv.inverse() should be equal to the original
+        var point = new Coordinate(new double[]{3.0, 5.0});
+        assertArrayEquals(t.transform(point).values(), invInv.transform(point).values(), 1e-10);
+    }
+
+    @Test
+    @DisplayName("Cached determinant of inverse equals 1/det(original)")
+    void testInverseDeterminantIsReciprocal() throws TransformationException {
+        var matrix = new double[][]{
+            {3.0, 1.0},
+            {2.0, 4.0}  // det = 3*4 - 1*2 = 10
+        };
+        var t = new LinearTransformation(matrix);
+        var inv = (LinearTransformation) t.inverse().orElseThrow();
+
+        var anyPoint = new Coordinate(new double[]{0.0, 0.0});
+        double detOrig = t.computeJacobianDeterminant(anyPoint);          // 10.0
+        double detInv  = inv.computeJacobianDeterminant(anyPoint);        // 0.1
+
+        assertEquals(1.0 / detOrig, detInv, 1e-12);
+    }
+
+    @Test
+    @DisplayName("No reflection API is used — inverse constructor assigns final fields directly")
+    void testNoReflectionInInverseConstruction() {
+        // If the old reflection path were used it would throw under strong JPMS encapsulation
+        // (--illegal-access=deny). Simply exercising the path without an exception is the gate.
+        var matrix = new double[][]{
+            {4.0, 7.0},
+            {2.0, 6.0}
+        };
+        var t = new LinearTransformation(matrix);
+        // Must not throw InaccessibleObjectException / any reflection error
+        var inv = assertDoesNotThrow(() -> t.inverse().orElseThrow());
+        assertNotNull(inv);
+    }
 }

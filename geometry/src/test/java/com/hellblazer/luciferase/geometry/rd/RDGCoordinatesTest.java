@@ -84,9 +84,19 @@ class RDGCoordinatesTest {
     @Test
     void euclideanNormAndL1() {
         assertThat(RDGCoordinates.l1(new Vector3f(1, -2, 3))).isEqualTo(6f);
-        // norm of zero vector is zero; norm is non-negative
+        // norm of zero vector is zero
         assertThat(RDGCoordinates.euclideanNorm(new Vector3f(0, 0, 0))).isEqualTo(0f);
-        assertThat(RDGCoordinates.euclideanNorm(new Vector3f(1, 1, 1))).isGreaterThan(0f);
+        // (1,1,1): x*(x+y+z)+y*(y+z)+z*z = 1*3+1*2+1 = 6 → norm = √6
+        assertThat((double) RDGCoordinates.euclideanNorm(new Vector3f(1, 1, 1)))
+                .isCloseTo(Math.sqrt(6), within(1e-5));
+        // (1,2,3): 1*6+2*5+3*3 = 25 → norm = 5.0
+        assertThat((double) RDGCoordinates.euclideanNorm(new Vector3f(1, 2, 3)))
+                .isCloseTo(5.0, within(1e-5));
+        // cross-check: euclideanNorm(v) == sqrt(dot(v,v)) for the metric tensor
+        var v = new Vector3f(1, 2, 3);
+        double normViaFormula = RDGCoordinates.euclideanNorm(v);
+        double normViaDot = Math.sqrt(RDGCoordinates.dot(v, v));
+        assertThat(normViaFormula).isCloseTo(normViaDot, within(1e-5));
     }
 
     @Test
@@ -125,11 +135,29 @@ class RDGCoordinatesTest {
         assertThat(rotated.z).isCloseTo(0f, within(1e-6f));
     }
 
+    /**
+     * All 12 face-connected neighbors of the FCC lattice sit at Cartesian distance 1.0
+     * (the nearest-neighbor shell), and their offset set is disjoint from the 6 vertex-connected
+     * neighbors which sit at distance √2.
+     */
     @Test
     void faceConnectedNeighborsAreTwelveDistinct() {
-        var n = RDGCoordinates.faceConnectedNeighbors(new Point3i(0, 0, 0));
+        var origin = new Point3i(0, 0, 0);
+        var n = RDGCoordinates.faceConnectedNeighbors(origin);
         assertThat(n).hasSize(12);
-        assertThat(new HashSet<>(Arrays.asList(n))).as("all distinct").hasSize(12);
+        var faceSet = new HashSet<>(Arrays.asList(n));
+        assertThat(faceSet).as("all distinct").hasSize(12);
+
+        // Each face-connected neighbor is at Cartesian distance 1.0 (FCC nearest-neighbor shell)
+        for (var cell : n) {
+            var c = RDGCoordinates.toCartesian(cell);
+            double dist = Math.sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
+            assertThat(dist).as("face neighbor %s at distance 1.0", cell).isCloseTo(1.0, within(1e-9));
+        }
+
+        // Face-neighbor offsets must be disjoint from vertex-neighbor offsets (distance √2)
+        var vertexSet = new HashSet<>(Arrays.asList(RDGCoordinates.vertexConnectedNeighbors(origin)));
+        assertThat(faceSet).as("face and vertex neighbor sets are disjoint").doesNotContainAnyElementsOf(vertexSet);
     }
 
     /** The 6 vertex-connected neighbors must all sit at Cartesian distance √2 (Luciferase-xnf). */

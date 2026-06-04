@@ -41,13 +41,13 @@ public class Polyhedron extends Mesh {
      */
     public Polyhedron(Polyhedron polyhedron) {
         super();
-        for (Vector3d vertexPos : vertexPositions) {
+        for (Vector3d vertexPos : polyhedron.vertexPositions) {
             addVertexPosition(new Vector3d(vertexPos));
         }
-        for (Vector3d normal : vertexNormals) {
+        for (Vector3d normal : polyhedron.vertexNormals) {
             addVertexNormal(new Vector3d(normal));
         }
-        for (Face face : faces) {
+        for (Face face : polyhedron.faces) {
             addFace(new Face(face));
         }
     }
@@ -153,17 +153,7 @@ public class Polyhedron extends Mesh {
      */
     @Override
     public Polyhedron clone() {
-        Polyhedron clone = new Polyhedron();
-        for (Vector3d vertexPos : vertexPositions) {
-            clone.addVertexPosition(new Vector3d(vertexPos));
-        }
-        for (Vector3d normal : vertexNormals) {
-            clone.addVertexNormal(new Vector3d(normal));
-        }
-        for (Face face : faces) {
-            clone.addFace(new Face(face));
-        }
-        return clone;
+        return new Polyhedron(this);
     }
 
     /**
