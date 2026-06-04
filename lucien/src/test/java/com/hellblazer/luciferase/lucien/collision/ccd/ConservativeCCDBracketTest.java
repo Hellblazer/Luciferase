@@ -19,6 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * when a hit had been bracketed. The corrected version scans for the first colliding sample, then bisects the
  * bracket and always returns the bracketed collision.
  *
+ * <p>Luciferase-7wzml.94: fixed-32-step scan tunnels when the collision window is narrower than motionLength/32.
+ * Adaptive step count (scaled to geometry, capped) closes this gap.
+ *
  * @author hal.hildebrand
  */
 class ConservativeCCDBracketTest {
@@ -55,5 +58,37 @@ class ConservativeCCDBracketTest {
         var result = ContinuousCollisionDetector.conservativeCCD(s1, s2);
 
         assertFalse(result.collides(), "non-overlapping sweeps must not report a collision");
+    }
+
+    /**
+     * Luciferase-7wzml.94 regression: thin shape sweeping fast → collision window falls STRICTLY between two
+     * adjacent fixed-32 scan samples → tunnels at 32 steps; adaptive steps (≥ ceil(L/r) = 250) must catch it.
+     *
+     * <p>Geometry (verified analytically):
+     * <ul>
+     *   <li>Sweeper radius r=0.04, sweeps 10 units from x=-0.04 to x=9.96.</li>
+     *   <li>Static target radius r=0.04 at x=0.3625.</li>
+     *   <li>Contact window: t ∈ [0.03225, 0.04025], width=0.008.</li>
+     *   <li>Fixed-32 sample nearest to window: step 1 at t=0.03125 (below) and step 2 at t=0.0625 (above) → no
+     *       sample hits the window → tunnels. Adaptive steps (250) sample at 1/250=0.004 spacing → step 9 at
+     *       t=0.036 falls inside the window → collision detected.</li>
+     * </ul>
+     */
+    @Test
+    void thinShapeFastSweepTunnelsCaughtByAdaptiveSteps() {
+        float r = 0.04f;
+        // Sweeper: x from -r to 10.0-r (sweeps 10 units).
+        // Target: at x=0.3625. Window: t in [0.03225, 0.04025] — no i/32 in that interval.
+        var staticTarget = staticSphere(new Point3f(0.3625f, 0, 0), r);
+        var sweeper = movingSphere(new Point3f(-r, 0, 0), new Point3f(10.0f - r, 0, 0), r);
+
+        var result = ContinuousCollisionDetector.conservativeCCD(sweeper, staticTarget);
+
+        assertTrue(result.collides(),
+                   "thin + fast sweep (window between samples 1 and 2 of 32): adaptive steps must detect it (Luciferase-7wzml.94)");
+        float toi = result.timeOfImpact();
+        // First contact at t_enter=0.03225; bisection should land somewhere in [0.03225, 0.04025].
+        assertTrue(toi >= 0.032f && toi <= 0.041f,
+                   "time of impact should be in the contact window [0.03225,0.04025], got " + toi);
     }
 }

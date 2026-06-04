@@ -108,8 +108,9 @@ public class DistanceConstraint implements Constraint {
         float positionError = currentDistance - targetDistance;
         bias = -BAUMGARTE_FACTOR * positionError / deltaTime;
         
-        // Warm starting
-        applyImpulse(axis, lambda * deltaTime);
+        // Warm starting — lambda accumulates raw impulse units (same as ContactConstraint.normalImpulseSum);
+        // do NOT scale by deltaTime here (Luciferase-7wzml.92).
+        applyImpulse(axis, lambda);
     }
     
     @Override

@@ -79,6 +79,62 @@ class DistanceConstraintOrientationTest {
                    "rotated constraint must stay bounded over many steps, not inject energy (Luciferase-wv1yk)");
     }
 
+    /**
+     * Regression for Luciferase-7wzml.92: warm-start used {@code lambda * deltaTime} instead of raw {@code lambda}.
+     * Because {@code lambda} accumulates raw impulse units, scaling by deltaTime made the warm-start magnitude
+     * proportional to the timestep. A smaller dt → weaker warm-start → more solve iterations needed to converge.
+     * After the fix, the converged lambda (and therefore constraint error) must be timestep-independent.
+     */
+    @Test
+    void warmStartIsTimestepIndependent() {
+        var inertia = InertiaTensor.sphere(1.0f, 0.5f);
+
+        // Run two identical scenarios with different dt values, both seeded identically.
+        // Scenario A: large timestep (dt=0.016, 60 Hz)
+        var bodyA1 = new RigidBody(1.0f, inertia);
+        var bodyB1 = new RigidBody(1.0f, inertia);
+        bodyA1.setPosition(new Point3f(0, 0, 0));
+        bodyB1.setPosition(new Point3f(2.5f, 0, 0)); // slightly violated: target is 2.0
+
+        var constraintLarge = new DistanceConstraint(bodyA1, bodyB1, new Point3f(0, 0, 0), new Point3f(2.0f, 0, 0));
+
+        // Scenario B: small timestep (dt=0.004, 250 Hz) — 4× finer
+        var bodyA2 = new RigidBody(1.0f, inertia);
+        var bodyB2 = new RigidBody(1.0f, inertia);
+        bodyA2.setPosition(new Point3f(0, 0, 0));
+        bodyB2.setPosition(new Point3f(2.5f, 0, 0));
+
+        var constraintSmall = new DistanceConstraint(bodyA2, bodyB2, new Point3f(0, 0, 0), new Point3f(2.0f, 0, 0));
+
+        float dtLarge = 0.016f;
+        float dtSmall = 0.004f;
+        int stepsLarge = 30;
+        int stepsSmall = stepsLarge * 4; // equal simulated time
+
+        for (int i = 0; i < stepsLarge; i++) {
+            constraintLarge.prepare(dtLarge);
+            constraintLarge.solve();
+        }
+        for (int i = 0; i < stepsSmall; i++) {
+            constraintSmall.prepare(dtSmall);
+            constraintSmall.solve();
+        }
+
+        float errorLarge = constraintLarge.getError();
+        float errorSmall = constraintSmall.getError();
+
+        // Both should converge to a similar error level; the ratio must be close to 1.
+        // Pre-fix: small-dt warm-start was 4× weaker → errorSmall >> errorLarge.
+        assertTrue(Float.isFinite(errorLarge), "large-dt constraint error must be finite");
+        assertTrue(Float.isFinite(errorSmall), "small-dt constraint error must be finite");
+
+        // The converged errors should agree to within a factor of 3 (generous; pre-fix diverged by >>10×).
+        float ratio = errorLarge > 1e-6f ? errorSmall / errorLarge : 1.0f;
+        assertTrue(ratio < 3.0f && ratio > 0.33f,
+                   "warm-start must be timestep-independent (Luciferase-7wzml.92): "
+                   + "errorLarge=" + errorLarge + " errorSmall=" + errorSmall + " ratio=" + ratio);
+    }
+
     @Test
     void identityOrientationLeavesAnchorsUnchanged() {
         var inertia = InertiaTensor.sphere(1.0f, 0.5f);

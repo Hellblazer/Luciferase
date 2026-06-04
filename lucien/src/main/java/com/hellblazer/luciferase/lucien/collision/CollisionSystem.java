@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.collision;
 
+import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialIndex.CollisionPair;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
@@ -424,9 +425,35 @@ public class CollisionSystem<ID extends EntityID, Content> {
         
         MovingShape movingShape = new MovingShape(shape, startPos, endPos, 0, deltaTime);
         
-        // Find potential collisions using broad phase. Buffer is configurable to the world scale (Luciferase-s62fr).
-        float searchRadius = props.getVelocity().length() * deltaTime + ccdSearchRadiusBuffer;
-        List<ID> nearbyEntities = spatialIndex.kNearestNeighbors(startPos, 100, searchRadius);
+        // Broad-phase sweep: build an AABB enclosing the full motion path so that fast entities whose
+        // collision is near the endpoint are not missed (Luciferase-7wzml.93). The AABB spans from
+        // min(start,end) to max(start,end), inflated by the shape's own radius + configurable buffer.
+        // entitiesInRegion(Spatial.Cube) requires equal extents in all three axes, so we use the
+        // smallest enclosing cube centred on the AABB midpoint.
+        EntityBounds shapeAABB = shape.getAABB();
+        float shapeRadius = Math.max(shapeAABB.getMaxX() - shapeAABB.getMinX(),
+                                     Math.max(shapeAABB.getMaxY() - shapeAABB.getMinY(),
+                                              shapeAABB.getMaxZ() - shapeAABB.getMinZ())) * 0.5f;
+        float inflation = shapeRadius + ccdSearchRadiusBuffer;
+        // Clamp to 0: the spatial index does not support negative coordinates.
+        float minX = Math.max(0f, Math.min(startPos.x, endPos.x) - inflation);
+        float minY = Math.max(0f, Math.min(startPos.y, endPos.y) - inflation);
+        float minZ = Math.max(0f, Math.min(startPos.z, endPos.z) - inflation);
+        float maxX = Math.max(startPos.x, endPos.x) + inflation;
+        float maxY = Math.max(startPos.y, endPos.y) + inflation;
+        float maxZ = Math.max(startPos.z, endPos.z) + inflation;
+        float halfSide = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ)) * 0.5f;
+        float cx = (minX + maxX) * 0.5f;
+        float cy = (minY + maxY) * 0.5f;
+        float cz = (minZ + maxZ) * 0.5f;
+        // Clamp cube origin to 0 (spatial index constraint).
+        float cubeOriginX = Math.max(0f, cx - halfSide);
+        float cubeOriginY = Math.max(0f, cy - halfSide);
+        float cubeOriginZ = Math.max(0f, cz - halfSide);
+        // Tighten extent to actual swept coverage after clamping (avoids over-expanding past true max).
+        float cubeExtent = Math.max(maxX - cubeOriginX, Math.max(maxY - cubeOriginY, maxZ - cubeOriginZ));
+        var sweepRegion = new Spatial.Cube(cubeOriginX, cubeOriginY, cubeOriginZ, cubeExtent);
+        List<ID> nearbyEntities = spatialIndex.entitiesInRegion(sweepRegion);
         
         // Check CCD against each nearby entity
         for (ID otherId : nearbyEntities) {
