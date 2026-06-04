@@ -82,6 +82,15 @@ public class LamportClockGenerator {
     private final ConcurrentHashMap<UUID, Long> vectorTimestamp;
 
     /**
+     * Guards the paired (vectorTimestamp, localClock) updates so a clock advance and the
+     * corresponding vector-timestamp advance are observed together. Without this, the two
+     * separate atomic updates in onRemoteEvent()/tick() can interleave across threads,
+     * leaving the local clock advanced past the value recorded in this bubble's vector
+     * entry — an inconsistency causality checks can act on (Luciferase-0frcy.63).
+     */
+    private final Object clockLock = new Object();
+
+    /**
      * Create a LamportClockGenerator for a bubble.
      *
      * @param bubbleId Unique identifier for this bubble
@@ -103,8 +112,11 @@ public class LamportClockGenerator {
      * @return Updated local Lamport clock value
      */
     public long tick() {
-        var timestamp = localClock.incrementAndGet();
-        vectorTimestamp.put(bubbleId, timestamp);
+        long timestamp;
+        synchronized (clockLock) {
+            timestamp = localClock.incrementAndGet();
+            vectorTimestamp.put(bubbleId, timestamp);
+        }
 
         if (timestamp % 100 == 0) {
             log.debug("Lamport tick: bubble={}, clock={}", bubbleId, timestamp);
@@ -125,12 +137,15 @@ public class LamportClockGenerator {
     public long onRemoteEvent(long remoteClock, UUID sourceBubbleId) {
         Objects.requireNonNull(sourceBubbleId, "sourceBubbleId must not be null");
 
-        // Update vector timestamp for source bubble
-        vectorTimestamp.putIfAbsent(sourceBubbleId, remoteClock);
-        vectorTimestamp.computeIfPresent(sourceBubbleId, (k, v) -> Math.max(v, remoteClock));
-
-        // Update local clock: max(local, remote) + 1
-        var updated = localClock.updateAndGet(current -> Math.max(current, remoteClock) + 1);
+        long updated;
+        // Atomically advance the source's vector entry AND the local clock together so the
+        // local clock can never be observed advanced past this bubble's own vector entry.
+        synchronized (clockLock) {
+            vectorTimestamp.merge(sourceBubbleId, remoteClock, Math::max);
+            updated = localClock.updateAndGet(current -> Math.max(current, remoteClock) + 1);
+            // Keep this bubble's own vector entry consistent with the advanced local clock.
+            vectorTimestamp.merge(bubbleId, updated, Math::max);
+        }
 
         if (updated % 100 == 0) {
             log.debug("Lamport remote event: bubble={}, remote={}, source={}, updated={}",

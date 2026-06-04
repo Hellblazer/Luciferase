@@ -233,20 +233,28 @@ public class MigrationOracleImpl implements MigrationOracle {
 
     @Override
     public Set<String> getEntitiesCrossingBoundaries() {
-        // Reset crossing cache and recompute from current positions
-        crossingCache.clear();
-
+        // Compute into a LOCAL set first. The shared crossingCache must not be used as a
+        // scratch buffer during computation: a concurrent caller reading it between the old
+        // clear() and the first add() would observe an empty set and silently drop every
+        // boundary crossing for that tick (Luciferase-0frcy.66).
+        var crossing = new HashSet<String>();
         for (var entry : entityPositions.entrySet()) {
             var entityId = entry.getKey();
             var position = entry.getValue();
 
             // Check if entity is at a grid boundary (transition between cubes)
             if (isAtBoundary(position)) {
-                crossingCache.add(entityId);
+                crossing.add(entityId);
             }
         }
 
-        return Set.copyOf(crossingCache);
+        // Publish to the side-effect cache only after the full set is computed. add-then-retain
+        // keeps the existing keyset instance (preserving removeEntity()/clearCrossingCache()
+        // semantics) while never exposing a transiently-empty cache.
+        crossingCache.addAll(crossing);
+        crossingCache.retainAll(crossing);
+
+        return Set.copyOf(crossing);
     }
 
     @Override

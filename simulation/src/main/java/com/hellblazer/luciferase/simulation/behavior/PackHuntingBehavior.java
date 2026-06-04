@@ -247,24 +247,29 @@ public class PackHuntingBehavior implements EntityBehavior {
             return new PackRole(Role.LEADER, closestPrey, null);
         }
 
-        // Flanker role - determine left or right based on position
-        var toLeader = new Vector3f(
-            leader.position().x - position.x,
-            leader.position().y - position.y,
-            leader.position().z - position.z
-        );
-
-        var toPrey = new Vector3f(
+        // Flanker role - determine left or right relative to the PURSUIT AXIS
+        // (leader -> prey), not relative to the flanker->leader vector. The
+        // pursuit axis is the shared frame all flankers agree on; measuring the
+        // side from flanker->leader produced geometrically inconsistent role
+        // assignments (Luciferase-0frcy.77).
+        var pursuitAxis = new Vector3f(
             closestPrey.position().x - leader.position().x,
             closestPrey.position().y - leader.position().y,
             closestPrey.position().z - leader.position().z
         );
 
-        // Cross product to determine left/right
-        var cross = new Vector3f();
-        cross.cross(toLeader, toPrey);
+        var leaderToFlanker = new Vector3f(
+            position.x - leader.position().x,
+            position.y - leader.position().y,
+            position.z - leader.position().z
+        );
 
-        Role flankerRole = cross.y > 0 ? Role.FLANKER_LEFT : Role.FLANKER_RIGHT;
+        // cross(pursuitAxis, leaderToFlanker).y discriminates which side of the
+        // pursuit axis the flanker sits on in the horizontal plane.
+        var cross = new Vector3f();
+        cross.cross(pursuitAxis, leaderToFlanker);
+
+        Role flankerRole = cross.y >= 0 ? Role.FLANKER_LEFT : Role.FLANKER_RIGHT;
         return new PackRole(flankerRole, closestPrey, leader.position());
     }
 
@@ -295,6 +300,41 @@ public class PackHuntingBehavior implements EntityBehavior {
     }
 
     /**
+     * Compute a unit flanking direction by rotating the (already-normalized)
+     * pursuit axis by {@code angleRad} toward a 3D-perpendicular axis.
+     * <p>
+     * Builds an orthonormal perpendicular {@code perp} to {@code axis} in 3D
+     * (axis × ref, ref chosen not parallel to axis), then returns
+     * {@code cos(angle)*axis ± sin(angle)*perp}. The result is a unit vector
+     * orthogonality-correct in 3D for any axis orientation, including vertical
+     * pursuit vectors that the old XZ-only rotation handled incorrectly
+     * (Luciferase-0frcy.77). Left/right flankers use opposite signs.
+     *
+     * @param axis     normalized pursuit axis (leader → prey)
+     * @param left     true for the left flanker, false for the right
+     * @param angleRad rotation magnitude in radians
+     * @return unit flanking direction
+     */
+    static Vector3f flankDirection(Vector3f axis, boolean left, float angleRad) {
+        var ref = Math.abs(axis.y) < 0.99f ? new Vector3f(0f, 1f, 0f) : new Vector3f(1f, 0f, 0f);
+        var perp = new Vector3f();
+        perp.cross(axis, ref);
+        if (perp.length() < 1e-6f) {
+            perp.cross(axis, new Vector3f(1f, 0f, 0f));
+        }
+        perp.normalize();
+
+        float sign = left ? 1f : -1f;
+        float cos = (float) Math.cos(angleRad);
+        float sin = (float) Math.sin(angleRad) * sign;
+        return new Vector3f(
+            axis.x * cos + perp.x * sin,
+            axis.y * cos + perp.y * sin,
+            axis.z * cos + perp.z * sin
+        );
+    }
+
+    /**
      * Flanker intercept: position to cut off prey escape.
      */
     private Vector3f computeFlankerIntercept(Point3f position, Point3f preyPosition,
@@ -312,17 +352,12 @@ public class PackHuntingBehavior implements EntityBehavior {
 
         leaderToPrey.normalize();
 
-        // Calculate perpendicular vector (flanking direction)
-        float angle = flankerRole == Role.FLANKER_LEFT ?
-            (float) Math.toRadians(FLANKING_ANGLE_DEGREES) :
-            (float) Math.toRadians(-FLANKING_ANGLE_DEGREES);
-
-        var flankVector = new Vector3f(
-            leaderToPrey.x * (float) Math.cos(angle) - leaderToPrey.z * (float) Math.sin(angle),
-            leaderToPrey.y,
-            leaderToPrey.x * (float) Math.sin(angle) + leaderToPrey.z * (float) Math.cos(angle)
-        );
-
+        // Compute the flanking direction via a proper 3D rotation (see
+        // flankDirection). The previous implementation rotated only in the XZ
+        // plane (leaving Y unchanged), which is only correct when the pursuit
+        // vector is horizontal (Luciferase-0frcy.77).
+        float angle = (float) Math.toRadians(FLANKING_ANGLE_DEGREES);
+        var flankVector = flankDirection(leaderToPrey, flankerRole == Role.FLANKER_LEFT, angle);
         flankVector.scale(flankingDistance);
 
         // Target position: prey + flank offset

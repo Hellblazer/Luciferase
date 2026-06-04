@@ -58,7 +58,7 @@ public class SameServerOptimizer {
     /**
      * Enable/disable optimization (for testing and debugging)
      */
-    private boolean enabled = true;
+    private volatile boolean enabled = true;
 
     /**
      * Create optimizer with server registry.

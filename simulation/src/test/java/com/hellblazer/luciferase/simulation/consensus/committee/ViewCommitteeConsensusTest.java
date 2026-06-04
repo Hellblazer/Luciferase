@@ -225,6 +225,51 @@ public class ViewCommitteeConsensusTest {
         assertFalse(result, "Proposal with old viewId should be rejected immediately");
     }
 
+    // ===== Per-entity in-flight migration mutex (Luciferase-0frcy.94) =====
+
+    @Test
+    public void testConcurrentProposalsForSameEntityRejected() throws Exception {
+        var entityId = UUID.randomUUID();
+
+        // First proposal for the entity (target = members.get(1)).
+        var first = new MigrationProposal(
+            UUID.randomUUID(), entityId,
+            members.get(0).getId(), members.get(1).getId(),
+            view1, System.currentTimeMillis());
+
+        // Second, concurrent proposal for the SAME entity but a DIFFERENT target.
+        var second = new MigrationProposal(
+            UUID.randomUUID(), entityId,
+            members.get(0).getId(), members.get(2).getId(),
+            view1, System.currentTimeMillis());
+
+        var firstFuture = consensus.requestConsensus(first);
+        assertFalse(firstFuture.isDone(), "First proposal should remain in-flight pending votes");
+
+        // While the first is in-flight, the second must be rejected immediately
+        // without ever entering voting — otherwise both could reach quorum and
+        // double-register the entity at two targets.
+        var secondFuture = consensus.requestConsensus(second);
+        assertTrue(secondFuture.isDone(), "Duplicate in-flight proposal must short-circuit");
+        assertFalse(secondFuture.get(100, TimeUnit.MILLISECONDS),
+                    "Second concurrent proposal for the same entity must be rejected");
+
+        // Drive the first to approval; the entity slot is then released.
+        for (int i = 0; i < 2; i++) {
+            votingProtocol.recordVote(new Vote(first.proposalId(), members.get(i).getId(), true, view1));
+        }
+        assertTrue(firstFuture.get(1, TimeUnit.SECONDS), "First proposal should be approved");
+
+        // After completion the slot is free: a fresh proposal for the entity is accepted again.
+        var third = new MigrationProposal(
+            UUID.randomUUID(), entityId,
+            members.get(0).getId(), members.get(1).getId(),
+            view1, System.currentTimeMillis());
+        var thirdFuture = consensus.requestConsensus(third);
+        assertFalse(thirdFuture.isDone(),
+                    "A new proposal for the entity must be accepted once the prior one completes");
+    }
+
     // ===== Byzantine Input Validation Tests (Luciferase-brtp) =====
 
     @Test

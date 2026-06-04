@@ -263,17 +263,22 @@ public class MigrationLog {
             }
         }
 
-        // Remove entities with no remaining history. Hold the per-entity lock and re-check that the
-        // history is still empty inside the lock (Luciferase-0frcy.26): a recordMigration() that
-        // raced in after the removeIf above will have re-populated history/tokens under the same
-        // lock, so we must NOT remove the entityId (which would drop its fresh idempotency token).
+        // Free the (memory-heavy) migration history for entities with no remaining records. Hold the
+        // per-entity lock and re-check emptiness inside the lock (Luciferase-0frcy.26) so a
+        // recordMigration() that raced in after the removeIf above is not clobbered.
+        //
+        // Luciferase-0frcy.104: token cleanup is DECOUPLED from history cleanup. We deliberately do NOT
+        // remove entityTokens (nor the per-entity lock monitor) when history empties. Co-locating token
+        // removal with history removal defeated the idempotency guard: recordMigration() releases its
+        // lock before the caller re-checks isDuplicate(), so a cleanup landing in that window could purge
+        // a token whose migration was just recorded, letting a re-delivered duplicate be processed twice.
+        // Idempotency tokens must outlive the history records they guard. Retained tokens and monitors
+        // are bounded by the live-entity set (not by migration volume), matching the prior growth bound.
         for (var entityId : entitiesToRemove) {
             synchronized (lockFor(entityId)) {
                 var history = migrationHistory.get(entityId);
-                if (history == null || history.isEmpty()) {
+                if (history != null && history.isEmpty()) {
                     migrationHistory.remove(entityId);
-                    entityTokens.remove(entityId);
-                    entityLocks.remove(entityId);
                 }
             }
         }

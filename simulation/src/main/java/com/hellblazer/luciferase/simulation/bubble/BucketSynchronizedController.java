@@ -98,13 +98,22 @@ public class BucketSynchronizedController extends RealTimeController {
      * Synchronize at bucket boundary.
      * Applies: simulationTime = max(current, target)
      */
-    private void synchronizeAtBucket(long bucketNum, long currentSimTime) {
+    // Package-private for deterministic regression testing of the synthetic
+    // tick emission on a bucket-boundary jump (Luciferase-0frcy.83).
+    void synchronizeAtBucket(long bucketNum, long currentSimTime) {
         long targetSimTime = bucketNum * TICKS_PER_BUCKET;
         long alignedSimTime = Math.max(currentSimTime, targetSimTime);
 
-        // Apply the alignment if needed
+        // Apply the alignment if needed. The forward jump from currentSimTime
+        // to alignedSimTime skips intermediate tick values; emit a synthetic
+        // tick event for each so monotonic listeners (e.g. ghost dead-reckoning
+        // interpolation) never see a simulation-time discontinuity across the
+        // bucket boundary (Luciferase-0frcy.83).
         if (alignedSimTime > currentSimTime) {
-            setSimulationTime(alignedSimTime);
+            for (long t = currentSimTime + 1; t <= alignedSimTime; t++) {
+                setSimulationTime(t);
+                emitLocalTickEvent(t, clockGenerator.tick());
+            }
         }
 
         currentBucket.set(bucketNum);

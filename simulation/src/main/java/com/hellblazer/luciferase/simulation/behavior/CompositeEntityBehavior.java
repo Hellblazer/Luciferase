@@ -35,6 +35,22 @@ public class CompositeEntityBehavior implements EntityBehavior {
     private final float maxAoiRadius;
     private final float maxSpeed;
 
+    // entityId -> behavior cache to avoid an O(N) record scan on every
+    // computeVelocity() call (which made the per-tick dispatch cost O(N^2) —
+    // see Luciferase-0frcy.1). The bubble returns a fresh record snapshot per
+    // call, so the cache is rebuilt whenever the snapshot size changes; within
+    // a single tick the entity set is stable, collapsing per-tick dispatch to
+    // O(N). A null cached value means "present, but resolves to defaultBehavior";
+    // an absent key means the entity was not in the last snapshot.
+    private final Map<String, EntityBehavior> behaviorByEntityId = new HashMap<>();
+    private int cachedSnapshotSize = -1;
+
+    /**
+     * Visible-for-testing: number of full record-snapshot scans performed.
+     * A correct O(N) tick performs exactly one scan regardless of entity count.
+     */
+    long snapshotScanCount = 0;
+
     /**
      * Create a composite behavior with a default.
      *
@@ -84,25 +100,39 @@ public class CompositeEntityBehavior implements EntityBehavior {
     @Override
     public Vector3f computeVelocity(String entityId, Point3f position, Vector3f velocity,
                                     EnhancedBubble bubble, float deltaTime) {
-        // Get the entity record to access content (type)
-        var records = bubble.getAllEntityRecords().stream()
-            .filter(r -> r.id().equals(entityId))
-            .findFirst();
-
-        if (records.isEmpty()) {
-            // Entity not found, use default
-            return defaultBehavior.computeVelocity(entityId, position, velocity, bubble, deltaTime);
-        }
-
-        var record = records.get();
-        EntityBehavior targetBehavior = defaultBehavior;
-
-        // Determine behavior based on entity type
-        if (record.content() instanceof EntityType entityType) {
-            targetBehavior = behaviors.getOrDefault(entityType, defaultBehavior);
-        }
-
+        EntityBehavior targetBehavior = resolveBehavior(entityId, bubble);
         return targetBehavior.computeVelocity(entityId, position, velocity, bubble, deltaTime);
+    }
+
+    /**
+     * Resolve the type-specific behavior for an entity, using a per-tick cache
+     * to avoid re-scanning the full entity-record snapshot on every call.
+     * <p>
+     * The bubble returns a fresh record list per call; we rebuild the cache
+     * only when the snapshot size changes. Within a single tick the entity set
+     * is stable, so the first call rebuilds (one O(N) scan) and all subsequent
+     * calls are O(1) — collapsing the whole-tick dispatch cost from O(N^2) to
+     * O(N).
+     */
+    private EntityBehavior resolveBehavior(String entityId, EnhancedBubble bubble) {
+        var records = bubble.getAllEntityRecords();
+        if (records.size() != cachedSnapshotSize || !behaviorByEntityId.containsKey(entityId)) {
+            rebuildCache(records);
+        }
+        return behaviorByEntityId.getOrDefault(entityId, defaultBehavior);
+    }
+
+    private void rebuildCache(java.util.List<EnhancedBubble.EntityRecord> records) {
+        snapshotScanCount++;
+        behaviorByEntityId.clear();
+        for (var record : records) {
+            EntityBehavior target = defaultBehavior;
+            if (record.content() instanceof EntityType entityType) {
+                target = behaviors.getOrDefault(entityType, defaultBehavior);
+            }
+            behaviorByEntityId.put(record.id(), target);
+        }
+        cachedSnapshotSize = records.size();
     }
 
     @Override

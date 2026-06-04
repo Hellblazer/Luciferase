@@ -148,6 +148,33 @@ class TopologyRemediationTest {
                    "entitiesMoved must reflect the real relocation count, not (after-before)=0");
     }
 
+    // ---- .70: MergeEvent.entitiesMoved is the real relocation count --------
+
+    @Test
+    void mergeEventReportsActualEntitiesMoved() {
+        bubbleGrid.createBubbles(2, (byte) 2, 10);
+        var bubbles = bubbleGrid.getAllBubbles().stream().toList();
+        var bubble1 = bubbles.get(0);
+        var bubble2 = bubbles.get(1);
+        addEntities(bubble1, 30);
+        addEntities(bubble2, 20);
+
+        List<TopologyEvent> events = new ArrayList<>();
+        executor.addListener(events::add);
+
+        var proposal = new MergeProposal(UUID.randomUUID(), bubble1.id(), bubble2.id(),
+                                         DigestAlgorithm.DEFAULT.getOrigin(), 0L);
+        var result = executor.execute(proposal);
+        assertTrue(result.success(), () -> "Merge should succeed: " + result.message());
+
+        assertEquals(1, events.size());
+        var merge = assertInstanceOf(MergeEvent.class, events.get(0));
+        // 20 entities were relocated from bubble2 into bubble1. (after - before) == 0
+        // by conservation, so the field must come from the merger's relocation count.
+        assertEquals(20, merge.entitiesMoved(),
+                     "entitiesMoved must reflect the real relocation count, not (after-before)=0");
+    }
+
     // ---- .47: events fire only after commit -------------------------------
 
     @Test
@@ -186,6 +213,35 @@ class TopologyRemediationTest {
         assertFalse(((MoveEvent) events.get(0)).success(), "Failed move must emit success=false");
     }
 
+    // ---- .122: rollback records the actual registration key ---------------
+
+    @Test
+    void mergeRollbackRecordsActualRegistrationKey() {
+        bubbleGrid.createBubbles(2, (byte) 2, 10);
+        var bubbles = bubbleGrid.getAllBubbles().stream().toList();
+        var bubble1 = bubbles.get(0);
+        var bubble2 = bubbles.get(1);
+        addEntities(bubble1, 30);
+        addEntities(bubble2, 20);
+
+        // The actual spatial-index registration key for bubble2, captured before the merge.
+        var expectedKey = bubbleGrid.getKeyForBubble(bubble2.id());
+        assertNotNull(expectedKey, "bubble2 must have a registration key");
+
+        var capturing = new CapturingTracker();
+        var merger = new BubbleMerger(bubbleGrid, accountant, capturing, metrics);
+
+        var proposal = new MergeProposal(UUID.randomUUID(), bubble1.id(), bubble2.id(),
+                                         DigestAlgorithm.DEFAULT.getOrigin(), 0L);
+        var result = merger.execute(proposal);
+        assertTrue(result.success(), () -> "Merge should succeed: " + result.message());
+
+        // The rollback record MUST use the actual registration key, not bounds().rootKey().
+        assertEquals(bubble2.id(), capturing.removedBubbleId, "Removal must be recorded for bubble2");
+        assertEquals(expectedKey, capturing.removedKey,
+                     "Rollback must record the bubble's actual registration key (not bounds().rootKey())");
+    }
+
     // ---- helpers ----------------------------------------------------------
 
     private SplitProposal splitProposal(EnhancedBubble bubble) {
@@ -221,5 +277,18 @@ class TopologyRemediationTest {
         @Override public void recordBubbleAdded(UUID bubbleId) { }
         @Override public void recordBubbleRemoved(UUID bubbleId, EnhancedBubble snapshot,
                                                   com.hellblazer.luciferase.lucien.tetree.TetreeKey<?> key) { }
+    }
+
+    /** Tracker that captures the removal record for the .122 rollback-key assertion. */
+    private static final class CapturingTracker implements OperationTracker {
+        UUID removedBubbleId;
+        com.hellblazer.luciferase.lucien.tetree.TetreeKey<?> removedKey;
+
+        @Override public void recordBubbleAdded(UUID bubbleId) { }
+        @Override public void recordBubbleRemoved(UUID bubbleId, EnhancedBubble snapshot,
+                                                  com.hellblazer.luciferase.lucien.tetree.TetreeKey<?> key) {
+            this.removedBubbleId = bubbleId;
+            this.removedKey = key;
+        }
     }
 }

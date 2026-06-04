@@ -80,6 +80,54 @@ public record EntityUpdateEvent(
     long lamportClock
 ) {
     /**
+     * Compact constructor — defensive copies of mutable Point3f fields.
+     * <p>
+     * javax.vecmath.Point3f exposes public mutable x/y/z fields. Without
+     * copying, a caller that retains and mutates the supplied Point3f after
+     * construction would silently corrupt this event's position/velocity
+     * in-flight (an RDR-004-class silent-data-loss risk for cross-bubble
+     * state synchronization). Copying restores the record's immutability
+     * contract.
+     */
+    public EntityUpdateEvent {
+        // Guard before any field deref: javax.vecmath copy constructors NPE on a null
+        // argument with an opaque "t1 is null" message. A null position/velocity is a
+        // caller contract violation for cross-bubble state sync, so fail loudly with an
+        // actionable message that names the offending entity (restores the guard a wave-3
+        // ghost change moved behind the Point3f copy — Luciferase-0frcy regression).
+        if (position == null) {
+            throw new NullPointerException(
+                "position must not be null for entity " + (entityId == null ? "<null>" : entityId.toDebugString()));
+        }
+        if (velocity == null) {
+            throw new NullPointerException(
+                "velocity must not be null for entity " + (entityId == null ? "<null>" : entityId.toDebugString()));
+        }
+        position = new Point3f(position);
+        velocity = new Point3f(velocity);
+    }
+
+    /**
+     * Returns a defensive copy of the position so callers cannot mutate
+     * this event's internal state.
+     *
+     * @return a copy of the position
+     */
+    public Point3f position() {
+        return new Point3f(position);
+    }
+
+    /**
+     * Returns a defensive copy of the velocity so callers cannot mutate
+     * this event's internal state.
+     *
+     * @return a copy of the velocity
+     */
+    public Point3f velocity() {
+        return new Point3f(velocity);
+    }
+
+    /**
      * Custom toString for debugging.
      * Includes all critical fields for trace logging.
      *

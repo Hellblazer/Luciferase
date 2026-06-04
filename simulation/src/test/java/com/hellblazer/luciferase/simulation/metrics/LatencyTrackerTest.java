@@ -53,8 +53,10 @@ class LatencyTrackerTest {
     void testGetStatsEmpty() {
         var stats = tracker.getStats();
 
-        assertEquals(Long.MAX_VALUE, stats.minLatencyNs(), "Min should be MAX_VALUE for empty tracker");
+        // Luciferase-0frcy.113: empty min is 0 (not Long.MAX_VALUE) so min <= max holds.
+        assertEquals(0, stats.minLatencyNs(), "Min should be 0 for empty tracker (min <= max invariant)");
         assertEquals(0, stats.maxLatencyNs(), "Max should be 0 for empty tracker");
+        assertTrue(stats.minLatencyNs() <= stats.maxLatencyNs(), "empty stats satisfy min <= max");
         assertEquals(0.0, stats.avgLatencyNs(), 0.01, "Avg should be 0 for empty tracker");
         assertEquals(0, stats.p50LatencyNs(), "P50 should be 0 for empty tracker");
         assertEquals(0, stats.p99LatencyNs(), "P99 should be 0 for empty tracker");

@@ -89,12 +89,13 @@ class BubbleMoverTest {
         // Execute move
         var result = mover.execute(proposal);
 
-        // Verify result
-        assertTrue(result.success(), "Move should succeed: " + result.message());
-        assertEquals(500, result.entitiesBefore(), "Entities before should be 500");
-        assertEquals(500, result.entitiesAfter(), "Entities after should be 500");
+        // BubbleMover relocation is deferred (Luciferase-0frcy.123): execute() must NOT
+        // report success for a no-op move. It returns a clear "not yet implemented" failure.
+        assertFalse(result.success(), "Move must report failure while relocation is unimplemented");
+        assertTrue(result.message().contains("not yet implemented"),
+                   "Failure message must state the operation is not yet implemented: " + result.message());
 
-        // Verify entity count unchanged
+        // Entities must remain untouched even on the deferred-failure path.
         int entitiesAfter = accountant.entitiesInBubble(bubble.id()).size();
         assertEquals(entitiesBefore, entitiesAfter, "Entity count should be unchanged");
 
@@ -175,8 +176,11 @@ class BubbleMoverTest {
 
         var result = mover.execute(proposal);
 
-        // Verify conservation
-        assertTrue(result.success(), "Move should succeed");
+        // Relocation is deferred (Luciferase-0frcy.123): a no-op move must report failure,
+        // not success. Entity conservation must still hold on the failure path.
+        assertFalse(result.success(), "Move must report failure while relocation is unimplemented");
+        assertTrue(result.message().contains("not yet implemented"),
+                   "Failure message must state the operation is not yet implemented: " + result.message());
         assertEquals(result.entitiesBefore(), result.entitiesAfter(), "Entity count should be unchanged");
 
         // Verify Accountant validation passes

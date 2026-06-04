@@ -179,6 +179,14 @@ public class GhostStateManager {
     private final Map<StringEntityID, GhostState> ghostStates;
 
     /**
+     * Guards the admission decision (size check) and the subsequent insert in {@link #updateGhost}
+     * so they are atomic. Without this, two threads inserting distinct new entities can both pass the
+     * {@code size() >= maxGhosts} check before either inserts, exceeding the declared limit
+     * (Luciferase-0frcy.65).
+     */
+    private final Object admissionLock = new Object();
+
+    /**
      * Performance metrics (optional, null-safe).
      */
     private GhostPhysicsMetrics metrics;
@@ -252,26 +260,29 @@ public class GhostStateManager {
         var velocity = new Vector3f(event.velocity());
         var timestamp = event.timestamp();
 
-        // Check max ghost limit
-        if (ghostStates.size() >= maxGhosts && !ghostStates.containsKey(entityId)) {
-            log.warn("Max ghost limit ({}) reached, dropping update for {}", maxGhosts, entityId);
-            return;
+        // Create SimulationGhostEntity
+        var ghostEntity = createGhostEntity(entityId, position, sourceBubbleId, timestamp, event.lamportClock());
+        var newState = new GhostState(ghostEntity, velocity);
+
+        // Atomic admission + insert (Luciferase-0frcy.65): the size check and the put must be
+        // performed under a single lock, otherwise concurrent inserts of distinct new entities can
+        // each pass the size guard and drive ghostStates past maxGhosts.
+        boolean isNewGhost;
+        synchronized (admissionLock) {
+            boolean present = ghostStates.containsKey(entityId);
+            if (!present && ghostStates.size() >= maxGhosts) {
+                log.warn("Max ghost limit ({}) reached, dropping update for {}", maxGhosts, entityId);
+                return;
+            }
+            isNewGhost = !present;
+            ghostStates.put(entityId, newState);
         }
 
         // Update lifecycle state (creates if new, updates if existing)
-        var existingState = ghostStates.get(entityId);
-        if (existingState == null) {
-            // New ghost: create in lifecycle state machine
+        if (isNewGhost) {
             lifecycle.onCreate(entityId.toDebugString(), sourceBubbleId, timestamp);
         }
         lifecycle.onUpdate(entityId.toDebugString(), timestamp);
-
-        // Create SimulationGhostEntity
-        var ghostEntity = createGhostEntity(entityId, position, sourceBubbleId, timestamp, event.lamportClock());
-
-        // Create or update ghost state (position + velocity only)
-        var newState = new GhostState(ghostEntity, velocity);
-        ghostStates.put(entityId, newState);
 
         // Notify dead reckoning estimator of authoritative update
         var adapter = new GhostStateAdapter(newState, entityId);

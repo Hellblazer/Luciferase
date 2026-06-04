@@ -90,9 +90,12 @@ public class LatencyTracker {
     public LatencyStats getStats() {
         var count = totalSamples.sum();
 
-        // Handle empty case
+        // Handle empty case: return min=0 (not Long.MAX_VALUE) so the natural min <= max
+        // invariant holds for consumers that compare the two without first checking
+        // sampleCount (Luciferase-0frcy.113). sampleCount=0 remains the authoritative
+        // "no data" signal.
         if (count == 0) {
-            return new LatencyStats(Long.MAX_VALUE, 0, 0.0, 0, 0, 0);
+            return new LatencyStats(0, 0, 0.0, 0, 0, 0);
         }
 
         var avg = (double) totalLatency.sum() / count;

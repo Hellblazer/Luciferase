@@ -91,11 +91,14 @@ public final class TetreeBubbleFactory {
             throw new IllegalArgumentException("Max entities per bubble must be positive, got: " + maxEntitiesPerBubble);
         }
 
-        // Calculate bubble distribution across levels
-        var distribution = createBalancedGrid(bubbleCount, maxLevel);
-
-        // Assign TetreeKey locations for all bubbles
-        var locations = assignBubbleLocations(bubbleCount, maxLevel, distribution);
+        // Delegate bubble distribution and placement entirely to the grid,
+        // which owns the authoritative distribution algorithm. The factory
+        // previously computed its own createBalancedGrid()/assignBubbleLocations()
+        // results here and then discarded them by calling grid.createBubbles()
+        // (which recomputes internally) — dead duplication and a future
+        // divergence hazard (Luciferase-0frcy.84). The distribution helpers
+        // remain available (and independently tested) for callers that want to
+        // inspect the distribution without creating bubbles.
 
         // Target frame time: estimate based on entity count and 60fps target
         // Assume ~500 entities total, 60fps = 16.67ms per frame

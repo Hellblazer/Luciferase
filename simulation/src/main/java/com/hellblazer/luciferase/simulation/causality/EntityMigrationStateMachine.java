@@ -541,20 +541,38 @@ public class EntityMigrationStateMachine {
     public void onViewChange() {
         var rolledBackCount = new java.util.concurrent.atomic.AtomicInteger(0);
         var ghostCount = new java.util.concurrent.atomic.AtomicInteger(0);
+        // Capture per-entity transitions atomically inside replaceAll so that, after the
+        // bulk update commits, each affected entity gets an individual notifyListeners()
+        // call with its precise (oldState -> newState) identity. Relying solely on the
+        // aggregate notifyViewChangeRollback() count left listeners (e.g.
+        // MigrationCoordinator) to *infer* which entities to abort by iterating their own
+        // maps — a weakly-consistent scan that could miss entities entering PREPARE_SENT
+        // concurrently (Luciferase-0frcy.61).
+        var transitions = new java.util.concurrent.ConcurrentLinkedQueue<Object[]>();
 
         entityStates.replaceAll((entityId, currentState) -> {
             if (currentState == EntityMigrationState.MIGRATING_OUT) {
                 totalRollbacks.incrementAndGet();
                 rolledBackCount.incrementAndGet();
                 log.info("View change: rolled back {} to ROLLBACK_OWNED", entityId);
+                transitions.add(new Object[] { entityId, currentState, EntityMigrationState.ROLLBACK_OWNED });
                 return EntityMigrationState.ROLLBACK_OWNED;
             } else if (currentState == EntityMigrationState.MIGRATING_IN) {
                 ghostCount.incrementAndGet();
                 log.info("View change: {} becomes GHOST", entityId);
+                transitions.add(new Object[] { entityId, currentState, EntityMigrationState.GHOST });
                 return EntityMigrationState.GHOST;
             }
             return currentState;
         });
+
+        // Per-entity notifications AFTER the atomic bulk update, with precise identity.
+        for (var t : transitions) {
+            var entityId = t[0];
+            var fromState = (EntityMigrationState) t[1];
+            var toState = (EntityMigrationState) t[2];
+            notifyListeners(entityId, fromState, toState, TransitionResult.success(fromState, toState));
+        }
 
         // Notify listeners once with aggregate counts (Phase 7D Day 1)
         notifyViewChangeRollback(rolledBackCount.get(), ghostCount.get());

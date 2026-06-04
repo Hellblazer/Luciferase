@@ -287,7 +287,9 @@ public class EntityStreamConsumer implements AutoCloseable {
      * <p>
      * Parses JSON format: {"entities":[{"id":"e1","x":1.0,"y":2.0,"z":3.0,"type":"PREY"}],...}
      */
-    private void onMessage(URI source, String json) {
+    // Package-private for regression testing of malformed-entity resilience
+    // (Luciferase-0frcy.68).
+    void onMessage(URI source, String json) {
         try {
             var upstreamLabel = upstreams.stream()
                 .filter(u -> u.uri().equals(source))
@@ -299,20 +301,47 @@ public class EntityStreamConsumer implements AutoCloseable {
             var entitiesNode = root.get("entities");
 
             if (entitiesNode != null && entitiesNode.isArray()) {
+                int processed = 0;
+                int skipped = 0;
                 for (JsonNode entityNode : entitiesNode) {
-                    var id = entityNode.get("id").asText();
-                    var x = (float) entityNode.get("x").asDouble();
-                    var y = (float) entityNode.get("y").asDouble();
-                    var z = (float) entityNode.get("z").asDouble();
-                    var type = entityNode.get("type").asText();
+                    // Per-entity guard: a single malformed entity (missing/typed-
+                    // wrong field) must not abort the whole batch. Using path()
+                    // (never null) plus presence checks, and keeping the try/catch
+                    // inside the loop, so one bad entity is skipped, not the rest
+                    // of potentially hundreds of valid entities (Luciferase-0frcy.68).
+                    try {
+                        var idNode = entityNode.path("id");
+                        var xNode = entityNode.path("x");
+                        var yNode = entityNode.path("y");
+                        var zNode = entityNode.path("z");
+                        var typeNode = entityNode.path("type");
 
-                    // M4: Prefix entity ID with upstream label for multi-upstream support
-                    var globalId = upstreamLabel + ":" + id;
+                        if (idNode.isMissingNode() || !idNode.isValueNode()
+                            || !xNode.isNumber() || !yNode.isNumber() || !zNode.isNumber()
+                            || typeNode.isMissingNode() || !typeNode.isValueNode()) {
+                            skipped++;
+                            log.warn("Skipping malformed entity from {}: {}", upstreamLabel, entityNode);
+                            continue;
+                        }
 
-                    regionManager.updateEntity(globalId, x, y, z, type);
+                        var id = idNode.asText();
+                        var x = (float) xNode.asDouble();
+                        var y = (float) yNode.asDouble();
+                        var z = (float) zNode.asDouble();
+                        var type = typeNode.asText();
+
+                        // M4: Prefix entity ID with upstream label for multi-upstream support
+                        var globalId = upstreamLabel + ":" + id;
+
+                        regionManager.updateEntity(globalId, x, y, z, type);
+                        processed++;
+                    } catch (Exception perEntity) {
+                        skipped++;
+                        log.warn("Skipping entity from {} due to error: {}", upstreamLabel, perEntity.getMessage());
+                    }
                 }
 
-                log.debug("Processed {} entities from {}", entitiesNode.size(), upstreamLabel);
+                log.debug("Processed {} entities ({} skipped) from {}", processed, skipped, upstreamLabel);
             }
         } catch (Exception e) {
             log.error("Failed to parse entity JSON from {}: {}", source, e.getMessage());

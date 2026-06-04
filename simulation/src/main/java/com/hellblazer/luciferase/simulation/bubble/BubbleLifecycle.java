@@ -6,6 +6,7 @@ import com.hellblazer.luciferase.common.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -30,6 +31,12 @@ public class BubbleLifecycle {
     private final Consumer<BubbleEvent> eventEmitter;
     private volatile Clock clock = Clock.system();
     private volatile Supplier<UUID> uuidSupplier = UUID::randomUUID;
+    // Logical simulation-time bucket source for Merge events. Every other bubble
+    // event uses a logical tick count as the bucket; wall-clock milliseconds
+    // (the previous behavior) mixed incompatible timestamp semantics and made
+    // cross-event causality comparison impossible (Luciferase-0frcy.82). Default
+    // 0L until a sim-time source is injected via setBucketSupplier().
+    private volatile LongSupplier bucketSupplier = () -> 0L;
 
     public BubbleLifecycle(Consumer<BubbleEvent> eventEmitter) {
         this.eventEmitter = eventEmitter;
@@ -54,6 +61,18 @@ public class BubbleLifecycle {
     }
 
     /**
+     * Inject a logical simulation-time source used to stamp Merge events.
+     * The supplied value must be the same logical tick count used by all other
+     * bubble events (e.g. {@code executionEngine.getCurrentBucket()}), never
+     * wall-clock milliseconds.
+     *
+     * @param bucketSupplier logical simulation-time (tick count) supplier
+     */
+    public void setBucketSupplier(LongSupplier bucketSupplier) {
+        this.bucketSupplier = bucketSupplier;
+    }
+
+    /**
      * Determine if two bubbles should join based on affinity.
      */
     public boolean shouldJoin(EnhancedBubble b1, EnhancedBubble b2, float affinity) {
@@ -71,9 +90,19 @@ public class BubbleLifecycle {
     }
 
     /**
-     * Perform join operation, merging two bubbles.
+     * Perform join operation, merging two bubbles. The Merge event is stamped
+     * with the logical simulation-time bucket from the injected bucket supplier.
      */
     public EnhancedBubble performJoin(EnhancedBubble b1, EnhancedBubble b2) {
+        return performJoin(b1, b2, bucketSupplier.getAsLong());
+    }
+
+    /**
+     * Perform join operation, merging two bubbles, stamping the Merge event with
+     * the supplied logical simulation-time {@code bucket} (a tick count — never
+     * wall-clock milliseconds; see Luciferase-0frcy.82).
+     */
+    public EnhancedBubble performJoin(EnhancedBubble b1, EnhancedBubble b2, long bucket) {
         int size1 = b1.entityCount();
         int size2 = b2.entityCount();
 
@@ -100,8 +129,8 @@ public class BubbleLifecycle {
             merged.addVonNeighbor(neighbor);
         }
 
-        // Emit merge event (bucket = current time, can be refined later)
-        long bucket = clock.currentTimeMillis();
+        // Emit merge event stamped with the logical simulation-time bucket
+        // (tick count), consistent with all other bubble events.
         eventEmitter.accept(new BubbleEvent.Merge(
             b1.id(), b2.id(), merged.id(),
             bucket, size1, size2

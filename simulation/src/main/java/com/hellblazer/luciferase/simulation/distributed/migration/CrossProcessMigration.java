@@ -679,7 +679,7 @@ public class CrossProcessMigration {
                 }
 
                 // Check if destination is reachable (for testing)
-                if (dest instanceof TestableEntityStore testDest) {
+                if (dest instanceof EntityStoreOperations testDest) {
                     if (!testDest.isReachable()) {
                         log.warn("Destination unreachable for entity {}", entityId);
                         recordFailure.accept("DESTINATION_UNREACHABLE");
@@ -714,7 +714,7 @@ public class CrossProcessMigration {
                 // Remove entity from source
                 var prepareStart = clockSupplier.getAsLong();
                 boolean removed;
-                if (source instanceof TestableEntityStore testSource) {
+                if (source instanceof EntityStoreOperations testSource) {
                     removed = testSource.removeEntity(entityId);
                 } else {
                     // Production code would call source.asLocal().removeEntity(entityId)
@@ -760,7 +760,7 @@ public class CrossProcessMigration {
                 // Add entity to destination
                 var commitStart = clockSupplier.getAsLong();
                 boolean added;
-                if (dest instanceof TestableEntityStore testDest) {
+                if (dest instanceof EntityStoreOperations testDest) {
                     added = testDest.addEntity(snapshot);
                 } else {
                     // Production code would call dest.asLocal().addEntity(snapshot)
@@ -855,7 +855,7 @@ public class CrossProcessMigration {
 
                 // Re-add entity to source from snapshot
                 boolean restored;
-                if (source instanceof TestableEntityStore testSource) {
+                if (source instanceof EntityStoreOperations testSource) {
                     restored = testSource.addEntity(snapshot);
                 } else {
                     // Production code would call source.asLocal().addEntity(snapshot)
@@ -944,7 +944,7 @@ public class CrossProcessMigration {
          * garbage-restore.
          */
         private static EntitySnapshot createEntitySnapshot(String entityId, BubbleReference source, long timestamp) {
-            if (source instanceof TestableEntityStore store) {
+            if (source instanceof EntityStoreOperations store) {
                 var captured = store.getEntitySnapshot(entityId);
                 if (captured != null) {
                     log.debug("Captured real entity snapshot for {} from source {} [position={}, epoch={}, version={}]",

@@ -87,6 +87,18 @@ public class ViewCommitteeConsensus {
     private final ConcurrentHashMap<UUID, ProposalTracking> pendingProposals = new ConcurrentHashMap<>();
 
     /**
+     * Per-entity in-flight migration guard (Luciferase-0frcy.94).
+     * <p>
+     * Maps entityId -&gt; the proposalId currently holding the migration slot for
+     * that entity. While an entry exists, any further {@link #requestConsensus}
+     * for the same entity is rejected so two concurrent proposals cannot both
+     * reach quorum within the same view and double-register the entity at two
+     * targets. The view-ID checks only guard cross-view staleness, not
+     * within-view duplicate proposals — this map closes that gap.
+     */
+    private final ConcurrentHashMap<UUID, UUID> inFlightByEntity = new ConcurrentHashMap<>();
+
+    /**
      * No-arg constructor for setter-based dependency injection. Callers MUST invoke
      * {@link #setViewMonitor}, {@link #setCommitteeSelector} and {@link #setVotingProtocol} before
      * {@link #requestConsensus}; {@code requestConsensus} fails fast with {@link IllegalStateException}
@@ -186,6 +198,18 @@ public class ViewCommitteeConsensus {
                  proposal.viewId(),
                  committeeIds.size());
 
+        // Per-entity in-flight guard (Luciferase-0frcy.94): reserve the migration
+        // slot for this entity. If another proposal already holds it, reject this
+        // one immediately so two concurrent proposals for the same entity cannot
+        // both reach quorum and double-register the entity at two targets.
+        var entityId = proposal.entityId();
+        var existing = inFlightByEntity.putIfAbsent(entityId, proposal.proposalId());
+        if (existing != null) {
+            log.debug("Entity {} already has in-flight migration proposal {}, rejecting {}",
+                     entityId, existing, proposal.proposalId());
+            return CompletableFuture.completedFuture(false);
+        }
+
         // Track proposal for view change rollback
         var tracking = new ProposalTracking(proposal, committeeIds);
         pendingProposals.put(proposal.proposalId(), tracking);
@@ -199,17 +223,20 @@ public class ViewCommitteeConsensus {
             if (!proposal.viewId().equals(getCurrentViewId())) {
                 log.warn("View changed during voting for proposal {}, aborting execution", proposal.proposalId());
                 pendingProposals.remove(proposal.proposalId());
+                inFlightByEntity.remove(entityId, proposal.proposalId());
                 return false;  // Abort - view changed
             }
 
             // Success - remove from pending
             pendingProposals.remove(proposal.proposalId());
+            inFlightByEntity.remove(entityId, proposal.proposalId());
             log.debug("Consensus result for proposal {}: approved={}", proposal.proposalId(), approved);
             return approved;
         }).exceptionally(ex -> {
             // Voting failed (timeout or view change)
             log.debug("Consensus failed for proposal {}: {}", proposal.proposalId(), ex.getMessage());
             pendingProposals.remove(proposal.proposalId());
+            inFlightByEntity.remove(entityId, proposal.proposalId());
             return false;
         });
     }
@@ -234,6 +261,9 @@ public class ViewCommitteeConsensus {
             if (!tracking.proposal.viewId().equals(newViewId)) {
                 log.debug("Rolling back proposal {} from old view {}", proposalId, tracking.proposal.viewId());
                 pendingProposals.remove(proposalId);
+                // Release the per-entity in-flight slot so the entity is not permanently
+                // blocked after a view-change rollback (Luciferase-0frcy.94).
+                inFlightByEntity.remove(tracking.proposal.entityId(), proposalId);
             }
         });
     }

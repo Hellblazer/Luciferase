@@ -504,6 +504,13 @@ public class Bubble extends EnhancedBubble implements Node {
             ));
         }
 
+        // Luciferase-0frcy.126: emit a self Event.Join once our neighbor set is populated so a joiner
+        // waiting in Manager.joinAndWait() (which counts down on Event.Join where nodeId == our id) is
+        // released deterministically. The acceptor emits Event.Join on its own bubble in
+        // handleJoinRequest(); without this emission the joiner's latch never fired via the Join path
+        // and relied on a racy neighbors-non-empty fallback.
+        emitEvent(new Event.Join(id(), position()));
+
         // Send ACK to acceptor
         var ctx = clockContext;  // Single volatile read
         try {

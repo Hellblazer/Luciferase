@@ -18,14 +18,20 @@
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
 /**
- * Test-only interface for entity storage operations.
+ * Entity-store operations a {@link BubbleReference} may expose to the cross-process migration
+ * 2PC state machine: removing/adding entities, snapshotting current state, and reporting
+ * reachability. When a {@code BubbleReference} implements this interface, the migration
+ * coordinator drives these operations directly during PREPARE/COMMIT/ABORT.
  * <p>
- * Allows test mocks to inject behavior (delays, failures) for migration testing.
- * Production code will use actual BubbleReference methods instead.
+ * This is a production interface and intentionally contains NO timing/sleep hooks — test
+ * doubles that need to simulate latency add that behavior in the test source tree
+ * (Luciferase-0frcy.111). Previously this seam lived in a type named {@code TestableEntityStore}
+ * carrying a {@code default simulateDelay()} that called {@link Thread#sleep(long)} from the
+ * production tree, which could block a simulation thread under PrimeMover.
  *
  * @author hal.hildebrand
  */
-public interface TestableEntityStore {
+public interface EntityStoreOperations {
 
     /**
      * Remove an entity from this store.
@@ -64,19 +70,4 @@ public interface TestableEntityStore {
      * @return true if reachable, false if unreachable/partitioned
      */
     boolean isReachable();
-
-    /**
-     * Simulate operation delay (for timeout testing).
-     *
-     * @param ms Delay in milliseconds
-     */
-    default void simulateDelay(long ms) {
-        if (ms > 0) {
-            try {
-                Thread.sleep(ms);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
 }

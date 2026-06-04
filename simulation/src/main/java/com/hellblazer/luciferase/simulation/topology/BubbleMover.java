@@ -16,12 +16,14 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.vecmath.Point3f;
 import java.util.UUID;
 
 /**
@@ -85,13 +87,19 @@ public class BubbleMover {
     /**
      * Executes a move operation on a bubble.
      * <p>
-     * Relocates bubble boundaries toward cluster centroid without moving entities.
-     * <p>
-     * <b>Phase 9C MVP</b>: Validates move parameters and logs intended operation.
-     * Actual bounds manipulation deferred until BubbleBounds becomes mutable.
+     * <b>NOT YET IMPLEMENTED (Luciferase-0frcy.123).</b> Bubble relocation is
+     * deferred until {@code BubbleBounds} becomes mutable / the tetree grid
+     * supports re-keying a bubble to a new SFC position. {@code recalculateBounds()}
+     * recomputes bounds from the <em>unchanged</em> entity positions, which
+     * produces the same AABB — i.e. no actual relocation occurs. Returning a
+     * success result for an operation that does nothing would silently mislead
+     * callers that depend on the bubble having moved, so this method validates
+     * inputs and then returns a <b>failure</b> result with a clear message.
      *
      * @param proposal the move proposal with new center and cluster centroid
-     * @return execution result with success status and details
+     * @return failure execution result ("BubbleMover not yet implemented"); a
+     *         genuine validation failure (missing bubble / bounds) is returned
+     *         in preference where applicable
      * @throws NullPointerException if proposal is null
      */
     public MoveExecutionResult execute(MoveProposal proposal) {
@@ -133,8 +141,21 @@ public class BubbleMover {
         float dz = newCenter.z - (float) currentCentroid.getZ();
         float moveDistance = (float) Math.sqrt(dx*dx + dy*dy + dz*dz);
 
-        log.info("[{}] Moving bubble {} by distance {} toward cluster", correlationId, bubbleId, moveDistance);
+        // Bubble relocation is not yet implemented (Luciferase-0frcy.123). The bubble
+        // cannot actually be re-keyed to newCenter in the tetree grid, so we MUST NOT
+        // report success for a no-op. Fail loudly so callers do not assume the bubble moved.
+        log.warn("[{}] Move requested for bubble {} (distance {}) but BubbleMover is not yet "
+                 + "implemented; returning failure", correlationId, bubbleId, moveDistance);
+        return new MoveExecutionResult(false, "BubbleMover not yet implemented", entitiesBefore, entitiesBefore);
+    }
 
+    /**
+     * Deferred relocation logic, retained for reference until bubble re-keying is implemented.
+     * Currently unreachable — {@link #execute(MoveProposal)} returns failure before reaching here.
+     */
+    @SuppressWarnings("unused")
+    private MoveExecutionResult deferredRelocation(String correlationId, UUID bubbleId, Point3f newCenter,
+                                                   EnhancedBubble bubble, float moveDistance, int entitiesBefore) {
         // Recalculate bounds based on entity distribution
         // Note: BubbleBounds is immutable, but recalculateBounds() creates new bounds
         // from current entity positions, which effectively "moves" the bubble to follow

@@ -58,6 +58,12 @@ public class BubbleMigrator {
     // Bubble factory for creating bubbles on target server
     private BiFunction<UUID, Bubble, Bubble> bubbleTransferFactory;
 
+    // Dedicated executor for migration tasks. executeMigration() blocks (it waits for neighbor
+    // acknowledgments), so it must NOT run on ForkJoinPool.commonPool() — blocking common-pool
+    // workers starves every other async operation in the JVM (Luciferase-0frcy.116). The pool is
+    // sized to maxConcurrentMigrations since that is the ceiling of simultaneous in-flight tasks.
+    private final ExecutorService migrationExecutor;
+
     public BubbleMigrator(SpatialTumbler tumbler) {
         this(tumbler, Duration.ofSeconds(1), Duration.ofSeconds(5), 3);
     }
@@ -68,8 +74,23 @@ public class BubbleMigrator {
         this.migrationTimeout = migrationTimeout;
         this.cooldownPeriod = cooldownPeriod;
         this.maxConcurrentMigrations = maxConcurrentMigrations;
+        this.migrationExecutor = Executors.newFixedThreadPool(
+            Math.max(1, maxConcurrentMigrations),
+            r -> {
+                var t = new Thread(r, "bubble-migrator");
+                t.setDaemon(true);
+                return t;
+            });
         log.info("BubbleMigrator created: timeout={}ms, cooldown={}ms, maxConcurrent={}",
                  migrationTimeout.toMillis(), cooldownPeriod.toMillis(), maxConcurrentMigrations);
+    }
+
+    /**
+     * Shut down the dedicated migration executor. Call when the migrator is no longer needed to
+     * release its threads.
+     */
+    public void shutdown() {
+        migrationExecutor.shutdownNow();
     }
 
     /**
@@ -148,7 +169,8 @@ public class BubbleMigrator {
                 // never a subsequent re-reservation of the same bubbleId by another thread.
                 inFlightMigrations.remove(bubbleId, state);
             }
-        }).orTimeout(migrationTimeout.toMillis(), TimeUnit.MILLISECONDS)
+        }, migrationExecutor) // dedicated pool — never block ForkJoinPool.commonPool (0frcy.116)
+          .orTimeout(migrationTimeout.toMillis(), TimeUnit.MILLISECONDS)
           .exceptionally(ex -> {
               // The supplyAsync body's finally already removed our entry on normal completion; this
               // value-conditional removal covers the timeout path (orTimeout completes the stage

@@ -52,17 +52,25 @@ public class RateLimiter {
         long now = clock.currentTimeMillis();  // Use injected clock
         var timestamps = requestTimestamps.computeIfAbsent(ip, k -> new ConcurrentLinkedQueue<>());
 
-        // Remove timestamps outside the sliding window
-        timestamps.removeIf(timestamp -> now - timestamp > windowMs);
+        // The prune-check-offer sequence must be atomic per IP. Each individual
+        // ConcurrentLinkedQueue op is thread-safe, but under a concurrent flood
+        // from one IP multiple threads could all observe size < max between
+        // their own checks and all offer(), letting the window grow to
+        // N * maxRequestsPerMinute (Luciferase-0frcy.121). Synchronizing on the
+        // per-IP queue serializes the critical section for that IP only.
+        synchronized (timestamps) {
+            // Remove timestamps outside the sliding window
+            timestamps.removeIf(timestamp -> now - timestamp > windowMs);
 
-        // Check if under limit
-        if (timestamps.size() < maxRequestsPerMinute) {
-            timestamps.offer(now);
-            return true;
+            // Check if under limit
+            if (timestamps.size() < maxRequestsPerMinute) {
+                timestamps.offer(now);
+                return true;
+            }
+
+            rejectionCount.incrementAndGet();  // Track rejection
+            return false;  // Rate limit exceeded
         }
-
-        rejectionCount.incrementAndGet();  // Track rejection
-        return false;  // Rate limit exceeded
     }
 
     /**

@@ -32,9 +32,11 @@ import com.hellblazer.primeMover.api.Kronos;
 import com.hellblazer.primeMover.controllers.RealTimeController;
 import com.hellblazer.primeMover.runtime.Kairos;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.vecmath.Point3f;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
 
 /**
  * An event controller for a volume of space.
@@ -46,7 +48,7 @@ import java.util.logging.Logger;
  * @author hal.hildebrand
  */
 public class VolumeAnimator {
-    private static final Logger log         = Logger.getLogger(VolumeAnimator.class.getCanonicalName());
+    private static final Logger log         = LoggerFactory.getLogger(VolumeAnimator.class);
     private static final byte   LEVEL       = 12; // Spatial resolution level
     private static final float  WORLD_SCALE = 32200f; // Scale for normalizing world coords to [0,1]
 

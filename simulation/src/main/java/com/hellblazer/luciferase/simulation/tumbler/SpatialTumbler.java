@@ -137,8 +137,19 @@ public class SpatialTumbler {
         int gx = (int) Math.floor(position.x / regionGridSize);
         int gy = (int) Math.floor(position.y / regionGridSize);
         int gz = (int) Math.floor(position.z / regionGridSize);
-        // Combine into a single long using bit interleaving
-        return ((long) gx & 0xFFFFF) | (((long) gy & 0xFFFFF) << 20) | (((long) gz & 0xFFFFF) << 40);
+        // Pack three signed grid coordinates into one long, 20 bits each. A bias of 2^19 shifts
+        // the signed range [-2^19, 2^19) into the unsigned 20-bit range [0, 2^20) BEFORE masking,
+        // so negative coordinates no longer alias positive ones. Previously a bare
+        // `(long) gx & 0xFFFFF` sign-extended gx=-1 to 0xFFFFF, colliding with gx=1048575 and
+        // causing pervasive region-ID collisions for any world spanning the origin
+        // (Luciferase-0frcy.117).
+        return (biasTo20Bits(gx)) | (biasTo20Bits(gy) << 20) | (biasTo20Bits(gz) << 40);
+    }
+
+    private static final int GRID_BIAS = 1 << 19; // 2^19, centers the signed 20-bit window
+
+    private static long biasTo20Bits(int gridCoord) {
+        return ((long) (gridCoord + GRID_BIAS)) & 0xFFFFF;
     }
 
     /**

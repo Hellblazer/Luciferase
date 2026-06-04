@@ -14,6 +14,9 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
 /**
@@ -70,6 +73,13 @@ public class InMemoryGhostChannel<ID extends EntityID, Content> implements Ghost
     private final long simulatedLatencyMs;
 
     /**
+     * Scheduler used to defer delivery when {@code simulatedLatencyMs > 0}. Lazily created (null when
+     * no latency is configured) so the zero-latency fast path allocates no thread. Single daemon
+     * thread — sufficient for test-only latency simulation. (Luciferase-0frcy.103)
+     */
+    private final ScheduledExecutorService delayScheduler;
+
+    /**
      * Create channel with no simulated latency.
      */
     public InMemoryGhostChannel() {
@@ -78,6 +88,11 @@ public class InMemoryGhostChannel<ID extends EntityID, Content> implements Ghost
 
     /**
      * Create channel with simulated latency.
+     * <p>
+     * Luciferase-0frcy.103: when {@code simulatedLatencyMs > 0}, {@link #sendBatch} schedules delivery
+     * on a daemon scheduler rather than calling {@code Thread.sleep} on the caller. This keeps the
+     * simulation / flush thread non-blocking so a configured latency never serializes flush() into
+     * O(neighbors * latency) wall-clock time, and never blocks an underlying PrimeMover entity thread.
      *
      * @param simulatedLatencyMs Latency to simulate in milliseconds
      */
@@ -85,6 +100,13 @@ public class InMemoryGhostChannel<ID extends EntityID, Content> implements Ghost
         this.pendingBatches = new ConcurrentHashMap<>();
         this.handlers = new CopyOnWriteArrayList<>();
         this.simulatedLatencyMs = simulatedLatencyMs;
+        this.delayScheduler = simulatedLatencyMs > 0
+            ? Executors.newSingleThreadScheduledExecutor(r -> {
+                  var t = new Thread(r, "ghost-channel-delay");
+                  t.setDaemon(true);
+                  return t;
+              })
+            : null;
     }
 
     @Override
@@ -107,17 +129,22 @@ public class InMemoryGhostChannel<ID extends EntityID, Content> implements Ghost
         Objects.requireNonNull(targetBubbleId, "targetBubbleId must not be null");
         Objects.requireNonNull(ghosts, "ghosts must not be null");
 
-        // Simulate network latency if configured
-        if (simulatedLatencyMs > 0) {
-            try {
-                Thread.sleep(simulatedLatencyMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return; // Exit early on interruption
-            }
+        // Luciferase-0frcy.103: never block the calling (simulation/flush) thread. With simulated
+        // latency configured, defer delivery onto the daemon scheduler so sendBatch returns
+        // immediately; delivery still happens after the configured delay.
+        if (simulatedLatencyMs > 0 && delayScheduler != null) {
+            delayScheduler.schedule(() -> deliver(targetBubbleId, ghosts), simulatedLatencyMs,
+                                    TimeUnit.MILLISECONDS);
+        } else {
+            deliver(targetBubbleId, ghosts);
         }
+    }
 
-        // Notify all handlers (isolated exception handling)
+    /**
+     * Notify all registered handlers with the batch. Handler exceptions are isolated so a failing
+     * handler does not prevent the others from running.
+     */
+    private void deliver(UUID targetBubbleId, List<SimulationGhostEntity<ID, Content>> ghosts) {
         for (var handler : handlers) {
             try {
                 handler.accept(targetBubbleId, ghosts);
@@ -162,5 +189,8 @@ public class InMemoryGhostChannel<ID extends EntityID, Content> implements Ghost
     public void close() {
         pendingBatches.clear();
         handlers.clear();
+        if (delayScheduler != null) {
+            delayScheduler.shutdownNow();
+        }
     }
 }

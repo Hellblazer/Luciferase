@@ -290,28 +290,37 @@ public class MigrationCoordinator implements MigrationStateListener {
         log.info("View change: {} entities rolled back, {} became ghost",
             rolledBackCount, ghostCount);
 
-        // FSM uses replaceAll for view changes, which doesn't trigger onEntityStateTransition
-        // So we need to send AbortRequests for all rolled-back entities here
+        // The FSM now fires per-entity transition notifications during onViewChange
+        // (Luciferase-0frcy.61), so MIGRATING_OUT->ROLLBACK_OWNED entities are aborted and
+        // removed via handleMigratingOutToRollback before this aggregate callback runs.
+        // This scan is a defensive net for any still-in-flight coordination state. To avoid
+        // the weakly-consistent forEach+remove hazard (entries removed mid-iteration are
+        // silently skipped, so an entity that entered PREPARE_SENT concurrently could be
+        // missed), collect the abort set first, then abort+remove after iteration completes.
+        var toAbort = new java.util.ArrayList<Object>();
         coordinatedEntities.forEach((entityId, state) -> {
-            // Check if this entity was in migration and needs abort
             if (state.state == MigrationState.PREPARE_SENT ||
                 state.state == MigrationState.PREPARED ||
                 state.state == MigrationState.COMMIT_SENT) {
-
-                // Send AbortRequest to target
-                if (state.targetBubble != null) {
-                    if (sendAbortRequest(entityId, state.targetBubble)) {
-                        totalAborts.incrementAndGet();
-                    } else {
-                        log.error("View-change AbortRequest dispatch failed for entity {} to {}",
-                            entityId, state.targetBubble);
-                    }
-                }
-
-                // Clean up coordination state
-                coordinatedEntities.remove(entityId);
+                toAbort.add(entityId);
             }
         });
+
+        for (var entityId : toAbort) {
+            var state = coordinatedEntities.remove(entityId);
+            if (state == null) {
+                // Already handled by the per-entity transition path — skip to avoid double-abort.
+                continue;
+            }
+            if (state.targetBubble != null) {
+                if (sendAbortRequest(entityId, state.targetBubble)) {
+                    totalAborts.incrementAndGet();
+                } else {
+                    log.error("View-change AbortRequest dispatch failed for entity {} to {}",
+                        entityId, state.targetBubble);
+                }
+            }
+        }
 
         // Track view change aborts for metrics
         totalViewChangeAborts.addAndGet(rolledBackCount);

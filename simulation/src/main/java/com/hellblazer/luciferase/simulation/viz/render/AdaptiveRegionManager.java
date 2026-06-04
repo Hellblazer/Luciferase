@@ -332,21 +332,29 @@ public class AdaptiveRegionManager {
 
         var newState = regions.computeIfAbsent(newRegion, this::createRegionState);
 
-        // vtet: Check entity count limit before adding new entity
-        boolean isNewEntityInRegion = newState.entities.stream().noneMatch(e -> e.id().equals(entityId));
-        if (isNewEntityInRegion && newState.entities.size() >= maxEntitiesPerRegion) {
-            throw new IllegalStateException(String.format(
-                    "Region %s has reached maximum entity limit of %d. Cannot add entity %s",
-                    newRegion, maxEntitiesPerRegion, entityId));
-        }
+        // The capacity check and the subsequent add must be atomic for a given
+        // region. entities is a CopyOnWriteArrayList (read-optimized, not a
+        // thread-safe mutator): concurrent updateEntity() calls for different
+        // ids targeting the same region could both observe size < max and both
+        // add, exceeding the cap (Luciferase-0frcy.119). Serialize the
+        // check-and-add on the per-region entity list.
+        synchronized (newState.entities) {
+            // vtet: Check entity count limit before adding new entity
+            boolean isNewEntityInRegion = newState.entities.stream().noneMatch(e -> e.id().equals(entityId));
+            if (isNewEntityInRegion && newState.entities.size() >= maxEntitiesPerRegion) {
+                throw new IllegalStateException(String.format(
+                        "Region %s has reached maximum entity limit of %d. Cannot add entity %s",
+                        newRegion, maxEntitiesPerRegion, entityId));
+            }
 
-        // Update or add entity in new region
-        var position = new EntityPosition(entityId, x, y, z, type);
-        newState.entities.removeIf(e -> e.id().equals(entityId));  // Remove old position
-        newState.entities.add(position);
-        newState.dirty.set(true);
-        newState.modificationCount.incrementAndGet();
-        newState.lastModifiedMs = clock.currentTimeMillis();
+            // Update or add entity in new region
+            var position = new EntityPosition(entityId, x, y, z, type);
+            newState.entities.removeIf(e -> e.id().equals(entityId));  // Remove old position
+            newState.entities.add(position);
+            newState.dirty.set(true);
+            newState.modificationCount.incrementAndGet();
+            newState.lastModifiedMs = clock.currentTimeMillis();
+        }
 
         entityRegionMap.put(entityId, newRegion);
     }

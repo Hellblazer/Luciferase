@@ -175,6 +175,62 @@ public class CausalityPreserver {
     }
 
     /**
+     * Atomically check-and-mark an event in a single operation, eliminating the
+     * TOCTOU race between {@link #canProcess} and {@link #markProcessed}. Two
+     * concurrent callers receiving events from the same source can no longer both
+     * be cleared to process the same (or out-of-order) event: the check and the
+     * clock advance happen atomically inside a single {@code compute()} on the
+     * per-source bin.
+     *
+     * <p>Returns {@code true} iff the event may be processed (its clock is &ge; the
+     * highest previously-marked clock from this source). When {@code true} is
+     * returned the source's highest-processed clock has already been advanced to
+     * {@code max(current, eventClock)}; the caller MUST NOT also call
+     * {@link #markProcessed}. When {@code false} is returned no state is mutated
+     * other than the rejection metric.
+     *
+     * <p>Idempotent replay (clock equal to the highest already marked) returns
+     * {@code true} and is counted as idempotent rather than as new processing,
+     * matching the semantics of the separate {@code markProcessed} path.
+     *
+     * @param event        Event to check and mark
+     * @param sourceBubble Source bubble that sent the event
+     * @return true if the caller should proceed to process the event
+     */
+    public boolean tryProcess(EntityUpdateEvent event, UUID sourceBubble) {
+        Objects.requireNonNull(event, "event must not be null");
+        Objects.requireNonNull(sourceBubble, "sourceBubble must not be null");
+
+        var eventClock = event.lamportClock();
+        // Sentinel array to carry the accept/reject decision out of the compute lambda
+        // without a second map read (which would re-open the TOCTOU window).
+        var accepted = new boolean[1];
+
+        processedClocks.compute(sourceBubble, (k, v) -> {
+            long current = (v == null) ? -1L : v;
+            if (eventClock < current) {
+                // Causality violation: lower clock than already processed. Reject,
+                // leave the highest-processed clock unchanged.
+                accepted[0] = false;
+                return current;
+            }
+            accepted[0] = true;
+            if (eventClock == current && current >= 0) {
+                totalIdempotent.incrementAndGet();
+            } else {
+                totalProcessed.incrementAndGet();
+            }
+            return Math.max(current, eventClock);
+        });
+
+        if (!accepted[0]) {
+            totalRejected.incrementAndGet();
+            log.warn("Event rejected (causality violation): source={}, eventClock={}", sourceBubble, eventClock);
+        }
+        return accepted[0];
+    }
+
+    /**
      * Get the highest Lamport clock processed from a source bubble.
      *
      * @param sourceBubble Source bubble to query

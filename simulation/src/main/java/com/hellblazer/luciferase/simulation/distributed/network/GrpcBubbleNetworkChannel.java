@@ -47,12 +47,21 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
     // a partition outlasting the budget still drops the event (documented on the interface).
     private static final int MAX_RPC_RETRIES = 3;
     private static final long INITIAL_RETRY_BACKOFF_MS = 50;
+    /**
+     * Consecutive terminal delivery failures (after retries are exhausted) to one node before it is
+     * treated as unreachable (Luciferase-0frcy.99). A crashed/partitioned node stays registered, so a
+     * pure address-registry liveness check reports it reachable forever; this failure-count gate marks
+     * it unreachable so callers stop attempting delivery and can trigger rollback.
+     */
+    private static final int UNREACHABLE_FAILURE_THRESHOLD = 3;
 
     private UUID localNodeId;
     private String localAddress;
     private Server server;
     private final Map<UUID, ManagedChannel> remoteChannels = new ConcurrentHashMap<>();
     private final Map<UUID, String> nodeAddresses = new ConcurrentHashMap<>();
+    // Per-node consecutive terminal-failure counter for liveness gating (Luciferase-0frcy.99).
+    private final Map<UUID, java.util.concurrent.atomic.AtomicInteger> consecutiveFailures = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newCachedThreadPool();
     // Schedules retry attempts for transient RPC failures (Luciferase-0frcy.23).
     private final ScheduledExecutorService retryScheduler =
@@ -176,6 +185,9 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
         StreamObserver<Object> observer = new StreamObserver<>() {
             @Override
             public void onNext(Object response) {
+                // Successful delivery: clear the node's consecutive-failure streak (Luciferase-0frcy.99).
+                consecutiveFailures.computeIfAbsent(peerId, k -> new java.util.concurrent.atomic.AtomicInteger())
+                                   .set(0);
                 try {
                     onNext.accept(response);
                 } catch (Exception ignored) {
@@ -199,8 +211,14 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
                         log.warn("Retry scheduler unavailable (shutting down) for {} to {}", label, peerId);
                     }
                 } else {
-                    log.error("Failed to send {} to {} after {} attempt(s): {} ({})",
-                              label, peerId, attempt + 1, t.getMessage(), code);
+                    // Terminal failure (non-transient, or retries exhausted): bump the node's
+                    // consecutive-failure count so isNodeReachable() can mark it unreachable
+                    // (Luciferase-0frcy.99).
+                    var failures = consecutiveFailures
+                        .computeIfAbsent(peerId, k -> new java.util.concurrent.atomic.AtomicInteger())
+                        .incrementAndGet();
+                    log.error("Failed to send {} to {} after {} attempt(s): {} ({}); consecutive failures={}",
+                              label, peerId, attempt + 1, t.getMessage(), code, failures);
                 }
             }
 
@@ -294,9 +312,27 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
 
     @Override
     public boolean isNodeReachable(UUID nodeId) {
-        // For now, just check if we have the address registered
-        // In production, could implement health checks
-        return nodeAddresses.containsKey(nodeId);
+        // Luciferase-0frcy.99: registry presence alone does not mean live — a crashed/partitioned node
+        // remains registered. Treat a node as unreachable once it has accumulated
+        // UNREACHABLE_FAILURE_THRESHOLD consecutive terminal delivery failures (reset on any success).
+        if (!nodeAddresses.containsKey(nodeId)) {
+            return false;
+        }
+        var failures = consecutiveFailures.get(nodeId);
+        return failures == null || failures.get() < UNREACHABLE_FAILURE_THRESHOLD;
+    }
+
+    /**
+     * Re-register a node, clearing any accumulated failure count (Luciferase-0frcy.99). Use when a
+     * previously-unreachable node has recovered and should be considered live again.
+     *
+     * @param nodeId the node to mark reachable again
+     */
+    public void markNodeRecovered(UUID nodeId) {
+        var failures = consecutiveFailures.get(nodeId);
+        if (failures != null) {
+            failures.set(0);
+        }
     }
 
     @Override

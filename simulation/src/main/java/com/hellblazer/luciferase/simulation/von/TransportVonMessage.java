@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
-import javax.vecmath.Point3f;
+import javax.vecmath.Point3d;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Objects;
@@ -49,9 +49,9 @@ public record TransportVonMessage(
     String type,                           // Message type: "GHOST_SYNC", "ACK", "MOVE", etc.
     String sourceBubbleId,                 // Source bubble UUID as string
     String targetBubbleId,                 // Target bubble UUID as string
-    float posX,                            // Entity X position (decomposed from Point3f)
-    float posY,                            // Entity Y position (decomposed from Point3f)
-    float posZ,                            // Entity Z position (decomposed from Point3f)
+    double posX,                           // Entity X position (Luciferase-0frcy.127: double to avoid precision loss)
+    double posY,                           // Entity Y position (Luciferase-0frcy.127: double to avoid precision loss)
+    double posZ,                           // Entity Z position (Luciferase-0frcy.127: double to avoid precision loss)
     String entityId,                       // Entity identifier as string
     long timestamp,                        // Message timestamp in millis
     List<TransportGhostData> ghosts,       // Ghost list for GhostSync (null for other types)
@@ -62,7 +62,7 @@ public record TransportVonMessage(
     TransportMigrationMessage migration    // 2PC payload for MigrationProtocolMessages (null for other types)
 ) implements Serializable {
     @java.io.Serial
-    private static final long serialVersionUID = 5L; // Incremented: added migration 2PC payload (Luciferase-l5gr9)
+    private static final long serialVersionUID = 6L; // Incremented: posX/Y/Z widened float->double (Luciferase-0frcy.127)
 
     /**
      * Compact constructor with validation.
@@ -81,9 +81,9 @@ public record TransportVonMessage(
         String type,
         String sourceBubbleId,
         String targetBubbleId,
-        float posX,
-        float posY,
-        float posZ,
+        double posX,
+        double posY,
+        double posZ,
         String entityId,
         long timestamp,
         List<TransportGhostData> ghosts,
@@ -111,9 +111,9 @@ public record TransportVonMessage(
         String type,
         String sourceBubbleId,
         String targetBubbleId,
-        float posX,
-        float posY,
-        float posZ,
+        double posX,
+        double posY,
+        double posZ,
         String entityId,
         long timestamp
     ) {
@@ -129,9 +129,9 @@ public record TransportVonMessage(
         String type,
         String sourceBubbleId,
         String targetBubbleId,
-        float posX,
-        float posY,
-        float posZ,
+        double posX,
+        double posY,
+        double posZ,
         String entityId,
         long timestamp,
         List<TransportGhostData> ghosts,
@@ -145,11 +145,15 @@ public record TransportVonMessage(
     }
 
     /**
-     * Reconstruct Point3f from decomposed components.
+     * Reconstruct Point3d from decomposed components.
+     * <p>
+     * Luciferase-0frcy.127: returns double-precision {@link Point3d} so coordinates round-trip
+     * through the wire without the silent double&rarr;float&rarr;double truncation that previously
+     * perturbed near-boundary spatial classification.
      *
-     * @return Point3f(posX, posY, posZ)
+     * @return Point3d(posX, posY, posZ)
      */
-    public Point3f position() {
-        return new Point3f(posX, posY, posZ);
+    public Point3d position() {
+        return new Point3d(posX, posY, posZ);
     }
 }

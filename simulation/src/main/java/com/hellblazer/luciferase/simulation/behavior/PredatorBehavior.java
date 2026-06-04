@@ -113,6 +113,7 @@ public class PredatorBehavior implements EntityBehavior {
             .findFirst();
 
         Vector3f newVelocity;
+        boolean inPursuitMode = false;
 
         if (nearestPrey.isPresent()) {
             var prey = nearestPrey.get();
@@ -124,6 +125,7 @@ public class PredatorBehavior implements EntityBehavior {
             if (dist < chaseRange) {
                 // Chase mode: pursuit behavior
                 newVelocity = computePursuit(position, prey.position(), velocity);
+                inPursuitMode = true;
             } else {
                 // Patrol mode: wander
                 newVelocity = computeWander(velocity);
@@ -148,9 +150,11 @@ public class PredatorBehavior implements EntityBehavior {
         // Boundary avoidance
         applyBoundaryAvoidance(position, newVelocity);
 
-        // Speed limits
-        boolean isChasing = nearestPrey.isPresent();
-        float speedLimit = isChasing ? pursuitSpeed : maxSpeed;
+        // Speed limits — only allow burst pursuitSpeed when actually pursuing
+        // (prey present AND within chaseRange). Previously isChasing was set
+        // to nearestPrey.isPresent(), which let the predator wander at burst
+        // speed whenever any prey existed in the k-NN result (Luciferase-0frcy.78).
+        float speedLimit = inPursuitMode ? pursuitSpeed : maxSpeed;
         float speed = newVelocity.length();
         if (speed > speedLimit) {
             newVelocity.scale(speedLimit / speed);
