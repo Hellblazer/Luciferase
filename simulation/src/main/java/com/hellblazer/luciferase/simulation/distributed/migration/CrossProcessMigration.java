@@ -444,6 +444,11 @@ public class CrossProcessMigration {
                 if (entityAge > timeout) {
                     log.warn("Cleaning up orphaned entity {} (age={}ms > timeout={}ms) - indicates bug",
                              entityId, entityAge, timeout);
+                    // Luciferase-7wzml.41: complete the resultFuture BEFORE removing the entity
+                    // so any caller blocked on migrate(...).get() unblocks immediately.
+                    // CompletableFuture.complete() is a no-op if already done, so double-complete
+                    // (e.g. state-machine raced to finish) is safe.
+                    entity.resultFuture.complete(MigrationResult.failure(entityId, "ORPHANED_CLEANUP"));
                     iterator.remove();
                     metrics.recordFailure("ORPHANED_CLEANUP");
                 }
@@ -451,6 +456,31 @@ public class CrossProcessMigration {
         } catch (Exception e) {
             log.error("Error during orphaned entity cleanup", e);
         }
+    }
+
+    /**
+     * Luciferase-7wzml.41: Package-private entry point so unit tests can trigger orphan cleanup
+     * without waiting 60 seconds for the scheduled task to fire.
+     */
+    void triggerOrphanCleanupForTesting() {
+        cleanupOrphanedEntities();
+    }
+
+    /**
+     * Luciferase-7wzml.41: Package-private accessor for tests that need to inspect or
+     * manipulate active-entity state (e.g. force-age an entity to simulate an orphan).
+     */
+    CrossProcessMigrationEntity getActiveEntityForTesting(String entityId) {
+        return activeEntities.get(entityId);
+    }
+
+    /**
+     * Luciferase-7wzml.41: Package-private injection point so tests can insert a pre-built
+     * entity with a back-dated {@code phaseStartTime} to simulate an orphan without waiting
+     * 5 minutes of real time.
+     */
+    void injectActiveEntityForTesting(String entityId, CrossProcessMigrationEntity entity) {
+        activeEntities.put(entityId, entity);
     }
 
     /**
@@ -536,8 +566,11 @@ public class CrossProcessMigration {
 
         // State tracking
         private       State                               currentState;
-        // Package-private for cleanup access (Luciferase-77tn)
-                      long                                phaseStartTime;
+        // Package-private for cleanup access (Luciferase-77tn).
+        // Luciferase-7wzml.41: volatile so cleanupOrphanedEntities() reads a consistent value
+        // across threads without acquiring a lock (written by state-machine thread, read by
+        // cleanup scheduler thread).
+        volatile      long                                phaseStartTime;
         // Luciferase-0frcy.31/.32: transaction start time, captured ONCE when the lock is
         // acquired and never overwritten. Used for the total-2PC timeout guard in abort() and
         // for the end-to-end totalLatency metric in commit(), both of which previously measured

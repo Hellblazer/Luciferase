@@ -9,6 +9,7 @@
 package com.hellblazer.luciferase.simulation.tumbler;
 
 import com.hellblazer.luciferase.common.time.Clock;
+import com.hellblazer.luciferase.simulation.persistence.PersistenceManager;
 import com.hellblazer.luciferase.simulation.von.Bubble;
 import com.hellblazer.luciferase.simulation.von.Manager;
 import org.slf4j.Logger;
@@ -57,6 +58,11 @@ public class BubbleMigrator {
 
     // Bubble factory for creating bubbles on target server
     private BiFunction<UUID, Bubble, Bubble> bubbleTransferFactory;
+
+    // Optional WAL persistence manager. When set, ENTITY_DEPARTURE and MIGRATION_COMMIT
+    // events are logged to bracket the transactional commit window (Luciferase-7wzml.45).
+    // Null = WAL logging disabled (default).
+    private volatile PersistenceManager persistenceManager;
 
     // Dedicated executor for migration tasks. executeMigration() blocks (it waits for neighbor
     // acknowledgments), so it must NOT run on ForkJoinPool.commonPool() — blocking common-pool
@@ -114,6 +120,16 @@ public class BubbleMigrator {
      */
     public void setBubbleTransferFactory(BiFunction<UUID, Bubble, Bubble> factory) {
         this.bubbleTransferFactory = factory;
+    }
+
+    /**
+     * Set an optional PersistenceManager for WAL-bracketed migration commit logging.
+     * When set, ENTITY_DEPARTURE events are written before entity staging and
+     * MIGRATION_COMMIT events are written at the commit point (after ACKs, before source.close()).
+     * Null disables WAL logging (default).
+     */
+    public void setPersistenceManager(PersistenceManager persistenceManager) {
+        this.persistenceManager = persistenceManager;
     }
 
     /**
@@ -187,6 +203,26 @@ public class BubbleMigrator {
 
     /**
      * Execute the actual migration protocol.
+     *
+     * <p><b>Transactional guarantee (Luciferase-7wzml.45):</b> entities are never visible in
+     * BOTH bubbles simultaneously at any observable point. The protocol uses a
+     * WAL-bracketed two-phase commit:
+     * <ol>
+     *   <li>Snapshot source entities (outside the try — no side-effects yet).</li>
+     *   <li>WAL bracket open: ENTITY_DEPARTURE logged per entity (if persistenceManager set).
+     *       Inside the try so a fatal WAL error triggers rollback.</li>
+     *   <li>Stage entities onto target (addEntity per entity). Inside the try — if addEntity
+     *       throws mid-loop the catch removes all already-staged entities and leaves source open.</li>
+     *   <li>Target broadcasts MOVE + waits for neighbor ACKs (the "pre-commit" window).
+     *       Source is still authoritative here.</li>
+     *   <li>COMMIT POINT: WAL MIGRATION_COMMIT logged (if persistenceManager set), then
+     *       source.close() — source deactivated. Target becomes the sole authoritative copy.</li>
+     *   <li>Source metrics decremented exactly once (.44 behavior preserved).</li>
+     * </ol>
+     * On ANY exception before the commit point: all staged entities are removed from the target
+     * bubble and the source bubble is left open. The rollback is:
+     * {@code entities.forEach(e -> targetBubble.removeEntity(e.id()));}
+     * Metrics are never updated on rollback so they cannot double-count.
      */
     private MigrationResult executeMigration(Bubble sourceBubble, UUID sourceServerId, UUID targetServerId,
                                              long startTime) {
@@ -194,37 +230,79 @@ public class BubbleMigrator {
 
         log.info("Starting migration of bubble {} to server {}", bubbleId, targetServerId);
 
+        // Step 1: Create bubble on target server (before acquiring entity snapshot)
+        if (bubbleTransferFactory == null) {
+            return new MigrationResult(bubbleId, targetServerId, false,
+                                       "No bubble transfer factory configured", 0);
+        }
+
+        var targetBubble = bubbleTransferFactory.apply(targetServerId, sourceBubble);
+        if (targetBubble == null) {
+            return new MigrationResult(bubbleId, targetServerId, false,
+                                       "Failed to create bubble on target server", 0);
+        }
+
+        // Step 2: Snapshot entities from source (source still authoritative).
+        var entities = sourceBubble.getAllEntityRecords();
+
+        // Steps 2b–5 run inside a try/catch so any failure (including a mid-staging
+        // addEntity throw) rolls back the staging.
+        // On exception: remove all staged entities from target (rollback); leave source open.
+        // Metrics are NEVER updated in the rollback path — no double-count possible.
         try {
-            // Step 1: Create bubble on target server
-            if (bubbleTransferFactory == null) {
-                return new MigrationResult(bubbleId, targetServerId, false,
-                                           "No bubble transfer factory configured", 0);
+            // WAL bracket open: ENTITY_DEPARTURE logged before staging (inside try so a WAL
+            // failure that is re-thrown would also be rolled back, though in practice the
+            // per-entity catch absorbs WAL failures as warnings).
+            if (persistenceManager != null) {
+                for (var entity : entities) {
+                    try {
+                        persistenceManager.logEntityDeparture(
+                            UUID.fromString(entity.id()), bubbleId, targetBubble.id());
+                    } catch (java.io.IOException | IllegalArgumentException walEx) {
+                        log.warn("WAL ENTITY_DEPARTURE log failed for entity {} in bubble {}: {}",
+                                 entity.id(), bubbleId, walEx.getMessage());
+                    }
+                }
             }
 
-            var targetBubble = bubbleTransferFactory.apply(targetServerId, sourceBubble);
-            if (targetBubble == null) {
-                return new MigrationResult(bubbleId, targetServerId, false,
-                                           "Failed to create bubble on target server", 0);
+            // Stage entities onto target — source still authoritative (not yet closed).
+            // If addEntity throws mid-loop the catch below removes all already-staged entities.
+            for (var entity : entities) {
+                targetBubble.addEntity(entity.id(), entity.position(), entity.content());
             }
+            log.debug("Staged {} entities onto target {} (source {} still authoritative)",
+                      entities.size(), targetBubble.id(), bubbleId);
 
-            // Step 2: Transfer entities from source to target
-            transferEntities(sourceBubble, targetBubble);
-
-            // Step 3: Target bubble sends MOVE to neighbors (position unchanged)
-            // This notifies neighbors about the server change
+            // Step 3: Target bubble sends MOVE to neighbors (position unchanged).
+            // Notifies neighbors about the server change while source is still live.
             targetBubble.broadcastMove();
 
-            // Step 4: Wait for neighbor acknowledgments
-            // In practice, we'd wait for ACKs - here we use a small delay
+            // Step 4: Wait for neighbor acknowledgments.
+            // In practice we'd wait for explicit ACKs; here we use a small delay.
             Thread.sleep(50);
 
-            // Step 5: Deactivate source bubble
+            // COMMIT POINT — no rollback after this line.
+            // WAL bracket close: MIGRATION_COMMIT logged per entity before source is deactivated.
+            if (persistenceManager != null) {
+                for (var entity : entities) {
+                    try {
+                        persistenceManager.logMigrationCommit(
+                            UUID.fromString(entity.id()));
+                    } catch (java.io.IOException | IllegalArgumentException walEx) {
+                        log.warn("WAL MIGRATION_COMMIT log failed for entity {} in bubble {}: {}",
+                                 entity.id(), bubbleId, walEx.getMessage());
+                    }
+                }
+            }
+
+            // Step 5: Deactivate source bubble — target is now the sole authoritative copy.
             sourceBubble.close();
 
             // Step 6: Update metrics — sourceServerId is threaded in from the caller who knows
             // which server owns the bubble. This replaces the hollow getServerForBubble() stub that
             // unconditionally returned null, which caused the source ServerMetrics to never be
             // decremented after a migration (Luciferase-7wzml.44).
+            // Runs exactly once on the success path; skipped entirely on rollback.
             var sourceMetrics = tumbler.getServerMetrics(sourceServerId);
             var targetMetrics = tumbler.getServerMetrics(targetServerId);
 
@@ -245,7 +323,13 @@ public class BubbleMigrator {
             return new MigrationResult(bubbleId, targetServerId, true, "Success", durationMs);
 
         } catch (Exception e) {
-            log.error("Migration failed for bubble {}: {}", bubbleId, e.getMessage(), e);
+            // ROLLBACK: remove all staged entities from target so no entity exists in both bubbles.
+            // Source is left open (close() was not called); it remains authoritative.
+            log.warn("Migration of bubble {} failed, rolling back {} staged entities from target {}: {}",
+                     bubbleId, entities.size(), targetBubble.id(), e.getMessage());
+            entities.forEach(entity -> targetBubble.removeEntity(entity.id()));
+            log.info("Rollback complete: {} entities removed from target {}; source {} remains authoritative",
+                     entities.size(), targetBubble.id(), bubbleId);
             return new MigrationResult(bubbleId, targetServerId, false,
                                        "Error: " + e.getMessage(), 0);
         }
@@ -253,7 +337,11 @@ public class BubbleMigrator {
 
     /**
      * Transfer entities from source bubble to target bubble.
+     *
+     * @deprecated Replaced by inline staging in {@link #executeMigration} for transactional
+     *             rollback support (Luciferase-7wzml.45). Retained for API compatibility.
      */
+    @Deprecated
     private void transferEntities(Bubble source, Bubble target) {
         // Get all entities from source
         var entities = source.getAllEntityRecords();

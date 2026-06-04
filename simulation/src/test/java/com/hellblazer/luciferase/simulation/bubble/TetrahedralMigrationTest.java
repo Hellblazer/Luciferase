@@ -16,15 +16,20 @@
  */
 package com.hellblazer.luciferase.simulation.bubble;
 
+import com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.entity.StringEntityIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import javax.vecmath.Point3f;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 /**
  * Test tetrahedral entity migration.
@@ -221,6 +226,117 @@ class TetrahedralMigrationTest {
         assertTrue(str.contains("TetrahedralMigrationMetrics"));
         assertTrue(str.contains("total="));
         assertTrue(str.contains("failures="));
+    }
+
+    // -----------------------------------------------------------------------
+    // Bead Luciferase-7wzml.36 — failure-count double-increment regression tests
+    // -----------------------------------------------------------------------
+
+    /**
+     * Null source-bubble path: executeMigration returns false because the source
+     * bubble key is not registered in the grid. checkMigrations must record
+     * exactly ONE failure — not two.
+     */
+    @Test
+    void nullSrcBubble_recordsExactlyOneFailure() {
+        var grid = new TetreeBubbleGrid((byte) 1);
+        grid.createBubbles(1, (byte) 1, 16);
+
+        // A key that is definitely not in the grid
+        var missingKey = new CompactTetreeKey((byte) 1, 99_999_999L);
+
+        // A real key that IS in the grid (for the destination)
+        var destKey = grid.getAllBubbles().iterator().next().bounds().rootKey();
+
+        // Stub checker: returns one MigrationRecord whose sourceKey is not in grid
+        var checker = Mockito.mock(TetrahedralContainmentChecker.class);
+        var record = new TetrahedralContainmentChecker.MigrationRecord(
+            "entity-missing-src", missingKey, destKey, new Point3f(0, 0, 0), null);
+        when(checker.checkMigrations(any())).thenReturn(List.of(record));
+
+        // Stub router: returns a decision that also uses the missing source key
+        var router = Mockito.mock(TetrahedralMigrationRouter.class);
+        var decision = new TetrahedralMigrationRouter.MigrationDecision(
+            "entity-missing-src", missingKey, destKey, 1.0f, false);
+        when(router.routeMigration(any())).thenReturn(decision);
+
+        var mig = new TetrahedralMigration(grid, checker, router);
+        mig.checkMigrations(0L);
+
+        assertEquals(1, mig.getMetrics().getFailureCount(),
+                     "Null-src path must record exactly 1 failure, not 2+");
+    }
+
+    /**
+     * Rollback-failure path: executeMigration returns false after srcBubble.removeEntity
+     * throws. checkMigrations must record exactly ONE failure — not two.
+     */
+    @Test
+    void rollbackFailurePath_recordsExactlyOneFailure() {
+        // Two-bubble grid: src and dst are different registered bubbles
+        var grid2 = new TetreeBubbleGrid((byte) 1);
+        grid2.createBubbles(2, (byte) 1, 16);
+        var bubbleIter = grid2.getAllBubbles().iterator();
+        var bubble1 = bubbleIter.next();
+        var bubble2 = bubbleIter.next();
+        var src2Key = bubble1.bounds().rootKey();
+        var dst2Key = bubble2.bounds().rootKey();
+        var spyGrid2 = Mockito.spy(grid2);
+        var mockSrc2 = Mockito.mock(EnhancedBubble.class);
+        var mockDst2 = Mockito.mock(EnhancedBubble.class);
+        var rec2 = new EnhancedBubble.EntityRecord("entity-rb2", new Point3f(2, 2, 2), null, 0L);
+        when(mockSrc2.getAllEntityRecords()).thenReturn(List.of(rec2));
+        doThrow(new RuntimeException("removeEntity forced")).when(mockSrc2).removeEntity("entity-rb2");
+        doThrow(new RuntimeException("rollback forced")).when(mockDst2).removeEntity("entity-rb2");
+        doReturn(mockSrc2).when(spyGrid2).getBubble(src2Key);
+        doReturn(mockDst2).when(spyGrid2).getBubble(dst2Key);
+
+        var checker2 = Mockito.mock(TetrahedralContainmentChecker.class);
+        var rec2Record = new TetrahedralContainmentChecker.MigrationRecord(
+            "entity-rb2", src2Key, dst2Key, new Point3f(2, 2, 2), null);
+        // Only emit the migration record for bubble1 (src); bubble2 has nothing to migrate
+        when(checker2.checkMigrations(bubble1)).thenReturn(List.of(rec2Record));
+        when(checker2.checkMigrations(bubble2)).thenReturn(List.of());
+
+        var router2 = Mockito.mock(TetrahedralMigrationRouter.class);
+        var decision2 = new TetrahedralMigrationRouter.MigrationDecision(
+            "entity-rb2", src2Key, dst2Key, 1.0f, false);
+        when(router2.routeMigration(any())).thenReturn(decision2);
+
+        var mig2 = new TetrahedralMigration(spyGrid2, checker2, router2);
+        mig2.checkMigrations(0L);
+
+        assertEquals(1, mig2.getMetrics().getFailureCount(),
+                     "Rollback-failure path must record exactly 1 failure, not 2+");
+    }
+
+    /**
+     * No failure path double-counts: a single failed migration (router returns null)
+     * records exactly 1 failure regardless of internal control flow.
+     */
+    @Test
+    void routerNullDecision_recordsExactlyOneFailure() {
+        var grid = new TetreeBubbleGrid((byte) 1);
+        grid.createBubbles(1, (byte) 1, 16);
+
+        var realBubble = grid.getAllBubbles().iterator().next();
+        var srcKey = realBubble.bounds().rootKey();
+        var dstKey = new CompactTetreeKey((byte) 1, 77_777_777L);
+
+        var checker = Mockito.mock(TetrahedralContainmentChecker.class);
+        var record = new TetrahedralContainmentChecker.MigrationRecord(
+            "entity-no-route", srcKey, dstKey, new Point3f(0, 0, 0), null);
+        when(checker.checkMigrations(any())).thenReturn(List.of(record));
+
+        // Router returns null → checkMigrations's else-branch fires once
+        var router = Mockito.mock(TetrahedralMigrationRouter.class);
+        when(router.routeMigration(any())).thenReturn(null);
+
+        var mig = new TetrahedralMigration(grid, checker, router);
+        mig.checkMigrations(0L);
+
+        assertEquals(1, mig.getMetrics().getFailureCount(),
+                     "Router-null path must record exactly 1 failure, not 2+");
     }
 
     /**

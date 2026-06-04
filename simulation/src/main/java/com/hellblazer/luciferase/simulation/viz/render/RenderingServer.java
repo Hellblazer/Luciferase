@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.net.InetSocketAddress;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Map;
@@ -264,21 +265,46 @@ public class RenderingServer implements AutoCloseable {
         // jgpu: Add authentication filter (API key)
         if (config.security().apiKey() != null) {
             app.before("/api/*", ctx -> {
+                var clientHost = ctx.ip();
+
+                // vyik: Check if client is blocked due to too many failed REST auth attempts
+                var authLimiter = authLimiters.get(clientHost,
+                    id -> new AuthAttemptRateLimiter(clock));
+
+                if (authLimiter.isBlocked()) {
+                    log.warn("REST auth failed - rate limit exceeded: ip={}", clientHost);
+                    ctx.status(429).json(Map.of("error", "Too many failed authentication attempts"));
+                    return;
+                }
+
                 String authHeader = ctx.header("Authorization");
 
                 // Check for Bearer token format
                 if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                    authLimiter.recordFailedAttempt();
+                    log.warn("REST auth failed - missing/malformed header: ip={}", clientHost);
                     ctx.status(401).json(Map.of("error", "Unauthorized"));
                     return;
                 }
 
-                // Extract and validate API key
-                String providedKey = authHeader.substring(7); // Remove "Bearer " prefix
-                if (!config.security().apiKey().equals(providedKey)) {
-                    ctx.status(401).json(Map.of("error", "Unauthorized"));
+                // 8gdp: Constant-time comparison to prevent timing attacks
+                var expectedAuth = "Bearer " + config.security().apiKey();
+                byte[] providedBytes = authHeader.getBytes(StandardCharsets.UTF_8);
+                byte[] expectedBytes = expectedAuth.getBytes(StandardCharsets.UTF_8);
+
+                if (!MessageDigest.isEqual(providedBytes, expectedBytes)) {
+                    if (!authLimiter.recordFailedAttempt()) {
+                        log.warn("REST auth failed - rate limit exceeded after failed attempt: ip={}", clientHost);
+                        ctx.status(429).json(Map.of("error", "Too many failed authentication attempts"));
+                    } else {
+                        log.warn("REST auth failed - invalid credentials: ip={}", clientHost);
+                        ctx.status(401).json(Map.of("error", "Unauthorized"));
+                    }
                     return;
                 }
 
+                // vyik: Record successful auth (resets rate limiter)
+                authLimiter.recordSuccess();
                 // Authentication successful - continue to endpoint
             });
         }
@@ -310,8 +336,11 @@ public class RenderingServer implements AutoCloseable {
                 var apiKey = config.security().apiKey();
                 if (apiKey != null) {
                     var sessionId = ctx.sessionId();
-                    // vyik: Track auth attempts by client host (IP-based rate limiting)
-                    var clientHost = ctx.host();
+                    // vyik: Track auth attempts by remote socket IP (host-header-independent)
+                    var remoteAddr = ctx.session.getRemoteAddress();
+                    var clientHost = (remoteAddr instanceof InetSocketAddress isa)
+                        ? isa.getAddress().getHostAddress()
+                        : remoteAddr.toString();
 
                     // vyik: Check if client is blocked due to too many failed auth attempts
                     var authLimiter = authLimiters.get(clientHost,

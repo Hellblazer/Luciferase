@@ -377,20 +377,23 @@ public class TopologyExecutor implements OperationTracker {
     /**
      * Rolls back to a previous snapshot on failure.
      * <p>
-     * Undoes all tracked grid operations in reverse order to restore grid structure.
-     * Operations are reversed using the GridOperation undo() mechanism:
-     * <ul>
-     *   <li>BubbleAdded → Remove bubble from grid</li>
-     *   <li>BubbleRemoved → Re-add bubble with saved state</li>
-     * </ul>
-     * <p>
-     * <b>Limitation</b>: This only reverses grid structural changes. Entity movements
-     * within bubbles are NOT reversed (requires EntityAccountant API extension).
-     * EntityAccountant guarantees entity tracking consistency, so entities are never
-     * lost. Rollback primarily addresses grid structure cleanup.
+     * Performs two complementary restores:
+     * <ol>
+     *   <li><b>Grid structure</b>: Undoes all tracked {@link GridOperation}s in LIFO order
+     *       (BubbleAdded → remove bubble, BubbleRemoved → re-add bubble). Grid undo runs
+     *       first so that snapshot bubble IDs (e.g. bubble2 removed by a merge) are live
+     *       again before any entity move targets them.</li>
+     *   <li><b>Entity distribution</b>: Iterates the snapshot and, for every entity whose
+     *       current accountant location differs from its snapshot location, issues a
+     *       {@code moveBetweenBubbles} call. This is general: it covers splits (entity on
+     *       transient newBubble → restored to sourceBubble), merges (entity moved from
+     *       bubble2 to bubble1 → restored to bubble2 after grid undo re-adds bubble2), and
+     *       any future operation. After entity moves, any bubble that is still absent from
+     *       the snapshot is purged.</li>
+     * </ol>
      *
-     * @param snapshot the snapshot to restore (used for logging/validation)
-     * @param reason   reason for rollback
+     * @param snapshot the pre-operation entity distribution (bubble → entity-set)
+     * @param reason   human-readable reason for the rollback
      */
     private void rollback(Map<UUID, Set<UUID>> snapshot, String reason) {
         log.warn("ROLLBACK TRIGGERED: {}", reason);
@@ -398,31 +401,74 @@ public class TopologyExecutor implements OperationTracker {
                 snapshot.size(),
                 snapshot.values().stream().mapToInt(Set::size).sum());
 
+        // --- Step 1: undo grid structural changes (LIFO) ---
+        // Must run BEFORE entity restore so that snapshot bubble IDs removed by the
+        // operation (e.g. bubble2 in a merge) are present in the grid when entity
+        // moveBetweenBubbles targets them.
         var operations = operationHistory.get();
         if (operations.isEmpty()) {
             log.warn("No grid operations to rollback - operation may have failed early");
-            return;
+        } else {
+            log.warn("Rolling back {} grid operations in reverse order", operations.size());
+            for (int i = operations.size() - 1; i >= 0; i--) {
+                var operation = operations.get(i);
+                try {
+                    log.debug("Undoing operation {}/{}: {}",
+                             operations.size() - i, operations.size(), operation.description());
+                    operation.undo(bubbleGrid);
+                } catch (Exception e) {
+                    log.error("Failed to undo operation '{}': {}",
+                             operation.description(), e.getMessage(), e);
+                    // Continue with remaining rollback operations despite failure
+                }
+            }
+            log.warn("Grid structure restored ({} operations undone)", operations.size());
         }
 
-        log.warn("Rolling back {} grid operations in reverse order", operations.size());
+        // --- Step 2: restore accountant entity distribution to match snapshot ---
+        //
+        // For every entity in the snapshot, if its current accountant location differs
+        // from the snapshot location, move it back.  This is O(all snapshot entities)
+        // and handles both:
+        //   - SPLIT: entities on the transient newBubble → moved back to sourceBubble
+        //   - MERGE: entities moved from bubble2 to bubble1 → moved back to bubble2
+        //     (bubble2 was re-added by grid undo in Step 1 above)
+        int restored = 0;
+        int failed = 0;
 
-        // Undo operations in reverse order (LIFO)
-        for (int i = operations.size() - 1; i >= 0; i--) {
-            var operation = operations.get(i);
-            try {
-                log.debug("Undoing operation {}/{}: {}",
-                         operations.size() - i, operations.size(), operation.description());
-                operation.undo(bubbleGrid);
-            } catch (Exception e) {
-                log.error("Failed to undo operation '{}': {}",
-                         operation.description(), e.getMessage(), e);
-                // Continue with remaining rollback operations despite failure
+        for (var entry : snapshot.entrySet()) {
+            var snapBubble = entry.getKey();
+            for (var entityId : entry.getValue()) {
+                var current = accountant.getLocationOfEntity(entityId);
+                if (current == null) {
+                    log.error("ROLLBACK: entity {} has no bubble assignment — cannot restore (potential orphan)",
+                             entityId);
+                    failed++;
+                    continue;
+                }
+                if (!current.equals(snapBubble)) {
+                    boolean moved = accountant.moveBetweenBubbles(entityId, current, snapBubble);
+                    if (moved) {
+                        restored++;
+                    } else {
+                        log.error("ROLLBACK: moveBetweenBubbles({}, {} → {}) failed — entity may be orphaned",
+                                 entityId, current, snapBubble);
+                        failed++;
+                    }
+                }
             }
         }
 
-        log.warn("Rollback complete: Grid structure restored");
-        log.warn("Note: Entity movements within bubbles are not reversed (EntityAccountant limitation)");
-        log.warn("EntityAccountant ensures entity tracking consistency - no entities lost");
+        // Purge any bubbles that are still present in the accountant but were not in
+        // the snapshot (transient bubbles that should no longer exist after rollback).
+        for (var bubbleId : new HashSet<>(accountant.getDistribution().keySet())) {
+            if (!snapshot.containsKey(bubbleId)) {
+                accountant.purgeBubble(bubbleId);
+            }
+        }
+
+        log.warn("Accountant distribution restored: {} entities moved back to snapshot bubbles, {} failed",
+                restored, failed);
     }
 
     /**

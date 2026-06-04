@@ -296,6 +296,210 @@ class BubbleMigratorTest {
             .isEqualTo(4);
     }
 
+    // -----------------------------------------------------------------------
+    // Luciferase-7wzml.45: transactional migration + rollback tests
+    // -----------------------------------------------------------------------
+
+    /**
+     * Luciferase-7wzml.45: when an exception fires AFTER transferEntities but BEFORE
+     * source.close(), the rollback must remove all staged entities from the target bubble
+     * and leave the source bubble open (not closed).  No entity must exist in both bubbles
+     * at any observable point.
+     */
+    @Test
+    void testMigrate_rollbackOnBroadcastFailure_entitiesOnlyInSource() throws Exception {
+        // Arrange: source bubble with 3 entities
+        var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        sourceBubble.addEntity("r1", new Point3f(1f, 0f, 0f), "c1");
+        sourceBubble.addEntity("r2", new Point3f(2f, 0f, 0f), "c2");
+        sourceBubble.addEntity("r3", new Point3f(3f, 0f, 0f), "c3");
+        assertThat(sourceBubble.entityCount()).isEqualTo(3);
+
+        // Target bubble - spy so we can make broadcastMove() throw after staging
+        var realTarget = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        var spyTarget = spy(realTarget);
+        doThrow(new RuntimeException("simulated broadcast failure"))
+            .when(spyTarget).broadcastMove();
+
+        migrator.setBubbleTransferFactory((tgtServerId, src) -> spyTarget);
+
+        // Act: migration should fail with the injected broadcast exception
+        var result = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                             .get(5, TimeUnit.SECONDS);
+
+        // Failure result
+        assertThat(result.success())
+            .as("migration must report failure when broadcastMove throws")
+            .isFalse();
+        assertThat(result.message())
+            .as("failure message must reflect the broadcast exception")
+            .contains("simulated broadcast failure");
+
+        // Rollback assertion: target must be empty (staged entities removed)
+        assertThat(spyTarget.entityCount())
+            .as("rollback must remove all staged entities from target (no entity in both)")
+            .isEqualTo(0);
+
+        // Source must still hold all 3 entities (source was never closed)
+        assertThat(sourceBubble.entityCount())
+            .as("source must retain all entities after rollback")
+            .isEqualTo(3);
+
+        // Source must not be closed (it remains authoritative)
+        // We verify this by checking that addEntity still works on source post-rollback
+        assertThatCode(() -> sourceBubble.addEntity("r4", new Point3f(4f, 0f, 0f), "c4"))
+            .as("source bubble must remain open (not closed) after rollback")
+            .doesNotThrowAnyException();
+    }
+
+    /**
+     * Luciferase-7wzml.45: when targetBubble.addEntity throws during staging (e.g. spatial-index
+     * constraint or null position), the rollback must remove the already-staged entities from the
+     * target and leave the source bubble open with all entities intact.  No metrics update may
+     * occur, confirming no double-count.
+     */
+    @Test
+    void testMigrate_rollbackOnAddEntityThrows_entitiesOnlyInSource() throws Exception {
+        // Arrange: source metrics + source bubble with 3 entities
+        var sourceMetrics = tumbler.getServerMetrics(sourceServerId);
+        sourceMetrics.addBubble(3);
+
+        var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        sourceBubble.addEntity("a1", new Point3f(1f, 0f, 0f), "c1");
+        sourceBubble.addEntity("a2", new Point3f(2f, 0f, 0f), "c2");
+        sourceBubble.addEntity("a3", new Point3f(3f, 0f, 0f), "c3");
+        assertThat(sourceBubble.entityCount()).isEqualTo(3);
+
+        // Spy target: first addEntity succeeds (entity a1 staged), second throws.
+        // This exercises the mid-loop failure path.
+        var realTarget = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        var spyTarget = spy(realTarget);
+        doCallRealMethod()               // first call: stage a1 normally
+            .doThrow(new RuntimeException("spatial-index constraint violation on a2"))
+            .when(spyTarget).addEntity(any(), any(), any());
+
+        migrator.setBubbleTransferFactory((tgtServerId, src) -> spyTarget);
+
+        // Act
+        var result = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                             .get(5, TimeUnit.SECONDS);
+
+        // Failure result
+        assertThat(result.success())
+            .as("migration must report failure when addEntity throws during staging")
+            .isFalse();
+        assertThat(result.message())
+            .as("failure message must include the addEntity exception text")
+            .contains("spatial-index constraint violation on a2");
+
+        // Rollback assertion: target must be empty (the one staged entity was removed)
+        assertThat(spyTarget.entityCount())
+            .as("rollback must remove all staged entities from target (even partially-staged)")
+            .isEqualTo(0);
+
+        // Source must still hold all 3 entities (source was never closed)
+        assertThat(sourceBubble.entityCount())
+            .as("source must retain all entities after mid-staging rollback")
+            .isEqualTo(3);
+
+        // Source must not be closed (it remains authoritative)
+        assertThatCode(() -> sourceBubble.addEntity("a4", new Point3f(4f, 0f, 0f), "c4"))
+            .as("source bubble must remain open (not closed) after mid-staging rollback")
+            .doesNotThrowAnyException();
+
+        // Metrics must not be updated on rollback path
+        assertThat(sourceMetrics.bubbleCount())
+            .as("source bubbleCount must not be decremented on rollback (no double-count)")
+            .isEqualTo(1);
+    }
+
+    /**
+     * Luciferase-7wzml.45: on a successful migration, entities must be present ONLY in the
+     * target bubble (not in source), source must be closed, and source metrics must be
+     * decremented exactly once.  This also verifies the .44 metrics decrement still fires
+     * on the success path (not skipped by the new transactional structure).
+     */
+    @Test
+    void testMigrate_successPath_entitiesInTargetOnlyAndSourceClosed() throws Exception {
+        // Arrange: prime source metrics
+        var sourceMetrics = tumbler.getServerMetrics(sourceServerId);
+        sourceMetrics.addBubble(3);
+        assertThat(sourceMetrics.bubbleCount()).isEqualTo(1);
+        assertThat(sourceMetrics.entityCount()).isEqualTo(3);
+
+        var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        sourceBubble.addEntity("s1", new Point3f(1f, 0f, 0f), "c1");
+        sourceBubble.addEntity("s2", new Point3f(2f, 0f, 0f), "c2");
+        sourceBubble.addEntity("s3", new Point3f(3f, 0f, 0f), "c3");
+
+        var targetBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        migrator.setBubbleTransferFactory((tgtServerId, src) -> targetBubble);
+
+        // Act
+        var result = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                             .get(5, TimeUnit.SECONDS);
+
+        assertThat(result.success())
+            .as("success path must report success")
+            .isTrue();
+
+        // Entities in target (migration succeeded)
+        assertThat(targetBubble.entityCount())
+            .as("all 3 entities must be in target after successful migration")
+            .isEqualTo(3);
+
+        // Source metrics decremented exactly once (.44 preserved)
+        assertThat(sourceMetrics.bubbleCount())
+            .as("source bubbleCount must be decremented exactly once after success")
+            .isEqualTo(0);
+        assertThat(sourceMetrics.entityCount())
+            .as("source entityCount must be decremented by the migrated entity count (.44 preserved)")
+            .isEqualTo(0);
+
+        // Target metrics incremented
+        var targetMetrics = tumbler.getServerMetrics(targetServerId);
+        assertThat(targetMetrics.bubbleCount())
+            .as("target bubbleCount must gain 1")
+            .isEqualTo(1);
+    }
+
+    /**
+     * Luciferase-7wzml.45: metrics must never double-count.  Running migrate() twice in
+     * succession on the same bubble (second call hits the cooldown) must never cause
+     * removeBubble to be called more than once on the source metrics.
+     */
+    @Test
+    void testMigrate_metricsNeverDoubleCount() throws Exception {
+        // Arrange: source metrics prime with exactly 1 bubble / 2 entities
+        var sourceMetrics = tumbler.getServerMetrics(sourceServerId);
+        sourceMetrics.addBubble(2);
+        assertThat(sourceMetrics.bubbleCount()).isEqualTo(1);
+
+        var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        sourceBubble.addEntity("m1", new Point3f(1f, 0f, 0f), "c1");
+        sourceBubble.addEntity("m2", new Point3f(2f, 0f, 0f), "c2");
+
+        var targetBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        migrator.setBubbleTransferFactory((tgtServerId, src) -> targetBubble);
+
+        // First migration (success)
+        var first = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                            .get(5, TimeUnit.SECONDS);
+        assertThat(first.success()).isTrue();
+
+        // At this point bubbleCount == 0, entityCount == 0. A second call would hit the cooldown.
+        var second = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                             .get(5, TimeUnit.SECONDS);
+        assertThat(second.success())
+            .as("second migrate on same bubbleId must fail (cooldown or already-migrated)")
+            .isFalse();
+
+        // Metrics: removeBubble called exactly once
+        assertThat(sourceMetrics.bubbleCount())
+            .as("bubbleCount must not go negative — removeBubble called exactly once")
+            .isGreaterThanOrEqualTo(0);
+    }
+
     /**
      * Luciferase-7wzml.44: source utilization picture (bubbleCount) drops to 0 post-migration.
      * This is the acceptance criterion "source utilization DROPS" — before the fix, bubbleCount

@@ -15,11 +15,13 @@ package com.hellblazer.luciferase.simulation.viz.render;
  * <p>
  * Thread-safe: immutable record.
  *
- * @param regionCacheTtlMs         Time-to-live for cached region data (milliseconds)
- * @param endpointCacheExpireSec   Expire endpoint cache entries after this duration (seconds)
- * @param endpointCacheMaxSize     Maximum number of cached endpoint responses
- * @param httpConnectTimeoutSec    HTTP client connect timeout for upstream connections (seconds)
- * @param decompressionBufferSize  Buffer size for GZIP decompression operations (bytes)
+ * @param regionCacheTtlMs           Time-to-live for cached region data (milliseconds)
+ * @param endpointCacheExpireSec     Expire endpoint cache entries after this duration (seconds)
+ * @param endpointCacheMaxSize       Maximum number of cached endpoint responses
+ * @param httpConnectTimeoutSec      HTTP client connect timeout for upstream connections (seconds)
+ * @param decompressionBufferSize    Buffer size for GZIP decompression operations (bytes)
+ * @param maxUpstreamMessageBytes    Maximum accumulated WebSocket frame size before the upstream
+ *                                   connection is aborted (Luciferase-7wzml.43 — OOM / DoS guard)
  * @author hal.hildebrand
  */
 public record PerformanceConfig(
@@ -27,7 +29,8 @@ public record PerformanceConfig(
     long endpointCacheExpireSec,
     int endpointCacheMaxSize,
     long httpConnectTimeoutSec,
-    int decompressionBufferSize
+    int decompressionBufferSize,
+    int maxUpstreamMessageBytes
 ) {
     /**
      * Compact constructor with validation.
@@ -48,6 +51,9 @@ public record PerformanceConfig(
         if (decompressionBufferSize < 1024) {
             throw new IllegalArgumentException("decompressionBufferSize must be >= 1024");
         }
+        if (maxUpstreamMessageBytes < 1024) {
+            throw new IllegalArgumentException("maxUpstreamMessageBytes must be >= 1024");
+        }
     }
 
     /**
@@ -59,7 +65,8 @@ public record PerformanceConfig(
             1L,       // 1s endpoint cache expiry
             10,       // Small endpoint cache
             10L,      // 10s HTTP connect timeout
-            8192      // 8KB decompression buffer
+            8192,     // 8KB decompression buffer
+            1_048_576 // 1 MB upstream WS message cap
         );
     }
 
@@ -72,7 +79,8 @@ public record PerformanceConfig(
             1L,      // 1s endpoint cache expiry (same as production)
             5,       // Smaller endpoint cache for tests
             5L,      // 5s HTTP connect timeout (faster test failures)
-            4096     // 4KB decompression buffer (smaller for tests)
+            4096,    // 4KB decompression buffer (smaller for tests)
+            65_536   // 64 KB upstream WS message cap (small for tests)
         );
     }
 }

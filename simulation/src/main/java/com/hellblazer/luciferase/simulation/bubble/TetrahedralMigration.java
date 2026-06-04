@@ -98,6 +98,18 @@ public class TetrahedralMigration {
     }
 
     /**
+     * Package-private constructor for testing: accepts pre-built checker and router.
+     */
+    TetrahedralMigration(TetreeBubbleGrid bubbleGrid, TetrahedralContainmentChecker checker,
+                         TetrahedralMigrationRouter router) {
+        this.bubbleGrid = Objects.requireNonNull(bubbleGrid, "BubbleGrid cannot be null");
+        this.checker = Objects.requireNonNull(checker, "Checker cannot be null");
+        this.router = Objects.requireNonNull(router, "Router cannot be null");
+        this.migrationCooldowns = new ConcurrentHashMap<>();
+        this.metrics = new TetrahedralMigrationMetrics();
+    }
+
+    /**
      * Check for and execute migrations across all bubbles.
      * <p>
      * Algorithm:
@@ -225,7 +237,6 @@ public class TetrahedralMigration {
                         bubbleGrid.getBubble(decision.destinationKey()) : null;
 
         if (srcBubble == null || dstBubble == null) {
-            metrics.recordFailedMigration();
             return false;
         }
 
@@ -259,7 +270,6 @@ public class TetrahedralMigration {
                               + "both source and destination (duplicate state)",
                               entityId, srcBubble.id(), dstBubble.id(), rollbackEx);
                 }
-                metrics.recordFailedMigration();
                 return false;
             }
 
@@ -269,7 +279,6 @@ public class TetrahedralMigration {
             return true;
 
         } catch (Exception e) {
-            metrics.recordFailedMigration();
             return false;
         }
     }
