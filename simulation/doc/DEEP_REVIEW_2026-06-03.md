@@ -1,7 +1,7 @@
 # Simulation Module — Deep Multi-Agent Code Review
 
-**Date**: 2026-06-03  
-**Method**: 14 code-review-expert + 10 substantive-critic agents (partitioned by subsystem), every Critical/High adversarially verified against source (205 agent invocations, ~11M tokens).  
+**Date**: 2026-06-03
+**Method**: 14 code-review-expert + 10 substantive-critic agents (partitioned by subsystem), every Critical/High adversarially verified against source (205 agent invocations, ~11M tokens).
 **Result**: 304 raw findings → **163 confirmed** (22 Critical, 107 High, 32 Medium, 2 Low), 18 refuted as false-positives, 117 Medium/Low unverified.
 
 
@@ -44,13 +44,13 @@ while `totalMigrationsInitiat
 - **sim:causality/EntityMigrationStateMachine.java:669-692** · correctness · unit=causality · flagged by expert
 - **Problem**: getStateCounts() counts entities for OWNED, MIGRATING_OUT, DEPARTED, MIGRATING_IN, and GHOST but has no case for ROLLBACK_OWNED. The `total` is set to `snapshot.size()` (line 689), which includes ROLLBACK_OWNED entities. The compact record constructor (lines 640-648) enforces `total == owned + migratingOut + departed + migratingIn + ghost`, and throws IllegalArgumentException if not equal. Since the view-change path and timeout rollback path both route entities through ROLLBACK_OWNED, any call to getStateCounts() during or shortly after a rollback throws an exception. This will crash any monitoring or coordination logic that calls getStateCounts() at view-change time, which is exactly the high-contention moment.
 - **Fix**: Add `case ROLLBACK_OWNED -> ownedCount++;` (since ROLLBACK_OWNED is a temporary 'locally owned' state per isLocallyOwned()), or add a separate `rollbackOwned` field to StateCounts. The compact record constructor must be updated to include it in the invariant check.
-- **Verifier**: Independently confirmed. At line 527, `entityStates` is updated to `ROLLBACK_OWNED` during view-change rollback. The switch at lines 680-686 has no case for `ROLLBACK_OWNED`, so those entities increment none of the counters. At line 689, `total = snapshot.size()` counts them. The compact record constructor at lines 640-648 computes `sum = owned + migratingOut + departed + migratingIn + ghost` and 
+- **Verifier**: Independently confirmed. At line 527, `entityStates` is updated to `ROLLBACK_OWNED` during view-change rollback. The switch at lines 680-686 has no case for `ROLLBACK_OWNED`, so those entities increment none of the counters. At line 689, `total = snapshot.size()` counts them. The compact record constructor at lines 640-648 computes `sum = owned + migratingOut + departed + migratingIn + ghost` and
 
 ### C5. StateCounts Constructor Throws IAE Whenever Any Entity Is In ROLLBACK_OWNED State
 - **sim:causality/EntityMigrationStateMachine.java:638-692** · correctness · unit=causality · flagged by critic
 - **Problem**: The StateCounts compact constructor validates total == owned + migratingOut + departed + migratingIn + ghost. The getStateCounts() method at line 680 builds these counts with a switch over EntityMigrationState values. There is no case ROLLBACK_OWNED in the switch, so entities in that state are counted in total (= snapshot.size()) but added to no bucket. When any entity is in ROLLBACK_OWNED state, total > sum, and the constructor throws IllegalArgumentException. onViewChange() routinely transitions MIGRATING_OUT entities to ROLLBACK_OWNED. Any caller of getStateCounts() during or after a view change will receive an uncaught IAE.
 - **Fix**: Add a rollbackOwned field to StateCounts and include it in the sum invariant check, OR add case ROLLBACK_OWNED -> rollbackOwnedCount++ and include rollbackOwnedCount in the sum. Also add rollbackOwned to the record parameter list so callers can observe it. Add a test that puts an entity in ROLLBACK_OWNED state and calls getStateCounts().
-- **Verifier**: Inspected lines 669-692 of EntityMigrationStateMachine.java. The switch at lines 680-686 handles OWNED, MIGRATING_OUT, DEPARTED, MIGRATING_IN, and GHOST — but has no case for ROLLBACK_OWNED. Line 689 sets total = snapshot.size(), which counts every entity regardless of state. The compact constructor at lines 640-648 asserts total == owned + migratingOut + departed + migratingIn + ghost and throws 
+- **Verifier**: Inspected lines 669-692 of EntityMigrationStateMachine.java. The switch at lines 680-686 handles OWNED, MIGRATING_OUT, DEPARTED, MIGRATING_IN, and GHOST — but has no case for ROLLBACK_OWNED. Line 689 sets total = snapshot.size(), which counts every entity regardless of state. The compact constructor at lines 640-648 asserts total == owned + migratingOut + departed + migratingIn + ghost and throws
 
 ### C6. MigrationCoordinator dispatches all 2PC operations via reflection — method failures silently orphan entities
 - **sim:causality/MigrationCoordinator.java:391-426** · distributed · unit=causality · flagged by expert
@@ -92,7 +92,7 @@ while `totalMigrationsInitiat
 - **sim:ghost/P2PGhostChannel.java:349-350** · serialization · unit=ghost · flagged by expert
 - **Problem**: fromTransportGhost() reconstructs the entity ID as `(ID) new StringEntityID(tg.entityId())` where StringEntityID is a private record inside P2PGhostChannel. The unchecked cast compiles and succeeds at runtime due to type erasure. However, any downstream handler that type-checks the ghost's entityId (e.g., `(ConcreteEntityID) ghost.entityId()`, `instanceof`, or equality via CompareTo across types) will receive a runtime ClassCastException or incorrect behavior for every ghost received over the P2P channel. This is a RDR-004 class silent-data-corruption: the ghost is delivered but with a fundamentally wrong ID type, silently breaking all callers that rely on the concrete ID type.
 - **Fix**: The channel needs an EntityID deserializer registered at construction time (matching the sender's ID type), or the EntityID must be reconstructable from its debug string via a factory. Add a `Function<String, ID> idFactory` constructor parameter and use it in fromTransportGhost. For the specific case where ID is the project's StringEntityID (not the private one), the caller can supply `StringEntityID::new`. For other ID types, the factory must be provided.
-- **Verifier**: Confirmed. P2PGhostChannel.java line 350 constructs the ghost entity ID as `(ID) new StringEntityID(tg.entityId())` where `StringEntityID` is a private record inside `P2PGhostChannel` (completely separate from the public `com.hellblazer.luciferase.simulation.entity.StringEntityID`). 
+- **Verifier**: Confirmed. P2PGhostChannel.java line 350 constructs the ghost entity ID as `(ID) new StringEntityID(tg.entityId())` where `StringEntityID` is a private record inside `P2PGhostChannel` (completely separate from the public `com.hellblazer.luciferase.simulation.entity.StringEntityID`).
 
 GhostStateListener.java line 154 then does `(StringEntityID) entityId` — importing `com.hellblazer.luciferase.simu
 
@@ -164,7 +164,7 @@ _(20 distinct Criticals after merging expert/critic corroboration of the same si
 
 ### bubble-core
 - **sim:bubble/AdaptiveSplitPolicy.java:151-164** [correctness] AdaptiveSplitPolicy.performSplit: creates empty child bubbles — cluster analysis is unused
-  - performSplit() creates one EnhancedBubble per cluster in analysis.clusters() but does NOT populate them with entities. It returns empty bubbles. The caller is expected to call redistributeEntities() separately, which uses naive round-robin 
+  - performSplit() creates one EnhancedBubble per cluster in analysis.clusters() but does NOT populate them with entities. It returns empty bubbles. The caller is expected to call redistributeEntities() separately, which uses naive round-robin
 - **sim:bubble/BubbleBoundsTracker.java:94-125** [concurrency] BubbleBoundsTracker: Non-Atomic bounds/entityPositions Update — Concurrent Visibility Race
   - entityPositions (ConcurrentHashMap) and bounds (volatile) are updated in separate non-atomic steps. onEntityAdded puts to entityPositions then updates bounds; a concurrent call to centroid() between those two writes reads an entityPositions
 - **sim:bubble/BubbleBoundsTracker.java:118-125** [correctness] BubbleBoundsTracker.onEntityMoved: bounds only expand, never shrink
@@ -190,7 +190,7 @@ _(20 distinct Criticals after merging expert/critic corroboration of the same si
 
 ### bubble-migration
 - **sim:bubble/BubbleBoundsTracker.java:118-125** [correctness] BubbleBoundsTracker.onEntityMoved only expands bounds — bounds grow monotonically, never shrink
-  - onEntityMoved only calls bounds.expand(newPosition). It never recalculates from all positions. As entities move away from old extremes, the bounds keep old max extents indefinitely. Eventually every entity in a bubble appears 'outside' its 
+  - onEntityMoved only calls bounds.expand(newPosition). It never recalculates from all positions. As entities move away from old extremes, the bounds keep old max extents indefinitely. Eventually every entity in a bubble appears 'outside' its
 - **sim:bubble/BubbleGhostCoordinator.java:33-60** [distributed] GhostStateManager receives stale BubbleBounds snapshot — ghost dead-reckoning clamped to initial (empty) bounds
   - The BubbleGhostCoordinator constructor passes `boundsTracker.bounds()` (a BubbleBounds value) to GhostStateManager. BubbleBounds is an immutable value type and BubbleBoundsTracker's bounds field is volatile; the snapshot captured at constru
 - **sim:bubble/EnhancedBubbleMigrationIntegration.java:267-290** [correctness] processTimeouts double-invocation — migrationFsm.processTimeouts called redundantly inside entity loop
@@ -208,7 +208,7 @@ _(20 distinct Criticals after merging expert/critic corroboration of the same si
 - **sim:bubble/RealTimeController.java:228-241** [clock-injection] System.nanoTime in RealTimeController.tickLoop — clock-injection mandate violated
   - tickLoop() calls System.nanoTime() directly twice: to seed the initial deadline and to compute remaining sleep time. This makes tick scheduling non-deterministic in tests and violates the project's mandatory Clock-injection invariant (all t
 - **sim:bubble/RealTimeController.java:228, 241** [clock-injection] RealTimeController.tickLoop(): System.nanoTime() called directly — clock injection mandate violated
-  - tickLoop() uses System.nanoTime() at lines 228 and 241 for deadline-based scheduling. RealTimeController is the root clock source for ALL bubble simulation timing. The injected Clock interface is present elsewhere but not used for nanoTime 
+  - tickLoop() uses System.nanoTime() at lines 228 and 241 for deadline-based scheduling. RealTimeController is the root clock source for ALL bubble simulation timing. The injected Clock interface is present elsewhere but not used for nanoTime
 - **sim:bubble/TetrahedralMigration.java:252** [correctness] TetrahedralMigration.executeMigration(): System.err.println on rollback failure — SLF4J violation + cascade not observable
   - When the PHASE 3 rollback (removeEntity on destination) itself fails, the only record is `System.err.println('Rollback failed for entity ' + entityId)`. This violates the SLF4J mandate. More critically, the duplicate-entity state (entity ex
 - **sim:bubble/TetreeGhostSyncAdapter.java:316-320** [clock-injection] GhostEntityHalo 5-arg constructor calls Clock.system() — covert wall-clock in TetreeGhostSyncAdapter
@@ -228,9 +228,9 @@ _(20 distinct Criticals after merging expert/critic corroboration of the same si
 - **sim:causality/FirefliesViewMonitor.java:417-422** [correctness] NPE when FirefliesViewMonitor.getCurrentViewId() returns null
   - getCurrentViewId() returns null when membershipView is not a FirefliesMembershipView instance. OptimisticMigratorIntegration.requestMigrationApproval() calls getCurrentViewId() and directly passes the result as the viewId constructor argume
 - **sim:consensus/committee/CommitteeBallotBox.java:128** [distributed] Quorum computed from full-cluster context, not committee — permanent liveness failure
-  - The quorum formula `context.size() == 1 ? 1 : context.toleranceLevel() + 1` uses the full-cluster DynamicContext. For a 100-node cluster, toleranceLevel()=33, quorum=34. But bftSubset() returns a 7-9 member committee (CommitteeConfig lines 
+  - The quorum formula `context.size() == 1 ? 1 : context.toleranceLevel() + 1` uses the full-cluster DynamicContext. For a 100-node cluster, toleranceLevel()=33, quorum=34. But bftSubset() returns a 7-9 member committee (CommitteeConfig lines
 - **sim:consensus/committee/CommitteeProtoConverter.java:71** [serialization] hexToDigest() hardcodes DigestAlgorithm.DEFAULT — silent vote rejection with non-DEFAULT algorithms
-  - CommitteeProtoConverter.hexToDigest() always constructs `new Digest(DigestAlgorithm.DEFAULT, bytes)`. Digest.equals() is algorithm-aware: the comparison at Digest.java:189 is `if (algorithm != other.algorithm) return false`. If the cluster 
+  - CommitteeProtoConverter.hexToDigest() always constructs `new Digest(DigestAlgorithm.DEFAULT, bytes)`. Digest.equals() is algorithm-aware: the comparison at Digest.java:189 is `if (algorithm != other.algorithm) return false`. If the cluster
 - **sim:consensus/committee/CommitteeVotingProtocol.java:94-121, 143-155** [resource-leak] ProposalState leaks in proposals map on normal quorum completion
   - proposals.remove(proposalId) is called only in handleTimeout() (line 144) and rollbackOnViewChange() (line 188). The normal quorum-reached path — recordVote() detects result.isDone() and calls state.timeoutTask.cancel(false) — never removes
 - **sim:consensus/committee/CommitteeVotingProtocol.java:94-121** [resource-leak] ProposalState memory leak on normal quorum success path
@@ -260,7 +260,7 @@ _(20 distinct Criticals after merging expert/critic corroboration of the same si
 - **simulation/src/test/java/com/hellblazer/luciferase/simulation/distributed/network/FailureRecoveryTest.java:232-258** [test-gap] FailureRecoveryTest.testCascadingFailureObservation: second setEntityRollbackListener overwrites the observer under test
   - The test sets an EntityRollbackListener at line 232 that sets failureObserved=true. A rollback event is sent at lines 250-252. Then at line 255 a SECOND setEntityRollbackListener call overwrites the first lambda before the async delivery ca
 - **simulation/src/test/java/com/hellblazer/luciferase/simulation/distributed/network/FailureRecoveryTest.java:321-323** [test-gap] FailureRecoveryTest.testConsistencyUnderConcurrentFailures: vacuous assertions prove nothing
-  - The three final assertions are assertTrue(pendingCount >= 0) for migratorA, B, and C. A non-negative pending count is always true — it holds even if every migration failed catastrophically. No actual consistency property is asserted: there 
+  - The three final assertions are assertTrue(pendingCount >= 0) for migratorA, B, and C. A non-negative pending count is always true — it holds even if every migration failed catastrophically. No actual consistency property is asserted: there
 
 ### ghost
 - **sim:ghost/BubbleGhostManager.java:252-254** [correctness] BubbleGhostManager.handleGhostBatch — incoming ghost lifecycle state never created, onUpdate is always a no-op
@@ -286,7 +286,7 @@ _(20 distinct Criticals after merging expert/critic corroboration of the same si
 
 ### lifecycle-tick-events
 - **sim:lifecycle/LifecycleCoordinator.java:806-821** [correctness] Rollback of STARTING components silently leaks half-initialized state
-  - stopLayer() during startup rollback filters for STARTING|RUNNING components (line 807) and calls stop() on them. AbstractLifecycleAdapter.stop() rejects STARTING state with 'Cannot stop from state: STARTING'. The rejection is swallowed via 
+  - stopLayer() during startup rollback filters for STARTING|RUNNING components (line 807) and calls stop() on them. AbstractLifecycleAdapter.stop() rejects STARTING state with 'Cannot stop from state: STARTING'. The rejection is swallowed via
 - **sim:scheduling/BucketScheduler.java:313-317** [correctness] BucketScheduler.toString() NPE when legacy constructor used
   - The legacy 4-argument constructor (lines 220-232) sets entity=null and controller=null. toString() at line 316 calls entity.getCurrentBucket() unconditionally. Any SLF4J logging that references a legacy BucketScheduler (e.g., in debug or wa
 - **sim:tick/SimulationTickOrchestrator.java:126-129** [correctness] Null bubble passed to entityUpdater.updateEntities causes silent NPE on every tick
@@ -316,13 +316,13 @@ _(20 distinct Criticals after merging expert/critic corroboration of the same si
 
 ### persistence-misc
 - **sim:delos/fireflies/FirefliesMembershipView.java:118-122** [distributed] FirefliesMembershipView.ViewChange.left Is Always Empty in Production
-  - handleDelosViewChange resolves leaving member Digests by calling delosChange.context().getMember(digest) where context() is the NEW post-change DynamicContext. Members that have just left are no longer present in this context, so getMember 
+  - handleDelosViewChange resolves leaving member Digests by calling delosChange.context().getMember(digest) where context() is the NEW post-change DynamicContext. Members that have just left are no longer present in this context, so getMember
 - **sim:delos/fireflies/FirefliesMembershipView.java:56-57** [resource-leak] FirefliesMembershipView Leaks Listener Registration — Prevents GC
   - The constructor calls view.register(listenerKey, this::handleDelosViewChange) with a randomly generated UUID key and never calls view.unregister(). The Delos View holds a strong reference to the bound method reference, which closes over thi
 - **sim:persistence/EventRecovery.java:72-111** [correctness] Recovery Never Filters Events Against Checkpoint Sequence Number
   - EventRecovery.recover() loads the checkpoint metadata (obtaining its sequenceNumber) but then calls wal.readAllEvents() which returns every event in the log directory unconditionally. The checkpoint sequence number is never used to call rea
 - **sim:tumbler/BubbleMigrator.java:107-136** [concurrency] BubbleMigrator.migrate() Check-Then-Act Race Allows Duplicate Migrations
-  - The containsKey guard, concurrent-migration count check, and inFlightMigrations.put are three non-atomic operations on a ConcurrentHashMap. Two concurrent threads calling migrate() with the same bubbleId can both observe containsKey=false, 
+  - The containsKey guard, concurrent-migration count check, and inFlightMigrations.put are three non-atomic operations on a ConcurrentHashMap. Two concurrent threads calling migrate() with the same bubbleId can both observe containsKey=false,
 
 ### render
 - **sim:viz/render/RegionBuilder.java:298-317** [clock-injection] Clock injection violation: System.nanoTime() in RegionBuilder.doBuild()
