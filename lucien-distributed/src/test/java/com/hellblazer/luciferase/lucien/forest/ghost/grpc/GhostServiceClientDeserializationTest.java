@@ -66,7 +66,7 @@ class GhostServiceClientDeserializationTest {
         @Override public int getCurrentRank() { return 1; }
         @Override public void addGhostElement(GhostElement<MortonKey, LongEntityID, String> e) { }
         @Override public void updateGhostElement(GhostElement<MortonKey, LongEntityID, String> e) { }
-        @Override public void removeGhostElement(String entityId, long treeId) { }
+        @Override public boolean removeGhostElement(String entityId, long treeId) { return false; }
         @Override public StatsResponse getGlobalStats() { return StatsResponse.getDefaultInstance(); }
     }
 

@@ -19,6 +19,7 @@ package com.hellblazer.sentry;
 
 import com.hellblazer.luciferase.common.IdentitySet;
 import com.hellblazer.luciferase.geometry.Geometry;
+import com.hellblazer.luciferase.geometry.GeometryAdaptive;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
@@ -146,7 +147,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * the test point is coplanar
      */
     public static double orientation(Tuple3f query, Tuple3f a, Tuple3f b, Tuple3f c) {
-        var result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
+        var result = GeometryAdaptive.leftOfPlaneAdaptive(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z,
+                                                         query.x, query.y, query.z);
         return Math.signum(result);
     }
 

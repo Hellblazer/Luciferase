@@ -301,6 +301,24 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
     }
 
     /**
+     * Return the entity IDs stored at the given spatial key, in O(log N) time (backed by the underlying
+     * {@code ConcurrentSkipListMap}). Used by the ghost-boundary subsystem to populate real entity content
+     * without an O(N) stream scan (Luciferase-7wzml.2 H1 fix).
+     *
+     * <p>Default throws {@link UnsupportedOperationException}; {@code AbstractSpatialIndex} overrides with a
+     * direct map lookup. The default exists so external implementors that pre-date this method continue to compile;
+     * only ghost-subsystem code paths that call it on non-overriding implementations hit the throw.
+     *
+     * @param key the spatial key to look up
+     * @return set of entity IDs at the key (defensive copy), or empty set if the key is absent
+     */
+    default Set<ID> getEntityIdsAt(Key key) {
+        throw new UnsupportedOperationException(
+            "getEntityIdsAt() is not implemented for " + getClass().getName()
+            + "; required for ghost-subsystem integration (Luciferase-7wzml.2 H1).");
+    }
+
+    /**
      * Refine (subdivide) the node at the given spatial key by one level, on demand.
      *
      * <p>Luciferase-m27q (2:1 balance B10c). Unlike the entity-threshold and deferred bulk-loading subdivision

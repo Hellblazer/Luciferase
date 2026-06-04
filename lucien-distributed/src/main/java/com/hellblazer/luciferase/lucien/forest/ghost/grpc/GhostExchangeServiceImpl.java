@@ -329,10 +329,16 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 }
                 case REMOVE -> {
                     var removal = update.getRemove();
-                    ghostLayerProvider.removeGhostElement(removal.getEntityId(), removal.getSourceTreeId());
                     entityId = removal.getEntityId();
-                    success = true;
-                    log.debug("Removed ghost element: {}", entityId);
+                    success = ghostLayerProvider.removeGhostElement(entityId, removal.getSourceTreeId());
+                    if (success) {
+                        log.debug("Removed ghost element: {}", entityId);
+                    } else {
+                        errorMessage = "Ghost element not found or layer absent: entityId=" + entityId
+                                       + " treeId=" + removal.getSourceTreeId();
+                        log.warn("REMOVE failed — element not found: entityId={} treeId={}", entityId,
+                                 removal.getSourceTreeId());
+                    }
                 }
                 case UPDATETYPE_NOT_SET -> {
                     errorMessage = "Update type not set";
@@ -457,11 +463,13 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
         
         /**
          * Removes a ghost element.
-         * 
+         *
          * @param entityId the entity ID to remove
-         * @param treeId the tree ID
+         * @param treeId   the tree ID
+         * @return {@code true} if at least one element with the given entityId was removed,
+         *         {@code false} if the layer was absent or no matching element was found
          */
-        void removeGhostElement(String entityId, long treeId);
+        boolean removeGhostElement(String entityId, long treeId);
         
         /**
          * Gets global statistics across all ghost layers.

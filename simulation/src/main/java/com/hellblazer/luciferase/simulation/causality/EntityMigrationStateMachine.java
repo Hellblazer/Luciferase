@@ -450,6 +450,28 @@ public class EntityMigrationStateMachine {
     }
 
     /**
+     * Directly set entity state during crash recovery, bypassing normal transition guards.
+     *
+     * <p>Use ONLY during WAL replay / crash recovery. Normal state transitions must go through
+     * {@link #transition} so that view-stability and invariant checks are enforced.
+     *
+     * <p>If {@code state} is {@code null} the entity is removed from the tracking map (equivalent
+     * to "was never tracked on this node").
+     *
+     * @param entityId recovered entity identifier (same type used at insert time)
+     * @param state    state to forcibly set, or {@code null} to remove
+     */
+    public void recoverEntityState(Object entityId, EntityMigrationState state) {
+        Objects.requireNonNull(entityId, "entityId must not be null");
+        if (state == null) {
+            entityStates.remove(entityId);
+        } else {
+            entityStates.put(entityId, state);
+        }
+        log.debug("Recovery: set entity {} to state {}", entityId, state);
+    }
+
+    /**
      * Attempt a state transition for an entity.
      *
      * @param entityId Entity to transition

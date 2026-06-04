@@ -490,12 +490,45 @@ public class GhostCommunicationManager<Key extends SpatialKey<Key>, ID extends E
         }
         
         @Override
-        public void removeGhostElement(String entityId, long treeId) {
+        public boolean removeGhostElement(String entityId, long treeId) {
             var layer = ghostLayers.get(treeId);
-            if (layer != null) {
-                // Implementation would need to add removal capability to GhostLayer
-                log.debug("Remove ghost element {} from tree {}", entityId, treeId);
+            if (layer == null) {
+                log.warn("removeGhostElement: no ghost layer for treeId={}", treeId);
+                return false;
             }
+            // Deserialise the wire entityId to a typed ID using the SAME contract used everywhere
+            // else in the ghost gRPC path (ProtobufConverters.createEntityId / ghostElementFromProtobuf).
+            // Matching on the typed ID's equals() is robust against toString() format divergence
+            // (UUID case normalisation, LongEntityID decoration, custom EntityID implementations).
+            // Falling back to raw-string comparison would silently fail whenever the wire format
+            // differs from the stored ID's toString() (Luciferase-7wzml.1 / RDR-004 D3 class).
+            final ID typedId;
+            try {
+                typedId = ProtobufConverters.createEntityId(entityId, entityIdClass);
+            } catch (ProtobufConverters.UnsupportedEntityIdTypeException e) {
+                log.error("removeGhostElement: unsupported entityIdClass {} — cannot deserialise wire entityId={}",
+                          entityIdClass, entityId, e);
+                return false;
+            } catch (IllegalArgumentException e) {
+                log.warn("removeGhostElement: malformed wire entityId='{}' for class {}: {}",
+                         entityId, entityIdClass.getSimpleName(), e.getMessage());
+                return false;
+            }
+            // Collect all matching elements first (getAllGhostElements holds a read-lock snapshot)
+            // then remove each one. GhostLayer.removeGhostElement returns true on actual removal.
+            var toRemove = layer.getAllGhostElements()
+                                .stream()
+                                .filter(e -> typedId.equals(e.getEntityId()))
+                                .toList();
+            if (toRemove.isEmpty()) {
+                log.debug("removeGhostElement: no element with entityId={} in treeId={}", entityId, treeId);
+                return false;
+            }
+            boolean removed = false;
+            for (var element : toRemove) {
+                removed |= layer.removeGhostElement(element.getSpatialKey(), element);
+            }
+            return removed;
         }
         
         @Override

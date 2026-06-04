@@ -60,6 +60,7 @@ public class PersistenceManager implements AutoCloseable {
 
     private final UUID nodeId;
     private final WriteAheadLog writeAheadLog;
+    private final RecoveryStateSink recoverySink;
     private final ScheduledExecutorService executor;
     private final AtomicBoolean recoveryInProgress;
     private final AtomicLong lastCheckpointSeq;
@@ -76,14 +77,36 @@ public class PersistenceManager implements AutoCloseable {
     }
 
     /**
-     * Create PersistenceManager with default settings.
+     * Create PersistenceManager with default settings and a no-op recovery sink.
      *
-     * @param nodeId Node UUID
+     * <p>Use {@link #PersistenceManager(UUID, Path, RecoveryStateSink)} to provide a real sink
+     * so that {@link #recover()} reconstructs actual state (migration FSM, entity positions)
+     * rather than silently discarding replayed events.
+     *
+     * @param nodeId       Node UUID
      * @param logDirectory Directory for log files
      * @throws IOException if log initialization fails
      */
     public PersistenceManager(UUID nodeId, Path logDirectory) throws IOException {
+        this(nodeId, logDirectory, RecoveryStateSink.NOOP);
+    }
+
+    /**
+     * Create PersistenceManager with a real recovery sink.
+     *
+     * <p>The {@code recoverySink} receives every replayed WAL event during {@link #recover()} so
+     * that real state (migration FSM, entity positions) can be reconstructed on crash recovery.
+     * Pass {@link RecoveryStateSink#NOOP} if recovery state reconstruction is intentionally
+     * deferred (but prefer this overload in production so callers cannot silently lose state).
+     *
+     * @param nodeId        Node UUID
+     * @param logDirectory  Directory for log files
+     * @param recoverySink  sink that receives replayed events during recovery (must not be null)
+     * @throws IOException if log initialization fails
+     */
+    public PersistenceManager(UUID nodeId, Path logDirectory, RecoveryStateSink recoverySink) throws IOException {
         this.nodeId = Objects.requireNonNull(nodeId, "nodeId must not be null");
+        this.recoverySink = Objects.requireNonNull(recoverySink, "recoverySink must not be null");
         this.writeAheadLog = new WriteAheadLog(nodeId, logDirectory);
         this.executor = Executors.newScheduledThreadPool(1, r -> {
             var thread = new Thread(r, "PersistenceManager-" + nodeId);
@@ -234,7 +257,7 @@ public class PersistenceManager implements AutoCloseable {
         }
 
         try {
-            var recovery = new EventRecovery(writeAheadLog.logDirectory);
+            var recovery = new EventRecovery(writeAheadLog.logDirectory, recoverySink);
             var recovered = recovery.recover(nodeId);
 
             log.info("Recovery completed: {} events replayed, {} skipped",

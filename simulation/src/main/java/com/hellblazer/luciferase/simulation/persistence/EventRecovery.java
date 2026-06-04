@@ -53,16 +53,33 @@ public class EventRecovery {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final Path logDirectory;
+    private final RecoveryStateSink stateSink;
 
     private volatile Clock clock = Clock.system();
 
     /**
-     * Create EventRecovery for log directory.
+     * Create EventRecovery for log directory with a no-op state sink.
+     * Equivalent to {@code new EventRecovery(logDirectory, RecoveryStateSink.NOOP)}.
      *
      * @param logDirectory Directory containing log files
      */
     public EventRecovery(Path logDirectory) {
+        this(logDirectory, RecoveryStateSink.NOOP);
+    }
+
+    /**
+     * Create EventRecovery for log directory with an injected state sink.
+     *
+     * <p>The {@code stateSink} receives every replayed event so that real state
+     * (migration FSM, entity positions) can be reconstructed on crash recovery.
+     * Pass {@link RecoveryStateSink#NOOP} to retain the previous log-only behaviour.
+     *
+     * @param logDirectory Directory containing log files
+     * @param stateSink    sink that receives replayed events (must not be null)
+     */
+    public EventRecovery(Path logDirectory, RecoveryStateSink stateSink) {
         this.logDirectory = Objects.requireNonNull(logDirectory, "logDirectory must not be null");
+        this.stateSink = Objects.requireNonNull(stateSink, "stateSink must not be null");
     }
 
     /**
@@ -130,8 +147,8 @@ public class EventRecovery {
             }
         }
 
-        // Replay valid events
-        replayEvents(validEvents);
+        // Replay valid events — capture per-event exception-skip count (M3)
+        skippedCount += replayEvents(validEvents);
 
         // Luciferase-0frcy.37 fix: a checkpoint at seq=N means the first N events are already
         // durably captured BY the checkpoint; recovery only re-reads the post-checkpoint tail
@@ -151,9 +168,15 @@ public class EventRecovery {
     /**
      * Replay events to restore state.
      *
+     * <p>Per-event errors are isolated: a malformed or otherwise unprocessable WAL entry logs a
+     * warning and increments the returned skip count rather than aborting the entire recovery
+     * run (M3 — Luciferase-7wzml.5).
+     *
      * @param events Events to replay
+     * @return number of events skipped due to per-event dispatch exceptions
      */
-    public void replayEvents(List<Map<String, Object>> events) {
+    public int replayEvents(List<Map<String, Object>> events) {
+        var exceptionSkipped = 0;
         for (var event : events) {
             try {
                 var type = (String) event.get("type");
@@ -166,9 +189,11 @@ public class EventRecovery {
                     default -> log.warn("Unknown event type: {}", type);
                 }
             } catch (Exception e) {
-                log.error("Failed to replay event: {}", event, e);
+                log.warn("Skipping malformed WAL entry during recovery: {}", event, e);
+                exceptionSkipped++;
             }
         }
+        return exceptionSkipped;
     }
 
     /**
@@ -309,36 +334,75 @@ public class EventRecovery {
     }
 
     private void replayEntityDeparture(Map<String, Object> event) {
-        var entityId = event.get("entityId");
-        var sourceBubble = event.get("sourceBubble");
-        var targetBubble = event.get("targetBubble");
+        var entityId = (String) event.get("entityId");
+        var sourceBubble = (String) event.get("sourceBubble");
+        var targetBubble = (String) event.get("targetBubble");
 
         log.debug("Replaying ENTITY_DEPARTURE: entity={}, source={}, target={}",
                  entityId, sourceBubble, targetBubble);
-
-        // In real implementation, would reconstruct state machine
-        // For now, just log the replay
+        stateSink.onEntityDeparture(entityId, sourceBubble, targetBubble);
     }
 
     private void replayViewSynchronyAck(Map<String, Object> event) {
-        var entityId = event.get("entityId");
-        var success = event.get("success");
+        var entityId = (String) event.get("entityId");
+        var successRaw = event.get("success");
+        boolean success = successRaw instanceof Boolean b ? b : Boolean.parseBoolean(String.valueOf(successRaw));
 
         log.debug("Replaying VIEW_SYNC_ACK: entity={}, success={}", entityId, success);
+        stateSink.onViewSynchronyAck(entityId, success);
     }
 
     private void replayDeferredUpdate(Map<String, Object> event) {
-        var entityId = event.get("entityId");
-        var position = event.get("position");
-        var velocity = event.get("velocity");
+        var entityId = (String) event.get("entityId");
+        var posRaw = event.get("position");
+        var velRaw = event.get("velocity");
 
         log.debug("Replaying DEFERRED_UPDATE: entity={}, pos={}, vel={}",
-                 entityId, position, velocity);
+                 entityId, posRaw, velRaw);
+        stateSink.onDeferredUpdate(entityId, toFloatArray(posRaw), toFloatArray(velRaw));
     }
 
     private void replayMigrationCommit(Map<String, Object> event) {
-        var entityId = event.get("entityId");
+        var entityId = (String) event.get("entityId");
 
         log.debug("Replaying MIGRATION_COMMIT: entity={}", entityId);
+        stateSink.onMigrationCommit(entityId);
+    }
+
+    /**
+     * Convert a WAL-encoded position/velocity value to a float array.
+     * The WAL stores float arrays as JSON arrays, which Jackson deserialises as
+     * {@code List<Number>} (or occasionally {@code double[]}).
+     *
+     * @param raw the raw value from the event map, may be null
+     * @return float[3] or null if absent/unparseable
+     */
+    @SuppressWarnings("unchecked")
+    private static float[] toFloatArray(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            if (raw instanceof List<?> list) {
+                var arr = new float[list.size()];
+                for (int i = 0; i < list.size(); i++) {
+                    arr[i] = ((Number) list.get(i)).floatValue();
+                }
+                return arr;
+            }
+            if (raw instanceof double[] da) {
+                var arr = new float[da.length];
+                for (int i = 0; i < da.length; i++) {
+                    arr[i] = (float) da[i];
+                }
+                return arr;
+            }
+            if (raw instanceof float[] fa) {
+                return fa.clone();
+            }
+        } catch (ClassCastException | ArrayIndexOutOfBoundsException e) {
+            log.warn("Could not parse float array from WAL value: {}", raw, e);
+        }
+        return null;
     }
 }

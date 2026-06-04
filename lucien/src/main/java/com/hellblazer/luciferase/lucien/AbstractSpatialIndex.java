@@ -857,6 +857,24 @@ implements SpatialIndex<Key, ID, Content>,
         }
     }
 
+    /**
+     * O(log N) entity-ID lookup by spatial key (Luciferase-7wzml.2 H1). Backed by a direct
+     * {@link java.util.concurrent.ConcurrentSkipListMap#get} — no stream scan needed.
+     */
+    @Override
+    public Set<ID> getEntityIdsAt(Key key) {
+        lock.readLock().lock();
+        try {
+            var node = getSpatialIndex().get(key);
+            if (node == null || node.isEmpty()) {
+                return java.util.Collections.emptySet();
+            }
+            return node.getEntityIdsAsSet();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     /** Auto-id insert (no bounds). RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public ID insert(Point3f position, byte level, Content content) {
