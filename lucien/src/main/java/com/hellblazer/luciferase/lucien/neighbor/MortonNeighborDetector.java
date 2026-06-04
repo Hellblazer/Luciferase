@@ -73,11 +73,9 @@ public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
     };
     
     private final Octree<?, ?> octree;
-    private final long maxCoordinate;
-    
+
     public MortonNeighborDetector(Octree<?, ?> octree) {
         this.octree = Objects.requireNonNull(octree, "Octree cannot be null");
-        this.maxCoordinate = (1L << Constants.getMaxRefinementLevel()) - 1;
     }
     
     @Override
@@ -97,16 +95,16 @@ public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
     
     @Override
     public boolean isBoundaryElement(MortonKey element, Direction direction) {
-        // Decode coordinates directly - these are actual coordinate values
+        // Decode raw grid coordinates — same convention as MortonKey.neighbor()
         int[] rawCoords = MortonCurve.decode(element.getMortonCode());
-        var cellSize = 1L << (Constants.getMaxRefinementLevel() - element.getLevel());
-        
+        var cellSize = Constants.lengthAtLevel(element.getLevel());
+
         return switch (direction) {
-            case POSITIVE_X -> rawCoords[0] + cellSize > maxCoordinate;
+            case POSITIVE_X -> rawCoords[0] + cellSize > Constants.MAX_COORD;
             case NEGATIVE_X -> rawCoords[0] == 0;
-            case POSITIVE_Y -> rawCoords[1] + cellSize > maxCoordinate;
+            case POSITIVE_Y -> rawCoords[1] + cellSize > Constants.MAX_COORD;
             case NEGATIVE_Y -> rawCoords[1] == 0;
-            case POSITIVE_Z -> rawCoords[2] + cellSize > maxCoordinate;
+            case POSITIVE_Z -> rawCoords[2] + cellSize > Constants.MAX_COORD;
             case NEGATIVE_Z -> rawCoords[2] == 0;
         };
     }
@@ -139,48 +137,32 @@ public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
     private List<MortonKey> findNeighborsWithOffsets(MortonKey element, int[][] offsets) {
         var neighbors = new ArrayList<MortonKey>();
         var coords = decodeCoordinates(element);
-        var cellSize = 1L << (Constants.getMaxRefinementLevel() - element.getLevel());
-        
+        var cellSize = Constants.lengthAtLevel(element.getLevel());
+
         for (var offset : offsets) {
             var nx = coords[0] + offset[0] * cellSize;
             var ny = coords[1] + offset[1] * cellSize;
             var nz = coords[2] + offset[2] * cellSize;
-            
-            // Check bounds
-            if (nx >= 0 && nx < maxCoordinate &&
-                ny >= 0 && ny < maxCoordinate &&
-                nz >= 0 && nz < maxCoordinate) {
-                
-                var neighborMorton = encodeMorton(nx, ny, nz);
+
+            // Check bounds — same convention as MortonKey.neighbor()
+            if (nx >= 0 && nx <= Constants.MAX_COORD &&
+                ny >= 0 && ny <= Constants.MAX_COORD &&
+                nz >= 0 && nz <= Constants.MAX_COORD) {
+
+                var neighborMorton = MortonCurve.encode(nx, ny, nz);
                 var neighborKey = new MortonKey(neighborMorton, element.getLevel());
                 neighbors.add(neighborKey);
             }
         }
-        
+
         return neighbors;
     }
-    
+
     /**
-     * Decode Morton code to coordinates.
+     * Decode Morton code to raw grid coordinates (0..2^21-1), consistent with
+     * MortonKey.neighbor() and isBoundaryElement() conventions.
      */
-    public long[] decodeCoordinates(MortonKey key) {
-        // Use the proper MortonCurve decode
-        int[] decoded = MortonCurve.decode(key.getMortonCode());
-        
-        // Shift to correct level
-        var shift = Constants.getMaxRefinementLevel() - key.getLevel();
-        return new long[] {
-            (long)decoded[0] << shift,
-            (long)decoded[1] << shift,
-            (long)decoded[2] << shift
-        };
-    }
-    
-    /**
-     * Encode coordinates to Morton code.
-     */
-    private long encodeMorton(long x, long y, long z) {
-        // Use the proper MortonCurve encode
-        return MortonCurve.encode((int)x, (int)y, (int)z);
+    public int[] decodeCoordinates(MortonKey key) {
+        return MortonCurve.decode(key.getMortonCode());
     }
 }

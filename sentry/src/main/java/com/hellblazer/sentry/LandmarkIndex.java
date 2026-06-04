@@ -157,15 +157,27 @@ public class LandmarkIndex {
     /**
      * Walk from start tetrahedron to the one containing the query point.
      * Tracks steps for performance monitoring.
+     *
+     * <p>Returns the containing tetrahedron on success, or {@code null} if the walk
+     * is <em>inconclusive</em> — either a hull face was reached (getNeighbor == null)
+     * or the step cap was hit.  A null return does NOT mean the query point is
+     * definitively outside the mesh; callers must fall back to a deterministic
+     * full-mesh locate rather than treating null as "outside".
+     *
+     * <p>Note: {@link Tetrahedron#orientationWrt} delegates to
+     * {@link com.hellblazer.sentry.GeometryAdaptive#leftOfPlaneAdaptive} and is
+     * already numerically robust; no separate fast/slow predicate switch is needed
+     * here.
      */
     private Tetrahedron walkToTarget(Tetrahedron start, Tuple3f query, Random entropy) {
         Tetrahedron current = start;
         int steps = 0;
-        
-        while (current != null && steps < 10000) { // Prevent infinite loops
+
+        while (current != null && steps < 10000) { // cap prevents infinite walk on degenerate meshes
             steps++;
-            
-            // Check if query is inside current tetrahedron
+
+            // Check if query is inside current tetrahedron using the robust adaptive predicate
+            // (orientationWrt -> GeometryAdaptive.leftOfPlaneAdaptive).
             V outsideFace = null;
             for (V face : Grid.VERTICES) {
                 if (current.orientationWrt(face, query) < 0.0d) {
@@ -173,18 +185,21 @@ public class LandmarkIndex {
                     break;
                 }
             }
-            
+
             if (outsideFace == null) {
-                // Found containing tetrahedron
+                // All four faces are positively oriented — query is inside current tet.
                 totalWalkSteps += steps;
                 return current;
             }
-            
-            // Move to neighbor
+
+            // Move through the face the query is on the wrong side of.
             current = current.getNeighbor(outsideFace);
+            // current == null means we reached a hull face: walk is inconclusive,
+            // not "definitively outside".  Fall through to the null return below.
         }
-        
-        // Failed to find
+
+        // Inconclusive: hull-exit or step-cap.  The caller (MutableGrid.locate) must
+        // fall back to a deterministic locate rather than treating this as "outside".
         totalWalkSteps += steps;
         return null;
     }

@@ -548,6 +548,73 @@ public class MutableGridTest {
         }
     }
     
+    /**
+     * Regression test for Luciferase-7wzml.14: hull-adjacent interior points must never be dropped
+     * or cause track() to throw when the landmark walk exits the hull or hits the step cap.
+     * <p>
+     * The defect: walkToTarget returns null for BOTH "hull-exit / step-cap" (inconclusive) AND
+     * "definitively outside". MutableGrid.track(Point3f, Random) threw IAE on null locate;
+     * track(Point3f, Vertex, Random) silently returned null (dropped the point).
+     * <p>
+     * The fix: track(Point3f, Random) falls back to deterministic Grid.locate on null;
+     * track(Point3f, Vertex, Random) falls back to Grid.locate when near.locate() returns null
+     * for a point that grid.contains() confirms is inside.
+     */
+    @Test
+    @DisplayName("Hull-adjacent interior point: track() must never drop or throw (Luciferase-7wzml.14)")
+    public void testHullAdjacentInteriorPointNeverDropped() {
+        // Build a tiny mesh — just enough to have a convex hull with null-neighbor hull faces.
+        // Five non-coplanar points create a Delaunay triangulation whose outer tetrahedra
+        // each have at least one hull face (neighbor == null).
+        float base = 10_000f;
+        grid.track(new Point3f(base,        base,        base),        entropy);
+        grid.track(new Point3f(base + 3000, base,        base),        entropy);
+        grid.track(new Point3f(base + 1500, base + 2598, base),        entropy);
+        grid.track(new Point3f(base + 1500, base + 866,  base + 2449), entropy);
+        grid.track(new Point3f(base + 1500, base + 866,  base + 500),  entropy);
+        int sizeBefore = grid.size();
+
+        // --- track(Point3f, Random) must not throw for a contained point ---
+        // A point near the centre of the inserted cloud but not coincident with any vertex.
+        Point3f interior = new Point3f(base + 1500f, base + 1000f, base + 600f);
+        assertTrue(grid.contains(interior),
+            "Interior test point must be inside the grid bounds (pre-condition)");
+
+        Vertex v1;
+        try {
+            v1 = grid.track(interior, entropy);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            fail("track(Point3f, Random) threw for a contained point: " + e);
+            return;
+        }
+        assertNotNull(v1, "track(Point3f, Random) must not drop a geometrically interior point");
+        assertEquals(sizeBefore + 1, grid.size());
+
+        // --- track(Point3f, Vertex, Random) must not silently drop a contained point ---
+        // Use the first inserted vertex as the 'near' hint.  Its adjacent tetrahedron touches
+        // hull faces (null neighbors), so a naive walk from there can exit the hull and return
+        // null for a point that IS inside the mesh.
+        Vertex nearHint = grid.iterator().next();
+        assertNotNull(nearHint, "Need at least one vertex as near hint");
+
+        Point3f interior2 = new Point3f(base + 1200f, base + 800f, base + 700f);
+        assertTrue(grid.contains(interior2),
+            "Second interior test point must be inside the grid bounds (pre-condition)");
+
+        int sizeAfterFirst = grid.size();
+        Vertex v2;
+        try {
+            v2 = grid.track(interior2, nearHint, entropy);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            fail("track(Point3f, Vertex, Random) threw for a contained point: " + e);
+            return;
+        }
+        assertNotNull(v2,
+            "track(Point3f, Vertex, Random) must not silently drop a contained interior point");
+        assertEquals(sizeAfterFirst + 1, grid.size(),
+            "Grid size must grow after track(Point3f, Vertex, Random) on a contained point");
+    }
+
     @Test
     @DisplayName("Manual validation of flip algorithm for small point set")
     public void testManualFlipValidation() {

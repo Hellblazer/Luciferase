@@ -427,19 +427,86 @@ class MortonOptimizerTest {
     void testLookupTableConsistency() {
         // Test that fast decode gives same results as regular decode
         int[] fastResult = new int[2];
-        
+
         for (long morton = 0; morton < 1000; morton++) {
             if (morton <= 0xFFFFL) { // Within 16-bit range for fast decode
                 MortonOptimizer.decode2DFast(morton, fastResult);
-                
+
                 int regularX = MortonOptimizer.decodeX2D(morton);
                 int regularY = MortonOptimizer.decodeY2D(morton);
-                
-                assertEquals(regularX, fastResult[0], 
+
+                assertEquals(regularX, fastResult[0],
                     String.format("Fast decode X inconsistency at Morton %d", morton));
-                assertEquals(regularY, fastResult[1], 
+                assertEquals(regularY, fastResult[1],
                     String.format("Fast decode Y inconsistency at Morton %d", morton));
             }
         }
+    }
+
+    /**
+     * Round-trip tests covering the full 21-bit component range.
+     * Verifies compact1By2 operates on the full long without truncation.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "0, 0, 0",
+        "1, 0, 0",
+        "0, 1, 0",
+        "0, 0, 1",
+        "1023, 1023, 1023",
+        "1024, 0, 0",
+        "0, 1024, 0",
+        "0, 0, 1024",
+        "1048576, 0, 0",
+        "0, 1048576, 0",
+        "0, 0, 1048576",
+        "2097151, 0, 0",
+        "0, 2097151, 0",
+        "0, 0, 2097151",
+        "2097151, 2097151, 2097151",
+        "1234567, 890123, 456789"
+    })
+    void testFullRange3DRoundTrip(int x, int y, int z) {
+        long morton = MortonOptimizer.encode3D(x, y, z);
+        assertEquals(x, MortonOptimizer.decodeX3D(morton),
+            String.format("X round-trip failed for (%d, %d, %d), morton=%d", x, y, z, morton));
+        assertEquals(y, MortonOptimizer.decodeY3D(morton),
+            String.format("Y round-trip failed for (%d, %d, %d), morton=%d", x, y, z, morton));
+        assertEquals(z, MortonOptimizer.decodeZ3D(morton),
+            String.format("Z round-trip failed for (%d, %d, %d), morton=%d", x, y, z, morton));
+    }
+
+    /**
+     * Verifies cached 3D encoding round-trips at the full 21-bit boundary.
+     */
+    @Test
+    void testCached3DRoundTripFullRange() {
+        int[] coords = {0, 1, 1023, 1024, (1 << 20), (1 << 21) - 1};
+        for (int x : coords) {
+            for (int y : coords) {
+                for (int z : coords) {
+                    long morton = MortonOptimizer.encode3DCached(x, y, z);
+                    assertEquals(x, MortonOptimizer.decodeX3D(morton),
+                        String.format("Cached X round-trip failed for (%d, %d, %d)", x, y, z));
+                    assertEquals(y, MortonOptimizer.decodeY3D(morton),
+                        String.format("Cached Y round-trip failed for (%d, %d, %d)", x, y, z));
+                    assertEquals(z, MortonOptimizer.decodeZ3D(morton),
+                        String.format("Cached Z round-trip failed for (%d, %d, %d)", x, y, z));
+                }
+            }
+        }
+    }
+
+    /**
+     * Confirms existing 3D tests limited to 10-bit range still pass,
+     * and the new 21-bit range decodes correctly.
+     */
+    @Test
+    void testMaximumCoordinates3DFullRange() {
+        int max21 = (1 << 21) - 1; // 2097151
+        long morton = MortonOptimizer.encode3D(max21, max21, max21);
+        assertEquals(max21, MortonOptimizer.decodeX3D(morton));
+        assertEquals(max21, MortonOptimizer.decodeY3D(morton));
+        assertEquals(max21, MortonOptimizer.decodeZ3D(morton));
     }
 }

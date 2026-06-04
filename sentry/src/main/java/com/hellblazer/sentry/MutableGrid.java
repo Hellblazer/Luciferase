@@ -300,10 +300,14 @@ public class MutableGrid extends Grid {
      * Track the point into the tetrahedralization. See "Computing the 3D Voronoi Diagram Robustly: An Easy
      * Explanation", by Hugo Ledoux
      * <p>
+     * The {@code near} vertex is used as a walk starting hint.  If the walk from {@code near} is
+     * inconclusive (hull-exit or step-cap in {@link Tetrahedron#locate}), this method falls back
+     * to the full deterministic {@link #locate(Tuple3f, Random)} rather than silently dropping the
+     * point.  A null return means the point is genuinely outside the mesh per {@link #contains}.
      *
      * @param p    - the point to be inserted
-     * @param near - the nearby vertex
-     * @return the new Vertex in the tetrahedralization or null if the point is contained in the tetrahedralization
+     * @param near - the nearby vertex used as a walk hint; must not be null
+     * @return the new Vertex in the tetrahedralization, or null if p is outside the mesh
      */
     public Vertex track(Point3f p, Vertex near, Random entropy) {
         assert p != null;
@@ -313,7 +317,15 @@ public class MutableGrid extends Grid {
         final var v = new Vertex(p);
         var containedIn = near.locate(p, entropy);
         if (containedIn == null) {
-            return null;
+            // near.locate() hit a hull face or returned inconclusive — fall back to the full
+            // robust locate so a valid interior point is never silently dropped.
+            containedIn = locate(p, entropy);
+        }
+        if (containedIn == null) {
+            // Both walks failed.  This can only happen for a genuinely exterior point,
+            // but contains() already passed — signal as a diagnostic rather than a silent drop.
+            throw new IllegalStateException(
+                "track(Point3f, Vertex, Random): locate inconclusive for a contained point: " + p);
         }
         add(v, containedIn);
         return v;
@@ -323,9 +335,17 @@ public class MutableGrid extends Grid {
      * Track the point into the tetrahedralization. See "Computing the 3D Voronoi Diagram Robustly: An Easy
      * Explanation", by Hugo Ledoux
      * <p>
+     * If the fast landmark walk in {@link #locate(Tuple3f, Random)} is inconclusive (hull-exit or
+     * step-cap), the underlying {@link Tetrahedron#locate} fallback is used.  If that also fails
+     * for a point {@link #contains} confirms is inside, an {@link IllegalStateException} is thrown
+     * (not a silent drop).
      *
      * @param p - the point to be inserted
      * @return the Vertex in the tetrahedralization
+     * @throws IllegalStateException if {@link #contains} returns true but both the landmark walk
+     *                               and the deterministic fallback locate are inconclusive —
+     *                               this indicates a mesh-consistency fault, not an expected
+     *                               exterior-point return
      */
     public Vertex track(Point3f p, Random entropy) {
         assert p != null;
@@ -335,10 +355,9 @@ public class MutableGrid extends Grid {
         final var v = new Vertex(p);
         var located = locate(p, entropy);
         if (located == null) {
-            if (contains(p)) {
-                throw new IllegalStateException("This grid should contain: " + p);
-            }
-            throw new IllegalArgumentException("There is no located vertex for " + p);
+            // locate() already tried the landmark walk + deterministic fallback.  If both
+            // returned null for a point contains() accepts, that is a mesh-consistency fault.
+            throw new IllegalStateException("locate inconclusive for a contained point: " + p);
         }
         add(v, located);
         return v;
