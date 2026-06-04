@@ -41,9 +41,15 @@ import java.util.stream.Stream;
  *
  * @author hal.hildebrand
  */
-public class FirefliesMembershipView implements MembershipView<Member> {
+public class FirefliesMembershipView implements MembershipView<Member>, AutoCloseable {
 
     private final View                               view;
+    /**
+     * Stable reference to the Delos view-change listener so {@link #close()} can deregister it.
+     * Without this, the listener (which captures {@code this}) is a permanent GC root from the
+     * long-lived Delos View, leaking every FirefliesMembershipView ever created (Luciferase-zwyf2).
+     */
+    private final Consumer<com.hellblazer.delos.context.ViewChange> delosListener = this::handleDelosViewChange;
     private final List<Consumer<ViewChange<Member>>> listeners = new CopyOnWriteArrayList<>();
     // Luciferase-0frcy.36: Digest→Member cache of previously-seen members. A leaving member is no
     // longer present in the NEW post-change DynamicContext, so it cannot be resolved via
@@ -62,7 +68,17 @@ public class FirefliesMembershipView implements MembershipView<Member> {
         // Register with Delos View to receive ViewChange notifications
         // Use a unique key based on this instance
         var listenerKey = "FirefliesMembershipView-" + UUID.randomUUID();
-        view.register(listenerKey, this::handleDelosViewChange);
+        view.register(listenerKey, delosListener);
+    }
+
+    /**
+     * Deregister the Delos view-change listener so this adapter can be garbage-collected and stops
+     * receiving notifications. Idempotent. Callers own the lifecycle and must close when done
+     * (Luciferase-zwyf2).
+     */
+    @Override
+    public void close() {
+        view.deregister(delosListener);
     }
 
     @Override

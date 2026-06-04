@@ -906,12 +906,18 @@ public class CrossProcessMigration {
          * Complete migration successfully and unlock.
          */
         private void succeedAndUnlock(long latency) {
+            // Luciferase-zwyf2: guarantee the result future is completed even if unlock() throws
+            // (e.g. IllegalMonitorStateException when a PrimeMover continuation resumes on a
+            // different thread than the one that locked). The previous single try/catch swallowed
+            // the unlock exception and skipped decrementConcurrent + resultFuture.complete, hanging
+            // any caller blocked on migrate(...).get() forever.
             try {
                 migrationLock.unlock();
+            } catch (Exception e) {
+                log.error("Error unlocking migration for entity {}: {}", entityId, e.getMessage(), e);
+            } finally {
                 decrementConcurrent.run();
                 resultFuture.complete(MigrationResult.success(entityId, dest.getBubbleId(), latency));
-            } catch (Exception e) {
-                log.error("Error completing migration success for entity {}: {}", entityId, e.getMessage(), e);
             }
         }
 
@@ -920,16 +926,20 @@ public class CrossProcessMigration {
          * Removes migration key from dedup store to allow retries after failures.
          */
         private void failAndUnlock(String reason) {
+            // Luciferase-zwyf2: guarantee future completion even if unlock() throws (see
+            // succeedAndUnlock). Unlock in its own try; cleanup + completion run in finally so a
+            // blocked caller never hangs.
             try {
                 migrationLock.unlock();
+            } catch (Exception e) {
+                log.error("Error unlocking migration for entity {}: {}", entityId, e.getMessage(), e);
+            } finally {
                 decrementConcurrent.run();
                 // Remove migration key to allow retry after failure
                 if (token != null) {
                     dedup.removeMigration(token);
                 }
                 resultFuture.complete(MigrationResult.failure(entityId, reason));
-            } catch (Exception e) {
-                log.error("Error completing migration failure for entity {}: {}", entityId, e.getMessage(), e);
             }
         }
 

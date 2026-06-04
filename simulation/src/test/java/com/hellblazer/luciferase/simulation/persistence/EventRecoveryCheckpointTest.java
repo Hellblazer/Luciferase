@@ -93,4 +93,65 @@ class EventRecoveryCheckpointTest {
             .as("Without a checkpoint, recovery replays the full log (seq>0)")
             .hasSize(3);
     }
+
+    // ---- validateRecoveryIntegrity(RecoveredState): real, falsifiable integrity gate ----
+    // (Luciferase-5yh9h — the old no-arg gate was a vacuous `return true`.)
+
+    private static HashMap<String, Object> seqEvent(String entityId, long seq) {
+        var event = departureEvent(entityId);
+        event.put("sequenceNumber", seq);
+        return event;
+    }
+
+    @Test
+    void integrityPassesForMonotonicPostCheckpointTail(@TempDir Path logDir) {
+        var recovery = new EventRecovery(logDir);
+        var checkpoint = new CheckpointMetadata(10, Instant.now());
+        // Sequences strictly increasing and all > checkpoint(10).
+        var events = java.util.List.<java.util.Map<String, Object>>of(
+            seqEvent("a", 11), seqEvent("b", 12), seqEvent("c", 13));
+        var state = new RecoveredState(checkpoint, events, 13, 0);
+        assertThat(recovery.validateRecoveryIntegrity(state))
+            .as("Monotonic, post-checkpoint tail with valid types must pass")
+            .isTrue();
+    }
+
+    @Test
+    void integrityFailsOnNonMonotonicSequence(@TempDir Path logDir) {
+        var recovery = new EventRecovery(logDir);
+        var checkpoint = new CheckpointMetadata(0, Instant.now());
+        // 12 then 11 — a reordering/corruption that the vacuous gate never caught.
+        var events = java.util.List.<java.util.Map<String, Object>>of(
+            seqEvent("a", 11), seqEvent("b", 12), seqEvent("c", 11));
+        var state = new RecoveredState(checkpoint, events, 11, 0);
+        assertThat(recovery.validateRecoveryIntegrity(state))
+            .as("A non-monotonic replayed sequence indicates corruption and must fail")
+            .isFalse();
+    }
+
+    @Test
+    void integrityFailsWhenTailReplaysCheckpointedEvents(@TempDir Path logDir) {
+        var recovery = new EventRecovery(logDir);
+        var checkpoint = new CheckpointMetadata(10, Instant.now());
+        // First replayed seq (10) is NOT > checkpoint(10) — recovery re-reading a captured prefix.
+        var events = java.util.List.<java.util.Map<String, Object>>of(
+            seqEvent("a", 10), seqEvent("b", 11));
+        var state = new RecoveredState(checkpoint, events, 11, 0);
+        assertThat(recovery.validateRecoveryIntegrity(state))
+            .as("Replaying an event at/below the checkpoint sequence must fail integrity")
+            .isFalse();
+    }
+
+    @Test
+    void integrityFailsOnEventMissingType(@TempDir Path logDir) {
+        var recovery = new EventRecovery(logDir);
+        var bad = new HashMap<String, Object>();
+        bad.put("entityId", "x");  // no "type"
+        bad.put("sequenceNumber", 11L);
+        var state = new RecoveredState(new CheckpointMetadata(0, Instant.now()),
+                                       java.util.List.of(bad), 1, 0);
+        assertThat(recovery.validateRecoveryIntegrity(state))
+            .as("An event with no type is malformed and must fail integrity")
+            .isFalse();
+    }
 }

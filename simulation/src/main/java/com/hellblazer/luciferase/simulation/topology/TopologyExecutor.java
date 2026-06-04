@@ -348,6 +348,10 @@ public class TopologyExecutor implements OperationTracker {
             return new TopologyExecutionResult(success, message, totalBefore, totalAfter);
 
         } finally {
+            // Luciferase-zwyf2: drop the thread-local operation history so the list (and the
+            // GridOperation snapshots it holds) is not retained on the calling thread after the
+            // execution completes — important when execute() runs on a pooled thread.
+            operationHistory.remove();
             executionLock.unlock();
         }
     }

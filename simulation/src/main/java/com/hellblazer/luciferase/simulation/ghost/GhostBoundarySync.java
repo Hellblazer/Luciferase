@@ -200,7 +200,11 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
             }
         }
 
-        // Expire stale ghosts
+        // Expire stale ghosts. expireStaleGhosts() and enforceMemoryLimit() record evicted ids in
+        // expiredGhosts (a per-bucket diagnostic read by getExpiredGhostCount()). Luciferase-zwyf2:
+        // clear it at the start of each bucket so it tracks only this bucket's evictions instead of
+        // accumulating one entry per eviction for the entire simulation lifetime (unbounded leak).
+        expiredGhosts.clear();
         expireStaleGhosts(bucket);
     }
 

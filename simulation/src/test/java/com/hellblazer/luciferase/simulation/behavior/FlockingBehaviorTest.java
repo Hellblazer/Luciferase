@@ -18,7 +18,6 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.Random;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -34,7 +33,10 @@ class FlockingBehaviorTest {
     @BeforeEach
     void setUp() {
         bubble = new EnhancedBubble(UUID.randomUUID(), (byte) 10, 16);
-        behavior = new FlockingBehavior();
+        // Seeded RNG so wander/steering is reproducible across runs (determinism mandate).
+        behavior = new FlockingBehavior(30f, 15f, 0.5f, 1.5f, 1.0f, 1.0f,
+                                        com.hellblazer.luciferase.simulation.config.WorldBounds.DEFAULT,
+                                        new Random(99));
     }
 
     @AfterEach
@@ -51,13 +53,14 @@ class FlockingBehaviorTest {
             bubble.addEntity("entity-" + i, new Point3f(100, 100, 100), null);
         }
 
-        // Run simulation with high separation weight
-        behavior = new FlockingBehavior(3.0f, 0.5f, 0.5f);
+        // Run simulation with high separation weight. Seed the RNG so the wander
+        // component is reproducible and drive ticks deterministically (no wall clock).
+        behavior = new FlockingBehavior(30f, 15f, 0.5f, 3.0f, 0.5f, 0.5f,
+                                        com.hellblazer.luciferase.simulation.config.WorldBounds.DEFAULT,
+                                        new Random(1));
         simulation = new SimulationBubble(bubble, behavior, 10);
 
-        simulation.start();
-        TimeUnit.MILLISECONDS.sleep(500);
-        simulation.stop();
+        runTicks(simulation, 50, 0.01f);
 
         // Entities should have spread out - check variance
         float sumX = 0, sumY = 0, sumZ = 0;
@@ -96,16 +99,16 @@ class FlockingBehaviorTest {
             ), null);
         }
 
-        // Run simulation with high cohesion weight
-        behavior = new FlockingBehavior(0.5f, 0.5f, 2.0f);
+        // Run simulation with high cohesion weight (seeded RNG + deterministic ticks).
+        behavior = new FlockingBehavior(30f, 15f, 0.5f, 0.5f, 0.5f, 2.0f,
+                                        com.hellblazer.luciferase.simulation.config.WorldBounds.DEFAULT,
+                                        new Random(2));
         simulation = new SimulationBubble(bubble, behavior, 10);
 
         // Measure initial spread
         float initialSpread = measureSpread(bubble);
 
-        simulation.start();
-        TimeUnit.MILLISECONDS.sleep(1000);
-        simulation.stop();
+        runTicks(simulation, 100, 0.01f);
 
         // Entities should not spread too far (cohesion keeps them together)
         float finalSpread = measureSpread(bubble);
@@ -127,9 +130,7 @@ class FlockingBehaviorTest {
 
         simulation = new SimulationBubble(bubble, behavior, 10);
 
-        simulation.start();
-        TimeUnit.MILLISECONDS.sleep(500);
-        simulation.stop();
+        runTicks(simulation, 50, 0.01f);
 
         // All entities should be within bounds
         for (var entity : bubble.getAllEntityRecords()) {
@@ -156,9 +157,7 @@ class FlockingBehaviorTest {
         bubble.addEntity("lonely", new Point3f(100, 100, 100), null);
 
         simulation = new SimulationBubble(bubble, behavior, 10);
-        simulation.start();
-        TimeUnit.MILLISECONDS.sleep(200);
-        simulation.stop();
+        runTicks(simulation, 20, 0.01f);
 
         var entity = bubble.getAllEntityRecords().get(0);
         var pos = entity.position();
@@ -190,6 +189,18 @@ class FlockingBehaviorTest {
 
         assertThat(customBehavior.getAoiRadius()).isEqualTo(30.0f);
         assertThat(customBehavior.getMaxSpeed()).isEqualTo(15.0f);
+    }
+
+    /**
+     * Drive the simulation a fixed number of ticks deterministically, with no wall-clock
+     * dependency. Replaces {@code start(); Thread.sleep(...); stop();} so behavior is
+     * reproducible (determinism mandate). Each call to {@link SimulationBubble#step(float)}
+     * runs exactly one physics tick synchronously.
+     */
+    private static void runTicks(SimulationBubble simulation, int tickCount, float deltaTime) {
+        for (int i = 0; i < tickCount; i++) {
+            simulation.step(deltaTime);
+        }
     }
 
     private float measureSpread(EnhancedBubble bubble) {

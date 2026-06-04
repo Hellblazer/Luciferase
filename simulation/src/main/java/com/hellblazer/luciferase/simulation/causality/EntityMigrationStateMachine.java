@@ -367,6 +367,19 @@ public class EntityMigrationStateMachine {
     }
 
     /**
+     * Create EntityMigrationStateMachine with an injected clock (Luciferase-ml7kc).
+     * Preferred over {@link #setClock(Clock)} so time is deterministic from construction.
+     *
+     * @param viewMonitor FirefliesViewMonitor for stability checks
+     * @param config      Configuration for timeout and rollback behavior
+     * @param clock       Clock providing migration timestamps (deterministic in tests)
+     */
+    public EntityMigrationStateMachine(FirefliesViewMonitor viewMonitor, Configuration config, Clock clock) {
+        this(viewMonitor, config);
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
+    /**
      * Create EntityMigrationStateMachine with Fireflies view monitor and custom configuration.
      *
      * @param viewMonitor FirefliesViewMonitor for stability checks

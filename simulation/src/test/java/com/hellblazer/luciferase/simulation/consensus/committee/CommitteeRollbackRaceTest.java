@@ -26,9 +26,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -145,6 +149,74 @@ class CommitteeRollbackRaceTest {
         assertFalse(future.isCompletedExceptionally(),
                     "Current-view proposal must be accepted after a view change");
         assertFalse(future.isDone(), "Accepted proposal is pending until quorum/timeout");
+    }
+
+    /**
+     * Luciferase-0frcy.C1: a proposal registered concurrently with a view-change rollback
+     * on the SAME id must NEVER yield a non-completing ("zombie") future. The earlier code
+     * captured the ballot-box result future OUTSIDE the viewLock, so a rollback could
+     * complete+clear the proposal in the gap and the trailing getResult would resurrect a
+     * fresh, never-completing VoteState. With register + getResult now atomic under the
+     * lock, the returned future must always settle — exceptionally (rolled back / rejected)
+     * or normally — but never hang.
+     * <p>
+     * We force the interleave with a CyclicBarrier so both threads enter their critical
+     * region at the same instant, then run the race many times to exercise both orderings.
+     */
+    @Test
+    void concurrentRegisterAndRollbackNeverProducesZombieFuture() {
+        for (int iteration = 0; iteration < 200; iteration++) {
+            final var protocol = new CommitteeVotingProtocol(mockContext, CommitteeConfig.defaultConfig(),
+                                                             scheduler);
+            // Proposal stamped with the OLD view V1; rollback will move to V2.
+            final var staleProposal = proposal(viewV1);
+            final var committee = committee(3);
+
+            final var barrier = new CyclicBarrier(2);
+            final var pool = Executors.newFixedThreadPool(2);
+            try {
+                var registerTask = pool.submit(() -> {
+                    awaitBarrier(barrier);
+                    return protocol.requestConsensus(staleProposal, committee);
+                });
+                var rollbackTask = pool.submit(() -> {
+                    awaitBarrier(barrier);
+                    protocol.rollbackOnViewChange(viewV2);
+                    return null;
+                });
+
+                final CompletableFuture<Boolean> future;
+                try {
+                    rollbackTask.get(5, TimeUnit.SECONDS);
+                    future = registerTask.get(5, TimeUnit.SECONDS);
+                } catch (InterruptedException | java.util.concurrent.ExecutionException
+                         | TimeoutException e) {
+                    throw new AssertionError("Race tasks did not settle on iteration " + iteration, e);
+                }
+
+                final int iter = iteration;
+                // The contract under test: the returned future MUST settle within the bound.
+                // It is allowed to complete exceptionally (rollback abort / stale-view reject)
+                // or normally, but it must NEVER be a non-completing zombie.
+                assertTimeoutPreemptively(Duration.ofSeconds(3), () -> {
+                    try {
+                        future.get(2, TimeUnit.SECONDS);
+                    } catch (java.util.concurrent.ExecutionException expected) {
+                        // Rolled back or rejected — acceptable terminal outcome.
+                    }
+                }, "Future must settle, never hang (zombie) — iteration " + iter);
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+    }
+
+    private static void awaitBarrier(CyclicBarrier barrier) {
+        try {
+            barrier.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException | BrokenBarrierException | TimeoutException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private MigrationProposal proposal(Digest viewId) {

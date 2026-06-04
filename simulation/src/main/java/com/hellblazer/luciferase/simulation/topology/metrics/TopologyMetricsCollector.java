@@ -92,6 +92,7 @@ public class TopologyMetricsCollector {
     public void setClock(Clock clock) {
         this.clock = clock;
         this.boundaryStressAnalyzer.setClock(clock);
+        this.densityMonitor.setClock(clock);  // Luciferase-ml7kc: propagate to DensityMonitor too
     }
 
     /**

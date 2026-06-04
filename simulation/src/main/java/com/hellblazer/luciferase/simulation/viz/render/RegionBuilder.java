@@ -302,7 +302,7 @@ public class RegionBuilder implements AutoCloseable {
      * @return Built region with serialized data
      */
     private BuiltRegion doBuild(BuildRequest request) throws IOException {
-        long startNs = System.nanoTime();
+        long startNs = clock.nanoTime();
         totalBuilds.incrementAndGet();
 
         try {
@@ -321,7 +321,7 @@ public class RegionBuilder implements AutoCloseable {
             byte[] data = SerializationUtils.compress(serialized);
             boolean compressed = SerializationUtils.isCompressed(data);
 
-            long buildTimeNs = System.nanoTime() - startNs;
+            long buildTimeNs = clock.nanoTime() - startNs;
             totalBuildTimeNs.addAndGet(buildTimeNs);
 
             // C3: Clear circuit breaker on success

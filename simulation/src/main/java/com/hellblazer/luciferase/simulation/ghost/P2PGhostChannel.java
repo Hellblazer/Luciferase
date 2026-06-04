@@ -35,6 +35,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -115,6 +116,14 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     private final List<BiConsumer<UUID, List<SimulationGhostEntity<ID, Content>>>> handlers;
 
     /**
+     * Stable reference to the event listener so {@code removeEventListener} matches the exact
+     * instance passed to {@code addEventListener}. A fresh {@code this::handleEvent} method-ref
+     * evaluation produces a distinct, non-equal Consumer, so {@code remove} would silently no-op
+     * and leak the listener (Luciferase-zwyf2).
+     */
+    private final Consumer<Event> eventListenerRef = this::handleEvent;
+
+    /**
      * Current simulation bucket for temporal ordering
      */
     private long currentBucket = 0;
@@ -182,7 +191,7 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
         this.handlers = new CopyOnWriteArrayList<>();
 
         // Register for GhostSync events from Bubble
-        vonBubble.addEventListener(this::handleEvent);
+        vonBubble.addEventListener(eventListenerRef);
 
         log.debug("P2PGhostChannel created for bubble {}", vonBubble.id());
     }
@@ -268,7 +277,7 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
 
     @Override
     public void close() {
-        vonBubble.removeEventListener(this::handleEvent);
+        vonBubble.removeEventListener(eventListenerRef);
         pendingBatches.clear();
         handlers.clear();
         log.debug("P2PGhostChannel closed for bubble {}", vonBubble.id());

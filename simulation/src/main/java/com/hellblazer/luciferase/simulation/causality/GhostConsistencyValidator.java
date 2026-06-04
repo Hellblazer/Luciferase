@@ -136,6 +136,19 @@ public class GhostConsistencyValidator {
     }
 
     /**
+     * Create GhostConsistencyValidator with an injected clock (Luciferase-ml7kc).
+     * Preferred over {@link #setClock(Clock)} so validation time is deterministic from construction.
+     *
+     * @param accuracyTargetPercent Accuracy target as percentage (e.g., 0.05 = 5%)
+     * @param extrapolationWindowMs Extrapolation window in milliseconds
+     * @param clock                 Clock providing validation timestamps (deterministic in tests)
+     */
+    public GhostConsistencyValidator(float accuracyTargetPercent, long extrapolationWindowMs, Clock clock) {
+        this(accuracyTargetPercent, extrapolationWindowMs);
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
+    /**
      * Set the clock for deterministic testing.
      *
      * @param clock Clock instance to use

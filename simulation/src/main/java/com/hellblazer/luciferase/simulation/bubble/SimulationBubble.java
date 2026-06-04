@@ -309,6 +309,28 @@ public class SimulationBubble {
     }
 
     /**
+     * Advance the simulation by exactly one physics tick, synchronously.
+     * <p>
+     * Deterministic test seam: runs the same per-tick work as the Prime-Mover
+     * {@code physicsTick()} event (buffer swap, per-entity behavior + integration,
+     * metrics) but without {@code Kronos.sleep()}, the wall-clock-driven
+     * {@code RealTimeController}, or any global {@link com.hellblazer.primeMover.Kairos}
+     * controller registration. Callers drive a fixed number of ticks to obtain
+     * reproducible, clock-independent behavior instead of starting the bubble and
+     * sleeping. Does not touch the {@code running} flag and never starts the controller.
+     *
+     * @param deltaTime time step in seconds (must be {@code > 0})
+     */
+    @NonEvent
+    public void step(float deltaTime) {
+        if (deltaTime <= 0f) {
+            throw new IllegalArgumentException("deltaTime must be positive, got: " + deltaTime);
+        }
+        // performPhysicsTick already performs the velocity-buffer swap before integration.
+        performPhysicsTick(deltaTime);
+    }
+
+    /**
      * Perform a single physics tick.
      * <p>
      * This method is called from SimulationBubbleEntity.physicsTick() and performs

@@ -101,6 +101,13 @@ public class RecoveryIntegration {
     private final AtomicInteger rankCounter;
     private final Consumer<Event> vonEventHandler;
     private final Consumer<PartitionChangeEvent> recoveryEventHandler;
+    /**
+     * Subscription handle for the fault-handler partition-change listener, retained so
+     * {@link #close()} can unsubscribe. Discarding it leaves the listener (which captures
+     * {@code this}) permanently registered, leaking the integration and delivering events to a
+     * shut-down object (Luciferase-zwyf2).
+     */
+    private final com.hellblazer.luciferase.lucien.balancing.fault.Subscription recoverySubscription;
     private final Map<UUID, Integer> partitionRanks;
 
     // Phase 2: Clock injection for deterministic testing
@@ -168,7 +175,7 @@ public class RecoveryIntegration {
 
         // Subscribe to events
         vonManager.addEventListener(vonEventHandler);
-        faultHandler.subscribeToChanges(recoveryEventHandler);
+        this.recoverySubscription = faultHandler.subscribeToChanges(recoveryEventHandler);
 
         log.info("RecoveryIntegration initialized with clock");
     }
@@ -345,7 +352,11 @@ public class RecoveryIntegration {
      */
     public void close() {
         vonManager.removeEventListener(vonEventHandler);
-        // Note: FaultHandler doesn't provide removeEventListener - subscription is permanent
+        // Luciferase-zwyf2: unsubscribe the fault-handler listener so no PartitionChangeEvents are
+        // delivered after close() and the integration can be garbage-collected.
+        if (recoverySubscription != null) {
+            recoverySubscription.unsubscribe();
+        }
         bubbleToPartition.clear();
         partitionBubbles.clear();
         partitionRanks.clear();

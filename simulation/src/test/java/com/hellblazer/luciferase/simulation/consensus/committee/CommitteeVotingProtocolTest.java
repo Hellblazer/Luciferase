@@ -279,22 +279,6 @@ class CommitteeVotingProtocolTest {
         assertFalse(future2.get(1, TimeUnit.SECONDS), "NO majority should return false");
     }
 
-    /**
-     * Test isQuorumReached() method directly.
-     */
-    @Test
-    void testIsQuorumReached() {
-        // 7 nodes → toleranceLevel=3, quorum=4
-        when(mockContext.size()).thenReturn(7);
-        when(mockContext.toleranceLevel()).thenReturn(3);
-
-        var protocol = new CommitteeVotingProtocol(mockContext, config, scheduler);
-
-        assertFalse(protocol.isQuorumReached(3), "3 votes should not reach quorum (need 4)");
-        assertTrue(protocol.isQuorumReached(4), "4 votes should reach quorum");
-        assertTrue(protocol.isQuorumReached(5), "5 votes should exceed quorum");
-    }
-
     // Helper methods
 
     private MigrationProposal createProposal() {

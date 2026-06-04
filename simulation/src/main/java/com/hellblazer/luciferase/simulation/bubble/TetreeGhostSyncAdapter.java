@@ -65,6 +65,13 @@ public class TetreeGhostSyncAdapter {
     private final TetreeBubbleGrid bubbleGrid;
     private final TetreeNeighborFinder neighborFinder;
 
+    /**
+     * Injected clock for ghost-halo timestamps. Defaults to {@link com.hellblazer.luciferase.common.time.Clock#system()};
+     * tests inject a deterministic clock so ghost staleness/TTL is reproducible (Luciferase-ml7kc).
+     */
+    private volatile com.hellblazer.luciferase.common.time.Clock clock =
+        com.hellblazer.luciferase.common.time.Clock.system();
+
     // Per-bubble ghost sync infrastructure
     private final Map<UUID, GhostBoundarySync<StringEntityID, Object>> ghostSyncByBubble;
     private final Map<UUID, ExternalBubbleTracker> trackerByBubble;
@@ -92,6 +99,15 @@ public class TetreeGhostSyncAdapter {
         initializeGhostSync();
 
         log.info("TetreeGhostSyncAdapter initialized for {} bubbles", bubbleGrid.getBubbleCount());
+    }
+
+    /**
+     * Inject a clock for ghost-halo timestamps (deterministic in tests).
+     *
+     * @param clock the clock to use (must not be null)
+     */
+    public void setClock(com.hellblazer.luciferase.common.time.Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     /**
@@ -305,7 +321,8 @@ public class TetreeGhostSyncAdapter {
                 entityRecord.content(),
                 position,
                 null,  // EntityBounds not used in simulation
-                bubbleId.toString()
+                bubbleId.toString(),
+                clock.currentTimeMillis()  // Deterministic timestamp via injected clock (Luciferase-ml7kc)
             );
 
             // Add ghost for each neighbor

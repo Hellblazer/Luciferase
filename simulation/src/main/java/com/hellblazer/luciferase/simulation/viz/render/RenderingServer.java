@@ -425,6 +425,10 @@ public class RenderingServer implements AutoCloseable {
             app = null;
         }
 
+        // Luciferase-zwyf2: release the viewport tracker reference too (consistent with the other
+        // components nulled above) so a stopped server does not retain stale tracker state.
+        viewportTracker = null;
+
         log.info("RenderingServer stopped");
     }
 

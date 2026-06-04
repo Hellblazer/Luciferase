@@ -410,6 +410,79 @@ class EnhancedBubbleMigrationIntegrationTest {
             "Departure event must target the resolved destination bubble");
     }
 
+    /**
+     * MIGRATING_IN registers the entity for stability tracking, and a stable view drives
+     * it through to OWNED (the only completion path on the target bubble).
+     * <p>
+     * Replaces the bead-flagged vacuous tests that called {@code processMigrations(
+     * System.currentTimeMillis())} and asserted only {@code metrics.contains("initiated=")}.
+     * Here we walk the entity to MIGRATING_IN via legal FSM transitions (which fires the
+     * {@code onEntityStateTransition} listener that populates {@code entityStabilityTicks}),
+     * then drive {@code processMigrations} with a deterministic monotonic time under a stable
+     * mocked view, and assert real state progression: pending++ on MIGRATING_IN, FSM reaching
+     * OWNED, and the completed-migrations counter incrementing.
+     */
+    @Test
+    @DisplayName("MIGRATING_IN populates stability tracking and stabilizes to OWNED")
+    void testMigratingInStabilizesToOwned() {
+        var id = UUID.randomUUID();
+
+        // The default mocked view has never changed -> checkStability() is stable, so the
+        // stability-gated transitions (DEPARTED, MIGRATING_IN->OWNED) are permitted.
+        // Walk to GHOST: OWNED -> MIGRATING_OUT -> DEPARTED -> GHOST.
+        migrationFsm.initializeOwned(id);
+        assertTrue(migrationFsm.transition(id, EntityMigrationState.MIGRATING_OUT).success);
+        assertTrue(migrationFsm.transition(id, EntityMigrationState.DEPARTED).success,
+                   "DEPARTED requires a stable view (default mock is stable)");
+        assertTrue(migrationFsm.transition(id, EntityMigrationState.GHOST).success);
+
+        var pendingBefore = pendingCount(integration.getMetrics());
+
+        // GHOST -> MIGRATING_IN fires onEntityStateTransition(MIGRATING_IN), which seeds
+        // entityStabilityTicks for this entity (reflected as pending=N in getMetrics()).
+        assertTrue(migrationFsm.transition(id, EntityMigrationState.MIGRATING_IN).success);
+        assertEquals(EntityMigrationState.MIGRATING_IN, migrationFsm.getState(id));
+        assertEquals(pendingBefore + 1, pendingCount(integration.getMetrics()),
+                     "MIGRATING_IN must register the entity for stability tracking");
+
+        // Drive processMigrations with deterministic, monotonic simulation time. Each stable
+        // tick increments the entity's stability counter; after viewStabilityTicks (3) the
+        // integration commits MIGRATING_IN -> OWNED.
+        long simTime = 1_000L;
+        for (int i = 0; i < 5 && migrationFsm.getState(id) == EntityMigrationState.MIGRATING_IN; i++) {
+            integration.processMigrations(simTime);
+            simTime += 100L;
+        }
+
+        assertEquals(EntityMigrationState.OWNED, migrationFsm.getState(id),
+                     "A stable view must commit MIGRATING_IN -> OWNED");
+        assertEquals(0, pendingCount(integration.getMetrics()),
+                     "Completed entity must be removed from stability tracking");
+        assertTrue(completedCount(integration.getMetrics()) >= 1,
+                   "completed counter must increment when migration commits");
+    }
+
+    private static int pendingCount(String metrics) {
+        return parseMetric(metrics, "pending=");
+    }
+
+    private static int completedCount(String metrics) {
+        return parseMetric(metrics, "completed=");
+    }
+
+    private static int parseMetric(String metrics, String key) {
+        int idx = metrics.indexOf(key);
+        if (idx < 0) {
+            throw new AssertionError("metric '" + key + "' not found in: " + metrics);
+        }
+        int start = idx + key.length();
+        int end = start;
+        while (end < metrics.length() && (Character.isDigit(metrics.charAt(end)))) {
+            end++;
+        }
+        return Integer.parseInt(metrics.substring(start, end));
+    }
+
     @Test
     @DisplayName("No crossing entities means no migration initiated")
     void testNoCrossingNoMigration() {

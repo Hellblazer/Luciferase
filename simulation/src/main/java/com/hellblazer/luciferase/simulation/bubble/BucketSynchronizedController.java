@@ -28,17 +28,8 @@ public class BucketSynchronizedController extends RealTimeController {
     private static final long TICKS_PER_BUCKET = 10;  // 100Hz ticks * 100ms = 10 ticks
     private static final long BUCKET_DURATION_NS = BUCKET_DURATION_MS * 1_000_000L;
 
-    private volatile Clock clock = Clock.system();
-
     private final AtomicLong currentBucket = new AtomicLong(0);
     private final AtomicLong startTimeNs = new AtomicLong(0);
-
-    /**
-     * Set the clock source for deterministic testing.
-     */
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
 
     public BucketSynchronizedController(UUID bubbleId, String name) {
         super(bubbleId, name, 100);  // 100Hz

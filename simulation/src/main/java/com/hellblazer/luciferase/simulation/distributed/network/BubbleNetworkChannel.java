@@ -13,7 +13,17 @@ import java.util.UUID;
  * Network communication channel abstraction for inter-bubble message exchange.
  * Provides message-based async communication with optional latency/loss simulation.
  */
-public interface BubbleNetworkChannel {
+public interface BubbleNetworkChannel extends AutoCloseable {
+
+    /**
+     * Release all resources held by this channel (executors, schedulers, gRPC server/channels).
+     * Luciferase-zwyf2: lifts teardown into the interface contract so callers holding a
+     * {@code BubbleNetworkChannel} reference can deterministically shut it down (e.g. in a
+     * try-with-resources) without knowing the concrete type. Implementations must make this
+     * idempotent.
+     */
+    @Override
+    void close() throws Exception;
 
     /**
      * Initialize the network channel for this node.

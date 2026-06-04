@@ -90,6 +90,52 @@ class ByzantineFailureTest {
     }
 
     /**
+     * Single-voter multi-vote (ballot stuffing) attack — the core C2 defect.
+     * <p>
+     * A single Byzantine committee member submits the SAME vote (identical voterId)
+     * quorum-many times, attempting to drive the tally to quorum unilaterally without
+     * any honest participation. Voter-identity deduplication in
+     * {@link CommitteeBallotBox#addVote} must count only the first vote, so the
+     * proposal NEVER reaches quorum and the result future stays incomplete.
+     * <p>
+     * Without the {@code seenVoters} guard this test fails: the multiset tally would
+     * reach 4 and complete the future with no honest votes.
+     */
+    @Test
+    void testSingleVoterCannotStuffBallotToQuorum() throws Exception {
+        // 7 nodes → toleranceLevel=3, quorum=4
+        when(mockContext.size()).thenReturn(7);
+        when(mockContext.toleranceLevel()).thenReturn(3);
+
+        var ballotBox = new CommitteeBallotBox(mockContext);
+        var proposalId = UUID.randomUUID();
+        var future = ballotBox.getResult(proposalId);
+
+        var attackerId = DigestAlgorithm.DEFAULT.digest("byzantine-stuffer");
+
+        // Submit 10 identical YES votes from the SAME voter (quorum is only 4).
+        for (int i = 0; i < 10; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId, attackerId, true, viewId));
+        }
+
+        // Deduplication must keep the tally at 1 → quorum (4) is never reached.
+        assertFalse(future.isDone(),
+                    "A single voter must not reach quorum by re-submitting the same vote");
+        assertThrows(java.util.concurrent.TimeoutException.class,
+                     () -> future.get(200, TimeUnit.MILLISECONDS),
+                     "Result future must remain incomplete under a ballot-stuffing attack");
+
+        // A genuine quorum still requires distinct honest voters.
+        for (int i = 0; i < 3; i++) {
+            ballotBox.addVote(proposalId,
+                              new Vote(proposalId, DigestAlgorithm.DEFAULT.digest("honest-" + i), true, viewId));
+        }
+        // attacker(1) + 3 honest = 4 distinct voters = quorum.
+        assertTrue(future.get(1, TimeUnit.SECONDS),
+                   "Quorum reached only with distinct voters (1 attacker + 3 honest = 4)");
+    }
+
+    /**
      * 5 nodes with 2 Byzantine: toleranceLevel=2, quorum=3.
      * <p>
      * 2 Byzantine NO votes should be overcome by 3 honest YES votes.

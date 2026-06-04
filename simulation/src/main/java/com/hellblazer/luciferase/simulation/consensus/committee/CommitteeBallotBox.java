@@ -154,12 +154,21 @@ public class CommitteeBallotBox {
     }
 
     /**
-     * Committee-relative quorum, matching the project's {@code toleranceLevel()+1}
-     * convention bounded by the committee that can actually vote (Luciferase-ltxta).
+     * Committee simple-majority quorum bounded by the committee that can actually vote
+     * (Luciferase-ltxta).
      * <p>
-     * DynamicContext.toleranceLevel() in this codebase is {@code floor((n-1)/2)} (see
-     * QuorumCalculationTest's size→tolerance table: 7→3, 9→4), so quorum is
-     * {@code floor((n-1)/2) + 1} — a simple majority of the committee.
+     * The formula is {@code floor((n-1)/2) + 1} — a <em>committee simple-majority quorum</em>,
+     * NOT a Byzantine (n/3) quorum. It tolerates {@code floor((n-1)/2)} crash faults and,
+     * combined with the per-voter deduplication in {@link #addVote} (one vote per member),
+     * prevents single-voter ballot stuffing. It does <em>not</em> by itself tolerate
+     * {@code floor((n-1)/3)} equivocating Byzantine voters; raising the threshold to the
+     * BFT {@code (n-1)/3 + 1} form is deliberately out of scope here (would require separate
+     * fault-model analysis). Safety is not weakened relative to the previous wording — this
+     * quorum is {@code >=} the BFT minimum — only the "BFT formula" label was inaccurate.
+     * <p>
+     * It coincides numerically with the project's {@code toleranceLevel()+1} convention
+     * because DynamicContext.toleranceLevel() in this codebase is {@code floor((n-1)/2)}
+     * (see QuorumCalculationTest's size→tolerance table: 7→3, 9→4).
      */
     private static int committeeQuorum(int committeeSize) {
         return committeeSize <= 1 ? 1 : ((committeeSize - 1) / 2) + 1;

@@ -68,6 +68,12 @@ public final class SocketTransport implements NetworkTransport {
     private final FirefliesMembershipView membership;
     private final FirefliesViewMonitor viewMonitor;
     private final RealTimeController controller;
+    /**
+     * In-flight ACK futures from {@link #sendToNeighborAsync}. Tracked so {@link #closeAll()} can
+     * cancel them on teardown — otherwise each leaves a TickListener running on the controller for
+     * up to the 5s orTimeout window after the transport is logically closed (Luciferase-zwyf2).
+     */
+    private final List<CompletableFuture<?>> pendingAcks = new CopyOnWriteArrayList<>();
 
     /**
      * Create a SocketTransport with a random local ID.
@@ -290,11 +296,20 @@ public final class SocketTransport implements NetworkTransport {
 
         controller.addTickListener(checkStability);
 
-        // Remove listener when future completes (success, failure, or timeout)
-        future.whenComplete((ack, error) -> controller.removeTickListener(checkStability));
+        // Timeout after 5 seconds (failsafe for hung views). Luciferase-zwyf2: register cleanup on
+        // the TIMED future, not the raw `future`. orTimeout() returns a NEW dependent future; when
+        // the timeout fires it completes the returned future, not `future`, so a whenComplete on
+        // `future` would never run and the TickListener would leak until the view stabilised.
+        var timedFuture = future.orTimeout(5, TimeUnit.SECONDS);
 
-        // Timeout after 5 seconds (failsafe for hung views)
-        return future.orTimeout(5, TimeUnit.SECONDS);
+        // Track for teardown cancellation and remove the listener on any completion path.
+        pendingAcks.add(timedFuture);
+        timedFuture.whenComplete((ack, error) -> {
+            controller.removeTickListener(checkStability);
+            pendingAcks.remove(timedFuture);
+        });
+
+        return timedFuture;
     }
 
     /**
@@ -340,6 +355,12 @@ public final class SocketTransport implements NetworkTransport {
 
     @Override
     public void closeAll() throws IOException {
+        // Luciferase-zwyf2: cancel in-flight ACK futures first so their TickListeners are removed
+        // (via the whenComplete cleanup) instead of burning on the controller until orTimeout fires.
+        for (var pending : pendingAcks) {
+            pending.cancel(true);
+        }
+        pendingAcks.clear();
         connectionManager.closeAll();
     }
 

@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +54,8 @@ public class EventRecovery {
 
     private final Path logDirectory;
 
+    private volatile Clock clock = Clock.system();
+
     /**
      * Create EventRecovery for log directory.
      *
@@ -60,6 +63,16 @@ public class EventRecovery {
      */
     public EventRecovery(Path logDirectory) {
         this.logDirectory = Objects.requireNonNull(logDirectory, "logDirectory must not be null");
+    }
+
+    /**
+     * Inject a clock for fallback checkpoint timestamps. Production uses {@link Clock#system()};
+     * tests inject a deterministic clock to correlate recovery metadata with simulated time.
+     *
+     * @param clock the clock to use (must not be null)
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     /**
@@ -159,12 +172,68 @@ public class EventRecovery {
     }
 
     /**
-     * Validate recovery integrity.
+     * Validate recovery integrity (no-arg legacy shim).
+     * <p>
+     * Retained for backward compatibility. Without a {@link RecoveredState} there is no
+     * material to validate, so this trivially returns {@code true}. Callers that want a
+     * real integrity gate must use {@link #validateRecoveryIntegrity(RecoveredState)}.
      *
-     * @return true if recovery passed validation
+     * @return always {@code true}
+     * @deprecated use {@link #validateRecoveryIntegrity(RecoveredState)} which performs
+     *             real sequence-ordering and checkpoint-consistency checks.
      */
+    @Deprecated
     public boolean validateRecoveryIntegrity() {
-        // Basic validation - could be extended with checksums, etc.
+        return true;
+    }
+
+    /**
+     * Validate the integrity of a recovered state.
+     * <p>
+     * Performs real, falsifiable checks against the replayed log so that corrupt or
+     * out-of-order recovery is detected rather than silently accepted
+     * (Luciferase-5yh9h — replaces the vacuous {@code return true} gate):
+     * <ul>
+     *   <li>every replayed event carries a non-null {@code type};</li>
+     *   <li>any present {@code sequenceNumber} fields are strictly monotonically
+     *       increasing across the replayed tail (a regression / reordering indicates
+     *       a corrupt or double-opened WAL);</li>
+     *   <li>the first replayed sequence number, when present, is strictly greater than
+     *       the checkpoint sequence (recovery must not re-replay checkpointed events).</li>
+     * </ul>
+     *
+     * @param state the recovered state to validate (must not be null)
+     * @return {@code true} if the recovered state passes all integrity checks
+     */
+    public boolean validateRecoveryIntegrity(RecoveredState state) {
+        java.util.Objects.requireNonNull(state, "state must not be null");
+
+        var checkpointSeq = state.checkpoint() != null ? state.checkpoint().sequenceNumber() : -1L;
+        Long previousSeq = null;
+        boolean first = true;
+
+        for (var event : state.events()) {
+            if (event == null || event.get("type") == null) {
+                log.warn("Recovery integrity failure: event missing type: {}", event);
+                return false;
+            }
+            var seqRaw = event.get("sequenceNumber");
+            if (seqRaw instanceof Number num) {
+                long seq = num.longValue();
+                if (first && checkpointSeq >= 0 && seq <= checkpointSeq) {
+                    log.warn("Recovery integrity failure: first replayed seq {} <= checkpoint seq {}",
+                             seq, checkpointSeq);
+                    return false;
+                }
+                if (previousSeq != null && seq <= previousSeq) {
+                    log.warn("Recovery integrity failure: non-monotonic sequence {} after {}",
+                             seq, previousSeq);
+                    return false;
+                }
+                previousSeq = seq;
+            }
+            first = false;
+        }
         return true;
     }
 
@@ -177,7 +246,7 @@ public class EventRecovery {
         try {
             return getLastCheckpoint(null);
         } catch (IOException e) {
-            return CheckpointMetadata.now(0);
+            return CheckpointMetadata.now(0, clock);
         }
     }
 
@@ -190,7 +259,7 @@ public class EventRecovery {
 
         if (!Files.exists(metadataFile)) {
             log.debug("No checkpoint metadata found, using default");
-            return CheckpointMetadata.now(0);
+            return CheckpointMetadata.now(0, clock);
         }
 
         try {
@@ -204,7 +273,7 @@ public class EventRecovery {
             return new CheckpointMetadata(seqNum, timestamp);
         } catch (Exception e) {
             log.warn("Failed to parse checkpoint metadata: {}", e.getMessage());
-            return CheckpointMetadata.now(0);
+            return CheckpointMetadata.now(0, clock);
         }
     }
 

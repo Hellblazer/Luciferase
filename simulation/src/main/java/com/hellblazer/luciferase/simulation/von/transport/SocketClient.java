@@ -122,6 +122,11 @@ public class SocketClient {
         log.debug("Sending message type={} to {}", message.type(), remoteAddress.toUrl());
         outStream.writeObject(message);
         outStream.flush();
+        // Luciferase-zwyf2: clear the ObjectOutputStream handle table after each message. Without
+        // reset() the table retains a strong back-reference to every object ever written on this
+        // long-lived connection, growing unbounded and eventually causing OOM. TransportVonMessage
+        // records are value objects, so losing cross-message reference dedup is harmless.
+        outStream.reset();
     }
 
     /**

@@ -200,6 +200,18 @@ public class EventReprocessor {
     }
 
     /**
+     * Create an EventReprocessor with an injected clock (Luciferase-ml7kc).
+     * Preferred over {@link #setClock(Clock)} so gap-detection time is deterministic from construction.
+     *
+     * @param config Configuration with window and queue sizes
+     * @param clock  Clock providing gap-detection timestamps (deterministic in tests)
+     */
+    public EventReprocessor(Configuration config, Clock clock) {
+        this(config);
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
+    /**
      * Set the clock for deterministic testing.
      *
      * @param clock Clock instance to use

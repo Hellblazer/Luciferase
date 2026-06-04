@@ -65,6 +65,8 @@ public class OptimisticMigratorIntegration {
      * Track approved migrations for diagnostics and validation.
      * Key: entityId, Value: target node ID
      */
+    /** Cap on the diagnostic approval-tracking map to bound memory (Luciferase-zwyf2). */
+    private static final int MAX_TRACKED_APPROVALS = 10_000;
     private final ConcurrentHashMap<UUID, Digest> approvedMigrations = new ConcurrentHashMap<>();
 
     /**
@@ -150,6 +152,17 @@ public class OptimisticMigratorIntegration {
      * @param targetNodeId target node
      */
     private void recordMigrationApproval(UUID entityId, Digest targetNodeId) {
+        // Luciferase-zwyf2: approvedMigrations is a diagnostic/tracking map with no production
+        // consumer that removes entries (clearApprovals() is test/recovery only), so it grew one
+        // entry per approval for the service lifetime. Bound it: once over the cap, drop an
+        // arbitrary existing entry before inserting so memory stays bounded. The map is only read
+        // by hasMigrationApproval() for diagnostics, so eviction of stale entries is harmless.
+        if (approvedMigrations.size() >= MAX_TRACKED_APPROVALS) {
+            var it = approvedMigrations.keySet().iterator();
+            if (it.hasNext()) {
+                approvedMigrations.remove(it.next());
+            }
+        }
         approvedMigrations.put(entityId, targetNodeId);
     }
 

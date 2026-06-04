@@ -62,7 +62,11 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
     private final Map<UUID, String> nodeAddresses = new ConcurrentHashMap<>();
     // Per-node consecutive terminal-failure counter for liveness gating (Luciferase-0frcy.99).
     private final Map<UUID, java.util.concurrent.atomic.AtomicInteger> consecutiveFailures = new ConcurrentHashMap<>();
-    private final ExecutorService executorService = Executors.newCachedThreadPool();
+    // Luciferase-zwyf2: bounded pool. newCachedThreadPool() is unbounded — under a migration/RPC
+    // storm it spawns one thread per queued callback with no cap, risking thread/stack OOM. Cap at
+    // 2x CPU cores; excess callbacks queue rather than spawning unbounded threads.
+    private final ExecutorService executorService =
+        Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors() * 2));
     // Schedules retry attempts for transient RPC failures (Luciferase-0frcy.23).
     private final ScheduledExecutorService retryScheduler =
         Executors.newSingleThreadScheduledExecutor(r -> {

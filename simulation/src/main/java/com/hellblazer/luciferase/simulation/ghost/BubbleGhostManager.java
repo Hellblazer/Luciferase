@@ -118,6 +118,22 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
     private final GhostLifecycleStateMachine lifecycle;
 
     /**
+     * Injected clock for ghost-entity timestamps. Defaults to {@link com.hellblazer.luciferase.common.time.Clock#system()};
+     * tests inject a deterministic clock so ghost staleness/TTL is reproducible (Luciferase-ml7kc).
+     */
+    private volatile com.hellblazer.luciferase.common.time.Clock clock =
+        com.hellblazer.luciferase.common.time.Clock.system();
+
+    /**
+     * Inject a clock for ghost-entity timestamps (deterministic in tests).
+     *
+     * @param clock the clock to use (must not be null)
+     */
+    public void setClock(com.hellblazer.luciferase.common.time.Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
+    /**
      * Create ghost manager with all dependencies.
      *
      * @param bubble                 Local bubble to manage
@@ -410,7 +426,8 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
             content,
             position,
             bounds,
-            "tree-" + bubble.id()  // Source tree ID
+            "tree-" + bubble.id(),  // Source tree ID
+            clock.currentTimeMillis()  // Deterministic timestamp via injected clock (Luciferase-ml7kc)
         );
     }
 }

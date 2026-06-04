@@ -397,69 +397,55 @@ class Phase3IntegrationTest {
 
     @Test
     void testPartitionRecovery() {
-        // Setup: 4 bubbles simulating partition scenario
-        var serverRegistry = new ServerRegistry();
-        var channel = new InMemoryGhostChannel<StringEntityID, Object>();
-        var optimizer = new SameServerOptimizer(serverRegistry);
+        // Drive the real Neighbor-Consistency (NC) lifecycle through GhostLayerHealth —
+        // the component that computes NC = knownSources / expectedNeighbors. The previous
+        // version of this test "simulated" a partition with empty ghost batches (which the
+        // manager early-returns on, recording nothing) and asserted only the trivially-true
+        // clamped range [0,1]. Here we establish baseline health, partition a neighbor,
+        // assert NC actually degrades below the partition-risk threshold, then recover and
+        // assert NC climbs back to healthy. These are non-clamp, falsifiable assertions.
+        var health = new GhostLayerHealth();
+        // Ring topology: 4 expected neighbors.
+        health.setExpectedNeighbors(4);
 
-        var bubbles = new ArrayList<EnhancedBubble>();
-        var managers = new ArrayList<BubbleGhostManager<StringEntityID, Object>>();
+        var n0 = UUID.randomUUID();
+        var n1 = UUID.randomUUID();
+        var n2 = UUID.randomUUID();
+        var n3 = UUID.randomUUID();
 
-        // Create 4 bubbles across 2 servers
-        for (int i = 0; i < 4; i++) {
-            var bubble = createBubble(randomPosition());
-            var serverId = i < 2 ? UUID.randomUUID() : UUID.randomUUID();
-
-            serverRegistry.registerBubble(bubble.id(), serverId);
-
-            var manager = createManager(bubble, serverRegistry, channel, optimizer);
-            bubbles.add(bubble);
-            managers.add(manager);
+        // Baseline: all four neighbors deliver ghosts -> NC == 1.0, healthy, no partition.
+        for (var n : List.of(n0, n1, n2, n3)) {
+            health.recordGhostSource(n);
         }
+        assertEquals(1.0f, health.neighborConsistency(), 1e-6f, "Baseline NC must be perfect (4/4)");
+        assertFalse(health.isDegraded(GhostLayerHealth.DEFAULT_NC_THRESHOLD), "Baseline must not be degraded");
+        assertFalse(health.isPartitionRisk(GhostLayerHealth.DEFAULT_PARTITION_THRESHOLD),
+                    "Baseline must not be a partition risk");
 
-        // Set up neighbor relationships (ring topology)
-        for (int i = 0; i < bubbles.size(); i++) {
-            var bubble = bubbles.get(i);
-            bubble.addVonNeighbor(bubbles.get((i + 1) % bubbles.size()).id());
-        }
+        // Partition: three of four neighbors become unreachable (neighbor-left events).
+        health.removeGhostSource(n1);
+        health.removeGhostSource(n2);
+        health.removeGhostSource(n3);
 
-        // Establish healthy state
-        for (int i = 0; i < managers.size(); i++) {
-            var manager = managers.get(i);
-            var bubble = bubbles.get(i);
+        // NC must degrade to 1/4 = 0.25 — below BOTH the 0.9 degraded and 0.5 partition thresholds.
+        assertEquals(0.25f, health.neighborConsistency(), 1e-6f, "Partition must drop NC to 1/4");
+        assertTrue(health.isDegraded(GhostLayerHealth.DEFAULT_NC_THRESHOLD),
+                   "NC=0.25 must register as degraded (< 0.9)");
+        assertTrue(health.isPartitionRisk(GhostLayerHealth.DEFAULT_PARTITION_THRESHOLD),
+                   "NC=0.25 must register as a partition risk (< 0.5)");
+        assertEquals(3, health.missingExpectedGhosts(), "Three expected neighbors are missing");
 
-            for (var neighborId : bubble.getVonNeighbors()) {
-                manager.handleGhostBatch(neighborId, List.of());
-            }
-        }
+        // Recovery: the three neighbors re-establish their ghost zones.
+        health.recordGhostSource(n1);
+        health.recordGhostSource(n2);
+        health.recordGhostSource(n3);
 
-        // Verify initial health
-        for (var manager : managers) {
-            float nc = manager.getNeighborConsistency();
-            assertTrue(nc >= 0.0f && nc <= 1.0f, "Initial NC should be valid");
-        }
-
-        // Simulate partition: remove ghost interactions for bubble 0
-        // (In real scenario, this would be network partition)
-        var partitionedManager = managers.get(0);
-
-        // Verify partition detection via NC degradation
-        // Note: NC may not degrade immediately in this simple test,
-        // but the infrastructure should support partition detection
-        float partitionedNC = partitionedManager.getNeighborConsistency();
-        assertTrue(partitionedNC >= 0.0f && partitionedNC <= 1.0f,
-            "Partitioned bubble NC should remain in valid range");
-
-        // Recovery: restore ghost interactions
-        for (var neighborId : bubbles.get(0).getVonNeighbors()) {
-            partitionedManager.handleGhostBatch(neighborId, List.of());
-        }
-
-        // Verify recovery
-        float recoveredNC = partitionedManager.getNeighborConsistency();
-        assertTrue(recoveredNC >= 0.0f && recoveredNC <= 1.0f,
-            "Recovered NC should be valid");
+        assertEquals(1.0f, health.neighborConsistency(), 1e-6f, "Recovery must restore NC to 1.0");
+        assertFalse(health.isPartitionRisk(GhostLayerHealth.DEFAULT_PARTITION_THRESHOLD),
+                    "Recovered NC must clear the partition-risk flag");
+        assertEquals(0, health.missingExpectedGhosts(), "No expected neighbors missing after recovery");
     }
+
 
     // Helper methods
 

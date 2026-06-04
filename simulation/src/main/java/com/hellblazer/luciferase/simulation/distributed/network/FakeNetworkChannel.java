@@ -231,6 +231,15 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
     }
 
     /**
+     * AutoCloseable contract (Luciferase-zwyf2): delegates to {@link #shutdown()} so the scheduler
+     * is released via the {@link BubbleNetworkChannel} interface / try-with-resources. Idempotent.
+     */
+    @Override
+    public void close() {
+        shutdown();
+    }
+
+    /**
      * Deliver all pending messages immediately (for testing).
      */
     public void flushPendingMessages() {
