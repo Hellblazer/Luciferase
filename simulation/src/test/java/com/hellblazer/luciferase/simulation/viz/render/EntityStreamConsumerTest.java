@@ -350,6 +350,73 @@ class EntityStreamConsumerTest {
         upstream2.stop();
     }
 
+    /**
+     * Luciferase-0frcy.120: reconnection timing must flow through the injected
+     * ScheduledExecutorService rather than a wall-clock {@code Thread.sleep} on a virtual
+     * thread. With a recording scheduler that captures the requested delay and runs the
+     * task immediately, a failing upstream must schedule its reconnect via the scheduler
+     * (exponential backoff: first retry = 2s = (1&lt;&lt;1)*1000) — provably without any
+     * real-time sleep in the test.
+     */
+    @Test
+    void reconnectIsScheduledViaInjectedSchedulerNotWallClockSleep() throws Exception {
+        var scheduledDelaysMs = new java.util.concurrent.CopyOnWriteArrayList<Long>();
+        var scheduleLatch = new CountDownLatch(1);
+
+        // Recording scheduler: capture the requested delay; the underlying pool never
+        // actually fires the task during the test, so timing is deterministic and clock-free.
+        var recording = new RecordingScheduler(scheduledDelaysMs, scheduleLatch);
+
+        var upstream = new UpstreamConfig(
+            URI.create("ws://localhost:99997/ws/entities"),  // always-fail port
+            "scheduler-test"
+        );
+
+        var consumer = new EntityStreamConsumer(
+            List.of(upstream), regionManager, PerformanceConfig.testing(),
+            Clock.system(), recording);
+        consumer.start();
+
+        try {
+            // The first connect fails and must schedule a reconnect through OUR scheduler.
+            assertTrue(scheduleLatch.await(5, TimeUnit.SECONDS),
+                       "Reconnect must be scheduled via the injected scheduler (Luciferase-0frcy.120)");
+            assertFalse(scheduledDelaysMs.isEmpty(), "A reconnect delay should have been recorded");
+            // First reconnect backoff is (1<<1)*1000 = 2000ms (attempt count 1).
+            assertTrue(scheduledDelaysMs.contains(2000L),
+                       "First reconnect should be scheduled with 2000ms backoff, got " + scheduledDelaysMs);
+        } finally {
+            consumer.close();
+        }
+    }
+
+    /**
+     * ScheduledExecutorService that records {@code schedule(Runnable, delay, unit)} delays.
+     * The task is parked far in the future and never fires during the test, so the test
+     * observes that production routed reconnect timing through the injected scheduler
+     * (Luciferase-0frcy.120) without any real wall-clock wait.
+     */
+    private static final class RecordingScheduler
+        extends java.util.concurrent.ScheduledThreadPoolExecutor {
+        private final java.util.List<Long> delays;
+        private final CountDownLatch       latch;
+
+        RecordingScheduler(java.util.List<Long> delays, CountDownLatch latch) {
+            super(1);
+            this.delays = delays;
+            this.latch = latch;
+        }
+
+        @Override
+        public java.util.concurrent.ScheduledFuture<?> schedule(Runnable command, long delay,
+                                                                TimeUnit unit) {
+            delays.add(unit.toMillis(delay));
+            latch.countDown();
+            // Park the task an hour out so it never actually runs during the test.
+            return super.schedule(() -> { }, 1, TimeUnit.HOURS);
+        }
+    }
+
     @Test
     void testClockInjection() {
         var testClock = new TestClock();

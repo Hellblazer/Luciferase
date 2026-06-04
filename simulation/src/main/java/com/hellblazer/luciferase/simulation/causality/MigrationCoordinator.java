@@ -113,8 +113,8 @@ public class MigrationCoordinator implements MigrationStateListener {
     }
 
     private final EntityMigrationStateMachine fsm;
-    private final Object crossProcessMigration;  // MockCrossProcessMigration or actual implementation
-    private final Object localBubbleId;
+    private final CrossProcessMigrationProtocol protocol;  // typed 2PC transport seam (Luciferase-4k66e)
+    private final UUID localBubbleId;
     private final ConcurrentHashMap<Object, CoordinationState> coordinatedEntities;
 
     // Metrics
@@ -122,20 +122,27 @@ public class MigrationCoordinator implements MigrationStateListener {
     private final AtomicLong totalCommits;
     private final AtomicLong totalAborts;
     private final AtomicLong totalViewChangeAborts;
+    private final AtomicLong totalPrepareFailures;
+    private final AtomicLong totalCommitFailures;
 
     /**
      * Create MigrationCoordinator.
      *
+     * <p>The 2PC transport is supplied as a typed {@link CrossProcessMigrationProtocol} so that
+     * a missing or wrongly-typed implementation is a compile/construction-time failure rather
+     * than a runtime {@code NoSuchMethodException} that silently orphans entities
+     * (Luciferase-4k66e).
+     *
      * @param fsm EntityMigrationStateMachine to observe
-     * @param crossProcessMigration CrossProcessMigration for 2PC operations
+     * @param protocol typed 2PC transport for prepare/commit/abort dispatch
      * @param localBubbleId Local bubble identifier
      */
     public MigrationCoordinator(EntityMigrationStateMachine fsm,
-                                Object crossProcessMigration,
-                                Object localBubbleId) {
+                                CrossProcessMigrationProtocol protocol,
+                                UUID localBubbleId) {
         this.fsm = Objects.requireNonNull(fsm, "fsm must not be null");
-        this.crossProcessMigration = Objects.requireNonNull(crossProcessMigration,
-            "crossProcessMigration must not be null");
+        this.protocol = Objects.requireNonNull(protocol,
+            "protocol must not be null");
         this.localBubbleId = Objects.requireNonNull(localBubbleId,
             "localBubbleId must not be null");
         this.coordinatedEntities = new ConcurrentHashMap<>();
@@ -143,6 +150,8 @@ public class MigrationCoordinator implements MigrationStateListener {
         this.totalCommits = new AtomicLong(0);
         this.totalAborts = new AtomicLong(0);
         this.totalViewChangeAborts = new AtomicLong(0);
+        this.totalPrepareFailures = new AtomicLong(0);
+        this.totalCommitFailures = new AtomicLong(0);
 
         log.debug("MigrationCoordinator created for bubble {}", localBubbleId);
     }
@@ -281,24 +290,37 @@ public class MigrationCoordinator implements MigrationStateListener {
         log.info("View change: {} entities rolled back, {} became ghost",
             rolledBackCount, ghostCount);
 
-        // FSM uses replaceAll for view changes, which doesn't trigger onEntityStateTransition
-        // So we need to send AbortRequests for all rolled-back entities here
+        // The FSM now fires per-entity transition notifications during onViewChange
+        // (Luciferase-0frcy.61), so MIGRATING_OUT->ROLLBACK_OWNED entities are aborted and
+        // removed via handleMigratingOutToRollback before this aggregate callback runs.
+        // This scan is a defensive net for any still-in-flight coordination state. To avoid
+        // the weakly-consistent forEach+remove hazard (entries removed mid-iteration are
+        // silently skipped, so an entity that entered PREPARE_SENT concurrently could be
+        // missed), collect the abort set first, then abort+remove after iteration completes.
+        var toAbort = new java.util.ArrayList<Object>();
         coordinatedEntities.forEach((entityId, state) -> {
-            // Check if this entity was in migration and needs abort
             if (state.state == MigrationState.PREPARE_SENT ||
                 state.state == MigrationState.PREPARED ||
                 state.state == MigrationState.COMMIT_SENT) {
-
-                // Send AbortRequest to target
-                if (state.targetBubble != null) {
-                    sendAbortRequest(entityId, state.targetBubble);
-                    totalAborts.incrementAndGet();
-                }
-
-                // Clean up coordination state
-                coordinatedEntities.remove(entityId);
+                toAbort.add(entityId);
             }
         });
+
+        for (var entityId : toAbort) {
+            var state = coordinatedEntities.remove(entityId);
+            if (state == null) {
+                // Already handled by the per-entity transition path — skip to avoid double-abort.
+                continue;
+            }
+            if (state.targetBubble != null) {
+                if (sendAbortRequest(entityId, state.targetBubble)) {
+                    totalAborts.incrementAndGet();
+                } else {
+                    log.error("View-change AbortRequest dispatch failed for entity {} to {}",
+                        entityId, state.targetBubble);
+                }
+            }
+        }
 
         // Track view change aborts for metrics
         totalViewChangeAborts.addAndGet(rolledBackCount);
@@ -316,7 +338,25 @@ public class MigrationCoordinator implements MigrationStateListener {
         }
 
         // Send PrepareRequest to target
-        sendPrepareRequest(entityId, (UUID) localBubbleId, state.targetBubble);
+        var dispatched = sendPrepareRequest(entityId, localBubbleId, state.targetBubble);
+        if (!dispatched) {
+            // Phase-1 dispatch failed: the entity is in MIGRATING_OUT but the target never
+            // received a prepare. Compensate by reclaiming local ownership (ROLLBACK_OWNED) and
+            // tearing down the coordination entry so no commit/abort is later misdirected.
+            // Removing the coordination entry first means the re-entrant ROLLBACK_OWNED
+            // transition's handler finds no state and does not emit a spurious AbortRequest
+            // for a prepare that never reached the target.
+            totalPrepareFailures.incrementAndGet();
+            log.error("PrepareRequest dispatch failed for entity {} to {} - rolling back to ROLLBACK_OWNED",
+                entityId, state.targetBubble);
+            coordinatedEntities.remove(entityId);
+            var rollback = fsm.transition(entityId, EntityMigrationState.ROLLBACK_OWNED);
+            if (!rollback.success) {
+                log.error("Compensating ROLLBACK_OWNED transition failed for entity {}: {}",
+                    entityId, rollback.reason);
+            }
+            return;
+        }
         state.state = MigrationState.PREPARE_SENT;
         totalPrepares.incrementAndGet();
 
@@ -335,7 +375,36 @@ public class MigrationCoordinator implements MigrationStateListener {
         }
 
         // Send CommitRequest to target
-        sendCommitRequest(entityId, state.targetBubble);
+        var dispatched = sendCommitRequest(entityId, state.targetBubble);
+        if (!dispatched) {
+            // Phase-2 dispatch failed: the source FSM has already advanced to DEPARTED, so the
+            // target would be left permanently stuck in MIGRATING_IN awaiting a commit that
+            // never arrives (the documented silent-orphan failure mode). Rather than silently
+            // cleaning up as if the commit succeeded, dispatch an AbortRequest so the target
+            // releases the entity, and record the failure for observability.
+            totalCommitFailures.incrementAndGet();
+            log.error("CommitRequest dispatch failed for entity {} to {} - sending AbortRequest to release target",
+                entityId, state.targetBubble);
+            state.state = MigrationState.ABORT_SENT;
+            if (sendAbortRequest(entityId, state.targetBubble)) {
+                totalAborts.incrementAndGet();
+            } else {
+                log.error("AbortRequest dispatch also failed for entity {} to {} - target may be orphaned",
+                    entityId, state.targetBubble);
+            }
+            // The source FSM has already advanced to DEPARTED, but the migration never committed at
+            // the target (which is now aborting). Without compensation the entity is lost from the
+            // network forever. Reclaim local ownership via the DEPARTED -> ROLLBACK_OWNED recovery
+            // edge so the source re-owns the entity. Remove the coordination entry first so the
+            // re-entrant transition's listener finds no state and emits no spurious AbortRequest.
+            coordinatedEntities.remove(entityId);
+            var rollback = fsm.transition(entityId, EntityMigrationState.ROLLBACK_OWNED);
+            if (!rollback.success) {
+                log.error("Compensating DEPARTED -> ROLLBACK_OWNED transition failed for entity {}: {} "
+                    + "- entity may be lost from the network", entityId, rollback.reason);
+            }
+            return;
+        }
         state.state = MigrationState.COMMIT_SENT;
         totalCommits.incrementAndGet();
 
@@ -357,11 +426,15 @@ public class MigrationCoordinator implements MigrationStateListener {
         }
 
         // Send AbortRequest to target
-        sendAbortRequest(entityId, state.targetBubble);
+        var dispatched = sendAbortRequest(entityId, state.targetBubble);
         state.state = MigrationState.ABORT_SENT;
-        totalAborts.incrementAndGet();
-
-        log.debug("Sent AbortRequest for entity {} to {}", entityId, state.targetBubble);
+        if (dispatched) {
+            totalAborts.incrementAndGet();
+            log.debug("Sent AbortRequest for entity {} to {}", entityId, state.targetBubble);
+        } else {
+            log.error("AbortRequest dispatch failed for entity {} to {} - target may remain in MIGRATING_IN",
+                entityId, state.targetBubble);
+        }
 
         // Clean up coordination state
         coordinatedEntities.remove(entityId);
@@ -386,42 +459,44 @@ public class MigrationCoordinator implements MigrationStateListener {
     }
 
     /**
-     * Send PrepareRequest to target bubble (via CrossProcessMigration).
+     * Send PrepareRequest to target bubble via the typed 2PC protocol.
+     *
+     * @return {@code true} if the request was dispatched successfully
      */
-    private void sendPrepareRequest(Object entityId, UUID sourceBubble, UUID targetBubble) {
+    private boolean sendPrepareRequest(Object entityId, UUID sourceBubble, UUID targetBubble) {
         try {
-            // Use reflection to call sendPrepareRequest on crossProcessMigration
-            var method = crossProcessMigration.getClass()
-                .getMethod("sendPrepareRequest", Object.class, UUID.class, UUID.class);
-            method.invoke(crossProcessMigration, entityId, sourceBubble, targetBubble);
-        } catch (Exception e) {
+            return protocol.sendPrepareRequest(entityId, sourceBubble, targetBubble);
+        } catch (RuntimeException e) {
             log.error("Failed to send PrepareRequest for entity {}", entityId, e);
+            return false;
         }
     }
 
     /**
-     * Send CommitRequest to target bubble (via CrossProcessMigration).
+     * Send CommitRequest to target bubble via the typed 2PC protocol.
+     *
+     * @return {@code true} if the request was dispatched successfully
      */
-    private void sendCommitRequest(Object entityId, UUID targetBubble) {
+    private boolean sendCommitRequest(Object entityId, UUID targetBubble) {
         try {
-            var method = crossProcessMigration.getClass()
-                .getMethod("sendCommitRequest", Object.class, UUID.class);
-            method.invoke(crossProcessMigration, entityId, targetBubble);
-        } catch (Exception e) {
+            return protocol.sendCommitRequest(entityId, targetBubble);
+        } catch (RuntimeException e) {
             log.error("Failed to send CommitRequest for entity {}", entityId, e);
+            return false;
         }
     }
 
     /**
-     * Send AbortRequest to target bubble (via CrossProcessMigration).
+     * Send AbortRequest to target bubble via the typed 2PC protocol.
+     *
+     * @return {@code true} if the request was dispatched successfully
      */
-    private void sendAbortRequest(Object entityId, UUID targetBubble) {
+    private boolean sendAbortRequest(Object entityId, UUID targetBubble) {
         try {
-            var method = crossProcessMigration.getClass()
-                .getMethod("sendAbortRequest", Object.class, UUID.class);
-            method.invoke(crossProcessMigration, entityId, targetBubble);
-        } catch (Exception e) {
+            return protocol.sendAbortRequest(entityId, targetBubble);
+        } catch (RuntimeException e) {
             log.error("Failed to send AbortRequest for entity {}", entityId, e);
+            return false;
         }
     }
 
@@ -459,6 +534,24 @@ public class MigrationCoordinator implements MigrationStateListener {
      */
     public long getTotalViewChangeAborts() {
         return totalViewChangeAborts.get();
+    }
+
+    /**
+     * Get total PrepareRequest dispatch failures (Luciferase-4k66e).
+     *
+     * @return Total prepare dispatch failures that triggered a compensating rollback
+     */
+    public long getTotalPrepareFailures() {
+        return totalPrepareFailures.get();
+    }
+
+    /**
+     * Get total CommitRequest dispatch failures (Luciferase-4k66e).
+     *
+     * @return Total commit dispatch failures that triggered a compensating abort
+     */
+    public long getTotalCommitFailures() {
+        return totalCommitFailures.get();
     }
 
     @Override

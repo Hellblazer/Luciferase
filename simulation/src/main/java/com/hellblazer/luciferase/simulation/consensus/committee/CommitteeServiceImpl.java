@@ -131,6 +131,12 @@ public class CommitteeServiceImpl extends CommitteeServiceGrpc.CommitteeServiceI
 
                 responseObserver.onNext(response);
                 responseObserver.onCompleted();
+
+                // Luciferase-zwyf2: tombstone-on-read. proposalResults accumulated one entry per
+                // completed proposal and was never trimmed in production (clearResultCache() is
+                // test-only), growing unbounded for the service lifetime. Remove the entry once a
+                // caller has consumed the result.
+                proposalResults.remove(proposalId);
             } else {
                 // Result not yet available
                 responseObserver.onError(new RuntimeException("Proposal result not yet available: " + proposalId));

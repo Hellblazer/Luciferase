@@ -287,6 +287,47 @@ class BinaryFrameCodecTest {
     }
 
     /**
+     * Test 12 (Luciferase-0frcy.73): buildVersion is a long counter but the wire field is
+     * 32 bits. A value past Integer.MAX_VALUE must round-trip to its low 32 bits, and
+     * version ordering across the int sign boundary must use unsigned comparison so the
+     * monotonic counter does not appear to go backwards.
+     */
+    @Test
+    void buildVersionTruncatesToLow32BitsAndComparesUnsigned() {
+        long bigVersion = (long) Integer.MAX_VALUE + 5; // 2_147_483_652 -> wraps to a negative int
+        var region = new RegionBuilder.BuiltRegion(
+            new RegionId(12345L, 4),
+            0,
+            RegionBuilder.BuildType.ESVO,
+            new byte[8],
+            false,
+            1_000L,
+            1_000_000L,
+            bigVersion
+        );
+
+        var header = BinaryFrameCodec.decodeHeader(BinaryFrameCodec.encode(region));
+
+        // Low 32 bits preserved on the wire (matches the documented truncation contract).
+        assertEquals((int) bigVersion, header.buildVersion(),
+                     "buildVersion must round-trip as its low 32 bits");
+        assertTrue(header.buildVersion() < 0,
+                   "Value past Integer.MAX_VALUE wraps to a negative signed int — the wrap that "
+                   + "unsigned comparison must absorb");
+
+        // A later version (bigVersion+1) is still NEWER under unsigned comparison, even though
+        // both are negative signed ints. Signed '>' would wrongly report it as older/equal.
+        int earlier = (int) bigVersion;
+        int later   = (int) (bigVersion + 1);
+        assertTrue(BinaryFrameCodec.compareBuildVersions(later, earlier) > 0,
+                   "compareBuildVersions must treat the higher counter as newer (unsigned)");
+        assertTrue(BinaryFrameCodec.compareBuildVersions(earlier, later) < 0,
+                   "compareBuildVersions must be antisymmetric");
+        assertEquals(0, BinaryFrameCodec.compareBuildVersions(earlier, earlier),
+                     "equal versions compare equal");
+    }
+
+    /**
      * Helper method to create a mock BuiltRegion for testing.
      *
      * @param type Build type (ESVO or ESVT)

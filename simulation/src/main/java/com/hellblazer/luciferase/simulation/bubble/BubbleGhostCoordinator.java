@@ -18,23 +18,33 @@ import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
  *
  * @author hal.hildebrand
  */
-public class BubbleGhostCoordinator {
+public class BubbleGhostCoordinator implements AutoCloseable {
 
     private final GhostChannel<StringEntityID, EntityData> ghostChannel;
     private final GhostStateManager ghostStateManager;
 
     /**
+     * Controller and tick-listener references retained so {@link #close()} can deregister the
+     * listener on bubble dissolution. Without this, the listener keeps the coordinator alive and
+     * keeps firing on the surviving controller's CopyOnWriteArrayList forever (Luciferase-zwyf2).
+     */
+    private final RealTimeController realTimeController;
+    private final RealTimeController.TickListener tickListener;
+
+    /**
      * Create a ghost coordinator with channel and state manager.
      *
      * @param ghostChannel        GhostChannel for cross-bubble ghost transmission
-     * @param bounds              Initial bubble bounds for ghost state manager
+     * @param boundsSupplier      Supplier of the bubble's current bounds; re-read on every
+     *                            dead-reckoning clamp so ghosts track live bounds rather than a
+     *                            stale construction-time snapshot
      * @param realTimeController  RealTimeController for tick listener registration
      */
     public BubbleGhostCoordinator(GhostChannel<StringEntityID, EntityData> ghostChannel,
-                                  BubbleBounds bounds,
+                                  java.util.function.Supplier<BubbleBounds> boundsSupplier,
                                   RealTimeController realTimeController) {
         this.ghostChannel = ghostChannel;
-        this.ghostStateManager = new GhostStateManager(bounds, 1000); // max 1000 ghosts
+        this.ghostStateManager = new GhostStateManager(boundsSupplier, 1000); // max 1000 ghosts
 
         // Register ghost reception handler using GhostChannel interface
         ghostChannel.onReceive((sourceBubbleId, ghosts) -> {
@@ -52,11 +62,23 @@ public class BubbleGhostCoordinator {
             }
         });
 
-        // Register tick listener with RealTimeController for ghost updates
-        realTimeController.addTickListener((simTime, lamportClock) -> {
+        // Register tick listener with RealTimeController for ghost updates. Retain the reference so
+        // close() can deregister it on bubble dissolution (Luciferase-zwyf2).
+        this.realTimeController = realTimeController;
+        this.tickListener = (simTime, lamportClock) -> {
             // Update ghost states via dead reckoning on each tick
             tickGhosts(simTime);
-        });
+        };
+        realTimeController.addTickListener(tickListener);
+    }
+
+    /**
+     * Deregister the tick listener so a dissolved bubble's coordinator stops firing on the
+     * surviving controller and can be garbage-collected. Idempotent (Luciferase-zwyf2).
+     */
+    @Override
+    public void close() {
+        realTimeController.removeTickListener(tickListener);
     }
 
     /**

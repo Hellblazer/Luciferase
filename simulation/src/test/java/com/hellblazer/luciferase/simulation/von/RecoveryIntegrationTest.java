@@ -231,6 +231,43 @@ class RecoveryIntegrationTest {
             "Third recovery should succeed (cooldown expired at 1500ms)");
     }
 
+    /**
+     * Regression for Luciferase-0frcy.130: a failed recovery attempt must not stamp the
+     * cooldown. Previously lastRecoveryTime was set before processPartitionRecovery ran,
+     * so a failing attempt suppressed the next legitimate retry for RECOVERY_COOLDOWN_MS.
+     */
+    @Test
+    void failedRecoveryDoesNotEngageCooldown() throws InterruptedException {
+        var partition = UUID.randomUUID();
+        var bubble = createMockBubble(UUID.randomUUID(), new Point3d(0, 0, 0));
+
+        integration.registerBubble(bubble.id(), partition);
+        when(vonManager.getBubble(bubble.id())).thenReturn(bubble);
+        // Recovery FAILS: no bubble rejoins.
+        when(vonManager.joinAt(any(), any())).thenReturn(false);
+
+        var recoveryCount = new AtomicInteger(0);
+        doAnswer(invocation -> {
+            Event event = invocation.getArgument(0);
+            if (event instanceof Event.PartitionRecovered) {
+                recoveryCount.incrementAndGet();
+            }
+            return null;
+        }).when(vonManager).dispatchEvent(any(Event.class));
+
+        // First attempt at 0ms fails (successfulRejoins == 0 -> no cooldown stamp).
+        testClock.setTime(0);
+        triggerPartitionRecovery(partition);
+        assertEquals(1, recoveryCount.get(), "First (failed) recovery should still be attempted");
+
+        // Second attempt at 100ms -- within RECOVERY_COOLDOWN_MS (1000ms). Pre-fix this
+        // was suppressed by the premature cooldown stamp; post-fix it must retry.
+        testClock.setTime(100);
+        triggerPartitionRecovery(partition);
+        assertEquals(2, recoveryCount.get(),
+            "Failed recovery must be promptly retriable (no cooldown on failure)");
+    }
+
     // ========== Helper Methods ==========
 
     /**

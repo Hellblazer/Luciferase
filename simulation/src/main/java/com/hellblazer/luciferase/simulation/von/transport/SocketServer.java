@@ -67,7 +67,7 @@ public class SocketServer {
     private final Consumer<TransportVonMessage> messageHandler;
     private final ExecutorService executor;
     private final Set<Socket> clientSockets = Collections.synchronizedSet(new java.util.HashSet<>());
-    private ServerSocket serverSocket;
+    private volatile ServerSocket serverSocket;
     private volatile boolean running = false;
 
     /**

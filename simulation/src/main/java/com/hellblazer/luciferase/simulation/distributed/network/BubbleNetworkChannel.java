@@ -13,7 +13,17 @@ import java.util.UUID;
  * Network communication channel abstraction for inter-bubble message exchange.
  * Provides message-based async communication with optional latency/loss simulation.
  */
-public interface BubbleNetworkChannel {
+public interface BubbleNetworkChannel extends AutoCloseable {
+
+    /**
+     * Release all resources held by this channel (executors, schedulers, gRPC server/channels).
+     * Luciferase-zwyf2: lifts teardown into the interface contract so callers holding a
+     * {@code BubbleNetworkChannel} reference can deterministically shut it down (e.g. in a
+     * try-with-resources) without knowing the concrete type. Implementations must make this
+     * idempotent.
+     */
+    @Override
+    void close() throws Exception;
 
     /**
      * Initialize the network channel for this node.
@@ -33,31 +43,45 @@ public interface BubbleNetworkChannel {
 
     /**
      * Send entity departure event to target bubble node.
-     * Non-blocking; delivery guaranteed with retries.
+     * <p>
+     * Non-blocking. The returned {@code boolean} reflects only whether the message was
+     * <em>queued/dispatched</em> for delivery — it is NOT a delivery acknowledgement. Implementations
+     * dispatch asynchronously; a {@code true} return does not guarantee the receiver processed (or
+     * even received) the event (Luciferase-0frcy.23 — the prior "delivery guaranteed with retries"
+     * wording was false: there was no retry and no completion signal). The gRPC implementation retries
+     * transient failures (UNAVAILABLE / DEADLINE_EXCEEDED) with bounded backoff, but a partition that
+     * outlasts the retry budget still drops the event; callers requiring end-to-end confirmation must
+     * use an application-level ack (e.g. ViewSynchronyAck).
      *
      * @param targetNodeId UUID of target node
      * @param event        EntityDepartureEvent to send
-     * @return true if message queued for delivery
+     * @return true if the message was queued/dispatched (not a delivery guarantee)
      */
     boolean sendEntityDeparture(UUID targetNodeId, EntityDepartureEvent event);
 
     /**
      * Send view synchrony acknowledgment to source bubble node.
-     * Non-blocking; indicates target has received and processed EntityDepartureEvent.
+     * <p>
+     * Non-blocking. The returned {@code boolean} reflects only whether the ack was queued/dispatched,
+     * not that it was delivered or processed (Luciferase-0frcy.23). The gRPC implementation retries
+     * transient failures with bounded backoff.
      *
      * @param sourceNodeId UUID of source node
      * @param event        ViewSynchronyAck to send
-     * @return true if message queued for delivery
+     * @return true if the message was queued/dispatched (not a delivery guarantee)
      */
     boolean sendViewSynchronyAck(UUID sourceNodeId, ViewSynchronyAck event);
 
     /**
      * Send entity rollback notification to target bubble node.
-     * Non-blocking; indicates migration should be rolled back due to view change.
+     * <p>
+     * Non-blocking; signals that migration should be rolled back due to view change. The returned
+     * {@code boolean} reflects only whether the message was queued/dispatched, not delivery
+     * (Luciferase-0frcy.23). The gRPC implementation retries transient failures with bounded backoff.
      *
      * @param targetNodeId UUID of target node
      * @param event        EntityRollbackEvent to send
-     * @return true if message queued for delivery
+     * @return true if the message was queued/dispatched (not a delivery guarantee)
      */
     boolean sendEntityRollback(UUID targetNodeId, EntityRollbackEvent event);
 

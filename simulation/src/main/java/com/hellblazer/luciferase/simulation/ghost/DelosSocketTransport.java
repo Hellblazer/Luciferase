@@ -148,7 +148,13 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
         Objects.requireNonNull(targetBubbleId, "targetBubbleId must not be null");
         Objects.requireNonNull(ghost, "ghost must not be null");
 
-        pendingBatches.computeIfAbsent(targetBubbleId, k -> new CopyOnWriteArrayList<>()).add(ghost);
+        // Add inside compute() so the append is mutually exclusive with flush()'s atomic swap on the
+        // same ConcurrentHashMap bin lock (Luciferase-0frcy.25), closing the drop window.
+        pendingBatches.compute(targetBubbleId, (k, list) -> {
+            var batch = (list == null) ? new CopyOnWriteArrayList<SimulationGhostEntity<StringEntityID, EntityData>>() : list;
+            batch.add(ghost);
+            return batch;
+        });
 
         log.debug("Queued ghost {} for target bubble {}, pending count: {}",
                   ghost.entityId().getValue(), targetBubbleId, getPendingCount(targetBubbleId));
@@ -217,14 +223,13 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
     public void flush(long bucket) {
         log.debug("Flushing pending batches for bucket {} from bubble {}", bucket, bubbleId);
 
-        for (var entry : pendingBatches.entrySet()) {
-            var targetId = entry.getKey();
-            var ghosts = entry.getValue(); // CopyOnWriteArrayList - clear() is safe
-
-            if (!ghosts.isEmpty()) {
-                // Send copy to avoid concurrent modification
-                sendBatch(targetId, new ArrayList<>(ghosts));
-                ghosts.clear(); // Safe: creates new list, concurrent adds go to new list
+        // Atomic swap (Luciferase-0frcy.25): install a fresh list per target so concurrent
+        // queueGhost() appends to the NEW list. snapshot-then-clear dropped ghosts queued between
+        // the snapshot and clear() because CopyOnWriteArrayList.clear() does not install a new instance.
+        for (var targetId : pendingBatches.keySet()) {
+            var ghostsToSend = pendingBatches.put(targetId, new CopyOnWriteArrayList<>());
+            if (ghostsToSend != null && !ghostsToSend.isEmpty()) {
+                sendBatch(targetId, new ArrayList<>(ghostsToSend));
             }
         }
     }

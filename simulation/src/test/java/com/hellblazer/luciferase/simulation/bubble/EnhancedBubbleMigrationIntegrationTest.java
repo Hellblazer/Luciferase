@@ -362,4 +362,174 @@ class EnhancedBubbleMigrationIntegrationTest {
         log.info("100 migrations with deferred queues: {}ms", elapsedMs);
         assertTrue(elapsedMs < 100, "Should complete in < 100ms, got " + elapsedMs + "ms");
     }
+
+    @Test
+    @DisplayName("Boundary crossing actually initiates a migration (Luciferase-ik1s9)")
+    void testBoundaryCrossingInitiatesRealMigration() {
+        // Regression for Luciferase-ik1s9: detectAndInitiateMigrations was hollow — it
+        // incremented the counter but never resolved a target, invoked the migrator, or
+        // transitioned the FSM. This test drives a real boundary crossing and asserts the
+        // migration actually fires.
+
+        var migratingEntity = UUID.randomUUID();
+        var entityIdStr = migratingEntity.toString();
+
+        // Position at a cube Z-boundary (within the 0.05 tolerance) in the default 2x2x2 grid.
+        // This is detected as a crossing and resolves to bubble-0 (a distinct, registered bubble
+        // that is not this random source bubble).
+        var crossingPosition = new Point3f(0.5f, 0.5f, 0.98f);
+
+        // Register the entity with the bubble (so getAllEntityRecords yields its position)...
+        bubble.addEntity(entityIdStr, crossingPosition, "payload");
+        // ...and with the oracle (so getEntitiesCrossingBoundaries reports it).
+        ((MigrationOracleImpl) migrationOracle).updateEntityPosition(entityIdStr, crossingPosition);
+
+        // Resolve the expected target independently for the assertion.
+        var expectedTarget = migrationOracle.getTargetBubble(crossingPosition);
+        assertNotNull(expectedTarget, "Oracle must resolve a target bubble");
+        assertNotEquals(bubble.id(), expectedTarget, "Target must differ from source bubble");
+
+        var before = integration.getTotalMigrationsInitiated();
+
+        integration.processMigrations(System.currentTimeMillis());
+
+        // Migration was actually initiated, not just counted.
+        assertEquals(before + 1, integration.getTotalMigrationsInitiated(),
+            "A crossing entity must initiate exactly one migration");
+
+        // FSM ownership actually changed: OWNED -> MIGRATING_OUT (the entity is leaving).
+        assertEquals(EntityMigrationState.MIGRATING_OUT, migrationFsm.getState(migratingEntity),
+            "Crossing entity must transition OWNED -> MIGRATING_OUT");
+
+        // The departure event carries the resolved destination.
+        var departure = integration.getLastDepartureEvent();
+        assertNotNull(departure, "An EntityDepartureEvent must be produced");
+        assertEquals(migratingEntity, departure.getEntityId());
+        assertEquals(bubble.id(), departure.getSourceBubbleId());
+        assertEquals(expectedTarget, departure.getTargetBubbleId(),
+            "Departure event must target the resolved destination bubble");
+    }
+
+    /**
+     * MIGRATING_IN registers the entity for stability tracking, and a stable view drives
+     * it through to OWNED (the only completion path on the target bubble).
+     * <p>
+     * Replaces the bead-flagged vacuous tests that called {@code processMigrations(
+     * System.currentTimeMillis())} and asserted only {@code metrics.contains("initiated=")}.
+     * Here we walk the entity to MIGRATING_IN via legal FSM transitions (which fires the
+     * {@code onEntityStateTransition} listener that populates {@code entityStabilityTicks}),
+     * then drive {@code processMigrations} with a deterministic monotonic time under a stable
+     * mocked view, and assert real state progression: pending++ on MIGRATING_IN, FSM reaching
+     * OWNED, and the completed-migrations counter incrementing.
+     */
+    @Test
+    @DisplayName("MIGRATING_IN populates stability tracking and stabilizes to OWNED")
+    void testMigratingInStabilizesToOwned() {
+        var id = UUID.randomUUID();
+
+        // The default mocked view has never changed -> checkStability() is stable, so the
+        // stability-gated transitions (DEPARTED, MIGRATING_IN->OWNED) are permitted.
+        // Walk to GHOST: OWNED -> MIGRATING_OUT -> DEPARTED -> GHOST.
+        migrationFsm.initializeOwned(id);
+        assertTrue(migrationFsm.transition(id, EntityMigrationState.MIGRATING_OUT).success);
+        assertTrue(migrationFsm.transition(id, EntityMigrationState.DEPARTED).success,
+                   "DEPARTED requires a stable view (default mock is stable)");
+        assertTrue(migrationFsm.transition(id, EntityMigrationState.GHOST).success);
+
+        var pendingBefore = pendingCount(integration.getMetrics());
+
+        // GHOST -> MIGRATING_IN fires onEntityStateTransition(MIGRATING_IN), which seeds
+        // entityStabilityTicks for this entity (reflected as pending=N in getMetrics()).
+        assertTrue(migrationFsm.transition(id, EntityMigrationState.MIGRATING_IN).success);
+        assertEquals(EntityMigrationState.MIGRATING_IN, migrationFsm.getState(id));
+        assertEquals(pendingBefore + 1, pendingCount(integration.getMetrics()),
+                     "MIGRATING_IN must register the entity for stability tracking");
+
+        // Drive processMigrations with deterministic, monotonic simulation time. Each stable
+        // tick increments the entity's stability counter; after viewStabilityTicks (3) the
+        // integration commits MIGRATING_IN -> OWNED.
+        long simTime = 1_000L;
+        for (int i = 0; i < 5 && migrationFsm.getState(id) == EntityMigrationState.MIGRATING_IN; i++) {
+            integration.processMigrations(simTime);
+            simTime += 100L;
+        }
+
+        assertEquals(EntityMigrationState.OWNED, migrationFsm.getState(id),
+                     "A stable view must commit MIGRATING_IN -> OWNED");
+        assertEquals(0, pendingCount(integration.getMetrics()),
+                     "Completed entity must be removed from stability tracking");
+        assertTrue(completedCount(integration.getMetrics()) >= 1,
+                   "completed counter must increment when migration commits");
+    }
+
+    private static int pendingCount(String metrics) {
+        return parseMetric(metrics, "pending=");
+    }
+
+    private static int completedCount(String metrics) {
+        return parseMetric(metrics, "completed=");
+    }
+
+    private static int parseMetric(String metrics, String key) {
+        int idx = metrics.indexOf(key);
+        if (idx < 0) {
+            throw new AssertionError("metric '" + key + "' not found in: " + metrics);
+        }
+        int start = idx + key.length();
+        int end = start;
+        while (end < metrics.length() && (Character.isDigit(metrics.charAt(end)))) {
+            end++;
+        }
+        return Integer.parseInt(metrics.substring(start, end));
+    }
+
+    @Test
+    @DisplayName("No crossing entities means no migration initiated")
+    void testNoCrossingNoMigration() {
+        var before = integration.getTotalMigrationsInitiated();
+        integration.processMigrations(System.currentTimeMillis());
+        assertEquals(before, integration.getTotalMigrationsInitiated(),
+            "With no crossing entities, no migration must be initiated");
+        assertNull(integration.getLastDepartureEvent(),
+            "No departure event without a crossing");
+    }
+
+    /**
+     * Luciferase-0frcy.58: the migration counters are AtomicLong because they
+     * are mutated from the tick thread and from FSM listener callbacks. Under
+     * concurrent rollback callbacks the rolledBack total must equal the sum of
+     * all increments with no lost updates (plain long += can lose updates /
+     * tear). We hammer onViewChangeRollback from many threads and assert the
+     * reported total in getMetrics() is exact.
+     */
+    @Test
+    @DisplayName("Concurrent rollback callbacks count atomically (no lost updates)")
+    void testConcurrentRollbackCountingIsAtomic() throws InterruptedException {
+        int threads = 16;
+        int rollbacksPerThread = 500;
+        var latch = new java.util.concurrent.CountDownLatch(1);
+        var workers = new Thread[threads];
+        for (int t = 0; t < threads; t++) {
+            workers[t] = new Thread(() -> {
+                try {
+                    latch.await();
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                for (int i = 0; i < rollbacksPerThread; i++) {
+                    integration.onViewChangeRollback(1, 0);
+                }
+            });
+            workers[t].start();
+        }
+        latch.countDown();
+        for (var w : workers) {
+            w.join(15_000);
+        }
+
+        int expected = threads * rollbacksPerThread;
+        var metrics = integration.getMetrics();
+        assertTrue(metrics.contains("rolledBack=" + expected),
+            "rolledBack count must be exact (" + expected + "), metrics=" + metrics);
+    }
 }

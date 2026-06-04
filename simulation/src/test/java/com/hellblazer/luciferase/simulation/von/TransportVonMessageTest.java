@@ -45,9 +45,9 @@ class TransportVonMessageTest {
         assertEquals("GHOST_SYNC", msg.type());
         assertEquals("bubble-1", msg.sourceBubbleId());
         assertEquals("bubble-2", msg.targetBubbleId());
-        assertEquals(1.0f, msg.posX());
-        assertEquals(2.0f, msg.posY());
-        assertEquals(3.0f, msg.posZ());
+        assertEquals(1.0, msg.posX(), 0.0);
+        assertEquals(2.0, msg.posY(), 0.0);
+        assertEquals(3.0, msg.posZ(), 0.0);
         assertEquals("entity-1", msg.entityId());
     }
 

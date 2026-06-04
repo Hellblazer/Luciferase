@@ -110,7 +110,7 @@ public class EnhancedBubble {
         // Create ghost coordinator with channel, bounds, and real-time controller
         this.ghostCoordinator = new BubbleGhostCoordinator(
             Objects.requireNonNull(ghostChannel, "ghostChannel must not be null"),
-            boundsTracker.bounds(),
+            boundsTracker::bounds,
             realTimeController
         );
     }

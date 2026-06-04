@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -80,17 +81,31 @@ public class SocketConnectionManager implements ConnectionManager {
             );
         }
 
-        // Idempotent: if already connected to this process, reuse existing client
-        if (clients.containsKey(remote.processId())) {
-            log.debug("Already connected to {}, reusing connection", remote.processId());
-            return;
+        // Idempotent + race-free: computeIfAbsent atomically creates and connects at
+        // most one client per processId. Concurrent callers with the same processId
+        // serialize on the map bin, so no duplicate TCP connection is leaked.
+        var created = new boolean[1];
+        try {
+            clients.computeIfAbsent(remote.processId(), id -> {
+                var c = new SocketClient(remote, incomingMessageHandler);
+                try {
+                    c.connect();
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                created[0] = true;
+                return c;
+            });
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
         }
 
-        var client = new SocketClient(remote, incomingMessageHandler);
-        client.connect();
-        clients.put(remote.processId(), client);
-        running = true;  // BUG FIX: set true after first connection
-        log.info("Connected to {}", remote.toUrl());
+        if (created[0]) {
+            running = true;  // BUG FIX: set true after first connection
+            log.info("Connected to {}", remote.toUrl());
+        } else {
+            log.debug("Already connected to {}, reusing connection", remote.processId());
+        }
     }
 
     @Override

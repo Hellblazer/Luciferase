@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +54,8 @@ public class EventRecovery {
 
     private final Path logDirectory;
 
+    private volatile Clock clock = Clock.system();
+
     /**
      * Create EventRecovery for log directory.
      *
@@ -60,6 +63,16 @@ public class EventRecovery {
      */
     public EventRecovery(Path logDirectory) {
         this.logDirectory = Objects.requireNonNull(logDirectory, "logDirectory must not be null");
+    }
+
+    /**
+     * Inject a clock for fallback checkpoint timestamps. Production uses {@link Clock#system()};
+     * tests inject a deterministic clock to correlate recovery metadata with simulated time.
+     *
+     * @param clock the clock to use (must not be null)
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     /**
@@ -75,10 +88,22 @@ public class EventRecovery {
         // Load last checkpoint
         var checkpoint = getLastCheckpoint(nodeId);
 
-        // Read all events from log
-        var wal = new WriteAheadLog(nodeId, logDirectory);
-        var allEvents = wal.readAllEvents();
-        wal.close();
+        // Luciferase-0frcy.37: replay only events AFTER the last checkpoint. Previously this read
+        // ALL events unconditionally, making the checkpoint mechanism a no-op for recovery (a crash
+        // at seq=15000 after a checkpoint at seq=10000 would re-replay all 15000 events). When no
+        // checkpoint exists, fall back to the full log.
+        // Luciferase-sc6pl: use a READ-ONLY reader, never a full WriteAheadLog. Constructing a
+        // WriteAheadLog here opens the same JSONL log file with a second writable append-mode
+        // FileOutputStream while the owning WAL is still being written by the batch-flush scheduler,
+        // interleaving partial JSON lines and corrupting the log. WalLogReader opens files for
+        // reading only.
+        var reader = new WalLogReader(nodeId, logDirectory);
+        List<Map<String, Object>> allEvents;
+        if (checkpoint != null) {
+            allEvents = reader.readEventsSince(checkpoint.sequenceNumber());
+        } else {
+            allEvents = reader.readAllEvents();
+        }
 
         // Replay events with validation
         var validEvents = new ArrayList<Map<String, Object>>();
@@ -108,7 +133,19 @@ public class EventRecovery {
         // Replay valid events
         replayEvents(validEvents);
 
-        return new RecoveredState(checkpoint, validEvents, validEvents.size(), skippedCount);
+        // Luciferase-0frcy.37 fix: a checkpoint at seq=N means the first N events are already
+        // durably captured BY the checkpoint; recovery only re-reads the post-checkpoint tail
+        // (readEventsSince, exclusive). The total number of events represented in the recovered
+        // state is therefore the checkpointed prefix PLUS the freshly-replayed tail. Counting only
+        // validEvents.size() (the tail) dropped the checkpointed prefix and reported 0 whenever the
+        // checkpoint sat at the final sequence (the common "checkpoint everything then recover" case).
+        var checkpointedPrefix = checkpoint != null ? checkpoint.sequenceNumber() : 0L;
+        // Keep the running total as a long end-to-end: checkpointedPrefix is a long sequence number
+        // and on a long-lived log the prefix + tail can exceed Integer.MAX_VALUE. Narrowing to int
+        // here (the prior behavior) would silently overflow to a negative/wrong count.
+        var totalReplayed = checkpointedPrefix + validEvents.size();
+
+        return new RecoveredState(checkpoint, validEvents, totalReplayed, skippedCount);
     }
 
     /**
@@ -135,12 +172,68 @@ public class EventRecovery {
     }
 
     /**
-     * Validate recovery integrity.
+     * Validate recovery integrity (no-arg legacy shim).
+     * <p>
+     * Retained for backward compatibility. Without a {@link RecoveredState} there is no
+     * material to validate, so this trivially returns {@code true}. Callers that want a
+     * real integrity gate must use {@link #validateRecoveryIntegrity(RecoveredState)}.
      *
-     * @return true if recovery passed validation
+     * @return always {@code true}
+     * @deprecated use {@link #validateRecoveryIntegrity(RecoveredState)} which performs
+     *             real sequence-ordering and checkpoint-consistency checks.
      */
+    @Deprecated
     public boolean validateRecoveryIntegrity() {
-        // Basic validation - could be extended with checksums, etc.
+        return true;
+    }
+
+    /**
+     * Validate the integrity of a recovered state.
+     * <p>
+     * Performs real, falsifiable checks against the replayed log so that corrupt or
+     * out-of-order recovery is detected rather than silently accepted
+     * (Luciferase-5yh9h — replaces the vacuous {@code return true} gate):
+     * <ul>
+     *   <li>every replayed event carries a non-null {@code type};</li>
+     *   <li>any present {@code sequenceNumber} fields are strictly monotonically
+     *       increasing across the replayed tail (a regression / reordering indicates
+     *       a corrupt or double-opened WAL);</li>
+     *   <li>the first replayed sequence number, when present, is strictly greater than
+     *       the checkpoint sequence (recovery must not re-replay checkpointed events).</li>
+     * </ul>
+     *
+     * @param state the recovered state to validate (must not be null)
+     * @return {@code true} if the recovered state passes all integrity checks
+     */
+    public boolean validateRecoveryIntegrity(RecoveredState state) {
+        java.util.Objects.requireNonNull(state, "state must not be null");
+
+        var checkpointSeq = state.checkpoint() != null ? state.checkpoint().sequenceNumber() : -1L;
+        Long previousSeq = null;
+        boolean first = true;
+
+        for (var event : state.events()) {
+            if (event == null || event.get("type") == null) {
+                log.warn("Recovery integrity failure: event missing type: {}", event);
+                return false;
+            }
+            var seqRaw = event.get("sequenceNumber");
+            if (seqRaw instanceof Number num) {
+                long seq = num.longValue();
+                if (first && checkpointSeq >= 0 && seq <= checkpointSeq) {
+                    log.warn("Recovery integrity failure: first replayed seq {} <= checkpoint seq {}",
+                             seq, checkpointSeq);
+                    return false;
+                }
+                if (previousSeq != null && seq <= previousSeq) {
+                    log.warn("Recovery integrity failure: non-monotonic sequence {} after {}",
+                             seq, previousSeq);
+                    return false;
+                }
+                previousSeq = seq;
+            }
+            first = false;
+        }
         return true;
     }
 
@@ -153,7 +246,7 @@ public class EventRecovery {
         try {
             return getLastCheckpoint(null);
         } catch (IOException e) {
-            return CheckpointMetadata.now(0);
+            return CheckpointMetadata.now(0, clock);
         }
     }
 
@@ -166,7 +259,7 @@ public class EventRecovery {
 
         if (!Files.exists(metadataFile)) {
             log.debug("No checkpoint metadata found, using default");
-            return CheckpointMetadata.now(0);
+            return CheckpointMetadata.now(0, clock);
         }
 
         try {
@@ -180,7 +273,7 @@ public class EventRecovery {
             return new CheckpointMetadata(seqNum, timestamp);
         } catch (Exception e) {
             log.warn("Failed to parse checkpoint metadata: {}", e.getMessage());
-            return CheckpointMetadata.now(0);
+            return CheckpointMetadata.now(0, clock);
         }
     }
 

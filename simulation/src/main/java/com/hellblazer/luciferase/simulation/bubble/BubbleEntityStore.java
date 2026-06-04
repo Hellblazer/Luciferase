@@ -9,6 +9,7 @@ import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Manages entity lifecycle and spatial indexing via Tetree.
@@ -25,6 +26,11 @@ public class BubbleEntityStore {
     private final byte spatialLevel;
     private final RealTimeController realTimeController;
     private final List<EntityChangeListener> listeners;
+    // Serializes the structural mutation paths (add / remove / updatePosition)
+    // so the get-remove-insert in updateEntityPosition cannot interleave with a
+    // concurrent removeEntity and leave spatialIndex out of sync with the
+    // id/reverse maps (the "zombie entity" race — Luciferase-0frcy.81).
+    private final ReentrantLock mutationLock = new ReentrantLock();
 
     /**
      * Create an entity store with spatial indexing.
@@ -62,19 +68,24 @@ public class BubbleEntityStore {
      * @param content  Entity content
      */
     public void addEntity(String entityId, Point3f position, Object content) {
-        var internalId = new StringEntityID(entityId);
-        // Luciferase-gn3p: Maintain both forward and reverse mappings atomically
-        idMapping.put(entityId, internalId);
-        reverseMapping.put(internalId, entityId);
+        mutationLock.lock();
+        try {
+            var internalId = new StringEntityID(entityId);
+            // Luciferase-gn3p: Maintain both forward and reverse mappings atomically
+            idMapping.put(entityId, internalId);
+            reverseMapping.put(internalId, entityId);
 
-        // Use simulation time instead of wall-clock time for determinism
-        var simulationTime = realTimeController.getSimulationTime();
-        var entityData = new BubbleEntityData(position, content, simulationTime);
-        spatialIndex.insert(internalId, position, spatialLevel, entityData);
+            // Use simulation time instead of wall-clock time for determinism
+            var simulationTime = realTimeController.getSimulationTime();
+            var entityData = new BubbleEntityData(position, content, simulationTime);
+            spatialIndex.insert(internalId, position, spatialLevel, entityData);
 
-        // Notify listeners
-        for (var listener : listeners) {
-            listener.onEntityAdded(entityId, position);
+            // Notify listeners
+            for (var listener : listeners) {
+                listener.onEntityAdded(entityId, position);
+            }
+        } finally {
+            mutationLock.unlock();
         }
     }
 
@@ -90,21 +101,26 @@ public class BubbleEntityStore {
      * @param entityId Entity to remove
      */
     public void removeEntity(String entityId) {
-        var internalId = idMapping.get(entityId);
-        if (internalId != null) {
-            // CRITICAL: Remove from spatial index FIRST
-            // This ensures getAllEntityRecords() won't return partial/inconsistent results
-            // if queried concurrently during removal
-            spatialIndex.removeEntity(internalId);
+        mutationLock.lock();
+        try {
+            var internalId = idMapping.get(entityId);
+            if (internalId != null) {
+                // CRITICAL: Remove from spatial index FIRST
+                // This ensures getAllEntityRecords() won't return partial/inconsistent results
+                // if queried concurrently during removal
+                spatialIndex.removeEntity(internalId);
 
-            // Luciferase-gn3p: Remove from both mappings atomically (forward + reverse)
-            idMapping.remove(entityId);
-            reverseMapping.remove(internalId);
+                // Luciferase-gn3p: Remove from both mappings atomically (forward + reverse)
+                idMapping.remove(entityId);
+                reverseMapping.remove(internalId);
 
-            // Notify listeners
-            for (var listener : listeners) {
-                listener.onEntityRemoved(entityId);
+                // Notify listeners
+                for (var listener : listeners) {
+                    listener.onEntityRemoved(entityId);
+                }
             }
+        } finally {
+            mutationLock.unlock();
         }
     }
 
@@ -116,8 +132,12 @@ public class BubbleEntityStore {
      * @param newPosition New position
      */
     public void updateEntityPosition(String entityId, Point3f newPosition) {
-        var internalId = idMapping.get(entityId);
-        if (internalId != null) {
+        mutationLock.lock();
+        try {
+            var internalId = idMapping.get(entityId);
+            if (internalId == null) {
+                return;
+            }
             // Get existing entity data
             var oldData = spatialIndex.getEntity(internalId);
             if (oldData != null) {
@@ -135,6 +155,8 @@ public class BubbleEntityStore {
                     listener.onEntityMoved(entityId, oldPosition, newPosition);
                 }
             }
+        } finally {
+            mutationLock.unlock();
         }
     }
 

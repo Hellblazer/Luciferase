@@ -206,12 +206,20 @@ public class BubbleMerger {
                                            totalBefore, totalAfter, duplicates.size());
         }
 
-        // Record bubble removal for rollback BEFORE removing
-        // Capture bubble state and compute key from bounds
-        var bubble2Bounds = bubble2.bounds();
-        if (bubble2Bounds != null) {
-            var bubble2Key = bubble2Bounds.rootKey();
+        // Record bubble removal for rollback BEFORE removing.
+        //
+        // Use the bubble's ACTUAL spatial-index registration key, not
+        // bubble2.bounds().rootKey(): the latter is the level-root key tracked
+        // from entity positions, not the key under which bubble2 is registered in
+        // the grid. Rolling back with the root key would re-insert the bubble at
+        // the wrong SFC position, leaving the spatial index inconsistent
+        // (Luciferase-0frcy.122).
+        var bubble2Key = bubbleGrid.getKeyForBubble(bubble2Id);
+        if (bubble2Key != null) {
             operationTracker.recordBubbleRemoved(bubble2Id, bubble2, bubble2Key);
+        } else {
+            log.warn("[{}] No registration key found for bubble {}; skipping rollback record",
+                     correlationId, bubble2Id);
         }
 
         // Remove bubble2 from grid (all entities now in bubble1)
@@ -226,7 +234,7 @@ public class BubbleMerger {
                 correlationId, bubble2Id, bubble1Id, entities1After);
 
         return new MergeExecutionResult(true, "Merge successful",
-                                       totalBefore, totalAfter, duplicates.size());
+                                       totalBefore, totalAfter, duplicates.size(), entitiesMoved);
     }
 }
 
@@ -238,12 +246,21 @@ public class BubbleMerger {
  * @param entitiesBefore   total entity count before merge (bubble1 + bubble2)
  * @param entitiesAfter    entity count after merge (should equal entitiesBefore)
  * @param duplicatesFound  number of duplicate entities detected
+ * @param entitiesMoved    number of entities relocated from bubble2 into bubble1
  */
 record MergeExecutionResult(
     boolean success,
     String message,
     int entitiesBefore,
     int entitiesAfter,
-    int duplicatesFound
+    int duplicatesFound,
+    int entitiesMoved
 ) {
+    /**
+     * Backward-compatible constructor that defaults {@code entitiesMoved} to 0.
+     * Used by failure paths where no entities were relocated.
+     */
+    MergeExecutionResult(boolean success, String message, int entitiesBefore, int entitiesAfter, int duplicatesFound) {
+        this(success, message, entitiesBefore, entitiesAfter, duplicatesFound, 0);
+    }
 }

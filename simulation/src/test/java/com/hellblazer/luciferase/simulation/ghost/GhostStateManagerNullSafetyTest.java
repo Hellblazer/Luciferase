@@ -62,17 +62,18 @@ class GhostStateManagerNullSafetyTest {
     void testUpdateGhostNullPositionThrows() {
         var entityId = new StringEntityID("entity1");
 
-        // Create event with null position
-        var event = new EntityUpdateEvent(
-            entityId,
-            null,  // null position - should throw
-            new Point3f(1.0f, 0.0f, 0.0f),
-            System.currentTimeMillis(),
-            100L // lamport clock
-        );
-
-        // Should throw NullPointerException with clear message
+        // A null position is rejected at the boundary: EntityUpdateEvent's compact constructor guards
+        // it before any vecmath deref (Luciferase-0frcy regression — the guard was moved behind the
+        // Point3f copy and lost its actionable message). Construction is the guarded operation, so it
+        // is exercised inside assertThrows.
         var exception = assertThrows(NullPointerException.class, () -> {
+            var event = new EntityUpdateEvent(
+                entityId,
+                null,  // null position - should throw
+                new Point3f(1.0f, 0.0f, 0.0f),
+                System.currentTimeMillis(),
+                100L // lamport clock
+            );
             manager.updateGhost(sourceBubbleId, event);
         });
 

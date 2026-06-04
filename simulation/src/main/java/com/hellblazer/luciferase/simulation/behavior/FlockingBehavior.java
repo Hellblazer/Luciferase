@@ -69,11 +69,22 @@ public class FlockingBehavior implements EntityBehavior {
     private final float boundaryMargin;
     private final Random random;
 
-    // Double-buffered velocity cache for thread-safe alignment calculations
-    // previousVelocities: read from during computation (last tick's values)
-    // currentVelocities: write to during computation (this tick's values)
-    private volatile Map<String, Vector3f> previousVelocities = new ConcurrentHashMap<>();
-    private volatile Map<String, Vector3f> currentVelocities = new ConcurrentHashMap<>();
+    // Double-buffered velocity cache for thread-safe alignment calculations.
+    // previous: read from during computation (last tick's values)
+    // current:  write to during computation (this tick's values)
+    // Both maps are held in a single immutable record behind one volatile reference so the
+    // tick-boundary swap is a SINGLE atomic write — there is no window where previous and
+    // current transiently alias the same map (Luciferase-0frcy.2).
+    private record VelocityBuffers(Map<String, Vector3f> previous, Map<String, Vector3f> current) {}
+
+    private volatile VelocityBuffers buffers =
+        new VelocityBuffers(new ConcurrentHashMap<>(), new ConcurrentHashMap<>());
+
+    // Guards the tick-boundary lifecycle operations (swap + cleanup) so they
+    // are mutually exclusive and serialized with respect to each other. Both
+    // are intended to run only between ticks, never concurrently with the
+    // computeVelocity() fan-out (Luciferase-0frcy.54).
+    private final Object tickBoundaryLock = new Object();
 
     /**
      * Create flocking behavior with default parameters.
@@ -156,27 +167,55 @@ public class FlockingBehavior implements EntityBehavior {
      * while writing to the current tick's buffer.
      */
     public void swapVelocityBuffers() {
-        previousVelocities = currentVelocities;
-        currentVelocities = new ConcurrentHashMap<>();
+        // Single atomic volatile write: the just-completed tick's current map becomes the new
+        // previous, and a fresh empty map becomes current. No intermediate aliasing window.
+        // Serialized with cleanupRemovedEntities() via tickBoundaryLock so the two
+        // tick-boundary operations cannot interleave (Luciferase-0frcy.54).
+        synchronized (tickBoundaryLock) {
+            var completed = buffers.current();
+            buffers = new VelocityBuffers(completed, new ConcurrentHashMap<>());
+        }
     }
 
     /**
      * Clean up velocity entries for entities that no longer exist.
      * <p>
-     * Should be called periodically to prevent memory leaks.
+     * Must only be called at a tick boundary (after {@link #swapVelocityBuffers()},
+     * before any {@link #computeVelocity} call for the new tick). It is serialized
+     * with the swap via {@code tickBoundaryLock}.
+     * <p>
+     * Cleanup rebuilds fresh filtered maps and installs them with a single
+     * volatile write rather than running {@code retainAll} in place on the live
+     * maps. An in-place {@code retainAll} performs a multi-step iterate-and-remove
+     * that can race a concurrent {@code computeVelocity().put} and drop a
+     * just-inserted entry (Luciferase-0frcy.54).
      *
      * @param activeEntityIds Set of currently active entity IDs
      */
     public void cleanupRemovedEntities(Set<String> activeEntityIds) {
-        previousVelocities.keySet().retainAll(activeEntityIds);
-        currentVelocities.keySet().retainAll(activeEntityIds);
+        synchronized (tickBoundaryLock) {
+            var snapshot = buffers;
+            var filteredPrevious = new ConcurrentHashMap<String, Vector3f>();
+            var filteredCurrent = new ConcurrentHashMap<String, Vector3f>();
+            for (var e : snapshot.previous().entrySet()) {
+                if (activeEntityIds.contains(e.getKey())) {
+                    filteredPrevious.put(e.getKey(), e.getValue());
+                }
+            }
+            for (var e : snapshot.current().entrySet()) {
+                if (activeEntityIds.contains(e.getKey())) {
+                    filteredCurrent.put(e.getKey(), e.getValue());
+                }
+            }
+            buffers = new VelocityBuffers(filteredPrevious, filteredCurrent);
+        }
     }
 
     @Override
     public Vector3f computeVelocity(String entityId, Point3f position, Vector3f velocity,
                                     EnhancedBubble bubble, float deltaTime) {
         // Store current velocity for next tick's alignment calculations
-        currentVelocities.put(entityId, new Vector3f(velocity));
+        buffers.current().put(entityId, new Vector3f(velocity));
 
         // Query neighbors within AOI
         var neighbors = bubble.queryRange(position, aoiRadius);
@@ -284,7 +323,7 @@ public class FlockingBehavior implements EntityBehavior {
             if (neighbor.id().equals(entityId)) continue;
 
             // Read from previous tick's velocities (thread-safe)
-            var neighborVel = previousVelocities.get(neighbor.id());
+            var neighborVel = buffers.previous().get(neighbor.id());
             if (neighborVel != null) {
                 avgVelocity.add(neighborVel);
                 count++;
@@ -421,7 +460,8 @@ public class FlockingBehavior implements EntityBehavior {
      * Clear velocity caches (call when resetting simulation).
      */
     public void clearCache() {
-        previousVelocities.clear();
-        currentVelocities.clear();
+        var snapshot = buffers;
+        snapshot.previous().clear();
+        snapshot.current().clear();
     }
 }

@@ -166,8 +166,11 @@ public class ClusteringDetector {
                     }
                 }
             }
-            // If all parsing fails, generate UUID from hash
-            return UUID.nameUUIDFromBytes(idStr.getBytes());
+            // Do NOT fabricate a UUID from a hash: a hash-derived UUID will never
+            // match any real entity record, silently corrupting cluster membership
+            // and coherence scores (Luciferase-0frcy.124). Honor the documented
+            // contract and let the caller skip this entity.
+            throw new IllegalArgumentException("Cannot parse entity ID: " + idStr);
         }
     }
 

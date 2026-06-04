@@ -153,46 +153,32 @@ public class AdaptiveSplitPolicy {
             return Collections.emptyList();
         }
 
+        // Index source records by id so each child can be populated from its
+        // cluster's entityIds (Luciferase-0frcy.3). The previous implementation
+        // returned empty child bubbles and relied on a separate round-robin
+        // redistributeEntities() that ignored the cluster assignments, wasting
+        // the k-means computation and placing entities in spatially wrong
+        // children. Population is now part of the split operation and preserves
+        // the cluster-entity correspondence.
+        var recordsById = new HashMap<String, EnhancedBubble.EntityRecord>();
+        for (var record : source.getAllEntityRecords()) {
+            recordsById.put(record.id(), record);
+        }
+
         var childBubbles = new ArrayList<EnhancedBubble>();
         for (var cluster : analysis.clusters()) {
             var childId = UUID.randomUUID();
             var child = new EnhancedBubble(childId, (byte) 10, 10);
+            for (var entityId : cluster.entityIds()) {
+                var record = recordsById.get(entityId);
+                if (record != null) {
+                    child.addEntity(record.id(), record.position(), record.content());
+                }
+            }
             childBubbles.add(child);
         }
 
         return childBubbles;
-    }
-
-    /**
-     * Redistribute entities from source bubble to child bubbles.
-     * Uses cluster assignments from split analysis.
-     *
-     * @param source   Source bubble
-     * @param children Child bubbles to receive entities
-     */
-    public void redistributeEntities(EnhancedBubble source, List<EnhancedBubble> children) {
-        if (children.isEmpty()) {
-            return;
-        }
-
-        // Get all entity records from source directly
-        var allRecords = source.getAllEntityRecords();
-
-        // Simple distribution: divide entities among children
-        int entitiesPerChild = allRecords.size() / children.size();
-        int childIndex = 0;
-
-        for (int i = 0; i < allRecords.size(); i++) {
-            var record = allRecords.get(i);
-
-            // Add to current child
-            children.get(childIndex).addEntity(record.id(), record.position(), record.content());
-
-            // Move to next child if this one has enough entities
-            if ((i + 1) % entitiesPerChild == 0 && childIndex < children.size() - 1) {
-                childIndex++;
-            }
-        }
     }
 
     /**

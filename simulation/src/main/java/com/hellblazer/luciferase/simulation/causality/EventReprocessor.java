@@ -120,9 +120,19 @@ public class EventReprocessor {
     private final PriorityQueue<EntityUpdateEvent> pendingQueue;
 
     /**
-     * Track events being held (by entity ID) to detect duplicates.
+     * Track events being held to detect duplicates. Keyed by entity ID, mapping to
+     * the SET of Lamport clocks currently queued for that entity. Keying on the
+     * (entityId, lamportClock) pair (rather than entityId alone) is required so that
+     * multiple in-flight clocks for the same entity are each tracked independently —
+     * the previous entityId-only map silently overwrote earlier clocks and removed
+     * all pending entries when polling the first one (Luciferase-0frcy.87).
      */
-    private final ConcurrentHashMap<String, Long> eventTracker;
+    private final ConcurrentHashMap<String, Set<Long>> eventTracker;
+
+    /**
+     * Highest Lamport clock force-processed (max-window exceeded) — diagnostic metric.
+     */
+    private final AtomicLong totalForceProcessed = new AtomicLong(0L);
 
     /**
      * Timestamp of first event in queue (for lookahead window calculation).
@@ -190,6 +200,18 @@ public class EventReprocessor {
     }
 
     /**
+     * Create an EventReprocessor with an injected clock (Luciferase-ml7kc).
+     * Preferred over {@link #setClock(Clock)} so gap-detection time is deterministic from construction.
+     *
+     * @param config Configuration with window and queue sizes
+     * @param clock  Clock providing gap-detection timestamps (deterministic in tests)
+     */
+    public EventReprocessor(Configuration config, Clock clock) {
+        this(config);
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
+    /**
      * Set the clock for deterministic testing.
      *
      * @param clock Clock instance to use
@@ -225,9 +247,11 @@ public class EventReprocessor {
             return false;
         }
 
-        // Track event to detect duplicates
+        // Track event to detect duplicates. Key on (entityId, lamportClock): record
+        // this specific clock in the entity's pending-clock set rather than
+        // overwriting the entity's single tracked clock.
         var entityKey = event.entityId().toString();
-        eventTracker.put(entityKey, event.lamportClock());
+        eventTracker.computeIfAbsent(entityKey, k -> ConcurrentHashMap.newKeySet()).add(event.lamportClock());
 
         // Add to queue (will be sorted by Lamport clock)
         pendingQueue.offer(event);
@@ -263,9 +287,15 @@ public class EventReprocessor {
             // Calculate time since event arrived
             long timeSinceArrival = currentTime - event.timestamp();
 
-            // Check if event is ready:
-            // 1. Within min lookahead window, OR
-            // 2. Within max lookahead window (force-process to avoid deadlock)
+            // Lookahead window classification:
+            // - timeSinceArrival < minLookaheadMs   : too young — hold (give predecessors time to arrive)
+            // - minLookaheadMs <= t < maxLookaheadMs: ready — process in clock order
+            // - timeSinceArrival >= maxLookaheadMs  : force-process — past the deadlock-avoidance
+            //                                         deadline; an expected predecessor never arrived,
+            //                                         so release anyway and surface it (WARN + metric).
+            //
+            // Previously withinMaxWindow was computed but never used, so the force-process path
+            // was unreachable dead code (Luciferase-0frcy.88). It now drives the WARN + metric.
             boolean withinMinWindow = timeSinceArrival < config.minLookaheadMs;
             boolean withinMaxWindow = timeSinceArrival < config.maxLookaheadMs;
 
@@ -274,10 +304,23 @@ public class EventReprocessor {
                 break;
             }
 
-            // Process event if within window or force-ready (max window exceeded)
+            long headClock = event.lamportClock();
+            if (!withinMaxWindow) {
+                // Past the max lookahead deadline — force-process to break a potential deadlock,
+                // with a visible WARN since a causally-earlier event it was waiting on never came.
+                totalForceProcessed.incrementAndGet();
+                log.warn("Force-processing event past max lookahead window: entity={}, clock={}, age={}ms (>{}ms)",
+                         event.entityId(), headClock, timeSinceArrival, config.maxLookaheadMs);
+            }
+
             pendingQueue.poll();
             var entityKey = event.entityId().toString();
-            eventTracker.remove(entityKey);
+            // Remove only THIS clock from the entity's pending set; drop the entity entry
+            // when no further clocks remain queued for it.
+            eventTracker.computeIfPresent(entityKey, (k, clocks) -> {
+                clocks.remove(headClock);
+                return clocks.isEmpty() ? null : clocks;
+            });
 
             try {
                 processor.process(event);
@@ -325,6 +368,30 @@ public class EventReprocessor {
      */
     public long getTotalReprocessed() {
         return totalReprocessed.get();
+    }
+
+    /**
+     * Get total events force-processed because they exceeded the max lookahead window.
+     *
+     * @return Total force-processed count
+     */
+    public long getTotalForceProcessed() {
+        return totalForceProcessed.get();
+    }
+
+    /**
+     * Check whether an event with the given entity ID and Lamport clock is currently
+     * queued (i.e. a duplicate would be a re-arrival of an already-pending event).
+     * Keyed on the (entityId, lamportClock) pair so distinct clocks for the same
+     * entity are tracked independently.
+     *
+     * @param entityId    Entity ID string
+     * @param lamportClock Lamport clock of the event
+     * @return true if an event with this exact (entityId, clock) is pending
+     */
+    public synchronized boolean isPending(String entityId, long lamportClock) {
+        var clocks = eventTracker.get(entityId);
+        return clocks != null && clocks.contains(lamportClock);
     }
 
     /**

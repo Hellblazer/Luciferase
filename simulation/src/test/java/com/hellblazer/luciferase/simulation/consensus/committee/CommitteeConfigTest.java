@@ -37,26 +37,21 @@ class CommitteeConfigTest {
         // Given/When: Default configuration
         var config = CommitteeConfig.defaultConfig();
 
-        // Then: Defaults are sensible (7-9 nodes, 5 sec timeout)
-        assertTrue(config.committeeSizeMin() >= 7, "Min committee size should be >= 7");
-        assertTrue(config.committeeSizeMax() >= config.committeeSizeMin(), "Max >= Min");
+        // Then: Default timeout is 5 seconds. Committee size and quorum are derived
+        // from the context, not from config (Luciferase-0frcy.91 removed the dead
+        // committeeSizeMin/committeeSizeMax/requiredQuorumRatio fields).
         assertEquals(5, config.votingTimeoutSeconds(), "Default timeout should be 5 seconds");
-        assertEquals(0.0, config.requiredQuorumRatio(), 0.001, "Quorum ratio not used (context.toleranceLevel())");
     }
 
     @Test
     void testConfigurability() {
-        // Given: Custom configuration values
-        var customMin = 5;
-        var customMax = 11;
+        // Given: Custom timeout
         var customTimeout = 10;
 
         // When: Creating custom config
-        var config = new CommitteeConfig(customMin, customMax, customTimeout, 0.0);
+        var config = new CommitteeConfig(customTimeout);
 
-        // Then: Values are overridden
-        assertEquals(customMin, config.committeeSizeMin());
-        assertEquals(customMax, config.committeeSizeMax());
+        // Then: Value is overridden
         assertEquals(customTimeout, config.votingTimeoutSeconds());
     }
 
@@ -64,14 +59,24 @@ class CommitteeConfigTest {
     void testBuilderPattern() {
         // Given: Builder-based configuration
         var config = CommitteeConfig.newBuilder()
-                                     .committeeSizeMin(3)
-                                     .committeeSizeMax(7)
                                      .votingTimeoutSeconds(3)
                                      .build();
 
         // Then: Builder works correctly
-        assertEquals(3, config.committeeSizeMin());
-        assertEquals(7, config.committeeSizeMax());
         assertEquals(3, config.votingTimeoutSeconds());
+    }
+
+    /**
+     * Regression guard for Luciferase-0frcy.91: the dead committeeSizeMin /
+     * committeeSizeMax / requiredQuorumRatio fields must stay removed. This test
+     * fails to COMPILE if any of them is reintroduced as a record component (the
+     * canonical constructor arity is pinned to 1).
+     */
+    @Test
+    void testOnlyVotingTimeoutComponentRemains() {
+        assertEquals(1, CommitteeConfig.class.getRecordComponents().length,
+                     "CommitteeConfig must expose exactly one record component (votingTimeoutSeconds)");
+        assertEquals("votingTimeoutSeconds",
+                     CommitteeConfig.class.getRecordComponents()[0].getName());
     }
 }

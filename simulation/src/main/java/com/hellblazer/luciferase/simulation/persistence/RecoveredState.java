@@ -30,7 +30,7 @@ import java.util.Objects;
 public record RecoveredState(
     CheckpointMetadata checkpoint,
     List<Map<String, Object>> events,
-    int totalEventsReplayed,
+    long totalEventsReplayed,
     int skippedEvents
 ) {
 

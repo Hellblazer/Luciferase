@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.persistence;
 
+import com.hellblazer.luciferase.common.time.Clock;
+
 import java.time.Instant;
 import java.util.Objects;
 
@@ -36,12 +38,25 @@ public record CheckpointMetadata(long sequenceNumber, Instant timestamp) {
     }
 
     /**
-     * Create a new checkpoint at current time.
+     * Create a new checkpoint at the system clock's current time.
+     * Convenience overload; prefer {@link #now(long, Clock)} in production paths
+     * that hold an injected clock so timestamps remain deterministic in tests.
      *
      * @param sequenceNumber Sequence number for this checkpoint
      * @return New checkpoint metadata
      */
     public static CheckpointMetadata now(long sequenceNumber) {
-        return new CheckpointMetadata(sequenceNumber, Instant.now());
+        return now(sequenceNumber, Clock.system());
+    }
+
+    /**
+     * Create a new checkpoint at the supplied clock's current time.
+     *
+     * @param sequenceNumber Sequence number for this checkpoint
+     * @param clock          Injected clock providing the timestamp (deterministic in tests)
+     * @return New checkpoint metadata
+     */
+    public static CheckpointMetadata now(long sequenceNumber, Clock clock) {
+        return new CheckpointMetadata(sequenceNumber, Instant.ofEpochMilli(clock.currentTimeMillis()));
     }
 }

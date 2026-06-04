@@ -238,10 +238,9 @@ public class AdaptiveSplitPolicyTest {
         bubble.recordFrameTime(12_500_000L); // 12.5ms = 125% of budget
 
         var splitResult = policy.analyzeSplit(bubble);
+        // performSplit now populates children from cluster assignments
+        // (Luciferase-0frcy.3); no separate redistribute step is needed.
         var childBubbles = policy.performSplit(bubble, splitResult);
-
-        // Redistribute entities from source to children
-        policy.redistributeEntities(bubble, childBubbles);
 
         // Count total entities in children
         int totalChildEntities = childBubbles.stream()
@@ -307,7 +306,6 @@ public class AdaptiveSplitPolicyTest {
 
         var splitResult = policy.analyzeSplit(bubble);
         var childBubbles = policy.performSplit(bubble, splitResult);
-        policy.redistributeEntities(bubble, childBubbles);
 
         // Collect all entity IDs from children
         var allChildEntityIds = new java.util.HashSet<String>();

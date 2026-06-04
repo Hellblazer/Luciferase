@@ -74,6 +74,21 @@ public class MigrationLog {
     // entityId -> Set of tokens (for duplicate detection)
     private final Map<EntityID, Set<UUID>> entityTokens;
 
+    // Per-entity lock monitors (Luciferase-0frcy.26). recordMigration() and cleanupBefore()
+    // serialize on the same per-entity monitor so the (token-add + history-mutate) sequence is
+    // atomic with respect to the cleanup removal of the same entity. Without this, a concurrent
+    // record could land its token in entityTokens just as cleanup removes that entityId, losing
+    // the idempotency record and allowing a retransmitted duplicate to be processed twice.
+    // Growth bound: entityLocks holds at most one monitor per live entity. Entries are created
+    // lazily on first use (computeIfAbsent) and removed by cleanup when an entity's migration
+    // history is purged (see remove at the cleanup site), so the map size is bounded by the live-
+    // entity set rather than growing unbounded with migration volume.
+    private final Map<EntityID, Object> entityLocks = new ConcurrentHashMap<>();
+
+    private Object lockFor(EntityID entityId) {
+        return entityLocks.computeIfAbsent(entityId, k -> new Object());
+    }
+
     // Optional Write-Ahead Log for crash recovery (nullable)
     private final MigrationLogPersistence persistence;
     private volatile Clock clock = Clock.system();
@@ -126,22 +141,27 @@ public class MigrationLog {
         UUID targetBubble,
         long bucket
     ) {
-        // Atomic check-then-add for duplicate token detection
-        // ConcurrentHashMap.newKeySet().add() returns false if element already exists
-        var tokens = entityTokens.computeIfAbsent(entityId, k -> ConcurrentHashMap.newKeySet());
-        if (!tokens.add(token)) {
-            return false;  // Duplicate - already recorded
+        // Serialize the token-add + history-mutate against cleanupBefore() for the same entity
+        // (Luciferase-0frcy.26) so a concurrent cleanup cannot remove the entityId between the
+        // token add and the history append, which would lose the idempotency record.
+        synchronized (lockFor(entityId)) {
+            // Atomic check-then-add for duplicate token detection
+            // ConcurrentHashMap.newKeySet().add() returns false if element already exists
+            var tokens = entityTokens.computeIfAbsent(entityId, k -> ConcurrentHashMap.newKeySet());
+            if (!tokens.add(token)) {
+                return false;  // Duplicate - already recorded
+            }
+
+            // Record migration - CopyOnWriteArrayList is thread-safe
+            var record = new MigrationRecord(entityId, token, sourceBubble, targetBubble, bucket);
+
+            var history = migrationHistory.computeIfAbsent(
+                entityId,
+                k -> new CopyOnWriteArrayList<>()
+            );
+
+            history.add(record);
         }
-
-        // Record migration - CopyOnWriteArrayList is thread-safe
-        var record = new MigrationRecord(entityId, token, sourceBubble, targetBubble, bucket);
-
-        var history = migrationHistory.computeIfAbsent(
-            entityId,
-            k -> new CopyOnWriteArrayList<>()
-        );
-
-        history.add(record);
 
         // Optionally persist to WAL for crash recovery
         if (persistence != null) {
@@ -243,10 +263,24 @@ public class MigrationLog {
             }
         }
 
-        // Remove entities with no remaining history
+        // Free the (memory-heavy) migration history for entities with no remaining records. Hold the
+        // per-entity lock and re-check emptiness inside the lock (Luciferase-0frcy.26) so a
+        // recordMigration() that raced in after the removeIf above is not clobbered.
+        //
+        // Luciferase-0frcy.104: token cleanup is DECOUPLED from history cleanup. We deliberately do NOT
+        // remove entityTokens (nor the per-entity lock monitor) when history empties. Co-locating token
+        // removal with history removal defeated the idempotency guard: recordMigration() releases its
+        // lock before the caller re-checks isDuplicate(), so a cleanup landing in that window could purge
+        // a token whose migration was just recorded, letting a re-delivered duplicate be processed twice.
+        // Idempotency tokens must outlive the history records they guard. Retained tokens and monitors
+        // are bounded by the live-entity set (not by migration volume), matching the prior growth bound.
         for (var entityId : entitiesToRemove) {
-            migrationHistory.remove(entityId);
-            entityTokens.remove(entityId);
+            synchronized (lockFor(entityId)) {
+                var history = migrationHistory.get(entityId);
+                if (history != null && history.isEmpty()) {
+                    migrationHistory.remove(entityId);
+                }
+            }
         }
 
         return removed;

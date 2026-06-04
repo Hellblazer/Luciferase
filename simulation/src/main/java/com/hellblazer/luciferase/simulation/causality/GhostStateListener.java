@@ -109,6 +109,13 @@ public class GhostStateListener implements MigrationStateListener {
     private final AtomicLong reconciliationCount = new AtomicLong(0L);
 
     /**
+     * Last consistency report produced by a GHOST&rarr;MIGRATING_IN validation. Exposed for
+     * observability and regression testing of the velocity-aware validation path
+     * (Luciferase-0frcy.90). {@code null} until the first such transition is validated.
+     */
+    private volatile GhostConsistencyValidator.ConsistencyReport lastConsistencyReport = null;
+
+    /**
      * Create GhostStateListener with ghost state manager and FSM.
      *
      * @param ghostStateManager Ghost state manager for ghost operations
@@ -251,6 +258,28 @@ public class GhostStateListener implements MigrationStateListener {
         return reconciliationCount.get();
     }
 
+    /**
+     * Inject a clock for deterministic testing. Propagates to the consistency validator and
+     * the ghost state manager so dead-reckoning extrapolation and validation use the same
+     * controllable time source.
+     *
+     * @param clock Clock instance to use
+     */
+    public void setClock(com.hellblazer.luciferase.common.time.Clock clock) {
+        Objects.requireNonNull(clock, "clock must not be null");
+        this.consistencyValidator.setClock(clock);
+        this.ghostStateManager.setClock(clock);
+    }
+
+    /**
+     * Get the consistency report from the most recent GHOST&rarr;MIGRATING_IN validation.
+     *
+     * @return last report, or {@code null} if no such transition has been validated yet
+     */
+    public GhostConsistencyValidator.ConsistencyReport getLastConsistencyReport() {
+        return lastConsistencyReport;
+    }
+
     // ========== Internal Transition Handlers ==========
 
     /**
@@ -283,12 +312,16 @@ public class GhostStateListener implements MigrationStateListener {
             return;
         }
 
-        // Get expected position and velocity from ghost
+        // Get expected position and the ACTUAL tracked velocity from the ghost state
+        // (Luciferase-0frcy.90). Previously a zero velocity was passed, which forced the
+        // validator down its static-tolerance branch (maxAllowedDelta=0.1f) and silently
+        // bypassed position validation for any entity moving faster than 0.1 units/sec.
         var expectedPosition = ghost.position();
-        var expectedVelocity = new Vector3f(0, 0, 0);  // Ghost doesn't expose velocity directly
+        var expectedVelocity = ghostStateManager.getGhostVelocity(entityId);
 
         // Validate consistency
         var report = consistencyValidator.validateConsistency(entityId, expectedPosition, expectedVelocity);
+        lastConsistencyReport = report;
 
         if (!report.positionValid()) {
             log.warn("GHOST→MIGRATING_IN: Position inconsistency for {}: {}", entityId, report.message());

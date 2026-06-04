@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
-import javax.vecmath.Point3f;
+import javax.vecmath.Point3d;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Objects;
@@ -49,18 +49,20 @@ public record TransportVonMessage(
     String type,                           // Message type: "GHOST_SYNC", "ACK", "MOVE", etc.
     String sourceBubbleId,                 // Source bubble UUID as string
     String targetBubbleId,                 // Target bubble UUID as string
-    float posX,                            // Entity X position (decomposed from Point3f)
-    float posY,                            // Entity Y position (decomposed from Point3f)
-    float posZ,                            // Entity Z position (decomposed from Point3f)
+    double posX,                           // Entity X position (Luciferase-0frcy.127: double to avoid precision loss)
+    double posY,                           // Entity Y position (Luciferase-0frcy.127: double to avoid precision loss)
+    double posZ,                           // Entity Z position (Luciferase-0frcy.127: double to avoid precision loss)
     String entityId,                       // Entity identifier as string
     long timestamp,                        // Message timestamp in millis
     List<TransportGhostData> ghosts,       // Ghost list for GhostSync (null for other types)
     Long bucket,                           // Simulation bucket for GhostSync (null for other types)
     List<TransportNeighborInfo> neighbors, // Neighbor list for JoinResponse (null for other types)
-    String queryId                         // Query correlation ID (null for non-query types)
+    String queryId,                        // Query correlation ID (null for non-query types)
+    TransportBubbleBounds bounds,          // Spatial bounds for JoinRequest/Move (null for other types)
+    TransportMigrationMessage migration    // 2PC payload for MigrationProtocolMessages (null for other types)
 ) implements Serializable {
     @java.io.Serial
-    private static final long serialVersionUID = 3L; // Incremented for protocol change
+    private static final long serialVersionUID = 6L; // Incremented: posX/Y/Z widened float->double (Luciferase-0frcy.127)
 
     /**
      * Compact constructor with validation.
@@ -70,6 +72,27 @@ public record TransportVonMessage(
         Objects.requireNonNull(type, "type cannot be null");
         Objects.requireNonNull(sourceBubbleId, "sourceBubbleId cannot be null");
         Objects.requireNonNull(targetBubbleId, "targetBubbleId cannot be null");
+    }
+
+    /**
+     * 12-argument constructor (pre-bounds wire shape). Defaults {@code bounds} to {@code null}.
+     */
+    public TransportVonMessage(
+        String type,
+        String sourceBubbleId,
+        String targetBubbleId,
+        double posX,
+        double posY,
+        double posZ,
+        String entityId,
+        long timestamp,
+        List<TransportGhostData> ghosts,
+        Long bucket,
+        List<TransportNeighborInfo> neighbors,
+        String queryId
+    ) {
+        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp,
+             ghosts, bucket, neighbors, queryId, null, null);
     }
 
     /**
@@ -88,21 +111,49 @@ public record TransportVonMessage(
         String type,
         String sourceBubbleId,
         String targetBubbleId,
-        float posX,
-        float posY,
-        float posZ,
+        double posX,
+        double posY,
+        double posZ,
         String entityId,
         long timestamp
     ) {
-        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp, null, null, null, null);
+        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp,
+             null, null, null, null, null, null);
     }
 
     /**
-     * Reconstruct Point3f from decomposed components.
-     *
-     * @return Point3f(posX, posY, posZ)
+     * 13-argument constructor (bounds wire shape, pre-migration). Defaults {@code migration} to
+     * {@code null}. Used by JoinRequest/Move conversions which carry spatial bounds.
      */
-    public Point3f position() {
-        return new Point3f(posX, posY, posZ);
+    public TransportVonMessage(
+        String type,
+        String sourceBubbleId,
+        String targetBubbleId,
+        double posX,
+        double posY,
+        double posZ,
+        String entityId,
+        long timestamp,
+        List<TransportGhostData> ghosts,
+        Long bucket,
+        List<TransportNeighborInfo> neighbors,
+        String queryId,
+        TransportBubbleBounds bounds
+    ) {
+        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp,
+             ghosts, bucket, neighbors, queryId, bounds, null);
+    }
+
+    /**
+     * Reconstruct Point3d from decomposed components.
+     * <p>
+     * Luciferase-0frcy.127: returns double-precision {@link Point3d} so coordinates round-trip
+     * through the wire without the silent double&rarr;float&rarr;double truncation that previously
+     * perturbed near-boundary spatial classification.
+     *
+     * @return Point3d(posX, posY, posZ)
+     */
+    public Point3d position() {
+        return new Point3d(posX, posY, posZ);
     }
 }

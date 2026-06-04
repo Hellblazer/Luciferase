@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.bubble;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.causality.LamportClockGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,6 +88,12 @@ public class RealTimeController {
     protected Thread                        tickThread;
 
     /**
+     * Injected clock for deadline scheduling. Defaults to {@link Clock#system()} for production;
+     * tests inject a deterministic clock to drive tick timing reproducibly (Luciferase-ml7kc).
+     */
+    protected volatile Clock                clock = Clock.system();
+
+    /**
      * Create a RealTimeController for a bubble.
      *
      * @param bubbleId Unique identifier for this bubble
@@ -112,6 +119,16 @@ public class RealTimeController {
         this.tickPeriodNs = TimeUnit.NANOSECONDS.convert(1, TimeUnit.SECONDS) / tickRate;
         this.tickListeners = new CopyOnWriteArrayList<>();  // Thread-safe for concurrent add/remove during iteration
         this.tickThread = null;
+    }
+
+    /**
+     * Inject a clock for deadline scheduling. Production uses {@link Clock#system()};
+     * tests inject a deterministic clock to make tick timing reproducible.
+     *
+     * @param clock the clock to use (must not be null)
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -189,7 +206,11 @@ public class RealTimeController {
 
             // Start the tick thread
             tickThread = new Thread(this::tickLoop, name + "-tick");
-            tickThread.setDaemon(false);
+            // Daemon so a forgotten/leaked controller cannot pin the JVM open
+            // (Luciferase-0frcy.57). Orderly shutdown still goes through stop(),
+            // which interrupts and joins the tick thread; the daemon flag only
+            // affects the case where stop() is never called.
+            tickThread.setDaemon(true);
             tickThread.start();
         }
     }
@@ -200,12 +221,20 @@ public class RealTimeController {
      */
     public void stop() {
         if (running.compareAndSet(true, false)) {
-            if (tickThread != null) {
+            // Interrupt the tick thread so a thread blocked in sleep wakes immediately
+            // and so a self-stop from within a TickListener does not join itself.
+            if (tickThread != null && Thread.currentThread() != tickThread) {
+                tickThread.interrupt();
                 try {
                     tickThread.join(1000); // Wait up to 1 second for thread to stop
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
+            } else if (tickThread != null) {
+                // Called synchronously from the tick thread (e.g. a TickListener invoking
+                // stop()): running=false already set; just self-interrupt so the loop exits
+                // after the listener returns. Do NOT join (would deadlock).
+                tickThread.interrupt();
             }
             log.info("RealTimeController stopped: bubble={}, name={}, finalTime={}, finalClock={}",
                    bubbleId, name, simulationTime.get(), clockGenerator.getLamportClock());
@@ -225,7 +254,7 @@ public class RealTimeController {
     protected void tickLoop() {
         // Deadline-based scheduling: advance deadline by tickPeriodNs each tick so that
         // work time is automatically subtracted from the next sleep, preventing clock drift.
-        long nextDeadline = System.nanoTime() + tickPeriodNs;
+        long nextDeadline = clock.nanoTime() + tickPeriodNs;
         while (running.get()) {
             var currentSimTime = simulationTime.incrementAndGet();
             var currentLamportClock = clockGenerator.tick();
@@ -238,7 +267,7 @@ public class RealTimeController {
             }
 
             // Sleep only the remaining time until the next deadline; skip sleep if overrun.
-            long sleepNs = nextDeadline - System.nanoTime();
+            long sleepNs = nextDeadline - clock.nanoTime();
             nextDeadline += tickPeriodNs;
             if (sleepNs > 0) {
                 try {
@@ -298,6 +327,16 @@ public class RealTimeController {
             tickListeners.remove(listener);
             log.debug("Unregistered tick listener: bubble={}, totalListeners={}", bubbleId, tickListeners.size());
         }
+    }
+
+    /**
+     * Number of currently-registered tick listeners. Exposed for leak-regression assertions
+     * (Luciferase-zwyf2): a listener registered then deregistered must return this to baseline.
+     *
+     * @return current tick-listener count
+     */
+    public int getTickListenerCount() {
+        return tickListeners.size();
     }
 
     /**

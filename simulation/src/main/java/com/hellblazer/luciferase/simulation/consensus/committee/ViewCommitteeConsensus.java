@@ -87,6 +87,42 @@ public class ViewCommitteeConsensus {
     private final ConcurrentHashMap<UUID, ProposalTracking> pendingProposals = new ConcurrentHashMap<>();
 
     /**
+     * Per-entity in-flight migration guard (Luciferase-0frcy.94).
+     * <p>
+     * Maps entityId -&gt; the proposalId currently holding the migration slot for
+     * that entity. While an entry exists, any further {@link #requestConsensus}
+     * for the same entity is rejected so two concurrent proposals cannot both
+     * reach quorum within the same view and double-register the entity at two
+     * targets. The view-ID checks only guard cross-view staleness, not
+     * within-view duplicate proposals — this map closes that gap.
+     */
+    private final ConcurrentHashMap<UUID, UUID> inFlightByEntity = new ConcurrentHashMap<>();
+
+    /**
+     * No-arg constructor for setter-based dependency injection. Callers MUST invoke
+     * {@link #setViewMonitor}, {@link #setCommitteeSelector} and {@link #setVotingProtocol} before
+     * {@link #requestConsensus}; {@code requestConsensus} fails fast with {@link IllegalStateException}
+     * otherwise (Luciferase-0frcy.20).
+     */
+    public ViewCommitteeConsensus() {
+    }
+
+    /**
+     * All-args constructor (preferred). Wires all collaborators up front so the instance is fully
+     * initialized at construction time.
+     *
+     * @param viewMonitor       view monitor for tracking the current view ID
+     * @param committeeSelector BFT committee selector
+     * @param votingProtocol    voting protocol for vote aggregation
+     */
+    public ViewCommitteeConsensus(FirefliesViewMonitor viewMonitor, ViewCommitteeSelector committeeSelector,
+                                  CommitteeVotingProtocol votingProtocol) {
+        this.viewMonitor = Objects.requireNonNull(viewMonitor, "viewMonitor must not be null");
+        this.committeeSelector = Objects.requireNonNull(committeeSelector, "committeeSelector must not be null");
+        this.votingProtocol = Objects.requireNonNull(votingProtocol, "votingProtocol must not be null");
+    }
+
+    /**
      * Set dependencies via dependency injection.
      *
      * @param monitor ViewMonitor for tracking current view
@@ -132,6 +168,9 @@ public class ViewCommitteeConsensus {
     public CompletableFuture<Boolean> requestConsensus(MigrationProposal proposal) {
         Objects.requireNonNull(proposal, "proposal must not be null");
 
+        // Lifecycle guard - all collaborators must be wired before use (Luciferase-0frcy.20)
+        checkInitialized();
+
         // Byzantine input validation - protect against malicious proposals
         if (!validateProposal(proposal)) {
             return CompletableFuture.completedFuture(false);
@@ -159,6 +198,18 @@ public class ViewCommitteeConsensus {
                  proposal.viewId(),
                  committeeIds.size());
 
+        // Per-entity in-flight guard (Luciferase-0frcy.94): reserve the migration
+        // slot for this entity. If another proposal already holds it, reject this
+        // one immediately so two concurrent proposals for the same entity cannot
+        // both reach quorum and double-register the entity at two targets.
+        var entityId = proposal.entityId();
+        var existing = inFlightByEntity.putIfAbsent(entityId, proposal.proposalId());
+        if (existing != null) {
+            log.debug("Entity {} already has in-flight migration proposal {}, rejecting {}",
+                     entityId, existing, proposal.proposalId());
+            return CompletableFuture.completedFuture(false);
+        }
+
         // Track proposal for view change rollback
         var tracking = new ProposalTracking(proposal, committeeIds);
         pendingProposals.put(proposal.proposalId(), tracking);
@@ -172,17 +223,20 @@ public class ViewCommitteeConsensus {
             if (!proposal.viewId().equals(getCurrentViewId())) {
                 log.warn("View changed during voting for proposal {}, aborting execution", proposal.proposalId());
                 pendingProposals.remove(proposal.proposalId());
+                inFlightByEntity.remove(entityId, proposal.proposalId());
                 return false;  // Abort - view changed
             }
 
             // Success - remove from pending
             pendingProposals.remove(proposal.proposalId());
+            inFlightByEntity.remove(entityId, proposal.proposalId());
             log.debug("Consensus result for proposal {}: approved={}", proposal.proposalId(), approved);
             return approved;
         }).exceptionally(ex -> {
             // Voting failed (timeout or view change)
             log.debug("Consensus failed for proposal {}: {}", proposal.proposalId(), ex.getMessage());
             pendingProposals.remove(proposal.proposalId());
+            inFlightByEntity.remove(entityId, proposal.proposalId());
             return false;
         });
     }
@@ -207,6 +261,9 @@ public class ViewCommitteeConsensus {
             if (!tracking.proposal.viewId().equals(newViewId)) {
                 log.debug("Rolling back proposal {} from old view {}", proposalId, tracking.proposal.viewId());
                 pendingProposals.remove(proposalId);
+                // Release the per-entity in-flight slot so the entity is not permanently
+                // blocked after a view-change rollback (Luciferase-0frcy.94).
+                inFlightByEntity.remove(tracking.proposal.entityId(), proposalId);
             }
         });
     }
@@ -249,6 +306,29 @@ public class ViewCommitteeConsensus {
      * @param proposal migration proposal to validate
      * @return true if valid, false if invalid (rejects Byzantine attacks)
      */
+    /**
+     * Verify all injected collaborators are present before processing a request.
+     * <p>
+     * Setter injection leaves a window where {@code requestConsensus} could be invoked before the
+     * dependencies are wired (e.g. a race between service startup and the first migration request).
+     * This guard converts what would be an opaque {@link NullPointerException} deep in the call into a
+     * fail-fast {@link IllegalStateException} naming the missing dependency.
+     */
+    private void checkInitialized() {
+        if (viewMonitor == null) {
+            throw new IllegalStateException(
+                "ViewCommitteeConsensus not initialized: viewMonitor is null (call setViewMonitor or use the all-args constructor)");
+        }
+        if (committeeSelector == null) {
+            throw new IllegalStateException(
+                "ViewCommitteeConsensus not initialized: committeeSelector is null (call setCommitteeSelector or use the all-args constructor)");
+        }
+        if (votingProtocol == null) {
+            throw new IllegalStateException(
+                "ViewCommitteeConsensus not initialized: votingProtocol is null (call setVotingProtocol or use the all-args constructor)");
+        }
+    }
+
     private boolean validateProposal(MigrationProposal proposal) {
         // Validate proposal ID (UUID format enforced by type system)
         if (proposal.proposalId() == null) {
@@ -271,6 +351,13 @@ public class ViewCommitteeConsensus {
         // Validate target node ID
         if (proposal.targetNodeId() == null) {
             log.warn("Rejected proposal {} with null targetNodeId", proposal.proposalId());
+            return false;
+        }
+
+        // Validate view ID - a null viewId cannot be matched against the current view and would NPE
+        // downstream on proposal.viewId().equals(...) and the vote path (Luciferase-0frcy.18).
+        if (proposal.viewId() == null) {
+            log.warn("Rejected proposal {} with null viewId", proposal.proposalId());
             return false;
         }
 

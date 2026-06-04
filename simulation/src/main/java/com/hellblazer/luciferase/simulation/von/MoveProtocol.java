@@ -78,14 +78,10 @@ public class MoveProtocol {
         for (UUID neighborId : currentNeighbors) {
             Node neighbor = index.get(neighborId);
             if (neighbor != null) {
-                // Check if this is a boundary crossing notification
-                if (isBoundaryNeighbor(newPosition, neighbor.position())) {
-                    // Boundary neighbor - special notification
-                    neighbor.notifyMove(mover);
-                } else {
-                    // Regular neighbor notification
-                    neighbor.notifyMove(mover);
-                }
+                // All current neighbors receive the same move notification. Boundary-
+                // differentiated handling is not implemented; if it is ever required it
+                // belongs in notifyMove() or a dedicated notifyBoundaryMove() method.
+                neighbor.notifyMove(mover);
             }
         }
 
@@ -142,18 +138,6 @@ public class MoveProtocol {
      */
     private boolean isInAOI(Point3d source, Point3d target) {
         return distance(source, target) <= aoiRadius;
-    }
-
-    /**
-     * Check if target position is in boundary zone (AOI < distance <= AOI + buffer).
-     *
-     * @param source Source position
-     * @param target Target position
-     * @return true if in boundary zone
-     */
-    private boolean isBoundaryNeighbor(Point3d source, Point3d target) {
-        double dist = distance(source, target);
-        return dist > aoiRadius && dist <= (aoiRadius + 10.0f); // 10.0f = BOUNDARY_BUFFER from test
     }
 
     /**

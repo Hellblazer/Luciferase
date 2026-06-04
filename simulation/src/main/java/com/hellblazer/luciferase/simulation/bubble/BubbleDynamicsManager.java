@@ -193,7 +193,13 @@ public class BubbleDynamicsManager<ID extends EntityID> {
         var entities = bubbles.remove(bubbleId);
         if (entities != null) {
             for (var entity : entities) {
-                entityBubbles.remove(entity);
+                // Remove the reverse mapping ONLY if it still points at this
+                // bubble. During a merge, mergeBubbles() repoints
+                // entityBubbles[entity] to the surviving bubble *before* calling
+                // unregisterBubble() on the absorbed bubble; an unconditional
+                // remove would delete those just-repointed entries and corrupt
+                // the reverse map (Luciferase-eegb2).
+                entityBubbles.remove(entity, bubbleId);
                 entityAffinities.remove(entity);
             }
         }
@@ -403,11 +409,6 @@ public class BubbleDynamicsManager<ID extends EntityID> {
         UUID token,
         long bucket
     ) {
-        // Check idempotency
-        if (migrationLog.isDuplicate(entityId, token)) {
-            return;  // Already processed
-        }
-
         var sourceEntities = bubbles.get(sourceBubble);
         var targetEntities = bubbles.get(targetBubble);
 
@@ -415,15 +416,24 @@ public class BubbleDynamicsManager<ID extends EntityID> {
             throw new IllegalArgumentException("Both bubbles must exist");
         }
 
+        // Write the idempotency token (and WAL record) BEFORE mutating bubble
+        // membership (Luciferase-0frcy.80). recordMigration() atomically rejects
+        // a duplicate token and returns false; if it returns false the migration
+        // was already applied (or is being applied), so we skip the transfer.
+        // Recording before the transfer means a crash between the log write and
+        // the membership mutation leaves the token already persisted, so on
+        // retry isDuplicate/recordMigration short-circuits and the entity is not
+        // transferred a second time. The previous ordering recorded the token
+        // AFTER the transfer, so a crash in that window left the entity moved but
+        // unguarded, allowing a duplicate re-transfer.
+        if (!migrationLog.recordMigration(entityId, token, sourceBubble, targetBubble, bucket)) {
+            return;  // Already processed (duplicate token)
+        }
+
         // Transfer entity
         sourceEntities.remove(entityId);
         targetEntities.add(entityId);
         entityBubbles.put(entityId, targetBubble);
-
-        // Record migration
-        migrationLog.recordMigration(
-            entityId, token, sourceBubble, targetBubble, bucket
-        );
 
         // Emit event
         long epoch = bucket;  // Simplified epoch = bucket

@@ -358,13 +358,29 @@ public class GhostLifecycleStateMachine {
      * @return Number of ghosts expired
      */
     public int expireStaleGhosts(long currentTime) {
+        return expireStaleGhostsReturningIds(currentTime).size();
+    }
+
+    /**
+     * Expire and remove all stale ghosts beyond TTL, returning the IDs that were
+     * actually removed.
+     * <p>
+     * Callers that maintain a parallel ghost map (e.g. GhostStateManager) can use the
+     * returned list to target their own removals directly instead of rescanning their
+     * map and re-querying lifecycle state — which is weakly consistent under concurrent
+     * expiry (Luciferase-0frcy.102).
+     *
+     * @param currentTime Current time (milliseconds)
+     * @return List of entity IDs (debug-string form) that were expired and removed
+     */
+    public List<String> expireStaleGhostsReturningIds(long currentTime) {
         var expired = findExpired(currentTime);
-        int expiredCount = 0;
+        var removedIds = new ArrayList<String>(expired.size());
 
         for (var entityId : expired) {
             var removed = states.remove(entityId);
             if (removed != null) {
-                expiredCount++;
+                removedIds.add(entityId);
                 log.debug("Ghost expired and removed: {} at time {}", entityId, currentTime);
 
                 if (metrics != null) {
@@ -373,7 +389,7 @@ public class GhostLifecycleStateMachine {
             }
         }
 
-        return expiredCount;
+        return removedIds;
     }
 
     /**

@@ -65,6 +65,13 @@ public class TetreeGhostSyncAdapter {
     private final TetreeBubbleGrid bubbleGrid;
     private final TetreeNeighborFinder neighborFinder;
 
+    /**
+     * Injected clock for ghost-halo timestamps. Defaults to {@link com.hellblazer.luciferase.common.time.Clock#system()};
+     * tests inject a deterministic clock so ghost staleness/TTL is reproducible (Luciferase-ml7kc).
+     */
+    private volatile com.hellblazer.luciferase.common.time.Clock clock =
+        com.hellblazer.luciferase.common.time.Clock.system();
+
     // Per-bubble ghost sync infrastructure
     private final Map<UUID, GhostBoundarySync<StringEntityID, Object>> ghostSyncByBubble;
     private final Map<UUID, ExternalBubbleTracker> trackerByBubble;
@@ -92,6 +99,15 @@ public class TetreeGhostSyncAdapter {
         initializeGhostSync();
 
         log.info("TetreeGhostSyncAdapter initialized for {} bubbles", bubbleGrid.getBubbleCount());
+    }
+
+    /**
+     * Inject a clock for ghost-halo timestamps (deterministic in tests).
+     *
+     * @param clock the clock to use (must not be null)
+     */
+    public void setClock(com.hellblazer.luciferase.common.time.Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     /**
@@ -230,7 +246,9 @@ public class TetreeGhostSyncAdapter {
      * @param bubble Bubble to find neighbors for
      * @return Set of neighbor bubble UUIDs
      */
-    private Set<UUID> findBoundaryNeighbors(EnhancedBubble bubble) {
+    // Package-private for regression testing of registration-key lookup
+    // (Luciferase-0frcy.60 / .85).
+    Set<UUID> findBoundaryNeighbors(EnhancedBubble bubble) {
         var neighbors = new HashSet<UUID>();
         var myBounds = bubble.bounds();
 
@@ -238,30 +256,15 @@ public class TetreeGhostSyncAdapter {
             return neighbors; // No bounds yet (no entities)
         }
 
-        // Get bubble's TetreeKey by searching spatial index
-        // Since we need the key, we'll iterate through bubblesByKey to find it
-        TetreeKey<?> myKey = null;
-        for (var entry : bubbleGrid.getAllBubbles()) {
-            if (entry.id().equals(bubble.id())) {
-                // Find the key by searching the grid's internal map
-                // We need to access TetreeBubbleGrid's bubblesByKey, but it's private
-                // So we'll use the neighborFinder to search based on position
-                var centroid = myBounds.centroid();
-                if (centroid != null) {
-                    // Locate the tetrahedron containing the centroid
-                    var tet = com.hellblazer.luciferase.lucien.tetree.Tet.locatePointBeyRefinementFromRoot(
-                        (float) centroid.getX(),
-                        (float) centroid.getY(),
-                        (float) centroid.getZ(),
-                        myBounds.level()
-                    );
-                    if (tet != null) {
-                        myKey = tet.tmIndex();
-                    }
-                }
-                break;
-            }
-        }
+        // Look up the bubble's canonical registration TetreeKey directly from
+        // the grid (O(1)/O(n) map lookup) rather than re-deriving it from the
+        // current centroid every tick. Re-derivation via
+        // Tet.locatePointBeyRefinementFromRoot was both a per-tick root-to-level
+        // tree walk AND a correctness hazard: once a bubble's adaptive bounds
+        // grow beyond the original tet, the centroid can land in a different
+        // tetrahedron, yielding a key that diverges from the registration key
+        // and targeting ghost sync at the wrong neighbors (Luciferase-0frcy.60 / .85).
+        TetreeKey<?> myKey = bubbleGrid.getKeyForBubble(bubble.id());
 
         if (myKey == null) {
             log.warn("Could not determine TetreeKey for bubble {}", bubble.id());
@@ -318,7 +321,8 @@ public class TetreeGhostSyncAdapter {
                 entityRecord.content(),
                 position,
                 null,  // EntityBounds not used in simulation
-                bubbleId.toString()
+                bubbleId.toString(),
+                clock.currentTimeMillis()  // Deterministic timestamp via injected clock (Luciferase-ml7kc)
             );
 
             // Add ghost for each neighbor

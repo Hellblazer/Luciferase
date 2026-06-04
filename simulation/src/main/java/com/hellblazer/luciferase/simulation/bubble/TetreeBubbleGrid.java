@@ -284,6 +284,31 @@ public class TetreeBubbleGrid {
     }
 
     /**
+     * Get the actual spatial-index registration key for a bubble by its UUID.
+     * <p>
+     * This is the key under which the bubble is stored in {@code bubblesByKey} —
+     * i.e. the exact key {@link #addBubble(EnhancedBubble, TetreeKey)} would need
+     * to re-insert the bubble at the same spatial position. Rollback bookkeeping
+     * MUST use this key rather than a bubble's dynamically-tracked bounds key
+     * (e.g. {@code BubbleBounds.rootKey()}), which is the level-root key and not
+     * the registration key (Luciferase-0frcy.122).
+     *
+     * @param bubbleId UUID to look up
+     * @return the registration {@link TetreeKey}, or {@code null} if the bubble is not in the grid
+     * @throws NullPointerException if bubbleId is null
+     */
+    public TetreeKey<?> getKeyForBubble(UUID bubbleId) {
+        Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
+
+        for (var entry : bubblesByKey.entrySet()) {
+            if (entry.getValue().id().equals(bubbleId)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    /**
      * Get topological neighbors of a bubble by its UUID.
      * <p>
      * Convenience method that first looks up the bubble by UUID,

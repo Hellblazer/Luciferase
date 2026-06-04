@@ -50,6 +50,12 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
      */
     public static final long DEFAULT_TICK_INTERVAL_MS = 16;
 
+    /**
+     * Deterministic base seed for initial velocity generation (Luciferase-0frcy.98). XORed with
+     * {@code gridConfig.hashCode()} so distinct grids still get distinct (but reproducible) streams.
+     */
+    private static final long VELOCITY_SEED = 0x5DEECE66DL;
+
     private final GridConfiguration gridConfig;
     private final WorldBounds worldBounds;
     private final BubbleGrid<EnhancedBubble> bubbleGrid;
@@ -340,7 +346,10 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
 
     private void initializeVelocities() {
         velocities.clear();
-        var random = new Random();
+        // Luciferase-0frcy.98: seed deterministically so velocity-dependent behaviour (migration
+        // counts, boundary crossings) is reproducible across runs, matching populateEntities()'s
+        // seeded placement. Derive from gridConfig so different grids still get distinct streams.
+        var random = new Random(VELOCITY_SEED ^ gridConfig.hashCode());
 
         // Initialize velocities for all entities in all bubbles
         for (int row = 0; row < gridConfig.rows(); row++) {
@@ -383,16 +392,19 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
                 }
             }
 
-            // Migration: check for entities crossing boundaries (Inc 5D).
-            // Held under snapshotLock so a concurrent getAllEntities() never observes a migration
-            // mid-move across two bubbles (Luciferase-jar).
+            // Migration commit + ghost sync, both under snapshotLock so a concurrent getAllEntities()
+            // observes a single logically-consistent tick: no migration seen mid-move across two
+            // bubbles (Luciferase-jar), AND the ghost snapshot read in getAllEntities() is from the
+            // same locked region as the ghost writes here (Luciferase-0frcy.64 / .97). Previously the
+            // ghost writes ran outside the lock, so getAllEntities() could observe partially-written
+            // ghost state or a ghost snapshot from a different tick phase than the real-entity snapshot.
             synchronized (snapshotLock) {
                 migration.checkMigrations(tickCount.get());
-            }
 
-            // Ghost sync: detect boundary entities and create ghosts (Inc 5C)
-            ghostSyncAdapter.processBoundaryEntities(bucket);
-            ghostSyncAdapter.onBucketComplete(bucket);
+                // Ghost sync: detect boundary entities and create ghosts (Inc 5C)
+                ghostSyncAdapter.processBoundaryEntities(bucket);
+                ghostSyncAdapter.onBucketComplete(bucket);
+            }
 
             // Record metrics
             long frameTimeNs = clock.nanoTime() - startNs;

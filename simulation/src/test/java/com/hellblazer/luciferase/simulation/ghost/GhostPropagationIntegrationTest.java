@@ -156,27 +156,44 @@ class GhostPropagationIntegrationTest {
         var entity = createGhostEntity(new TestEntityID("e1"), 0.5f);
         ghostSync.addGhost(entity, sourceBubbleId, neighborId, 100L);
 
-        // Bucket 100: Send ghost
+        // Luciferase-0frcy.101: onBucketComplete no longer re-broadcasts every tracked ghost on
+        // every bucket. An unchanged ghost is suppressed until it is heartbeated at TTL-1 buckets
+        // since its last send (GHOST_TTL_BUCKETS = 5, so heartbeat interval = 4), then expired once
+        // its insertion bucket falls outside the TTL window. The assertions below follow that
+        // corrected dirty-tracking + heartbeat contract.
+
+        // Bucket 100: first send (never-sent ghost is dirty). lastSentBucket -> 100.
         ghostSync.onBucketComplete(100L);
-        assertEquals(1, sentGhosts.size(), "Ghost should be sent");
+        assertEquals(1, sentGhosts.size(), "Ghost should be sent on first bucket (never sent yet)");
 
         sentGhosts.clear();
 
-        // Bucket 104: Ghost still active (within TTL window)
+        // Buckets 101..103: unchanged ghost, well within TTL — suppressed (no redundant re-send).
+        ghostSync.onBucketComplete(101L);
+        ghostSync.onBucketComplete(102L);
+        ghostSync.onBucketComplete(103L);
+        assertEquals(0, sentGhosts.size(), "Unchanged ghost must not be re-sent while well within TTL");
+
+        // Bucket 104: heartbeat fires (104 - 100 = 4 = TTL-1) so the neighbor's copy is refreshed
+        // before it would be culled. lastSentBucket -> 104.
         ghostSync.onBucketComplete(104L);
-        assertEquals(1, sentGhosts.size(), "Ghost should be resent (still active)");
+        assertEquals(1, sentGhosts.size(), "Unchanged ghost must heartbeat at TTL-1 since last send");
 
         sentGhosts.clear();
 
-        // Bucket 106: Ghost sent then expired (expiration happens after send)
+        // Bucket 105: unchanged, only 1 bucket since the heartbeat — suppressed.
+        ghostSync.onBucketComplete(105L);
+        assertEquals(0, sentGhosts.size(), "No heartbeat yet (only 1 bucket since last send)");
+
+        // Bucket 106: still suppressed (106 - 104 = 2 < 4), then expired — the ghost's insertion
+        // bucket (100) is older than the TTL window (expirationBucket = 106 - 5 = 101).
         ghostSync.onBucketComplete(106L);
-        assertEquals(1, sentGhosts.size(), "Ghost sent at bucket 106");
+        assertEquals(0, sentGhosts.size(), "Unchanged ghost suppressed; not yet at heartbeat interval");
+        assertEquals(0, ghostSync.getActiveGhostCount(), "Ghost expired after TTL window");
 
-        sentGhosts.clear();
-
-        // Bucket 107: Ghost now expired (not sent)
+        // Bucket 107: ghost already gone — nothing sent, none active.
         ghostSync.onBucketComplete(107L);
-        assertEquals(0, sentGhosts.size(), "Ghost should not be sent (expired)");
+        assertEquals(0, sentGhosts.size(), "Expired ghost must not be sent");
         assertEquals(0, ghostSync.getActiveGhostCount(), "No active ghosts");
     }
 

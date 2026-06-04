@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -165,17 +166,30 @@ class GhostChannelTest {
 
     @Test
     void testSimulatedLatency() {
+        // Luciferase-0frcy.103: simulated latency is now non-blocking — sendBatch() schedules
+        // delivery on a daemon scheduler and returns immediately instead of Thread.sleep()-ing the
+        // caller. The test therefore verifies two things: (1) sendBatch() returns promptly without
+        // blocking for the latency window, and (2) delivery still occurs, just deferred. Delivery is
+        // awaited deterministically via a latch under a bounded preemptive timeout rather than
+        // asserting synchronous receipt.
         var latencyMs = 50L;
         var channel = new InMemoryGhostChannel<TestEntityID, String>(latencyMs);
-        var received = new AtomicBoolean(false);
-        channel.onReceive((from, ghosts) -> received.set(true));
+        var delivered = new CountDownLatch(1);
+        channel.onReceive((from, ghosts) -> delivered.countDown());
 
-        var start = System.currentTimeMillis();
+        var start = System.nanoTime();
         channel.sendBatch(UUID.randomUUID(), List.of(createTestGhost()));
-        var elapsed = System.currentTimeMillis() - start;
+        var sendElapsedMs = (System.nanoTime() - start) / 1_000_000L;
 
-        assertTrue(received.get());
-        assertTrue(elapsed >= latencyMs, "Expected latency >= " + latencyMs + "ms, got " + elapsed + "ms");
+        // sendBatch must not block the caller for the latency window (non-blocking contract).
+        assertTrue(sendElapsedMs < latencyMs,
+                   "sendBatch must return without blocking for the latency window; took " + sendElapsedMs + "ms");
+
+        // Delivery still happens, deferred by the scheduler. Bound the wait generously to stay
+        // robust under CI scheduling jitter while remaining deterministic.
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+            assertTrue(delivered.await(2, TimeUnit.SECONDS), "deferred delivery must occur after the latency window");
+        });
     }
 
     @Test

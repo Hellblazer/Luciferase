@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.simulation.von.transport;
 
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
+import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.delos.fireflies.View;
 import com.hellblazer.luciferase.simulation.bubble.RealTimeController;
 import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
@@ -68,6 +69,8 @@ class SocketTransportFirefliesAckTest {
     private SocketTransport transport2;
     private UUID transport2BubbleId;  // Store transport2's bubble ID for tests
     private MessageFactory factory;
+    private DynamicContext mockContext;  // mocked view context; tests can mutate getId()
+    private ProcessAddress addr2;        // transport2's address, reused by ad-hoc transports
 
     private final List<SocketTransport> transports = new ArrayList<>();
 
@@ -83,7 +86,7 @@ class SocketTransportFirefliesAckTest {
 
         // Create membership view with mocked Delos View
         var delosView = mock(View.class);
-        var mockContext = mock(DynamicContext.class);
+        mockContext = mock(DynamicContext.class);
         when(delosView.getContext()).thenReturn((DynamicContext) mockContext);
         when(mockContext.getId()).thenReturn(Digest.NONE);  // Stable view ID
         membership = new FirefliesMembershipView(delosView);
@@ -92,7 +95,7 @@ class SocketTransportFirefliesAckTest {
         var port1 = findAvailablePort();
         var port2 = findAvailablePort();
         var addr1 = ProcessAddress.localhost("p1", port1);
-        var addr2 = ProcessAddress.localhost("p2", port2);
+        addr2 = ProcessAddress.localhost("p2", port2);
 
         transport2BubbleId = UUID.randomUUID();  // Store for use in tests
         transport1 = SocketTransport.create(bubbleId, addr1, membership, viewMonitor, controller);
@@ -162,23 +165,28 @@ class SocketTransportFirefliesAckTest {
      * This test validates the expected behavior once view change detection is fully implemented.
      */
     @Test
-    void testViewChangeDetection() throws Exception {
-        // This test documents expected behavior for view change handling
-        // Current implementation uses fixed view ID (Digest.NONE) from mocked membership
-        // Future enhancement: detect actual view changes during ACK wait
+    void testViewChangeDetection() {
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(3), () -> {
+            // Drive the mocked Delos view to change its id AFTER the send captures the
+            // initial (Digest.NONE) view. sendToNeighborAsync() captures the view id at
+            // send time; the next tick must observe a different id and fail the future.
+            var changedViewId = DigestAlgorithm.DEFAULT.digest("view-changed");
+            // First call (at send time) returns NONE; every subsequent call returns the changed id.
+            when(mockContext.getId()).thenReturn(Digest.NONE).thenReturn(changedViewId);
 
-        var message = factory.createAck(UUID.randomUUID(), transport2BubbleId);
+            var message = factory.createAck(UUID.randomUUID(), transport2BubbleId);
+            var ackFuture = transport1.sendToNeighborAsync(transport2BubbleId, message);
 
-        // For now, verify ACK completes successfully with stable mocked view
-        var ackFuture = transport1.sendToNeighborAsync(transport2BubbleId, message);
-
-        // Should complete successfully since mocked view never changes
-        var ack = ackFuture.get(500, TimeUnit.MILLISECONDS);
-        assertNotNull(ack, "ACK completes with stable view");
-
-        // TODO: Enhance test when view change detection is implemented
-        // Expected behavior: If membership.getCurrentViewId() changes between send and stability,
-        // the ACK future should complete exceptionally with TransportException
+            // The controller is already ticking at 100Hz; the listener fires within a few ms
+            // and must observe the changed view id, completing the future exceptionally.
+            var ex = assertThrows(ExecutionException.class,
+                                  () -> ackFuture.get(2, TimeUnit.SECONDS),
+                                  "ACK must fail when the view changes mid-send");
+            assertInstanceOf(SocketTransport.TransportException.class, ex.getCause(),
+                             "Cause should be TransportException");
+            assertTrue(ex.getCause().getMessage().contains("View changed during send"),
+                       "Message should describe the view change: " + ex.getCause().getMessage());
+        });
     }
 
     /**
@@ -213,15 +221,41 @@ class SocketTransportFirefliesAckTest {
      * View keeps changing, 5-second timeout should trigger.
      */
     @Test
-    void testTimeoutWhenViewNeverStabilizes() {
-        // Note: Testing actual 5-second timeout would slow down test suite
-        // This test documents expected behavior
-        
-        // For a real timeout test, would need to prevent view from stabilizing for 5+ seconds
-        // Current implementation uses .orTimeout(5, TimeUnit.SECONDS)
-        
-        // TODO: Add timeout test with mocked/controlled timing if needed
-        assertTrue(true, "Timeout behavior documented - implement if critical");
+    void testTimeoutWhenViewNeverStabilizes() throws Exception {
+        // Build a dedicated monitor whose stability threshold can never be reached within
+        // the 5s failsafe (Integer.MAX_VALUE ticks). Trigger a single view change so the
+        // monitor is permanently unstable, but keep the Delos view id constant so the
+        // value-change branch never fires either. The only path that can complete the
+        // future is the orTimeout(5s) failsafe under test.
+        var neverStableMonitor = new FirefliesViewMonitor(mockView, Integer.MAX_VALUE);
+        controller.addTickListener((simTime, lamportClock) -> neverStableMonitor.onTick(simTime));
+        // Fire a view change -> monitor.hasChanged=true, never re-stabilizes.
+        mockView.addMember("perturber");
+        neverStableMonitor.onTick(1L);
+        assertFalse(neverStableMonitor.isViewStable(),
+                    "Monitor must be unstable after a view change with an unreachable threshold");
+
+        var port = findAvailablePort();
+        var addr = ProcessAddress.localhost("p-timeout", port);
+        var timeoutTransport = SocketTransport.create(UUID.randomUUID(), addr, membership,
+                                                      neverStableMonitor, controller);
+        transports.add(timeoutTransport);
+        timeoutTransport.listenOn(addr);
+        timeoutTransport.registerMember(transport2BubbleId, addr2);
+        timeoutTransport.connectTo(addr2);
+
+        var message = factory.createAck(UUID.randomUUID(), transport2BubbleId);
+
+        // Wrap the real 5s failsafe with a preemptive guard so a regression that removes
+        // orTimeout would hang here and fail the test rather than the suite.
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(8), () -> {
+            var ackFuture = timeoutTransport.sendToNeighborAsync(transport2BubbleId, message);
+            var ex = assertThrows(ExecutionException.class,
+                                  () -> ackFuture.get(6, TimeUnit.SECONDS),
+                                  "ACK must time out when the view never stabilizes");
+            assertInstanceOf(TimeoutException.class, ex.getCause(),
+                             "Cause should be TimeoutException from the 5s failsafe");
+        });
     }
 
         /**

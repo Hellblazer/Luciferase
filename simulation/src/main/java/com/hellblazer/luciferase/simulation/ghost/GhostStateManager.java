@@ -151,9 +151,12 @@ public class GhostStateManager {
     }
 
     /**
-     * Spatial bounds for ghost position clamping (dead reckoning boundary).
+     * Supplier of the current spatial bounds for ghost position clamping (dead reckoning
+     * boundary). A supplier (rather than a captured value) ensures clamping always uses the
+     * bubble's <em>current</em> bounds as entities are added/moved, instead of the stale
+     * snapshot captured at construction time.
      */
-    private final BubbleBounds bounds;
+    private final java.util.function.Supplier<BubbleBounds> boundsSupplier;
 
     /**
      * Maximum number of ghosts to track (memory limit).
@@ -174,6 +177,14 @@ public class GhostStateManager {
      * Active ghost state by entity ID (position and velocity only).
      */
     private final Map<StringEntityID, GhostState> ghostStates;
+
+    /**
+     * Guards the admission decision (size check) and the subsequent insert in {@link #updateGhost}
+     * so they are atomic. Without this, two threads inserting distinct new entities can both pass the
+     * {@code size() >= maxGhosts} check before either inserts, exceeding the declared limit
+     * (Luciferase-0frcy.65).
+     */
+    private final Object admissionLock = new Object();
 
     /**
      * Performance metrics (optional, null-safe).
@@ -200,13 +211,33 @@ public class GhostStateManager {
      * @param maxGhosts  Maximum number of ghosts to track
      */
     public GhostStateManager(BubbleBounds bounds, int maxGhosts) {
-        this.bounds = Objects.requireNonNull(bounds, "bounds must not be null");
+        this(asSupplier(bounds), maxGhosts);
+    }
+
+    /**
+     * Create GhostStateManager with a live bounds supplier and ghost limit.
+     * <p>
+     * Prefer this constructor when bounds change over the bubble's lifetime (e.g. as entities
+     * are added/moved): the supplier is re-read on every clamp so dead-reckoned ghost positions
+     * are clamped to the current bounds rather than a stale construction-time snapshot.
+     *
+     * @param boundsSupplier supplier of the current spatial bounds for extrapolation clamping
+     * @param maxGhosts      maximum number of ghosts to track
+     */
+    public GhostStateManager(java.util.function.Supplier<BubbleBounds> boundsSupplier, int maxGhosts) {
+        this.boundsSupplier = Objects.requireNonNull(boundsSupplier, "boundsSupplier must not be null");
+        Objects.requireNonNull(boundsSupplier.get(), "bounds must not be null");
         this.maxGhosts = maxGhosts;
         this.deadReckoning = new DeadReckoningEstimator();
         this.lifecycle = new GhostLifecycleStateMachine(); // 500ms TTL, 300ms staleness threshold
         this.ghostStates = new ConcurrentHashMap<>();
 
-        log.debug("GhostStateManager initialized with bounds {} and max ghosts {}", bounds, maxGhosts);
+        log.debug("GhostStateManager initialized with bounds {} and max ghosts {}", boundsSupplier.get(), maxGhosts);
+    }
+
+    private static java.util.function.Supplier<BubbleBounds> asSupplier(BubbleBounds bounds) {
+        Objects.requireNonNull(bounds, "bounds must not be null");
+        return () -> bounds;
     }
 
     /**
@@ -229,26 +260,29 @@ public class GhostStateManager {
         var velocity = new Vector3f(event.velocity());
         var timestamp = event.timestamp();
 
-        // Check max ghost limit
-        if (ghostStates.size() >= maxGhosts && !ghostStates.containsKey(entityId)) {
-            log.warn("Max ghost limit ({}) reached, dropping update for {}", maxGhosts, entityId);
-            return;
+        // Create SimulationGhostEntity
+        var ghostEntity = createGhostEntity(entityId, position, sourceBubbleId, timestamp, event.lamportClock());
+        var newState = new GhostState(ghostEntity, velocity);
+
+        // Atomic admission + insert (Luciferase-0frcy.65): the size check and the put must be
+        // performed under a single lock, otherwise concurrent inserts of distinct new entities can
+        // each pass the size guard and drive ghostStates past maxGhosts.
+        boolean isNewGhost;
+        synchronized (admissionLock) {
+            boolean present = ghostStates.containsKey(entityId);
+            if (!present && ghostStates.size() >= maxGhosts) {
+                log.warn("Max ghost limit ({}) reached, dropping update for {}", maxGhosts, entityId);
+                return;
+            }
+            isNewGhost = !present;
+            ghostStates.put(entityId, newState);
         }
 
         // Update lifecycle state (creates if new, updates if existing)
-        var existingState = ghostStates.get(entityId);
-        if (existingState == null) {
-            // New ghost: create in lifecycle state machine
+        if (isNewGhost) {
             lifecycle.onCreate(entityId.toDebugString(), sourceBubbleId, timestamp);
         }
         lifecycle.onUpdate(entityId.toDebugString(), timestamp);
-
-        // Create SimulationGhostEntity
-        var ghostEntity = createGhostEntity(entityId, position, sourceBubbleId, timestamp, event.lamportClock());
-
-        // Create or update ghost state (position + velocity only)
-        var newState = new GhostState(ghostEntity, velocity);
-        ghostStates.put(entityId, newState);
 
         // Notify dead reckoning estimator of authoritative update
         var adapter = new GhostStateAdapter(newState, entityId);
@@ -301,12 +335,17 @@ public class GhostStateManager {
         // Dead reckoning estimator handles prediction internally
         // Delegate staleness detection to lifecycle state machine
 
-        var expiredCount = lifecycle.expireStaleGhosts(currentTime);
+        // Use the exact set of IDs the lifecycle just expired to target our removals,
+        // instead of rescanning ghostStates and re-querying lifecycle.getState() — the
+        // latter is weakly consistent under concurrent expiry and could both miss and
+        // double-visit keys (Luciferase-0frcy.102). removeGhost()'s null-check makes the
+        // targeted removal idempotent.
+        var expiredIds = lifecycle.expireStaleGhostsReturningIds(currentTime);
 
-        if (expiredCount > 0) {
-            // Remove expired ghosts from our local state
+        if (!expiredIds.isEmpty()) {
+            var expiredDebugStrings = new HashSet<>(expiredIds);
             for (var entityId : ghostStates.keySet()) {
-                if (lifecycle.getState(entityId.toDebugString()) == null) {
+                if (expiredDebugStrings.contains(entityId.toDebugString())) {
                     removeGhost(entityId);
                     log.debug("Culled stale ghost {} at time {}", entityId, currentTime);
                 }
@@ -450,6 +489,7 @@ public class GhostStateManager {
      * If outside bounds, clamps to RDGCS min/max in Cartesian space.
      */
     private Point3f clampToBounds(Point3f position) {
+        var bounds = boundsSupplier.get();
         // Check if already within bounds
         if (bounds.contains(position)) {
             return position;
@@ -497,6 +537,6 @@ public class GhostStateManager {
     @Override
     public String toString() {
         return String.format("GhostStateManager{ghosts=%d, maxGhosts=%d, bounds=%s}",
-                            ghostStates.size(), maxGhosts, bounds);
+                            ghostStates.size(), maxGhosts, boundsSupplier.get());
     }
 }

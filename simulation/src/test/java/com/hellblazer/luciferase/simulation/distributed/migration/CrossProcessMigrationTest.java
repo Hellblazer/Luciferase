@@ -339,70 +339,95 @@ class CrossProcessMigrationTest {
      * - Metrics track already-migrating count
      * - Entity migration lock prevents race condition (C1)
      */
+    /**
+     * Test 8: C1 entity-migration lock invariant — deterministic, event-loop safe.
+     * <p>
+     * The previous version was {@code @Disabled}: it relied on two {@code supplyAsync}
+     * migrations overlapping in wall-clock time, but {@code Thread.sleep()} in the test
+     * harness blocks the single-threaded Prime-Mover event loop, so the migrations ran
+     * sequentially and the race was never exercised — C1 had zero running coverage.
+     * <p>
+     * This rewrite tests the lock invariant directly and deterministically: it acquires
+     * the entity's migration lock out-of-band (the SAME {@link ReentrantLock} instance the
+     * migration would use, obtained via {@code getLockForEntity}), then issues a migration
+     * for that entity. With the lock already held, {@code acquireLock()} cannot
+     * {@code tryLock()}, exhausts its retries (advancing virtual time via {@code Kronos.sleep}),
+     * and the migration must fail with {@code ALREADY_MIGRATING}. No real concurrency, no
+     * {@code Thread.sleep}, fully reproducible.
+     */
     @Test
     @Timeout(5)
-    @org.junit.jupiter.api.Disabled("Incompatible with single-threaded Prime-Mover event loop: " +
-                                    "Thread.sleep() in simulateDelay() blocks the entire event loop, " +
-                                    "preventing true concurrent execution. Needs redesign for event-driven model.")
     void testConcurrentMigrationsSameEntity() throws Exception {
         var entityId = "test-entity-8";
-        var sourceId = UUID.randomUUID();
-        var destId1 = UUID.randomUUID();
-        var destId2 = UUID.randomUUID();
+        var source = createMockBubbleReference(UUID.randomUUID(), true);
+        var dest = createMockBubbleReference(UUID.randomUUID(), true);
 
-        // Use delayed source/dest to ensure migrations overlap in time
-        // Delay must be > LOCK_TIMEOUT_MS (50ms) to force second migration to fail
-        // But not so long that first migration times out (PHASE_TIMEOUT_MS = 100ms)
-        // Use 60ms: enough to force overlap, but won't trigger phase timeout
-        var source = createDelayedBubbleReference(sourceId, 60);
-        var dest1 = createDelayedBubbleReference(destId1, 0);  // dest1 instant
-        var dest2 = createDelayedBubbleReference(destId2, 0);  // dest2 instant
+        // Obtain the exact lock instance the migration will use for this entity.
+        var getLock = CrossProcessMigration.class.getDeclaredMethod("getLockForEntity", String.class);
+        getLock.setAccessible(true);
+        var entityLock = (ReentrantLock) getLock.invoke(migration, entityId);
 
-        var latch = new CountDownLatch(2);
-        var successCount = new AtomicInteger(0);
-        var alreadyMigratingCount = new AtomicInteger(0);
-
-        // Start two migrations concurrently
-        var future1 = CompletableFuture.supplyAsync(() -> {
+        // Acquire it out-of-band on a separate thread (so this thread does not hold it and
+        // the migration's tryLock on the event thread genuinely fails). Hold until asserted.
+        var heldLatch = new CountDownLatch(1);
+        var releaseLatch = new CountDownLatch(1);
+        var holder = new Thread(() -> {
+            entityLock.lock();
             try {
-                var result = migration.migrate(entityId, source, dest1).get(2, TimeUnit.SECONDS);
-                if (result.success()) {
-                    successCount.incrementAndGet();
-                } else if ("ALREADY_MIGRATING".equals(result.reason())) {
-                    alreadyMigratingCount.incrementAndGet();
-                }
-                return result;
-            } catch (Exception e) {
-                throw new RuntimeException(e);
+                heldLatch.countDown();
+                releaseLatch.await();
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
             } finally {
-                latch.countDown();
+                entityLock.unlock();
             }
-        });
+        }, "lock-holder");
+        holder.setDaemon(true);
+        holder.start();
+        assertTrue(heldLatch.await(2, TimeUnit.SECONDS), "Lock holder must acquire the lock");
 
-        var future2 = CompletableFuture.supplyAsync(() -> {
-            try {
-                var result = migration.migrate(entityId, source, dest2).get(2, TimeUnit.SECONDS);
-                if (result.success()) {
-                    successCount.incrementAndGet();
-                } else if ("ALREADY_MIGRATING".equals(result.reason())) {
-                    alreadyMigratingCount.incrementAndGet();
-                }
-                return result;
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            } finally {
-                latch.countDown();
-            }
-        });
+        try {
+            var result = migration.migrate(entityId, source, dest).get(3, TimeUnit.SECONDS);
+            assertFalse(result.success(), "Migration must not succeed while the entity lock is held");
+            assertEquals("ALREADY_MIGRATING", result.reason(),
+                         "A migration blocked by the C1 entity lock must report ALREADY_MIGRATING");
+            assertTrue(metrics.getAlreadyMigrating() >= 1,
+                       "Metrics must record the already-migrating rejection");
+        } finally {
+            releaseLatch.countDown();
+            holder.join(2000);
+        }
+    }
 
-        latch.await(5, TimeUnit.SECONDS);
+    /**
+     * Test 8b: Production (non-{@code EntityStoreOperations}) code path.
+     * <p>
+     * Every other test drives a {@code BubbleReference} that also implements the test
+     * {@code EntityStoreOperations} seam; the production branch (a plain
+     * {@code BubbleReference}, where {@code prepare()}/{@code commit()} fall through to the
+     * {@code removed = true} / {@code added = true} stubs) had no coverage. This pins the
+     * current production-stub contract: with a plain reference the 2PC stubs report success
+     * and the migration completes successfully. If the stubs are ever wired to real
+     * remove/add operations, this test must be updated alongside that change.
+     */
+    @Test
+    @Timeout(5)
+    void testProductionBubbleReferencePathSucceedsViaStubs() throws Exception {
+        var entityId = "prod-entity";
+        BubbleReference source = new ProductionBubbleReference(UUID.randomUUID());
+        BubbleReference dest = new ProductionBubbleReference(UUID.randomUUID());
 
-        // Exactly one should succeed, one should fail with ALREADY_MIGRATING
-        assertEquals(1, successCount.get(), "Exactly one migration should succeed");
-        assertEquals(1, alreadyMigratingCount.get(), "Exactly one should be rejected as already migrating");
+        // Sanity: these references must NOT be the test seam, so the production branch runs.
+        assertFalse(source instanceof EntityStoreOperations,
+                    "Test must exercise a plain BubbleReference (production branch)");
 
-        // Verify metrics
-        assertTrue(metrics.getAlreadyMigrating() >= 1, "Should track at least one already-migrating rejection");
+        var result = migration.migrate(entityId, source, dest).get(3, TimeUnit.SECONDS);
+
+        assertTrue(result.success(),
+                   "Production-stub 2PC path must complete successfully (removed=true/added=true stubs)");
+        assertEquals(entityId, result.entityId());
+        assertEquals(dest.getBubbleId(), result.destProcessId(),
+                     "Result must report the production destination bubble id");
     }
 
     /**
@@ -500,6 +525,48 @@ class CrossProcessMigrationTest {
     }
 
     // Helper methods
+
+    /**
+     * Plain BubbleReference that does NOT implement the {@link EntityStoreOperations} test
+     * seam — used to exercise the production stub branch in prepare()/commit().
+     */
+    private static final class ProductionBubbleReference implements BubbleReference {
+        private final UUID bubbleId;
+
+        ProductionBubbleReference(UUID bubbleId) {
+            this.bubbleId = bubbleId;
+        }
+
+        @Override
+        public boolean isLocal() {
+            return false;
+        }
+
+        @Override
+        public LocalBubbleReference asLocal() {
+            return null;
+        }
+
+        @Override
+        public RemoteBubbleProxy asRemote() {
+            throw new IllegalStateException("Not remote");
+        }
+
+        @Override
+        public UUID getBubbleId() {
+            return bubbleId;
+        }
+
+        @Override
+        public Point3d getPosition() {
+            return new Point3d(0, 0, 0);
+        }
+
+        @Override
+        public Set<UUID> getNeighbors() {
+            return new HashSet<>();
+        }
+    }
 
     /**
      * Test bubble reference that implements TestableEntityStore.

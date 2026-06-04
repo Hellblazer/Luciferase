@@ -21,28 +21,28 @@ package com.hellblazer.luciferase.simulation.consensus.committee;
  * Configuration for committee-based consensus voting.
  * <p>
  * Phase 7G Day 1: Committee Selector & Data Structures
+ * <p>
+ * The committee size and quorum are NOT configured here: the committee is drawn from
+ * {@code context.bftSubset()} and the quorum is derived from
+ * {@code context.toleranceLevel() + 1} (KerlDHT pattern). The former
+ * {@code committeeSizeMin}, {@code committeeSizeMax} and {@code requiredQuorumRatio}
+ * fields were dead — never read by production code — and were removed
+ * (Luciferase-0frcy.91) to stop advertising configurability that does not exist.
  *
- * @param committeeSizeMin      Minimum committee size (default: 7, from bftSubset)
- * @param committeeSizeMax      Maximum committee size (default: 9)
  * @param votingTimeoutSeconds  How long to wait for quorum (default: 5 seconds)
- * @param requiredQuorumRatio   NOT USED - quorum inherited from context.toleranceLevel()
  * @author hal.hildebrand
  */
 public record CommitteeConfig(
-    int committeeSizeMin,
-    int committeeSizeMax,
-    int votingTimeoutSeconds,
-    double requiredQuorumRatio  // Not used - inherited from context.toleranceLevel() + 1
+    int votingTimeoutSeconds
 ) {
 
     /**
      * Create default configuration.
-     * - Committee size: 7-9 nodes (bftSubset default)
      * - Voting timeout: 5 seconds
-     * - Quorum ratio: 0.0 (not used, context.toleranceLevel() + 1 determines quorum)
+     * - Committee size / quorum derived from context (not configurable here)
      */
     public static CommitteeConfig defaultConfig() {
-        return new CommitteeConfig(7, 9, 5, 0.0);
+        return new CommitteeConfig(5);
     }
 
     /**
@@ -56,33 +56,15 @@ public record CommitteeConfig(
      * Builder for CommitteeConfig.
      */
     public static class Builder {
-        private int committeeSizeMin = 7;
-        private int committeeSizeMax = 9;
         private int votingTimeoutSeconds = 5;
-        private double requiredQuorumRatio = 0.0;  // Not used
-
-        public Builder committeeSizeMin(int min) {
-            this.committeeSizeMin = min;
-            return this;
-        }
-
-        public Builder committeeSizeMax(int max) {
-            this.committeeSizeMax = max;
-            return this;
-        }
 
         public Builder votingTimeoutSeconds(int timeout) {
             this.votingTimeoutSeconds = timeout;
             return this;
         }
 
-        public Builder requiredQuorumRatio(double ratio) {
-            this.requiredQuorumRatio = ratio;
-            return this;
-        }
-
         public CommitteeConfig build() {
-            return new CommitteeConfig(committeeSizeMin, committeeSizeMax, votingTimeoutSeconds, requiredQuorumRatio);
+            return new CommitteeConfig(votingTimeoutSeconds);
         }
     }
 }

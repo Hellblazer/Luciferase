@@ -17,6 +17,9 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.UUID;
 
 /**
@@ -42,7 +45,7 @@ import java.util.UUID;
  * @param destProcess      UUID of destination process
  * @param sourceBubble     UUID of source bubble
  * @param destBubble       UUID of destination bubble
- * @param snapshot         EntitySnapshot for rollback (serializable)
+ * @param snapshot         SerializedSnapshot for rollback (Jackson-serializable, no Point3d)
  * @param idempotencyToken UUID for idempotency deduplication
  * @param phase            MigrationPhase (PREPARE, COMMIT, ABORT)
  * @param timestamp        WAL record creation timestamp (ms)
@@ -55,11 +58,41 @@ public record TransactionState(
     UUID destProcess,
     UUID sourceBubble,
     UUID destBubble,
-    EntitySnapshot snapshot,
+    SerializedSnapshot snapshot,
     UUID idempotencyToken,
     MigrationPhase phase,
     long timestamp
 ) {
+    /**
+     * Jackson constructor — explicit @JsonProperty bindings so WAL recovery deserialization
+     * works regardless of whether the ParameterNamesModule is registered on the ObjectMapper
+     * (Luciferase-0frcy.34). The previous implicit record binding silently failed at recovery
+     * time, causing every PREPARE record to be skipped (crash recovery was a no-op).
+     */
+    @JsonCreator
+    public TransactionState(
+        @JsonProperty("transactionId") UUID transactionId,
+        @JsonProperty("entityId") String entityId,
+        @JsonProperty("sourceProcess") UUID sourceProcess,
+        @JsonProperty("destProcess") UUID destProcess,
+        @JsonProperty("sourceBubble") UUID sourceBubble,
+        @JsonProperty("destBubble") UUID destBubble,
+        @JsonProperty("snapshot") SerializedSnapshot snapshot,
+        @JsonProperty("idempotencyToken") UUID idempotencyToken,
+        @JsonProperty("phase") MigrationPhase phase,
+        @JsonProperty("timestamp") long timestamp
+    ) {
+        this.transactionId = transactionId;
+        this.entityId = entityId;
+        this.sourceProcess = sourceProcess;
+        this.destProcess = destProcess;
+        this.sourceBubble = sourceBubble;
+        this.destBubble = destBubble;
+        this.snapshot = snapshot;
+        this.idempotencyToken = idempotencyToken;
+        this.phase = phase;
+        this.timestamp = timestamp;
+    }
     /**
      * MigrationPhase enum for transaction state tracking.
      */
@@ -88,5 +121,28 @@ public record TransactionState(
         long version,
         long timestamp
     ) {
+        @JsonCreator
+        public SerializedSnapshot(
+            @JsonProperty("entityId") String entityId,
+            @JsonProperty("authorityBubbleId") UUID authorityBubbleId,
+            @JsonProperty("epoch") long epoch,
+            @JsonProperty("version") long version,
+            @JsonProperty("timestamp") long timestamp
+        ) {
+            this.entityId = entityId;
+            this.authorityBubbleId = authorityBubbleId;
+            this.epoch = epoch;
+            this.version = version;
+            this.timestamp = timestamp;
+        }
+
+        /**
+         * Project a full {@link EntitySnapshot} into the Jackson-serializable form,
+         * dropping the non-serializable {@code Point3d position} and {@code content}.
+         */
+        public static SerializedSnapshot from(EntitySnapshot snapshot) {
+            return new SerializedSnapshot(snapshot.entityId(), snapshot.authorityBubbleId(),
+                                          snapshot.epoch(), snapshot.version(), snapshot.timestamp());
+        }
     }
 }

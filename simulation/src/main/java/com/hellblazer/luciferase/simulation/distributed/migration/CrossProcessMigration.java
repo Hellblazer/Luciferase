@@ -26,6 +26,8 @@ import javax.vecmath.Point3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.ref.WeakReference;
 import java.util.Map;
 import java.util.Objects;
@@ -94,6 +96,11 @@ public class CrossProcessMigration {
     private final        Map<String, CrossProcessMigrationEntity> activeEntities = new ConcurrentHashMap<>();
     // Periodic cleanup task for orphaned entities (>5min timeout)
     private final        ScheduledExecutorService cleanupScheduler;
+    // Luciferase-0frcy.30: optional Write-Ahead Log for crash recovery of in-flight 2PC
+    // transactions. When wired, recordPrepare is called before the entity is removed from the
+    // source, recordCommit after it is added to the destination, and recordAbort after rollback.
+    // When null, the orchestrator provides at-most-once semantics with no crash recovery.
+    private final        MigrationLogPersistence walPersistence;
 
     /**
      * Set the clock source for deterministic testing.
@@ -122,9 +129,25 @@ public class CrossProcessMigration {
      * @param config  Timeout and retry configuration
      */
     public CrossProcessMigration(IdempotencyStore dedup, MigrationMetrics metrics, MigrationConfig config) {
+        this(dedup, metrics, config, null);
+    }
+
+    /**
+     * Create CrossProcessMigration with explicit configuration and a Write-Ahead Log for crash
+     * recovery (Luciferase-0frcy.30).
+     *
+     * @param dedup          Idempotency store for exactly-once semantics
+     * @param metrics        Migration metrics collector
+     * @param config         Timeout and retry configuration
+     * @param walPersistence Write-Ahead Log for crash recovery; may be {@code null} for
+     *                       at-most-once semantics with no recovery
+     */
+    public CrossProcessMigration(IdempotencyStore dedup, MigrationMetrics metrics, MigrationConfig config,
+                                 MigrationLogPersistence walPersistence) {
         this.dedup = dedup;
         this.metrics = metrics;
         this.config = config;
+        this.walPersistence = walPersistence;
         // Phase 4.2.2: Initialize Prime-Mover controller
         this.controller = new RealTimeController("CrossProcessMigration");
         this.controller.start();
@@ -250,7 +273,10 @@ public class CrossProcessMigration {
             metrics::recordAbort,
             dedup,
             orphanedEntityIds::add,  // Phase 2C: Pass orphaned entity tracking callback
-            config  // Luciferase-65qu: Pass timeout configuration
+            config,  // Luciferase-65qu: Pass timeout configuration
+            this::walRecordPrepare,  // Luciferase-0frcy.30: WAL crash-recovery hooks
+            this::walRecordCommit,
+            this::walRecordAbort
         );
 
         // Luciferase-77tn: Track entity with strong reference for lifecycle management
@@ -282,6 +308,56 @@ public class CrossProcessMigration {
     private void checkAndStoreMigrationWrapper(IdempotencyToken token) {
         if (!dedup.checkAndStoreMigration(token)) {
             throw new IllegalStateException("Duplicate migration");
+        }
+    }
+
+    /**
+     * Luciferase-0frcy.30: durably record the PREPARE phase to the WAL before the entity is
+     * removed from the source. If the process crashes after this point but before COMMIT, the
+     * WAL record drives crash recovery. No-op when no WAL is wired. IOExceptions are propagated
+     * to the caller so a PREPARE that cannot be made durable aborts the migration rather than
+     * removing the entity with no recovery record.
+     */
+    private void walRecordPrepare(TransactionState state) {
+        if (walPersistence == null) {
+            return;
+        }
+        try {
+            walPersistence.recordPrepare(state);
+        } catch (IOException e) {
+            throw new UncheckedIOException("WAL recordPrepare failed for txn " + state.transactionId(), e);
+        }
+    }
+
+    /**
+     * Luciferase-0frcy.30: record COMMIT to the WAL after the entity has been added to the
+     * destination. A COMMIT record prevents recovery from rolling the transaction back.
+     */
+    private void walRecordCommit(UUID transactionId) {
+        if (walPersistence == null) {
+            return;
+        }
+        try {
+            walPersistence.recordCommit(transactionId);
+        } catch (IOException e) {
+            // The migration already succeeded on the destination; a failure to durably record
+            // COMMIT is non-fatal (recovery would, at worst, re-validate the destination).
+            log.error("WAL recordCommit failed for txn {}: {}", transactionId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Luciferase-0frcy.30: record ABORT to the WAL after rollback so recovery treats the
+     * transaction as resolved.
+     */
+    private void walRecordAbort(UUID transactionId) {
+        if (walPersistence == null) {
+            return;
+        }
+        try {
+            walPersistence.recordAbort(transactionId);
+        } catch (IOException e) {
+            log.error("WAL recordAbort failed for txn {}: {}", transactionId, e.getMessage(), e);
         }
     }
 
@@ -462,6 +538,11 @@ public class CrossProcessMigration {
         private       State                               currentState;
         // Package-private for cleanup access (Luciferase-77tn)
                       long                                phaseStartTime;
+        // Luciferase-0frcy.31/.32: transaction start time, captured ONCE when the lock is
+        // acquired and never overwritten. Used for the total-2PC timeout guard in abort() and
+        // for the end-to-end totalLatency metric in commit(), both of which previously measured
+        // only a single phase because they reused phaseStartTime.
+        private       long                                txnStartTime;
         private       int                                 lockRetries = 0;
         private       EntitySnapshot                      snapshot;
         private       IdempotencyToken                    token;
@@ -482,6 +563,10 @@ public class CrossProcessMigration {
         private final IdempotencyStore                    dedup;
         private final java.util.function.Consumer<String> recordOrphanedEntity; // Phase 2C: Orphan tracking callback
         private final MigrationConfig                     config;  // Luciferase-65qu: Timeout configuration
+        // Luciferase-0frcy.30: WAL crash-recovery hooks (no-op when no WAL is wired)
+        private final java.util.function.Consumer<TransactionState> walRecordPrepare;
+        private final java.util.function.Consumer<UUID>             walRecordCommit;
+        private final java.util.function.Consumer<UUID>             walRecordAbort;
 
         public CrossProcessMigrationEntity(
             String entityId,
@@ -501,7 +586,10 @@ public class CrossProcessMigration {
             java.util.function.Consumer<String> recordAbort,
             IdempotencyStore dedup,
             java.util.function.Consumer<String> recordOrphanedEntity,  // Phase 2C: Orphan tracking
-            MigrationConfig config  // Luciferase-65qu: Timeout configuration
+            MigrationConfig config,  // Luciferase-65qu: Timeout configuration
+            java.util.function.Consumer<TransactionState> walRecordPrepare,  // Luciferase-0frcy.30
+            java.util.function.Consumer<UUID> walRecordCommit,
+            java.util.function.Consumer<UUID> walRecordAbort
         ) {
             this.entityId = entityId;
             this.source = source;
@@ -521,6 +609,9 @@ public class CrossProcessMigration {
             this.dedup = dedup;
             this.recordOrphanedEntity = recordOrphanedEntity;  // Phase 2C
             this.config = config;  // Luciferase-65qu
+            this.walRecordPrepare = walRecordPrepare;  // Luciferase-0frcy.30
+            this.walRecordCommit = walRecordCommit;
+            this.walRecordAbort = walRecordAbort;
         }
 
         /**
@@ -540,6 +631,8 @@ public class CrossProcessMigration {
                 incrementConcurrent.run();
                 currentState = State.PREPARE;
                 phaseStartTime = clockSupplier.getAsLong();
+                // Luciferase-0frcy.31/.32: capture the transaction start time exactly once.
+                txnStartTime = phaseStartTime;
 
                 // Generate idempotency token
                 token = new IdempotencyToken(entityId, source.getBubbleId(), dest.getBubbleId(),
@@ -586,7 +679,7 @@ public class CrossProcessMigration {
                 }
 
                 // Check if destination is reachable (for testing)
-                if (dest instanceof TestableEntityStore testDest) {
+                if (dest instanceof EntityStoreOperations testDest) {
                     if (!testDest.isReachable()) {
                         log.warn("Destination unreachable for entity {}", entityId);
                         recordFailure.accept("DESTINATION_UNREACHABLE");
@@ -600,10 +693,28 @@ public class CrossProcessMigration {
                 txnId = UUID.randomUUID();
                 // Note: Transaction tracking removed to avoid Prime-Mover class resolution issues
 
+                // Luciferase-0frcy.30: durably record PREPARE to the WAL BEFORE removing the
+                // entity from the source. If this throws (WAL unwritable), we abort the migration
+                // without removing the entity, so there is never a removed-but-unrecorded entity.
+                try {
+                    walRecordPrepare.accept(new TransactionState(
+                        txnId, entityId, source.getBubbleId(), dest.getBubbleId(),
+                        source.getBubbleId(), dest.getBubbleId(),
+                        TransactionState.SerializedSnapshot.from(snapshot),
+                        token != null ? token.toUUID() : null,
+                        TransactionState.MigrationPhase.PREPARE, clockSupplier.getAsLong()));
+                } catch (RuntimeException walEx) {
+                    log.error("WAL PREPARE record failed for entity {} (txn={}); aborting before removal: {}",
+                              entityId, txnId, walEx.getMessage(), walEx);
+                    recordFailure.accept("WAL_PREPARE_FAILED");
+                    failAndUnlock("WAL_PREPARE_FAILED");
+                    return;
+                }
+
                 // Remove entity from source
                 var prepareStart = clockSupplier.getAsLong();
                 boolean removed;
-                if (source instanceof TestableEntityStore testSource) {
+                if (source instanceof EntityStoreOperations testSource) {
                     removed = testSource.removeEntity(entityId);
                 } else {
                     // Production code would call source.asLocal().removeEntity(entityId)
@@ -649,7 +760,7 @@ public class CrossProcessMigration {
                 // Add entity to destination
                 var commitStart = clockSupplier.getAsLong();
                 boolean added;
-                if (dest instanceof TestableEntityStore testDest) {
+                if (dest instanceof EntityStoreOperations testDest) {
                     added = testDest.addEntity(snapshot);
                 } else {
                     // Production code would call dest.asLocal().addEntity(snapshot)
@@ -684,8 +795,15 @@ public class CrossProcessMigration {
                 log.debug("COMMIT: Added entity {} to destination {} with epoch {}", entityId, dest.getBubbleId(),
                           snapshot.epoch() + 1);
 
+                // Luciferase-0frcy.30: durably record COMMIT after the entity is at the
+                // destination so crash recovery does not roll the transaction back.
+                walRecordCommit.accept(txnId);
+
                 // Success!
-                var totalLatency = clockSupplier.getAsLong() - phaseStartTime;
+                // Luciferase-0frcy.32: measure end-to-end (PREPARE→COMMIT) latency from the
+                // transaction start, not the COMMIT-phase start, otherwise the PREPARE half is
+                // silently excluded and the metric under-reports.
+                var totalLatency = clockSupplier.getAsLong() - txnStartTime;
                 recordSuccess.accept(totalLatency);
                 succeedAndUnlock(totalLatency);
 
@@ -704,6 +822,11 @@ public class CrossProcessMigration {
          * ABORT state: Rollback (restore entity to source).
          * <p>
          * Phase 2C: Enhanced logging with full entity state for observability.
+         * <p>
+         * NOTE: the snapshot restored on rollback carries content as a String only — that is all
+         * EntitySnapshot.content holds on the wire (RDR-004 hygiene). Rollback therefore restores
+         * the entity's String content (and identity/position/epoch), not any richer in-memory
+         * content type that may have existed before serialization.
          */
         private void abort() {
             try {
@@ -713,7 +836,10 @@ public class CrossProcessMigration {
                          snapshot.epoch(), snapshot.position());
 
                 // Check total timeout
-                var totalElapsed = clockSupplier.getAsLong() - phaseStartTime;
+                // Luciferase-0frcy.31: measure against the transaction start time, not the
+                // ABORT-phase start (phaseStartTime was just reset at the COMMIT→ABORT
+                // transition), otherwise the total-2PC-duration guard can never fire.
+                var totalElapsed = clockSupplier.getAsLong() - txnStartTime;
                 if (totalElapsed > config.totalTimeoutMs()) {
                     // Phase 2C: Enhanced error logging with full state
                     log.error("ABORT timed out for entity {} - CRITICAL: Entity may be lost " +
@@ -729,7 +855,7 @@ public class CrossProcessMigration {
 
                 // Re-add entity to source from snapshot
                 boolean restored;
-                if (source instanceof TestableEntityStore testSource) {
+                if (source instanceof EntityStoreOperations testSource) {
                     restored = testSource.addEntity(snapshot);
                 } else {
                     // Production code would call source.asLocal().addEntity(snapshot)
@@ -746,8 +872,18 @@ public class CrossProcessMigration {
                     recordOrphanedEntity.accept(entityId); // Phase 2C: Track orphaned entity
                 }
 
-                log.debug("ABORT: Restored entity {} to source {} with epoch {} (txn={}, position={})",
-                          entityId, source.getBubbleId(), snapshot.epoch(), txnId, snapshot.position());
+                // Luciferase-0frcy.109: only log the "Restored entity" success message when the
+                // entity was actually re-added to the source. Logging it unconditionally (even when
+                // restored == false) produces a false success trace that masks rollback-failure data
+                // loss for operators watching debug logs.
+                if (restored) {
+                    log.debug("ABORT: Restored entity {} to source {} with epoch {} (txn={}, position={})",
+                              entityId, source.getBubbleId(), snapshot.epoch(), txnId, snapshot.position());
+                }
+
+                // Luciferase-0frcy.30: record ABORT to the WAL after rollback so recovery treats
+                // the transaction as resolved (entity is back at the source).
+                walRecordAbort.accept(txnId);
 
                 recordAbort.accept(abortReason != null ? abortReason : "COMMIT_FAILED");
                 // Return the original failure reason, not "ROLLBACK_COMPLETE"
@@ -770,12 +906,18 @@ public class CrossProcessMigration {
          * Complete migration successfully and unlock.
          */
         private void succeedAndUnlock(long latency) {
+            // Luciferase-zwyf2: guarantee the result future is completed even if unlock() throws
+            // (e.g. IllegalMonitorStateException when a PrimeMover continuation resumes on a
+            // different thread than the one that locked). The previous single try/catch swallowed
+            // the unlock exception and skipped decrementConcurrent + resultFuture.complete, hanging
+            // any caller blocked on migrate(...).get() forever.
             try {
                 migrationLock.unlock();
+            } catch (Exception e) {
+                log.error("Error unlocking migration for entity {}: {}", entityId, e.getMessage(), e);
+            } finally {
                 decrementConcurrent.run();
                 resultFuture.complete(MigrationResult.success(entityId, dest.getBubbleId(), latency));
-            } catch (Exception e) {
-                log.error("Error completing migration success for entity {}: {}", entityId, e.getMessage(), e);
             }
         }
 
@@ -784,27 +926,54 @@ public class CrossProcessMigration {
          * Removes migration key from dedup store to allow retries after failures.
          */
         private void failAndUnlock(String reason) {
+            // Luciferase-zwyf2: guarantee future completion even if unlock() throws (see
+            // succeedAndUnlock). Unlock in its own try; cleanup + completion run in finally so a
+            // blocked caller never hangs.
             try {
                 migrationLock.unlock();
+            } catch (Exception e) {
+                log.error("Error unlocking migration for entity {}: {}", entityId, e.getMessage(), e);
+            } finally {
                 decrementConcurrent.run();
                 // Remove migration key to allow retry after failure
                 if (token != null) {
                     dedup.removeMigration(token);
                 }
                 resultFuture.complete(MigrationResult.failure(entityId, reason));
-            } catch (Exception e) {
-                log.error("Error completing migration failure for entity {}: {}", entityId, e.getMessage(), e);
             }
         }
 
         /**
-         * Create entity snapshot for rollback.
+         * Capture a snapshot of the entity's real state from the source for rollback
+         * (Luciferase-x8pwi).
+         * <p>
+         * Must be called during PREPARE <em>before</em> the entity is removed from the source.
+         * Queries the source store for the entity's actual position, content, epoch, and
+         * version. If the source can provide a real snapshot, that snapshot is used verbatim so
+         * an aborted migration restores the exact original state.
+         * <p>
+         * If the source cannot provide full entity state (no entity store wired), an
+         * identity-only snapshot is returned with {@code null} position and content rather than
+         * fabricated {@code (0,0,0)}/{@code "MockContent"} data. This preserves the entity's
+         * identity and authority for rollback bookkeeping while making it unambiguous that no
+         * real spatial/content state was captured — eliminating the previous silent
+         * garbage-restore.
          */
         private static EntitySnapshot createEntitySnapshot(String entityId, BubbleReference source, long timestamp) {
-            // In actual implementation, would query source bubble for entity state
-            // For now, create synthetic snapshot
-            return new EntitySnapshot(entityId, new Point3d(0, 0, 0), "MockContent", source.getBubbleId(), 1L, 1L,
-                                      timestamp);
+            if (source instanceof EntityStoreOperations store) {
+                var captured = store.getEntitySnapshot(entityId);
+                if (captured != null) {
+                    log.debug("Captured real entity snapshot for {} from source {} [position={}, epoch={}, version={}]",
+                              entityId, source.getBubbleId(), captured.position(), captured.epoch(), captured.version());
+                    return captured;
+                }
+            }
+            // No full entity state available: return an honest identity-only snapshot rather
+            // than fabricated position/content that would silently corrupt the entity on rollback.
+            log.warn("No entity state available to snapshot for {} from source {}; "
+                     + "rollback will restore identity only (position/content unavailable)",
+                     entityId, source.getBubbleId());
+            return new EntitySnapshot(entityId, null, null, source.getBubbleId(), 0L, 0L, timestamp);
         }
     }
 }

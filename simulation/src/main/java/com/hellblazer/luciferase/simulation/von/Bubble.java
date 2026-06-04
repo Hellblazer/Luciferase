@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
@@ -73,8 +74,15 @@ public class Bubble extends EnhancedBubble implements Node {
     private final Set<UUID> introducedTo;  // Track neighbors we've introduced ourselves to
     private final List<Consumer<Event>> eventListeners;
     private final Consumer<Message> messageHandler;
+    // 2PC migration messages arriving over transport are routed here (Luciferase-l5gr9). Default
+    // is a debug-log no-op so messages are never silently dropped; a coordinator can register a
+    // real handler via setMigrationHandler. CopyOnWriteArrayList semantics not needed — single
+    // volatile reference replacement is sufficient.
+    private volatile Consumer<MigrationProtocolMessages> migrationHandler =
+        m -> log.debug("Bubble {} received 2PC {} (txn={}) — no migration handler registered",
+                       id(), m.getClass().getSimpleName(), m.transactionId());
     private volatile ClockContext clockContext = new ClockContext(Clock.system());
-    private volatile boolean closed = false;  // Track if close() has been called (for idempotency)
+    private final AtomicBoolean closed = new AtomicBoolean(false);  // Atomic idempotency guard for close()
 
     // JOIN response retry management
     private final Map<UUID, PendingJoinResponse> pendingJoinResponses = new ConcurrentHashMap<>();
@@ -371,18 +379,30 @@ public class Bubble extends EnhancedBubble implements Node {
     }
 
     /**
+     * Register the handler for inbound 2PC migration messages (Luciferase-l5gr9).
+     * <p>
+     * 2PC messages ({@link MigrationProtocolMessages}) that arrive over transport are routed to
+     * this handler rather than dropped. The default handler logs at debug level. A migration
+     * coordinator registers its own handler here to drive the protocol.
+     *
+     * @param handler Consumer to receive 2PC messages (must not be null)
+     */
+    public void setMigrationHandler(Consumer<MigrationProtocolMessages> handler) {
+        this.migrationHandler = Objects.requireNonNull(handler, "handler must not be null");
+    }
+
+    /**
      * Close this bubble and release resources.
      * <p>
      * Unregisters message handler. Note: broadcastLeave() is handled by
      * LifecycleCoordinator during shutdown to prevent duplicate calls.
      */
     public void close() {
-        // Idempotent: return immediately if already closed
-        if (closed) {
+        // Idempotent: atomic test-and-set. Only the first caller proceeds.
+        if (closed.getAndSet(true)) {
             log.debug("Bubble {} already closed - idempotent no-op", id());
             return;
         }
-        closed = true;
 
         // Broadcast LEAVE to neighbors before cleanup (graceful departure)
         // This ensures neighbors are notified while transport is still available
@@ -429,6 +449,7 @@ public class Bubble extends EnhancedBubble implements Node {
             case Message.Ack ack -> handleAck(ack);
             case Message.Query query -> handleQuery(query);
             case Message.QueryResponse resp -> {}  // Handled by RemoteBubbleProxy
+            case MigrationProtocolMessages migration -> handleMigrationMessage(migration);
             default -> log.warn("Unhandled message type: {}", message.getClass().getSimpleName());
         }
     }
@@ -482,6 +503,13 @@ public class Bubble extends EnhancedBubble implements Node {
                 resp.timestamp()
             ));
         }
+
+        // Luciferase-0frcy.126: emit a self Event.Join once our neighbor set is populated so a joiner
+        // waiting in Manager.joinAndWait() (which counts down on Event.Join where nodeId == our id) is
+        // released deterministically. The acceptor emits Event.Join on its own bubble in
+        // handleJoinRequest(); without this emission the joiner's latch never fired via the Join path
+        // and relied on a racy neighbors-non-empty fallback.
+        emitEvent(new Event.Join(id(), position()));
 
         // Send ACK to acceptor
         var ctx = clockContext;  // Single volatile read
@@ -662,6 +690,19 @@ public class Bubble extends EnhancedBubble implements Node {
             } catch (Exception e) {
                 log.warn("Event listener error: {}", e.getMessage());
             }
+        }
+    }
+
+    /**
+     * Route an inbound 2PC migration message to the registered migration handler
+     * (Luciferase-l5gr9). Never silently dropped.
+     */
+    private void handleMigrationMessage(MigrationProtocolMessages migration) {
+        try {
+            migrationHandler.accept(migration);
+        } catch (Exception e) {
+            log.warn("Migration handler error for {} (txn={}): {}",
+                     migration.getClass().getSimpleName(), migration.transactionId(), e.getMessage());
         }
     }
 

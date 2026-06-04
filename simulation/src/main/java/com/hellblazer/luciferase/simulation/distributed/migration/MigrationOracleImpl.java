@@ -21,7 +21,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -110,8 +109,11 @@ public class MigrationOracleImpl implements MigrationOracle {
         this.gridY = gridY;
         this.gridZ = gridZ;
         this.tolerance = DEFAULT_TOLERANCE;
-        this.bubbleMap = new HashMap<>();
-        this.bubbleCoordinates = new HashMap<>();
+        // Luciferase-d3pz6: registerBubble() mutates these post-construction while checkMigration/
+        // getTargetBubble/getClosestBubble read them concurrently. Plain HashMap is not thread-safe
+        // and the class javadoc promises concurrent safety, so both must be ConcurrentHashMap.
+        this.bubbleMap = new ConcurrentHashMap<>();
+        this.bubbleCoordinates = new ConcurrentHashMap<>();
         this.entityPositions = new ConcurrentHashMap<>();
         this.crossingCache = ConcurrentHashMap.newKeySet();
 
@@ -233,20 +235,28 @@ public class MigrationOracleImpl implements MigrationOracle {
 
     @Override
     public Set<String> getEntitiesCrossingBoundaries() {
-        // Reset crossing cache and recompute from current positions
-        crossingCache.clear();
-
+        // Compute into a LOCAL set first. The shared crossingCache must not be used as a
+        // scratch buffer during computation: a concurrent caller reading it between the old
+        // clear() and the first add() would observe an empty set and silently drop every
+        // boundary crossing for that tick (Luciferase-0frcy.66).
+        var crossing = new HashSet<String>();
         for (var entry : entityPositions.entrySet()) {
             var entityId = entry.getKey();
             var position = entry.getValue();
 
             // Check if entity is at a grid boundary (transition between cubes)
             if (isAtBoundary(position)) {
-                crossingCache.add(entityId);
+                crossing.add(entityId);
             }
         }
 
-        return Set.copyOf(crossingCache);
+        // Publish to the side-effect cache only after the full set is computed. add-then-retain
+        // keeps the existing keyset instance (preserving removeEntity()/clearCrossingCache()
+        // semantics) while never exposing a transiently-empty cache.
+        crossingCache.addAll(crossing);
+        crossingCache.retainAll(crossing);
+
+        return Set.copyOf(crossing);
     }
 
     @Override

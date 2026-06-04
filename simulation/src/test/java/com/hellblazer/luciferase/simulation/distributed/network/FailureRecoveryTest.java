@@ -227,11 +227,18 @@ class FailureRecoveryTest {
     void testCascadingFailureObservation() {
         var entityId = UUID.randomUUID();
         var failureObserved = new AtomicBoolean(false);
+        var observedEntity = new java.util.concurrent.atomic.AtomicReference<UUID>();
+        var observedSource = new java.util.concurrent.atomic.AtomicReference<UUID>();
 
-        // Set up observer listener
-        nodeObserver.getNetworkChannel().setEntityRollbackListener((sourceId, evt) -> {
+        // The rollback below is delivered to node A's channel (B -> A), so the listener
+        // under test MUST be registered on A's channel — the previous version registered
+        // it on the observer (C), which never receives the B->A rollback, and then a
+        // SECOND setEntityRollbackListener overwrote the lambda with no assertion at all.
+        nodeActual.getNetworkChannel().setEntityRollbackListener((sourceId, evt) -> {
             failureObserved.set(true);
-            log.debug("Observer detected rollback for entity {}", evt.getEntityId());
+            observedEntity.set(evt.getEntityId());
+            observedSource.set(sourceId);
+            log.debug("Node A detected rollback for entity {} from {}", evt.getEntityId(), sourceId);
         });
 
         // Migration initiated
@@ -242,20 +249,24 @@ class FailureRecoveryTest {
         var event = new EntityDepartureEvent(
             entityId, nodeA, nodeB,
             EntityMigrationState.MIGRATING_OUT, 0L);
-        nodeActual.sendEntityDeparture(nodeB, event);
+        assertTrue(nodeActual.sendEntityDeparture(nodeB, event),
+                   "Departure must be delivered (no packet loss configured)");
 
-        // Simulate B failure by sending rollback. Use a constant Lamport
-        // timestamp instead of System.nanoTime() to keep the test
-        // deterministic across runs (CLAUDE.md: no raw system clocks).
+        // Simulate B failure by sending a rollback to A. Constant Lamport timestamp keeps
+        // the test deterministic (CLAUDE.md: no raw system clocks). Default 0ms latency
+        // means delivery is synchronous, so the listener has fired by the time send returns.
         var rollback = new EntityRollbackEvent(
             entityId, nodeA, nodeB, "node_b_failure", 1L);
-        nodeTarget.sendEntityRollback(nodeA, rollback);
+        assertTrue(nodeTarget.sendEntityRollback(nodeA, rollback),
+                   "Rollback must be delivered to node A");
 
-        // Observer should see the rollback
-        nodeObserver.getNetworkChannel().setEntityRollbackListener((sourceId, evt) ->
-            failureObserved.set(true));
+        // The cascading-failure observation property: A actually observed the rollback,
+        // for the right entity, attributed to B.
+        assertTrue(failureObserved.get(), "Node A must observe the rollback from B");
+        assertEquals(entityId, observedEntity.get(), "Observed rollback must carry the migrating entity id");
+        assertEquals(nodeB, observedSource.get(), "Rollback must be attributed to its sender (B)");
 
-        log.info("✓ Cascading failure: rollback propagated, observer notified");
+        log.info("✓ Cascading failure: rollback propagated, node A notified");
     }
 
     @Test
@@ -318,12 +329,31 @@ class FailureRecoveryTest {
         thread2.join();
         thread3.join();
 
-        // Check consistency: all pending counts should be at or above 0
-        assertTrue(migratorA.getPendingDeferredCount() >= 0, "A's pending count consistent");
-        assertTrue(migratorB.getPendingDeferredCount() >= 0, "B's pending count consistent");
-        assertTrue(migratorC.getPendingDeferredCount() >= 0, "C's pending count consistent");
+        // Real consistency invariants (the previous `>= 0` assertions were tautologies —
+        // a non-negative count holds even if every migration corrupted state).
+        for (var entry : Map.of("A", migratorA, "B", migratorB, "C", migratorC).entrySet()) {
+            var name = entry.getKey();
+            var migrator = entry.getValue();
+            // 1. No phantom application: never flush (apply) more deferred events than were queued.
+            assertTrue(migrator.getTotalDeferredEventsFlushed() <= migrator.getTotalDeferredEventsQueued(),
+                       name + ": flushed deferred events must not exceed queued (no phantom updates)");
+        }
+        // 2 & 3. Each entity's source migrator drained its queue (flushDeferredUpdates removes it).
+        assertEquals(0, migratorA.getDeferredQueueSize(id1), "A drained entity id1's deferred queue");
+        assertEquals(0, migratorB.getDeferredQueueSize(id2), "B drained entity id2's deferred queue");
+        assertEquals(0, migratorC.getDeferredQueueSize(id3), "C drained entity id3's deferred queue");
+        // 4. Total accounting holds across all three migrators (no negative / lost events).
+        long totalQueued = migratorA.getTotalDeferredEventsQueued()
+                         + migratorB.getTotalDeferredEventsQueued()
+                         + migratorC.getTotalDeferredEventsQueued();
+        long totalFlushed = migratorA.getTotalDeferredEventsFlushed()
+                          + migratorB.getTotalDeferredEventsFlushed()
+                          + migratorC.getTotalDeferredEventsFlushed();
+        assertTrue(totalFlushed <= totalQueued,
+                   "System-wide: flushed (" + totalFlushed + ") <= queued (" + totalQueued + ")");
 
-        log.info("✓ Consistency under concurrent failures maintained");
+        log.info("✓ Consistency under concurrent failures maintained: queued={}, flushed={}",
+                 totalQueued, totalFlushed);
     }
 
     @Test

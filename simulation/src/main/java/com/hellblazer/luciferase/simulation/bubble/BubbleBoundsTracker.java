@@ -18,6 +18,7 @@ public class BubbleBoundsTracker implements EntityChangeListener {
 
     private final byte spatialLevel;
     private final Map<String, Point3f> entityPositions;  // For recalculation and centroid
+    private final Object monitor = new Object();
     private volatile BubbleBounds bounds;
 
     /**
@@ -50,77 +51,86 @@ public class BubbleBoundsTracker implements EntityChangeListener {
      * @return Centroid point or null if no bounds
      */
     public Point3d centroid() {
-        if (bounds == null) {
-            return null;
-        }
-
-        // If there are entities, compute centroid from their positions
-        if (!entityPositions.isEmpty()) {
-            double sumX = 0, sumY = 0, sumZ = 0;
-            int count = 0;
-
-            for (var position : entityPositions.values()) {
-                sumX += position.x;
-                sumY += position.y;
-                sumZ += position.z;
-                count++;
+        synchronized (monitor) {
+            if (bounds == null) {
+                return null;
             }
 
-            if (count > 0) {
-                return new Point3d(sumX / count, sumY / count, sumZ / count);
-            }
-        }
+            // If there are entities, compute centroid from their positions
+            if (!entityPositions.isEmpty()) {
+                double sumX = 0, sumY = 0, sumZ = 0;
+                int count = 0;
 
-        // Fall back to tetrahedral centroid if no entities
-        return bounds.centroid();
+                for (var position : entityPositions.values()) {
+                    sumX += position.x;
+                    sumY += position.y;
+                    sumZ += position.z;
+                    count++;
+                }
+
+                if (count > 0) {
+                    return new Point3d(sumX / count, sumY / count, sumZ / count);
+                }
+            }
+
+            // Fall back to tetrahedral centroid if no entities
+            return bounds.centroid();
+        }
     }
 
     /**
      * Recalculate bounds from current entity positions.
      */
     public void recalculateBounds() {
-        if (entityPositions.isEmpty()) {
-            bounds = null;
-            return;
-        }
+        synchronized (monitor) {
+            if (entityPositions.isEmpty()) {
+                bounds = null;
+                return;
+            }
 
-        var positions = new ArrayList<>(entityPositions.values());
-        if (!positions.isEmpty()) {
-            bounds = BubbleBounds.fromEntityPositions(positions, spatialLevel);
+            var positions = new ArrayList<>(entityPositions.values());
+            if (!positions.isEmpty()) {
+                bounds = BubbleBounds.fromEntityPositions(positions, spatialLevel);
+            }
         }
     }
 
     @Override
     public void onEntityAdded(String entityId, Point3f position) {
-        entityPositions.put(entityId, position);
+        synchronized (monitor) {
+            entityPositions.put(entityId, position);
 
-        // Update bounds
-        if (bounds == null) {
-            bounds = BubbleBounds.fromEntityPositions(List.of(position), spatialLevel);
-        } else {
-            bounds = bounds.expand(position);
+            // Update bounds atomically with the position write
+            if (bounds == null) {
+                bounds = BubbleBounds.fromEntityPositions(List.of(position), spatialLevel);
+            } else {
+                bounds = bounds.expand(position);
+            }
         }
     }
 
     @Override
     public void onEntityRemoved(String entityId) {
-        entityPositions.remove(entityId);
+        synchronized (monitor) {
+            entityPositions.remove(entityId);
 
-        // Recalculate bounds if entities remain
-        if (!entityPositions.isEmpty()) {
-            recalculateBounds();
-        } else {
-            bounds = null;
+            // Recalculate bounds if entities remain
+            if (!entityPositions.isEmpty()) {
+                recalculateBounds();
+            } else {
+                bounds = null;
+            }
         }
     }
 
     @Override
     public void onEntityMoved(String entityId, Point3f oldPosition, Point3f newPosition) {
-        entityPositions.put(entityId, newPosition);
+        synchronized (monitor) {
+            entityPositions.put(entityId, newPosition);
 
-        // Expand bounds if needed
-        if (bounds != null) {
-            bounds = bounds.expand(newPosition);
+            // Recalculate from scratch so bounds can shrink as entities migrate inward
+            // (expand-only would permanently overestimate spatial extent).
+            recalculateBounds();
         }
     }
 }

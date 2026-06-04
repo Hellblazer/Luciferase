@@ -55,9 +55,18 @@ public class EntityAccountant {
      * @param entityId the entity identifier
      */
     public void register(UUID bubbleId, UUID entityId) {
-        entityToBubble.put(entityId, bubbleId);
-        bubbleToEntities.computeIfAbsent(bubbleId, k -> new CopyOnWriteArraySet<>()).add(entityId);
-        totalOperations.incrementAndGet();
+        // Hold the lock so the two map writes are atomic w.r.t. moveBetweenBubbles()/validate()
+        // (Luciferase-0frcy.22). Without it, a concurrent validate() could observe the entity in
+        // entityToBubble but not yet in bubbleToEntities, violating the bidirectional invariant the
+        // class javadoc claims ("All operations are atomic").
+        lock.lock();
+        try {
+            entityToBubble.put(entityId, bubbleId);
+            bubbleToEntities.computeIfAbsent(bubbleId, k -> new CopyOnWriteArraySet<>()).add(entityId);
+            totalOperations.incrementAndGet();
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -67,12 +76,19 @@ public class EntityAccountant {
      * @param entityId the entity identifier
      */
     public void unregister(UUID bubbleId, UUID entityId) {
-        entityToBubble.remove(entityId);
-        var entities = bubbleToEntities.get(bubbleId);
-        if (entities != null) {
-            entities.remove(entityId);
+        // Hold the lock so both map removals are atomic w.r.t. moveBetweenBubbles()/validate()
+        // (Luciferase-0frcy.22).
+        lock.lock();
+        try {
+            entityToBubble.remove(entityId);
+            var entities = bubbleToEntities.get(bubbleId);
+            if (entities != null) {
+                entities.remove(entityId);
+            }
+            totalOperations.incrementAndGet();
+        } finally {
+            lock.unlock();
         }
-        totalOperations.incrementAndGet();
     }
 
     /**
@@ -180,8 +196,15 @@ public class EntityAccountant {
      * @return set of entity identifiers (empty if bubble has no entities)
      */
     public Set<UUID> entitiesInBubble(UUID bubbleId) {
-        var entities = bubbleToEntities.get(bubbleId);
-        return entities != null ? new HashSet<>(entities) : Set.of();
+        // Lock for a consistent snapshot w.r.t. concurrent move/register/unregister
+        // (Luciferase-0frcy.22).
+        lock.lock();
+        try {
+            var entities = bubbleToEntities.get(bubbleId);
+            return entities != null ? new HashSet<>(entities) : Set.of();
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**

@@ -212,9 +212,14 @@ public class CausalRollback<ID extends EntityID, Content> {
      * @return Optional containing checkpoint if it exists
      */
     public Optional<Checkpoint<ID, Content>> getCheckpoint(long bucket) {
-        return checkpoints.stream()
-                         .filter(cp -> cp.bucket() == bucket)
-                         .findFirst();
+        lock.readLock().lock();
+        try {
+            return checkpoints.stream()
+                             .filter(cp -> cp.bucket() == bucket)
+                             .findFirst();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
@@ -224,8 +229,13 @@ public class CausalRollback<ID extends EntityID, Content> {
      * @return true if checkpoint exists
      */
     public boolean hasCheckpointForBucket(long bucket) {
-        return checkpoints.stream()
-                         .anyMatch(cp -> cp.bucket() == bucket);
+        lock.readLock().lock();
+        try {
+            return checkpoints.stream()
+                             .anyMatch(cp -> cp.bucket() == bucket);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
@@ -234,7 +244,12 @@ public class CausalRollback<ID extends EntityID, Content> {
      * @return true if no checkpoints exist
      */
     public boolean isEmpty() {
-        return checkpoints.isEmpty();
+        lock.readLock().lock();
+        try {
+            return checkpoints.isEmpty();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
@@ -243,7 +258,12 @@ public class CausalRollback<ID extends EntityID, Content> {
      * @return Checkpoint count
      */
     public int getCheckpointCount() {
-        return checkpoints.size();
+        lock.readLock().lock();
+        try {
+            return checkpoints.size();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
@@ -252,7 +272,17 @@ public class CausalRollback<ID extends EntityID, Content> {
      * @return Oldest bucket number, or -1 if no checkpoints
      */
     public long getOldestBucket() {
-        return checkpoints.isEmpty() ? -1 : checkpoints.getFirst().bucket();
+        // peekFirst() is null-safe on an empty deque, avoiding the TOCTOU
+        // NoSuchElementException from isEmpty()+getFirst() when a concurrent
+        // writer removes the last checkpoint between the two calls
+        // (Luciferase-0frcy.107). Read lock pins a consistent snapshot.
+        lock.readLock().lock();
+        try {
+            var first = checkpoints.peekFirst();
+            return first != null ? first.bucket() : -1;
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
@@ -261,15 +291,28 @@ public class CausalRollback<ID extends EntityID, Content> {
      * @return Latest bucket number, or -1 if no checkpoints
      */
     public long getLatestBucket() {
-        return checkpoints.isEmpty() ? -1 : checkpoints.getLast().bucket();
+        lock.readLock().lock();
+        try {
+            var last = checkpoints.peekLast();
+            return last != null ? last.bucket() : -1;
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public String toString() {
-        if (checkpoints.isEmpty()) {
-            return "CausalRollback{empty}";
+        lock.readLock().lock();
+        try {
+            var first = checkpoints.peekFirst();
+            var last = checkpoints.peekLast();
+            if (first == null || last == null) {
+                return "CausalRollback{empty}";
+            }
+            return String.format("CausalRollback{buckets=%d-%d, count=%d}",
+                                first.bucket(), last.bucket(), checkpoints.size());
+        } finally {
+            lock.readLock().unlock();
         }
-        return String.format("CausalRollback{buckets=%d-%d, count=%d}",
-                            getOldestBucket(), getLatestBucket(), checkpoints.size());
     }
 }

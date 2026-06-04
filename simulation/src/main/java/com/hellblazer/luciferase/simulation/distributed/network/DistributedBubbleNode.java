@@ -115,9 +115,11 @@ public class DistributedBubbleNode implements BubbleNetworkChannel.EntityDepartu
             return false;
         }
 
-        // Initiate local migration
+        // Initiate the migration toward the intended remote target. Passing bubble.id()
+        // here registered the entity as migrating to itself, orphaning it in MIGRATING_OUT
+        // (Luciferase-t7bwr).
         migrationIntegration.getOptimisticMigrator()
-            .initiateOptimisticMigration(entityId, bubble.id());
+            .initiateOptimisticMigration(entityId, targetNodeId);
 
         log.debug("Initiated remote migration: {} from {} to {}", entityId, nodeId, targetNodeId);
         return true;

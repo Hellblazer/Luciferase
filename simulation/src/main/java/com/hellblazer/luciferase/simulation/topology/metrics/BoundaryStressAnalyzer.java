@@ -96,7 +96,15 @@ public class BoundaryStressAnalyzer {
      * @param timestamp migration timestamp (milliseconds)
      */
     public void recordMigration(UUID bubbleId, long timestamp) {
-        migrationEvents.computeIfAbsent(bubbleId, k -> new ArrayList<>()).add(timestamp);
+        // The per-bubble event list is a plain ArrayList guarded by synchronizing on the list
+        // itself (see getMigrationRate / cleanOldEntries / getTotalEventCount). The append must
+        // hold that same monitor, otherwise an unsynchronized add() races with a concurrent
+        // synchronized iteration or removeIf, producing ConcurrentModificationException or lost
+        // records (Luciferase-0frcy.49).
+        var events = migrationEvents.computeIfAbsent(bubbleId, k -> new ArrayList<>());
+        synchronized (events) {
+            events.add(timestamp);
+        }
 
         // Periodically clean old entries (every 5 seconds)
         var lastClean = lastCleanupTime.getOrDefault(bubbleId, 0L);

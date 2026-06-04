@@ -11,6 +11,7 @@ package com.hellblazer.luciferase.simulation.distributed.grid;
 import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
@@ -207,6 +208,8 @@ class GridMultiBubbleSimulationTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+            disabledReason = "Wall-clock tick-throughput: asserts >= 90 ticks in a 1.7s window; tick rate varies with CI runner speed. Run via -Pperformance on dedicated hardware.")
     void testRunFor100Ticks() throws InterruptedException {
         var config = GridConfiguration.square(2, 100f);
         var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);

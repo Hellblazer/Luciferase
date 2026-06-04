@@ -114,11 +114,14 @@ class BubbleSplitterStrategyIntegrationTest {
         bubbleGrid.createBubbles(1, (byte) 1, 10);
         var bubble = bubbleGrid.getAllBubbles().iterator().next();
 
-        // Add 5100 entities spread along Y-axis
+        // Add 5100 entities spread along BOTH X and Y. X-spread is required so the
+        // injected X-axis strategy produces a genuine two-sided partition; a degenerate
+        // one-sided split (all entities at the same X) is now rejected (Luciferase-0frcy.40).
         for (int i = 0; i < 5100; i++) {
             var entityId = UUID.randomUUID();
+            var x = (i / 51.0f); // Spread 0-100 along X so the X-axis strategy partitions
             var y = (i / 51.0f); // Spread 0-100 along Y
-            bubble.addEntity(entityId.toString(), new Point3f(50.0f, y, 50.0f), null);
+            bubble.addEntity(entityId.toString(), new Point3f(x, y, 50.0f), null);
             accountant.register(bubble.id(), entityId);
         }
 
@@ -233,19 +236,19 @@ class BubbleSplitterStrategyIntegrationTest {
         var xResult = xAxisSplitter.execute(xProposal);
         var yResult = yAxisSplitter.execute(yProposal);
 
-        // Both should succeed
-        assertTrue(xResult.success(), "X-axis split should succeed");
-        assertTrue(yResult.success(), "Y-axis split should succeed");
-
-        // X-axis split should partition entities (spread along X)
-        // Y-axis split should fail to partition or have all entities on one side (no spread along Y)
-        var xNew = accountant.entitiesInBubble(xResult.newBubbleId()).size();
-        var yNew = accountant.entitiesInBubble(yResult.newBubbleId()).size();
+        // The two strategies produce different OUTCOMES on this distribution: the X-axis split
+        // partitions the X-spread entities into two non-empty sides and succeeds, while the
+        // Y-axis split is degenerate (no variance along Y -> all entities on one side) and is
+        // now rejected fast rather than producing a one-sided partition (Luciferase-0frcy.40).
+        assertTrue(xResult.success(), "X-axis split should succeed: " + xResult.message());
+        assertFalse(yResult.success(),
+                    "Y-axis split on Y-clustered entities is degenerate and must be rejected");
 
         // X-axis split should move approximately half the entities
+        var xNew = accountant.entitiesInBubble(xResult.newBubbleId()).size();
         assertTrue(xNew > 1000 && xNew < 4000, "X-axis split should partition entities: " + xNew);
-        // Y-axis split should move either 0 or all entities (no variance along Y)
-        assertTrue(yNew == 0 || yNew == 5100, "Y-axis split should not partition clustered entities: " + yNew);
+        // Degenerate Y-axis split created no new bubble.
+        assertNull(yResult.newBubbleId(), "Rejected degenerate split must not create a new bubble");
     }
 
     /**

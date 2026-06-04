@@ -73,11 +73,18 @@ public class CubeForest {
     }
 
     /**
-     * Classify a world-space point into one of the 6 S0-S5 tetrahedral types.
+     * Classify a world-space point into one of the 6 tetrahedral types.
      * <p>
-     * Uses the deterministic classification algorithm:
-     * 1. Primary: Which coordinate dominates (X/Y/Z)?
-     * 2. Secondary: Upper or lower diagonal split?
+     * Uses the canonical t8code/Luciferase coordinate-ordering chain
+     * (see CLAUDE.md "Per-type interior ordering"):
+     * <ul>
+     *   <li>t0: x&ge;z&ge;y</li>
+     *   <li>t1: x&ge;y&ge;z</li>
+     *   <li>t2: y&ge;x&ge;z</li>
+     *   <li>t3: y&ge;z&ge;x</li>
+     *   <li>t4: z&ge;y&ge;x</li>
+     *   <li>t5: z&ge;x&ge;y</li>
+     * </ul>
      *
      * @param worldPos Position in world space
      * @return Tetrahedral type (0-5)
@@ -94,20 +101,13 @@ public class CubeForest {
         y = Math.max(0.0f, Math.min(1.0f, y));
         z = Math.max(0.0f, Math.min(1.0f, z));
 
-        // Primary: Which coordinate dominates?
-        boolean xDominant = (x >= y && x >= z);
-        boolean yDominant = (y >= x && y >= z);
-        // zDominant is the remaining case
-
-        // Secondary: Which side of diagonal?
-        boolean upperDiagonal = (x + y + z >= 1.5f);
-
-        if (xDominant) {
-            return upperDiagonal ? (byte) 0 : (byte) 4; // S0 or S4
-        } else if (yDominant) {
-            return upperDiagonal ? (byte) 1 : (byte) 5; // S1 or S5
+        // Canonical coordinate-ordering classification (t8code dtet type ordering).
+        if (x >= y && x >= z) {
+            return (z >= y) ? (byte) 0 : (byte) 1; // t0: x>=z>=y, t1: x>=y>=z
+        } else if (y >= x && y >= z) {
+            return (x >= z) ? (byte) 2 : (byte) 3; // t2: y>=x>=z, t3: y>=z>=x
         } else {
-            return upperDiagonal ? (byte) 2 : (byte) 3; // S2 or S3
+            return (y >= x) ? (byte) 4 : (byte) 5; // t4: z>=y>=x, t5: z>=x>=y
         }
     }
 

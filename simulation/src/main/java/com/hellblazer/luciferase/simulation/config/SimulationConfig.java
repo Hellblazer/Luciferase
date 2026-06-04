@@ -240,6 +240,17 @@ public record SimulationConfig(
                 ", ghostTtlBuckets=" + ghostTtlBuckets
             );
         }
+        // Luciferase-0frcy.112: ghostTtlBuckets is computed by integer division
+        // (int)(ghostTtlMs / bucketIntervalMs). If ghostTtlMs is not a multiple of bucketIntervalMs,
+        // the division silently truncates and the effective TTL diverges from the configured TTL
+        // (e.g. 150ms/100ms -> 1 bucket -> 100ms effective). Reject non-multiples so the configured
+        // TTL is always exact rather than silently shortened.
+        if (ghostTtlMs % bucketIntervalMs != 0) {
+            throw new IllegalArgumentException(
+                "ghostTtlMs must be a multiple of bucketIntervalMs for exact TTL; got ghostTtlMs="
+                + ghostTtlMs + ", bucketIntervalMs=" + bucketIntervalMs
+            );
+        }
     }
 
     /**

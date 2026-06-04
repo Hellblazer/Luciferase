@@ -754,7 +754,17 @@ public class RegionStreamer implements AutoCloseable {
             if (needsRegion && session.pendingSends.get() < config.maxPendingSendsPerClient()) {
                 // Send immediately without waiting for next streaming cycle
                 if (regionCache != null) {
-                    var cacheKey = new RegionCache.CacheKey(regionId, builtRegion.lodLevel());
+                    // A.2 invariant: the build pipeline only stores LOD 0 entries,
+                    // and the streaming cycle (line ~558) and unpin both look up at
+                    // PIPELINE_CANONICAL_LOD. Using builtRegion.lodLevel() here
+                    // would miss the cache for any non-zero lodLevel and silently
+                    // drop the completed build (Luciferase-0frcy.69).
+                    if (builtRegion.lodLevel() != PIPELINE_CANONICAL_LOD) {
+                        log.warn("BuiltRegion {} has non-canonical lodLevel {} (expected {}); "
+                                 + "normalizing cache key to canonical LOD",
+                                 regionId, builtRegion.lodLevel(), PIPELINE_CANONICAL_LOD);
+                    }
+                    var cacheKey = new RegionCache.CacheKey(regionId, PIPELINE_CANONICAL_LOD);
                     var cached = regionCache.get(cacheKey);
                     cached.ifPresent(cachedRegion -> sendBinaryFrameAsync(session, cachedRegion));
                 }

@@ -779,4 +779,71 @@ class BubbleDynamicsManagerTest {
             );
         }, "Should reject null config");
     }
+
+    /**
+     * Luciferase-eegb2: after mergeBubbles, the entityBubbles reverse-map must
+     * resolve every merged entity to the surviving (larger) bubble. The prior
+     * unregisterBubble() unconditionally cleared entityBubbles for the absorbed
+     * bubble's entities, deleting the just-repointed survivor entries; a
+     * subsequent setEntityAffinity() on a transferred entity then threw
+     * "Entity not in specified bubble".
+     */
+    @Test
+    void testMergePreservesReverseMap() {
+        var larger = UUID.randomUUID();
+        var smaller = UUID.randomUUID();
+        var e1 = new TestEntityID("e1");
+        var e2 = new TestEntityID("e2");
+        var e3 = new TestEntityID("e3");  // in smaller bubble
+
+        manager.registerBubble(larger, Set.of(e1, e2));   // size 2 -> survivor
+        manager.registerBubble(smaller, Set.of(e3));      // size 1 -> absorbed
+
+        manager.mergeBubbles(larger, smaller, 100L);
+
+        // Every entity (including the one originally in the smaller bubble) must
+        // now resolve to the survivor. setEntityAffinity verifies the reverse
+        // map: it throws "Entity not in specified bubble" if entityBubbles[e3]
+        // was corrupted.
+        assertDoesNotThrow(() -> manager.setEntityAffinity(e3, larger, 0.9f),
+            "Transferred entity must resolve to survivor bubble after merge");
+        assertDoesNotThrow(() -> manager.setEntityAffinity(e1, larger, 0.9f));
+        assertDoesNotThrow(() -> manager.setEntityAffinity(e2, larger, 0.9f));
+
+        // And the absorbed bubble's stale mapping must NOT resolve.
+        assertThrows(IllegalArgumentException.class,
+            () -> manager.setEntityAffinity(e3, smaller, 0.5f),
+            "Absorbed bubble must no longer own the transferred entity");
+    }
+
+    /**
+     * Luciferase-0frcy.80: the idempotency token must be recorded BEFORE the
+     * entity transfer mutates bubble membership. We assert the token is present
+     * in the migration log after a transfer, and that replaying the same token
+     * is a no-op (the entity is not transferred a second time).
+     */
+    @Test
+    void testTransferRecordsTokenBeforeMutation() {
+        var source = UUID.randomUUID();
+        var target = UUID.randomUUID();
+        var entity = new TestEntityID("mover");
+        var token = UUID.randomUUID();
+
+        manager.registerBubble(source, new HashSet<>(Set.of(entity)));
+        manager.registerBubble(target, new HashSet<>(Set.of(new TestEntityID("t1"))));
+
+        manager.transferEntityWithToken(entity, source, target, 0.5f, token, 100L);
+
+        // Token recorded => entity resolves to target after transfer.
+        assertDoesNotThrow(() -> manager.setEntityAffinity(entity, target, 0.5f),
+            "Entity should be in target after transfer");
+        assertEquals(2, manager.getEntityCount(target),
+            "target holds the moved entity plus its original");
+
+        // Replay same token: must be a no-op (idempotent), not a double transfer.
+        int targetCountBefore = manager.getEntityCount(target);
+        manager.transferEntityWithToken(entity, source, target, 0.5f, token, 101L);
+        assertEquals(targetCountBefore, manager.getEntityCount(target),
+            "Duplicate token replay must not re-transfer the entity");
+    }
 }

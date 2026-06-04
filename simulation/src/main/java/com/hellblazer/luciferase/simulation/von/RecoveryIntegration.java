@@ -101,6 +101,13 @@ public class RecoveryIntegration {
     private final AtomicInteger rankCounter;
     private final Consumer<Event> vonEventHandler;
     private final Consumer<PartitionChangeEvent> recoveryEventHandler;
+    /**
+     * Subscription handle for the fault-handler partition-change listener, retained so
+     * {@link #close()} can unsubscribe. Discarding it leaves the listener (which captures
+     * {@code this}) permanently registered, leaking the integration and delivering events to a
+     * shut-down object (Luciferase-zwyf2).
+     */
+    private final com.hellblazer.luciferase.lucien.balancing.fault.Subscription recoverySubscription;
     private final Map<UUID, Integer> partitionRanks;
 
     // Phase 2: Clock injection for deterministic testing
@@ -168,7 +175,7 @@ public class RecoveryIntegration {
 
         // Subscribe to events
         vonManager.addEventListener(vonEventHandler);
-        faultHandler.subscribeToChanges(recoveryEventHandler);
+        this.recoverySubscription = faultHandler.subscribeToChanges(recoveryEventHandler);
 
         log.info("RecoveryIntegration initialized with clock");
     }
@@ -345,7 +352,11 @@ public class RecoveryIntegration {
      */
     public void close() {
         vonManager.removeEventListener(vonEventHandler);
-        // Note: FaultHandler doesn't provide removeEventListener - subscription is permanent
+        // Luciferase-zwyf2: unsubscribe the fault-handler listener so no PartitionChangeEvents are
+        // delivered after close() and the integration can be garbage-collected.
+        if (recoverySubscription != null) {
+            recoverySubscription.unsubscribe();
+        }
         bubbleToPartition.clear();
         partitionBubbles.clear();
         partitionRanks.clear();
@@ -457,7 +468,6 @@ public class RecoveryIntegration {
                       partitionId, now - lastTime);
             return;
         }
-        lastRecoveryTime.put(partitionId, now);
 
         // BFS with depth tracking
         var queue = new ArrayDeque<RecoveryTask>();
@@ -473,16 +483,20 @@ public class RecoveryIntegration {
                 continue;
             }
 
-            // Process this partition's recovery
-            processPartitionRecovery(task.partitionId);
+            // Process this partition's recovery. Only stamp the cooldown when the
+            // recovery actually succeeded (successfulRejoins > 0); a failed attempt
+            // must remain promptly retriable rather than being suppressed for
+            // RECOVERY_COOLDOWN_MS.
+            var successfulRejoins = processPartitionRecovery(task.partitionId);
+            if (successfulRejoins > 0) {
+                lastRecoveryTime.put(task.partitionId, clock.currentTimeMillis());
+            }
 
             // Queue dependent partitions
             var dependents = recoveryDependencies.get(task.partitionId);
             if (dependents != null) {
                 for (var dependent : dependents) {
                     if (visited.add(dependent)) {
-                        // Update cooldown timestamp for dependent
-                        lastRecoveryTime.put(dependent, clock.currentTimeMillis());
                         queue.add(new RecoveryTask(dependent, task.depth + 1));
                     } else {
                         log.debug("Skipping already visited partition {} (cycle prevention)", dependent);
@@ -499,14 +513,14 @@ public class RecoveryIntegration {
      *
      * @param partitionId Partition to process
      */
-    private void processPartitionRecovery(UUID partitionId) {
+    private int processPartitionRecovery(UUID partitionId) {
         var recoveryStartTime = clock.currentTimeMillis();
         var bubbles = partitionBubbles.get(partitionId);
 
         if (bubbles == null || bubbles.isEmpty()) {
             log.warn("No bubbles found for recovered partition {}", partitionId);
             emitRecoveryEvent(partitionId, 0, 0, 0, 0, false);
-            return;
+            return 0;
         }
 
         int totalBubbles = bubbles.size();
@@ -555,6 +569,7 @@ public class RecoveryIntegration {
 
         log.info("Partition {} recovery complete: {}/{} bubbles rejoined in {}ms (cascade={})",
                 partitionId, successfulRejoins, totalBubbles, recoveryTimeMs, cascadeTriggered);
+        return successfulRejoins;
     }
 
     /**

@@ -151,6 +151,51 @@ class MultiBubbleVisualizationServerTest {
         System.out.println("Sample JSON (first 500 chars): " + body.substring(0, Math.min(500, body.length())));
     }
 
+    /**
+     * Luciferase-0frcy.118: getBubbleBounds() must compute the AABB from the bubble's
+     * registered tetrahedral vertices, not return the hardcoded +/-100 stub. With known
+     * vertices set, the /api/bubbles JSON must report the vertex-derived min/max.
+     */
+    @Test
+    void bubbleBoundsComputedFromVerticesNotHardcodedStub() throws Exception {
+        var grid = new TetreeBubbleGrid((byte) 2);
+        grid.createBubbles(1, (byte) 2, 10);
+        var bubbles = grid.getAllBubbles().stream().toList();
+        assertFalse(bubbles.isEmpty(), "grid should yield at least one bubble");
+        var bubble = bubbles.get(0);
+
+        // Deterministic vertices whose AABB is clearly distinct from the +/-100 stub.
+        var verts = new Point3f[]{
+            new Point3f(1f, 2f, 3f),
+            new Point3f(5f, 2f, 3f),
+            new Point3f(1f, 9f, 3f),
+            new Point3f(1f, 2f, 12f)
+        };
+        var vertices = new HashMap<UUID, Point3f[]>();
+        vertices.put(bubble.id(), verts);
+
+        server.setBubbles(bubbles);
+        server.setBubbleVertices(vertices);
+        server.start();
+        Thread.sleep(100);
+
+        var request = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/api/bubbles"))
+            .GET()
+            .build();
+        var response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        String body = response.body();
+
+        // AABB of the verts: min(1,2,3) max(5,9,12). Must NOT be the +/-100 stub.
+        assertFalse(body.contains("\"maxX\":100.0") || body.contains("\"maxX\":100"),
+                    "bounds must not be the hardcoded +/-100 stub when vertices are set: " + body);
+        assertTrue(body.contains("\"minX\":1.0"), "minX should be 1.0 from vertices: " + body);
+        assertTrue(body.contains("\"maxX\":5.0"), "maxX should be 5.0 from vertices: " + body);
+        assertTrue(body.contains("\"maxY\":9.0"), "maxY should be 9.0 from vertices: " + body);
+        assertTrue(body.contains("\"maxZ\":12.0"), "maxZ should be 12.0 from vertices: " + body);
+    }
+
     private static Map<UUID, Point3f[]> extractBubbleVertices(TetreeBubbleGrid grid, List<EnhancedBubble> bubbles) {
         var vertices = new HashMap<UUID, Point3f[]>();
         var bubblesWithKeys = grid.getBubblesWithKeys();

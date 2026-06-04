@@ -48,6 +48,23 @@ public final class BubbleBounds implements Serializable {
     }
 
     /**
+     * Reconstruct bounds from their constituent root key and RDGCS corners.
+     * <p>
+     * This is the inverse of the {@code rootKey()}/{@code rdgMin()}/{@code rdgMax()} accessors and
+     * exists to round-trip {@code BubbleBounds} across the VoN wire ({@code TransportBubbleBounds},
+     * Luciferase-vzyrf) without re-deriving the RDGCS box from the tetrahedron (which would lose any
+     * box that was grown via {@code expand}/{@code encompassing}).
+     *
+     * @param rootKey the root TetreeKey
+     * @param rdgMin  minimum RDGCS corner
+     * @param rdgMax  maximum RDGCS corner
+     * @return reconstructed BubbleBounds
+     */
+    public static BubbleBounds of(TetreeKey<?> rootKey, Point3i rdgMin, Point3i rdgMax) {
+        return new BubbleBounds(rootKey, rdgMin, rdgMax);
+    }
+
+    /**
      * Create bounds from a TetreeKey.
      * <p>
      * Computes RDGCS min/max from the tetrahedron vertices.
@@ -343,6 +360,22 @@ public final class BubbleBounds implements Serializable {
      */
     public byte type() {
         return rootKey.toTet().type();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof BubbleBounds that)) {
+            return false;
+        }
+        return rootKey.equals(that.rootKey) && rdgMin.equals(that.rdgMin) && rdgMax.equals(that.rdgMax);
+    }
+
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash(rootKey, rdgMin, rdgMax);
     }
 
     @Override

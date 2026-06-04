@@ -28,9 +28,13 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
     private final Queue<PendingMessage> outboundMessages = new ConcurrentLinkedQueue<>();
     private final Random random = new Random();
 
-    private EntityDepartureListener departureListener;
-    private ViewSynchronyAckListener ackListener;
-    private EntityRollbackListener rollbackListener;
+    // volatile: set from the test/setup thread but read by delivery callbacks on the
+    // ScheduledExecutorService thread (networkLatencyMs > 0 path). Without the memory
+    // barrier the scheduler thread could observe a stale null and silently drop the
+    // delivery (Luciferase-0frcy.72), matching the pattern already used for `clock`.
+    private volatile EntityDepartureListener departureListener;
+    private volatile ViewSynchronyAckListener ackListener;
+    private volatile EntityRollbackListener rollbackListener;
 
     private long networkLatencyMs = 0;
     private double packetLossRate = 0.0;
@@ -224,6 +228,15 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
         }
         NETWORK.remove(nodeId);
         log.debug("Network channel shut down: {}", nodeId);
+    }
+
+    /**
+     * AutoCloseable contract (Luciferase-zwyf2): delegates to {@link #shutdown()} so the scheduler
+     * is released via the {@link BubbleNetworkChannel} interface / try-with-resources. Idempotent.
+     */
+    @Override
+    public void close() {
+        shutdown();
     }
 
     /**

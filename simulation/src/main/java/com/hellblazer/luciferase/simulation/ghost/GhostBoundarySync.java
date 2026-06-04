@@ -86,6 +86,11 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
         final GhostEntityHalo<ID, Content> ghost;
         final UUID sourceBubbleId;
         final long bucket;
+        /**
+         * Bucket at which this entry was last transmitted to its neighbor, or -1 if never sent.
+         * Used to suppress redundant re-broadcast of unchanged ghosts (Luciferase-0frcy.101).
+         */
+        volatile long lastSentBucket = -1L;
 
         GhostEntry(GhostEntityHalo<ID, Content> ghost, UUID sourceBubbleId, long bucket) {
             this.ghost = ghost;
@@ -163,8 +168,19 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
                 continue;
             }
 
-            // Convert to SimulationGhostEntity and send batch
-            var ghostBatch = ghosts.values().stream()
+            // Luciferase-0frcy.101: only transmit ghosts that changed since their last send (dirty),
+            // plus a heartbeat for unchanged ghosts approaching TTL expiry so they are refreshed before
+            // they would otherwise be culled. This replaces the previous unconditional re-broadcast of
+            // every tracked ghost on every bucket boundary (O(activeGhosts*neighbors) per bucket).
+            var toSend = ghosts.values().stream()
+                .filter(e -> shouldTransmit(e, bucket))
+                .collect(Collectors.toList());
+
+            if (toSend.isEmpty()) {
+                continue;
+            }
+
+            var ghostBatch = toSend.stream()
                 .map(e -> new SimulationGhostEntity<>(
                     e.ghost,
                     e.sourceBubbleId,
@@ -176,15 +192,44 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
 
             ghostSender.accept(neighborId, ghostBatch);
 
-            // Notify bubble tracker and health of discovered bubbles
-            for (var ghostEntry : ghosts.values()) {
+            // Mark transmitted entries as sent at this bucket and notify trackers/health.
+            for (var ghostEntry : toSend) {
+                ghostEntry.lastSentBucket = bucket;
                 bubbleTracker.recordGhostInteraction(ghostEntry.sourceBubbleId);
                 health.recordGhostSource(ghostEntry.sourceBubbleId);
             }
         }
 
-        // Expire stale ghosts
+        // Expire stale ghosts. expireStaleGhosts() and enforceMemoryLimit() record evicted ids in
+        // expiredGhosts (a per-bucket diagnostic read by getExpiredGhostCount()). Luciferase-zwyf2:
+        // clear it at the start of each bucket so it tracks only this bucket's evictions instead of
+        // accumulating one entry per eviction for the entire simulation lifetime (unbounded leak).
+        expiredGhosts.clear();
         expireStaleGhosts(bucket);
+    }
+
+    /**
+     * Decide whether a ghost entry must be transmitted at the given bucket boundary
+     * (Luciferase-0frcy.101).
+     * <p>
+     * Returns true when the entry is <em>dirty</em> — never sent, or (re)added since it was last sent
+     * ({@code lastSentBucket < bucket} for an entry whose own {@code bucket == bucket}) — or when it is
+     * an unchanged entry that is approaching TTL expiry and needs a heartbeat refresh so the neighbor's
+     * copy is not culled. An unchanged ghost that was recently sent is suppressed.
+     *
+     * @param e      the ghost entry
+     * @param bucket the bucket boundary being processed
+     * @return true if the entry should be included in this bucket's batch
+     */
+    private boolean shouldTransmit(GhostEntry<ID, Content> e, long bucket) {
+        if (e.lastSentBucket < 0) {
+            return true; // never sent
+        }
+        if (e.bucket >= bucket && e.lastSentBucket < e.bucket) {
+            return true; // updated since last send (dirty)
+        }
+        // Heartbeat: refresh unchanged ghosts before they would expire at the neighbor.
+        return (bucket - e.lastSentBucket) >= (GHOST_TTL_BUCKETS - 1);
     }
 
     /**

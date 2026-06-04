@@ -88,20 +88,17 @@ public class TetrahedralContainmentChecker {
             return migrations;
         }
 
-        // Get the bubble's TetreeKey
-        // We need to find which key this bubble corresponds to in the grid
-        TetreeKey<?> bubbleKey = null;
-        for (var candidateBubble : bubbleGrid.getAllBubbles()) {
-            if (candidateBubble.id().equals(bubble.id())) {
-                // Find the key from the grid
-                // NOTE: This is inefficient - consider caching bubble→key mapping
-                bubbleKey = findBubbleKey(candidateBubble);
-                break;
-            }
-        }
+        // Get the bubble's TetreeKey directly from its own bounds — O(1).
+        // The previous implementation scanned bubbleGrid.getAllBubbles() to find
+        // the matching bubble and then called findBubbleKey(), which scanned the
+        // same list a SECOND time, for an O(n) cost per call. Since checkMigrations
+        // is invoked once per bubble per tick, that made the overall cost O(n^2)
+        // in bubble count every tick (Luciferase-0frcy.59). The source key is
+        // simply this bubble's root key — no grid scan is required.
+        TetreeKey<?> bubbleKey = bubble.bounds().rootKey();
 
         if (bubbleKey == null) {
-            // Bubble not found in grid - skip migration check
+            // Bubble has no key (no bounds) - skip migration check
             return migrations;
         }
 
@@ -175,30 +172,6 @@ public class TetrahedralContainmentChecker {
             // (This prevents migration failures from crashing simulation)
             return null;
         }
-    }
-
-    /**
-     * Find the TetreeKey for a bubble.
-     * <p>
-     * NOTE: This is a temporary inefficient implementation.
-     * In production, consider maintaining a bubble→key cache.
-     *
-     * @param bubble Bubble to find key for
-     * @return TetreeKey or null if not found
-     */
-    private TetreeKey<?> findBubbleKey(EnhancedBubble bubble) {
-        // Iterate through all keys in grid to find matching bubble
-        for (var candidateBubble : bubbleGrid.getAllBubbles()) {
-            if (candidateBubble.id().equals(bubble.id())) {
-                // Search for the key by comparing bubbles
-                // This is inefficient but correct
-                var bounds = candidateBubble.bounds();
-                if (bounds != null) {
-                    return bounds.rootKey();
-                }
-            }
-        }
-        return null;
     }
 
     /**

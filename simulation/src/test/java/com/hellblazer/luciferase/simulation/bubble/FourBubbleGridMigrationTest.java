@@ -11,6 +11,7 @@ import com.hellblazer.luciferase.simulation.distributed.migration.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -119,6 +120,8 @@ class FourBubbleGridMigrationTest {
 
     @Test
     @DisplayName("Performance: 100 migrations across 4-bubble grid")
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+            disabledReason = "Latency benchmark: asserts 100 migrations complete < 100ms; CI runner speed varies. Run via -Pperformance on dedicated hardware.")
     void testGridPerformance() {
         long start = System.nanoTime();
 

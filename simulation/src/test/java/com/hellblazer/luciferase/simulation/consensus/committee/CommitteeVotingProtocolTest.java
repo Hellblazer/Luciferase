@@ -88,6 +88,35 @@ class CommitteeVotingProtocolTest {
     }
 
     /**
+     * Regression for Luciferase-ltxta: a small BFT committee drawn from a LARGE cluster
+     * must reach consensus with committee-sized votes. Pre-fix the ballot box derived
+     * quorum from the full-cluster context (size=100, toleranceLevel=33 → quorum 34),
+     * which a 7-member committee could never reach — every migration silently timed out.
+     */
+    @Test
+    void testSmallCommitteeReachesQuorumInLargeCluster() throws Exception {
+        // Full cluster is 100 nodes; the ballot box must NOT use this for quorum.
+        when(mockContext.size()).thenReturn(100);
+        when(mockContext.toleranceLevel()).thenReturn(33);
+
+        var protocol = new CommitteeVotingProtocol(mockContext, config, scheduler);
+        var proposal = createProposal();
+        var committee = createCommittee(7);  // committee majority = (7-1)/2 + 1 = 4
+
+        var future = protocol.requestConsensus(proposal, committee);
+
+        // 4 distinct committee YES votes reach the committee-relative quorum.
+        for (int i = 0; i < 4; i++) {
+            protocol.recordVote(new Vote(
+                proposal.proposalId(), DigestAlgorithm.DEFAULT.digest("member-" + i), true, viewId));
+        }
+
+        var result = assertTimeoutPreemptively(java.time.Duration.ofSeconds(2),
+            () -> future.get(2, TimeUnit.SECONDS));
+        assertTrue(result, "Committee-sized YES majority must reach quorum despite a 100-node cluster context");
+    }
+
+    /**
      * Future should complete when quorum is reached.
      */
     @Test
@@ -248,22 +277,6 @@ class CommitteeVotingProtocolTest {
             protocol.recordVote(vote);
         }
         assertFalse(future2.get(1, TimeUnit.SECONDS), "NO majority should return false");
-    }
-
-    /**
-     * Test isQuorumReached() method directly.
-     */
-    @Test
-    void testIsQuorumReached() {
-        // 7 nodes → toleranceLevel=3, quorum=4
-        when(mockContext.size()).thenReturn(7);
-        when(mockContext.toleranceLevel()).thenReturn(3);
-
-        var protocol = new CommitteeVotingProtocol(mockContext, config, scheduler);
-
-        assertFalse(protocol.isQuorumReached(3), "3 votes should not reach quorum (need 4)");
-        assertTrue(protocol.isQuorumReached(4), "4 votes should reach quorum");
-        assertTrue(protocol.isQuorumReached(5), "5 votes should exceed quorum");
     }
 
     // Helper methods

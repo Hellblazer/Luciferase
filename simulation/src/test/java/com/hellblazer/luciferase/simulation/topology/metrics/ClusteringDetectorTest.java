@@ -43,11 +43,14 @@ class ClusteringDetectorTest {
 
     @Test
     void testClusterDetectionWithSufficientEntities() {
-        // Add 200 entities in two distinct clusters
+        // Add 200 entities in two distinct clusters. IDs are in the realistic
+        // "entity-{uuid}" form so ClusteringDetector.parseEntityId resolves them
+        // (Luciferase-0frcy.124 now skips genuinely-malformed IDs instead of
+        // fabricating a hash UUID).
         // Cluster 1: around (10, 10, 10)
         for (int i = 0; i < 100; i++) {
             bubble.addEntity(
-                "entity-cluster1-" + i,
+                "entity-" + UUID.randomUUID(),
                 new Point3f(10 + i * 0.1f, 10 + i * 0.1f, 10 + i * 0.1f),
                 null
             );
@@ -56,7 +59,7 @@ class ClusteringDetectorTest {
         // Cluster 2: around (100, 100, 100)
         for (int i = 0; i < 100; i++) {
             bubble.addEntity(
-                "entity-cluster2-" + i,
+                "entity-" + UUID.randomUUID(),
                 new Point3f(100 + i * 0.1f, 100 + i * 0.1f, 100 + i * 0.1f),
                 null
             );
@@ -99,7 +102,7 @@ class ClusteringDetectorTest {
         for (int i = 0; i < 100; i++) {
             // Entities very close together
             bubble.addEntity(
-                "tight-entity-" + i,
+                "entity-" + UUID.randomUUID(),
                 new Point3f(50 + i * 0.01f, 50 + i * 0.01f, 50 + i * 0.01f),
                 null
             );
@@ -120,17 +123,17 @@ class ClusteringDetectorTest {
         var bubble1 = new EnhancedBubble(UUID.randomUUID(), (byte) 10, 10);
         var bubble2 = new EnhancedBubble(UUID.randomUUID(), (byte) 10, 10);
 
-        // Bubble 1: Two distinct clusters
+        // Bubble 1: Two distinct clusters (realistic "entity-{uuid}" IDs — see .124)
         for (int i = 0; i < 100; i++) {
-            bubble1.addEntity("b1-c1-" + i, new Point3f(10 + i * 0.1f, 10, 10), null);
+            bubble1.addEntity("entity-" + UUID.randomUUID(), new Point3f(10 + i * 0.1f, 10, 10), null);
         }
         for (int i = 0; i < 100; i++) {
-            bubble1.addEntity("b1-c2-" + i, new Point3f(100 + i * 0.1f, 100, 100), null);
+            bubble1.addEntity("entity-" + UUID.randomUUID(), new Point3f(100 + i * 0.1f, 100, 100), null);
         }
 
         // Bubble 2: Uniform distribution (no clear clusters)
         for (int i = 0; i < 100; i++) {
-            bubble2.addEntity("b2-uniform-" + i, new Point3f(i * 2.0f, i * 2.0f, i * 2.0f), null);
+            bubble2.addEntity("entity-" + UUID.randomUUID(), new Point3f(i * 2.0f, i * 2.0f, i * 2.0f), null);
         }
 
         var clusters1 = detector.detectClusters(bubble1);
@@ -151,5 +154,32 @@ class ClusteringDetectorTest {
         var clusters = detector.detectClusters(emptyBubble);
 
         assertTrue(clusters.isEmpty(), "Empty bubble should have no clusters");
+    }
+
+    // ---- Luciferase-0frcy.124: malformed IDs must NOT fabricate a UUID -----
+
+    @Test
+    void parseEntityIdThrowsOnMalformedIdInsteadOfFabricatingUuid() throws Exception {
+        var m = ClusteringDetector.class.getDeclaredMethod("parseEntityId", String.class);
+        m.setAccessible(true);
+
+        // A plain UUID parses.
+        var uuid = UUID.randomUUID();
+        assertEquals(uuid, m.invoke(detector, uuid.toString()));
+
+        // "entity-{uuid}" form parses to the embedded UUID.
+        assertEquals(uuid, m.invoke(detector, "entity-" + uuid));
+
+        // A malformed ID must throw IllegalArgumentException (honoring the Javadoc
+        // contract) rather than silently returning a hash-derived UUID that would
+        // never match a real entity record and would corrupt coherence scoring.
+        var bad = "not-a-uuid";
+        var ex = assertThrows(java.lang.reflect.InvocationTargetException.class,
+                              () -> m.invoke(detector, bad));
+        assertInstanceOf(IllegalArgumentException.class, ex.getCause(),
+                         "Malformed entity ID must raise IllegalArgumentException");
+
+        // Guard against regression to the fabricated-UUID behavior.
+        assertNotEquals(UUID.nameUUIDFromBytes(bad.getBytes()), ex.getCause());
     }
 }

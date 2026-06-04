@@ -29,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * EnhancedBubbleMigrationIntegration - Migration coordination for EnhancedBubble (Phase 7E Day 4)
@@ -99,11 +100,18 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
     private final int viewStabilityTicks;
     private final Map<UUID, Integer> entityStabilityTicks = new ConcurrentHashMap<>();
 
-    // Metrics
-    private long totalMigrationsInitiated = 0;
-    private long totalMigrationsCompleted = 0;
-    private long totalMigrationsRolledBack = 0;
-    private long totalTimeoutsProcessed = 0;
+    // Most recent EntityDepartureEvent produced by detectAndInitiateMigrations (diagnostics/testing).
+    private volatile EntityDepartureEvent lastDepartureEvent;
+
+    // Metrics. AtomicLong because these counters are mutated from the tick
+    // thread (processMigrations) and from FSM listener callbacks
+    // (onEntityStateTransition / onViewChangeRollback) which can run on a
+    // different thread; plain non-volatile longs are not guaranteed atomic and
+    // getMetrics() could read torn/stale values (Luciferase-0frcy.58).
+    private final AtomicLong totalMigrationsInitiated = new AtomicLong(0);
+    private final AtomicLong totalMigrationsCompleted = new AtomicLong(0);
+    private final AtomicLong totalMigrationsRolledBack = new AtomicLong(0);
+    private final AtomicLong totalTimeoutsProcessed = new AtomicLong(0);
 
     /**
      * Create migration integration for an EnhancedBubble.
@@ -161,44 +169,99 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
         // Get entities that crossed boundaries
         var crossingEntities = migrationOracle.getEntitiesCrossingBoundaries();
 
-        for (var entityId : crossingEntities) {
+        for (var crossingId : crossingEntities) {
             try {
-                // Determine target bubble
-                var entityRecord = bubble.getEntities().stream()
-                    .filter(id -> id.equals(entityId))
+                // Resolve the entity's current record (position + content) from the bubble. The
+                // oracle reports IDs as Strings; match them against this bubble's entity records.
+                var entityRecord = bubble.getAllEntityRecords().stream()
+                    .filter(record -> record.id().equals(crossingId))
                     .findFirst();
 
                 if (entityRecord.isEmpty()) {
+                    // Crossing reported for an entity this bubble does not own — nothing to migrate.
                     continue;
                 }
 
-                // Get entity position (would need to extend EnhancedBubble to provide this)
-                // For now, we skip detailed position tracking
-                // In real implementation, would get actual position and determine target
+                var position = entityRecord.get().position();
 
-                // Check current FSM state
+                // Entity IDs flow through the FSM and OptimisticMigrator as UUIDs. The oracle
+                // reports the UUID's string form; parse it back so the FSM key, the optimistic
+                // migrator, and the downstream stability/commit path (which key on UUID) all
+                // agree on identity.
+                final UUID entityId;
+                try {
+                    entityId = UUID.fromString(crossingId);
+                } catch (IllegalArgumentException e) {
+                    log.warn("Crossing entity id {} is not a UUID; cannot migrate", crossingId);
+                    continue;
+                }
+
+                // Only own (OWNED) entities can begin an outbound migration. Initialize tracking
+                // if the FSM has not yet seen this entity.
                 var currentState = migrationFsm.getState(entityId);
+                if (currentState == null) {
+                    migrationFsm.initializeOwned(entityId);
+                    currentState = migrationFsm.getState(entityId);
+                }
+
                 if (currentState == EntityMigrationState.OWNED) {
-                    // Determine target bubble from position
-                    // UUID targetBubble = migrationOracle.getTargetBubble(position);
+                    // Resolve the destination bubble for the entity's new position.
+                    var targetBubble = migrationOracle.getTargetBubble(position);
+                    if (targetBubble == null || targetBubble.equals(bubble.id())) {
+                        // No distinct destination — not actually leaving this bubble.
+                        continue;
+                    }
 
-                    // Initiate optimistic migration
-                    // optimisticMigrator.initiateOptimisticMigration(entityId, targetBubble);
+                    // Begin optimistic migration: subsequent physics updates are deferred until
+                    // the migration commits or rolls back.
+                    optimisticMigrator.initiateOptimisticMigration(entityId, targetBubble);
 
-                    // Transition FSM: OWNED → MIGRATING_OUT
-                    // migrationFsm.transition(entityId, EntityMigrationState.MIGRATING_OUT);
+                    // Drive the FSM: OWNED → MIGRATING_OUT. This fires onEntityStateTransition,
+                    // which freezes physics and records the migration context. If the transition
+                    // is rejected (e.g. invalid/blocked), undo the optimistic migration.
+                    var transition = migrationFsm.transition(entityId, EntityMigrationState.MIGRATING_OUT);
+                    if (!transition.success) {
+                        log.debug("FSM rejected OWNED->MIGRATING_OUT for entity {}: {}",
+                                entityId, transition.reason);
+                        optimisticMigrator.rollbackMigration(entityId, "fsm_rejected");
+                        continue;
+                    }
 
-                    totalMigrationsInitiated++;
+                    // Notify the destination that the entity is departing this bubble.
+                    sendEntityDepartureEvent(entityId, targetBubble);
 
-                    log.debug("Migration initiated for entity: {}", entityId);
+                    totalMigrationsInitiated.incrementAndGet();
+
+                    log.debug("Migration initiated for entity {} -> target bubble {}", entityId, targetBubble);
                 }
             } catch (Exception e) {
-                log.error("Error processing migration for entity {}: {}", entityId, e.getMessage());
+                log.error("Error processing migration for entity {}: {}", crossingId, e.getMessage());
             }
         }
 
         // Clear crossing cache for next tick
         migrationOracle.clearCrossingCache();
+    }
+
+    /**
+     * Send an EntityDepartureEvent to the destination bubble announcing that the entity is
+     * leaving this bubble (source side of the migration handshake).
+     * <p>
+     * The cross-bubble transport channel is not owned by this class; consistent with the other
+     * {@code send*} handlers here, the event is constructed (so the payload is real, not a stub)
+     * and logged. The constructed event is retained for diagnostics/testing.
+     *
+     * @param entityId     entity departing this bubble
+     * @param targetBubble destination bubble
+     */
+    private void sendEntityDepartureEvent(UUID entityId, UUID targetBubble) {
+        // No Lamport clock source is wired into this bubble integration; use 0 rather than
+        // fabricate a timestamp. Cross-bubble ordering is handled by the transport layer when
+        // the channel is wired.
+        var event = new EntityDepartureEvent(entityId, bubble.id(), targetBubble,
+                EntityMigrationState.MIGRATING_OUT, 0L);
+        lastDepartureEvent = event;
+        log.debug("EntityDepartureEvent sent for entity {} -> target {}", entityId, targetBubble);
     }
 
     /**
@@ -242,7 +305,7 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
                     // Send ViewSynchronyAck to source
                     sendViewSynchronyAck(entityId);
 
-                    totalMigrationsCompleted++;
+                    totalMigrationsCompleted.incrementAndGet();
 
                     log.debug("Migration completed for entity: {} (stable for {} ticks)",
                             entityId, stableTicks);
@@ -266,20 +329,25 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
      */
     private void processTimeouts(long simulationTime) {
         try {
+            // checkTimeouts() reports the timed-out entities WITHOUT mutating FSM state.
+            // Drive the FSM rollback once per timed-out entity via an explicit per-entity
+            // transition. (Calling migrationFsm.processTimeouts() here would re-run
+            // checkTimeouts() internally and reprocess ALL timed-out entities once per
+            // iteration — N+1 processing per tick, triggering spurious rollbacks. See
+            // Luciferase-0frcy.13.)
             var timedOutEntities = migrationFsm.checkTimeouts(simulationTime);
 
             for (var entityId : timedOutEntities) {
-                // Rollback the migration if entity is a UUID
-                if (entityId instanceof UUID) {
-                    optimisticMigrator.rollbackMigration((UUID) entityId, "timeout");
+                if (entityId instanceof UUID uuid) {
+                    optimisticMigrator.rollbackMigration(uuid, "timeout");
 
-                    // Transition FSM to handle timeout
-                    migrationFsm.processTimeouts(simulationTime);
+                    // Drive the FSM rollback for THIS entity only.
+                    migrationFsm.transition(uuid, EntityMigrationState.ROLLBACK_OWNED);
 
                     // Send rollback event
-                    sendEntityRollbackEvent((UUID) entityId, "timeout");
+                    sendEntityRollbackEvent(uuid, "timeout");
 
-                    totalTimeoutsProcessed++;
+                    totalTimeoutsProcessed.incrementAndGet();
                 }
 
                 log.warn("Migration timeout for entity: {}", entityId);
@@ -311,27 +379,35 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
 
         log.debug("Entity {} transitioned: {} → {}", entityId, fromState, toState);
 
+        // This integration keys the FSM exclusively on UUID (see detectAndInitiateMigrations,
+        // which parses the oracle's String ids back to UUID). The stability map is therefore
+        // UUID-keyed. A non-UUID key reaching here means an upstream contract was violated;
+        // surface it loudly rather than silently dropping the MIGRATING_IN→OWNED commit path
+        // (the only path by which a migration completes on the target bubble). See
+        // Luciferase-0frcy.12.
+        if (!(entityId instanceof UUID uuid)) {
+            log.error("Migration FSM emitted non-UUID entity id {} ({}) for transition {}→{}; "
+                      + "stability/commit tracking requires UUID keys and will be skipped",
+                      entityId, entityId == null ? "null" : entityId.getClass().getName(),
+                      fromState, toState);
+            return;
+        }
+
         // Handle specific transitions
         if (toState == EntityMigrationState.MIGRATING_OUT) {
             // Entity is leaving this bubble - freeze physics
-            freezeEntityPhysics(entityId.toString());
+            freezeEntityPhysics(uuid.toString());
         } else if (toState == EntityMigrationState.MIGRATING_IN) {
             // Entity arriving - start deferring physics updates
-            startDeferringUpdates(entityId.toString());
-            if (entityId instanceof UUID) {
-                entityStabilityTicks.put((UUID) entityId, 0);
-            }
+            startDeferringUpdates(uuid.toString());
+            entityStabilityTicks.put(uuid, 0);
         } else if (toState == EntityMigrationState.ROLLBACK_OWNED) {
             // Migration rolled back - thaw physics
-            thawEntityPhysics(entityId.toString());
-            if (entityId instanceof UUID) {
-                entityStabilityTicks.remove(entityId);
-            }
+            thawEntityPhysics(uuid.toString());
+            entityStabilityTicks.remove(uuid);
         } else if (toState == EntityMigrationState.GHOST) {
             // Target abandoned migration - forget this entity
-            if (entityId instanceof UUID) {
-                entityStabilityTicks.remove(entityId);
-            }
+            entityStabilityTicks.remove(uuid);
         }
     }
 
@@ -349,7 +425,7 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
         // Clear stability tracking for rolled-back entities
         entityStabilityTicks.clear();
 
-        totalMigrationsRolledBack += rolledBackCount;
+        totalMigrationsRolledBack.addAndGet(rolledBackCount);
     }
 
     /**
@@ -422,10 +498,10 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
         return String.format(
             "EnhancedBubbleMigrationIntegration{initiated=%d, completed=%d, rolledBack=%d, " +
             "timeouts=%d, pending=%d}",
-            totalMigrationsInitiated,
-            totalMigrationsCompleted,
-            totalMigrationsRolledBack,
-            totalTimeoutsProcessed,
+            totalMigrationsInitiated.get(),
+            totalMigrationsCompleted.get(),
+            totalMigrationsRolledBack.get(),
+            totalTimeoutsProcessed.get(),
             entityStabilityTicks.size()
         );
     }
@@ -437,6 +513,25 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
      */
     public MigrationOracle getMigrationOracle() {
         return migrationOracle;
+    }
+
+    /**
+     * Get the number of migrations initiated by boundary-crossing detection.
+     *
+     * @return total migrations initiated
+     */
+    public long getTotalMigrationsInitiated() {
+        return totalMigrationsInitiated.get();
+    }
+
+    /**
+     * Get the most recent EntityDepartureEvent produced during migration initiation
+     * (diagnostics/testing).
+     *
+     * @return last departure event, or {@code null} if none has been produced
+     */
+    public EntityDepartureEvent getLastDepartureEvent() {
+        return lastDepartureEvent;
     }
 
     /**

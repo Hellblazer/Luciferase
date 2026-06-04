@@ -144,8 +144,17 @@ public class MigrationRouter {
      * @return Direction if target is valid, null otherwise
      */
     private MigrationDirection validateTarget(BubbleCoordinate source, MigrationDirection direction) {
-        var target = direction.apply(source);
-        return gridConfig.isValid(target) ? direction : null;
+        // Bounds-check the delta BEFORE constructing the coordinate (Luciferase-0frcy.21).
+        // BubbleCoordinate's compact constructor throws IllegalArgumentException for negative
+        // coordinates, so direction.apply(source) on an edge/corner cell (e.g. row=0 + SOUTH, or
+        // col=0 + WEST) threw before isValid() could return false. getValidDirections() iterates
+        // all 8 directions and tripped this for every edge cell. Guard, then return.
+        int newRow = source.row() + direction.deltaRow();
+        int newColumn = source.column() + direction.deltaColumn();
+        if (newRow < 0 || newColumn < 0 || newRow >= gridConfig.rows() || newColumn >= gridConfig.columns()) {
+            return null;
+        }
+        return direction;
     }
 
     /**

@@ -110,11 +110,12 @@ public class MigrationMetrics {
         // Circular buffer for percentile calculation (Luciferase-6k23)
         private final long[] histogram = new long[HISTOGRAM_SIZE];
         private int histogramIndex = 0;
+        // Luciferase-0frcy.110: number of histogram slots actually written, capped at HISTOGRAM_SIZE.
+        // Guarded by synchronized(histogram). `getPercentile()` derives its sample count from `filled`
+        // (not the unbounded `count`) so it never sorts uninitialized zero slots.
+        private int filled = 0;
 
         public void record(long latencyMs) {
-            count.incrementAndGet();
-            sum.addAndGet(latencyMs);
-
             // Update min
             var currentMin = min.get();
             while (latencyMs < currentMin && !min.compareAndSet(currentMin, latencyMs)) {
@@ -127,10 +128,20 @@ public class MigrationMetrics {
                 currentMax = max.get();
             }
 
-            // Store in circular buffer for percentile calculation (Luciferase-6k23)
+            // Luciferase-0frcy.110: publish the histogram slot and `filled` BEFORE the observable
+            // `count`/`sum`, all within the same critical section. A reader that sees count > 0 is
+            // therefore guaranteed to also see filled > 0 (the slot write and filled++ happened-before
+            // the count increment, and `filled` is monotonic once non-zero), so getPercentile() can
+            // never return 0 for a non-empty tracker. count/sum are incremented LAST so they are never
+            // observable ahead of the sample that backs the percentile.
             synchronized (histogram) {
                 histogram[histogramIndex] = latencyMs;
                 histogramIndex = (histogramIndex + 1) % HISTOGRAM_SIZE;
+                if (filled < HISTOGRAM_SIZE) {
+                    filled++;
+                }
+                sum.addAndGet(latencyMs);
+                count.incrementAndGet();
             }
         }
 
@@ -194,11 +205,13 @@ public class MigrationMetrics {
          */
         private long getPercentile(double percentile) {
             synchronized (histogram) {
-                var c = count.get();
-                if (c == 0) return 0;
+                // Luciferase-0frcy.110: use `filled` (slots actually written under this lock), not
+                // count.get(). count is incremented before the histogram write, so it can exceed the
+                // number of populated slots and pull uninitialized zeros into the percentile sort.
+                var sampleCount = filled;
+                if (sampleCount == 0) return 0;
 
                 // Copy and sort histogram (only populated portion)
-                var sampleCount = (int) Math.min(c, HISTOGRAM_SIZE);
                 var sorted = new long[sampleCount];
                 System.arraycopy(histogram, 0, sorted, 0, sampleCount);
                 java.util.Arrays.sort(sorted);
@@ -210,7 +223,27 @@ public class MigrationMetrics {
                 return sorted[index];
             }
         }
+
+        /**
+         * Atomically consistent snapshot of count and percentiles (Luciferase-0frcy.110).
+         * <p>
+         * Taken under the same {@code histogram} monitor that {@link #record(long)} holds when it
+         * publishes the slot, {@code filled}, and {@code count}, so the returned {@code count} and
+         * percentiles always reflect the same set of samples. A lock-free reader that calls
+         * {@link #count()} and {@link #getP99Latency()} separately can observe a torn pair
+         * (count read after a percentile read on an empty tracker); callers needing a consistent
+         * pair must use this method.
+         */
+        public LatencySnapshot snapshot() {
+            synchronized (histogram) {
+                return new LatencySnapshot(count.get(), getPercentile(0.50), getPercentile(0.95),
+                                           getPercentile(0.99));
+            }
+        }
     }
+
+    /** Atomically consistent latency snapshot (count + percentiles). */
+    public record LatencySnapshot(long count, long p50, long p95, long p99) {}
 
     // Counters
     private final AtomicLong    successfulMigrations = new AtomicLong(0);

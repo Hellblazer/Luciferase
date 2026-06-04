@@ -10,6 +10,8 @@ package com.hellblazer.luciferase.simulation.viz.render.protocol;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.simulation.viz.render.RegionBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -27,10 +29,19 @@ import java.nio.ByteOrder;
  *   6    |  1   | level          | Region octree/tetree level (0-21)
  *   7    |  1   | reserved       | Reserved (0x00)
  *   8    |  8   | key            | Spatial key (Morton code or TetreeKey low bits)
- *  16    |  4   | buildVersion   | Build timestamp/version
+ *  16    |  4   | buildVersion   | Build version counter (LOW 32 bits; see note)
  *  20    |  4   | dataSize       | Payload size in bytes
  *  24    |  N   | payload        | ESVO/ESVT binary data
  * </pre>
+ * <p>
+ * <b>buildVersion truncation (Luciferase-0frcy.73):</b> {@code buildVersion} is a
+ * {@code long} counter on the source records but the wire format reserves only 4
+ * bytes, so the encoder writes the low 32 bits (via {@link #buildVersionToWire(long)},
+ * which logs a warning once the counter exceeds {@link Integer#MAX_VALUE}). The
+ * counter is monotonic and wraps after ~4.29e9 builds; consumers MUST compare wire
+ * build versions with {@link #compareBuildVersions(int, int)} (unsigned) rather than
+ * signed {@code <}/{@code >} so the wrap is handled predictably. Extending the header
+ * to carry a full {@code long} requires a protocol version bump and is deferred.
  * <p>
  * All multi-byte fields use little-endian byte order.
  * <p>
@@ -40,8 +51,42 @@ import java.nio.ByteOrder;
  */
 public final class BinaryFrameCodec {
 
+    private static final Logger log = LoggerFactory.getLogger(BinaryFrameCodec.class);
+
     private BinaryFrameCodec() {
         // Prevent instantiation
+    }
+
+    /**
+     * Truncate a 64-bit build-version counter to the 32-bit wire field, warning once
+     * the counter has grown past what the wire field can represent (Luciferase-0frcy.73).
+     * <p>
+     * The wire format reserves only 4 bytes for {@code buildVersion}. The low 32 bits
+     * are written; the counter is monotonic so wrap-around is predictable as long as
+     * consumers compare with {@link #compareBuildVersions(int, int)}. Once the source
+     * counter exceeds {@link Integer#MAX_VALUE} the high bits are silently dropped, so
+     * a warning is emitted to make the schema trap observable in logs.
+     *
+     * @param buildVersion the 64-bit source build version
+     * @return the low 32 bits, as an int, for {@code putInt}
+     */
+    static int buildVersionToWire(long buildVersion) {
+        if (buildVersion > Integer.MAX_VALUE || buildVersion < 0) {
+            log.warn("buildVersion {} exceeds 32-bit wire field; truncating to low 32 bits {} "
+                     + "(consumers must use compareBuildVersions for unsigned ordering)",
+                     buildVersion, buildVersion & 0xFFFF_FFFFL);
+        }
+        return (int) buildVersion;
+    }
+
+    /**
+     * Compare two wire build-version values using unsigned semantics so the 32-bit
+     * counter wrap is handled predictably (Luciferase-0frcy.73). Returns a negative,
+     * zero, or positive int if {@code a} is older than, equal to, or newer than
+     * {@code b} respectively.
+     */
+    public static int compareBuildVersions(int a, int b) {
+        return Integer.compareUnsigned(a, b);
     }
 
     /**
@@ -62,7 +107,7 @@ public final class BinaryFrameCodec {
         buffer.put(6, (byte) region.regionId().level());  // byte 6: region level
         buffer.put(7, (byte) 0);                          // byte 7: reserved
         buffer.putLong(8, region.regionId().mortonCode()); // bytes 8-15: morton code
-        buffer.putInt(16, (int) region.buildVersion());   // bytes 16-19: build version
+        buffer.putInt(16, buildVersionToWire(region.buildVersion())); // bytes 16-19: build version (low 32 bits, see class doc)
         buffer.putInt(20, data.length);                   // bytes 20-23: data size
 
         // Write payload
@@ -104,7 +149,7 @@ public final class BinaryFrameCodec {
         buffer.put(6, (byte) region.regionId().level());  // byte 6: region level
         buffer.put(7, (byte) 0);                          // byte 7: reserved
         buffer.putLong(8, region.regionId().mortonCode()); // bytes 8-15: morton code
-        buffer.putInt(16, (int) region.buildVersion());   // bytes 16-19: build version
+        buffer.putInt(16, buildVersionToWire(region.buildVersion())); // bytes 16-19: build version (low 32 bits, see class doc)
         buffer.putInt(20, data.length);                   // bytes 20-23: data size
 
         // Write payload
@@ -209,7 +254,7 @@ public final class BinaryFrameCodec {
         buf.put(6, key.getLevel());
         buf.put(7, (byte) 0);
         buf.putLong(8, keyLong(key));
-        buf.putInt(16, (int) buildVersion);
+        buf.putInt(16, buildVersionToWire(buildVersion));
         buf.putInt(20, dataSize);
     }
 

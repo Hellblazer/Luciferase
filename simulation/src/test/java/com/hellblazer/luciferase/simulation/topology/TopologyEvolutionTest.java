@@ -179,10 +179,13 @@ class TopologyEvolutionTest {
         // Execute move
         var result = executor.execute(proposal);
 
-        // Verify evolution
-        assertTrue(result.success(), "Move should succeed: " + result.message());
+        // Bubble relocation is deferred (Luciferase-0frcy.123): a no-op move must report
+        // failure (and roll back), not silently succeed. Entity conservation must hold.
+        assertFalse(result.success(), "Move must report failure while relocation is unimplemented");
+        assertTrue(result.message().contains("not yet implemented"),
+                   "Failure message must state the operation is not yet implemented: " + result.message());
         assertEquals(1000, totalEntitiesBefore, "Should start with 1000 entities");
-        assertEquals(1000, getTotalEntityCount(), "Entity count should be conserved (no movement)");
+        assertEquals(1000, getTotalEntityCount(), "Entity count should be conserved across the rolled-back move");
 
         // Verify no entities were moved (move only adjusts bubble boundaries)
         int entitiesAfter = accountant.entitiesInBubble(bubble.id()).size();

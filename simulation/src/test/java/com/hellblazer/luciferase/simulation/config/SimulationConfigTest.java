@@ -286,12 +286,23 @@ class SimulationConfigTest {
      */
     @Test
     void testInvalidConfigThrows() {
-        // ghostTtlMs not evenly divisible by bucketIntervalMs should work (integer division)
+        // Luciferase-0frcy.112: ghostTtlMs that is NOT evenly divisible by bucketIntervalMs must be
+        // rejected — integer division silently truncated the effective TTL (550/100 -> 5 buckets ->
+        // 500ms effective, losing 50ms). The configured TTL must be exact.
+        assertThrows(IllegalArgumentException.class, () ->
+            SimulationConfig.builder()
+                .ghostTtlMs(550)
+                .bucketIntervalMs(100)
+                .build(),
+            "non-multiple ghostTtlMs must be rejected (was silently truncated)"
+        );
+
+        // An exact multiple is accepted.
         var config = SimulationConfig.builder()
-            .ghostTtlMs(550)
+            .ghostTtlMs(500)
             .bucketIntervalMs(100)
             .build();
-        assertEquals(5, config.ghostTtlBuckets(), "550ms / 100ms = 5 buckets (integer division)");
+        assertEquals(5, config.ghostTtlBuckets(), "500ms / 100ms = 5 buckets (exact)");
 
         // But warn if bucketIntervalMs > ghostTtlMs (results in 0 buckets)
         assertThrows(IllegalArgumentException.class, () ->

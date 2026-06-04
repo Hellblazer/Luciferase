@@ -56,6 +56,17 @@ public class EntityStreamConsumer implements AutoCloseable {
     private final PerformanceConfig performanceConfig;
     private final ConcurrentHashMap<URI, UpstreamState> connections = new ConcurrentHashMap<>();
     private final ExecutorService virtualThreadPool;
+    /**
+     * Scheduler for timed reconnection / circuit-breaker re-checks (Luciferase-0frcy.120).
+     * <p>
+     * Replaces the previous {@code virtualThreadPool.submit(() -> Thread.sleep(...))}
+     * pattern: a 5-minute {@code Thread.sleep} parked a virtual thread per upstream in
+     * circuit-breaker state and could not be advanced by an injected clock, forcing
+     * reconnection tests onto wall-clock waits. A {@link ScheduledExecutorService} defers
+     * the work without a parked thread and lets tests drive timing by submitting an
+     * immediate-execution scheduler.
+     */
+    private final ScheduledExecutorService reconnectScheduler;
     private final ObjectMapper jsonMapper = new ObjectMapper();
     private final AtomicBoolean running = new AtomicBoolean(false);
 
@@ -85,11 +96,32 @@ public class EntityStreamConsumer implements AutoCloseable {
                                 AdaptiveRegionManager regionManager,
                                 PerformanceConfig performanceConfig,
                                 Clock clock) {
+        this(upstreams, regionManager, performanceConfig, clock,
+             Executors.newSingleThreadScheduledExecutor(r -> {
+                 var t = new Thread(r, "entity-stream-reconnect");
+                 t.setDaemon(true);
+                 return t;
+             }));
+    }
+
+    /**
+     * Full configuration with an injectable reconnect scheduler (Luciferase-0frcy.120).
+     * <p>
+     * Tests can pass a scheduler that runs scheduled tasks immediately (or a controllable
+     * one) so reconnection / circuit-breaker timing is deterministic and does not require
+     * real wall-clock waits.
+     */
+    public EntityStreamConsumer(List<UpstreamConfig> upstreams,
+                                AdaptiveRegionManager regionManager,
+                                PerformanceConfig performanceConfig,
+                                Clock clock,
+                                ScheduledExecutorService reconnectScheduler) {
         this.upstreams = upstreams;
         this.regionManager = regionManager;
         this.performanceConfig = performanceConfig;
         this.clock = clock;
         this.virtualThreadPool = Executors.newVirtualThreadPerTaskExecutor();
+        this.reconnectScheduler = reconnectScheduler;
 
         log.info("EntityStreamConsumer created for {} upstreams", upstreams.size());
     }
@@ -249,9 +281,11 @@ public class EntityStreamConsumer implements AutoCloseable {
         log.info("Reconnecting to {} in {}ms (attempt {}/{})",
                  upstream, backoffMs, attempts, MAX_RECONNECT_ATTEMPTS);
 
-        virtualThreadPool.submit(() -> {
-            try {
-                Thread.sleep(backoffMs);
+        // Defer the reconnect via the scheduler instead of parking a virtual thread on
+        // Thread.sleep (Luciferase-0frcy.120). The actual connect runs on the virtual-thread
+        // pool so blocking I/O stays off the single scheduler thread.
+        reconnectScheduler.schedule(() -> {
+            virtualThreadPool.submit(() -> {
                 var upstreamConfig = upstreams.stream()
                     .filter(u -> u.uri().equals(upstream))
                     .findFirst()
@@ -260,26 +294,22 @@ public class EntityStreamConsumer implements AutoCloseable {
                 if (upstreamConfig != null) {
                     connect(upstreamConfig);
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        });
+            });
+        }, backoffMs, TimeUnit.MILLISECONDS);
     }
 
     /**
      * Schedule circuit breaker check after timeout.
      */
     private void scheduleCircuitBreakerCheck(URI upstream) {
-        virtualThreadPool.submit(() -> {
-            try {
-                Thread.sleep(CIRCUIT_BREAKER_TIMEOUT_MS);
-                if (running.get()) {
-                    reconnectWithBackoff(upstream);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        // Defer the circuit-breaker re-check via the scheduler instead of parking a
+        // virtual thread on a 5-minute Thread.sleep (Luciferase-0frcy.120). No thread is
+        // held for the timeout window, and tests can advance it via the injected scheduler.
+        reconnectScheduler.schedule(() -> {
+            if (running.get()) {
+                reconnectWithBackoff(upstream);
             }
-        });
+        }, CIRCUIT_BREAKER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -287,7 +317,9 @@ public class EntityStreamConsumer implements AutoCloseable {
      * <p>
      * Parses JSON format: {"entities":[{"id":"e1","x":1.0,"y":2.0,"z":3.0,"type":"PREY"}],...}
      */
-    private void onMessage(URI source, String json) {
+    // Package-private for regression testing of malformed-entity resilience
+    // (Luciferase-0frcy.68).
+    void onMessage(URI source, String json) {
         try {
             var upstreamLabel = upstreams.stream()
                 .filter(u -> u.uri().equals(source))
@@ -299,20 +331,47 @@ public class EntityStreamConsumer implements AutoCloseable {
             var entitiesNode = root.get("entities");
 
             if (entitiesNode != null && entitiesNode.isArray()) {
+                int processed = 0;
+                int skipped = 0;
                 for (JsonNode entityNode : entitiesNode) {
-                    var id = entityNode.get("id").asText();
-                    var x = (float) entityNode.get("x").asDouble();
-                    var y = (float) entityNode.get("y").asDouble();
-                    var z = (float) entityNode.get("z").asDouble();
-                    var type = entityNode.get("type").asText();
+                    // Per-entity guard: a single malformed entity (missing/typed-
+                    // wrong field) must not abort the whole batch. Using path()
+                    // (never null) plus presence checks, and keeping the try/catch
+                    // inside the loop, so one bad entity is skipped, not the rest
+                    // of potentially hundreds of valid entities (Luciferase-0frcy.68).
+                    try {
+                        var idNode = entityNode.path("id");
+                        var xNode = entityNode.path("x");
+                        var yNode = entityNode.path("y");
+                        var zNode = entityNode.path("z");
+                        var typeNode = entityNode.path("type");
 
-                    // M4: Prefix entity ID with upstream label for multi-upstream support
-                    var globalId = upstreamLabel + ":" + id;
+                        if (idNode.isMissingNode() || !idNode.isValueNode()
+                            || !xNode.isNumber() || !yNode.isNumber() || !zNode.isNumber()
+                            || typeNode.isMissingNode() || !typeNode.isValueNode()) {
+                            skipped++;
+                            log.warn("Skipping malformed entity from {}: {}", upstreamLabel, entityNode);
+                            continue;
+                        }
 
-                    regionManager.updateEntity(globalId, x, y, z, type);
+                        var id = idNode.asText();
+                        var x = (float) xNode.asDouble();
+                        var y = (float) yNode.asDouble();
+                        var z = (float) zNode.asDouble();
+                        var type = typeNode.asText();
+
+                        // M4: Prefix entity ID with upstream label for multi-upstream support
+                        var globalId = upstreamLabel + ":" + id;
+
+                        regionManager.updateEntity(globalId, x, y, z, type);
+                        processed++;
+                    } catch (Exception perEntity) {
+                        skipped++;
+                        log.warn("Skipping entity from {} due to error: {}", upstreamLabel, perEntity.getMessage());
+                    }
                 }
 
-                log.debug("Processed {} entities from {}", entitiesNode.size(), upstreamLabel);
+                log.debug("Processed {} entities ({} skipped) from {}", processed, skipped, upstreamLabel);
             }
         } catch (Exception e) {
             log.error("Failed to parse entity JSON from {}: {}", source, e.getMessage());
@@ -347,6 +406,7 @@ public class EntityStreamConsumer implements AutoCloseable {
             }
         }
 
+        reconnectScheduler.shutdownNow();
         virtualThreadPool.shutdown();
 
         try {

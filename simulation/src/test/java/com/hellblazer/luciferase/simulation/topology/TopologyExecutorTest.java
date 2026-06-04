@@ -164,10 +164,15 @@ class TopologyExecutorTest {
         // Execute
         var result = executor.execute(proposal);
 
-        // Verify
-        assertTrue(result.success(), "Move should succeed: " + result.message());
-        assertEquals(totalBefore, result.entitiesBefore(), "Entities before should match");
-        assertEquals(totalBefore, result.entitiesAfter(), "Entities after should match (no movement)");
+        // Bubble relocation is deferred (Luciferase-0frcy.123): the executor must NOT
+        // report success for an unimplemented no-op move. It rolls back and reports failure.
+        assertFalse(result.success(), "Move must report failure while relocation is unimplemented");
+        assertTrue(result.message().contains("not yet implemented"),
+                   "Failure message must state the operation is not yet implemented: " + result.message());
+
+        // Entities are preserved across the rolled-back move.
+        assertEquals(totalBefore, accountant.entitiesInBubble(bubble.id()).size(),
+                     "Entities must be preserved after a rolled-back move");
 
         // Verify accountant validation passes
         var validation = accountant.validate();

@@ -48,6 +48,25 @@ public class CommitteeVotingProtocol {
     private final CommitteeBallotBox ballotBox;
     private final ConcurrentHashMap<UUID, ProposalState> proposals = new ConcurrentHashMap<>();
 
+    /**
+     * View-change containment lock (Luciferase-0frcy.95).
+     * <p>
+     * Serializes the {@code requestConsensus} register-step against
+     * {@code rollbackOnViewChange}'s snapshot so a new proposal cannot be inserted
+     * into {@link #proposals} after the rollback snapshot was taken yet still belong
+     * to the old view. Held only for the O(1) view re-check + put / the snapshot read,
+     * never across voting or scheduling.
+     */
+    private final Object viewLock = new Object();
+
+    /**
+     * Most recent view observed via {@link #rollbackOnViewChange}. {@code null} until
+     * the first view change. Read under {@link #viewLock} on the register path so a
+     * proposal whose viewId no longer matches the current view is rejected at the
+     * point of {@code proposals.put} rather than escaping into the old view's tally.
+     */
+    private volatile Digest currentView;
+
     public CommitteeVotingProtocol(DynamicContext<Member> context, CommitteeConfig config,
                                    ScheduledExecutorService scheduler) {
         this.context = context;
@@ -70,9 +89,44 @@ public class CommitteeVotingProtocol {
      */
     public CompletableFuture<Boolean> requestConsensus(MigrationProposal proposal, Set<Digest> committee) {
         var state = new ProposalState(proposal, committee);
-        proposals.put(proposal.proposalId(), state);
 
-        // Schedule timeout handler
+        // View-change containment (Luciferase-0frcy.95): re-check the view and insert
+        // under viewLock so this put cannot race past a concurrent rollback snapshot.
+        // If a view change has already been recorded and this proposal belongs to an
+        // older view, reject it immediately rather than letting it be voted on in a
+        // stale context (the snapshot in rollbackOnViewChange would have missed it).
+        // Zombie-future containment (Luciferase-0frcy.C1): the view re-check, the
+        // proposals.put, the committee registration, AND the capture of the ballot-box
+        // result future must all be atomic with respect to rollbackOnViewChange (which
+        // snapshots + clears under the same viewLock). If registerCommittee/getResult ran
+        // outside the lock, a concurrent rollback could complete+clear this proposal in
+        // the gap, and the subsequent getResult would computeIfAbsent a fresh, never-
+        // completing VoteState — a zombie future that blocks the caller forever. Holding
+        // the lock through getResult guarantees either (a) we capture the real (possibly
+        // later exceptionally-completed) future before any rollback can interleave, or
+        // (b) the rollback ran first, recorded the new view, and we reject below.
+        final CompletableFuture<Boolean> resultFuture;
+        synchronized (viewLock) {
+            if (currentView != null && !currentView.equals(proposal.viewId())) {
+                return CompletableFuture.failedFuture(new IllegalStateException(
+                    "Proposal " + proposal.proposalId() + " rejected: viewId " + proposal.viewId()
+                    + " does not match current view " + currentView));
+            }
+            proposals.put(proposal.proposalId(), state);
+
+            // Bound quorum by the committee that can actually vote, not the full cluster
+            // (Luciferase-ltxta). Without this the ballot box derives quorum from the
+            // full-cluster context and no committee-sized tally can ever reach it.
+            ballotBox.registerCommittee(proposal.proposalId(), committee.size());
+
+            // Capture the real result future atomically under the lock so a concurrent
+            // rollback cannot interleave between the put and this read.
+            resultFuture = ballotBox.getResult(proposal.proposalId());
+        }
+
+        // Schedule timeout handler (outside the lock — never hold viewLock across the
+        // scheduler call). If a rollback already settled the proposal, handleTimeout
+        // finds no state and is a no-op.
         var timeoutFuture = scheduler.schedule(
             () -> handleTimeout(proposal.proposalId()),
             config.votingTimeoutSeconds(),
@@ -80,8 +134,7 @@ public class CommitteeVotingProtocol {
         );
         state.timeoutTask = timeoutFuture;
 
-        // Return the ballot box result future
-        return ballotBox.getResult(proposal.proposalId());
+        return resultFuture;
     }
 
     /**
@@ -113,24 +166,18 @@ public class CommitteeVotingProtocol {
         // Add vote to ballot box (will complete future if quorum reached)
         ballotBox.addVote(vote.proposalId(), vote);
 
-        // If quorum reached, cancel timeout
+        // If quorum reached, cancel timeout and free the ProposalState (Luciferase-zwyf2). The
+        // normal success path previously left the entry in `proposals` (and its VoteState in the
+        // ballot box) forever — only handleTimeout/rollbackOnViewChange removed entries — so every
+        // completed proposal leaked under sustained migration load. Mirror handleTimeout's cleanup.
         var result = ballotBox.getResult(vote.proposalId());
-        if (result.isDone() && state.timeoutTask != null) {
-            state.timeoutTask.cancel(false);
+        if (result.isDone()) {
+            if (state.timeoutTask != null) {
+                state.timeoutTask.cancel(false);
+            }
+            proposals.remove(vote.proposalId());
+            ballotBox.clear(vote.proposalId());
         }
-    }
-
-    /**
-     * Check if quorum is reached for a given vote count.
-     * <p>
-     * Uses KerlDHT formula: context.size() == 1 ? 1 : context.toleranceLevel() + 1
-     *
-     * @param voteCount number of votes
-     * @return true if quorum reached
-     */
-    public boolean isQuorumReached(long voteCount) {
-        var majority = context.size() == 1 ? 1 : context.toleranceLevel() + 1;
-        return voteCount >= majority;
     }
 
     /**
@@ -146,12 +193,18 @@ public class CommitteeVotingProtocol {
             return;  // Already completed or rolled back
         }
 
-        var result = ballotBox.getResult(proposalId);
-        if (!result.isDone()) {
-            result.completeExceptionally(new TimeoutException("Voting timeout after " + config.votingTimeoutSeconds() + " seconds"));
+        // Use getResultIfPresent (NOT getResult) so a proposal already cleared by a
+        // concurrent view-change rollback is not resurrected into a zombie VoteState
+        // and then completed with a misleading "Voting timeout" outcome
+        // (Luciferase-0frcy.92). If the state is gone, the rollback already settled it.
+        var result = ballotBox.getResultIfPresent(proposalId);
+        if (result.isPresent()) {
+            if (!result.get().isDone()) {
+                result.get().completeExceptionally(
+                    new TimeoutException("Voting timeout after " + config.votingTimeoutSeconds() + " seconds"));
+            }
+            ballotBox.clear(proposalId);
         }
-
-        ballotBox.clear(proposalId);
     }
 
     /**
@@ -163,10 +216,19 @@ public class CommitteeVotingProtocol {
      * @param newViewId the new view ID
      */
     public void rollbackOnViewChange(Digest newViewId) {
-        // Collect proposals to rollback first to avoid concurrent modification
-        var proposalsToRollback = proposals.entrySet().stream()
-            .filter(e -> !e.getValue().proposal.viewId().equals(newViewId))
-            .toList();
+        // Atomically record the new view and snapshot the proposals to roll back under
+        // viewLock (Luciferase-0frcy.95). Recording currentView BEFORE the snapshot,
+        // while holding the same lock requestConsensus uses for its put, closes the
+        // TOCTOU window: any concurrent requestConsensus either (a) completes its put
+        // before this block runs and is therefore in the snapshot, or (b) runs after
+        // and observes the new currentView, rejecting a stale-view proposal outright.
+        final java.util.List<java.util.Map.Entry<UUID, ProposalState>> proposalsToRollback;
+        synchronized (viewLock) {
+            currentView = newViewId;
+            proposalsToRollback = proposals.entrySet().stream()
+                .filter(e -> !e.getValue().proposal.viewId().equals(newViewId))
+                .toList();
+        }
 
         // Process rollbacks
         for (var entry : proposalsToRollback) {

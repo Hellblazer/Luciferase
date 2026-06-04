@@ -4,7 +4,6 @@
 package com.hellblazer.luciferase.simulation.metrics;
 
 import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
@@ -46,9 +45,17 @@ public class LatencyTracker {
     private final long[] window;
 
     /**
-     * Current index in ring buffer
+     * Current index in ring buffer. Guarded by {@code synchronized(window)} (Luciferase-43dc2): the
+     * advance must be co-located with the slot write so a reader never observes a half-published sample.
      */
-    private final AtomicInteger windowIndex;
+    private int windowIndex;
+
+    /**
+     * Number of ring-buffer slots actually written, capped at {@link #WINDOW_SIZE} (Luciferase-43dc2).
+     * Guarded by {@code synchronized(window)}. {@link #getStats()} derives its window sample count from
+     * {@code filled} (not the unbounded {@code totalSamples}) so it never sorts uninitialized zero slots.
+     */
+    private int filled;
 
     /**
      * Create a new latency tracker.
@@ -57,7 +64,8 @@ public class LatencyTracker {
         this.totalSamples = new LongAdder();
         this.totalLatency = new LongAdder();
         this.window = new long[WINDOW_SIZE];
-        this.windowIndex = new AtomicInteger(0);
+        this.windowIndex = 0;
+        this.filled = 0;
     }
 
     /**
@@ -68,14 +76,20 @@ public class LatencyTracker {
      * @param latencyNs Latency in nanoseconds
      */
     public void record(long latencyNs) {
-        // Update counters
-        totalSamples.increment();
-        totalLatency.add(latencyNs);
-
-        // Add to ring buffer
-        var idx = windowIndex.getAndUpdate(i -> (i + 1) % WINDOW_SIZE);
+        // Luciferase-43dc2: publish the ring-buffer slot, the index advance, and `filled` BEFORE the
+        // observable counters, all within the same critical section. A reader that sees totalSamples > 0
+        // is therefore guaranteed to also see filled > 0 (the slot write and filled++ happened-before the
+        // count increment, and `filled` is monotonic once non-zero), so getStats() can never return
+        // min/percentiles of 0 backed by an uninitialized slot for a non-empty tracker. The counters are
+        // updated LAST so they are never observable ahead of the sample that backs them.
         synchronized (window) {
-            window[idx] = latencyNs;
+            window[windowIndex] = latencyNs;
+            windowIndex = (windowIndex + 1) % WINDOW_SIZE;
+            if (filled < WINDOW_SIZE) {
+                filled++;
+            }
+            totalLatency.add(latencyNs);
+            totalSamples.increment();
         }
     }
 
@@ -88,47 +102,44 @@ public class LatencyTracker {
      * @return Current latency statistics
      */
     public LatencyStats getStats() {
-        var count = totalSamples.sum();
-
-        // Handle empty case
-        if (count == 0) {
-            return new LatencyStats(Long.MAX_VALUE, 0, 0.0, 0, 0, 0);
-        }
-
-        var avg = (double) totalLatency.sum() / count;
-
-        // Calculate min, max, and percentiles from window
-        long min;
-        long max;
-        long p50;
-        long p99;
-
+        // Luciferase-43dc2: read the count and compute window stats under the SAME `window` monitor that
+        // record() holds when it publishes the slot, `filled`, and the counters. This makes getStats() an
+        // atomically-consistent snapshot — the returned sampleCount and min/percentiles always reflect the
+        // same set of samples, so a concurrent reader can never observe count > 0 paired with a torn
+        // min/p99 of 0 from an uninitialized slot.
         synchronized (window) {
-            // Determine how many samples are in the window
-            var windowSamples = (int) Math.min(count, WINDOW_SIZE);
+            var count = totalSamples.sum();
+
+            // Handle empty case: return min=0 (not Long.MAX_VALUE) so the natural min <= max
+            // invariant holds for consumers that compare the two without first checking
+            // sampleCount (Luciferase-0frcy.113). sampleCount=0 remains the authoritative
+            // "no data" signal.
+            if (count == 0) {
+                return new LatencyStats(0, 0, 0.0, 0, 0, 0);
+            }
+
+            var avg = (double) totalLatency.sum() / count;
+
+            // Determine how many samples are populated in the window from `filled` (slots actually written
+            // under this lock), never the unbounded `count` — they only differ transiently across calls,
+            // but `filled` is the authoritative count of initialized slots.
+            var windowSamples = filled;
 
             // Copy and sort only the valid samples
             var sorted = new long[windowSamples];
-            if (count <= WINDOW_SIZE) {
-                // Haven't wrapped yet - copy first windowSamples entries
-                System.arraycopy(window, 0, sorted, 0, windowSamples);
-            } else {
-                // Have wrapped - copy entire window
-                System.arraycopy(window, 0, sorted, 0, WINDOW_SIZE);
-            }
-
+            System.arraycopy(window, 0, sorted, 0, windowSamples);
             Arrays.sort(sorted);
 
             // Calculate min/max from window
-            min = sorted[0];
-            max = sorted[windowSamples - 1];
+            var min = sorted[0];
+            var max = sorted[windowSamples - 1];
 
             // Calculate percentiles
-            p50 = calculatePercentile(sorted, 50);
-            p99 = calculatePercentile(sorted, 99);
-        }
+            var p50 = calculatePercentile(sorted, 50);
+            var p99 = calculatePercentile(sorted, 99);
 
-        return new LatencyStats(min, max, avg, p50, p99, count);
+            return new LatencyStats(min, max, avg, p50, p99, count);
+        }
     }
 
     /**
@@ -137,10 +148,11 @@ public class LatencyTracker {
      * Clears all recorded samples and resets counters to initial state.
      */
     public void reset() {
-        totalSamples.reset();
-        totalLatency.reset();
-        windowIndex.set(0);
         synchronized (window) {
+            totalSamples.reset();
+            totalLatency.reset();
+            windowIndex = 0;
+            filled = 0;
             Arrays.fill(window, 0);
         }
     }

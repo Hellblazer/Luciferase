@@ -171,7 +171,7 @@ public class BucketScheduler<ID extends EntityID, Content> {
     public void stop() {
         running = false;
         controller.stop();
-        log.info("BucketScheduler stopped after bucket {}", entity.getCurrentBucket());
+        log.info("BucketScheduler stopped after bucket {}", getCurrentBucket());
     }
 
     /**
@@ -313,7 +313,7 @@ public class BucketScheduler<ID extends EntityID, Content> {
     @Override
     public String toString() {
         return String.format("BucketScheduler{bucket=%d, running=%s, barrier=%s}",
-                            entity.getCurrentBucket(), running, barrier);
+                            getCurrentBucket(), running, barrier);
     }
 
     /**

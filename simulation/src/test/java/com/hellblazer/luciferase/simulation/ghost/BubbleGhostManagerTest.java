@@ -163,6 +163,61 @@ class BubbleGhostManagerTest {
     }
 
     @Test
+    void testOnBucketCompleteExpiresOncePerBucket() {
+        // Regression for Luciferase-0frcy.100: BubbleGhostManager.onBucketComplete must not
+        // call ghostBoundarySync.expireStaleGhosts(bucket) explicitly, because
+        // GhostBoundarySync.onBucketComplete already does so internally. Pre-fix the same
+        // bucket was expired twice.
+        var expireCalls = new java.util.concurrent.atomic.AtomicInteger(0);
+        var lastExpireBucket = new java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE);
+        var countingSync = new GhostBoundarySync<TestEntityID, String>(
+            externalBubbleTracker, ghostLayerHealth, (to, ghosts) -> { }) {
+            @Override
+            public void expireStaleGhosts(long currentBucket) {
+                expireCalls.incrementAndGet();
+                lastExpireBucket.set(currentBucket);
+                super.expireStaleGhosts(currentBucket);
+            }
+        };
+
+        var instrumented = new BubbleGhostManager<>(
+            bubble, serverRegistry, ghostChannel, optimizer,
+            externalBubbleTracker, ghostLayerHealth, countingSync);
+
+        instrumented.onBucketComplete(7L);
+
+        assertEquals(1, expireCalls.get(),
+                     "expireStaleGhosts must be invoked exactly once per bucket (was double-invoked pre-fix)");
+        assertEquals(7L, lastExpireBucket.get(), "expireStaleGhosts must receive the completed bucket");
+    }
+
+    @Test
+    void testHandleGhostBatchRegistersReceiverLifecycle() {
+        // Regression for Luciferase-liimr: handleGhostBatch must onCreate() a previously
+        // unseen incoming ghost before onUpdate(), otherwise onUpdate()'s computeIfPresent
+        // is a guaranteed no-op and receiver-side staleness tracking never advances.
+        var entityId = new TestEntityID("recv-liimr");
+        var key = entityId.toDebugString();
+
+        // Pre-fix: lifecycle state is null because onCreate is never called on the receive path.
+        assertNull(manager.getLifecycleStateForTesting(key),
+                   "No lifecycle state should exist before any batch");
+
+        // Batch 1 at timestamp 1000 -> must create lifecycle state.
+        manager.handleGhostBatch(neighborId, List.of(createGhostWithIdAndTimestamp(entityId, 1000L)));
+        var afterFirst = manager.getLifecycleStateForTesting(key);
+        assertNotNull(afterFirst, "Receiver lifecycle state must be created on first batch");
+        assertEquals(1000L, afterFirst.lastUpdateAt(), "lastUpdateAt must reflect first batch timestamp");
+
+        // Batch 2 at timestamp 2000 -> onUpdate advances the existing state.
+        manager.handleGhostBatch(neighborId, List.of(createGhostWithIdAndTimestamp(entityId, 2000L)));
+        var afterSecond = manager.getLifecycleStateForTesting(key);
+        assertNotNull(afterSecond, "Lifecycle state must persist across batches");
+        assertEquals(2000L, afterSecond.lastUpdateAt(),
+                     "Receiver staleness tracking must advance on subsequent batches");
+    }
+
+    @Test
     void testGhostTTLExpiration() {
         // Create ghost at bucket 1
         var ghost = createTestGhost(neighborId, 1L);
@@ -374,6 +429,20 @@ class BubbleGhostManagerTest {
     }
 
     // Helper methods
+
+    private SimulationGhostEntity<TestEntityID, String> createGhostWithIdAndTimestamp(
+        TestEntityID entityId, long timestamp) {
+        var position = new Point3f(1.0f, 1.0f, 1.0f);
+        var ghostEntity = new GhostEntityHalo<>(
+            entityId,
+            "content",
+            position,
+            new EntityBounds(position, 0.5f),
+            "tree-1",
+            timestamp
+        );
+        return new SimulationGhostEntity<>(ghostEntity, bubble.id(), 1L, 0L, 0L);
+    }
 
     private SimulationGhostEntity<TestEntityID, String> createTestGhost(UUID targetBubbleId, long bucket) {
         var position = new Point3f(1.0f, 1.0f, 1.0f);

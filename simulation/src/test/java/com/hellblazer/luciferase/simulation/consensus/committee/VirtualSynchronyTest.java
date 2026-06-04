@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -105,36 +106,54 @@ public class VirtualSynchronyTest {
     }
 
     @Test
-    public void testAllNodesReceiveSameViewChangeSequence() {
-        // Simulate multiple nodes tracking view changes
-        var viewSequenceNode1 = new CopyOnWriteArrayList<Digest>();
-        var viewSequenceNode2 = new CopyOnWriteArrayList<Digest>();
-        var viewSequenceNode3 = new CopyOnWriteArrayList<Digest>();
+    public void testAllNodesReceiveSameViewChangeSequence() throws Exception {
+        // Virtual synchrony: when a view change is delivered, EVERY node's consensus
+        // instance must abort its pending proposal identically (atomic, same outcome).
+        // Wire three independent ViewCommitteeConsensus instances over the same view
+        // sequence, give each a pending proposal in view1, then deliver view2 to all.
+        int nodeCount = 3;
+        var consensusNodes = new ArrayList<ViewCommitteeConsensus>();
+        var monitors = new ArrayList<MockViewMonitor>();
+        var futures = new ArrayList<CompletableFuture<Boolean>>();
 
-        // All nodes start with view1
-        viewSequenceNode1.add(view1);
-        viewSequenceNode2.add(view1);
-        viewSequenceNode3.add(view1);
+        for (int i = 0; i < nodeCount; i++) {
+            var monitor = new MockViewMonitor(view1);
+            var sel = new ViewCommitteeSelector(context);
+            var vp = new CommitteeVotingProtocol(context, CommitteeConfig.defaultConfig(),
+                                                 Executors.newScheduledThreadPool(1));
+            var node = new ViewCommitteeConsensus();
+            node.setViewMonitor(monitor);
+            node.setCommitteeSelector(sel);
+            node.setVotingProtocol(vp);
 
-        // Fireflies delivers view changes atomically
-        // All nodes see: view1 → view2 → view3 in same order
+            var proposal = new MigrationProposal(UUID.randomUUID(), UUID.randomUUID(),
+                                                 members.get(0).getId(), members.get(1).getId(),
+                                                 view1, 1000L + i);
+            futures.add(node.requestConsensus(proposal));
+            // Partial vote (1 of quorum=2) so the proposal cannot reach quorum on its own
+            // and remains in-flight until the view change aborts it.
+            var committee = new ArrayList<>(sel.selectCommittee(view1));
+            vp.recordVote(new Vote(proposal.proposalId(), committee.get(0).getId(), true, view1));
+            consensusNodes.add(node);
+            monitors.add(monitor);
+        }
 
-        // Simulate view change to view2
-        mockMonitor.setCurrentViewId(view2);
-        viewSequenceNode1.add(view2);
-        viewSequenceNode2.add(view2);
-        viewSequenceNode3.add(view2);
+        // Deliver the SAME view change (view1 -> view2) to every node — the atomic step.
+        for (int i = 0; i < nodeCount; i++) {
+            monitors.get(i).setCurrentViewId(view2);
+            consensusNodes.get(i).onViewChange(view2);
+        }
 
-        // Simulate view change to view3
-        mockMonitor.setCurrentViewId(view3);
-        viewSequenceNode1.add(view3);
-        viewSequenceNode2.add(view3);
-        viewSequenceNode3.add(view3);
-
-        // ASSERT: All nodes saw same sequence
-        assertEquals(viewSequenceNode1, viewSequenceNode2, "Node1 and Node2 should see same sequence");
-        assertEquals(viewSequenceNode2, viewSequenceNode3, "Node2 and Node3 should see same sequence");
-        assertEquals(Arrays.asList(view1, view2, view3), viewSequenceNode1, "All nodes should see view1→view2→view3");
+        // ASSERT every node observed identical behaviour: proposal aborted (false),
+        // no orphaned pending consensus. This is real system state, not fabricated lists.
+        for (int i = 0; i < nodeCount; i++) {
+            assertFalse(futures.get(i).get(1, TimeUnit.SECONDS),
+                        "Node " + i + " must abort its proposal on the view change (return false)");
+            assertFalse(consensusNodes.get(i).hasPendingProposals(),
+                        "Node " + i + " must have no orphaned pending proposals after rollback");
+            assertEquals(view2, monitors.get(i).getCurrentViewId(),
+                         "Node " + i + " must observe view2 after the change");
+        }
     }
 
     @Test

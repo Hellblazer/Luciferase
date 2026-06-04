@@ -73,12 +73,14 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
     // Integration with committee consensus (Phase 7G.3)
     private com.hellblazer.luciferase.simulation.consensus.committee.OptimisticMigratorIntegration consensusIntegration;
 
-    // Metrics
-    private long totalMigrationsInitiated = 0;
-    private long totalMigrationsCompleted = 0;
-    private long totalMigrationsRolledBack = 0;
-    private long totalDeferredEventsQueued = 0;
-    private long totalDeferredEventsFlushed = 0;
+    // Metrics — AtomicLong because all increments occur from public interface methods that the
+    // class documents as concurrently callable; plain long read-add-write triples lose
+    // increments under concurrent access (Luciferase-0frcy.67).
+    private final java.util.concurrent.atomic.AtomicLong totalMigrationsInitiated = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong totalMigrationsCompleted = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong totalMigrationsRolledBack = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong totalDeferredEventsQueued = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong totalDeferredEventsFlushed = new java.util.concurrent.atomic.AtomicLong();
 
     /**
      * Create optimistic migrator with deferred queue management.
@@ -113,7 +115,7 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
         // Create bounded deferred queue for this entity (O(1) operations, lock-free)
         deferredQueues.computeIfAbsent(entityId, k -> new java.util.concurrent.LinkedBlockingDeque<>(MAX_DEFERRED_QUEUE_SIZE));
 
-        totalMigrationsInitiated++;
+        totalMigrationsInitiated.incrementAndGet();
 
         // NOTE: EntityDepartureEvent sending is handled by EnhancedBubble via MigrationCoordinator
         // This method only manages the deferred queue lifecycle
@@ -124,14 +126,19 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
         Objects.requireNonNull(entityId, "entityId must not be null");
         Objects.requireNonNull(targetBubble, "targetBubble must not be null");
 
-        // Phase 7G.3: Delegate to committee consensus if integration set
+        // Phase 7G.3 / Luciferase-0frcy.35: when a consensus integration is wired, the caller
+        // expects the committee-quorum gate to actually run. The integration's
+        // requestMigrationApproval requires Digest source/target node identities, but this impl
+        // only has UUID bubble ids and no UUID→Digest mapping. Previously this branch silently
+        // returned `true`, bypassing the quorum check entirely while logging "Delegating ...".
+        // That is a safety hazard: a caller relying on the gate would skip it without any signal.
+        // Fail loud instead of silently approving until a real UUID→Digest mapping is wired.
         if (consensusIntegration != null) {
-            log.debug("Delegating migration approval to consensus: entity={}, target={}",
-                    entityId, targetBubble);
-            // Note: This assumes targetBubble is UUID, but consensus needs Digest
-            // In production, this would use proper node ID → Digest mapping
-            // For now, default to approved when Digest conversion not available
-            return java.util.concurrent.CompletableFuture.completedFuture(true);
+            throw new UnsupportedOperationException(
+                "Consensus-gated migration approval is configured but the UUID→Digest mapping "
+                + "required to delegate to committee consensus is not available "
+                + "(entity=" + entityId + ", target=" + targetBubble + "). Refusing to silently "
+                + "approve and bypass the quorum gate.");
         }
 
         // Backward compatibility: default to approved when consensus not configured
@@ -173,7 +180,7 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
             queue.offerLast(update);  // Add new (guaranteed to succeed after poll)
             log.warn("Deferred queue overflow for entity {}, dropped oldest event", entityId);
         }
-        totalDeferredEventsQueued++;
+        totalDeferredEventsQueued.incrementAndGet();
 
         var queueSize = queue.size();
         if (queueSize > OVERFLOW_WARNING_THRESHOLD) {
@@ -201,8 +208,8 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
         // The actual application is delegated to EnhancedBubble which has
         // the entity reference and can apply position/velocity updates.
 
-        totalDeferredEventsFlushed += flushedCount;
-        totalMigrationsCompleted++;
+        totalDeferredEventsFlushed.addAndGet(flushedCount);
+        totalMigrationsCompleted.incrementAndGet();
     }
 
     @Override
@@ -217,7 +224,7 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
         log.info("Rolling back migration for entity {}: reason={}, discarded {} deferred updates",
                 entityId, reason, discardedCount);
 
-        totalMigrationsRolledBack++;
+        totalMigrationsRolledBack.incrementAndGet();
     }
 
     @Override
@@ -257,11 +264,11 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
         return String.format(
             "OptimisticMigrator{initiated=%d, completed=%d, rolledBack=%d, " +
             "queued=%d, flushed=%d, pending=%d, avgQueueSize=%.1f}",
-            totalMigrationsInitiated,
-            totalMigrationsCompleted,
-            totalMigrationsRolledBack,
-            totalDeferredEventsQueued,
-            totalDeferredEventsFlushed,
+            totalMigrationsInitiated.get(),
+            totalMigrationsCompleted.get(),
+            totalMigrationsRolledBack.get(),
+            totalDeferredEventsQueued.get(),
+            totalDeferredEventsFlushed.get(),
             getPendingDeferredCount(),
             calculateAverageQueueSize()
         );
@@ -291,9 +298,34 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
     public String toString() {
         return String.format(
             "OptimisticMigrator{migrations=%d, pending=%d, max_queue=%d}",
-            totalMigrationsInitiated,
+            totalMigrationsInitiated.get(),
             getPendingDeferredCount(),
             MAX_DEFERRED_QUEUE_SIZE
         );
+    }
+
+    /** @return total migrations initiated (thread-safe metric). */
+    public long getTotalMigrationsInitiated() {
+        return totalMigrationsInitiated.get();
+    }
+
+    /** @return total migrations completed (thread-safe metric). */
+    public long getTotalMigrationsCompleted() {
+        return totalMigrationsCompleted.get();
+    }
+
+    /** @return total migrations rolled back (thread-safe metric). */
+    public long getTotalMigrationsRolledBack() {
+        return totalMigrationsRolledBack.get();
+    }
+
+    /** @return total deferred events queued (thread-safe metric). */
+    public long getTotalDeferredEventsQueued() {
+        return totalDeferredEventsQueued.get();
+    }
+
+    /** @return total deferred events flushed (thread-safe metric). */
+    public long getTotalDeferredEventsFlushed() {
+        return totalDeferredEventsFlushed.get();
     }
 }
