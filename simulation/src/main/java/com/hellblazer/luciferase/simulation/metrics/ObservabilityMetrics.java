@@ -161,9 +161,14 @@ public class ObservabilityMetrics {
      * - activeBubbleCount: Number of unique bubbles (union of frame + neighbor metrics)
      * - timestamp: Current time
      * <p>
-     * Thread-safe: Creates consistent snapshot without locking.
+     * Thread-safe: produces a <em>best-effort</em> snapshot without locking. The frameMetrics pass,
+     * neighborMetrics pass, and the activeBubbles union are three separate weakly-consistent reads
+     * over two ConcurrentHashMaps, so a bubble inserted concurrently between passes may be reflected
+     * in some aggregates (e.g. totalNeighbors, activeBubbleCount) but not others (e.g.
+     * avgUtilization). For observability this staleness is acceptable; callers must not rely on the
+     * snapshot being a single atomic point-in-time view (Luciferase-0frcy.114).
      *
-     * @return MetricsSnapshot with aggregated metrics
+     * @return MetricsSnapshot with aggregated (best-effort) metrics
      */
     public MetricsSnapshot getSnapshot() {
         // Calculate average animator utilization

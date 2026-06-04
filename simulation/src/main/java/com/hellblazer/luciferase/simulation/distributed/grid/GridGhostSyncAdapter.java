@@ -128,9 +128,12 @@ public class GridGhostSyncAdapter {
     private void expireStaleGhosts(long currentBucket) {
         long expirationBucket = currentBucket - GhostBoundarySync.GHOST_TTL_BUCKETS;
 
+        // Use <= so a ghost created at bucket B is removed once currentBucket reaches
+        // B + GHOST_TTL_BUCKETS, giving exactly GHOST_TTL_BUCKETS of lifetime. The prior
+        // strict-< predicate delayed removal one extra bucket (TTL+1) — Luciferase-0frcy.96.
         for (var ghostMap : ghostsByBubble.values()) {
             ghostMap.entrySet().removeIf(entry ->
-                entry.getValue().bucket() < expirationBucket
+                entry.getValue().bucket() <= expirationBucket
             );
         }
     }

@@ -21,7 +21,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -110,8 +109,11 @@ public class MigrationOracleImpl implements MigrationOracle {
         this.gridY = gridY;
         this.gridZ = gridZ;
         this.tolerance = DEFAULT_TOLERANCE;
-        this.bubbleMap = new HashMap<>();
-        this.bubbleCoordinates = new HashMap<>();
+        // Luciferase-d3pz6: registerBubble() mutates these post-construction while checkMigration/
+        // getTargetBubble/getClosestBubble read them concurrently. Plain HashMap is not thread-safe
+        // and the class javadoc promises concurrent safety, so both must be ConcurrentHashMap.
+        this.bubbleMap = new ConcurrentHashMap<>();
+        this.bubbleCoordinates = new ConcurrentHashMap<>();
         this.entityPositions = new ConcurrentHashMap<>();
         this.crossingCache = ConcurrentHashMap.newKeySet();
 

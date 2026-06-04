@@ -56,6 +56,17 @@ public class EntityStreamConsumer implements AutoCloseable {
     private final PerformanceConfig performanceConfig;
     private final ConcurrentHashMap<URI, UpstreamState> connections = new ConcurrentHashMap<>();
     private final ExecutorService virtualThreadPool;
+    /**
+     * Scheduler for timed reconnection / circuit-breaker re-checks (Luciferase-0frcy.120).
+     * <p>
+     * Replaces the previous {@code virtualThreadPool.submit(() -> Thread.sleep(...))}
+     * pattern: a 5-minute {@code Thread.sleep} parked a virtual thread per upstream in
+     * circuit-breaker state and could not be advanced by an injected clock, forcing
+     * reconnection tests onto wall-clock waits. A {@link ScheduledExecutorService} defers
+     * the work without a parked thread and lets tests drive timing by submitting an
+     * immediate-execution scheduler.
+     */
+    private final ScheduledExecutorService reconnectScheduler;
     private final ObjectMapper jsonMapper = new ObjectMapper();
     private final AtomicBoolean running = new AtomicBoolean(false);
 
@@ -85,11 +96,32 @@ public class EntityStreamConsumer implements AutoCloseable {
                                 AdaptiveRegionManager regionManager,
                                 PerformanceConfig performanceConfig,
                                 Clock clock) {
+        this(upstreams, regionManager, performanceConfig, clock,
+             Executors.newSingleThreadScheduledExecutor(r -> {
+                 var t = new Thread(r, "entity-stream-reconnect");
+                 t.setDaemon(true);
+                 return t;
+             }));
+    }
+
+    /**
+     * Full configuration with an injectable reconnect scheduler (Luciferase-0frcy.120).
+     * <p>
+     * Tests can pass a scheduler that runs scheduled tasks immediately (or a controllable
+     * one) so reconnection / circuit-breaker timing is deterministic and does not require
+     * real wall-clock waits.
+     */
+    public EntityStreamConsumer(List<UpstreamConfig> upstreams,
+                                AdaptiveRegionManager regionManager,
+                                PerformanceConfig performanceConfig,
+                                Clock clock,
+                                ScheduledExecutorService reconnectScheduler) {
         this.upstreams = upstreams;
         this.regionManager = regionManager;
         this.performanceConfig = performanceConfig;
         this.clock = clock;
         this.virtualThreadPool = Executors.newVirtualThreadPerTaskExecutor();
+        this.reconnectScheduler = reconnectScheduler;
 
         log.info("EntityStreamConsumer created for {} upstreams", upstreams.size());
     }
@@ -249,9 +281,11 @@ public class EntityStreamConsumer implements AutoCloseable {
         log.info("Reconnecting to {} in {}ms (attempt {}/{})",
                  upstream, backoffMs, attempts, MAX_RECONNECT_ATTEMPTS);
 
-        virtualThreadPool.submit(() -> {
-            try {
-                Thread.sleep(backoffMs);
+        // Defer the reconnect via the scheduler instead of parking a virtual thread on
+        // Thread.sleep (Luciferase-0frcy.120). The actual connect runs on the virtual-thread
+        // pool so blocking I/O stays off the single scheduler thread.
+        reconnectScheduler.schedule(() -> {
+            virtualThreadPool.submit(() -> {
                 var upstreamConfig = upstreams.stream()
                     .filter(u -> u.uri().equals(upstream))
                     .findFirst()
@@ -260,26 +294,22 @@ public class EntityStreamConsumer implements AutoCloseable {
                 if (upstreamConfig != null) {
                     connect(upstreamConfig);
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        });
+            });
+        }, backoffMs, TimeUnit.MILLISECONDS);
     }
 
     /**
      * Schedule circuit breaker check after timeout.
      */
     private void scheduleCircuitBreakerCheck(URI upstream) {
-        virtualThreadPool.submit(() -> {
-            try {
-                Thread.sleep(CIRCUIT_BREAKER_TIMEOUT_MS);
-                if (running.get()) {
-                    reconnectWithBackoff(upstream);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        // Defer the circuit-breaker re-check via the scheduler instead of parking a
+        // virtual thread on a 5-minute Thread.sleep (Luciferase-0frcy.120). No thread is
+        // held for the timeout window, and tests can advance it via the injected scheduler.
+        reconnectScheduler.schedule(() -> {
+            if (running.get()) {
+                reconnectWithBackoff(upstream);
             }
-        });
+        }, CIRCUIT_BREAKER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -376,6 +406,7 @@ public class EntityStreamConsumer implements AutoCloseable {
             }
         }
 
+        reconnectScheduler.shutdownNow();
         virtualThreadPool.shutdown();
 
         try {

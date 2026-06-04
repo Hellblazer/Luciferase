@@ -580,8 +580,11 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
                 com.hellblazer.luciferase.lucien.distributed.migration.proto.ViewSynchronyAck request,
                 StreamObserver<com.hellblazer.luciferase.lucien.distributed.migration.proto.ViewSynchronyAck> responseObserver) {
             try {
-                // Extract source node ID from request
-                var sourceNodeId = UUID.fromString(request.getTargetBubbleId());
+                // The ack originates from the target bubble, which writes its own identity
+                // into sourceBubbleId (see convertToProto). Read sourceBubbleId — reading
+                // targetBubbleId yielded a phantom id and orphaned the source FSM
+                // (Luciferase-wikxz).
+                var sourceNodeId = UUID.fromString(request.getSourceBubbleId());
 
                 // Dispatch to listener asynchronously
                 if (ackListener != null) {

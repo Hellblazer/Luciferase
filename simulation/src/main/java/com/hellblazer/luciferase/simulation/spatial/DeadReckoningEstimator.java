@@ -125,40 +125,50 @@ public class DeadReckoningEstimator {
         var velocity = new Vector3f(predictionState.velocity());
         predicted.scaleAdd(deltaSec, velocity, predicted);
 
-        // Apply smooth correction if active
-        var correction = corrections.get(ghost.id());
-        if (correction != null && correction.framesRemaining() > 0) {
+        // Apply smooth correction if active.
+        //
+        // The read-modify-write on `corrections` must be atomic: two concurrent
+        // predict() calls for the same entity (animation renderer + tick loop)
+        // would otherwise both observe the same CorrectionState, both consume the
+        // same frame, and the counter would advance by 2 with a double-applied
+        // correction (Luciferase-0frcy.55). We compute the next state atomically
+        // and capture the frame's correction so it is applied to `predicted`
+        // exactly once per consumed frame.
+        float velocityMagnitude = velocity.length();
+        var consumed = new Vector3f[1];
+        corrections.compute(ghost.id(), (id, correction) -> {
+            if (correction == null || correction.framesRemaining() <= 0) {
+                return null;
+            }
             // Calculate correction for this frame
             var correctionThisFrame = new Vector3f(correction.totalError());
             correctionThisFrame.scale(1f / correction.framesRemaining());
 
             // Clamp correction to prevent jarring snaps
-            float velocityMagnitude = velocity.length();
             if (velocityMagnitude > 0.001f) {  // Avoid division by zero
                 float maxCorrection = velocityMagnitude * MAX_CORRECTION_PER_FRAME;
-
                 if (correctionThisFrame.length() > maxCorrection) {
                     correctionThisFrame.normalize();
                     correctionThisFrame.scale(maxCorrection);
                 }
             }
 
-            // Apply correction
-            predicted.add(correctionThisFrame);
+            consumed[0] = correctionThisFrame;
 
             // Update correction state for next frame
             var remainingError = new Vector3f(correction.totalError());
             remainingError.sub(correctionThisFrame);
 
             int newFramesRemaining = correction.framesRemaining() - 1;
-
             if (newFramesRemaining > 0) {
-                corrections.put(ghost.id(),
-                    new CorrectionState(remainingError, newFramesRemaining));
-            } else {
-                // Cleanup correction state when complete
-                corrections.remove(ghost.id());
+                return new CorrectionState(remainingError, newFramesRemaining);
             }
+            // Cleanup correction state when complete
+            return null;
+        });
+
+        if (consumed[0] != null) {
+            predicted.add(consumed[0]);
         }
 
         return predicted;

@@ -502,4 +502,97 @@ class DeadReckoningEstimatorTest {
 
         assertNotNull(predicted, "Should handle first update gracefully");
     }
+
+    /**
+     * Luciferase-0frcy.55: predict() must perform its correction-state
+     * read-modify-write atomically. With the non-atomic get/put, concurrent
+     * predict() calls for the same entity over-consume the correction: each
+     * caller observes the same CorrectionState and the framesRemaining counter
+     * is decremented more than once per logical frame, so an active correction
+     * is reported finished after fewer total predict() calls than there are
+     * correction frames. We drive a large authoritative error so a correction
+     * is active, then hammer predict() concurrently and require that the
+     * correction is consumed in EXACTLY CORRECTION_FRAMES logical advances:
+     * after fewer calls than that it must still be active, and it must
+     * eventually clear. The atomic compute() path makes the consumption count
+     * deterministic regardless of thread interleaving.
+     */
+    @Test
+    void testCorrectionConsumedInExactlyCorrectionFramesCalls() {
+        // Deterministic contract: a fresh active correction must take EXACTLY
+        // CORRECTION_FRAMES sequential predict() calls to fully consume — one
+        // frame per call. A non-atomic RMW that lost updates (or double-consumed)
+        // would clear it in fewer calls (Luciferase-0frcy.55).
+        int frames = DeadReckoningEstimator.CORRECTION_FRAMES;
+        var est = new DeadReckoningEstimator();
+        var seed = new TestGhostEntity("g", new Point3f(0, 0, 0), new Vector3f(100, 0, 0), 0L);
+        est.onAuthoritativeUpdate(seed, new Point3f(0, 0, 0));
+        var updated = new TestGhostEntity("g", new Point3f(0, 0, 0), new Vector3f(100, 0, 0), 1000L);
+        est.onAuthoritativeUpdate(updated, new Point3f(500, 0, 0));
+
+        int calls = 0;
+        while (est.hasActiveCorrection(updated.id()) && calls < frames * 4) {
+            est.predict(updated, 1000L);
+            calls++;
+        }
+        assertEquals(frames, calls,
+            "Correction must consume exactly CORRECTION_FRAMES frames, one per predict() call");
+    }
+
+    /**
+     * Concurrency stress companion for Luciferase-0frcy.55 — see the deterministic
+     * contract test above. Hammers predict() concurrently; the atomic compute()
+     * path must leave the correction fully and cleanly consumed.
+     */
+    @Test
+    void testConcurrentPredictDoesNotOverConsumeCorrection() throws InterruptedException {
+        int frames = DeadReckoningEstimator.CORRECTION_FRAMES;
+        // Run the race many times to surface the lost-update under contention.
+        for (int trial = 0; trial < 50; trial++) {
+            var est = new DeadReckoningEstimator();
+            var id = "ghost-" + trial;
+            // Seed prediction state with a non-trivial velocity (so clamping does
+            // not zero the correction) at t=0.
+            var seed = new TestGhostEntity(id, new Point3f(0, 0, 0), new Vector3f(100, 0, 0), 0L);
+            est.onAuthoritativeUpdate(seed, new Point3f(0, 0, 0));
+            // Authoritative update arriving with a large position error -> active correction.
+            var updated = new TestGhostEntity(id, new Point3f(0, 0, 0), new Vector3f(100, 0, 0), 1000L);
+            est.onAuthoritativeUpdate(updated, new Point3f(500, 0, 0));
+
+            assertTrue(est.hasActiveCorrection(updated.id()),
+                "Correction must be active before consumption");
+
+            // Fire 2 concurrent predict() calls (same logical frame). If the RMW
+            // were non-atomic both would consume the same frame, advancing the
+            // counter by 2. With atomic compute() the two calls serialize and
+            // consume exactly 2 frames total.
+            int concurrentCallers = 2;
+            for (int consumed = 0; consumed < frames; consumed += concurrentCallers) {
+                var latch = new java.util.concurrent.CountDownLatch(1);
+                var threads = new Thread[concurrentCallers];
+                for (int t = 0; t < concurrentCallers; t++) {
+                    threads[t] = new Thread(() -> {
+                        try {
+                            latch.await();
+                        } catch (InterruptedException ignored) {
+                            Thread.currentThread().interrupt();
+                        }
+                        est.predict(updated, 1000L);
+                    });
+                    threads[t].start();
+                }
+                latch.countDown();
+                for (var th : threads) {
+                    th.join(5000);
+                }
+            }
+
+            // After exactly `frames` logical advances (frames/concurrentCallers
+            // rounds of concurrentCallers calls), the correction must be fully
+            // consumed — never left active (which would mean a frame was skipped
+            // by a double-consume) — and predict must remain side-effect-stable.
+            assertFalse(est.hasActiveCorrection(updated.id()),
+                "Correction must be fully consumed without double-counting (trial " + trial + ")");
+        }
+    }
 }

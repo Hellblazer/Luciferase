@@ -161,8 +161,12 @@ public class GrpcBubbleNetworkChannelTest {
         assertTrue(receivedLatch.await(5, TimeUnit.SECONDS),
                    "Should receive ack within 5 seconds");
 
-        // Verify received ack
-        assertEquals(targetNodeId, receivedSourceId.get(), "Source ID should match");
+        // Verify received ack. Luciferase-wikxz: the receiver must recover the ack's
+        // SourceBubbleId (the originating identity the sender serialised), NOT TargetBubbleId.
+        // The ack was built with sourceBubbleId=sourceNodeId, so the recovered source id
+        // must equal sourceNodeId. (Pre-fix this asserted targetNodeId — encoding the bug.)
+        assertEquals(sourceNodeId, receivedSourceId.get(),
+                     "Recovered source id must equal the ack's SourceBubbleId");
         assertNotNull(receivedAck.get(), "Ack should be received");
         assertEquals(entityId, receivedAck.get().getEntityId(), "Entity ID should match");
         assertEquals(3, receivedAck.get().getStabilityTicksVerified());

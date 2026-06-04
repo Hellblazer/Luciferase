@@ -158,6 +158,31 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
     }
 
     /**
+     * Visible-for-testing constructor that accepts an explicit GhostBoundarySync so a
+     * test can observe its interactions (e.g. that onBucketComplete does not invoke
+     * expireStaleGhosts twice — Luciferase-0frcy.100).
+     */
+    BubbleGhostManager(
+        EnhancedBubble bubble,
+        ServerRegistry serverRegistry,
+        GhostChannel<ID, Content> ghostChannel,
+        SameServerOptimizer optimizer,
+        ExternalBubbleTracker externalBubbleTracker,
+        GhostLayerHealth ghostLayerHealth,
+        GhostBoundarySync<ID, Content> ghostBoundarySync
+    ) {
+        this.bubble = Objects.requireNonNull(bubble, "bubble must not be null");
+        this.serverRegistry = Objects.requireNonNull(serverRegistry, "serverRegistry must not be null");
+        this.ghostChannel = Objects.requireNonNull(ghostChannel, "ghostChannel must not be null");
+        this.optimizer = Objects.requireNonNull(optimizer, "optimizer must not be null");
+        this.externalBubbleTracker = Objects.requireNonNull(externalBubbleTracker,
+                                                              "externalBubbleTracker must not be null");
+        this.ghostLayerHealth = Objects.requireNonNull(ghostLayerHealth, "ghostLayerHealth must not be null");
+        this.lifecycle = new GhostLifecycleStateMachine(500L, 300L);
+        this.ghostBoundarySync = Objects.requireNonNull(ghostBoundarySync, "ghostBoundarySync must not be null");
+    }
+
+    /**
      * Notify manager that an entity is near a boundary and should be ghosted to a neighbor.
      * <p>
      * This queues the ghost in GhostBoundarySync with TTL and memory limit management. The ghost will be sent at the
@@ -213,10 +238,9 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
         // Expire stale ghosts in lifecycle (bucket → milliseconds)
         lifecycle.expireStaleGhosts(bucket * 100L);
 
-        // Expire stale ghosts in GhostBoundarySync (bucket-based)
-        ghostBoundarySync.expireStaleGhosts(bucket);
-
-        // Flush all pending batches
+        // Flush all pending batches. GhostBoundarySync.onBucketComplete() already
+        // calls expireStaleGhosts(bucket) internally as its final action, so we do
+        // not invoke it explicitly here (that was a redundant double-expiry per bucket).
         ghostBoundarySync.onBucketComplete(bucket);
 
         // Trigger GhostChannel flush
@@ -249,9 +273,17 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
         // Update NC metric (VON health)
         ghostLayerHealth.recordGhostSource(fromBubbleId);
 
-        // Update lifecycle for incoming ghosts
+        // Update lifecycle for incoming ghosts. Received ghosts are never registered
+        // by the local sender path (notifyEntityNearBoundary), so the first time we see
+        // one we must onCreate() it before onUpdate() — otherwise onUpdate()'s
+        // computeIfPresent() is a guaranteed no-op and receiver-side staleness tracking
+        // never advances (Luciferase-liimr).
         for (var ghost : ghosts) {
-            lifecycle.onUpdate(ghost.entityId().toDebugString(), ghost.timestamp());
+            var entityKey = ghost.entityId().toDebugString();
+            if (lifecycle.getState(entityKey) == null) {
+                lifecycle.onCreate(entityKey, fromBubbleId, ghost.timestamp());
+            }
+            lifecycle.onUpdate(entityKey, ghost.timestamp());
         }
 
         log.debug("Received ghost batch from {}: {} ghosts", fromBubbleId, ghosts.size());
@@ -291,6 +323,18 @@ public class BubbleGhostManager<ID extends EntityID, Content> {
      */
     public int getActiveGhostCount() {
         return ghostBoundarySync.getActiveGhostCount();
+    }
+
+    /**
+     * Visible-for-testing: lifecycle state for a tracked ghost by its debug-string key,
+     * or {@code null} if no lifecycle entry exists. Lets tests assert that receiver-side
+     * staleness tracking actually advances for incoming ghosts (Luciferase-liimr).
+     *
+     * @param entityDebugString Entity id in {@code toDebugString()} form
+     * @return the lifecycle state, or null if the entity is not tracked
+     */
+    GhostLifecycleStateMachine.GhostLifecycleState getLifecycleStateForTesting(String entityDebugString) {
+        return lifecycle.getLifecycleState(entityDebugString);
     }
 
     /**

@@ -216,4 +216,52 @@ class FlockingBehaviorTest {
 
         return (float) Math.sqrt(variance / entities.size());
     }
+
+    /**
+     * Luciferase-0frcy.54: cleanupRemovedEntities() must not drop velocity
+     * entries for entities that are still active. The prior implementation ran
+     * keySet().retainAll(activeIds) in place on the live ConcurrentHashMaps,
+     * which races a concurrent computeVelocity().put and could remove a
+     * just-inserted entry. The fix rebuilds filtered maps under the tick-boundary
+     * lock. Here we verify the functional contract: after a compute (which puts
+     * into current) and a cleanup that RETAINS the active entity, the entity's
+     * current-buffer velocity survives.
+     */
+    @Test
+    void cleanupRetainsActiveEntityVelocities() throws Exception {
+        var fb = new FlockingBehavior(30f, 15f, 0.5f, 1f, 1f, 1f,
+            com.hellblazer.luciferase.simulation.config.WorldBounds.DEFAULT,
+            new java.util.Random(7));
+
+        var bub = new EnhancedBubble(UUID.randomUUID(), (byte) 10, 16);
+        bub.addEntity("active", new Point3f(10, 10, 10), null);
+
+        // computeVelocity writes the entity's velocity into the current buffer.
+        fb.computeVelocity("active", new Point3f(10, 10, 10), new Vector3f(1, 0, 0), bub, 0.1f);
+
+        // Cleanup retaining the active entity must NOT evict its current velocity.
+        fb.cleanupRemovedEntities(java.util.Set.of("active"));
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Vector3f> current = currentBuffer(fb);
+        assertThat(current.containsKey("active"))
+            .as("Active entity velocity must survive a retaining cleanup")
+            .isTrue();
+
+        // Cleanup with an empty active set must drop the stale entry.
+        fb.cleanupRemovedEntities(java.util.Set.of());
+        assertThat(currentBuffer(fb).containsKey("active"))
+            .as("Removed entity must be evicted by cleanup")
+            .isFalse();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Map<String, Vector3f> currentBuffer(FlockingBehavior fb) throws Exception {
+        var bf = FlockingBehavior.class.getDeclaredField("buffers");
+        bf.setAccessible(true);
+        Object buffers = bf.get(fb);
+        var cm = buffers.getClass().getDeclaredMethod("current");
+        cm.setAccessible(true);
+        return (java.util.Map<String, Vector3f>) cm.invoke(buffers);
+    }
 }

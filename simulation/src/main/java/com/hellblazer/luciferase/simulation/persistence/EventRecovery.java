@@ -79,14 +79,18 @@ public class EventRecovery {
         // ALL events unconditionally, making the checkpoint mechanism a no-op for recovery (a crash
         // at seq=15000 after a checkpoint at seq=10000 would re-replay all 15000 events). When no
         // checkpoint exists, fall back to the full log.
-        var wal = new WriteAheadLog(nodeId, logDirectory);
+        // Luciferase-sc6pl: use a READ-ONLY reader, never a full WriteAheadLog. Constructing a
+        // WriteAheadLog here opens the same JSONL log file with a second writable append-mode
+        // FileOutputStream while the owning WAL is still being written by the batch-flush scheduler,
+        // interleaving partial JSON lines and corrupting the log. WalLogReader opens files for
+        // reading only.
+        var reader = new WalLogReader(nodeId, logDirectory);
         List<Map<String, Object>> allEvents;
         if (checkpoint != null) {
-            allEvents = wal.readEventsSince(checkpoint.sequenceNumber());
+            allEvents = reader.readEventsSince(checkpoint.sequenceNumber());
         } else {
-            allEvents = wal.readAllEvents();
+            allEvents = reader.readAllEvents();
         }
-        wal.close();
 
         // Replay events with validation
         var validEvents = new ArrayList<Map<String, Object>>();

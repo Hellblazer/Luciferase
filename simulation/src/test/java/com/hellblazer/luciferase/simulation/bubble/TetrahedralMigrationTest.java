@@ -222,4 +222,34 @@ class TetrahedralMigrationTest {
         assertTrue(str.contains("total="));
         assertTrue(str.contains("failures="));
     }
+
+    /**
+     * Luciferase-0frcy.59: TetrahedralContainmentChecker.checkMigrations must
+     * derive the source bubble key directly from the bubble's own bounds (O(1)),
+     * not by scanning getAllBubbles() twice (O(n) per call, O(n^2) per tick).
+     * This verifies the FUNCTIONAL contract that the source key of every produced
+     * migration record equals bubble.bounds().rootKey() — the value the direct
+     * O(1) lookup returns — for an entity that has escaped its bubble.
+     */
+    @Test
+    void containmentCheckerUsesBubbleOwnKeyAsSource() {
+        var grid = new TetreeBubbleGrid((byte) 1);
+        grid.createBubbles(9, (byte) 1, 16);
+        var tet = new Tetree<StringEntityID, Object>(new StringEntityIDGenerator(), 100, (byte) 1);
+        var checker = new TetrahedralContainmentChecker(tet, grid);
+
+        var bubble = grid.getAllBubbles().iterator().next();
+        var expectedSourceKey = bubble.bounds().rootKey();
+        assertNotNull(expectedSourceKey, "Bubble must have a root key");
+
+        // Place an entity far outside the bubble bounds so it is flagged as escaped.
+        bubble.addEntity("escapee", new Point3f(1_000_000f, 1_000_000f, 1_000_000f), null);
+
+        var records = checker.checkMigrations(bubble);
+        // Every produced record must carry the bubble's own key as the source.
+        for (var rec : records) {
+            assertEquals(expectedSourceKey, rec.sourceBubbleKey(),
+                "Source key must equal the bubble's own root key (direct O(1) lookup)");
+        }
+    }
 }

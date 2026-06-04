@@ -29,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * EnhancedBubbleMigrationIntegration - Migration coordination for EnhancedBubble (Phase 7E Day 4)
@@ -102,11 +103,15 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
     // Most recent EntityDepartureEvent produced by detectAndInitiateMigrations (diagnostics/testing).
     private volatile EntityDepartureEvent lastDepartureEvent;
 
-    // Metrics
-    private long totalMigrationsInitiated = 0;
-    private long totalMigrationsCompleted = 0;
-    private long totalMigrationsRolledBack = 0;
-    private long totalTimeoutsProcessed = 0;
+    // Metrics. AtomicLong because these counters are mutated from the tick
+    // thread (processMigrations) and from FSM listener callbacks
+    // (onEntityStateTransition / onViewChangeRollback) which can run on a
+    // different thread; plain non-volatile longs are not guaranteed atomic and
+    // getMetrics() could read torn/stale values (Luciferase-0frcy.58).
+    private final AtomicLong totalMigrationsInitiated = new AtomicLong(0);
+    private final AtomicLong totalMigrationsCompleted = new AtomicLong(0);
+    private final AtomicLong totalMigrationsRolledBack = new AtomicLong(0);
+    private final AtomicLong totalTimeoutsProcessed = new AtomicLong(0);
 
     /**
      * Create migration integration for an EnhancedBubble.
@@ -225,7 +230,7 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
                     // Notify the destination that the entity is departing this bubble.
                     sendEntityDepartureEvent(entityId, targetBubble);
 
-                    totalMigrationsInitiated++;
+                    totalMigrationsInitiated.incrementAndGet();
 
                     log.debug("Migration initiated for entity {} -> target bubble {}", entityId, targetBubble);
                 }
@@ -300,7 +305,7 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
                     // Send ViewSynchronyAck to source
                     sendViewSynchronyAck(entityId);
 
-                    totalMigrationsCompleted++;
+                    totalMigrationsCompleted.incrementAndGet();
 
                     log.debug("Migration completed for entity: {} (stable for {} ticks)",
                             entityId, stableTicks);
@@ -342,7 +347,7 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
                     // Send rollback event
                     sendEntityRollbackEvent(uuid, "timeout");
 
-                    totalTimeoutsProcessed++;
+                    totalTimeoutsProcessed.incrementAndGet();
                 }
 
                 log.warn("Migration timeout for entity: {}", entityId);
@@ -420,7 +425,7 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
         // Clear stability tracking for rolled-back entities
         entityStabilityTicks.clear();
 
-        totalMigrationsRolledBack += rolledBackCount;
+        totalMigrationsRolledBack.addAndGet(rolledBackCount);
     }
 
     /**
@@ -493,10 +498,10 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
         return String.format(
             "EnhancedBubbleMigrationIntegration{initiated=%d, completed=%d, rolledBack=%d, " +
             "timeouts=%d, pending=%d}",
-            totalMigrationsInitiated,
-            totalMigrationsCompleted,
-            totalMigrationsRolledBack,
-            totalTimeoutsProcessed,
+            totalMigrationsInitiated.get(),
+            totalMigrationsCompleted.get(),
+            totalMigrationsRolledBack.get(),
+            totalTimeoutsProcessed.get(),
             entityStabilityTicks.size()
         );
     }
@@ -516,7 +521,7 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
      * @return total migrations initiated
      */
     public long getTotalMigrationsInitiated() {
-        return totalMigrationsInitiated;
+        return totalMigrationsInitiated.get();
     }
 
     /**

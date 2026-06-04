@@ -872,8 +872,14 @@ public class CrossProcessMigration {
                     recordOrphanedEntity.accept(entityId); // Phase 2C: Track orphaned entity
                 }
 
-                log.debug("ABORT: Restored entity {} to source {} with epoch {} (txn={}, position={})",
-                          entityId, source.getBubbleId(), snapshot.epoch(), txnId, snapshot.position());
+                // Luciferase-0frcy.109: only log the "Restored entity" success message when the
+                // entity was actually re-added to the source. Logging it unconditionally (even when
+                // restored == false) produces a false success trace that masks rollback-failure data
+                // loss for operators watching debug logs.
+                if (restored) {
+                    log.debug("ABORT: Restored entity {} to source {} with epoch {} (txn={}, position={})",
+                              entityId, source.getBubbleId(), snapshot.epoch(), txnId, snapshot.position());
+                }
 
                 // Luciferase-0frcy.30: record ABORT to the WAL after rollback so recovery treats
                 // the transaction as resolved (entity is back at the source).

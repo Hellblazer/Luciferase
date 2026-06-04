@@ -314,18 +314,37 @@ public class WriteAheadLog implements AutoCloseable {
             this.fileChannel = fos.getChannel();
             this.writer = new BufferedWriter(new OutputStreamWriter(fos, java.nio.charset.StandardCharsets.UTF_8));
 
-            // Set rotation count from file name
-            var fileName = currentLogFile.getFileName().toString();
-            if (fileName.contains("-")) {
-                try {
-                    var parts = fileName.replace(".log", "").split("-");
-                    if (parts.length >= 3) {
-                        rotationCount = Integer.parseInt(parts[parts.length - 1]);
-                    }
-                } catch (NumberFormatException e) {
-                    rotationCount = 0;
+            // Set rotation count from file name (robust against UUID hyphens)
+            rotationCount = rotationSuffix(currentLogFile);
+        }
+
+        // Restore sequence counter from existing log content so sequence numbers remain
+        // globally monotonic across process restarts (otherwise they restart at 1,2,3...
+        // and collide with prior runs, breaking readEventsSince filtering).
+        restoreSequenceCounter();
+    }
+
+    /**
+     * Scan all existing log files for this node and initialize the sequence counter to the
+     * highest persisted sequence number, so subsequently-appended events continue the
+     * monotonic sequence rather than colliding with prior-run sequence numbers.
+     */
+    private void restoreSequenceCounter() {
+        long maxSequence = 0;
+        try {
+            for (var event : readAllEvents()) {
+                var seq = event.get("sequence");
+                if (seq instanceof Number n) {
+                    maxSequence = Math.max(maxSequence, n.longValue());
                 }
             }
+        } catch (IOException e) {
+            log.warn("Failed to scan existing log for sequence restoration on node {}; starting at 0", nodeId, e);
+            return;
+        }
+        sequenceCounter.set(maxSequence);
+        if (maxSequence > 0) {
+            log.debug("Restored WAL sequence counter to {} for node {}", maxSequence, nodeId);
         }
     }
 
@@ -334,9 +353,12 @@ public class WriteAheadLog implements AutoCloseable {
         var logFiles = new ArrayList<Path>();
 
         try (var stream = Files.list(logDirectory)) {
+            // Sort by numeric rotation suffix (base=0, node-UUID-N.log=N) so replay is chronological.
+            // Plain lexicographic .sorted() is WRONG: ASCII '-'(45) < '.'(46) puts node-UUID-1.log
+            // before node-UUID.log, and orders -10 before -2, inverting causal order.
             stream.filter(p -> p.getFileName().toString().startsWith(prefix))
                   .filter(p -> p.getFileName().toString().endsWith(".log"))
-                  .sorted()
+                  .sorted(Comparator.comparingInt(this::rotationSuffix))
                   .forEach(logFiles::add);
         } catch (IOException e) {
             // Directory might not exist yet
@@ -344,6 +366,35 @@ public class WriteAheadLog implements AutoCloseable {
         }
 
         return logFiles;
+    }
+
+    /**
+     * Extract the numeric rotation suffix from a log file path.
+     * The base file ({@code node-UUID.log}) returns 0; rotated files ({@code node-UUID-N.log})
+     * return N. The node id is a UUID (which itself contains hyphens), so the suffix is parsed
+     * relative to the fixed {@code node-UUID} prefix rather than by splitting on '-'.
+     *
+     * @param path log file path
+     * @return rotation number (base=0), or 0 if the name does not match the rotated pattern
+     */
+    private int rotationSuffix(Path path) {
+        var fileName = path.getFileName().toString();
+        var base = "node-" + nodeId; // node-<UUID>
+        if (!fileName.startsWith(base) || !fileName.endsWith(".log")) {
+            return 0;
+        }
+        var middle = fileName.substring(base.length(), fileName.length() - ".log".length());
+        if (middle.isEmpty()) {
+            return 0; // base file: node-UUID.log
+        }
+        if (middle.startsWith("-")) {
+            try {
+                return Integer.parseInt(middle.substring(1));
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+        }
+        return 0;
     }
 
     private List<Map<String, Object>> readLogFile(Path logFile) throws IOException {

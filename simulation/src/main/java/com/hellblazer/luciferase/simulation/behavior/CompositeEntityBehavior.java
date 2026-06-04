@@ -15,6 +15,7 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Composite behavior that routes to different behaviors based on entity type.
@@ -30,7 +31,7 @@ import java.util.Map;
  */
 public class CompositeEntityBehavior implements EntityBehavior {
 
-    private final Map<EntityType, EntityBehavior> behaviors = new HashMap<>();
+    private final Map<EntityType, EntityBehavior> behaviors = new ConcurrentHashMap<>();
     private final EntityBehavior defaultBehavior;
     private final float maxAoiRadius;
     private final float maxSpeed;

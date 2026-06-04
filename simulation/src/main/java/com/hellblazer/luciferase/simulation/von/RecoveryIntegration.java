@@ -457,7 +457,6 @@ public class RecoveryIntegration {
                       partitionId, now - lastTime);
             return;
         }
-        lastRecoveryTime.put(partitionId, now);
 
         // BFS with depth tracking
         var queue = new ArrayDeque<RecoveryTask>();
@@ -473,16 +472,20 @@ public class RecoveryIntegration {
                 continue;
             }
 
-            // Process this partition's recovery
-            processPartitionRecovery(task.partitionId);
+            // Process this partition's recovery. Only stamp the cooldown when the
+            // recovery actually succeeded (successfulRejoins > 0); a failed attempt
+            // must remain promptly retriable rather than being suppressed for
+            // RECOVERY_COOLDOWN_MS.
+            var successfulRejoins = processPartitionRecovery(task.partitionId);
+            if (successfulRejoins > 0) {
+                lastRecoveryTime.put(task.partitionId, clock.currentTimeMillis());
+            }
 
             // Queue dependent partitions
             var dependents = recoveryDependencies.get(task.partitionId);
             if (dependents != null) {
                 for (var dependent : dependents) {
                     if (visited.add(dependent)) {
-                        // Update cooldown timestamp for dependent
-                        lastRecoveryTime.put(dependent, clock.currentTimeMillis());
                         queue.add(new RecoveryTask(dependent, task.depth + 1));
                     } else {
                         log.debug("Skipping already visited partition {} (cycle prevention)", dependent);
@@ -499,14 +502,14 @@ public class RecoveryIntegration {
      *
      * @param partitionId Partition to process
      */
-    private void processPartitionRecovery(UUID partitionId) {
+    private int processPartitionRecovery(UUID partitionId) {
         var recoveryStartTime = clock.currentTimeMillis();
         var bubbles = partitionBubbles.get(partitionId);
 
         if (bubbles == null || bubbles.isEmpty()) {
             log.warn("No bubbles found for recovered partition {}", partitionId);
             emitRecoveryEvent(partitionId, 0, 0, 0, 0, false);
-            return;
+            return 0;
         }
 
         int totalBubbles = bubbles.size();
@@ -555,6 +558,7 @@ public class RecoveryIntegration {
 
         log.info("Partition {} recovery complete: {}/{} bubbles rejoined in {}ms (cascade={})",
                 partitionId, successfulRejoins, totalBubbles, recoveryTimeMs, cascadeTriggered);
+        return successfulRejoins;
     }
 
     /**

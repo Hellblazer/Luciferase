@@ -80,6 +80,12 @@ public class FlockingBehavior implements EntityBehavior {
     private volatile VelocityBuffers buffers =
         new VelocityBuffers(new ConcurrentHashMap<>(), new ConcurrentHashMap<>());
 
+    // Guards the tick-boundary lifecycle operations (swap + cleanup) so they
+    // are mutually exclusive and serialized with respect to each other. Both
+    // are intended to run only between ticks, never concurrently with the
+    // computeVelocity() fan-out (Luciferase-0frcy.54).
+    private final Object tickBoundaryLock = new Object();
+
     /**
      * Create flocking behavior with default parameters.
      *
@@ -163,21 +169,46 @@ public class FlockingBehavior implements EntityBehavior {
     public void swapVelocityBuffers() {
         // Single atomic volatile write: the just-completed tick's current map becomes the new
         // previous, and a fresh empty map becomes current. No intermediate aliasing window.
-        var completed = buffers.current();
-        buffers = new VelocityBuffers(completed, new ConcurrentHashMap<>());
+        // Serialized with cleanupRemovedEntities() via tickBoundaryLock so the two
+        // tick-boundary operations cannot interleave (Luciferase-0frcy.54).
+        synchronized (tickBoundaryLock) {
+            var completed = buffers.current();
+            buffers = new VelocityBuffers(completed, new ConcurrentHashMap<>());
+        }
     }
 
     /**
      * Clean up velocity entries for entities that no longer exist.
      * <p>
-     * Should be called periodically to prevent memory leaks.
+     * Must only be called at a tick boundary (after {@link #swapVelocityBuffers()},
+     * before any {@link #computeVelocity} call for the new tick). It is serialized
+     * with the swap via {@code tickBoundaryLock}.
+     * <p>
+     * Cleanup rebuilds fresh filtered maps and installs them with a single
+     * volatile write rather than running {@code retainAll} in place on the live
+     * maps. An in-place {@code retainAll} performs a multi-step iterate-and-remove
+     * that can race a concurrent {@code computeVelocity().put} and drop a
+     * just-inserted entry (Luciferase-0frcy.54).
      *
      * @param activeEntityIds Set of currently active entity IDs
      */
     public void cleanupRemovedEntities(Set<String> activeEntityIds) {
-        var snapshot = buffers;
-        snapshot.previous().keySet().retainAll(activeEntityIds);
-        snapshot.current().keySet().retainAll(activeEntityIds);
+        synchronized (tickBoundaryLock) {
+            var snapshot = buffers;
+            var filteredPrevious = new ConcurrentHashMap<String, Vector3f>();
+            var filteredCurrent = new ConcurrentHashMap<String, Vector3f>();
+            for (var e : snapshot.previous().entrySet()) {
+                if (activeEntityIds.contains(e.getKey())) {
+                    filteredPrevious.put(e.getKey(), e.getValue());
+                }
+            }
+            for (var e : snapshot.current().entrySet()) {
+                if (activeEntityIds.contains(e.getKey())) {
+                    filteredCurrent.put(e.getKey(), e.getValue());
+                }
+            }
+            buffers = new VelocityBuffers(filteredPrevious, filteredCurrent);
+        }
     }
 
     @Override

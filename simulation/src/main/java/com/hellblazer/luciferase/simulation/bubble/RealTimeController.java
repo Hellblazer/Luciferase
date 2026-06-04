@@ -189,7 +189,11 @@ public class RealTimeController {
 
             // Start the tick thread
             tickThread = new Thread(this::tickLoop, name + "-tick");
-            tickThread.setDaemon(false);
+            // Daemon so a forgotten/leaked controller cannot pin the JVM open
+            // (Luciferase-0frcy.57). Orderly shutdown still goes through stop(),
+            // which interrupts and joins the tick thread; the daemon flag only
+            // affects the case where stop() is never called.
+            tickThread.setDaemon(true);
             tickThread.start();
         }
     }

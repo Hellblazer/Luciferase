@@ -77,15 +77,14 @@ public class StockNeighborList {
      * @param bucket     Bucket when seen
      */
     public void addStockNeighbor(UUID neighborId, long bucket) {
-        stockNeighbors.put(neighborId, bucket);
-
-        // Enforce capacity limit (synchronized only for eviction)
-        if (stockNeighbors.size() > maxCapacity) {
-            synchronized (this) {
-                // Double-check after acquiring lock
-                while (stockNeighbors.size() > maxCapacity) {
-                    evictOldest();
-                }
+        // Put and capacity enforcement must be one critical section, otherwise
+        // N concurrent threads can each put before any thread evicts, leaving
+        // up to maxCapacity + (N-1) entries (Luciferase-0frcy.79 TOCTOU). The
+        // put is cheap; holding the lock around it gives a hard capacity cap.
+        synchronized (this) {
+            stockNeighbors.put(neighborId, bucket);
+            while (stockNeighbors.size() > maxCapacity) {
+                evictOldest();
             }
         }
     }

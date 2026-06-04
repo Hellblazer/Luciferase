@@ -35,6 +35,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 /**
  * P2P implementation of GhostChannel using Transport for neighbor-to-neighbor ghost synchronization.
@@ -119,6 +120,14 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     private long currentBucket = 0;
 
     /**
+     * Factory that reconstructs the caller's concrete {@code ID} type from a ghost's
+     * serialized entity-id string. Required so received cross-bubble ghosts carry an
+     * entityId of the real ID type rather than a private placeholder, which would throw
+     * ClassCastException at any type-checking use site (Luciferase-weaqr).
+     */
+    private final Function<String, ID> idFactory;
+
+    /**
      * Set the clock source for deterministic testing.
      */
     public void setClock(Clock clock) {
@@ -127,12 +136,47 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     }
 
     /**
-     * Create P2P ghost channel with Bubble.
+     * Create P2P ghost channel with Bubble, defaulting the entity-id factory to the
+     * project's {@link com.hellblazer.luciferase.simulation.entity.StringEntityID}.
+     * <p>
+     * Use this only when the caller's {@code ID} type is the project StringEntityID. For
+     * any other ID type use {@link #P2PGhostChannel(Bubble, Function)} and supply a
+     * matching deserializer; otherwise received ghosts will carry the wrong concrete ID
+     * type (Luciferase-weaqr).
      *
      * @param vonBubble Bubble for P2P transport
      */
+    @SuppressWarnings("unchecked")
     public P2PGhostChannel(Bubble vonBubble) {
+        this(vonBubble, (Function<String, ID>) (Function<String, ?>)
+             (Function<String, com.hellblazer.luciferase.simulation.entity.StringEntityID>)
+             P2PGhostChannel::deserializeStringEntityId);
+    }
+
+    /**
+     * Inverse of {@link com.hellblazer.luciferase.simulation.entity.StringEntityID#toDebugString()}
+     * (the form the sender serializes into the wire token). StringEntityID renders as
+     * {@code "Entity[<value>]"}; this strips the wrapper so the reconstructed id
+     * {@code equals()} the original. Tokens not in that form are passed through verbatim.
+     */
+    private static com.hellblazer.luciferase.simulation.entity.StringEntityID deserializeStringEntityId(String token) {
+        var value = token;
+        if (token.startsWith("Entity[") && token.endsWith("]")) {
+            value = token.substring("Entity[".length(), token.length() - 1);
+        }
+        return new com.hellblazer.luciferase.simulation.entity.StringEntityID(value);
+    }
+
+    /**
+     * Create P2P ghost channel with Bubble and an explicit entity-id deserializer.
+     *
+     * @param vonBubble Bubble for P2P transport
+     * @param idFactory Reconstructs the caller's concrete {@code ID} from a ghost's
+     *                  serialized entity-id string (must match the sender's ID type)
+     */
+    public P2PGhostChannel(Bubble vonBubble, Function<String, ID> idFactory) {
         this.vonBubble = Objects.requireNonNull(vonBubble, "vonBubble must not be null");
+        this.idFactory = Objects.requireNonNull(idFactory, "idFactory must not be null");
         this.factory = new MessageFactory(clock);
         this.pendingBatches = new ConcurrentHashMap<>();
         this.handlers = new CopyOnWriteArrayList<>();
@@ -336,7 +380,6 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
      * @param bucket   Simulation bucket
      * @return SimulationGhostEntity with reconstructed content
      */
-    @SuppressWarnings("unchecked")
     private SimulationGhostEntity<ID, Content> fromTransportGhost(
         Message.TransportGhost tg,
         UUID sourceId,
@@ -345,9 +388,13 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
         // Deserialize content
         var content = deserializeContent(tg.contentClass(), tg.contentValue());
 
+        // Reconstruct the caller's concrete ID type via the injected deserializer, so the
+        // ghost's entityId is usable by handlers that type-check it (Luciferase-weaqr).
+        var entityId = idFactory.apply(tg.entityId());
+
         // Create ghost entity with reconstructed content
         var internalGhost = new com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo<ID, Content>(
-            (ID) new StringEntityID(tg.entityId()),  // Use StringEntityID as placeholder
+            entityId,
             content,  // Reconstructed content
             tg.position(),
             new com.hellblazer.luciferase.lucien.entity.EntityBounds(tg.position(), 0.5f),
@@ -392,20 +439,5 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
         // Future: Add support for other Content types here
         log.warn("Unsupported content type for deserialization: {}", contentClass);
         return null;
-    }
-
-    /**
-     * Simple string-based EntityID for transport reconstruction.
-     */
-    private record StringEntityID(String id) implements EntityID {
-        @Override
-        public String toDebugString() {
-            return id;
-        }
-
-        @Override
-        public int compareTo(EntityID other) {
-            return id.compareTo(other.toDebugString());
-        }
     }
 }

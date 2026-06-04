@@ -577,17 +577,49 @@ public class MultiBubbleVisualizationServer {
         return sb.toString();
     }
 
+    /**
+     * Compute the axis-aligned bounding box of a bubble from its tetrahedral vertices
+     * (Luciferase-0frcy.118).
+     * <p>
+     * The bubble's 4 tetrahedral vertices are tracked in {@link #bubbleVertices} (set
+     * via {@link #setBubbleVertices}). When present, the AABB is the per-axis min/max
+     * over those vertices, so each bubble reports its true geometry instead of a shared
+     * hardcoded cube. If vertices have not been registered for this bubble (e.g. a demo
+     * configuration that never called {@code setBubbleVertices}), fall back to the
+     * legacy {@code +/-100} stub and warn so the missing geometry is observable.
+     */
     private Map<String, Float> getBubbleBounds(EnhancedBubble bubble) {
-        // Approximate bubble bounds (in a real implementation, would query tetree bounds)
-        // For now, use a simple calculation based on world size
-        // TODO: Get actual tetrahedral bounds from TetreeBubbleGrid
+        var vertices = bubbleVertices.get(bubble.id());
+        if (vertices == null || vertices.length == 0) {
+            log.warn("No tetrahedral vertices registered for bubble {}; reporting stub +/-100 bounds",
+                     bubble.id());
+            return Map.of(
+                "minX", -100f, "minY", -100f, "minZ", -100f,
+                "maxX", 100f, "maxY", 100f, "maxZ", 100f
+            );
+        }
+
+        var minX = Float.POSITIVE_INFINITY;
+        var minY = Float.POSITIVE_INFINITY;
+        var minZ = Float.POSITIVE_INFINITY;
+        var maxX = Float.NEGATIVE_INFINITY;
+        var maxY = Float.NEGATIVE_INFINITY;
+        var maxZ = Float.NEGATIVE_INFINITY;
+        for (var v : vertices) {
+            if (v == null) {
+                continue;
+            }
+            minX = Math.min(minX, v.x);
+            minY = Math.min(minY, v.y);
+            minZ = Math.min(minZ, v.z);
+            maxX = Math.max(maxX, v.x);
+            maxY = Math.max(maxY, v.y);
+            maxZ = Math.max(maxZ, v.z);
+        }
+
         return Map.of(
-            "minX", -100f,
-            "minY", -100f,
-            "minZ", -100f,
-            "maxX", 100f,
-            "maxY", 100f,
-            "maxZ", 100f
+            "minX", minX, "minY", minY, "minZ", minZ,
+            "maxX", maxX, "maxY", maxY, "maxZ", maxZ
         );
     }
 

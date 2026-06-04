@@ -25,6 +25,7 @@ import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.membership.Member;
 
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -54,9 +55,31 @@ public class CommitteeBallotBox {
 
     private final DynamicContext<Member> context;
     private final ConcurrentHashMap<UUID, VoteState> proposals = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Integer>   proposalCommitteeSize = new ConcurrentHashMap<>();
 
     public CommitteeBallotBox(DynamicContext<Member> context) {
         this.context = context;
+    }
+
+    /**
+     * Register the size of the committee that may vote on {@code proposalId}.
+     * <p>
+     * Quorum must be bounded by the number of members who can actually vote. The BFT
+     * committee is a small subset (typically 7–9) drawn from the full cluster, so
+     * deriving quorum from the full-cluster {@link DynamicContext} produced a threshold
+     * (e.g. 34 for a 100-node cluster) that the committee could never reach — every
+     * migration silently timed out (Luciferase-ltxta). When a committee size is
+     * registered for a proposal, {@link #completeIfQuorum} uses the committee-relative
+     * BFT formula instead of the full-cluster context. Absent a registration the legacy
+     * context-based formula is retained (used by mock-driven unit tests).
+     *
+     * @param proposalId    the proposal whose committee size is being declared
+     * @param committeeSize number of distinct members eligible to vote
+     */
+    public void registerCommittee(UUID proposalId, int committeeSize) {
+        if (committeeSize > 0) {
+            proposalCommitteeSize.put(proposalId, committeeSize);
+        }
     }
 
     /**
@@ -85,7 +108,7 @@ public class CommitteeBallotBox {
             state.votes.add(vote.approved());
 
             // Check if quorum reached (KerlDHT pattern)
-            completeIfQuorum(state);
+            completeIfQuorum(proposalId, state);
         }
     }
 
@@ -102,6 +125,23 @@ public class CommitteeBallotBox {
     }
 
     /**
+     * Get the result future for a proposal WITHOUT creating a new entry.
+     * <p>
+     * Unlike {@link #getResult(UUID)}, this never resurrects state for a proposal
+     * that has already been {@link #clear(UUID) cleared} (e.g. by a concurrent
+     * view-change rollback). Callers on the abort path — such as timeout handling —
+     * must use this to avoid creating a "zombie" {@code VoteState} and then
+     * completing it with a misleading outcome (Luciferase-0frcy.92).
+     *
+     * @param proposalId which proposal
+     * @return the existing result future, or empty if no state is tracked
+     */
+    public Optional<CompletableFuture<Boolean>> getResultIfPresent(UUID proposalId) {
+        var state = proposals.get(proposalId);
+        return state == null ? Optional.empty() : Optional.of(state.result);
+    }
+
+    /**
      * Clear all vote state for a proposal.
      * <p>
      * Used after decision is made to clean up memory.
@@ -110,6 +150,19 @@ public class CommitteeBallotBox {
      */
     public void clear(UUID proposalId) {
         proposals.remove(proposalId);
+        proposalCommitteeSize.remove(proposalId);
+    }
+
+    /**
+     * Committee-relative quorum, matching the project's {@code toleranceLevel()+1}
+     * convention bounded by the committee that can actually vote (Luciferase-ltxta).
+     * <p>
+     * DynamicContext.toleranceLevel() in this codebase is {@code floor((n-1)/2)} (see
+     * QuorumCalculationTest's size→tolerance table: 7→3, 9→4), so quorum is
+     * {@code floor((n-1)/2) + 1} — a simple majority of the committee.
+     */
+    private static int committeeQuorum(int committeeSize) {
+        return committeeSize <= 1 ? 1 : ((committeeSize - 1) / 2) + 1;
     }
 
     /**
@@ -126,7 +179,7 @@ public class CommitteeBallotBox {
      * }
      * </pre>
      */
-    private void completeIfQuorum(VoteState state) {
+    private void completeIfQuorum(UUID proposalId, VoteState state) {
         if (state.result.isDone()) {
             return;  // Already completed
         }
@@ -137,8 +190,12 @@ public class CommitteeBallotBox {
                              .max(Ordering.natural().onResultOf(Multiset.Entry::getCount))
                              .orElse(null);
 
-        // Calculate quorum using KerlDHT formula
-        var majority = context.size() == 1 ? 1 : context.toleranceLevel() + 1;
+        // Quorum bounded by the committee that can actually vote when registered
+        // (Luciferase-ltxta); otherwise fall back to the full-cluster context formula.
+        var committeeSize = proposalCommitteeSize.get(proposalId);
+        var majority = committeeSize != null
+            ? committeeQuorum(committeeSize)
+            : (context.size() == 1 ? 1 : context.toleranceLevel() + 1);
 
         // If max vote count >= quorum, complete with that vote option
         if (max != null && max.getCount() >= majority) {

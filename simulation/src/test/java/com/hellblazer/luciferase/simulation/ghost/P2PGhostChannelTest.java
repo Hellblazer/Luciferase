@@ -149,6 +149,33 @@ class P2PGhostChannelTest {
     }
 
     @Test
+    void testReceivedGhostEntityIdIsRealTypeAndEqualsOriginal() throws Exception {
+        // Regression for Luciferase-weaqr: received ghosts must carry the caller's real
+        // EntityID type (project StringEntityID), reconstructed via the injected factory,
+        // not a private placeholder that throws ClassCastException at any type-check site.
+        var originalId = new StringEntityID("ghost-weaqr");
+        var ghost = createGhost("ghost-weaqr", new Point3f(51.0f, 51.0f, 50.0f));
+
+        var received = new AtomicReference<List<SimulationGhostEntity<StringEntityID, Object>>>();
+        var latch = new CountDownLatch(1);
+        channel2.onReceive((fromId, ghosts) -> {
+            received.set(new ArrayList<>(ghosts));
+            latch.countDown();
+        });
+
+        channel1.queueGhost(bubble2.id(), ghost);
+        channel1.flush(100);
+
+        assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(received.get()).hasSize(1);
+        var receivedEntityId = received.get().get(0).entityId();
+        // Type-check at use site: this cast threw ClassCastException pre-fix.
+        StringEntityID typed = (StringEntityID) receivedEntityId;
+        assertThat(typed).isInstanceOf(StringEntityID.class);
+        assertThat(typed).isEqualTo(originalId);
+    }
+
+    @Test
     void testIsConnected_checkNeighborStatus() {
         // Given: Established neighbor relationship
         // Then: Connected to neighbor

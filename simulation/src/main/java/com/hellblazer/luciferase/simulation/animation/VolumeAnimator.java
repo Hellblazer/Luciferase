@@ -125,6 +125,20 @@ public class VolumeAnimator {
         return p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1 && p.z >= 0 && p.z <= 1;
     }
 
+    /**
+     * Compute the per-frame sleep duration, clamped to be non-negative
+     * (Luciferase-0frcy.74). When the frame's work plus event overhead exceeds
+     * the frame budget, {@code frameRateNs - duration - eventOverhead} is
+     * negative; passing a negative duration to {@code Kronos.sleep} has
+     * unspecified behavior (potential stall). Mirrors the
+     * {@code if (sleepNs > 0)} guard in RealTimeController.tickLoop().
+     * Visible-for-testing (public because the @Entity PrimeMover transformation
+     * prevents package-private access from cross-package tests).
+     */
+    public static long frameSleepNs(long frameRateNs, long duration, long eventOverhead) {
+        return Math.max(0, frameRateNs - duration - eventOverhead);
+    }
+
     @Entity
     public class AnimationFrame {
         private final long frameRateNs;
@@ -162,7 +176,7 @@ public class VolumeAnimator {
             var now = clock.nanoTime();
             var duration = now - start;
             cumulativeDurations += duration;
-            Kronos.sleep(frameRateNs - duration - eventOverhead);
+            Kronos.sleep(VolumeAnimator.frameSleepNs(frameRateNs, duration, eventOverhead));
             this.track();
             lastActive = clock.nanoTime();
             eventOverhead = (lastActive - now) / 2;

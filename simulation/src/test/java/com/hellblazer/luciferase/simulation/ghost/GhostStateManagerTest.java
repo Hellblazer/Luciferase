@@ -269,6 +269,31 @@ class GhostStateManagerTest {
     }
 
     @Test
+    void testTickExpiresOnlyStaleGhostsViaTargetedRemoval() {
+        // Regression for Luciferase-0frcy.102: tick() now drives removals from the exact
+        // set of IDs the lifecycle expired, rather than rescanning ghostStates and
+        // re-querying lifecycle state. Verify a stale ghost is culled while a freshly
+        // updated peer survives the same tick.
+        var stale = new StringEntityID("stale-102");
+        var fresh = new StringEntityID("fresh-102");
+        var position = new Point3f(0.0f, 0.0f, 0.0f);
+        var velocity = new Point3f(0.0f, 0.0f, 0.0f);
+
+        manager.updateGhost(sourceBubbleId, new EntityUpdateEvent(stale, position, velocity, 1000L, 1L));
+        manager.updateGhost(sourceBubbleId, new EntityUpdateEvent(fresh, position, velocity, 1000L, 1L));
+
+        // Refresh only the fresh ghost at 1400ms.
+        manager.updateGhost(sourceBubbleId, new EntityUpdateEvent(fresh, position, velocity, 1400L, 2L));
+
+        // Tick at 1600ms: stale last-updated 1000 (600ms > 500ms TTL) expires;
+        // fresh last-updated 1400 (200ms) survives.
+        manager.tick(1600L);
+
+        assertNull(manager.getGhost(stale), "Stale ghost should be culled by tick");
+        assertNotNull(manager.getGhost(fresh), "Freshly-updated ghost must survive the same tick");
+    }
+
+    @Test
     void testDeadReckoningBoundsClamping() {
         var entityId = new StringEntityID("entity1");
 

@@ -381,4 +381,45 @@ class StockNeighborListTest {
                     )),
                     "Returned list should be unmodifiable");
     }
+
+    /**
+     * Luciferase-0frcy.79: capacity must be a hard cap even under concurrent
+     * adds. With the unsynchronized put-then-check-then-evict, N threads could
+     * each complete their put before any eviction ran, leaving up to
+     * maxCapacity + (N-1) entries. With put+eviction inside one critical
+     * section the count never exceeds maxCapacity, even momentarily as observed
+     * after all adds complete.
+     */
+    @Test
+    void testCapacityHardCapUnderConcurrentAdds() throws InterruptedException {
+        int cap = 8;
+        var list = new StockNeighborList(cap);
+        int threads = 16;
+        int addsPerThread = 100;
+
+        var latch = new java.util.concurrent.CountDownLatch(1);
+        var workers = new Thread[threads];
+        for (int t = 0; t < threads; t++) {
+            final long base = t * 1000L;
+            workers[t] = new Thread(() -> {
+                try {
+                    latch.await();
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                for (int i = 0; i < addsPerThread; i++) {
+                    list.addStockNeighbor(UUID.randomUUID(), base + i);
+                }
+            });
+            workers[t].start();
+        }
+        latch.countDown();
+        for (var w : workers) {
+            w.join(10_000);
+        }
+
+        assertTrue(list.getStockNeighborCount() <= cap,
+            "Concurrent adds must never leave the list over capacity, got "
+                + list.getStockNeighborCount() + " > " + cap);
+    }
 }

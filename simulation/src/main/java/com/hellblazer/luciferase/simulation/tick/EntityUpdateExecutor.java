@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 
@@ -83,7 +84,11 @@ public class EntityUpdateExecutor {
     public void updateEntities(EnhancedBubble bubble, float deltaTime) {
         for (var entity : bubble.getAllEntityRecords()) {
             try {
-                var entityUUID = UUID.nameUUIDFromBytes(entity.id().getBytes());
+                // Luciferase-0frcy.108: encode with an explicit UTF-8 charset so UUID generation is
+                // deterministic across platforms/nodes. Relying on the platform default charset makes
+                // velocity-map keys diverge between nodes with different defaults, silently losing
+                // velocity updates.
+                var entityUUID = UUID.nameUUIDFromBytes(entity.id().getBytes(StandardCharsets.UTF_8));
                 var velocity = velocities.computeIfAbsent(entityUUID, k -> new Vector3f());
 
                 var newVelocity = behavior.computeVelocity(

@@ -420,4 +420,43 @@ class EnhancedBubbleMigrationIntegrationTest {
         assertNull(integration.getLastDepartureEvent(),
             "No departure event without a crossing");
     }
+
+    /**
+     * Luciferase-0frcy.58: the migration counters are AtomicLong because they
+     * are mutated from the tick thread and from FSM listener callbacks. Under
+     * concurrent rollback callbacks the rolledBack total must equal the sum of
+     * all increments with no lost updates (plain long += can lose updates /
+     * tear). We hammer onViewChangeRollback from many threads and assert the
+     * reported total in getMetrics() is exact.
+     */
+    @Test
+    @DisplayName("Concurrent rollback callbacks count atomically (no lost updates)")
+    void testConcurrentRollbackCountingIsAtomic() throws InterruptedException {
+        int threads = 16;
+        int rollbacksPerThread = 500;
+        var latch = new java.util.concurrent.CountDownLatch(1);
+        var workers = new Thread[threads];
+        for (int t = 0; t < threads; t++) {
+            workers[t] = new Thread(() -> {
+                try {
+                    latch.await();
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                for (int i = 0; i < rollbacksPerThread; i++) {
+                    integration.onViewChangeRollback(1, 0);
+                }
+            });
+            workers[t].start();
+        }
+        latch.countDown();
+        for (var w : workers) {
+            w.join(15_000);
+        }
+
+        int expected = threads * rollbacksPerThread;
+        var metrics = integration.getMetrics();
+        assertTrue(metrics.contains("rolledBack=" + expected),
+            "rolledBack count must be exact (" + expected + "), metrics=" + metrics);
+    }
 }

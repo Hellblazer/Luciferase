@@ -335,12 +335,17 @@ public class GhostStateManager {
         // Dead reckoning estimator handles prediction internally
         // Delegate staleness detection to lifecycle state machine
 
-        var expiredCount = lifecycle.expireStaleGhosts(currentTime);
+        // Use the exact set of IDs the lifecycle just expired to target our removals,
+        // instead of rescanning ghostStates and re-querying lifecycle.getState() — the
+        // latter is weakly consistent under concurrent expiry and could both miss and
+        // double-visit keys (Luciferase-0frcy.102). removeGhost()'s null-check makes the
+        // targeted removal idempotent.
+        var expiredIds = lifecycle.expireStaleGhostsReturningIds(currentTime);
 
-        if (expiredCount > 0) {
-            // Remove expired ghosts from our local state
+        if (!expiredIds.isEmpty()) {
+            var expiredDebugStrings = new HashSet<>(expiredIds);
             for (var entityId : ghostStates.keySet()) {
-                if (lifecycle.getState(entityId.toDebugString()) == null) {
+                if (expiredDebugStrings.contains(entityId.toDebugString())) {
                     removeGhost(entityId);
                     log.debug("Culled stale ghost {} at time {}", entityId, currentTime);
                 }
