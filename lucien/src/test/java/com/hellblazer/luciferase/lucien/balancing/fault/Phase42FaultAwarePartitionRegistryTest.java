@@ -207,6 +207,12 @@ class Phase42FaultAwarePartitionRegistryTest {
         public void reportHeartbeatFailure(UUID partitionId, UUID nodeId) {}
 
         @Override
+        public void reportHeartbeatFailure(UUID partitionId) {}
+
+        @Override
+        public void reportPartitionFailed(UUID partitionId) {}
+
+        @Override
         public void registerRecovery(UUID partitionId, PartitionRecovery recovery) {}
 
         @Override

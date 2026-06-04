@@ -66,7 +66,7 @@ class BubbleMigratorExecutorTest {
             return null;
         });
 
-        var result = migrator.migrate(sourceBubble, UUID.randomUUID())
+        var result = migrator.migrate(sourceBubble, UUID.randomUUID(), UUID.randomUUID())
                              .get(5, TimeUnit.SECONDS);
 
         assertFalse(result.success(), "migration fails gracefully (factory returned null)");

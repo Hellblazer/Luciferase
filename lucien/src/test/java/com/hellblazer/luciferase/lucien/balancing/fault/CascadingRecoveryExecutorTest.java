@@ -5,33 +5,33 @@
  */
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
+import com.hellblazer.luciferase.lucien.balancing.fault.test.MockFaultHandler;
 import org.junit.jupiter.api.Test;
 
+import java.util.EnumSet;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Luciferase-h08sd: CascadingRecoveryImpl used Executors.newCachedThreadPool, so a cascading failure (many
- * partitions failing at once, each parking on a Thread.sleep backoff) spawned N unbounded platform threads. It now
- * uses a virtual-thread-per-task executor, so N concurrent parked backoffs are cheap.
+ * Tests for CascadingRecoveryImpl.
+ * <p>
+ * Luciferase-h08sd: virtual-thread executor test.
+ * Luciferase-7wzml.11: verifyRecovery de-tautologized via per-level outcome injection.
  *
  * @author hal.hildebrand
  */
 class CascadingRecoveryExecutorTest {
 
-    /**
-     * Submit far more concurrently-parked tasks than any sane platform-thread pool would tolerate, and require
-     * every one of them to (a) actually start and (b) run on a virtual thread. A cached platform-thread pool would
-     * either exhaust OS threads or run on non-virtual carriers — either way this assertion fails.
-     */
     @Test
     void recoveryTasksRunOnCheapVirtualThreads() throws Exception {
         var recovery = new CascadingRecoveryImpl();
-        var executor = recovery.executor();   // package-private accessor (no reflection)
+        var executor = recovery.executor();
 
         int tasks = 1_000;
         var allVirtual = new AtomicInteger(0);
@@ -46,7 +46,7 @@ class CascadingRecoveryExecutorTest {
                 }
                 started.countDown();
                 try {
-                    release.await();   // park all 1000 simultaneously — cheap only on virtual threads
+                    release.await();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 } finally {
@@ -56,12 +56,147 @@ class CascadingRecoveryExecutorTest {
         }
 
         assertTrue(started.await(10, TimeUnit.SECONDS),
-                   "all " + tasks + " recovery tasks must start concurrently — a bounded platform pool would stall "
-                   + "(Luciferase-h08sd)");
+                   "all " + tasks + " recovery tasks must start concurrently (Luciferase-h08sd)");
         release.countDown();
         assertTrue(finished.await(10, TimeUnit.SECONDS), "all tasks must finish");
         assertEquals(tasks, allVirtual.get(),
-                     "every recovery task must run on a virtual thread, not an unbounded cached platform pool "
-                     + "(Luciferase-h08sd)");
+                     "every recovery task must run on a virtual thread (Luciferase-h08sd)");
+    }
+
+    /**
+     * Level1 forced fail -> escalation reaches STATE_TRANSFER and FULL_REBUILD (Luciferase-7wzml.11).
+     */
+    @Test
+    void level1FailForceEscalationToStateTransferAndFullRebuild() throws Exception {
+        var partitionId = UUID.randomUUID();
+        var config = FaultConfiguration.defaultConfig().withMaxRetries(1);
+        var handler = new MockFaultHandler(config);
+        handler.injectStatusChange(partitionId, PartitionStatus.FAILED);
+
+        Set<CascadingRecoveryImpl.RecoveryLevel> levelsAttempted = ConcurrentHashMap.newKeySet();
+
+        var recovery = new CascadingRecoveryImpl(config)
+            .enableSimulatedRecovery()
+            .setLevelOutcome(level -> {
+                levelsAttempted.add(level);
+                return level == CascadingRecoveryImpl.RecoveryLevel.FULL_REBUILD;
+            });
+
+        var result = recovery.recover(partitionId, handler).get(10, TimeUnit.SECONDS);
+
+        assertTrue(result.success(), "recovery must succeed via FULL_REBUILD");
+        assertTrue(result.statusMessage().contains("full rebuild") || result.statusMessage().contains("Level 3"),
+                   "success message must mention full rebuild, got: " + result.statusMessage());
+        assertEquals(EnumSet.allOf(CascadingRecoveryImpl.RecoveryLevel.class), levelsAttempted,
+                     "all three levels must have been attempted");
+        assertEquals(1, handler.getCallCount("markHealthy"),
+                     "markHealthy called exactly once — when FULL_REBUILD succeeds");
+    }
+
+    /**
+     * Level1 fail -> Level2 succeeds -> Level3 not reached (Luciferase-7wzml.11).
+     */
+    @Test
+    void level1FailEscalesToLevel2WhenLevel2Succeeds() throws Exception {
+        var partitionId = UUID.randomUUID();
+        var config = FaultConfiguration.defaultConfig().withMaxRetries(1);
+        var handler = new MockFaultHandler(config);
+        handler.injectStatusChange(partitionId, PartitionStatus.SUSPECTED);
+
+        Set<CascadingRecoveryImpl.RecoveryLevel> levelsAttempted = ConcurrentHashMap.newKeySet();
+
+        var recovery = new CascadingRecoveryImpl(config)
+            .enableSimulatedRecovery()
+            .setLevelOutcome(level -> {
+                levelsAttempted.add(level);
+                return level != CascadingRecoveryImpl.RecoveryLevel.BARRIER;
+            });
+
+        var result = recovery.recover(partitionId, handler).get(10, TimeUnit.SECONDS);
+
+        assertTrue(result.success(), "recovery must succeed via STATE_TRANSFER");
+        assertTrue(result.statusMessage().contains("state transfer") || result.statusMessage().contains("Level 2"),
+                   "must succeed at Level 2: " + result.statusMessage());
+        assertTrue(levelsAttempted.contains(CascadingRecoveryImpl.RecoveryLevel.BARRIER), "BARRIER must be attempted");
+        assertTrue(levelsAttempted.contains(CascadingRecoveryImpl.RecoveryLevel.STATE_TRANSFER), "STATE_TRANSFER must be attempted");
+        assertFalse(levelsAttempted.contains(CascadingRecoveryImpl.RecoveryLevel.FULL_REBUILD),
+                    "FULL_REBUILD must NOT be reached when STATE_TRANSFER succeeds");
+        assertEquals(1, handler.getCallCount("markHealthy"), "markHealthy called exactly once");
+    }
+
+    /**
+     * All levels fail -> result is failure, markHealthy never called.
+     * Proves verifyRecovery is not self-confirming (Luciferase-7wzml.11).
+     */
+    @Test
+    void allLevelsFailedMeansNoMarkHealthyAndResultIsFailure() throws Exception {
+        var partitionId = UUID.randomUUID();
+        var config = FaultConfiguration.defaultConfig().withMaxRetries(1);
+        var handler = new MockFaultHandler(config);
+        handler.injectStatusChange(partitionId, PartitionStatus.FAILED);
+
+        var recovery = new CascadingRecoveryImpl(config)
+            .enableSimulatedRecovery()
+            .setLevelOutcome(level -> false);
+
+        var result = recovery.recover(partitionId, handler).get(10, TimeUnit.SECONDS);
+
+        assertFalse(result.success(), "all levels failed — result must be failure");
+        assertEquals(0, handler.getCallCount("markHealthy"),
+                     "markHealthy must NEVER be called when all levels fail — "
+                     + "old tautological verifyRecovery would have self-confirmed (Luciferase-7wzml.11)");
+        assertEquals(PartitionStatus.FAILED, handler.checkHealth(partitionId),
+                     "partition must remain FAILED");
+    }
+
+    /**
+     * Retry/backoff loop executes >1 attempt under injected failure (Luciferase-7wzml.11).
+     * maxRecoveryRetries=2: attempt1 fails -> 100ms sleep -> attempt2 fails -> escalate.
+     */
+    @Test
+    void retryBackoffLoopExecutesMultipleAttemptsUnderInjectedFailure() throws Exception {
+        var partitionId = UUID.randomUUID();
+        var config = FaultConfiguration.defaultConfig().withMaxRetries(2);
+        var handler = new MockFaultHandler(config);
+        handler.injectStatusChange(partitionId, PartitionStatus.FAILED);
+
+        var barrierCallCount = new AtomicInteger(0);
+
+        var recovery = new CascadingRecoveryImpl(config)
+            .enableSimulatedRecovery()
+            .setLevelOutcome(level -> {
+                if (level == CascadingRecoveryImpl.RecoveryLevel.BARRIER) {
+                    barrierCallCount.incrementAndGet();
+                    return false;
+                }
+                return true;  // STATE_TRANSFER succeeds
+            });
+
+        var result = recovery.recover(partitionId, handler).get(10, TimeUnit.SECONDS);
+
+        assertTrue(result.success(), "recovery must succeed at STATE_TRANSFER after BARRIER retries");
+        assertEquals(2, barrierCallCount.get(),
+                     "BARRIER verifyRecovery called exactly 2 times (maxRecoveryRetries=2), "
+                     + "proving retry/backoff loop ran >1 attempt (Luciferase-7wzml.11)");
+    }
+
+    /**
+     * Default (no injection): BARRIER succeeds on first attempt. No regression.
+     */
+    @Test
+    void defaultOutcomeAllLevelsSucceedBarrierOnFirstAttempt() throws Exception {
+        var partitionId = UUID.randomUUID();
+        var config = FaultConfiguration.defaultConfig().withMaxRetries(1);
+        var handler = new MockFaultHandler(config);
+        handler.injectStatusChange(partitionId, PartitionStatus.SUSPECTED);
+
+        var recovery = new CascadingRecoveryImpl(config).enableSimulatedRecovery();
+
+        var result = recovery.recover(partitionId, handler).get(10, TimeUnit.SECONDS);
+
+        assertTrue(result.success(), "default: BARRIER must succeed on first attempt");
+        assertTrue(result.statusMessage().contains("barrier") || result.statusMessage().contains("Level 1"),
+                   "must succeed at Level 1: " + result.statusMessage());
+        assertEquals(1, handler.getCallCount("markHealthy"), "markHealthy called exactly once");
     }
 }

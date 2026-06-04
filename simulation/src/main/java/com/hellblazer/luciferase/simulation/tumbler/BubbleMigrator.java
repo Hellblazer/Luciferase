@@ -119,9 +119,13 @@ public class BubbleMigrator {
     /**
      * Execute a single migration.
      *
+     * @param bubble         the bubble to migrate
+     * @param sourceServerId the server currently hosting the bubble; used to decrement source metrics
+     *                       after a successful migration (Luciferase-7wzml.44)
+     * @param targetServerId the destination server
      * @return CompletableFuture with migration result
      */
-    public CompletableFuture<MigrationResult> migrate(Bubble bubble, UUID targetServerId) {
+    public CompletableFuture<MigrationResult> migrate(Bubble bubble, UUID sourceServerId, UUID targetServerId) {
         var bubbleId = bubble.id();
 
         // Check cooldown (read-only, safe before reservation)
@@ -163,7 +167,7 @@ public class BubbleMigrator {
 
         return CompletableFuture.supplyAsync(() -> {
             try {
-                return executeMigration(bubble, targetServerId, startTime);
+                return executeMigration(bubble, sourceServerId, targetServerId, startTime);
             } finally {
                 // Luciferase-0frcy.38: value-conditional removal so we only clear OUR reservation,
                 // never a subsequent re-reservation of the same bubbleId by another thread.
@@ -184,7 +188,8 @@ public class BubbleMigrator {
     /**
      * Execute the actual migration protocol.
      */
-    private MigrationResult executeMigration(Bubble sourceBubble, UUID targetServerId, long startTime) {
+    private MigrationResult executeMigration(Bubble sourceBubble, UUID sourceServerId, UUID targetServerId,
+                                             long startTime) {
         var bubbleId = sourceBubble.id();
 
         log.info("Starting migration of bubble {} to server {}", bubbleId, targetServerId);
@@ -216,8 +221,11 @@ public class BubbleMigrator {
             // Step 5: Deactivate source bubble
             sourceBubble.close();
 
-            // Step 6: Update metrics
-            var sourceMetrics = tumbler.getServerMetrics(getServerForBubble(sourceBubble));
+            // Step 6: Update metrics — sourceServerId is threaded in from the caller who knows
+            // which server owns the bubble. This replaces the hollow getServerForBubble() stub that
+            // unconditionally returned null, which caused the source ServerMetrics to never be
+            // decremented after a migration (Luciferase-7wzml.44).
+            var sourceMetrics = tumbler.getServerMetrics(sourceServerId);
             var targetMetrics = tumbler.getServerMetrics(targetServerId);
 
             if (sourceMetrics != null) {
@@ -260,15 +268,6 @@ public class BubbleMigrator {
     }
 
     /**
-     * Get the server ID for a bubble.
-     * This should be tracked elsewhere; placeholder implementation.
-     */
-    private UUID getServerForBubble(Bubble bubble) {
-        // In real implementation, look up from registry
-        return null;
-    }
-
-    /**
      * Run a migration cycle based on current load imbalance.
      *
      * @return Number of migrations initiated
@@ -292,7 +291,7 @@ public class BubbleMigrator {
                 continue;
             }
 
-            migrate(bubble, candidate.targetServer());
+            migrate(bubble, candidate.sourceServer(), candidate.targetServer());
             initiated++;
 
             if (initiated >= maxConcurrentMigrations) {

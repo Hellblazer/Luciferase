@@ -29,11 +29,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests for NodeReductionComparator.
+ *
+ * <p>Key invariants under test:
+ * <ol>
+ *   <li>tiledNodes is the SUM of actual per-tile BeamTree totalBeams() — never totalTiles, never globalNodes</li>
+ *   <li>With N&gt;1 non-empty tiles, tiledNodes != globalNodes AND tiledNodes != totalTiles</li>
+ *   <li>reductionRatio is computed from real measured node counts: 1 - (tiledNodes / globalNodes)</li>
+ * </ol>
  */
 class NodeReductionComparatorTest {
 
     private NodeReductionComparator comparator;
-    private static final int FRAME_SIZE = 64;  // 64x64 = 4096 rays for quick tests
+    // 32x32 = 1024 rays, 16-px tiles → 4 tiles per axis = 16 non-empty tiles
+    private static final int FRAME_SIZE = 32;
+    private static final int TILE_SIZE = 16;
 
     @BeforeEach
     void setUp() {
@@ -41,80 +50,116 @@ class NodeReductionComparatorTest {
         comparator = new NodeReductionComparator(analyzer);
     }
 
+    /**
+     * tiledNodes must be the sum of actual per-tile BeamTree totalBeams(), not totalTiles and not globalNodes.
+     * With N&gt;1 high-coherence tiles, tiledNodes != globalNodes AND tiledNodes != totalTiles.
+     */
     @Test
-    void testGlobalVsTiledComparison() {
-        // Create high-coherence rays (all parallel)
+    void testTiledNodesIsActualPerTileBeamTreeSum() {
         var rays = createParallelRays(FRAME_SIZE, FRAME_SIZE);
-        var config = TileConfiguration.from(FRAME_SIZE, FRAME_SIZE, 16);
+        var config = TileConfiguration.from(FRAME_SIZE, FRAME_SIZE, TILE_SIZE);
+
+        // Threshold below expected coherence so all tiles classified high-coherence
+        var result = comparator.compare(rays, config, 0.1, FRAME_SIZE, FRAME_SIZE);
+
+        int totalTiles = config.totalTiles();  // 16 tiles for 32x32 / 16
+
+        assertTrue(result.globalNodes() > 0,
+                   "Global BeamTree must have nodes");
+        assertTrue(result.tiledNodes() > 0,
+                   "Tiled sum must be positive");
+
+        // The headline invariant: tiledNodes is NOT totalTiles and NOT globalNodes
+        assertNotEquals(totalTiles, result.tiledNodes(),
+                        "tiledNodes must be sum of BeamTree nodes, not a raw tile count");
+        assertNotEquals(result.globalNodes(), result.tiledNodes(),
+                        "tiledNodes must be sum of per-tile trees, not the global tree count");
+
+        // Tile count partition: all non-empty tiles accounted for
+        assertEquals(totalTiles, result.highCoherenceTiles() + result.lowCoherenceTiles(),
+                     "highCoherenceTiles + lowCoherenceTiles must equal total non-empty tiles");
+    }
+
+    /**
+     * reductionRatio must equal 1 - (tiledNodes / globalNodes) exactly.
+     */
+    @Test
+    void testReductionRatioIsComputedFromRealNodeCounts() {
+        var rays = createParallelRays(FRAME_SIZE, FRAME_SIZE);
+        var config = TileConfiguration.from(FRAME_SIZE, FRAME_SIZE, TILE_SIZE);
+
+        var result = comparator.compare(rays, config, 0.1, FRAME_SIZE, FRAME_SIZE);
+
+        double expected = 1.0 - ((double) result.tiledNodes() / result.globalNodes());
+        assertEquals(expected, result.reductionRatio(), 1e-9,
+                     "reductionRatio must equal 1 - (tiledNodes / globalNodes)");
+    }
+
+    /**
+     * Empty rays must produce all-zero result without building any trees.
+     */
+    @Test
+    void testEmptyRaysProducesZeroResult() {
+        var rays = new Ray[0];
+        var config = TileConfiguration.from(FRAME_SIZE, FRAME_SIZE, TILE_SIZE);
 
         var result = comparator.compare(rays, config, 0.7, FRAME_SIZE, FRAME_SIZE);
 
-        // Verify basic result structure
-        assertTrue(result.globalNodes() > 0, "Global tree should have nodes");
-        assertTrue(result.tiledNodes() > 0, "Tiled approach should have nodes");
-        assertTrue(result.reductionRatio() >= 0.0, "Reduction ratio should be non-negative");
+        assertEquals(0, result.globalNodes(),        "Empty rays → 0 global nodes");
+        assertEquals(0, result.tiledNodes(),         "Empty rays → 0 tiled nodes");
+        assertEquals(0.0, result.reductionRatio(),   "Empty rays → 0.0 reduction ratio");
+        assertEquals(0, result.highCoherenceTiles(), "Empty rays → 0 high-coherence tiles");
+        assertEquals(0, result.lowCoherenceTiles(),  "Empty rays → 0 low-coherence tiles");
     }
 
+    /**
+     * Per-tile coherence classification must partition all non-empty tiles into
+     * high or low coherence — the sum must equal the total tile count.
+     */
     @Test
-    void testVirtualNodeCounting() {
-        // Create low-coherence rays (divergent)
-        var rays = createDivergentRays(FRAME_SIZE, FRAME_SIZE);
-        var config = TileConfiguration.from(FRAME_SIZE, FRAME_SIZE, 16);
+    void testTileCoherencePartitionIsExhaustive() {
+        var parallelRays = createParallelRays(FRAME_SIZE, FRAME_SIZE);
+        var config = TileConfiguration.from(FRAME_SIZE, FRAME_SIZE, TILE_SIZE);
 
-        // Use high threshold so all tiles are low-coherence
+        // Parallel rays have coherence ~1.0: threshold=0.0 → all tiles high-coherence
+        var highResult = comparator.compare(parallelRays, config, 0.0, FRAME_SIZE, FRAME_SIZE);
+        assertEquals(config.totalTiles(), highResult.highCoherenceTiles(),
+                     "With threshold=0.0 all parallel-ray tiles should be high-coherence");
+        assertEquals(0, highResult.lowCoherenceTiles(),
+                     "With threshold=0.0 no tiles should be low-coherence");
+        assertEquals(config.totalTiles(),
+                     highResult.highCoherenceTiles() + highResult.lowCoherenceTiles(),
+                     "high + low must equal total non-empty tiles");
+
+        // Divergent rays with threshold=1.0 → all tiles below threshold (low-coherence)
+        var divergentRays = createDivergentRays(FRAME_SIZE, FRAME_SIZE);
+        var lowResult = comparator.compare(divergentRays, config, 1.0, FRAME_SIZE, FRAME_SIZE);
+        assertEquals(config.totalTiles(), lowResult.lowCoherenceTiles(),
+                     "With threshold=1.0 all divergent-ray tiles should be low-coherence");
+        assertEquals(0, lowResult.highCoherenceTiles(),
+                     "With threshold=1.0 no divergent-ray tiles should be high-coherence");
+        assertEquals(config.totalTiles(),
+                     lowResult.highCoherenceTiles() + lowResult.lowCoherenceTiles(),
+                     "high + low must equal total non-empty tiles");
+    }
+
+    /**
+     * Divergent rays must still produce a real tiledNodes sum (not totalTiles).
+     */
+    @Test
+    void testDivergentRaysTiledNodesIsActualTreeSum() {
+        var rays = createDivergentRays(FRAME_SIZE, FRAME_SIZE);
+        var config = TileConfiguration.from(FRAME_SIZE, FRAME_SIZE, TILE_SIZE);
+
         var result = comparator.compare(rays, config, 0.9, FRAME_SIZE, FRAME_SIZE);
 
-        // All tiles should be low-coherence (virtual nodes)
-        assertEquals(config.totalTiles(), result.lowCoherenceTiles(),
-                     "All tiles should be low-coherence with high threshold");
+        int totalTiles = config.totalTiles();
 
-        // Tiled nodes should equal number of low-coherence tiles (1 virtual node each)
-        assertTrue(result.tiledNodes() >= result.lowCoherenceTiles(),
-                   "Tiled nodes should include at least 1 virtual node per low-coherence tile");
-    }
-
-    @Test
-    void testReductionRatioCalculation() {
-        // Create parallel rays (high coherence)
-        var rays = createParallelRays(FRAME_SIZE, FRAME_SIZE);
-        var config = TileConfiguration.from(FRAME_SIZE, FRAME_SIZE, 16);
-
-        var result = comparator.compare(rays, config, 0.7, FRAME_SIZE, FRAME_SIZE);
-
-        // Reduction ratio formula: 1 - (tiled / global)
-        double expectedRatio = 1.0 - ((double) result.tiledNodes() / result.globalNodes());
-        assertEquals(expectedRatio, result.reductionRatio(), 0.0001,
-                     "Reduction ratio should match formula: 1 - (tiled / global)");
-    }
-
-    @Test
-    void testHighCoherenceTileCount() {
-        // Create parallel rays (high coherence)
-        var rays = createParallelRays(FRAME_SIZE, FRAME_SIZE);
-        var config = TileConfiguration.from(FRAME_SIZE, FRAME_SIZE, 16);
-
-        // Use low threshold so all tiles are high-coherence
-        var result = comparator.compare(rays, config, 0.5, FRAME_SIZE, FRAME_SIZE);
-
-        // Most or all tiles should be high-coherence
-        assertTrue(result.highCoherenceTiles() > 0,
-                   "Parallel rays should produce high-coherence tiles");
-        assertEquals(config.totalTiles(), result.highCoherenceTiles() + result.lowCoherenceTiles(),
-                     "Total tiles should equal high + low coherence tiles");
-    }
-
-    @Test
-    void testZeroNodeReduction() {
-        // Create empty ray array
-        var rays = new Ray[0];
-        var config = TileConfiguration.from(FRAME_SIZE, FRAME_SIZE, 16);
-
-        var result = comparator.compare(rays, config, 0.7, FRAME_SIZE, FRAME_SIZE);
-
-        // Empty input should produce zero results
-        assertEquals(0, result.globalNodes(), "Empty rays should have 0 global nodes");
-        assertEquals(0, result.tiledNodes(), "Empty rays should have 0 tiled nodes");
-        assertEquals(0.0, result.reductionRatio(), "Empty rays should have 0.0 reduction ratio");
+        // tiledNodes is sum of actual BeamTree nodes, not the tile count
+        assertNotEquals(totalTiles, result.tiledNodes(),
+                        "tiledNodes must be actual BeamTree node sum, not raw tile count even for divergent rays");
+        assertTrue(result.tiledNodes() > 0,
+                   "Divergent rays still produce real BeamTree nodes per tile");
     }
 
     // Helper methods
@@ -143,7 +188,6 @@ class NodeReductionComparatorTest {
                 float screenY = 1.0f - 2.0f * y / height;
                 var origin = new Point3f(screenX, screenY, 0);
 
-                // Truly random direction for maximum divergence
                 var direction = new Vector3f(
                     random.nextFloat() * 2.0f - 1.0f,
                     random.nextFloat() * 2.0f - 1.0f,

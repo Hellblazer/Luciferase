@@ -437,24 +437,69 @@ public class GhostBoundaryDetector<Key extends SpatialKey<Key>, ID extends Entit
     }
 
     /**
-     * Create a ghost element for a remote-owned neighbor that is absent from the local index.
+     * Create ghost element(s) for a remote-owned neighbor key.
      *
-     * <p>Placeholder hook: the actual ghost entity data arrives asynchronously via gRPC
-     * ({@link DistributedGhostManager}). This method is the single point where the local boundary scan
-     * decides "this neighbor key, owned by {@code ownerRank}, is a ghost" — {@code protected} so an
-     * integration test can observe the firing (RDR-010 pi1.5 Phase C, Luciferase-azwr), which is the
-     * only way to assert the cross-shape ghost path end-to-end given the placeholder body.
+     * <p><b>Contract:</b> This method is invoked by {@link #createGhostsForElement} ONLY for keys that have
+     * already passed {@code !spatialIndex.containsSpatialKey(neighborKey)}, i.e. keys that are <em>absent</em>
+     * from the local index. The base implementation therefore always finds an empty entity set and returns
+     * without emitting any ghost. <b>The base class never populates the ghost layer by itself</b>; it is a
+     * do-nothing placeholder that logs the absent-key event at debug level.
      *
-     * @param neighborKey the spatial key of the remote-owned neighbor
-     * @param ownerRank    the owning process rank (always non-zero here)
+     * <p>Remote entity data for absent keys arrives via {@link DistributedGhostManager} (the gRPC fill path),
+     * which populates the ghost layer directly without going through this hook. This hook exists as a
+     * {@code protected} extension point so subclasses (e.g. integration-test stubs such as
+     * {@code PopulatingDetector} and {@code RecordingGhostBoundaryDetector}) can override the materialization
+     * logic without changing the boundary-scan plumbing (Luciferase-azwr). In a single-process multi-partition
+     * fixture an override is required to supply synthetic ghost data; the base class cannot do it because the
+     * caller guard structurally guarantees the key is absent from the local index before this method is called.
+     *
+     * @param neighborKey the spatial key of the remote-owned neighbor (guaranteed absent from local index)
+     * @param ownerRank   the owning process rank
      */
     protected void createGhostElement(Key neighborKey, int ownerRank) {
-        // Placeholder ghost creation - actual data would come via gRPC
-        log.trace("Creating placeholder ghost for key {} owned by rank {}", neighborKey, ownerRank);
+        if (spatialIndex == null || ghostLayer == null) {
+            log.warn("createGhostElement called but spatialIndex or ghostLayer is null — cannot materialize ghost for key {}",
+                     neighborKey);
+            return;
+        }
+        var entityIds = spatialIndex.getEntityIdsAt(neighborKey);
+        if (entityIds.isEmpty()) {
+            // Key absent from local index (structurally guaranteed by createGhostsForElement's
+            // !containsSpatialKey guard). Remote data arrives via DistributedGhostManager gRPC fill path.
+            log.debug("createGhostElement: key {} (owner rank {}) absent from local index — remote fill via gRPC",
+                      neighborKey, ownerRank);
+            return;
+        }
+        // Defensive: should not be reached in practice (caller guard ensures absence).
+        // Retained to handle any future call sites that bypass the standard guard.
+        for (var entityId : entityIds) {
+            var position = spatialIndex.getEntityPosition(entityId);
+            if (position == null) {
+                log.warn("Entity {} at key {} has no position — skipping ghost materialization", entityId, neighborKey);
+                continue;
+            }
+            var content = spatialIndex.getEntity(entityId);
+            if (content == null) {
+                log.warn("Entity {} at key {} has no content (removed mid-flight) — skipping ghost", entityId,
+                         neighborKey);
+                continue;
+            }
+            var ghost = new GhostElement<>(neighborKey, entityId, content, position, ownerRank, 0L);
+            ghostLayer.addGhostElement(ghost);
+            log.trace("Materialized local ghost for key {} entity {} owner-rank {}", neighborKey, entityId, ownerRank);
+        }
     }
 
     private void removeGhostsForElement(Key key) {
-        // Implementation depends on ghost layer API
+        if (ghostLayer == null) {
+            return;
+        }
+        int removed = ghostLayer.removeGhostElementsAt(key);
+        if (removed > 0) {
+            log.trace("Removed {} stale ghost(s) at key {}", removed, key);
+        }
+        // Reset processedElements for this key so it is re-evaluated on next createGhostsForElement.
+        processedElements.remove(key);
     }
 
     private void updateNeighborGhosts(Key key) {

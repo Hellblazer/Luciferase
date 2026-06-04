@@ -8,14 +8,19 @@
  */
 package com.hellblazer.luciferase.simulation.tumbler;
 
+import com.hellblazer.luciferase.simulation.von.Bubble;
+import com.hellblazer.luciferase.simulation.von.Transport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 /**
  * Tests for BubbleMigrator - bubble migration protocol.
@@ -202,5 +207,129 @@ class BubbleMigratorTest {
         metrics.removeBubble(50);
         assertThat(metrics.bubbleCount()).isEqualTo(0);
         assertThat(metrics.entityCount()).isEqualTo(0);
+    }
+
+    /**
+     * Luciferase-7wzml.44: sourceServerId must be non-null and resolve a real ServerMetrics.
+     * Before the fix, getServerForBubble() unconditionally returned null so source metrics
+     * were never decremented.
+     */
+    @Test
+    void testMigrate_sourceServerIdResolvesRealMetrics() {
+        // getServerForBubble stub is deleted; sourceServerId is threaded in by the caller.
+        // Verify that the sourceServerId registered in the tumbler resolves a non-null ServerMetrics.
+        var sourceMetrics = tumbler.getServerMetrics(sourceServerId);
+        assertThat(sourceMetrics)
+            .as("sourceServerId registered with tumbler must resolve a non-null ServerMetrics")
+            .isNotNull();
+    }
+
+    /**
+     * Luciferase-7wzml.44: after a successful migration, source ServerMetrics bubbleCount
+     * must DECREASE to 0 (verifies removeBubble is called on the source metrics).
+     * entityCount is not asserted here because the source bubble has no entities at
+     * migration time; see testMigrate_entityCountDecrementedAfterSuccessfulMigration for
+     * the non-vacuous entityCount assertion.
+     */
+    @Test
+    void testMigrate_bubbleCountDecrementedAfterSuccessfulMigration() throws Exception {
+        // Arrange: prime source metrics with one bubble carrying 10 entities
+        var sourceMetrics = tumbler.getServerMetrics(sourceServerId);
+        sourceMetrics.addBubble(10);
+        assertThat(sourceMetrics.bubbleCount()).isEqualTo(1);
+        assertThat(sourceMetrics.entityCount()).isEqualTo(10);
+
+        // Create source and target bubbles (no entities in sourceBubble)
+        var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        var targetBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        migrator.setBubbleTransferFactory((tgtServerId, src) -> targetBubble);
+
+        // Act
+        var result = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                             .get(5, TimeUnit.SECONDS);
+
+        assertThat(result.success())
+            .as("migration must succeed to exercise metrics decrement path")
+            .isTrue();
+
+        // Assert: source bubbleCount DECREASED from 1 to 0 (removeBubble was called)
+        assertThat(sourceMetrics.bubbleCount())
+            .as("source ServerMetrics bubbleCount must reach 0 after migration (Luciferase-7wzml.44)")
+            .isEqualTo(0);
+    }
+
+    /**
+     * Luciferase-7wzml.44: after a successful migration of a NON-EMPTY bubble, source
+     * ServerMetrics entityCount must GENUINELY DECREASE by the number of migrated entities.
+     * This is the non-vacuous acceptance criterion for bead .44 — the old empty-bubble
+     * fixture left entityCount unchanged and masked the bug.
+     */
+    @Test
+    void testMigrate_entityCountDecrementedAfterSuccessfulMigration() throws Exception {
+        // Arrange: prime source metrics with one bubble carrying 7 entities
+        var sourceMetrics = tumbler.getServerMetrics(sourceServerId);
+        sourceMetrics.addBubble(7);
+        assertThat(sourceMetrics.entityCount()).isEqualTo(7);
+
+        // Create source bubble with 3 actual entities so sourceBubble.entityCount() == 3
+        var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        sourceBubble.addEntity("e1", new Point3f(1f, 0f, 0f), "content1");
+        sourceBubble.addEntity("e2", new Point3f(2f, 0f, 0f), "content2");
+        sourceBubble.addEntity("e3", new Point3f(3f, 0f, 0f), "content3");
+        assertThat(sourceBubble.entityCount()).isEqualTo(3);
+
+        var targetBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        migrator.setBubbleTransferFactory((tgtServerId, src) -> targetBubble);
+
+        // Act
+        var result = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                             .get(5, TimeUnit.SECONDS);
+
+        assertThat(result.success())
+            .as("migration must succeed to exercise entity-count decrement path")
+            .isTrue();
+
+        // Assert: sourceMetrics.entityCount() decreased by the 3 entities that were in sourceBubble.
+        // removeBubble(sourceBubble.entityCount()) = removeBubble(3): 7 - 3 = 4.
+        assertThat(sourceMetrics.entityCount())
+            .as("source ServerMetrics entityCount must decrease by migrated entity count (Luciferase-7wzml.44)")
+            .isEqualTo(4);
+    }
+
+    /**
+     * Luciferase-7wzml.44: source utilization picture (bubbleCount) drops to 0 post-migration.
+     * This is the acceptance criterion "source utilization DROPS" — before the fix, bubbleCount
+     * on the source server grew monotonically since removeBubble was never called.
+     */
+    @Test
+    void testMigrate_sourceUtilizationPictureDropsPostMigration() throws Exception {
+        // Arrange: prime source metrics — simulates server tracking a bubble with 5 entities
+        var sourceMetrics = tumbler.getServerMetrics(sourceServerId);
+        sourceMetrics.addBubble(5); // 1 bubble, 5 entities on source
+
+        int sourceInitialBubbleCount = sourceMetrics.bubbleCount();
+        assertThat(sourceInitialBubbleCount).isEqualTo(1);
+
+        // Create bubbles with mocked transports
+        var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        var targetBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        migrator.setBubbleTransferFactory((tgtId, src) -> targetBubble);
+
+        // Act
+        var result = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                             .get(5, TimeUnit.SECONDS);
+        assertThat(result.success()).isTrue();
+
+        // Assert: source bubbleCount DROPS below initial value (the key metric for load-balance decisions)
+        assertThat(sourceMetrics.bubbleCount())
+            .as("source server load picture (bubbleCount) must DROP after migration — " +
+                "before fix it was never decremented (Luciferase-7wzml.44)")
+            .isLessThan(sourceInitialBubbleCount);
+
+        // Assert: target metrics gained a bubble
+        var targetMetrics = tumbler.getServerMetrics(targetServerId);
+        assertThat(targetMetrics.bubbleCount())
+            .as("target server must gain a bubble after migration")
+            .isEqualTo(1);
     }
 }

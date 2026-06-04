@@ -31,16 +31,16 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * F3.2.4: GPU Memory Management Validation Test Suite
  *
- * <p>Validates large scene streaming support:
+ * <p>Validates quota accounting and memory pressure logic:
  * <ul>
  *   <li>Memory pressure detection and thresholds</li>
- *   <li>Buffer pooling with LRU eviction</li>
+ *   <li>Quota accounting with LRU eviction of idle slots</li>
  *   <li>Memory statistics tracking</li>
  *   <li>Pressure callbacks for streaming triggers</li>
  * </ul>
  *
  * @see GPUMemoryManager
- * @see GPUBufferPool
+ * @see GPUMemoryAccountant
  */
 @DisplayName("F3.2.4: GPU Memory Management Validation")
 class F324GPUMemoryManagementTest {
@@ -154,19 +154,19 @@ class F324GPUMemoryManagementTest {
     }
 
     @Nested
-    @DisplayName("GPUBufferPool")
-    class GPUBufferPoolTests {
+    @DisplayName("GPUMemoryAccountant")
+    class GPUMemoryAccountantTests {
 
-        private GPUBufferPool pool;
+        private GPUMemoryAccountant pool;
 
         @BeforeEach
         void setUp() {
-            pool = new GPUBufferPool(100 * 1024 * 1024);  // 100 MB pool
+            pool = new GPUMemoryAccountant(100 * 1024 * 1024);  // 100 MB quota ceiling
         }
 
         @Test
-        @DisplayName("Basic allocation and release")
-        void testBasicAllocation() {
+        @DisplayName("Allocate increments active byte counter; release decrements it")
+        void testAccountingCounters() {
             var buffer = pool.allocate(1024 * 1024);  // 1 MB
 
             assertNotNull(buffer);
@@ -176,31 +176,41 @@ class F324GPUMemoryManagementTest {
 
             var stats = pool.getStats();
             assertEquals(1, stats.activeBuffers());
+            assertEquals(1, stats.allocations());
+            assertEquals(0, stats.deallocations());
             assertTrue(stats.activeBytes() > 0);
+            assertEquals(0, stats.freeBytes());
 
             boolean released = pool.release(buffer.id());
             assertTrue(released);
 
             stats = pool.getStats();
             assertEquals(0, stats.activeBuffers());
+            assertEquals(1, stats.deallocations());
+            // released slot is now idle (quota parked), not active
+            assertEquals(0, stats.activeBytes());
+            assertTrue(stats.freeBytes() > 0);
             assertEquals(1, stats.freeBuffers());
         }
 
         @Test
-        @DisplayName("Buffer reuse from pool")
-        void testBufferReuse() {
+        @DisplayName("Second allocate in same size class hits idle slot (hitCount increments); id is FRESH")
+        void testIdleSlotReuse() {
             var buffer1 = pool.allocate(1024 * 1024);
             pool.release(buffer1.id());
 
             var buffer2 = pool.allocate(1024 * 1024);
             assertNotNull(buffer2);
-
+            // hitCount tracks quota-slot reuse — no GPU buffer is actually reused
             var stats = pool.getStats();
-            assertEquals(1, stats.hitCount());  // Reused from pool
+            assertEquals(1, stats.hitCount());
+            // The returned record must carry a NEW id (not the old one)
+            assertNotEquals(buffer1.id(), buffer2.id(),
+                "allocate must mint a fresh id; it does NOT return an existing GPU handle");
         }
 
         @Test
-        @DisplayName("Pool miss creates new buffer")
+        @DisplayName("No idle slot in size class registers new quota entry (missCount increments)")
         void testPoolMiss() {
             var buffer1 = pool.allocate(1024 * 1024);   // 1 MB
             var buffer2 = pool.allocate(2 * 1024 * 1024);  // 2 MB (different size class)
@@ -213,10 +223,10 @@ class F324GPUMemoryManagementTest {
         }
 
         @Test
-        @DisplayName("LRU eviction when pool exhausted")
+        @DisplayName("LRU eviction reclaims idle quota slots when ceiling approached")
         void testLRUEviction() {
             // Fill the pool
-            var buffers = new ArrayList<GPUBufferPool.PooledBuffer>();
+            var buffers = new ArrayList<GPUMemoryAccountant.PooledBuffer>();
             for (int i = 0; i < 10; i++) {
                 var buffer = pool.allocate(10 * 1024 * 1024);  // 10 MB each
                 if (buffer != null) {
@@ -251,7 +261,7 @@ class F324GPUMemoryManagementTest {
             assertTrue(medium.sizeClass() >= 128 * 1024);  // Rounded to 128 KB
 
             // For large allocation testing, use a larger pool
-            var largePool = new GPUBufferPool(512 * 1024 * 1024);  // 512 MB pool
+            var largePool = new GPUMemoryAccountant(512 * 1024 * 1024);  // 512 MB pool
             var large = largePool.allocate(300 * 1024 * 1024);  // 300 MB
             assertNotNull(large);
             assertEquals(256 * 1024 * 1024, large.sizeClass());  // Capped at max size class
@@ -349,7 +359,7 @@ class F324GPUMemoryManagementTest {
 
             // Force pressure change by allocating enough to exceed 75% threshold
             // Use 16 MB allocations (exactly matches size class)
-            var buffers = new ArrayList<GPUBufferPool.PooledBuffer>();
+            var buffers = new ArrayList<GPUMemoryAccountant.PooledBuffer>();
             for (int i = 0; i < 12; i++) {
                 var buffer = manager.allocate(16 * 1024 * 1024);  // 16 MB
                 if (buffer != null) {
@@ -364,7 +374,7 @@ class F324GPUMemoryManagementTest {
         @DisplayName("Force eviction frees memory")
         void testForceEviction() {
             // Allocate and release to populate free pool
-            var buffers = new ArrayList<GPUBufferPool.PooledBuffer>();
+            var buffers = new ArrayList<GPUMemoryAccountant.PooledBuffer>();
             for (int i = 0; i < 5; i++) {
                 var buffer = manager.allocate(10 * 1024 * 1024);
                 if (buffer != null) {
@@ -483,7 +493,7 @@ class F324GPUMemoryManagementTest {
             var smallManager = GPUMemoryManager.forTesting(100 * 1024 * 1024);  // 100 MB
 
             // Try to allocate "scene" that would exceed VRAM
-            var allocations = new ArrayList<GPUBufferPool.PooledBuffer>();
+            var allocations = new ArrayList<GPUMemoryAccountant.PooledBuffer>();
             int successCount = 0;
             int failCount = 0;
 
@@ -519,7 +529,7 @@ class F324GPUMemoryManagementTest {
             var manager = GPUMemoryManager.forTesting(100 * 1024 * 1024);
 
             // Fill pool
-            var buffers = new ArrayList<GPUBufferPool.PooledBuffer>();
+            var buffers = new ArrayList<GPUMemoryAccountant.PooledBuffer>();
             for (int i = 0; i < 10; i++) {
                 var buffer = manager.allocate(8 * 1024 * 1024);
                 if (buffer != null) {
@@ -551,7 +561,7 @@ class F324GPUMemoryManagementTest {
 
             for (int frame = 0; frame < 10; frame++) {
                 // Each frame needs ~20 MB
-                var frameBuffers = new ArrayList<GPUBufferPool.PooledBuffer>();
+                var frameBuffers = new ArrayList<GPUMemoryAccountant.PooledBuffer>();
 
                 // Try to allocate frame data
                 for (int chunk = 0; chunk < 4; chunk++) {
@@ -593,7 +603,7 @@ class F324GPUMemoryManagementTest {
             assertEquals(GPUMemoryPressure.NONE, manager.getPressure());
 
             // 2. Allocate buffers
-            var buffers = new ArrayList<GPUBufferPool.PooledBuffer>();
+            var buffers = new ArrayList<GPUMemoryAccountant.PooledBuffer>();
             for (int i = 0; i < 20; i++) {
                 var buffer = manager.allocate(10 * 1024 * 1024);
                 if (buffer != null) {

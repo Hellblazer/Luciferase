@@ -16,28 +16,26 @@
  */
 package com.hellblazer.luciferase.esvo.gpu;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 
 /**
  * Central manager for GPU memory allocation and streaming.
  *
  * <p>Manages GPU VRAM allocation, tracks memory pressure, and coordinates
- * buffer pooling and streaming for large scene support.
+ * byte-quota accounting for large scene support.
  *
  * <p>Key features:
  * <ul>
  *   <li>VRAM capacity detection from GPUCapabilities</li>
  *   <li>Memory pressure monitoring with configurable thresholds</li>
- *   <li>Buffer pooling via GPUBufferPool</li>
- *   <li>Pressure callbacks for eviction and streaming triggers</li>
+ *   <li>Byte-quota tracking via GPUMemoryAccountant</li>
+ *   <li>Pressure callbacks for eviction triggers</li>
  *   <li>Large scene streaming support (exceeding GPU VRAM)</li>
  * </ul>
  *
- * @see GPUBufferPool
+ * @see GPUMemoryAccountant
  * @see GPUMemoryPressure
  * @see GPUMemoryStats
  */
@@ -81,8 +79,8 @@ public class GPUMemoryManager {
     }
 
     private final GPUCapabilities capabilities;
-    private final MemoryConfig config;
-    private final GPUBufferPool bufferPool;
+    private final MemoryConfig           config;
+    private final GPUMemoryAccountant    bufferPool;
     private final List<PressureListener> pressureListeners;
 
     // Statistics tracking
@@ -121,7 +119,7 @@ public class GPUMemoryManager {
         this.config = config;
 
         long poolSize = (long) (capabilities.globalMemorySize() * config.poolSizeRatio());
-        this.bufferPool = new GPUBufferPool(poolSize);
+        this.bufferPool = new GPUMemoryAccountant(poolSize);
         this.pressureListeners = new CopyOnWriteArrayList<>();
 
         this.streamInBytes = new AtomicLong(0);
@@ -159,7 +157,7 @@ public class GPUMemoryManager {
      * @param requestedBytes requested buffer size
      * @return pooled buffer, or null if allocation failed
      */
-    public GPUBufferPool.PooledBuffer allocate(long requestedBytes) {
+    public GPUMemoryAccountant.PooledBuffer allocate(long requestedBytes) {
         var buffer = bufferPool.allocate(requestedBytes);
 
         if (buffer != null) {
@@ -282,9 +280,9 @@ public class GPUMemoryManager {
     }
 
     /**
-     * Returns the underlying buffer pool.
+     * Returns the underlying quota accountant.
      */
-    public GPUBufferPool getBufferPool() {
+    public GPUMemoryAccountant getMemoryAccountant() {
         return bufferPool;
     }
 

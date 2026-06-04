@@ -521,10 +521,13 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
 
     @Override
     protected void executeKernel() throws ComputeKernel.KernelExecutionException {
-        // Phase 5a.3: Check if tile-based dispatch is enabled
-        if (useTileBasedDispatch && tileDispatcher != null && cpuRayBuffer != null && lastDAGData != null) {
-            // Use tile-based adaptive execution
-            executeTileBasedDispatch();
+        // Phase 5a.3: Fail loud when tile-based dispatch is requested but the
+        // KernelExecutor implementation is not complete. Both the fully-initialized
+        // path (tileDispatcher != null) and the partially-initialized path (dispatcher
+        // still null after init) must refuse rather than silently fall through to the
+        // standard kernel and produce an unexpected result.
+        if (useTileBasedDispatch) {
+            executeTileBasedDispatch();  // always throws UnsupportedOperationException
             return;
         }
 
@@ -585,6 +588,23 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
      * Converts CPU ray buffer to Ray[] array, dispatches tiles, and collects results.
      */
     private void executeTileBasedDispatch() throws ComputeKernel.KernelExecutionException {
+        // Fail loud: KernelExecutor is not yet implemented. Rather than building rays and
+        // discovering the failure deep inside dispatchFrame, reject here so the caller
+        // gets a clear error and does NOT observe a silent all-miss frame.
+        throw new UnsupportedOperationException(
+            "Tile-based dispatch path (-DENABLE_TILE_DISPATCH) is selected but the "
+            + "KernelExecutor GPU implementation is not yet complete. "
+            + "Unset ENABLE_TILE_DISPATCH to use the standard kernel path.");
+    }
+
+    /**
+     * Phase 5a.3: Execute rendering using tile-based adaptive dispatch.
+     * Converts CPU ray buffer to Ray[] array, dispatches tiles, and collects results.
+     * NOTE: Currently unreachable — executeTileBasedDispatch() throws UnsupportedOperationException
+     * until KernelExecutor is fully implemented.
+     */
+    @SuppressWarnings("unused")
+    private void executeTileBasedDispatchImpl() throws ComputeKernel.KernelExecutionException {
         // Convert cpuRayBuffer to Ray[] array
         cpuRayBuffer.rewind();
         var rays = new Ray[rayCount];
@@ -605,46 +625,40 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         }
 
         // Execute tile-based dispatch
-        var metrics = tileDispatcher.dispatchFrame(rays, frameWidth, frameHeight, lastDAGData, createKernelExecutor());
-
-        // Log metrics (SLF4J doesn't support Python-style format, use correct placeholders)
-        log.debug("Tile dispatch metrics: {} batch tiles, {} single-ray tiles, {} total tiles, batch ratio: {}, avg coherence: {}",
-                metrics.batchTiles(), metrics.singleRayTiles(), metrics.totalTiles(), metrics.batchRatio(), metrics.avgCoherence());
+        tileDispatcher.dispatchFrame(rays, frameWidth, frameHeight, lastDAGData, createKernelExecutor());
     }
 
     /**
-     * Phase 5a.3: Create KernelExecutor adapter for tile-based dispatch.
-     * Wraps existing kernel execution infrastructure.
+     * Phase 5a.3: KernelExecutor adapter stub — NOT IMPLEMENTED.
+     *
+     * <p>This method exists to satisfy the {@link com.hellblazer.luciferase.render.tile.KernelExecutor}
+     * contract required by {@link com.hellblazer.luciferase.render.tile.TileBasedDispatcher}.
+     * GPU tile execution is not yet implemented; every method throws
+     * {@link UnsupportedOperationException} so that enabling the tile-dispatch path
+     * via {@code -DENABLE_TILE_DISPATCH} fails loudly rather than silently producing
+     * an all-miss (zeroed) frame.
      */
     private com.hellblazer.luciferase.render.tile.KernelExecutor createKernelExecutor() {
         return new com.hellblazer.luciferase.render.tile.KernelExecutor() {
             @Override
             public void executeBatch(Ray[] rays, int[] rayIndices, int raysPerItem) {
-                // TODO: Implement batch execution for tile subset
-                // For now, fall back to single-ray
-                executeSingleRay(rays, rayIndices);
+                throw new UnsupportedOperationException(
+                    "Tile-based batch GPU execution is not implemented. "
+                    + "Disable -DENABLE_TILE_DISPATCH until KernelExecutor is fully implemented.");
             }
 
             @Override
             public void executeSingleRay(Ray[] rays, int[] rayIndices) {
-                // TODO: Implement single-ray execution for tile subset
-                // For now, execute on GPU using existing kernel
-                try {
-                    // Upload subset of rays to GPU
-                    // Execute kernel
-                    // Download results
-                } catch (Exception e) {
-                    throw new RuntimeException("Failed to execute tile kernel", e);
-                }
+                throw new UnsupportedOperationException(
+                    "Tile-based single-ray GPU execution is not implemented. "
+                    + "Disable -DENABLE_TILE_DISPATCH until KernelExecutor is fully implemented.");
             }
 
             @Override
             public com.hellblazer.luciferase.render.tile.RayResult getResult(int rayIndex) {
-                // TODO: Implement result retrieval from GPU buffer
-                // For now, return dummy result
-                return new com.hellblazer.luciferase.render.tile.RayResult(
-                    0.0f, 0.0f, 0.0f, -1.0f
-                );
+                throw new UnsupportedOperationException(
+                    "Tile-based result retrieval is not implemented. "
+                    + "Disable -DENABLE_TILE_DISPATCH until KernelExecutor is fully implemented.");
             }
         };
     }

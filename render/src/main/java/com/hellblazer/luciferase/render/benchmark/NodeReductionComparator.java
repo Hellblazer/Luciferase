@@ -34,15 +34,9 @@ import java.util.List;
  * <p><b>Measurement Methodology</b>:
  * <ul>
  *   <li>Baseline (Global): Build ONE BeamTree for ALL rays in the frame</li>
- *   <li>Tiled (Adaptive): Build N smaller BeamTrees, one per high-coherence tile</li>
- *   <li>Virtual Nodes: Low-coherence tiles count as 1 "virtual node" each (single-ray kernel, no tree)</li>
+ *   <li>Tiled (Adaptive): Build one BeamTree per non-empty tile, sum totalBeams() across all tiles</li>
  *   <li>Reduction: 1 - (tiled_nodes / global_nodes)</li>
  * </ul>
- *
- * <p><b>Virtual Node Rationale (DD-2)</b>: Low-coherence tiles bypass BeamTree construction
- * entirely and execute via single-ray kernel. The "1 virtual node" represents the minimum
- * dispatch overhead for processing these tiles. This provides a conservative baseline for
- * comparison against global tree nodes.
  *
  * @see BeamTreeBuilder
  * @see TileBasedDispatcher
@@ -58,15 +52,11 @@ public class NodeReductionComparator {
     /**
      * Comparison result between global and tiled approaches.
      *
-     * <p><b>NOTE on Virtual Nodes</b>: tiledNodes includes 1 "virtual node" per low-coherence tile,
-     * representing single-ray kernel overhead (no actual tree built). This is a conservative
-     * estimate that provides a fair comparison baseline.
-     *
      * @param globalNodes Number of nodes in single global BeamTree
-     * @param tiledNodes Sum of nodes in per-tile BeamTrees + virtual nodes for low-coherence tiles
+     * @param tiledNodes Sum of actual per-tile BeamTree totalBeams() counts over all non-empty tiles
      * @param reductionRatio Node reduction: 1 - (tiledNodes / globalNodes)
-     * @param highCoherenceTiles Number of tiles routed to batch kernel (tree built)
-     * @param lowCoherenceTiles Number of tiles routed to single-ray kernel (virtual node)
+     * @param highCoherenceTiles Number of tiles whose per-tile coherence meets the threshold
+     * @param lowCoherenceTiles Number of tiles whose per-tile coherence is below the threshold
      */
     public record ComparisonResult(
         int globalNodes,
@@ -97,32 +87,30 @@ public class NodeReductionComparator {
         var globalStats = globalTree.getStatistics();
         int globalNodes = globalStats.totalBeams();
 
-        // Analyze global coherence once
-        double globalCoherence = coherenceAnalyzer.analyzeCoherence(rays, null);
-
-        // Count tiles
+        // Build per-tile BeamTrees and sum their actual node counts
         var tileRayGroups = partitionRaysIntoTiles(rays, config, frameWidth, frameHeight);
-        int totalTiles = (int) tileRayGroups.stream().filter(t -> !t.isEmpty()).count();
 
-        int tiledNodes;
-        int highCoherenceTiles;
-        int lowCoherenceTiles;
+        int tiledNodes = 0;
+        int highCoherenceTiles = 0;
+        int lowCoherenceTiles = 0;
 
-        if (globalCoherence >= coherenceThreshold) {
-            // High global coherence: use single global BeamTree for all tiles
-            // The comparison shows that a single tree is as efficient as tiled approach
-            tiledNodes = globalNodes;
-            highCoherenceTiles = totalTiles;
-            lowCoherenceTiles = 0;
-        } else {
-            // Low global coherence: route ALL tiles to single-ray kernel (virtual nodes)
-            // Conservative estimate: 1 virtual node per tile
-            tiledNodes = totalTiles;
-            highCoherenceTiles = 0;
-            lowCoherenceTiles = totalTiles;
+        for (var group : tileRayGroups) {
+            if (group.isEmpty()) {
+                continue;
+            }
+            var tileRays = group.toArray(new Ray[0]);
+            var tileTree = BeamTreeBuilder.from(tileRays).build();
+            tiledNodes += tileTree.getStatistics().totalBeams();
+
+            double tileCoherence = coherenceAnalyzer.analyzeCoherence(tileRays, null);
+            if (tileCoherence >= coherenceThreshold) {
+                highCoherenceTiles++;
+            } else {
+                lowCoherenceTiles++;
+            }
         }
 
-        // Calculate reduction ratio
+        // Calculate reduction ratio from real measurements
         double reductionRatio = globalNodes > 0 ? 1.0 - ((double) tiledNodes / globalNodes) : 0.0;
 
         return new ComparisonResult(globalNodes, tiledNodes, reductionRatio, highCoherenceTiles, lowCoherenceTiles);

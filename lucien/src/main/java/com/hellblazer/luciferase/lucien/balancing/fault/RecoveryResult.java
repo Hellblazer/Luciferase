@@ -51,6 +51,15 @@ public record RecoveryResult(
     }
 
     /**
+     * Alias for {@link #statusMessage()} — backward compatibility with callers using {@code message()}.
+     *
+     * @return the status message
+     */
+    public String message() {
+        return statusMessage;
+    }
+
+    /**
      * Create successful recovery result.
      *
      * @param partitionId partition that was recovered

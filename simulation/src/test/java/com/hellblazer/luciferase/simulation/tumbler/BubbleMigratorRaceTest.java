@@ -48,7 +48,9 @@ class BubbleMigratorRaceTest {
     @Test
     void concurrentMigrateOnSameBubbleAllowsExactlyOne() throws Exception {
         var tumbler = new SpatialTumbler((byte) 5, 16.0);
+        var sourceServerId = UUID.randomUUID();
         var targetServerId = UUID.randomUUID();
+        tumbler.registerServer(sourceServerId);
         tumbler.registerServer(targetServerId);
 
         var migrator = new BubbleMigrator(tumbler, Duration.ofSeconds(5), Duration.ofMillis(0), 50);
@@ -83,7 +85,7 @@ class BubbleMigratorRaceTest {
                 pool.submit(() -> {
                     try {
                         barrier.await(5, TimeUnit.SECONDS); // align all threads
-                        futures[idx] = migrator.migrate(bubble, targetServerId);
+                        futures[idx] = migrator.migrate(bubble, sourceServerId, targetServerId);
                     } catch (Exception e) {
                         futures[idx] = CompletableFuture.completedFuture(
                             new BubbleMigrator.MigrationResult(bubbleId, targetServerId, false,

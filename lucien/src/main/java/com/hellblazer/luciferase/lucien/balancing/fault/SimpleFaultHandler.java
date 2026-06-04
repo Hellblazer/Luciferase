@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +41,7 @@ public class SimpleFaultHandler implements FaultHandler {
     private static final Logger log = LoggerFactory.getLogger(SimpleFaultHandler.class);
 
     private final FaultConfiguration config;
+    private volatile Clock clock = Clock.system();
     private final Map<UUID, PartitionState> partitions;
     private final Map<UUID, PartitionRecovery> recoveryStrategies;
     private final List<Consumer<PartitionChangeEvent>> subscribers;
@@ -60,7 +62,7 @@ public class SimpleFaultHandler implements FaultHandler {
         PartitionState(UUID partitionId) {
             this.partitionId = partitionId;
             this.status = PartitionStatus.HEALTHY;
-            this.lastSeenMs = System.currentTimeMillis();
+            this.lastSeenMs = System.currentTimeMillis(); // TODO(clock-injection bead)
             this.nodeCount = 1;
             this.healthyNodes = 1;
             this.metrics = FaultMetrics.zero();
@@ -69,7 +71,7 @@ public class SimpleFaultHandler implements FaultHandler {
 
         synchronized void updateStatus(PartitionStatus newStatus) {
             this.status = newStatus;
-            this.lastSeenMs = System.currentTimeMillis();
+            this.lastSeenMs = System.currentTimeMillis(); // TODO(clock-injection bead)
         }
 
         /**
@@ -97,9 +99,28 @@ public class SimpleFaultHandler implements FaultHandler {
                 return null; // already FAILED, no further escalation
             }
             this.status = newStatus;
-            this.lastSeenMs = System.currentTimeMillis();
+            this.lastSeenMs = System.currentTimeMillis(); // TODO(clock-injection bead)
             this.metrics = metrics.withIncrementedFailureCount();
             return new PartitionChangeEvent(partitionId, oldStatus, newStatus, this.lastSeenMs, reason);
+        }
+
+        /**
+         * Atomically transition directly to FAILED regardless of current status.
+         * Returns a PartitionChangeEvent if the status actually changed, or
+         * {@code null} if the partition was already FAILED.
+         *
+         * @param reason description of why the partition was forced to FAILED
+         * @param nowMs  current time from the injected Clock (not System.currentTimeMillis())
+         */
+        synchronized PartitionChangeEvent forceFailed(String reason, long nowMs) {
+            var oldStatus = this.status;
+            if (oldStatus == PartitionStatus.FAILED) {
+                return null; // already FAILED, no-op
+            }
+            this.status = PartitionStatus.FAILED;
+            this.lastSeenMs = nowMs;
+            this.metrics = metrics.withIncrementedFailureCount();
+            return new PartitionChangeEvent(partitionId, oldStatus, PartitionStatus.FAILED, this.lastSeenMs, reason);
         }
 
         synchronized void recordFailure() {
@@ -207,6 +228,15 @@ public class SimpleFaultHandler implements FaultHandler {
         this.running = new AtomicBoolean(false);
     }
 
+    /**
+     * Set clock for deterministic testing (mirrors DefaultFaultHandler.setClock).
+     *
+     * @param clock the clock to use; must not be null
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
     // ===== Lifecycle =====
 
     @Override
@@ -308,6 +338,25 @@ public class SimpleFaultHandler implements FaultHandler {
         var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
         state.failedNodes.add(nodeId);
         applyEscalation(state, "Heartbeat failure for node " + nodeId, "Multiple heartbeat failures");
+    }
+
+    @Override
+    public void reportHeartbeatFailure(UUID partitionId) {
+        Objects.requireNonNull(partitionId, "partitionId must not be null");
+        var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
+        // No nodeId added — avoids polluting failedNodes with fabricated UUIDs
+        applyEscalation(state, "Heartbeat timeout for partition", "Multiple heartbeat timeouts");
+    }
+
+    @Override
+    public void reportPartitionFailed(UUID partitionId) {
+        Objects.requireNonNull(partitionId, "partitionId must not be null");
+        var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
+        var event = state.forceFailed("Definitive partition failure reported", clock.currentTimeMillis());
+        if (event != null) {
+            notifySubscribers(event);
+            log.error("Partition {} driven directly to FAILED: {} -> FAILED", partitionId, event.oldStatus());
+        }
     }
 
     // ===== Recovery Coordination =====

@@ -22,26 +22,31 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Buffer pool for GPU memory allocation with LRU eviction.
+ * GPU memory quota tracker and byte-accounting gate.
  *
- * <p>Manages a pool of reusable GPU buffers to reduce allocation overhead
- * and fragmentation. Supports multiple buffer size classes with LRU
- * eviction when memory pressure is detected.
+ * <p>Tracks byte quotas for logical GPU memory allocations within a
+ * configurable capacity limit. Allocations and releases adjust
+ * {@code AtomicLong} counters; no actual GPU handle (cl_mem,
+ * MemorySegment, etc.) is created or freed here.
+ *
+ * <p>Size-class buckets allow the accounting layer to round requests up to
+ * powers-of-2 boundaries and enforce an LRU eviction policy over the
+ * tracked quota when the limit is approached.
  *
  * <p>Key features:
  * <ul>
- *   <li>Size-class based pooling (powers of 2)</li>
- *   <li>LRU eviction of least recently used buffers</li>
- *   <li>Thread-safe allocation and release</li>
+ *   <li>Size-class based quota accounting (powers of 2)</li>
+ *   <li>LRU eviction of least-recently-used quota slots</li>
+ *   <li>Thread-safe counter adjustment</li>
  *   <li>Statistics tracking for monitoring</li>
  * </ul>
  *
  * @see GPUMemoryManager
  */
-public class GPUBufferPool {
+public class GPUMemoryAccountant {
 
     /**
-     * Represents a pooled buffer allocation.
+     * Represents a tracked quota slot (metadata only — no GPU handle).
      */
     public record PooledBuffer(
         String id,
@@ -59,7 +64,14 @@ public class GPUBufferPool {
     }
 
     /**
-     * Statistics for buffer pool monitoring.
+     * Statistics for quota accounting monitoring.
+     *
+     * <p><b>Important:</b> {@code hitCount} and {@code hitRate()} measure
+     * <em>quota-slot budget reuse</em>, not GPU buffer-object reuse. A "hit"
+     * means an allocation request found a previously-released quota slot of
+     * the matching size class and reused its byte-accounting entry, avoiding
+     * a fresh counter increment. No actual GPU handle (cl_mem, MemorySegment,
+     * etc.) is created or reused — this class is byte-accounting only.
      */
     public record PoolStats(
         int activeBuffers,
@@ -73,7 +85,11 @@ public class GPUBufferPool {
         long missCount
     ) {
         /**
-         * Returns hit rate (0.0 to 1.0).
+         * Returns the quota-slot reuse rate (0.0 to 1.0).
+         *
+         * <p>This is the fraction of allocations that reused a previously-released
+         * accounting slot rather than minting a fresh one. It does <em>not</em>
+         * reflect GPU buffer-object reuse efficiency.
          */
         public double hitRate() {
             long total = hitCount + missCount;
@@ -100,11 +116,11 @@ public class GPUBufferPool {
     private final AtomicLong missCount;
 
     /**
-     * Creates a buffer pool with the specified maximum size.
+     * Creates a quota tracker with the specified byte ceiling.
      *
-     * @param maxPoolBytes maximum bytes the pool can hold
+     * @param maxPoolBytes maximum bytes the accountant will permit active at once
      */
-    public GPUBufferPool(long maxPoolBytes) {
+    public GPUMemoryAccountant(long maxPoolBytes) {
         if (maxPoolBytes <= 0) {
             throw new IllegalArgumentException("Max pool bytes must be positive");
         }
@@ -129,10 +145,15 @@ public class GPUBufferPool {
     }
 
     /**
-     * Allocates a buffer from the pool or creates a new one.
+     * Registers a quota slot for the requested byte count.
      *
-     * @param requestedBytes requested buffer size
-     * @return pooled buffer, or null if pool is exhausted and eviction failed
+     * <p>No GPU memory is allocated. The returned {@link PooledBuffer} is a
+     * metadata record tracking the quota claim. Returns {@code null} if the
+     * byte ceiling would be exceeded and eviction of idle slots cannot free
+     * enough quota.
+     *
+     * @param requestedBytes requested byte count
+     * @return quota record, or null if quota is exhausted
      */
     public PooledBuffer allocate(long requestedBytes) {
         if (requestedBytes <= 0) {
@@ -145,12 +166,14 @@ public class GPUBufferPool {
 
         lock.writeLock().lock();
         try {
-            // Try to reuse from free pool
+            // Quota slot available in this size class — reuse its byte budget
             var freeList = freeBuffersByClass.get(sizeClass);
             if (freeList != null && !freeList.isEmpty()) {
                 var reused = freeList.removeFirst();
                 totalFreeBytes.addAndGet(-reused.sizeBytes());
 
+                // Mint a fresh quota record (new id/timestamps); actual GPU memory
+                // allocation is the caller's responsibility.
                 var buffer = new PooledBuffer(id, requestedBytes, sizeClass, now, now);
                 activeBuffers.put(id, buffer);
                 totalActiveBytes.addAndGet(requestedBytes);
@@ -159,7 +182,7 @@ public class GPUBufferPool {
                 return buffer;
             }
 
-            // Need to allocate new buffer
+            // No idle slot in this size class — register a new quota entry
             missCount.incrementAndGet();
 
             // Check if we have room
@@ -183,10 +206,13 @@ public class GPUBufferPool {
     }
 
     /**
-     * Releases a buffer back to the pool for reuse.
+     * Releases a quota slot by its ID, adjusting the active-byte counter.
      *
-     * @param bufferId ID of the buffer to release
-     * @return true if buffer was found and released
+     * <p>No GPU memory is freed here. The slot is moved from active to idle
+     * so its quota can be reclaimed by a subsequent eviction pass.
+     *
+     * @param bufferId ID of the quota slot to release
+     * @return true if the slot was found and released
      */
     public boolean release(String bufferId) {
         lock.writeLock().lock();
@@ -199,7 +225,7 @@ public class GPUBufferPool {
             totalActiveBytes.addAndGet(-buffer.sizeBytes());
             deallocations.incrementAndGet();
 
-            // Add to free pool
+            // Park slot as idle so its byte budget can be reclaimed by eviction
             var freeList = freeBuffersByClass.get(buffer.sizeClass());
             if (freeList != null) {
                 freeList.addLast(buffer.touch());
@@ -225,10 +251,10 @@ public class GPUBufferPool {
     }
 
     /**
-     * Evicts buffers to free the specified amount of memory.
+     * Evicts idle quota slots to reclaim at least {@code bytesNeeded} from the tracked quota.
      *
-     * @param bytesNeeded bytes to free
-     * @return bytes actually freed
+     * @param bytesNeeded quota bytes to reclaim
+     * @return quota bytes actually reclaimed
      */
     public long evict(long bytesNeeded) {
         lock.writeLock().lock();
@@ -240,7 +266,7 @@ public class GPUBufferPool {
     }
 
     /**
-     * Clears all buffers from the pool.
+     * Clears all quota slots and resets byte counters to zero.
      */
     public void clear() {
         lock.writeLock().lock();
@@ -257,7 +283,7 @@ public class GPUBufferPool {
     }
 
     /**
-     * Returns current pool statistics.
+     * Returns current quota accounting statistics.
      */
     public PoolStats getStats() {
         lock.readLock().lock();
@@ -284,7 +310,7 @@ public class GPUBufferPool {
     }
 
     /**
-     * Returns total bytes currently in use (active + free).
+     * Returns total tracked quota bytes (active + idle).
      */
     public long getTotalBytes() {
         return totalActiveBytes.get() + totalFreeBytes.get();
@@ -319,16 +345,16 @@ public class GPUBufferPool {
     }
 
     /**
-     * Attempts to evict free buffers to make room for new allocation.
+     * Attempts to evict idle quota slots to reclaim enough quota for a new entry.
      * Must be called with write lock held.
      *
-     * @param bytesNeeded bytes to free
-     * @return true if enough space was freed
+     * @param bytesNeeded quota bytes to reclaim
+     * @return true if enough quota was reclaimed
      */
     private boolean evictToMakeRoom(long bytesNeeded) {
         long freed = 0;
 
-        // First, evict from free pool (LRU order - oldest first)
+        // Evict idle quota slots (LRU order - oldest first)
         for (var entry : freeBuffersByClass.entrySet()) {
             var freeList = entry.getValue();
             while (!freeList.isEmpty() && freed < bytesNeeded) {
