@@ -305,6 +305,16 @@ public class GhostLifecycleStateMachine {
     }
 
     /**
+     * Check if ghost is stale using the injected clock.
+     *
+     * @param entityId Entity identifier
+     * @return true if ghost is stale
+     */
+    public boolean isStale(String entityId) {
+        return isStale(entityId, clock.currentTimeMillis());
+    }
+
+    /**
      * Check if ghost is expired based on TTL.
      * <p>
      * A ghost is expired if: (currentTime - lastUpdateTime) > ttlMillis
@@ -330,6 +340,16 @@ public class GhostLifecycleStateMachine {
         }
 
         return timeSinceUpdate > ttlMillis;
+    }
+
+    /**
+     * Check if ghost is expired using the injected clock.
+     *
+     * @param entityId Entity identifier
+     * @return true if ghost is expired and should be removed
+     */
+    public boolean isExpired(String entityId) {
+        return isExpired(entityId, clock.currentTimeMillis());
     }
 
     /**
@@ -362,6 +382,15 @@ public class GhostLifecycleStateMachine {
     }
 
     /**
+     * Expire and remove all stale ghosts using the injected clock.
+     *
+     * @return Number of ghosts expired
+     */
+    public int expireStaleGhosts() {
+        return expireStaleGhostsReturningIds(clock.currentTimeMillis()).size();
+    }
+
+    /**
      * Expire and remove all stale ghosts beyond TTL, returning the IDs that were
      * actually removed.
      * <p>
@@ -390,6 +419,15 @@ public class GhostLifecycleStateMachine {
         }
 
         return removedIds;
+    }
+
+    /**
+     * Expire and remove all stale ghosts using the injected clock, returning IDs removed.
+     *
+     * @return List of entity IDs (debug-string form) that were expired and removed
+     */
+    public List<String> expireStaleGhostsReturningIds() {
+        return expireStaleGhostsReturningIds(clock.currentTimeMillis());
     }
 
     /**

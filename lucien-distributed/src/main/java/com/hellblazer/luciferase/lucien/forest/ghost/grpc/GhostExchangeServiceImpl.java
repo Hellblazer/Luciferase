@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
@@ -73,7 +74,10 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     private final AtomicLong requestCount;
     private final AtomicLong streamUpdateCount;
     private final AtomicLong syncRequestCount;
-    
+
+    // Clock for deterministic time — injectable for testing (Luciferase-7wzml.86)
+    private volatile Clock clock = Clock.system();
+
     // Active streaming sessions
     private final Map<String, StreamSession> activeStreams;
     
@@ -96,10 +100,20 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
         this.syncRequestCount = new AtomicLong(0);
         this.activeStreams = new ConcurrentHashMap<>();
         
-        log.info("GhostExchangeService initialized with content type: {}", 
+        log.info("GhostExchangeService initialized with content type: {}",
                 contentSerializer.getContentType());
     }
-    
+
+    /**
+     * Replaces the clock used for Timestamp generation.  Inject a {@code TestClock} in tests
+     * to produce deterministic, single-read timestamps (Luciferase-7wzml.86).
+     *
+     * @param clock the clock to use; must not be null
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
     /**
      * Handles ghost element requests from remote processes.
      * 
@@ -163,7 +177,7 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 @Override public void onCompleted() { }
             };
         }
-        var sessionId = "stream-" + System.currentTimeMillis() + "-" + streamUpdateCount.incrementAndGet();
+        var sessionId = "stream-" + streamUpdateCount.incrementAndGet();
         var session = new StreamSession(sessionId, responseObserver);
         activeStreams.put(sessionId, session);
         
@@ -208,6 +222,8 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 var responseBuilder = SyncResponse.newBuilder();
                 int totalElements = 0;
                 
+                long now = clock.currentTimeMillis();
+
                 // Process each requested tree
                 for (var treeId : request.getTreeIdsList()) {
                     var ghostLayer = ghostLayerProvider.getGhostLayer(treeId);
@@ -216,17 +232,18 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                             ghostLayer,
                             ghostLayerProvider.getCurrentRank(),
                             treeId,
-                            contentSerializer);
+                            contentSerializer,
+                            now);
                         responseBuilder.addBatches(batch);
                         totalElements += batch.getElementsCount();
                     }
                 }
-                
+
                 var response = responseBuilder
                     .setTotalElements(totalElements)
                     .setSyncTime(com.google.protobuf.Timestamp.newBuilder()
-                        .setSeconds(System.currentTimeMillis() / 1000)
-                        .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                        .setSeconds(now / 1000)
+                        .setNanos((int) ((now % 1000) * 1_000_000))
                         .build())
                     .build();
                 
@@ -269,27 +286,29 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     /**
      * Creates a ghost batch for a specific request.
      */
-    private GhostBatch createGhostBatch(GhostRequest request, GhostLayer<Key, ID, Content> ghostLayer) 
+    private GhostBatch createGhostBatch(GhostRequest request, GhostLayer<Key, ID, Content> ghostLayer)
             throws ContentSerializer.SerializationException {
-        
+
+        long now = clock.currentTimeMillis();
+
         if (request.getBoundaryKeysCount() > 0) {
             // Request for specific boundary keys
             var batchBuilder = GhostBatch.newBuilder()
                 .setSourceRank(ghostLayerProvider.getCurrentRank())
                 .setSourceTreeId(request.getRequesterTreeId())
                 .setTimestamp(com.google.protobuf.Timestamp.newBuilder()
-                    .setSeconds(System.currentTimeMillis() / 1000)
-                    .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                    .setSeconds(now / 1000)
+                    .setNanos((int) ((now % 1000) * 1_000_000))
                     .build());
-            
+
             for (var keyProto : request.getBoundaryKeysList()) {
                 var key = ProtobufConverters.spatialKeyFromProtobuf(keyProto);
                 var elements = ghostLayer.getGhostElements((Key) key);
                 for (var element : elements) {
-                    batchBuilder.addElements(ProtobufConverters.ghostElementToProtobuf(element, contentSerializer));
+                    batchBuilder.addElements(ProtobufConverters.ghostElementToProtobuf(element, contentSerializer, now));
                 }
             }
-            
+
             return batchBuilder.build();
         } else {
             // Request for all ghosts
@@ -297,7 +316,8 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 ghostLayer,
                 ghostLayerProvider.getCurrentRank(),
                 request.getRequesterTreeId(),
-                contentSerializer);
+                contentSerializer,
+                now);
         }
     }
     

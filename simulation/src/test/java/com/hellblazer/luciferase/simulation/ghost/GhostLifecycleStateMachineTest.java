@@ -335,6 +335,58 @@ class GhostLifecycleStateMachineTest {
                    "Should handle negative time delta gracefully (not expired)");
     }
 
+    /**
+     * Verify that no-arg overloads (isStale/isExpired/expireStaleGhosts/expireStaleGhostsReturningIds)
+     * read the injected clock rather than being dead code.  Advancing testClock across each
+     * boundary must flip the result without passing a time argument.
+     */
+    @Test
+    void testNoArgOverloadsReadInjectedClock() {
+        var entityId = "entity-noarg";
+        var sourceBubbleId = UUID.randomUUID();
+
+        // Create at t=1000, update (CREATED → ACTIVE) at t=1000.
+        // Default staleness threshold = 500ms, TTL = 500ms (same default in both constructors).
+        lifecycle.onCreate(entityId, sourceBubbleId, testClock.currentTimeMillis());
+        lifecycle.onUpdate(entityId, testClock.currentTimeMillis());
+
+        // Clock still at 1000 — not yet stale or expired.
+        assertFalse(lifecycle.isStale(entityId),
+                    "isStale() no-arg: should be false before threshold");
+        assertFalse(lifecycle.isExpired(entityId),
+                    "isExpired() no-arg: should be false before TTL");
+
+        // Advance clock past staleness threshold (500ms) and TTL (500ms).
+        testClock.setMillis(1501L);
+
+        assertTrue(lifecycle.isStale(entityId),
+                   "isStale() no-arg: clock advance must flip to true (clock is live)");
+        assertTrue(lifecycle.isExpired(entityId),
+                   "isExpired() no-arg: clock advance must flip to true (clock is live)");
+
+        // expireStaleGhosts() no-arg should remove the expired ghost.
+        var removedIds = lifecycle.expireStaleGhostsReturningIds();
+        assertFalse(removedIds.isEmpty(),
+                    "expireStaleGhostsReturningIds() no-arg: must remove the expired ghost");
+        assertTrue(removedIds.contains(entityId),
+                   "expireStaleGhostsReturningIds() no-arg: returned list must contain entityId");
+
+        // Ghost is gone — isStale/isExpired must now return false.
+        assertFalse(lifecycle.isStale(entityId),
+                    "isStale() no-arg: false after removal");
+        assertFalse(lifecycle.isExpired(entityId),
+                    "isExpired() no-arg: false after removal");
+
+        // Verify expireStaleGhosts() (count-returning overload) via a fresh ghost.
+        var entityId2 = "entity-noarg-2";
+        testClock.setMillis(2000L);
+        lifecycle.onCreate(entityId2, sourceBubbleId, testClock.currentTimeMillis());
+        lifecycle.onUpdate(entityId2, testClock.currentTimeMillis());
+        testClock.setMillis(2501L);
+        int count = lifecycle.expireStaleGhosts();
+        assertEquals(1, count, "expireStaleGhosts() no-arg: must expire exactly 1 ghost");
+    }
+
     // Helper class for metrics testing
     private static class TestMetricsCallback implements GhostLifecycleStateMachine.GhostLifecycleMetrics {
         final AtomicInteger createCount = new AtomicInteger(0);

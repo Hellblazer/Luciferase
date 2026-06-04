@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.collision;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialIndex.CollisionPair;
@@ -60,6 +61,7 @@ public class CollisionSystem<ID extends EntityID, Content> {
     protected final List<CollisionListener<ID, Content>> listeners;
     protected final CollisionFilter<ID, Content>         globalFilter;
     private         CollisionStats                       lastStats = new CollisionStats(0, 0, 0, 0, 0);
+    private volatile Clock                               clock     = Clock.system();
 
     /** Default extra reach added to the CCD broad-phase search radius beyond the swept distance. */
     public static final float DEFAULT_CCD_SEARCH_RADIUS_BUFFER = 10.0f;
@@ -109,6 +111,15 @@ public class CollisionSystem<ID extends EntityID, Content> {
     }
 
     /**
+     * Inject a clock for deterministic testing. Production code should use the default {@link Clock#system()}.
+     *
+     * @param clock the clock to use for elapsed-time measurements; must not be null
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    /**
      * Add a collision listener
      */
     public void addCollisionListener(CollisionListener<ID, Content> listener) {
@@ -135,7 +146,7 @@ public class CollisionSystem<ID extends EntityID, Content> {
      * @return list of processed collision responses
      */
     public List<ProcessedCollision<ID>> processAllCollisions() {
-        long startTime = System.nanoTime();
+        long startTime = clock.nanoTime();
 
         // Find all collisions
         List<CollisionPair<ID, Content>> collisions = spatialIndex.findAllCollisions();
@@ -185,7 +196,7 @@ public class CollisionSystem<ID extends EntityID, Content> {
             }
         }
 
-        long endTime = System.nanoTime();
+        long endTime = clock.nanoTime();
         lastStats = new CollisionStats(broadPhaseChecks, narrowPhaseChecks, collisions.size(), resolved,
                                        endTime - startTime);
 

@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.entity;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.FrameManager;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
@@ -46,7 +47,11 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
     
     // Optional frame manager for consistent time tracking
     private FrameManager frameManager;
-    
+
+    // Clock for wall-clock timestamps fed to EntityDynamics (which divides by 1000 to get seconds).
+    // MUST always be milliseconds — never frame numbers (small ints) — to keep velocity math correct.
+    private volatile Clock clock = Clock.system();
+
     // Flag to enable automatic dynamics updates
     private boolean autoDynamicsEnabled = false;
 
@@ -132,12 +137,13 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
             }
         }
         
-        // Update dynamics if they exist (for existing entities) and auto-dynamics is enabled
+        // Update dynamics if they exist (for existing entities) and auto-dynamics is enabled.
+        // Always use wall-clock ms: EntityDynamics.calculateVelocity divides deltaTime by 1000 to
+        // get seconds, so it requires milliseconds. Frame numbers (small ints) must NOT be used here.
         if (!isNew && autoDynamicsEnabled) {
             var dynamics = entityDynamics.get(entityId);
             if (dynamics != null) {
-                long timestamp = frameManager != null ? frameManager.getCurrentFrame() : System.currentTimeMillis();
-                dynamics.updatePosition(position, timestamp);
+                dynamics.updatePosition(position, clock.currentTimeMillis());
             }
         }
         
@@ -319,12 +325,12 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
         }
         entity.setPosition(newPosition);
         
-        // Also update dynamics if they exist and auto-dynamics is enabled
+        // Also update dynamics if they exist and auto-dynamics is enabled.
+        // Always use wall-clock ms — see comment in createOrUpdateEntity.
         if (autoDynamicsEnabled) {
             var dynamics = entityDynamics.get(entityId);
             if (dynamics != null) {
-                long timestamp = frameManager != null ? frameManager.getCurrentFrame() : System.currentTimeMillis();
-                dynamics.updatePosition(newPosition, timestamp);
+                dynamics.updatePosition(newPosition, clock.currentTimeMillis());
             }
         }
     }
@@ -348,18 +354,6 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
      */
     public EntityDynamics getDynamics(ID entityId) {
         return entityDynamics.get(entityId);
-    }
-
-    /**
-     * Update entity position with dynamics tracking
-     * @param entityId the entity ID
-     * @param newPosition the new position
-     * @param frameNumber the current frame number for velocity calculation
-     */
-    public void updateEntityPositionWithDynamics(ID entityId, Point3f newPosition, long frameNumber) {
-        updateEntityPosition(entityId, newPosition);
-        var dynamics = getOrCreateDynamics(entityId);
-        dynamics.updatePosition(newPosition, frameNumber);
     }
 
     /**
@@ -395,6 +389,15 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
      */
     public void setFrameManager(FrameManager frameManager) {
         this.frameManager = frameManager;
+    }
+
+    /**
+     * Inject a clock for wall-clock timestamps used by auto-dynamics.
+     * The default is {@link Clock#system()}. Override in tests with a deterministic
+     * {@code TestClock} to assert velocity without real-time dependencies.
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "Clock cannot be null");
     }
 
     /**

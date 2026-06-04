@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.forest.ghost;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.balancing.fault.GhostSyncCallback;
@@ -71,6 +72,9 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
     private volatile long lastSyncTime = 0;
     private volatile long syncIntervalMs = 30000; // 30 seconds default
 
+    // Clock — injected for deterministic testing; defaults to wall-clock
+    private volatile Clock clock = Clock.system();
+
     // Fault detection callback for sync operations
     private volatile GhostSyncCallback syncCallback = null;
     
@@ -96,6 +100,15 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
                 currentRank, treeId);
     }
     
+    /**
+     * Inject a clock for deterministic testing.
+     *
+     * @param clock the clock to use (must not be null)
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
     /**
      * Get the ghost layer for this distributed manager.
      * @return the ghost layer for boundary violation checking
@@ -264,7 +277,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
         }
         CompletableFuture.allOf(flushes.toArray(new CompletableFuture[0])).join();
 
-        lastSyncTime = System.currentTimeMillis();
+        lastSyncTime = clock.currentTimeMillis();
         log.info("Synchronization complete for {} processes", flushes.size());
     }
     
@@ -464,6 +477,6 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
 
     private boolean shouldPerformSync() {
         return autoSyncEnabled &&
-               (System.currentTimeMillis() - lastSyncTime) > syncIntervalMs;
+               (clock.currentTimeMillis() - lastSyncTime) > syncIntervalMs;
     }
 }

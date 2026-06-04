@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.balancing.grpc;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.balancing.proto.*;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement;
 import io.grpc.stub.StreamObserver;
@@ -53,6 +54,9 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
     // Balance provider for accessing balance state
     private final BalanceProvider balanceProvider;
 
+    // Injected clock for deterministic time (testable)
+    private volatile Clock clock = Clock.system();
+
     // Virtual thread executor for concurrent operations
     private final ExecutorService virtualExecutor;
 
@@ -78,6 +82,15 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
         this.activeStreams = new ConcurrentHashMap<>();
 
         log.info("BalanceCoordinatorServer initialized for rank {}", balanceProvider.getCurrentRank());
+    }
+
+    /**
+     * Injects a clock for deterministic testing. Uses {@link Clock#system()} by default.
+     *
+     * @param clock the clock to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -107,7 +120,7 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
                     .setResponderRank(balanceProvider.getCurrentRank())
                     .setResponderTreeId(request.getRequesterTreeId())
                     .setRoundNumber(request.getRoundNumber())
-                    .setTimestamp(System.currentTimeMillis());
+                    .setTimestamp(clock.currentTimeMillis());
 
                 // Add ghost elements
                 for (var element : ghostElements) {
@@ -199,7 +212,7 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
     public StreamObserver<BalanceStatistics> streamBalanceUpdates(
             StreamObserver<BalanceStatistics> responseObserver) {
 
-        var sessionId = "stream-" + System.currentTimeMillis() + "-" + streamUpdateCount.incrementAndGet();
+        var sessionId = "stream-" + streamUpdateCount.incrementAndGet();
         var session = new StreamSession(sessionId, responseObserver);
         activeStreams.put(sessionId, session);
 

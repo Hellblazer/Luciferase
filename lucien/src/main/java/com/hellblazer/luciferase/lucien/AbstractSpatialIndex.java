@@ -2429,8 +2429,8 @@ implements SpatialIndex<Key, ID, Content>,
         return entityManager.generateEntityId();
     }
 
-    // Package-private accessors for StackBasedTreeBuilder
-    EntityManager<Key, ID, Content> getEntityManager() {
+    // Accessible to sub-packages (e.g. lucien.octree.OctreeBalancer) and tests
+    public EntityManager<Key, ID, Content> getEntityManager() {
         return entityManager;
     }
 

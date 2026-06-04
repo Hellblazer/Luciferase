@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.octree;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
@@ -40,14 +41,24 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
     private final int maxEntitiesPerNode;
     private TreeBalancingStrategy<ID> balancingStrategy;
     private boolean autoBalancingEnabled = false;
+    private volatile Clock clock = Clock.system();
     
-    public OctreeBalancer(Octree<ID, ?> octree, EntityManager<MortonKey, ID, ?> entityManager, 
+    public OctreeBalancer(Octree<ID, ?> octree, EntityManager<MortonKey, ID, ?> entityManager,
                           byte maxDepth, int maxEntitiesPerNode) {
         this.octree = octree;
         this.entityManager = entityManager;
         this.maxDepth = maxDepth;
         this.maxEntitiesPerNode = maxEntitiesPerNode;
         this.balancingStrategy = new com.hellblazer.luciferase.lucien.balancing.DefaultBalancingStrategy<>();
+    }
+
+    /**
+     * Convenience constructor for use within the octree package. Retrieves the
+     * EntityManager directly from the Octree (package-private accessor).
+     */
+    @SuppressWarnings("unchecked")
+    OctreeBalancer(Octree<ID, ?> octree, byte maxDepth, int maxEntitiesPerNode) {
+        this(octree, (EntityManager<MortonKey, ID, ?>) octree.getEntityManager(), maxDepth, maxEntitiesPerNode);
     }
 
     @Override
@@ -181,7 +192,7 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
 
     @Override
     public TreeBalancer.RebalancingResult rebalanceTree() {
-        var startTime = System.nanoTime();
+        var startTime = clock.nanoTime();
         var nodesCreated = 0;
         var nodesRemoved = 0;
         var nodesMerged = 0;
@@ -219,7 +230,7 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
                 }
             }
 
-            var timeTaken = System.nanoTime() - startTime;
+            var timeTaken = clock.nanoTime() - startTime;
             return new TreeBalancer.RebalancingResult(
                 nodesCreated,
                 nodesRemoved,
@@ -231,7 +242,7 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
             );
 
         } catch (Exception e) {
-            var timeTaken = System.nanoTime() - startTime;
+            var timeTaken = clock.nanoTime() - startTime;
             return new TreeBalancer.RebalancingResult(0, 0, 0, 0, 0, timeTaken, false);
         }
     }
@@ -244,6 +255,10 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
     @Override
     public void setBalancingStrategy(TreeBalancingStrategy<ID> strategy) {
         this.balancingStrategy = strategy;
+    }
+
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     @Override

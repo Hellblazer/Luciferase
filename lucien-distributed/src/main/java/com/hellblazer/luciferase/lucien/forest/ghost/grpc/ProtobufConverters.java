@@ -183,6 +183,7 @@ public final class ProtobufConverters {
      *
      * @param element the ghost element to convert
      * @param contentSerializer the serializer for the content type
+     * @param nowMillis the wall-clock time in milliseconds to stamp the element (caller captures once)
      * @param <K> the spatial key type
      * @param <I> the entity ID type
      * @param <C> the content type
@@ -192,7 +193,8 @@ public final class ProtobufConverters {
     public static <K extends SpatialKey<K>, I extends EntityID, C>
             com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement ghostElementToProtobuf(
             GhostElement<K, I, C> element,
-            ContentSerializer<C> contentSerializer) throws ContentSerializer.SerializationException {
+            ContentSerializer<C> contentSerializer,
+            long nowMillis) throws ContentSerializer.SerializationException {
 
         var builder = com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement.newBuilder()
             .setSpatialKey(spatialKeyToProtobuf(element.getSpatialKey()))
@@ -202,8 +204,8 @@ public final class ProtobufConverters {
             .setOwnerRank(element.getOwnerRank())
             .setGlobalTreeId(element.getGlobalTreeId())
             .setTimestamp(Timestamp.newBuilder()
-                .setSeconds(System.currentTimeMillis() / 1000)
-                .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                .setSeconds(nowMillis / 1000)
+                .setNanos((int) ((nowMillis % 1000) * 1_000_000))
                 .build());
 
         return builder.build();
@@ -243,6 +245,7 @@ public final class ProtobufConverters {
      * @param sourceRank the rank of this process
      * @param sourceTreeId the tree ID of this process
      * @param contentSerializer the serializer for content
+     * @param nowMillis the wall-clock time in milliseconds to stamp the batch and all its elements (caller captures once)
      * @param <K> the spatial key type
      * @param <I> the entity ID type
      * @param <C> the content type
@@ -251,18 +254,19 @@ public final class ProtobufConverters {
      */
     public static <K extends SpatialKey<K>, I extends EntityID, C> GhostBatch ghostLayerToProtobufBatch(
             GhostLayer<K, I, C> layer, int sourceRank, long sourceTreeId,
-            ContentSerializer<C> contentSerializer) throws ContentSerializer.SerializationException {
+            ContentSerializer<C> contentSerializer,
+            long nowMillis) throws ContentSerializer.SerializationException {
 
         var batch = GhostBatch.newBuilder()
             .setSourceRank(sourceRank)
             .setSourceTreeId(sourceTreeId)
             .setTimestamp(Timestamp.newBuilder()
-                .setSeconds(System.currentTimeMillis() / 1000)
-                .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                .setSeconds(nowMillis / 1000)
+                .setNanos((int) ((nowMillis % 1000) * 1_000_000))
                 .build());
 
         for (var element : layer.getAllGhostElements()) {
-            batch.addElements(ghostElementToProtobuf(element, contentSerializer));
+            batch.addElements(ghostElementToProtobuf(element, contentSerializer, nowMillis));
         }
 
         return batch.build();

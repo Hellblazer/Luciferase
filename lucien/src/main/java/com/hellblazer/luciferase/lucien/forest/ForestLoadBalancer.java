@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.forest;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import org.slf4j.Logger;
@@ -43,7 +44,17 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
         private final AtomicLong queryCount = new AtomicLong(0);
         private final AtomicLong totalQueryTimeNanos = new AtomicLong(0);
         private final AtomicLong memoryUsageBytes = new AtomicLong(0);
-        private final long timestamp = System.currentTimeMillis();
+        private final Clock clock;
+        private final long timestamp;
+
+        public TreeLoadMetrics() {
+            this(Clock.system());
+        }
+
+        public TreeLoadMetrics(Clock clock) {
+            this.clock = clock;
+            this.timestamp = clock.currentTimeMillis();
+        }
 
         public int getEntityCount() {
             return entityCount.get();
@@ -67,7 +78,7 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
         }
 
         public double getQueryRate() {
-            var ageSeconds = (System.currentTimeMillis() - timestamp) / 1000.0;
+            var ageSeconds = (clock.currentTimeMillis() - timestamp) / 1000.0;
             return ageSeconds > 0 ? queryCount.get() / ageSeconds : 0;
         }
 
@@ -200,6 +211,7 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
     private final Map<Integer, TreeLoadMetrics> treeMetrics = new ConcurrentHashMap<>();
     private final LoadBalancerConfig config;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    private volatile Clock clock = Clock.system();
 
     public ForestLoadBalancer() {
         this(new LoadBalancerConfig());
@@ -209,6 +221,10 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
         this.config = config;
     }
 
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
     /**
      * Collect load metrics from all trees
      */
@@ -216,7 +232,7 @@ public class ForestLoadBalancer<Key extends SpatialKey<Key>, ID extends com.hell
         lock.writeLock().lock();
         try {
             trees.forEach((treeId, tree) -> {
-                var metrics = treeMetrics.computeIfAbsent(treeId, k -> new TreeLoadMetrics());
+                var metrics = treeMetrics.computeIfAbsent(treeId, k -> new TreeLoadMetrics(clock));
                 metrics.updateEntityCount(tree.entityCount());
                 // Memory usage estimation (simplified - in practice would use more sophisticated measurement)
                 metrics.updateMemoryUsage(tree.entityCount() * 1024L); // Rough estimate

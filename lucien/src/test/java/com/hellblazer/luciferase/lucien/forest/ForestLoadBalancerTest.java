@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -336,6 +337,49 @@ public class ForestLoadBalancerTest {
         }
     }
     
+    @Test
+    void testQueryRateDeterministicWithClock() {
+        // Inject a TestClock so getQueryRate() is deterministic — no Thread.sleep needed.
+        var testClock = new TestClock(0L);
+        loadBalancer.setClock(testClock);
+        loadBalancer.collectMetrics(treeIndexMap); // creates TreeLoadMetrics with clock.currentTimeMillis()=0
+
+        // Record 60 queries
+        for (int i = 0; i < 60; i++) {
+            loadBalancer.recordQuery(0, 1_000_000L);
+        }
+
+        // Advance clock by 30 seconds
+        testClock.advance(30_000L);
+
+        var metrics = loadBalancer.getMetrics(0);
+        assertNotNull(metrics);
+        assertEquals(60, metrics.getQueryCount());
+
+        // queryRate = 60 queries / 30 seconds = 2.0 queries/sec
+        assertEquals(2.0, metrics.getQueryRate(), 0.001,
+                "getQueryRate should use injected clock; expected 2.0 qps for 60 queries over 30 s");
+    }
+
+    @Test
+    void testSetClockPropagatesToNewMetrics() {
+        // setClock before collectMetrics; new TreeLoadMetrics should use the injected clock.
+        var testClock = new TestClock(1_000_000L); // epoch ms = 1_000_000
+        loadBalancer.setClock(testClock);
+        loadBalancer.collectMetrics(treeIndexMap);
+
+        // Advance by 10 seconds
+        testClock.advance(10_000L);
+
+        loadBalancer.recordQuery(0, 500_000L);
+        var metrics = loadBalancer.getMetrics(0);
+        assertNotNull(metrics);
+
+        // 1 query / 10 seconds = 0.1 qps
+        assertEquals(0.1, metrics.getQueryRate(), 0.001,
+                "getClock should be propagated so age=10 s → 1 query / 10 s = 0.1 qps");
+    }
+
     @Test
     void testClearMetrics() {
         loadBalancer.collectMetrics(treeIndexMap);

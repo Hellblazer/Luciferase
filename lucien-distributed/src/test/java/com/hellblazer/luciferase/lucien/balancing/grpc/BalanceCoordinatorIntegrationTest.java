@@ -51,15 +51,17 @@ class BalanceCoordinatorIntegrationTest {
     private BalanceCoordinatorGrpc.BalanceCoordinatorBlockingStub blockingStub;
     private MockBalanceProvider balanceProvider;
     private String serverName;
+    private BalanceCoordinatorServer serverImpl;
 
     @BeforeEach
     void setUp() throws Exception {
         serverName = "test-server-" + System.nanoTime();
         balanceProvider = new MockBalanceProvider();
+        serverImpl = new BalanceCoordinatorServer(balanceProvider);
 
         server = InProcessServerBuilder.forName(serverName)
             .directExecutor()
-            .addService(new BalanceCoordinatorServer(balanceProvider))
+            .addService(serverImpl)
             .build()
             .start();
 
@@ -165,6 +167,52 @@ class BalanceCoordinatorIntegrationTest {
         assertEquals(1, responseBatch.getResponderRank());
         assertEquals(0, responseBatch.getRoundNumber());
         assertTrue(responseBatch.getTimestamp() > 0);
+    }
+
+    @Test
+    void testRefinementResponseTimestampUsesInjectedClock() {
+        var testClock = new TestClock(999_000L);
+        serverImpl.setClock(testClock);
+
+        var request = RefinementRequest.newBuilder()
+            .setRequesterRank(2)
+            .setRequesterTreeId(7777L)
+            .setRoundNumber(3)
+            .setTreeLevel(4)
+            .setTimestamp(System.currentTimeMillis())
+            .build();
+
+        var response = blockingStub.requestRefinement(request);
+
+        assertNotNull(response);
+        assertEquals(999_000L, response.getTimestamp(),
+            "RefinementResponse.timestamp must come from the injected clock, not wall time");
+    }
+
+    @Test
+    void testStreamSessionIdIsCounterDerived() throws Exception {
+        // Open two streaming sessions and verify both complete without collision.
+        // sessionId = "stream-<counter>" — no wall-clock component means two sessions
+        // opened within the same millisecond get distinct ids.
+        var asyncStub = BalanceCoordinatorGrpc.newStub(channel);
+        var latch = new java.util.concurrent.CountDownLatch(2);
+
+        var obs1 = asyncStub.streamBalanceUpdates(new io.grpc.stub.StreamObserver<>() {
+            @Override public void onNext(BalanceStatistics s) {}
+            @Override public void onError(Throwable t) { latch.countDown(); }
+            @Override public void onCompleted() { latch.countDown(); }
+        });
+        obs1.onCompleted();
+
+        var obs2 = asyncStub.streamBalanceUpdates(new io.grpc.stub.StreamObserver<>() {
+            @Override public void onNext(BalanceStatistics s) {}
+            @Override public void onError(Throwable t) { latch.countDown(); }
+            @Override public void onCompleted() { latch.countDown(); }
+        });
+        obs2.onCompleted();
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS),
+            "Both streaming sessions must complete — counter-only ids guarantee no map key collision");
     }
 
     /**

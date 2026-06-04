@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.lucien.balancing.grpc;
 
 import com.hellblazer.luciferase.common.grpc.GrpcCredentialFactory;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.balancing.proto.*;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey;
 import io.grpc.ChannelCredentials;
@@ -78,6 +79,12 @@ public class BalanceCoordinatorClient {
     // Request batching
     private final Map<Integer, BatchQueue> batchQueues;
 
+    // Clock for deterministic timestamps (injectable for testing)
+    private volatile Clock clock = Clock.system();
+
+    // Shared scheduler for all BatchQueues (avoids per-queue thread leak)
+    private final ScheduledExecutorService batchScheduler;
+
     /**
      * Creates a new balance coordinator client.
      *
@@ -132,9 +139,23 @@ public class BalanceCoordinatorClient {
         this.batchedRequestCount = new AtomicLong(0);
         this.activeStreams = new ConcurrentHashMap<>();
         this.batchQueues = new ConcurrentHashMap<>();
+        this.batchScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            var t = new Thread(r, "balance-batch-scheduler-" + currentRank);
+            t.setDaemon(true);
+            return t;
+        });
 
         log.info("BalanceCoordinatorClient initialized for rank {} with batch size {}, timeout {}ms",
                 currentRank, batchSize, batchTimeoutMillis);
+    }
+
+    /**
+     * Injects a clock for deterministic timestamp generation (testing).
+     *
+     * @param clock the clock to use; {@code Clock.system()} by default
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -164,7 +185,7 @@ public class BalanceCoordinatorClient {
                 .setRequesterTreeId(treeId)
                 .setRoundNumber(roundNumber)
                 .setTreeLevel(treeLevel)
-                .setTimestamp(System.currentTimeMillis());
+                .setTimestamp(clock.currentTimeMillis());
 
             // Add boundary keys if specified
             if (boundaryKeys != null && !boundaryKeys.isEmpty()) {
@@ -253,7 +274,7 @@ public class BalanceCoordinatorClient {
         batchedRequestCount.incrementAndGet();
 
         var queue = batchQueues.computeIfAbsent(targetRank,
-            rank -> new BatchQueue(rank, batchSize, batchTimeoutMillis));
+            rank -> new BatchQueue(rank, batchSize, batchTimeoutMillis, batchScheduler));
 
         var future = new CompletableFuture<RefinementResponse>();
         var request = RefinementRequest.newBuilder()
@@ -261,7 +282,7 @@ public class BalanceCoordinatorClient {
             .setRequesterTreeId(treeId)
             .setRoundNumber(roundNumber)
             .setTreeLevel(treeLevel)
-            .setTimestamp(System.currentTimeMillis());
+            .setTimestamp(clock.currentTimeMillis());
 
         if (boundaryKeys != null && !boundaryKeys.isEmpty()) {
             request.addAllBoundaryKeys(boundaryKeys);
@@ -359,9 +380,11 @@ public class BalanceCoordinatorClient {
     public String startStreaming(int targetRank,
                                 Consumer<BalanceStatistics> updateHandler,
                                 Consumer<Throwable> errorHandler) {
-        streamCount.incrementAndGet();
+        // Monotonic stream sequence for a collision-free id — a wall-clock timestamp collides at sub-ms rates and
+        // violates the Clock-injection mandate (Luciferase-mt7hi). Mirror of GhostServiceClient L307-309.
+        long streamSeq = streamCount.incrementAndGet();
 
-        var streamId = "stream-" + targetRank + "-" + System.currentTimeMillis();
+        var streamId = "stream-" + targetRank + "-" + streamSeq;
 
         virtualExecutor.submit(() -> {
             try {
@@ -538,8 +561,27 @@ public class BalanceCoordinatorClient {
         blockingStubs.clear();
         asyncStubs.clear();
 
-        // Shutdown virtual thread executor
+        // Shutdown shared batch scheduler (after BatchQueue.flush() completes in batchQueues drain above)
+        batchScheduler.shutdown();
+        try {
+            if (!batchScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                batchScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            batchScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+
+        // Shutdown virtual thread executor (longer window — virtual threads may be mid-submit)
         virtualExecutor.shutdown();
+        try {
+            if (!virtualExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                virtualExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            virtualExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -574,6 +616,7 @@ public class BalanceCoordinatorClient {
 
     /**
      * Manages batching of refinement requests for a specific rank.
+     * Uses a shared ScheduledExecutorService to avoid per-queue thread leak (Luciferase-7wzml.87).
      */
     private class BatchQueue {
         private final int targetRank;
@@ -583,12 +626,12 @@ public class BalanceCoordinatorClient {
         private final ScheduledExecutorService scheduler;
         private ScheduledFuture<?> timeoutTask;
 
-        BatchQueue(int targetRank, int maxBatchSize, long timeoutMillis) {
+        BatchQueue(int targetRank, int maxBatchSize, long timeoutMillis, ScheduledExecutorService scheduler) {
             this.targetRank = targetRank;
             this.maxBatchSize = maxBatchSize;
             this.timeoutMillis = timeoutMillis;
             this.queue = new ArrayList<>();
-            this.scheduler = Executors.newSingleThreadScheduledExecutor();
+            this.scheduler = scheduler;
         }
 
         synchronized void add(BatchedRequest request) {
@@ -639,8 +682,9 @@ public class BalanceCoordinatorClient {
         }
 
         void shutdown() {
+            // Flush any pending requests; do NOT shut down the shared scheduler here —
+            // the owning BalanceCoordinatorClient.shutdown() owns the scheduler lifecycle.
             flush();
-            scheduler.shutdown();
         }
     }
 
