@@ -65,6 +65,10 @@ public class GpuService {
      * Enable GPU mode for a session.
      */
     public GpuStats enableGpu(String sessionId, ESVTData esvtData, GpuEnableRequest request) {
+        // Validate dimensions first — before any state checks so invalid input is always rejected.
+        var width = request.getFrameWidthOrDefault();
+        var height = request.getFrameHeightOrDefault();
+
         if (sessions.containsKey(sessionId)) {
             throw new IllegalStateException("GPU already enabled for session. Disable first.");
         }
@@ -72,9 +76,6 @@ public class GpuService {
         if (!ESVTOpenCLRenderer.isOpenCLAvailable()) {
             throw new IllegalStateException("OpenCL is not available on this system");
         }
-
-        var width = request.getFrameWidthOrDefault();
-        var height = request.getFrameHeightOrDefault();
 
         var renderer = new ESVTOpenCLRenderer(width, height);
         try {
@@ -133,7 +134,12 @@ public class GpuService {
 
         // Get output image
         var imageBuffer = state.renderer.getOutputImage();
-        var imageBytes = new byte[state.width * state.height * 4];
+        long bufferSize = (long) state.width * state.height * 4;
+        if (bufferSize > Integer.MAX_VALUE) {
+            throw new IllegalStateException(
+                    "Render buffer size " + bufferSize + " exceeds Integer.MAX_VALUE");
+        }
+        var imageBytes = new byte[(int) bufferSize];
         imageBuffer.get(imageBytes);
         imageBuffer.rewind();
 
@@ -183,9 +189,11 @@ public class GpuService {
         double totalTime = 0;
 
         for (int i = 0; i < iterations; i++) {
+            // wall-clock elapsed-time measurement for benchmarking; intentionally not the
+            // injected Clock (perf timing needs real elapsed time, not simulation time)
             long startTime = System.nanoTime();
             state.renderer.renderFrame(cameraPos, lookAt, fov);
-            long elapsed = System.nanoTime() - startTime;
+            long elapsed = System.nanoTime() - startTime;  // wall-clock elapsed-time measurement
 
             double timeMs = elapsed / 1_000_000.0;
             times[i] = timeMs;

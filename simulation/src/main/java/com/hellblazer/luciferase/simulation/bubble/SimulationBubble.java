@@ -207,10 +207,12 @@ public class SimulationBubble {
 
     /**
      * Shutdown the simulation bubble and release resources.
+     * Releases the EnhancedBubble's ghost coordinator and owned controller via bubble.close().
+     * EnhancedBubble.close() is idempotent; safe to call even if caller also closes the bubble.
      */
     public void shutdown() {
         stop();
-        // Prime-Mover controller doesn't have explicit shutdown
+        bubble.close();
     }
 
     /**

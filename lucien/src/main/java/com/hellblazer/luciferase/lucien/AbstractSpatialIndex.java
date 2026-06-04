@@ -85,7 +85,7 @@ import java.util.stream.Stream;
  */
 public abstract class AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
 implements SpatialIndex<Key, ID, Content>,
-           com.hellblazer.luciferase.lucien.balancing.ShapeWeightProvider {
+           com.hellblazer.luciferase.lucien.balancing.ShapeWeightProvider, AutoCloseable {
 
     /**
      * Record representing a neighbor search result with distance information.
@@ -353,13 +353,18 @@ implements SpatialIndex<Key, ID, Content>,
     }
 
     /**
-     * Configure parallel bulk operations
+     * Configure parallel bulk operations. Shuts down the OLD pool before the volatile swap to avoid leaking the
+     * replaced pool (Luciferase-7wzml.60).
      */
     public void configureParallelOperations(ParallelBulkOperations.ParallelConfig config) {
         if (config == null) {
             throw new IllegalArgumentException("Parallel config cannot be null");
         }
+        var old = this.parallelOperations;
         this.parallelOperations = new ParallelBulkOperations<>(this, bulkProcessor, config);
+        if (old != null) {
+            old.close(); // shutdown + awaitTermination; safe to call after the swap
+        }
     }
 
     /**
@@ -1290,6 +1295,19 @@ implements SpatialIndex<Key, ID, Content>,
         if (parallelOperations != null) {
             parallelOperations.shutdown();
         }
+    }
+
+    /**
+     * Release all resources held by this index: parallel operation pools and distributed ghost subsystem.
+     * Implements {@link AutoCloseable} so try-with-resources works (Luciferase-7wzml.60).
+     */
+    @Override
+    public void close() {
+        var ops = parallelOperations;
+        if (ops != null) {
+            ops.close();
+        }
+        ghost.shutdownDistributedGhosts();
     }
 
     // ===== Plane Intersection Abstract Methods =====

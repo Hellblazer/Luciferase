@@ -44,15 +44,33 @@ import java.util.concurrent.TimeUnit;
  * Uses Lucien's Tetree (tetrahedral) spatial index for entity tracking instead of Sentry's
  * MutableGrid (Delaunay tetrahedralization). This provides O(log n) position
  * updates instead of O(n log n) per-frame rebuilds.
+ * <p>
+ * <b>Lifecycle:</b> VolumeAnimator owns a {@link RealTimeController} and must be closed
+ * when no longer needed to stop the controller's scheduling thread. Use try-with-resources
+ * or call {@link #close()} explicitly.
+ * <p>
+ * <b>Kairos thread-local scope:</b> {@code Kairos.setController} is thread-local (backed by
+ * {@link ThreadLocal}). The constructor binds the controller to the constructing thread.
+ * {@link #start()} runs on the same thread as the constructor. {@link #close()} <em>must be
+ * called on the same thread that called {@link #start()}</em>; only that thread holds the
+ * active Kairos binding, and only that thread can clear it via
+ * {@code Kairos.setController(null)}. Calling {@code close()} from a different thread stops
+ * the RealTimeController but cannot clear the Kairos binding on the original thread — the
+ * binding will leak until that thread terminates. A WARN log is emitted in this case.
+ * A single thread should own at most one active VolumeAnimator at a time;
+ * creating a second one on the same thread silently rebinds the thread-local to the new
+ * controller.
  *
  * @author hal.hildebrand
  */
-public class VolumeAnimator {
+public class VolumeAnimator implements AutoCloseable {
     private static final Logger log         = LoggerFactory.getLogger(VolumeAnimator.class);
     private static final byte   LEVEL       = 12; // Spatial resolution level
     private static final float  WORLD_SCALE = 32200f; // Scale for normalizing world coords to [0,1]
 
-    private volatile Clock clock = Clock.system();
+    private volatile Clock   clock         = Clock.system();
+    /** Thread that called start() and owns the Kairos ThreadLocal binding. */
+    private volatile Thread  bindingThread = null;
 
     private final Tetree<LongEntityID, Void> index;
     private final RealTimeController         controller;
@@ -91,8 +109,36 @@ public class VolumeAnimator {
     }
 
     public void start() {
+        bindingThread = Thread.currentThread();
         frame.track();
         controller.start();
+    }
+
+    /**
+     * Stop the RealTimeController scheduling thread and clear the thread-local
+     * Kairos controller binding for the calling thread.
+     * <p>
+     * <b>Precondition:</b> must be called on the same thread that called {@link #start()}.
+     * The Kairos controller binding is thread-local; only the thread that set it can clear it.
+     * If called from a different thread, the controller is still stopped, but the Kairos
+     * binding on the original thread cannot be cleared and will leak until that thread
+     * terminates. A WARN log is emitted in this case.
+     * <p>
+     * Safe to call multiple times; {@code controller.stop()} is idempotent.
+     * Does not affect other threads' Kairos bindings.
+     */
+    @Override
+    @NonEvent
+    public void close() {
+        controller.stop();
+        var bt = bindingThread;
+        if (bt != null && bt != Thread.currentThread()) {
+            log.warn("VolumeAnimator.close() called from thread '{}' but Kairos was bound on thread '{}'; "
+                     + "the Kairos binding on the original thread cannot be cleared from here.",
+                     Thread.currentThread().getName(), bt.getName());
+        } else {
+            Kairos.setController(null);
+        }
     }
 
     /**

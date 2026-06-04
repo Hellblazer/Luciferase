@@ -11,8 +11,10 @@ import com.hellblazer.luciferase.lucien.octree.Octree;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Random;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -24,6 +26,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * get/remove/insert under separate locks across parallel threads, so between an entity's remove and reinsert it was
  * absent — concurrent range/kNN/collision readers saw partial batch state. The fix runs each batch under one
  * write-lock critical section, making it atomic versus concurrent readers (which acquire the same read lock).
+ *
+ * Also covers Luciferase-7wzml.60: AutoCloseable lifecycle, daemon-thread factory for the fixed pool, and
+ * configureParallelOperations closing the old pool before the volatile swap.
  *
  * @author hal.hildebrand
  */
@@ -122,5 +127,98 @@ class ParallelBulkOperationsAtomicityTest {
         for (var id : ids.subList(n / 2, n)) {
             assertNotNull(octree.getEntity(id), "untouched entity must remain");
         }
+    }
+
+    // ---- Luciferase-7wzml.60: AutoCloseable / daemon-thread / configureParallelOperations ----
+
+    @Test
+    void closeShutsPools() throws Exception {
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        var bulkProcessor = new BulkOperationProcessor<>(octree);
+
+        // work-stealing path (ForkJoinPool) — default config has useWorkStealing=true
+        var wsPbo = new ParallelBulkOperations<>(octree, bulkProcessor, ParallelBulkOperations.defaultConfig());
+        var wsPool = getWorkStealingPool(wsPbo);
+        assertFalse(wsPool.isShutdown(), "pool must be live before close");
+        wsPbo.close();
+        assertTrue(wsPool.isShutdown(), "ForkJoinPool must be shut down after close() (Luciferase-7wzml.60)");
+
+        // fixed-thread path (ExecutorService)
+        var ftConfig = new ParallelBulkOperations.ParallelConfig().withWorkStealing(false);
+        var ftPbo = new ParallelBulkOperations<>(octree, bulkProcessor, ftConfig);
+        var ftPool = (java.util.concurrent.ExecutorService) getFixedThreadPool(ftPbo);
+        assertFalse(ftPool.isShutdown(), "fixed pool must be live before close");
+        ftPbo.close();
+        assertTrue(ftPool.isShutdown(), "fixed-thread pool must be shut down after close() (Luciferase-7wzml.60)");
+    }
+
+    @Test
+    void fixedPoolThreadsAreDaemon() throws Exception {
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        var bulkProcessor = new BulkOperationProcessor<>(octree);
+        var config = new ParallelBulkOperations.ParallelConfig().withWorkStealing(false).withThreadCount(2);
+        try (var pbo = new ParallelBulkOperations<>(octree, bulkProcessor, config)) {
+            var pool = (java.util.concurrent.ExecutorService) getFixedThreadPool(pbo);
+            var daemonCapture = new AtomicBoolean(false);
+            // Submit a task to force thread creation
+            pool.submit(() -> daemonCapture.set(Thread.currentThread().isDaemon())).get(5, TimeUnit.SECONDS);
+            assertTrue(daemonCapture.get(),
+                       "fixed-pool threads must be daemon so they never pin JVM exit (Luciferase-7wzml.60)");
+        }
+    }
+
+    @Test
+    void configureParallelOperationsClosesOldPool() throws Exception {
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        // Capture the instance created during Octree construction
+        var oldOps = getParallelOperations(octree);
+        assertNotNull(oldOps, "parallelOperations must be initialized at construction");
+        var oldPool = getWorkStealingPool(oldOps); // defaultConfig uses work-stealing
+
+        // Reconfigure — must shut down the old pool before the volatile swap
+        octree.configureParallelOperations(ParallelBulkOperations.defaultConfig());
+
+        assertTrue(oldPool.isShutdown(),
+                   "old ForkJoinPool must be shut down after reconfigure (Luciferase-7wzml.60)");
+        var newOps = getParallelOperations(octree);
+        assertNotSame(oldOps, newOps, "reconfigure must produce a new instance");
+        assertFalse(getWorkStealingPool(newOps).isShutdown(), "new pool must be live after reconfigure");
+
+        octree.close(); // cleanup
+    }
+
+    @Test
+    void tryWithResourcesWorks() throws Exception {
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        var bulkProcessor = new BulkOperationProcessor<>(octree);
+        ForkJoinPool captured;
+        try (var pbo = new ParallelBulkOperations<>(octree, bulkProcessor, ParallelBulkOperations.defaultConfig())) {
+            captured = getWorkStealingPool(pbo);
+            assertFalse(captured.isShutdown(), "pool must be live inside try block");
+        }
+        assertTrue(captured.isShutdown(), "pool must be shut down after try-with-resources closes");
+    }
+
+    // ---- reflection helpers ----
+
+    private static ForkJoinPool getWorkStealingPool(ParallelBulkOperations<?, ?, ?> pbo) throws Exception {
+        Field f = ParallelBulkOperations.class.getDeclaredField("workStealingPool");
+        f.setAccessible(true);
+        return (ForkJoinPool) f.get(pbo);
+    }
+
+    private static Object getFixedThreadPool(ParallelBulkOperations<?, ?, ?> pbo) throws Exception {
+        Field f = ParallelBulkOperations.class.getDeclaredField("fixedThreadPool");
+        f.setAccessible(true);
+        return f.get(pbo);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <Key extends SpatialKey<Key>, ID extends com.hellblazer.luciferase.lucien.entity.EntityID, Content>
+    ParallelBulkOperations<Key, ID, Content> getParallelOperations(
+    AbstractSpatialIndex<Key, ID, Content> idx) throws Exception {
+        Field f = AbstractSpatialIndex.class.getDeclaredField("parallelOperations");
+        f.setAccessible(true);
+        return (ParallelBulkOperations<Key, ID, Content>) f.get(idx);
     }
 }

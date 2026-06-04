@@ -32,7 +32,9 @@ import java.net.SocketTimeoutException;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -72,27 +74,69 @@ public class SocketServer {
      */
     static final int READ_TIMEOUT_MS = 30_000;
 
+    /**
+     * Default maximum concurrent accepted connections (Luciferase-7wzml.69).
+     * Sized to match a typical VoN overlay peer neighbourhood (k ≈ 20) with headroom.
+     * Excess connections are closed immediately in the accept loop without being tracked.
+     */
+    static final int DEFAULT_MAX_CONNECTIONS = 64;
+
     private final ProcessAddress bindAddress;
     private final Consumer<TransportVonMessage> messageHandler;
     private final ExecutorService executor;
+    private final int maxConnections;
     private final Set<Socket> clientSockets = Collections.synchronizedSet(new java.util.HashSet<>());
     private volatile ServerSocket serverSocket;
     private volatile boolean running = false;
 
     /**
-     * Create a SocketServer.
+     * Create a SocketServer with the default connection cap ({@value #DEFAULT_MAX_CONNECTIONS}).
      *
      * @param bindAddress    Address to bind (hostname and port)
      * @param messageHandler Callback for received messages
      */
     public SocketServer(ProcessAddress bindAddress, Consumer<TransportVonMessage> messageHandler) {
+        this(bindAddress, messageHandler, DEFAULT_MAX_CONNECTIONS);
+    }
+
+    /**
+     * Create a SocketServer with an explicit connection cap (Luciferase-7wzml.69).
+     * <p>
+     * The thread pool is a fixed {@link ThreadPoolExecutor} sized to {@code maxConnections + 4} —
+     * the accept thread plus one handler thread per live connection with a small burst margin.
+     * The bounded queue holds up to {@code maxConnections} pending tasks; pool saturation
+     * triggers the rejection handler, which logs and throws so the accept loop can close the socket.
+     *
+     * @param bindAddress    Address to bind (hostname and port)
+     * @param messageHandler Callback for received messages
+     * @param maxConnections Maximum concurrent accepted connections (&gt; 0); excess are closed on accept
+     */
+    public SocketServer(ProcessAddress bindAddress, Consumer<TransportVonMessage> messageHandler, int maxConnections) {
+        if (maxConnections <= 0) {
+            throw new IllegalArgumentException("maxConnections must be positive; got " + maxConnections);
+        }
         this.bindAddress = bindAddress;
         this.messageHandler = messageHandler;
-        this.executor = Executors.newCachedThreadPool(r -> {
-            var t = new Thread(r, "socket-server-" + bindAddress.processId());
-            t.setDaemon(true);
-            return t;
-        });
+        this.maxConnections = maxConnections;
+        int poolSize = maxConnections + 4;
+        this.executor = new ThreadPoolExecutor(
+            poolSize, poolSize,
+            60L, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(maxConnections),
+            r -> {
+                var t = new Thread(r, "socket-server-" + bindAddress.processId());
+                t.setDaemon(true);
+                return t;
+            },
+            // Rejection handler: log and throw — accept loop catches RejectedExecutionException
+            // and closes the socket so no FD leaks. The cap check is the primary guard; this
+            // fires only if pool + queue are both full (e.g. during shutdown or misconfiguration).
+            (runnable, pool) -> {
+                log.warn("Thread pool saturated (max={}, queueSize={}); rejecting client handler",
+                         pool.getMaximumPoolSize(), pool.getQueue().size());
+                throw new RejectedExecutionException("Thread pool saturated at " + pool.getMaximumPoolSize());
+            }
+        );
     }
 
     /**
@@ -135,9 +179,34 @@ public class SocketServer {
                         clientSocket.close();
                         throw e;
                     }
+                    // Luciferase-7wzml.69: enforce connection cap — reject excess immediately
+                    // so neither a handler thread nor a tracked FD is consumed by the excess socket.
+                    if (clientSockets.size() >= maxConnections) {
+                        log.warn("Connection cap reached ({}/{}), closing excess connection from {}",
+                                 clientSockets.size(), maxConnections, clientSocket.getRemoteSocketAddress());
+                        try {
+                            clientSocket.close();
+                        } catch (IOException closeEx) {
+                            log.debug("Error closing excess socket", closeEx);
+                        }
+                        continue;
+                    }
                     clientSockets.add(clientSocket);
                     log.info("Accepted connection from {}", clientSocket.getRemoteSocketAddress());
-                    executor.execute(() -> handleClient(clientSocket));
+                    try {
+                        executor.execute(() -> handleClient(clientSocket));
+                    } catch (RejectedExecutionException e) {
+                        // Pool saturated (should not occur under cap enforcement, but be defensive).
+                        // Remove from tracking and close so neither slot nor FD leaks.
+                        clientSockets.remove(clientSocket);
+                        log.warn("Executor rejected handler for {}, closing socket",
+                                 clientSocket.getRemoteSocketAddress());
+                        try {
+                            clientSocket.close();
+                        } catch (IOException closeEx) {
+                            log.debug("Error closing rejected socket", closeEx);
+                        }
+                    }
                 } catch (SocketException e) {
                     if (running) {
                         log.error("Socket error in accept loop", e);

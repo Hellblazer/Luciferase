@@ -40,7 +40,8 @@ import java.util.stream.IntStream;
  * @param <NodeType> The type of spatial node used by the implementation
  * @author hal.hildebrand
  */
-public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
+public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+implements AutoCloseable {
     
     private static final Logger log = LoggerFactory.getLogger(ParallelBulkOperations.class);
 
@@ -71,7 +72,9 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
             this.fixedThreadPool = null;
         } else {
             this.workStealingPool = null;
-            this.fixedThreadPool = Executors.newFixedThreadPool(config.getThreadCount());
+            // Daemon threads so stray pool threads never block JVM exit (Luciferase-7wzml.60)
+            var daemonFactory = new DaemonThreadFactory("lucien-parallel");
+            this.fixedThreadPool = Executors.newFixedThreadPool(config.getThreadCount(), daemonFactory);
         }
     }
 
@@ -224,7 +227,28 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
     }
 
     /**
-     * Clean up resources
+     * AutoCloseable entry point — shuts down pools and waits for orderly termination (Luciferase-7wzml.60).
+     * Suitable for try-with-resources.
+     */
+    @Override
+    public void close() {
+        shutdown();
+        // Await termination with a reasonable timeout so callers get deterministic cleanup
+        try {
+            if (workStealingPool != null) {
+                workStealingPool.awaitTermination(5, TimeUnit.SECONDS);
+            }
+            if (fixedThreadPool != null) {
+                fixedThreadPool.awaitTermination(5, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Interrupted while awaiting parallel-operations pool termination");
+        }
+    }
+
+    /**
+     * Clean up resources (initiates shutdown without waiting; use {@link #close()} for orderly termination).
      */
     public void shutdown() {
         if (workStealingPool != null && !workStealingPool.isShutdown()) {
@@ -519,6 +543,26 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
 
         public boolean hasErrors() {
             return !errors.isEmpty();
+        }
+    }
+
+    /**
+     * ThreadFactory that creates daemon threads so stray pool threads never pin JVM exit (Luciferase-7wzml.60).
+     */
+    private static class DaemonThreadFactory implements java.util.concurrent.ThreadFactory {
+        private final String namePrefix;
+        private final java.util.concurrent.atomic.AtomicInteger counter = new java.util.concurrent.atomic.AtomicInteger(
+        1);
+
+        DaemonThreadFactory(String namePrefix) {
+            this.namePrefix = namePrefix;
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            var t = new Thread(r, namePrefix + "-" + counter.getAndIncrement());
+            t.setDaemon(true);
+            return t;
         }
     }
 

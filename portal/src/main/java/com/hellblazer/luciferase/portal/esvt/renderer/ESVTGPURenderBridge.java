@@ -195,9 +195,10 @@ public class ESVTGPURenderBridge implements AutoCloseable {
         }
 
         return CompletableFuture.runAsync(() -> {
-            // Dispose old memory if exists
+            // Close old memory if exists (idempotent, delegates to dispose())
             if (gpuMemory != null) {
-                gpuMemory.dispose();
+                gpuMemory.close();
+                gpuMemory = null;
             }
 
             // Create new GPU memory from data
@@ -373,7 +374,7 @@ public class ESVTGPURenderBridge implements AutoCloseable {
                 }
 
                 if (gpuMemory != null) {
-                    gpuMemory.dispose();
+                    gpuMemory.close();
                     gpuMemory = null;
                 }
 

@@ -368,9 +368,19 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
     /**
      * Close simulation and release resources.
+     * Stops the execution engine then releases per-bubble resources (ghost coordinator
+     * tick-listener deregistration + owned RealTimeController shutdown). Idempotent via
+     * EnhancedBubble.close()'s own guard; one failure does not skip the remaining bubbles.
      */
     @Override
     public void close() {
         executionEngine.close();
+        for (var bubble : getAllBubbles()) {
+            try {
+                bubble.close();
+            } catch (Exception e) {
+                log.warn("Failed to close bubble {}: {}", bubble.id(), e.getMessage(), e);
+            }
+        }
     }
 }

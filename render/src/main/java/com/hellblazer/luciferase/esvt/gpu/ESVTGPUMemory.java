@@ -23,7 +23,9 @@ import com.hellblazer.luciferase.resource.opengl.BufferResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.ref.Cleaner;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.lwjgl.opengl.GL43.*;
 import static org.lwjgl.system.MemoryUtil.*;
@@ -38,8 +40,9 @@ import static org.lwjgl.system.MemoryUtil.*;
  *
  * @author hal.hildebrand
  */
-public final class ESVTGPUMemory {
+public final class ESVTGPUMemory implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(ESVTGPUMemory.class);
+    private static final Cleaner CLEANER = Cleaner.create();
 
     // GPU memory alignment requirements
     private static final int GPU_ALIGNMENT = 64; // Cache line alignment
@@ -49,13 +52,21 @@ public final class ESVTGPUMemory {
     private final long bufferSize;
     private final int nodeCount;
     private final int rootType;
-    private boolean disposed = false;
+    private volatile boolean disposed = false;
 
     // Resource manager for GPU resources
     private final UnifiedResourceManager resourceManager = UnifiedResourceManager.getInstance();
 
     // Managed GPU buffer
     private BufferResource nodeSSBO;
+
+    // Guard shared between dispose() and the Cleaner action — ensures the native
+    // buffer is freed exactly once regardless of which path runs first.
+    private final AtomicBoolean freed;
+
+    // Cleaner action — frees only the native ByteBuffer; never touches GL resources
+    // (GL calls off the GL thread are unsafe and must not be registered here)
+    private final Cleaner.Cleanable cleanable;
 
     /**
      * Create GPU memory for ESVT nodes
@@ -89,6 +100,19 @@ public final class ESVTGPUMemory {
 
         // Initialize buffer to zero
         memSet(nodeBuffer, (byte) 0);
+
+        // Shared one-shot guard: whichever path runs first (dispose() or Cleaner at GC) wins.
+        // The guard and buffer reference are captured by value — must NOT capture 'this'.
+        this.freed = new AtomicBoolean(false);
+        ByteBuffer bufferRef = nodeBuffer;
+        AtomicBoolean freedRef = this.freed;
+        this.cleanable = CLEANER.register(this, () -> {
+            if (freedRef.compareAndSet(false, true)) {
+                log.warn("ESVTGPUMemory was not closed — native buffer freed by Cleaner (GL resources may leak)");
+                memAlignedFree(bufferRef);
+            }
+            // else: dispose() already freed — no-op, no double-free
+        });
 
         log.debug("Allocated ESVT GPU memory: {} nodes, {} bytes, rootType={}", nodeCount, bufferSize, rootType);
     }
@@ -236,7 +260,8 @@ public final class ESVTGPUMemory {
     }
 
     /**
-     * Dispose GPU memory - MUST be called to avoid memory leaks
+     * Dispose GPU memory - MUST be called to avoid memory leaks.
+     * Idempotent: safe to call multiple times.
      */
     public synchronized void dispose() {
         if (disposed) {
@@ -252,21 +277,26 @@ public final class ESVTGPUMemory {
             log.error("Error disposing GPU buffer", e);
         }
 
-        if (nodeBuffer != null) {
+        // Free native buffer exactly once — shared guard prevents double-free with Cleaner.
+        if (freed.compareAndSet(false, true)) {
             memAlignedFree(nodeBuffer);
-            nodeBuffer = null;
         }
+        nodeBuffer = null;
+
+        // Deregister the Cleaner. The action is a no-op at this point (freed==true),
+        // but calling clean() removes the phantom reference from the Cleaner queue.
+        cleanable.clean();
 
         disposed = true;
         log.debug("Disposed ESVT GPU memory: {} nodes, {} bytes", nodeCount, bufferSize);
     }
 
+    /**
+     * Implements {@link AutoCloseable}. Delegates to {@link #dispose()}.
+     * Idempotent — double-close is a no-op.
+     */
     @Override
-    protected void finalize() throws Throwable {
-        if (!disposed) {
-            log.warn("ESVTGPUMemory was not properly disposed - memory leak detected!");
-            dispose();
-        }
-        super.finalize();
+    public void close() {
+        dispose();
     }
 }
