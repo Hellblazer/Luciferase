@@ -30,8 +30,8 @@ import java.util.UUID;
  * Java Serialization over network sockets. This is the wire format used in
  * TransportVonMessage for neighbor set transmission in JoinResponse messages.
  * <p>
- * Phase 6A: BubbleBounds not transmitted (set to null on reconstruction)
- * Phase 6B: Will add BubbleBounds serialization when needed
+ * Phase 6B (Luciferase-vzyrf): BubbleBounds now transmitted via the primitive-decomposed
+ * {@link TransportBubbleBounds} (null only when the source NeighborInfo had null bounds).
  *
  * @author hal.hildebrand
  */
@@ -39,16 +39,24 @@ public record TransportNeighborInfo(
     String nodeId,
     double posX,
     double posY,
-    double posZ
+    double posZ,
+    TransportBubbleBounds bounds
 ) implements Serializable {
 
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L; // Incremented: added bounds (Luciferase-vzyrf)
 
     /**
-     * Create TransportNeighborInfo from a Message.NeighborInfo.
+     * Legacy 4-argument constructor (pre-bounds). Defaults {@code bounds} to {@code null}.
+     */
+    public TransportNeighborInfo(String nodeId, double posX, double posY, double posZ) {
+        this(nodeId, posX, posY, posZ, null);
+    }
+
+    /**
+     * Create TransportNeighborInfo from a Message.NeighborInfo, including its bounds.
      *
      * @param neighbor NeighborInfo to convert
-     * @return TransportNeighborInfo with decomposed position
+     * @return TransportNeighborInfo with decomposed position and bounds
      */
     public static TransportNeighborInfo from(Message.NeighborInfo neighbor) {
         var pos = neighbor.position();
@@ -56,22 +64,21 @@ public record TransportNeighborInfo(
             neighbor.nodeId().toString(),
             pos.getX(),
             pos.getY(),
-            pos.getZ()
+            pos.getZ(),
+            TransportBubbleBounds.from(neighbor.bounds())
         );
     }
 
     /**
-     * Convert back to Message.NeighborInfo.
-     * <p>
-     * Phase 6A: BubbleBounds set to null (not transmitted in wire format)
+     * Convert back to Message.NeighborInfo, reconstructing bounds when present.
      *
-     * @return NeighborInfo with reconstructed Point3d, null bounds
+     * @return NeighborInfo with reconstructed Point3d and bounds (null iff the wire bounds were null)
      */
     public Message.NeighborInfo toNeighborInfo() {
         return new Message.NeighborInfo(
             UUID.fromString(nodeId),
             new Point3d(posX, posY, posZ),
-            null  // BubbleBounds not transmitted in Phase 6A
+            bounds != null ? bounds.toBubbleBounds() : null
         );
     }
 }

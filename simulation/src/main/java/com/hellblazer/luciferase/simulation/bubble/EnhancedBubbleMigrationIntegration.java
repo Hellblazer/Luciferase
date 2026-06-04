@@ -99,6 +99,9 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
     private final int viewStabilityTicks;
     private final Map<UUID, Integer> entityStabilityTicks = new ConcurrentHashMap<>();
 
+    // Most recent EntityDepartureEvent produced by detectAndInitiateMigrations (diagnostics/testing).
+    private volatile EntityDepartureEvent lastDepartureEvent;
+
     // Metrics
     private long totalMigrationsInitiated = 0;
     private long totalMigrationsCompleted = 0;
@@ -161,44 +164,99 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
         // Get entities that crossed boundaries
         var crossingEntities = migrationOracle.getEntitiesCrossingBoundaries();
 
-        for (var entityId : crossingEntities) {
+        for (var crossingId : crossingEntities) {
             try {
-                // Determine target bubble
-                var entityRecord = bubble.getEntities().stream()
-                    .filter(id -> id.equals(entityId))
+                // Resolve the entity's current record (position + content) from the bubble. The
+                // oracle reports IDs as Strings; match them against this bubble's entity records.
+                var entityRecord = bubble.getAllEntityRecords().stream()
+                    .filter(record -> record.id().equals(crossingId))
                     .findFirst();
 
                 if (entityRecord.isEmpty()) {
+                    // Crossing reported for an entity this bubble does not own — nothing to migrate.
                     continue;
                 }
 
-                // Get entity position (would need to extend EnhancedBubble to provide this)
-                // For now, we skip detailed position tracking
-                // In real implementation, would get actual position and determine target
+                var position = entityRecord.get().position();
 
-                // Check current FSM state
+                // Entity IDs flow through the FSM and OptimisticMigrator as UUIDs. The oracle
+                // reports the UUID's string form; parse it back so the FSM key, the optimistic
+                // migrator, and the downstream stability/commit path (which key on UUID) all
+                // agree on identity.
+                final UUID entityId;
+                try {
+                    entityId = UUID.fromString(crossingId);
+                } catch (IllegalArgumentException e) {
+                    log.warn("Crossing entity id {} is not a UUID; cannot migrate", crossingId);
+                    continue;
+                }
+
+                // Only own (OWNED) entities can begin an outbound migration. Initialize tracking
+                // if the FSM has not yet seen this entity.
                 var currentState = migrationFsm.getState(entityId);
+                if (currentState == null) {
+                    migrationFsm.initializeOwned(entityId);
+                    currentState = migrationFsm.getState(entityId);
+                }
+
                 if (currentState == EntityMigrationState.OWNED) {
-                    // Determine target bubble from position
-                    // UUID targetBubble = migrationOracle.getTargetBubble(position);
+                    // Resolve the destination bubble for the entity's new position.
+                    var targetBubble = migrationOracle.getTargetBubble(position);
+                    if (targetBubble == null || targetBubble.equals(bubble.id())) {
+                        // No distinct destination — not actually leaving this bubble.
+                        continue;
+                    }
 
-                    // Initiate optimistic migration
-                    // optimisticMigrator.initiateOptimisticMigration(entityId, targetBubble);
+                    // Begin optimistic migration: subsequent physics updates are deferred until
+                    // the migration commits or rolls back.
+                    optimisticMigrator.initiateOptimisticMigration(entityId, targetBubble);
 
-                    // Transition FSM: OWNED → MIGRATING_OUT
-                    // migrationFsm.transition(entityId, EntityMigrationState.MIGRATING_OUT);
+                    // Drive the FSM: OWNED → MIGRATING_OUT. This fires onEntityStateTransition,
+                    // which freezes physics and records the migration context. If the transition
+                    // is rejected (e.g. invalid/blocked), undo the optimistic migration.
+                    var transition = migrationFsm.transition(entityId, EntityMigrationState.MIGRATING_OUT);
+                    if (!transition.success) {
+                        log.debug("FSM rejected OWNED->MIGRATING_OUT for entity {}: {}",
+                                entityId, transition.reason);
+                        optimisticMigrator.rollbackMigration(entityId, "fsm_rejected");
+                        continue;
+                    }
+
+                    // Notify the destination that the entity is departing this bubble.
+                    sendEntityDepartureEvent(entityId, targetBubble);
 
                     totalMigrationsInitiated++;
 
-                    log.debug("Migration initiated for entity: {}", entityId);
+                    log.debug("Migration initiated for entity {} -> target bubble {}", entityId, targetBubble);
                 }
             } catch (Exception e) {
-                log.error("Error processing migration for entity {}: {}", entityId, e.getMessage());
+                log.error("Error processing migration for entity {}: {}", crossingId, e.getMessage());
             }
         }
 
         // Clear crossing cache for next tick
         migrationOracle.clearCrossingCache();
+    }
+
+    /**
+     * Send an EntityDepartureEvent to the destination bubble announcing that the entity is
+     * leaving this bubble (source side of the migration handshake).
+     * <p>
+     * The cross-bubble transport channel is not owned by this class; consistent with the other
+     * {@code send*} handlers here, the event is constructed (so the payload is real, not a stub)
+     * and logged. The constructed event is retained for diagnostics/testing.
+     *
+     * @param entityId     entity departing this bubble
+     * @param targetBubble destination bubble
+     */
+    private void sendEntityDepartureEvent(UUID entityId, UUID targetBubble) {
+        // No Lamport clock source is wired into this bubble integration; use 0 rather than
+        // fabricate a timestamp. Cross-bubble ordering is handled by the transport layer when
+        // the channel is wired.
+        var event = new EntityDepartureEvent(entityId, bubble.id(), targetBubble,
+                EntityMigrationState.MIGRATING_OUT, 0L);
+        lastDepartureEvent = event;
+        log.debug("EntityDepartureEvent sent for entity {} -> target {}", entityId, targetBubble);
     }
 
     /**
@@ -437,6 +495,25 @@ public class EnhancedBubbleMigrationIntegration implements MigrationStateListene
      */
     public MigrationOracle getMigrationOracle() {
         return migrationOracle;
+    }
+
+    /**
+     * Get the number of migrations initiated by boundary-crossing detection.
+     *
+     * @return total migrations initiated
+     */
+    public long getTotalMigrationsInitiated() {
+        return totalMigrationsInitiated;
+    }
+
+    /**
+     * Get the most recent EntityDepartureEvent produced during migration initiation
+     * (diagnostics/testing).
+     *
+     * @return last departure event, or {@code null} if none has been produced
+     */
+    public EntityDepartureEvent getLastDepartureEvent() {
+        return lastDepartureEvent;
     }
 
     /**

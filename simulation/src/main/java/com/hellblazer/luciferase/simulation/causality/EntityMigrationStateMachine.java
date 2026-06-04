@@ -447,64 +447,87 @@ public class EntityMigrationStateMachine {
         Objects.requireNonNull(entityId, "entityId must not be null");
         Objects.requireNonNull(newState, "newState must not be null");
 
-        var currentState = entityStates.get(entityId);
-        if (currentState == null) {
-            totalFailedTransitions.incrementAndGet();
-            var result = TransitionResult.notFound(newState);
-            notifyListeners(entityId, null, newState, result);
-            return result;
-        }
-
-        // Validate transition
-        if (!isValidTransition(currentState, newState)) {
-            totalFailedTransitions.incrementAndGet();
-            var result = TransitionResult.invalid(currentState, newState);
-            notifyListeners(entityId, currentState, newState, result);
-            return result;
-        }
-
-        // Check view stability if this specific transition requires it (TOCTOU race prevention - Luciferase-yag5)
-        if (requiresViewStabilityForTransition(currentState, newState)) {
-            var stabilityCheck = viewMonitor.checkStability();
-            if (!stabilityCheck.stable()) {
-                totalFailedTransitions.incrementAndGet();
-                log.debug("Transition blocked: view not stable for {} -> {}", currentState, newState);
-                var result = TransitionResult.blocked(currentState, newState, "View not stable");
-                notifyListeners(entityId, currentState, newState, result);
-                return result;
+        // Atomic read-validate-write to enforce the single-owner invariant. The entire
+        // current-state read, transition validation, view-stability check, and state write
+        // execute under ConcurrentHashMap's per-key bin lock inside compute(), so two
+        // concurrent transitions on the same entity can never both observe the same
+        // currentState and both commit (Luciferase-umqlt).
+        var outcome = new TransitionOutcome();
+        entityStates.compute(entityId, (id, currentState) -> {
+            if (currentState == null) {
+                outcome.result = TransitionResult.notFound(newState);
+                return null; // leave absent
             }
 
-            // Validate viewId hasn't changed during transition preparation
-            var currentViewId = viewMonitor.getCurrentViewId();
-            if (stabilityCheck.viewId() != null && !stabilityCheck.viewId().equals(currentViewId)) {
-                totalFailedTransitions.incrementAndGet();
-                log.debug("Transition blocked: view changed during prep for {} -> {}", currentState, newState);
-                var result = TransitionResult.blocked(currentState, newState, "View changed during preparation");
-                notifyListeners(entityId, currentState, newState, result);
-                return result;
+            if (!isValidTransition(currentState, newState)) {
+                outcome.result = TransitionResult.invalid(currentState, newState);
+                return currentState; // no change
             }
-        }
 
-        // Perform transition
-        entityStates.put(entityId, newState);
-        totalTransitions.incrementAndGet();
+            // Check view stability if this specific transition requires it (TOCTOU race prevention - Luciferase-yag5).
+            // Performed inside compute() so the stability decision and the state write are atomic.
+            if (requiresViewStabilityForTransition(currentState, newState)) {
+                var stabilityCheck = viewMonitor.checkStability();
+                if (!stabilityCheck.stable()) {
+                    outcome.result = TransitionResult.blocked(currentState, newState, "View not stable");
+                    outcome.blockedDebug = "Transition blocked: view not stable";
+                    return currentState; // no change
+                }
 
-        // Update migration context
-        if (newState.isInTransition()) {
-            var startTimeMs = clock.currentTimeMillis();
-            var timeoutMs = startTimeMs + config.migrationTimeoutMs;
-            migrationContexts.putIfAbsent(entityId,
-                new MigrationContext(entityId, 0L, currentState, startTimeMs, timeoutMs));
+                var currentViewId = viewMonitor.getCurrentViewId();
+                if (stabilityCheck.viewId() != null && !stabilityCheck.viewId().equals(currentViewId)) {
+                    outcome.result = TransitionResult.blocked(currentState, newState, "View changed during preparation");
+                    outcome.blockedDebug = "Transition blocked: view changed during prep";
+                    return currentState; // no change
+                }
+            }
+
+            // Commit: this is the single winning transition for this currentState.
+            outcome.fromState = currentState;
+            outcome.committed = true;
+            outcome.result = TransitionResult.success(currentState, newState);
+            return newState;
+        });
+
+        // Side effects performed outside the compute() lambda (metrics, context map, listeners)
+        // to avoid running them under the bin lock and to keep the lambda re-entrancy-safe.
+        if (outcome.committed) {
+            totalTransitions.incrementAndGet();
+
+            // Update migration context
+            if (newState.isInTransition()) {
+                var startTimeMs = clock.currentTimeMillis();
+                var timeoutMs = startTimeMs + config.migrationTimeoutMs;
+                migrationContexts.putIfAbsent(entityId,
+                    new MigrationContext(entityId, 0L, outcome.fromState, startTimeMs, timeoutMs));
+            } else {
+                // Clean up context for ALL terminal/non-transitional states
+                // Prevents memory leak from contexts piling up for ROLLBACK_OWNED, GHOST, DEPARTED, OWNED
+                migrationContexts.remove(entityId);
+            }
+
+            log.debug("Transition: {} {} -> {}", entityId, outcome.fromState, newState);
+            notifyListeners(entityId, outcome.fromState, newState, outcome.result);
         } else {
-            // Clean up context for ALL terminal/non-transitional states
-            // Prevents memory leak from contexts piling up for ROLLBACK_OWNED, GHOST, DEPARTED, OWNED
-            migrationContexts.remove(entityId);
+            totalFailedTransitions.incrementAndGet();
+            if (outcome.blockedDebug != null) {
+                log.debug("{} for {} -> {}", outcome.blockedDebug, outcome.result.fromState, newState);
+            }
+            notifyListeners(entityId, outcome.result.fromState, newState, outcome.result);
         }
+        return outcome.result;
+    }
 
-        log.debug("Transition: {} {} -> {}", entityId, currentState, newState);
-        var result = TransitionResult.success(currentState, newState);
-        notifyListeners(entityId, currentState, newState, result);
-        return result;
+    /**
+     * Mutable holder for capturing the result of an atomic {@link #transition} compute() lambda
+     * so that side effects (metrics, listener notifications, context updates) can be performed
+     * outside the ConcurrentHashMap bin lock.
+     */
+    private static final class TransitionOutcome {
+        TransitionResult result;
+        EntityMigrationState fromState;
+        boolean committed;
+        String blockedDebug;
     }
 
     /**
@@ -554,7 +577,11 @@ public class EntityMigrationStateMachine {
                 newState == EntityMigrationState.ROLLBACK_OWNED; // Migration failed
 
             case DEPARTED ->
-                newState == EntityMigrationState.GHOST;          // Leave cluster, become ghost
+                newState == EntityMigrationState.GHOST ||        // Leave cluster, become ghost
+                newState == EntityMigrationState.ROLLBACK_OWNED; // Commit-phase failure: source re-owns
+                                                                 // the entity that never committed at
+                                                                 // the target (MigrationCoordinator
+                                                                 // compensation path).
 
             case GHOST ->
                 newState == EntityMigrationState.MIGRATING_IN;   // Start incoming migration
@@ -624,6 +651,7 @@ public class EntityMigrationStateMachine {
      * @param departed Count of entities in DEPARTED state
      * @param migratingIn Count of entities in MIGRATING_IN state
      * @param ghost Count of entities in GHOST state
+     * @param rollbackOwned Count of entities in ROLLBACK_OWNED state (transient recovery state)
      * @param total Total entity count across all states (sum of above)
      */
     public record StateCounts(
@@ -632,17 +660,18 @@ public class EntityMigrationStateMachine {
         int departed,
         int migratingIn,
         int ghost,
+        int rollbackOwned,
         int total
     ) {
         /**
          * Validate invariant: total equals sum of individual state counts.
          */
         public StateCounts {
-            int sum = owned + migratingOut + departed + migratingIn + ghost;
+            int sum = owned + migratingOut + departed + migratingIn + ghost + rollbackOwned;
             if (total != sum) {
                 throw new IllegalArgumentException(
-                    String.format("Invariant violated: total=%d != sum=%d (owned=%d, migratingOut=%d, departed=%d, migratingIn=%d, ghost=%d)",
-                                 total, sum, owned, migratingOut, departed, migratingIn, ghost)
+                    String.format("Invariant violated: total=%d != sum=%d (owned=%d, migratingOut=%d, departed=%d, migratingIn=%d, ghost=%d, rollbackOwned=%d)",
+                                 total, sum, owned, migratingOut, departed, migratingIn, ghost, rollbackOwned)
                 );
             }
         }
@@ -675,6 +704,7 @@ public class EntityMigrationStateMachine {
         int departedCount = 0;
         int migratingInCount = 0;
         int ghostCount = 0;
+        int rollbackOwnedCount = 0;
 
         for (var state : snapshot.values()) {
             switch (state) {
@@ -683,12 +713,13 @@ public class EntityMigrationStateMachine {
                 case DEPARTED -> departedCount++;
                 case MIGRATING_IN -> migratingInCount++;
                 case GHOST -> ghostCount++;
+                case ROLLBACK_OWNED -> rollbackOwnedCount++;
             }
         }
 
         int total = snapshot.size();
         return new StateCounts(ownedCount, migratingOutCount, departedCount,
-                              migratingInCount, ghostCount, total);
+                              migratingInCount, ghostCount, rollbackOwnedCount, total);
     }
 
     /**

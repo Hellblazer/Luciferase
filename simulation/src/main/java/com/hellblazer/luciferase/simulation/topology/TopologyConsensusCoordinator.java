@@ -16,7 +16,10 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.delos.cryptography.Digest;
+import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
+import com.hellblazer.luciferase.simulation.consensus.committee.MigrationProposal;
 import com.hellblazer.luciferase.simulation.consensus.committee.ViewCommitteeConsensus;
 import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
@@ -183,21 +186,71 @@ public class TopologyConsensusCoordinator {
             return CompletableFuture.completedFuture(false);
         }
 
-        // Stage 3: Consensus voting
-        // For Phase 9B, we use pre-validation as the consensus mechanism
-        // (Byzantine proposals rejected in Stage 2, valid proposals approved here)
-        // Future: Integrate with ViewCommitteeConsensus for distributed voting
-        log.debug("Approving valid proposal {} (passed pre-validation): type={}, view={}, timestamp={}",
+        // Stage 3: Distributed Byzantine fault-tolerant consensus voting.
+        // Pre-validation (Stage 2) only rejects locally-detectable Byzantine inputs;
+        // it is NOT a substitute for quorum agreement. A topology change must be
+        // approved by the committee via ViewCommitteeConsensus before it takes effect,
+        // otherwise any single node could unilaterally split/merge/move a bubble.
+        log.debug("Submitting valid proposal {} to committee consensus: type={}, view={}, timestamp={}",
                  proposal.proposalId(),
                  proposal.getClass().getSimpleName(),
                  proposal.viewId(),
                  proposal.timestamp());
 
-        // Update cooldown timestamp for approved proposal
-        updateCooldownTimestamps(proposal);
-        log.info("Topology proposal {} approved (passed validation + cooldown)", proposal.proposalId());
+        return consensusProtocol.requestConsensus(toMigrationProposal(proposal))
+                                .thenApply(approved -> {
+                                    if (Boolean.TRUE.equals(approved)) {
+                                        // Only update cooldown when the committee actually approved.
+                                        updateCooldownTimestamps(proposal);
+                                        log.info("Topology proposal {} approved by committee consensus",
+                                                 proposal.proposalId());
+                                        return true;
+                                    }
+                                    log.info("Topology proposal {} rejected by committee consensus",
+                                             proposal.proposalId());
+                                    return false;
+                                });
+    }
 
-        return CompletableFuture.completedFuture(true);
+    /**
+     * Adapts a {@link TopologyProposal} to the consensus layer's
+     * {@link MigrationProposal} envelope for committee voting.
+     * <p>
+     * The consensus layer votes on opaque proposal identity (proposalId + viewId +
+     * timestamp); the topology-specific payload is validated locally in Stage 2.
+     * The affected bubble is mapped to source/target node identities so the
+     * proposal is well-formed for the voting protocol.
+     * <p>
+     * <b>Known limitation (Luciferase-vhbw3):</b> the source/target node identities
+     * here are {@link #digestOf(UUID) digests derived from bubble UUIDs}, which are
+     * NOT Fireflies member IDs. A live {@code ViewCommitteeConsensus.validateProposal}
+     * gates on {@code isNodeInView(...)} against the actual Fireflies membership view,
+     * so a bubble-UUID-derived digest will be rejected as "node not in view". The
+     * mapping is therefore only sound against a test/mock consensus that does not
+     * enforce membership. Wiring real Fireflies member IDs through this envelope is
+     * tracked by bead Luciferase-vhbw3.
+     *
+     * @param proposal the topology proposal to wrap
+     * @return a migration proposal carrying the same identity for committee voting
+     */
+    private MigrationProposal toMigrationProposal(TopologyProposal proposal) {
+        var affected = getAffectedBubbles(proposal);
+        var primary = affected.get(0);
+        var entityId = primary;
+        var sourceNode = digestOf(primary);
+        var targetNode = affected.size() > 1 ? digestOf(affected.get(1)) : digestOf(proposal.proposalId());
+        return new MigrationProposal(proposal.proposalId(), entityId, sourceNode, targetNode,
+                                     proposal.viewId(), proposal.timestamp());
+    }
+
+    /**
+     * Derives a stable {@link Digest} identity from a UUID for the consensus envelope.
+     *
+     * @param id the source identifier
+     * @return a deterministic digest of the identifier
+     */
+    private static Digest digestOf(UUID id) {
+        return DigestAlgorithm.DEFAULT.digest(id.toString());
     }
 
     /**

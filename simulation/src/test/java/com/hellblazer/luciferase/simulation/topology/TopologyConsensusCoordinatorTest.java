@@ -31,6 +31,9 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -297,6 +300,86 @@ class TopologyConsensusCoordinatorTest {
         assertThrows(NullPointerException.class, () -> {
             coordinator.requestConsensus(null);
         }, "Should reject null proposal");
+    }
+
+    @Test
+    void testRequestConsensusRoutesThroughConsensusProtocol() {
+        // A valid proposal that passes cooldown + pre-validation must still be
+        // submitted to the committee consensus protocol — pre-validation is NOT consensus.
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+        addEntities(bubble, 5100);
+
+        var proposal = createSplitProposal(bubble.id());
+        var result = coordinator.requestConsensus(proposal).join();
+
+        assertTrue(result, "Proposal should be approved when committee approves");
+        // The stub cannot re-emerge: the consensus protocol MUST be invoked exactly once.
+        verify(mockConsensus, times(1)).requestConsensus(any());
+    }
+
+    @Test
+    void testNonApprovingCommitteeBlocksProposal() {
+        // Committee votes NO — proposal must be rejected even though it passed
+        // local cooldown and pre-validation. This is the core BFT guarantee.
+        //
+        // Non-vacuous cooldown assertion: a bare assertEquals(0L, getRemainingCooldown(...))
+        // passes trivially because an absent bubble key returns 0. To prove that *only* an
+        // approval starts/refreshes the cooldown — and a rejection neither starts nor
+        // extends it — we first drive an APPROVED proposal to establish a real, non-zero
+        // cooldown baseline, then submit a REJECTED proposal and assert the cooldown is
+        // unchanged (not reset, not extended) by the rejection.
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+        addEntities(bubble, 5100);
+
+        // Stage 1: approved proposal establishes a real cooldown baseline at t=1000ms.
+        // setUp() already mocks consensus to approve.
+        var approved = createSplitProposal(bubble.id());
+        assertTrue(coordinator.requestConsensus(approved).join(),
+                   "Baseline proposal must be approved to start the cooldown");
+        long baselineCooldown = coordinator.getRemainingCooldown(bubble.id());
+        assertTrue(baselineCooldown > 0L,
+                   "Approval must establish a non-zero cooldown (baseline for the non-vacuous check)");
+
+        // Advance time past the 10s cooldown so the rejected proposal clears the stage-1
+        // cooldown gate and actually reaches the committee (otherwise it is short-circuited
+        // before consensus and the test would be vacuous in a different way).
+        testClock.setMillis(12_000L);
+        assertEquals(0L, coordinator.getRemainingCooldown(bubble.id()),
+                     "Cooldown must have fully elapsed before the rejected proposal");
+
+        // Stage 2: committee now votes NO.
+        when(mockConsensus.requestConsensus(any()))
+            .thenReturn(CompletableFuture.completedFuture(false));
+        var rejected = createSplitProposal(bubble.id());
+        var result = coordinator.requestConsensus(rejected).join();
+
+        assertFalse(result, "Proposal must be rejected when committee does not approve");
+        // requestConsensus was invoked once for the approval and once for the rejection.
+        verify(mockConsensus, times(2)).requestConsensus(any());
+
+        // The defining defense: the rejection must NOT start or refresh the cooldown. The
+        // last-change timestamp is still the approval's (t=1000ms), which fully elapsed by
+        // t=12000ms, so remaining cooldown is 0. A rejection that wrongly stamped the
+        // cooldown at t=12000ms would yield a non-zero remaining here.
+        assertEquals(0L, coordinator.getRemainingCooldown(bubble.id()),
+                     "Rejected proposal must not start or extend the cooldown");
+    }
+
+    @Test
+    void testPreValidationFailureSkipsConsensus() {
+        // Byzantine proposal (below split threshold) is rejected locally and must
+        // never reach the committee.
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+        addEntities(bubble, 1000);
+
+        var proposal = createSplitProposal(bubble.id());
+        var result = coordinator.requestConsensus(proposal).join();
+
+        assertFalse(result, "Byzantine proposal should be rejected by pre-validation");
+        verify(mockConsensus, never()).requestConsensus(any());
     }
 
     // Helper methods

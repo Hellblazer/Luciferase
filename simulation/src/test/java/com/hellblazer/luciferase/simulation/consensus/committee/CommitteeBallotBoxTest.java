@@ -276,6 +276,69 @@ class CommitteeBallotBoxTest {
     }
 
     /**
+     * Voter-identity deduplication: a single Byzantine member that submits the
+     * same vote N times must NOT reach quorum on its own. Each member contributes
+     * exactly one vote; repeats are silently rejected and cannot move the tally.
+     */
+    @Test
+    void testSingleVoterRepeatVotesCannotReachQuorum() throws Exception {
+        // 7 nodes → toleranceLevel=3, quorum=4
+        when(mockContext.size()).thenReturn(7);
+        when(mockContext.toleranceLevel()).thenReturn(3);
+
+        var ballotBox = new CommitteeBallotBox(mockContext);
+        var proposalId = UUID.randomUUID();
+        var future = ballotBox.getResult(proposalId);
+
+        // One Byzantine voter submits the SAME (proposalId, voterId) vote 10 times.
+        var byzantine = DigestAlgorithm.DEFAULT.digest("byzantine-solo");
+        for (int i = 0; i < 10; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId, byzantine, true, viewId));
+        }
+
+        assertFalse(future.isDone(),
+                    "A single voter casting 10 identical votes must NOT reach quorum (need 4 distinct voters)");
+
+        // Three additional DISTINCT honest voters bring the YES tally to exactly 4.
+        for (int i = 0; i < 3; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId, DigestAlgorithm.DEFAULT.digest("honest-" + i), true, viewId));
+        }
+
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertTrue(result, "4 DISTINCT YES voters (1 Byzantine + 3 honest) reach quorum");
+    }
+
+    /**
+     * A duplicate vote from an already-counted voter must not flip a tally that a
+     * distinct set of voters would otherwise control.
+     */
+    @Test
+    void testDuplicateVoteDoesNotOutweighDistinctVoters() throws Exception {
+        // 5 nodes → toleranceLevel=2, quorum=3
+        when(mockContext.size()).thenReturn(5);
+        when(mockContext.toleranceLevel()).thenReturn(2);
+
+        var ballotBox = new CommitteeBallotBox(mockContext);
+        var proposalId = UUID.randomUUID();
+        var future = ballotBox.getResult(proposalId);
+
+        // One voter spams NO five times — must count as a single NO.
+        var spammer = DigestAlgorithm.DEFAULT.digest("no-spammer");
+        for (int i = 0; i < 5; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId, spammer, false, viewId));
+        }
+        assertFalse(future.isDone(), "5 repeat NO votes from one voter must not reach quorum=3");
+
+        // Three distinct YES voters reach quorum; YES wins despite the NO spam.
+        for (int i = 0; i < 3; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId, DigestAlgorithm.DEFAULT.digest("yes-" + i), true, viewId));
+        }
+
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertTrue(result, "3 distinct YES voters reach quorum; the single NO-spammer counts once and loses");
+    }
+
+    /**
      * Test cleanup after decision.
      */
     @Test

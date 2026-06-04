@@ -127,11 +127,15 @@ class VonDeserializationHardeningTest {
     @Test
     void filterAcceptsEveryConverterProducedMessageType() throws IOException {
         var ghost = new Message.TransportGhost("e1", new Point3f(1, 2, 3), "java.lang.String", "v", "tree-1", 1L, 2L, 3L);
-        var neighbor = new Message.NeighborInfo(UUID.randomUUID(), new Point3d(1, 2, 3), null);
+        // Non-null bounds (Luciferase-vzyrf) so the TransportBubbleBounds wire type is exercised
+        // against the strict RDR-004 allow-list (ends in !*).
+        var bounds = com.hellblazer.luciferase.simulation.bubble.BubbleBounds.fromEntityPositions(
+            List.of(new Point3f(10, 20, 30), new Point3f(60, 70, 80)));
+        var neighbor = new Message.NeighborInfo(UUID.randomUUID(), new Point3d(1, 2, 3), bounds);
         List<Message> messages = List.of(
-            new Message.JoinRequest(UUID.randomUUID(), new Point3d(1, 2, 3), null, 1L),
+            new Message.JoinRequest(UUID.randomUUID(), new Point3d(1, 2, 3), bounds, 1L),
             new Message.JoinResponse(UUID.randomUUID(), Set.of(neighbor), 2L),
-            new Message.Move(UUID.randomUUID(), new Point3d(4, 5, 6), null, 3L),
+            new Message.Move(UUID.randomUUID(), new Point3d(4, 5, 6), bounds, 3L),
             new Message.Leave(UUID.randomUUID(), 4L),
             new Message.GhostSync(UUID.randomUUID(), List.of(ghost), 9L, 5L),
             new Message.Ack(UUID.randomUUID(), UUID.randomUUID(), 6L),

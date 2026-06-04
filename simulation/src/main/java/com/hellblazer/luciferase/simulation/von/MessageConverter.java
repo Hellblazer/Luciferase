@@ -152,18 +152,24 @@ public class MessageConverter {
             (float) msg.position().getY(),
             (float) msg.position().getZ(),
             msg.joinerId().toString(),
-            msg.timestamp()
+            msg.timestamp(),
+            null,  // ghosts
+            null,  // bucket
+            null,  // neighbors
+            null,  // queryId
+            TransportBubbleBounds.from(msg.bounds())  // Luciferase-vzyrf: bounds now on the wire
         );
     }
 
     private static Message joinRequestFromTransport(TransportVonMessage transport) {
         var joinerId = UUID.fromString(transport.sourceBubbleId());
         var position = new javax.vecmath.Point3d(transport.posX(), transport.posY(), transport.posZ());
+        var bounds = transport.bounds() != null ? transport.bounds().toBubbleBounds() : null;
 
         return new Message.JoinRequest(
             joinerId,
             position,
-            null,  // BubbleBounds not transmitted in wire format (Phase 6B)
+            bounds,  // Luciferase-vzyrf: round-tripped from wire (was hard-coded null in Phase 6A)
             transport.timestamp()
         );
     }
@@ -220,18 +226,24 @@ public class MessageConverter {
             (float) msg.newPosition().getY(),
             (float) msg.newPosition().getZ(),
             msg.nodeId().toString(),
-            msg.timestamp()
+            msg.timestamp(),
+            null,  // ghosts
+            null,  // bucket
+            null,  // neighbors
+            null,  // queryId
+            TransportBubbleBounds.from(msg.newBounds())  // Luciferase-vzyrf: bounds now on the wire
         );
     }
 
     private static Message moveFromTransport(TransportVonMessage transport) {
         var nodeId = UUID.fromString(transport.sourceBubbleId());
         var newPosition = new javax.vecmath.Point3d(transport.posX(), transport.posY(), transport.posZ());
+        var newBounds = transport.bounds() != null ? transport.bounds().toBubbleBounds() : null;
 
         return new Message.Move(
             nodeId,
             newPosition,
-            null,  // BubbleBounds not transmitted in wire format (Phase 6B)
+            newBounds,  // Luciferase-vzyrf: round-tripped from wire (was hard-coded null in Phase 6A)
             transport.timestamp()
         );
     }

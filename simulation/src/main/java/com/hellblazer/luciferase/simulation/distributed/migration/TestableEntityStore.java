@@ -44,6 +44,21 @@ public interface TestableEntityStore {
     boolean addEntity(EntitySnapshot snapshot);
 
     /**
+     * Capture a snapshot of an entity's current state from this store (Luciferase-x8pwi).
+     * <p>
+     * Used by the migration PREPARE phase to capture the entity's real position, content,
+     * epoch, and version <em>before</em> the entity is removed, so that an aborted migration
+     * can restore the exact original state rather than fabricated data.
+     *
+     * @param entityId Entity identifier
+     * @return the entity's current snapshot, or {@code null} if this store does not track the
+     *         entity's full state
+     */
+    default EntitySnapshot getEntitySnapshot(String entityId) {
+        return null;
+    }
+
+    /**
      * Check if this store is reachable (simulates network connectivity).
      *
      * @return true if reachable, false if unreachable/partitioned

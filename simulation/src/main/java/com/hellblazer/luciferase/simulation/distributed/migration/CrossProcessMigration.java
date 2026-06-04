@@ -798,13 +798,36 @@ public class CrossProcessMigration {
         }
 
         /**
-         * Create entity snapshot for rollback.
+         * Capture a snapshot of the entity's real state from the source for rollback
+         * (Luciferase-x8pwi).
+         * <p>
+         * Must be called during PREPARE <em>before</em> the entity is removed from the source.
+         * Queries the source store for the entity's actual position, content, epoch, and
+         * version. If the source can provide a real snapshot, that snapshot is used verbatim so
+         * an aborted migration restores the exact original state.
+         * <p>
+         * If the source cannot provide full entity state (no entity store wired), an
+         * identity-only snapshot is returned with {@code null} position and content rather than
+         * fabricated {@code (0,0,0)}/{@code "MockContent"} data. This preserves the entity's
+         * identity and authority for rollback bookkeeping while making it unambiguous that no
+         * real spatial/content state was captured — eliminating the previous silent
+         * garbage-restore.
          */
         private static EntitySnapshot createEntitySnapshot(String entityId, BubbleReference source, long timestamp) {
-            // In actual implementation, would query source bubble for entity state
-            // For now, create synthetic snapshot
-            return new EntitySnapshot(entityId, new Point3d(0, 0, 0), "MockContent", source.getBubbleId(), 1L, 1L,
-                                      timestamp);
+            if (source instanceof TestableEntityStore store) {
+                var captured = store.getEntitySnapshot(entityId);
+                if (captured != null) {
+                    log.debug("Captured real entity snapshot for {} from source {} [position={}, epoch={}, version={}]",
+                              entityId, source.getBubbleId(), captured.position(), captured.epoch(), captured.version());
+                    return captured;
+                }
+            }
+            // No full entity state available: return an honest identity-only snapshot rather
+            // than fabricated position/content that would silently corrupt the entity on rollback.
+            log.warn("No entity state available to snapshot for {} from source {}; "
+                     + "rollback will restore identity only (position/content unavailable)",
+                     entityId, source.getBubbleId());
+            return new EntitySnapshot(entityId, null, null, source.getBubbleId(), 0L, 0L, timestamp);
         }
     }
 }

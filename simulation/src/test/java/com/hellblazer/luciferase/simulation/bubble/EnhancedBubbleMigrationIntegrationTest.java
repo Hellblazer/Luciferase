@@ -362,4 +362,62 @@ class EnhancedBubbleMigrationIntegrationTest {
         log.info("100 migrations with deferred queues: {}ms", elapsedMs);
         assertTrue(elapsedMs < 100, "Should complete in < 100ms, got " + elapsedMs + "ms");
     }
+
+    @Test
+    @DisplayName("Boundary crossing actually initiates a migration (Luciferase-ik1s9)")
+    void testBoundaryCrossingInitiatesRealMigration() {
+        // Regression for Luciferase-ik1s9: detectAndInitiateMigrations was hollow — it
+        // incremented the counter but never resolved a target, invoked the migrator, or
+        // transitioned the FSM. This test drives a real boundary crossing and asserts the
+        // migration actually fires.
+
+        var migratingEntity = UUID.randomUUID();
+        var entityIdStr = migratingEntity.toString();
+
+        // Position at a cube Z-boundary (within the 0.05 tolerance) in the default 2x2x2 grid.
+        // This is detected as a crossing and resolves to bubble-0 (a distinct, registered bubble
+        // that is not this random source bubble).
+        var crossingPosition = new Point3f(0.5f, 0.5f, 0.98f);
+
+        // Register the entity with the bubble (so getAllEntityRecords yields its position)...
+        bubble.addEntity(entityIdStr, crossingPosition, "payload");
+        // ...and with the oracle (so getEntitiesCrossingBoundaries reports it).
+        ((MigrationOracleImpl) migrationOracle).updateEntityPosition(entityIdStr, crossingPosition);
+
+        // Resolve the expected target independently for the assertion.
+        var expectedTarget = migrationOracle.getTargetBubble(crossingPosition);
+        assertNotNull(expectedTarget, "Oracle must resolve a target bubble");
+        assertNotEquals(bubble.id(), expectedTarget, "Target must differ from source bubble");
+
+        var before = integration.getTotalMigrationsInitiated();
+
+        integration.processMigrations(System.currentTimeMillis());
+
+        // Migration was actually initiated, not just counted.
+        assertEquals(before + 1, integration.getTotalMigrationsInitiated(),
+            "A crossing entity must initiate exactly one migration");
+
+        // FSM ownership actually changed: OWNED -> MIGRATING_OUT (the entity is leaving).
+        assertEquals(EntityMigrationState.MIGRATING_OUT, migrationFsm.getState(migratingEntity),
+            "Crossing entity must transition OWNED -> MIGRATING_OUT");
+
+        // The departure event carries the resolved destination.
+        var departure = integration.getLastDepartureEvent();
+        assertNotNull(departure, "An EntityDepartureEvent must be produced");
+        assertEquals(migratingEntity, departure.getEntityId());
+        assertEquals(bubble.id(), departure.getSourceBubbleId());
+        assertEquals(expectedTarget, departure.getTargetBubbleId(),
+            "Departure event must target the resolved destination bubble");
+    }
+
+    @Test
+    @DisplayName("No crossing entities means no migration initiated")
+    void testNoCrossingNoMigration() {
+        var before = integration.getTotalMigrationsInitiated();
+        integration.processMigrations(System.currentTimeMillis());
+        assertEquals(before, integration.getTotalMigrationsInitiated(),
+            "With no crossing entities, no migration must be initiated");
+        assertNull(integration.getLastDepartureEvent(),
+            "No departure event without a crossing");
+    }
 }

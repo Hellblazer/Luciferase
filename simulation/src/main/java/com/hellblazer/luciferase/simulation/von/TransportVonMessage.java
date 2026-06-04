@@ -57,10 +57,11 @@ public record TransportVonMessage(
     List<TransportGhostData> ghosts,       // Ghost list for GhostSync (null for other types)
     Long bucket,                           // Simulation bucket for GhostSync (null for other types)
     List<TransportNeighborInfo> neighbors, // Neighbor list for JoinResponse (null for other types)
-    String queryId                         // Query correlation ID (null for non-query types)
+    String queryId,                        // Query correlation ID (null for non-query types)
+    TransportBubbleBounds bounds           // Spatial bounds for JoinRequest/Move (null for other types)
 ) implements Serializable {
     @java.io.Serial
-    private static final long serialVersionUID = 3L; // Incremented for protocol change
+    private static final long serialVersionUID = 4L; // Incremented: added bounds (Luciferase-vzyrf)
 
     /**
      * Compact constructor with validation.
@@ -70,6 +71,27 @@ public record TransportVonMessage(
         Objects.requireNonNull(type, "type cannot be null");
         Objects.requireNonNull(sourceBubbleId, "sourceBubbleId cannot be null");
         Objects.requireNonNull(targetBubbleId, "targetBubbleId cannot be null");
+    }
+
+    /**
+     * 12-argument constructor (pre-bounds wire shape). Defaults {@code bounds} to {@code null}.
+     */
+    public TransportVonMessage(
+        String type,
+        String sourceBubbleId,
+        String targetBubbleId,
+        float posX,
+        float posY,
+        float posZ,
+        String entityId,
+        long timestamp,
+        List<TransportGhostData> ghosts,
+        Long bucket,
+        List<TransportNeighborInfo> neighbors,
+        String queryId
+    ) {
+        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp,
+             ghosts, bucket, neighbors, queryId, null);
     }
 
     /**
@@ -94,7 +116,7 @@ public record TransportVonMessage(
         String entityId,
         long timestamp
     ) {
-        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp, null, null, null, null);
+        this(type, sourceBubbleId, targetBubbleId, posX, posY, posZ, entityId, timestamp, null, null, null, null, null);
     }
 
     /**

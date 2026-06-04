@@ -21,31 +21,35 @@ import com.hellblazer.luciferase.simulation.von.TransportVonMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.EOFException;
 import java.io.IOException;
-import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
-import java.net.SocketException;
 import java.util.function.Consumer;
 
 /**
  * Client-side socket connection for inter-process communication.
  * <p>
- * Establishes a TCP connection to a remote SocketServer and provides bidirectional
- * message transport via Java Serialization. Received messages are dispatched to
- * a message handler on a background thread.
+ * Establishes a TCP connection to a remote SocketServer and provides <em>send-only</em>
+ * message transport via Java Serialization. The transport is unidirectional: a SocketClient
+ * only ever writes to the remote SocketServer; it never reads.
+ * <p>
+ * <b>Why send-only (Luciferase-ihy0s):</b> SocketServer opens only an {@link ObjectInputStream}
+ * on each accepted connection and never an {@code ObjectOutputStream}. A receive-side
+ * {@code new ObjectInputStream(socket.getInputStream())} on the client therefore blocks
+ * <em>forever</em> in its constructor, which synchronously reads the Java serialization stream
+ * header ({@code STREAM_MAGIC}/{@code STREAM_VERSION}) that the server never emits. The earlier
+ * receive loop deadlocked silently, leaking a thread and a socket. Inbound messages from a peer
+ * arrive instead via that peer's own SocketClient connecting to this node's SocketServer.
  * <p>
  * Thread Model:
  * <ul>
  *   <li>Send is synchronous (caller thread blocks during write)</li>
- *   <li>Receive loop runs in dedicated daemon thread</li>
- *   <li>Message handler invoked from receive thread</li>
+ *   <li>No receive thread — the client never reads from the socket</li>
  * </ul>
  * <p>
  * Usage:
  * <pre>
- * var client = new SocketClient(remoteAddress, msg -> handleIncoming(msg));
+ * var client = new SocketClient(remoteAddress, msg -> {});  // handler is a no-op placeholder
  * client.connect();
  * client.send(message);
  * // ... later ...
@@ -59,6 +63,13 @@ public class SocketClient {
     private static final Logger log = LoggerFactory.getLogger(SocketClient.class);
 
     private final ProcessAddress remoteAddress;
+    /**
+     * Retained for source/binary compatibility with {@code SocketConnectionManager}, which
+     * constructs every client with an inbound handler. The VoN socket transport is unidirectional
+     * (send-only on the client side — see class docs / Luciferase-ihy0s), so this handler is a
+     * no-op placeholder: the client never reads from the socket and therefore never invokes it.
+     */
+    @SuppressWarnings("unused")
     private final Consumer<TransportVonMessage> messageHandler;
     private Socket socket;
     private ObjectOutputStream outStream;
@@ -68,7 +79,9 @@ public class SocketClient {
      * Create a SocketClient.
      *
      * @param remoteAddress  Target process address
-     * @param messageHandler Callback for received messages
+     * @param messageHandler Inbound-message callback; <b>never invoked</b> — the client is
+     *                       send-only (Luciferase-ihy0s). Retained as a no-op placeholder so the
+     *                       unidirectional contract is explicit at the call site.
      */
     public SocketClient(ProcessAddress remoteAddress, Consumer<TransportVonMessage> messageHandler) {
         this.remoteAddress = remoteAddress;
@@ -78,7 +91,8 @@ public class SocketClient {
     /**
      * Establish connection to remote server.
      * <p>
-     * Blocks until connection is established, then starts background receive thread.
+     * Opens the socket and the outbound {@link ObjectOutputStream}. No receive thread is started:
+     * the client is send-only (see class docs / Luciferase-ihy0s).
      *
      * @throws IOException if connection fails
      */
@@ -89,45 +103,6 @@ public class SocketClient {
         this.connected = true;
 
         log.info("Connected to {}", remoteAddress.toUrl());
-
-        // Start receive loop in background
-        var threadName = String.format("socket-client-recv-%s:%d", remoteAddress.hostname(), remoteAddress.port());
-        var receiveThread = new Thread(this::receiveMessages, threadName);
-        receiveThread.setDaemon(true);
-        receiveThread.start();
-    }
-
-    /**
-     * Receive messages from remote server.
-     * <p>
-     * Runs in background thread, reading TransportVonMessage objects until
-     * EOF or error. Invokes messageHandler for each received message.
-     */
-    private void receiveMessages() {
-        try (var inStream = new ObjectInputStream(socket.getInputStream())) {
-            inStream.setObjectInputFilter(VonTransportFilter.create());  // RDR-004: reject non-wire types
-            while (connected) {
-                var message = (TransportVonMessage) inStream.readObject();
-                log.debug("Received message type={} from {}", message.type(), remoteAddress.toUrl());
-                messageHandler.accept(message);
-            }
-        } catch (EOFException e) {
-            // Normal disconnect
-            log.info("Server closed connection: {}", remoteAddress.toUrl());
-        } catch (SocketException e) {
-            if (connected) {
-                log.error("Socket error reading from {}", remoteAddress.toUrl(), e);
-            }
-            // Normal during close
-        } catch (IOException e) {
-            if (connected) {
-                log.error("IO error reading from {}", remoteAddress.toUrl(), e);
-            }
-        } catch (ClassNotFoundException e) {
-            log.error("Unknown message class from {}", remoteAddress.toUrl(), e);
-        } finally {
-            connected = false;
-        }
     }
 
     /**

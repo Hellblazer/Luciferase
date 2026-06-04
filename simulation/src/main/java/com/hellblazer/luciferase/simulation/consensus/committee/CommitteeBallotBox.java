@@ -21,8 +21,11 @@ import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Multiset;
 import com.google.common.collect.Ordering;
 import com.hellblazer.delos.context.DynamicContext;
+import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.membership.Member;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -68,6 +71,16 @@ public class CommitteeBallotBox {
         var state = proposals.computeIfAbsent(proposalId, id -> new VoteState());
 
         synchronized (state) {
+            // Voter-identity deduplication: each committee member contributes
+            // exactly one vote. Reject (silently) any repeat vote from a voter
+            // that has already been counted for this proposal. Without this guard
+            // a single Byzantine member could submit the same vote N times and
+            // drive the tally to quorum unilaterally, breaking the BFT guarantee
+            // (quorum = toleranceLevel()+1 is only sound under one-vote-per-member).
+            if (!state.seenVoters.add(vote.voterId())) {
+                return;
+            }
+
             // Add vote to multiset (YES or NO)
             state.votes.add(vote.approved());
 
@@ -140,6 +153,7 @@ public class CommitteeBallotBox {
      */
     private static class VoteState {
         final HashMultiset<Boolean> votes = HashMultiset.create();
+        final Set<Digest>           seenVoters = new HashSet<>();
         final CompletableFuture<Boolean> result = new CompletableFuture<>();
     }
 }
