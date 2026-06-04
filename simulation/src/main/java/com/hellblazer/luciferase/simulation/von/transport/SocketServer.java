@@ -28,6 +28,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -62,6 +63,14 @@ import java.util.function.Consumer;
 public class SocketServer {
 
     private static final Logger log = LoggerFactory.getLogger(SocketServer.class);
+
+    /**
+     * Per-client read timeout (Luciferase-7wzml.33). A peer that sends no complete object within
+     * this window causes {@code readObject()} to throw {@link java.net.SocketTimeoutException},
+     * releasing the thread and socket. Sized at 30 s: generous enough for a legitimate slow-but-
+     * alive peer, short enough to bound the slow-loris / stalled-connection attack surface.
+     */
+    static final int READ_TIMEOUT_MS = 30_000;
 
     private final ProcessAddress bindAddress;
     private final Consumer<TransportVonMessage> messageHandler;
@@ -114,6 +123,18 @@ public class SocketServer {
             while (running) {
                 try {
                     var clientSocket = serverSocket.accept();
+                    // Luciferase-7wzml.33: set read timeout so a stalled / slow-loris peer
+                    // cannot pin a thread + socket indefinitely. readObject() will throw
+                    // SocketTimeoutException (a subclass of IOException, caught below) when
+                    // no complete object arrives within the window.
+                    try {
+                        clientSocket.setSoTimeout(READ_TIMEOUT_MS);
+                    } catch (SocketException e) {
+                        // setSoTimeout can fail if the peer closed immediately after accept;
+                        // close the orphan so it is not leaked (it was not yet tracked).
+                        clientSocket.close();
+                        throw e;
+                    }
                     clientSockets.add(clientSocket);
                     log.info("Accepted connection from {}", clientSocket.getRemoteSocketAddress());
                     executor.execute(() -> handleClient(clientSocket));
@@ -150,6 +171,11 @@ public class SocketServer {
         } catch (EOFException | SocketException e) {
             // Normal client disconnect
             log.info("Client disconnected: {}", clientSocket.getRemoteSocketAddress());
+        } catch (SocketTimeoutException e) {
+            // Luciferase-7wzml.33: slow-loris / stalled peer — read timeout fired.
+            // Log at WARN (not ERROR): the peer is dropped intentionally, no action needed.
+            log.warn("Client timed out (no data within {}ms), dropping: {}",
+                     READ_TIMEOUT_MS, clientSocket.getRemoteSocketAddress());
         } catch (IOException e) {
             if (running) {
                 log.error("IO error reading from client {}", clientSocket.getRemoteSocketAddress(), e);

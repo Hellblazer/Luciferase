@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Builder for constructing DAG (Directed Acyclic Graph) octrees from SVO octrees.
@@ -61,10 +62,14 @@ public final class DAGBuilder {
     private CompressionStrategy strategy = CompressionStrategy.BALANCED;
     private Consumer<BuildProgress> progressCallback = null;
     private boolean validateResult = true;
+    // Package-private: test injection point to override hasher creation (e.g. collision-forcing stubs).
+    Supplier<Hasher> hasherFactory = null;
 
     // Build state (computed during build())
-    private long[] nodeHashes;
-    private Map<Long, Integer> hashToCanonical;
+    // nodeDigests stores the FULL digest bytes (not truncated) per node so that
+    // hashToCanonical keyed on DigestKey uses the complete hash for collision safety.
+    private byte[][] nodeDigests;
+    private Map<DigestKey, Integer> hashToCanonical;
     private int[] oldToNew;
 
     /**
@@ -129,6 +134,19 @@ public final class DAGBuilder {
      */
     public DAGBuilder withValidation(boolean validate) {
         this.validateResult = validate;
+        return this;
+    }
+
+    /**
+     * Package-private test hook: override the hasher factory used for subtree hashing.
+     * Allows tests to inject deterministic or collision-forcing hashers without modifying
+     * production {@link HashAlgorithm} or {@link Hasher} implementations.
+     *
+     * @param factory supplier that creates a fresh Hasher per node (null reverts to hashAlgorithm)
+     * @return this builder for chaining
+     */
+    DAGBuilder withHasherFactory(Supplier<Hasher> factory) {
+        this.hasherFactory = factory;
         return this;
     }
 
@@ -204,7 +222,7 @@ public final class DAGBuilder {
             maxIdx = Math.max(maxIdx, idx);
         }
 
-        nodeHashes = new long[maxIdx + 1];
+        nodeDigests = new byte[maxIdx + 1][];
 
         // Process nodes in reverse order to ensure children are hashed before parents
         for (int i = indices.length - 1; i >= 0; i--) {
@@ -213,27 +231,31 @@ public final class DAGBuilder {
 
             if (node == null) continue;
 
-            // Create fresh hasher for each node
-            var hasher = hashAlgorithm.createHasher();
+            // Create fresh hasher for each node (test hook overrides hashAlgorithm if set)
+            var hasher = (hasherFactory != null) ? hasherFactory.get() : hashAlgorithm.createHasher();
 
             // Start with node's own data
             hasher.update(node.getChildDescriptor());
             hasher.update(node.getContourDescriptor());
 
-            // Include hashes of all children
+            // Include full digest bytes of all children to propagate structural identity.
+            // Using the full bytes (not a truncated long) ensures two subtrees with
+            // different structures cannot match even if their 64-bit truncations collide.
             var childMask = node.getChildMask();
             if (childMask != 0) {
                 for (int octant = 0; octant < 8; octant++) {
                     if (node.hasChild(octant)) {
                         var childIdx = node.getChildIndex(octant, nodeIdx, source.getFarPointers());
-                        if (childIdx >= 0 && childIdx < nodeHashes.length) {
-                            hasher.update(nodeHashes[childIdx]);
+                        if (childIdx >= 0 && childIdx < nodeDigests.length && nodeDigests[childIdx] != null) {
+                            for (byte b : nodeDigests[childIdx]) {
+                                hasher.update(b);
+                            }
                         }
                     }
                 }
             }
 
-            nodeHashes[nodeIdx] = hasher.digest();
+            nodeDigests[nodeIdx] = hasher.digestBytes();
         }
     }
 
@@ -249,10 +271,10 @@ public final class DAGBuilder {
         var indices = source.getNodeIndices();
 
         for (var nodeIdx : indices) {
-            var hash = nodeHashes[nodeIdx];
+            var key = new DigestKey(nodeDigests[nodeIdx]);
 
             // First occurrence becomes canonical
-            hashToCanonical.putIfAbsent(hash, nodeIdx);
+            hashToCanonical.putIfAbsent(key, nodeIdx);
         }
     }
 
@@ -284,8 +306,8 @@ public final class DAGBuilder {
         // Step 1: Assign new indices to canonical nodes
         var canonicalNodes = new ArrayList<Integer>();
         for (var nodeIdx : indices) {
-            var hash = nodeHashes[nodeIdx];
-            var canonical = hashToCanonical.get(hash);
+            var key = new DigestKey(nodeDigests[nodeIdx]);
+            var canonical = hashToCanonical.get(key);
 
             if (canonical == nodeIdx) {
                 // This is a canonical node

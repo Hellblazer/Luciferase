@@ -22,8 +22,10 @@ import com.hellblazer.luciferase.sparse.core.PointerAddressingMode;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -719,5 +721,173 @@ class DAGBuilderTest {
         }
 
         return octree;
+    }
+
+    // ==================== Hash Collision Regression Tests ====================
+
+    /**
+     * Regression test for Luciferase-7wzml.23: DAGBuilder must NOT merge two structurally-distinct
+     * subtrees that share the same 64-bit truncation of their SHA-256 digest.
+     *
+     * <p>Mechanism: inject a {@code CollisionForcingHasher} via the package-private
+     * {@code withHasherFactory} test hook. The hasher always produces digests whose first 8 bytes
+     * (= the old truncated-long key) are identical, but whose remaining bytes differ based on a
+     * call-counter. Under the old code, every node would collapse to the first canonical because
+     * {@code putIfAbsent(identicalLong, nodeIdx)} treats them all as duplicates. Under the fixed
+     * code, the full byte[] is compared, so nodes with different content are kept distinct.
+     */
+    @Test
+    void testCollisionForcedHashDoesNotMergeDistinctSubtrees() {
+        // Create SVO with two sibling leaves that have different contour descriptors.
+        // They must NOT be merged even when their 64-bit hash prefix is forced identical.
+        var octree = new ESVOOctreeData(4096);
+
+        var root = new ESVONodeUnified();
+        root.setValid(true);
+        root.setChildMask(0b00000011); // 2 children
+        root.setChildPtr(1);
+        octree.setNode(0, root);
+
+        // Two structurally-distinct leaves: different contour descriptors
+        var leaf1 = new ESVONodeUnified(0, 1); // contourDescriptor = 1
+        leaf1.setValid(true);
+        leaf1.setChildMask(0);
+        octree.setNode(1, leaf1);
+
+        var leaf2 = new ESVONodeUnified(0, 2); // contourDescriptor = 2 — DISTINCT
+        leaf2.setValid(true);
+        leaf2.setChildMask(0);
+        octree.setNode(2, leaf2);
+
+        // The forced-collision hasher: all digests have identical first 8 bytes but unique bytes[8].
+        // Under the old truncated-long key, leaf1 and leaf2 would collapse to the same canonical.
+        // Under the fixed full-digest key they must remain distinct.
+        var callCounter = new AtomicInteger(0);
+        Supplier<Hasher> collisionFactory = () -> new CollisionForcingHasher(callCounter.getAndIncrement());
+
+        // Build with collision-forcing hasher injected via test hook
+        var dag = DAGBuilder.from(octree)
+                            .withHasherFactory(collisionFactory)
+                            .withValidation(false) // skip validation; node layout may differ
+                            .build();
+
+        // ASSERTION 1: both distinct leaves must survive as separate DAG nodes.
+        // If the old bug were present, canonicalNodes would contain only 2 entries (root + one leaf)
+        // instead of 3 (root + two distinct leaves).
+        assertEquals(3, dag.nodes().length,
+                     "Both structurally-distinct leaves must be kept separate despite forced hash collision; "
+                     + "old code would have merged them to 2 nodes total");
+
+        // ASSERTION 2: compression ratio should be 1.0 (no sharing among distinct nodes)
+        assertEquals(1.0f, dag.getCompressionRatio(), 0.01f,
+                     "No compression should occur when all nodes are distinct");
+    }
+
+    /**
+     * Verify that the collision-safe fix does NOT break compression on genuinely duplicate subtrees.
+     * Two identical leaves must still be merged to 1 canonical node (compression ratio > 1).
+     */
+    @Test
+    void testCollisionForcedHashStillMergesGenuineDuplicates() {
+        // Root with two children that have IDENTICAL content — must still be merged
+        var octree = new ESVOOctreeData(4096);
+
+        var root = new ESVONodeUnified();
+        root.setValid(true);
+        root.setChildMask(0b00000011); // 2 children
+        root.setChildPtr(1);
+        octree.setNode(0, root);
+
+        // Both leaves are identical
+        var leaf = new ESVONodeUnified(0, 42);
+        leaf.setValid(true);
+        leaf.setChildMask(0);
+        octree.setNode(1, leaf);
+        octree.setNode(2, leaf);
+
+        // Use real SHA-256 (no collision forcing) — identical nodes must still deduplicate
+        var dag = DAGBuilder.from(octree).build();
+
+        // Root + 1 canonical leaf (leaf1 and leaf2 are identical, merged to 1)
+        assertEquals(2, dag.nodes().length,
+                     "Genuinely identical leaves must still be merged to a single canonical node");
+        assertTrue(dag.getCompressionRatio() > 1.0f,
+                   "Genuine duplicates must yield compression ratio > 1.0");
+    }
+
+    /**
+     * Verify the digestBytes() API on JavaMessageDigestHasher returns a full 32-byte SHA-256 digest,
+     * not the old 8-byte truncation. This pins the root cause of the collision bug.
+     */
+    @Test
+    void testDigestBytesReturnsFullSha256() {
+        var hasher = new JavaMessageDigestHasher("SHA-256");
+        hasher.update(0xDEADBEEF);
+        var bytes = hasher.digestBytes();
+
+        assertEquals(32, bytes.length,
+                     "digestBytes() must return the full 32-byte SHA-256 digest, not a truncated form");
+
+        // Two different inputs must produce different full digests
+        var hasher2 = new JavaMessageDigestHasher("SHA-256");
+        hasher2.update(0xCAFEBABE);
+        var bytes2 = hasher2.digestBytes();
+
+        assertFalse(Arrays.equals(bytes, bytes2),
+                    "Different inputs must produce different full digests");
+    }
+
+    /**
+     * Hasher that forces a 64-bit collision: all instances return the same first 8 bytes,
+     * but bytes[8] encodes the instance counter so full digests are distinct.
+     *
+     * <p>This simulates the birthday-bound collision scenario that the old code was
+     * vulnerable to: same truncated-long key, different structural content.
+     */
+    private static final class CollisionForcingHasher implements Hasher {
+        // All instances share the same 8-byte prefix — forces a 64-bit collision
+        private static final byte[] FIXED_PREFIX = new byte[]{0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42};
+
+        private final int instanceId;
+        // Accumulate input bytes so that nodes with different content still differ
+        // in bytes[9..31] of the digest (even though bytes[0..7] are always FIXED_PREFIX).
+        private int inputChecksum = 0;
+
+        CollisionForcingHasher(int instanceId) {
+            this.instanceId = instanceId;
+        }
+
+        @Override
+        public void update(byte value) {
+            inputChecksum = inputChecksum * 31 + value;
+        }
+
+        @Override
+        public void update(int value) {
+            inputChecksum = inputChecksum * 31 + value;
+        }
+
+        @Override
+        public void update(long value) {
+            inputChecksum = inputChecksum * 31 + Long.hashCode(value);
+        }
+
+        @Override
+        public byte[] digestBytes() {
+            // 32-byte digest: first 8 bytes always identical (forces 64-bit collision),
+            // bytes 8-11 encode inputChecksum (so distinct content yields distinct full digest),
+            // bytes 12-15 encode instanceId (extra uniqueness guard).
+            var result = new byte[32];
+            System.arraycopy(FIXED_PREFIX, 0, result, 0, 8);
+            result[8]  = (byte) (inputChecksum >> 24);
+            result[9]  = (byte) (inputChecksum >> 16);
+            result[10] = (byte) (inputChecksum >> 8);
+            result[11] = (byte) inputChecksum;
+            result[12] = (byte) (instanceId >> 24);
+            result[13] = (byte) (instanceId >> 16);
+            result[14] = (byte) (instanceId >> 8);
+            result[15] = (byte) instanceId;
+            return result;
+        }
     }
 }

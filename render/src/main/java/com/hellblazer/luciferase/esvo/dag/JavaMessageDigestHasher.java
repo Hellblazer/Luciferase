@@ -1,7 +1,5 @@
 package com.hellblazer.luciferase.esvo.dag;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -52,10 +50,10 @@ public class JavaMessageDigestHasher implements Hasher {
     }
 
     @Override
-    public long digest() {
+    public byte[] digestBytes() {
         if (cachedDigest == null) {
             cachedDigest = digest.digest();
         }
-        return ByteBuffer.wrap(cachedDigest, 0, 8).order(ByteOrder.LITTLE_ENDIAN).getLong();
+        return cachedDigest;
     }
 }

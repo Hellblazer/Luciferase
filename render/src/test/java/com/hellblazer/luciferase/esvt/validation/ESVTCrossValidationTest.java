@@ -19,6 +19,8 @@ package com.hellblazer.luciferase.esvt.validation;
 import com.hellblazer.luciferase.esvt.builder.ESVTBuilder;
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import com.hellblazer.luciferase.esvt.io.ESVTDeserializer;
+import com.hellblazer.luciferase.esvt.io.ESVTSerializer;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
@@ -27,12 +29,16 @@ import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 import com.hellblazer.luciferase.lucien.tetree.TetreeFamily;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.geometry.Point3i;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import javax.vecmath.Point3f;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.Path;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -54,6 +60,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 public class ESVTCrossValidationTest {
+
+    @TempDir
+    Path tempDir;
 
     private static final int RANDOM_SEED = 42;
     private static final int NUM_ENTITIES = 1000;
@@ -539,20 +548,28 @@ public class ESVTCrossValidationTest {
 
     // ========== Layer 5: Memory Layout Validation ==========
 
+    /**
+     * Layer 5: Memory Layout — file-based round-trip via ESVTSerializer/ESVTDeserializer
+     * preserves all node data including far pointers (Luciferase-7wzml.30: the deleted
+     * fromByteBuffer() helper silently dropped far pointers).
+     */
     @Test
-    void testByteBufferRoundTrip() {
+    void testByteBufferRoundTrip() throws IOException {
         buildTestStructure();
 
-        // Write to ByteBuffer (toByteBuffer already flips)
-        var buffer = esvtData.toByteBuffer();
+        // Round-trip through the far-pointer-aware serializer/deserializer
+        var tmpFile = tempDir.resolve("cross-validation.esvt");
+        try (var ser = new ESVTSerializer()) {
+            ser.serialize(esvtData, tmpFile);
+        }
+        ESVTData restored;
+        try (var des = new ESVTDeserializer()) {
+            restored = des.deserialize(tmpFile);
+        }
 
-        // Read back
-        var restored = ESVTData.fromByteBuffer(buffer, esvtData.nodeCount(),
-            esvtData.rootType(), esvtData.maxDepth(), esvtData.leafCount(),
-            esvtData.internalCount());
-
-        // Verify
         assertEquals(esvtData.nodeCount(), restored.nodeCount());
+        assertEquals(esvtData.farPointerCount(), restored.farPointerCount(),
+            "far pointer count must survive serialization round-trip");
 
         var original = esvtData.nodes();
         var restoredNodes = restored.nodes();
@@ -565,7 +582,70 @@ public class ESVTCrossValidationTest {
         }
 
         assertEquals(0, mismatchCount,
-            "ByteBuffer round-trip should preserve all node data");
+            "Serialization round-trip should preserve all node data");
+    }
+
+    /**
+     * Layer 5b: Far-pointer integrity — build a tree large enough to emit far pointers
+     * (relativeOffset &gt; 32767) via ESVTBuilder, round-trip through
+     * ESVTSerializer/ESVTDeserializer, and verify that isFar nodes resolve to the correct
+     * absolute child index on the restored copy (Luciferase-7wzml.30).
+     */
+    @Test
+    void testFarPointerRoundTrip() throws IOException {
+        // Build a dense 40^3 voxel block — ESVTBuilderLargeModelTest confirms this exercises
+        // the far-pointer path with a child-contiguous layout.
+        var voxels = new ArrayList<Point3i>();
+        for (int x = 0; x < 40; x++) {
+            for (int y = 0; y < 40; y++) {
+                for (int z = 0; z < 40; z++) {
+                    voxels.add(new Point3i(x, y, z));
+                }
+            }
+        }
+
+        var original = new ESVTBuilder().buildFromVoxels(voxels, 8, 64);
+        assertTrue(original.farPointerCount() > 0,
+            "precondition: dense 40^3 block must emit at least one far pointer");
+
+        // Serialize and deserialize using the far-pointer-aware path
+        var tmpFile = tempDir.resolve("far-ptr-roundtrip.esvt");
+        try (var ser = new ESVTSerializer()) {
+            ser.serialize(original, tmpFile);
+        }
+        ESVTData restored;
+        try (var des = new ESVTDeserializer()) {
+            restored = des.deserialize(tmpFile);
+        }
+
+        // Far pointer count must be identical
+        assertEquals(original.farPointerCount(), restored.farPointerCount(),
+            "far pointer count must be preserved across serialization");
+
+        // For every isFar node in the restored tree, resolveChildPtr must return the same
+        // absolute child index as the original — not the raw 15-bit farPointers index.
+        var origNodes  = original.nodes();
+        var restNodes  = restored.nodes();
+        assertEquals(origNodes.length, restNodes.length, "node count must be equal");
+
+        int farNodeCount = 0;
+        for (int i = 0; i < origNodes.length; i++) {
+            if (origNodes[i].isFar()) {
+                farNodeCount++;
+                int origResolved  = original.resolveChildPtr(origNodes[i]);
+                int restResolved  = restored.resolveChildPtr(restNodes[i]);
+                assertEquals(origResolved, restResolved,
+                    "isFar node " + i + ": resolveChildPtr must return the same offset after round-trip");
+                // Guard: resolved offset must differ from the raw 15-bit far-ptr index
+                // (if they were equal the test would be vacuous — the bug was exactly this).
+                int rawFarIdx = restNodes[i].getChildPtr();
+                assertNotEquals(rawFarIdx, restResolved,
+                    "isFar node " + i + ": resolveChildPtr must return the actual child offset, not the far-ptr index "
+                    + rawFarIdx + " (would indicate far pointers were not loaded)");
+            }
+        }
+
+        assertTrue(farNodeCount > 0, "at least one isFar node must exist in the restored tree");
     }
 
     @Test

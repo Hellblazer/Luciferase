@@ -80,6 +80,45 @@ public class SpatialKeySerdeRegistryTest {
         assertEquals(original, roundtrip);
     }
 
+    // ── TetreeKeySerde direct round-trip and guard tests (Luciferase-7wzml.88) ──
+
+    @Test
+    void tetreeKeySerdeCompactRoundTrip() {
+        var serde = new TetreeKeySerde();
+        var original = new CompactTetreeKey((byte) 8, 0xDEAD_BEEF_CAFE_1234L);
+        var bytes = serde.serialize(original);
+        var roundtrip = serde.deserialize(bytes);
+        assertInstanceOf(CompactTetreeKey.class, roundtrip, "level<=10 must deserialise as CompactTetreeKey");
+        assertEquals(original, roundtrip);
+    }
+
+    @Test
+    void tetreeKeySerdeExtendedRoundTrip() {
+        var serde = new TetreeKeySerde();
+        var original = new ExtendedTetreeKey((byte) 11, 0xAAAA_BBBB_CCCC_DDDDL, 0x1111_2222_3333_4444L);
+        var bytes = serde.serialize(original);
+        var roundtrip = serde.deserialize(bytes);
+        assertInstanceOf(ExtendedTetreeKey.class, roundtrip, "level>10 must deserialise as ExtendedTetreeKey");
+        assertEquals(original, roundtrip);
+    }
+
+    @Test
+    void tetreeKeySerdeCompactWithNonZeroHighThrows() {
+        // Craft a proto payload with level<=10 but high!=0 — simulates a future or
+        // buggy encoder sending non-zero high bits for a compact key.
+        var malformed = com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey.newBuilder()
+            .setLow(0x1234_5678_9ABC_DEF0L)
+            .setHigh(0xFFFF_FFFF_FFFF_FFFFL)  // non-zero: must be rejected
+            .setLevel(5)                        // level<=10 → compact path
+            .build()
+            .toByteArray();
+        var serde = new TetreeKeySerde();
+        var thrown = assertThrows(IllegalArgumentException.class, () -> serde.deserialize(malformed));
+        assertNotNull(thrown.getMessage());
+        assertEquals(true, thrown.getMessage().contains("high bits"),
+                     "exception must mention 'high bits': " + thrown.getMessage());
+    }
+
     @Test
     void unknownTypeIdThrowsMeaningfulMessage() {
         var envelope = com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey.newBuilder()
