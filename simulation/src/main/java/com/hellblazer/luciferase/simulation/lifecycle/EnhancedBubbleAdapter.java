@@ -91,9 +91,16 @@ public class EnhancedBubbleAdapter extends AbstractLifecycleAdapter {
             vonBubble.close();
         }
         // For all EnhancedBubbles (including VON), close() releases the ghost coordinator
-        // tick-listener and, if this bubble owns its controller, stops it.
+        // tick-listener and, if this bubble owns its controller (3-arg ctor), stops it.
         // EnhancedBubble.close() is idempotent; calling it after vonBubble.close() is safe.
         bubble.close();
+        // The adapter always receives a controller reference (injected or matching the bubble's
+        // internal one). When the bubble was created with an externally-supplied controller
+        // (ownsController=false) bubble.close() does NOT stop it — the adapter is then
+        // the responsible owner and must stop it here.
+        // RealTimeController.stop() uses compareAndSet(true→false), so calling it when the
+        // bubble already stopped it (ownsController=true path) is a safe no-op.
+        realTimeController.stop();
     }
 
     @Override
