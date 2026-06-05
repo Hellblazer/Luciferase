@@ -73,7 +73,19 @@ public class GpuService {
             throw new IllegalStateException("GPU already enabled for session. Disable first.");
         }
 
-        if (!ESVTOpenCLRenderer.isOpenCLAvailable()) {
+        // OpenCL availability probe. isOpenCLAvailable() catches Exception but not Error;
+        // on a headless runner with no OpenCL native binding, loading the LWJGL native can
+        // throw UnsatisfiedLinkError / NoClassDefFoundError (subclasses of Error), which would
+        // otherwise escape to the generic Exception handler as a 500. Treat any Throwable here
+        // as "GPU unavailable" and surface it as a graceful 409 (IllegalStateException), never 500.
+        boolean openCLAvailable;
+        try {
+            openCLAvailable = ESVTOpenCLRenderer.isOpenCLAvailable();
+        } catch (Throwable t) {
+            log.warn("OpenCL availability probe failed; treating GPU as unavailable: {}", t.toString());
+            openCLAvailable = false;
+        }
+        if (!openCLAvailable) {
             throw new IllegalStateException("OpenCL is not available on this system");
         }
 
@@ -88,9 +100,20 @@ public class GpuService {
             log.info("Enabled GPU for session {} at {}x{}", sessionId, width, height);
             return getStats(sessionId);
 
-        } catch (Exception e) {
+        } catch (Throwable t) {
+            // Catch Throwable: native GPU init can fail with Error (UnsatisfiedLinkError etc.)
+            // on runners where the OpenCL ICD reports available but no usable device exists.
+            // Surface as a graceful 409 (GPU could not be initialized), not a 500 crash.
+            safeDispose(renderer);
+            throw new IllegalStateException("GPU could not be initialized on this system: " + t.getMessage());
+        }
+    }
+
+    private static void safeDispose(ESVTOpenCLRenderer renderer) {
+        try {
             renderer.dispose();
-            throw new RuntimeException("Failed to enable GPU: " + e.getMessage(), e);
+        } catch (Throwable t) {
+            log.debug("Renderer dispose during failed GPU enable threw: {}", t.toString());
         }
     }
 

@@ -44,8 +44,14 @@ public class SpatialInspectorServer {
     static final int MAX_SESSIONS = 100;
     private static final long REAPER_PERIOD_MS = 60_000; // check every minute
 
-    /** Maximum number of entities allowed in a single bulk-insert array. */
-    static final int DEFAULT_MAX_BULK_INSERT = 10_000;
+    /**
+     * Maximum number of entities allowed in a single bulk-insert array.
+     * Sized to comfortably admit legitimate large meshes (the Stanford Bunny voxelization is
+     * ~47,705 entities) while still bounding abuse. The 10 MB HTTP body cap
+     * ({@code config.http.maxRequestSize}) provides the primary request-size bound; this cap is the
+     * secondary element-count bound. Configurable via the 4-arg constructor.
+     */
+    static final int DEFAULT_MAX_BULK_INSERT = 100_000;
 
     private final Map<String, SpatialSession> sessions = new ConcurrentHashMap<>();
     private final AtomicInteger sessionCount = new AtomicInteger(0);
