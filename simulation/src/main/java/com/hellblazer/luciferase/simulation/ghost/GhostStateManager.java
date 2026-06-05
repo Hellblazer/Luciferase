@@ -265,8 +265,9 @@ public class GhostStateManager {
         var velocity = new Vector3f(event.velocity());
         var timestamp = event.timestamp();
 
-        // Create SimulationGhostEntity
-        var ghostEntity = createGhostEntity(entityId, position, sourceBubbleId, timestamp, event.lamportClock());
+        // Create SimulationGhostEntity — pass velocity so the record carries the real value
+        // (Luciferase-7wzml.186: consistency between SimulationGhostEntity.velocity and GhostState.velocity)
+        var ghostEntity = createGhostEntity(entityId, position, velocity, sourceBubbleId, timestamp, event.lamportClock());
         var newState = new GhostState(ghostEntity, velocity);
 
         // Atomic admission + insert (Luciferase-0frcy.65): the size check and the put must be
@@ -443,19 +444,24 @@ public class GhostStateManager {
     /**
      * Create SimulationGhostEntity from EntityUpdateEvent.
      * Luciferase-r73c: Validates position is non-null (fail-fast approach).
+     * Luciferase-7wzml.186: velocity is now passed through so SimulationGhostEntity.velocity()
+     * is consistent with GhostState.velocity — callers that read ghost.velocity() directly
+     * (e.g. BubbleGhostCoordinator.onReceive) get the real value, not (0,0,0).
      *
      * @param entityId Entity identifier
      * @param position Entity position (must not be null)
+     * @param velocity Entity velocity for dead-reckoning (must not be null)
      * @param sourceBubbleId Source bubble ID
      * @param timestamp Creation timestamp
      * @param bucket Simulation time bucket
-     * @return SimulationGhostEntity with validated non-null position
-     * @throws NullPointerException if position is null
+     * @return SimulationGhostEntity with validated non-null position and real velocity
+     * @throws NullPointerException if position or velocity is null
      */
     @SuppressWarnings("rawtypes")
     private SimulationGhostEntity<StringEntityID, EntityData> createGhostEntity(
         StringEntityID entityId,
         Point3f position,
+        Vector3f velocity,
         UUID sourceBubbleId,
         long timestamp,
         long bucket
@@ -478,13 +484,15 @@ public class GhostStateManager {
             clock.currentTimeMillis()
         );
 
-        // Wrap in SimulationGhostEntity with metadata
+        // Wrap in SimulationGhostEntity with metadata. Luciferase-7wzml.186: pass real velocity
+        // so SimulationGhostEntity.velocity() is consistent with GhostState.velocity.
         return new SimulationGhostEntity<>(
             ghostEntity,
             sourceBubbleId,
             bucket,
             deriveEpoch(bucket),             // epoch from bucket
-            versionCounter.incrementAndGet() // monotonic version
+            versionCounter.incrementAndGet(), // monotonic version
+            velocity                          // real velocity — dead-reckoning in downstream consumers
         );
     }
 

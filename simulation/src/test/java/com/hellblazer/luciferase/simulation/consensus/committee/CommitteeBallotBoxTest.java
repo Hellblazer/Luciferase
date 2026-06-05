@@ -25,11 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -336,6 +332,323 @@ class CommitteeBallotBoxTest {
 
         var result = future.get(1, TimeUnit.SECONDS);
         assertTrue(result, "3 distinct YES voters reach quorum; the single NO-spammer counts once and loses");
+    }
+
+    // -------------------------------------------------------------------------
+    // Split-tally determinism tests (Luciferase-7wzml.195)
+    // New formula: n==2 ? 1 : n/2+1 (strict majority for n>=3)
+    // -------------------------------------------------------------------------
+
+    /**
+     * DETERMINISM PROOF for even n=4 (Luciferase-7wzml.195).
+     * <p>
+     * New quorum: n/2+1 = 3 for n=4. A perfect {2Y,2N} split cannot reach quorum=3
+     * from either side, regardless of arrival order. Both orderings of the SAME vote
+     * SET must produce the SAME result (no-decision), proving arrival-order independence.
+     * <p>
+     * This is the key regression: the old formula gave quorum=2 for n=4, so a 2-YES
+     * burst decided YES at 2-0 before any NO arrived. The same vote SET {2Y,2N} produced
+     * YES or NO depending purely on which faction's 2 votes landed first — a consensus
+     * violation. The tie-break guard did NOT catch this (it only fires at yesCount==noCount,
+     * never reached in the 2-0 burst scenario).
+     */
+    @Test
+    void testEvenN4SplitBothOrderingsProduceNodecision() {
+        // Order A: 2 YES then 2 NO — must NOT decide
+        {
+            var ballotBox = new CommitteeBallotBox(mockContext);
+            var proposalId = UUID.randomUUID();
+            ballotBox.registerCommittee(proposalId, 4); // quorum = 4/2+1 = 3
+            var future = ballotBox.getResult(proposalId);
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-0"), true, viewId));
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-1"), true, viewId));
+            // With old formula (quorum=2), YES would have decided here at 2-0.
+            assertFalse(future.isDone(),
+                "n=4 order-A: 2-YES burst must NOT reach quorum=3 — old quorum=2 would have decided YES here");
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("no-0"), false, viewId));
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("no-1"), false, viewId));
+            assertFalse(future.isDone(),
+                "n=4 order-A: full {2Y,2N} split must NOT decide (same vote set → same no-decision)");
+        }
+        // Order B: 2 NO then 2 YES — must also NOT decide (same vote set, different arrival order)
+        {
+            var ballotBox = new CommitteeBallotBox(mockContext);
+            var proposalId = UUID.randomUUID();
+            ballotBox.registerCommittee(proposalId, 4); // quorum = 4/2+1 = 3
+            var future = ballotBox.getResult(proposalId);
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("no-0"), false, viewId));
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("no-1"), false, viewId));
+            // With old formula (quorum=2), NO would have decided here at 2-0.
+            assertFalse(future.isDone(),
+                "n=4 order-B: 2-NO burst must NOT reach quorum=3 — old quorum=2 would have decided NO here");
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-0"), true, viewId));
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-1"), true, viewId));
+            assertFalse(future.isDone(),
+                "n=4 order-B: full {2Y,2N} split must NOT decide (same vote set → same no-decision)");
+        }
+    }
+
+    /**
+     * Even committee n=4, strict majority: 3 YES + 1 NO → YES decides.
+     * With quorum=3 (n/2+1), YES reaches quorum and outnumbers NO.
+     */
+    @Test
+    void testEvenN4StrictMajorityYesDecides() throws Exception {
+        var ballotBox = new CommitteeBallotBox(mockContext);
+        var proposalId = UUID.randomUUID();
+        ballotBox.registerCommittee(proposalId, 4); // quorum = 4/2+1 = 3
+        var future = ballotBox.getResult(proposalId);
+
+        // 1 NO, then 3 YES
+        ballotBox.addVote(proposalId, new Vote(proposalId,
+            DigestAlgorithm.DEFAULT.digest("no-0"), false, viewId));
+        assertFalse(future.isDone(), "1 NO alone must not complete");
+        ballotBox.addVote(proposalId, new Vote(proposalId,
+            DigestAlgorithm.DEFAULT.digest("yes-0"), true, viewId));
+        ballotBox.addVote(proposalId, new Vote(proposalId,
+            DigestAlgorithm.DEFAULT.digest("yes-1"), true, viewId));
+        assertFalse(future.isDone(), "2 YES vs 1 NO must not complete (quorum=3 not reached)");
+        ballotBox.addVote(proposalId, new Vote(proposalId,
+            DigestAlgorithm.DEFAULT.digest("yes-2"), true, viewId));
+
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertTrue(result, "n=4: 3 YES vs 1 NO must decide YES (quorum=3 reached, YES > NO)");
+    }
+
+    /**
+     * Even committee n=8: quorum = 8/2+1 = 5 (strict majority, not 4).
+     * DETERMINISM PROOF: both orderings of {4Y,4N} must produce no-decision.
+     * Run 20 independent instances each ordering → all no-decision (never random).
+     */
+    @Test
+    void testEvenN8SplitBothOrderingsProduceNodecision() {
+        for (int run = 0; run < 20; run++) {
+            // Order A: 4 YES then 4 NO
+            {
+                var ballotBox = new CommitteeBallotBox(mockContext);
+                var proposalId = UUID.randomUUID();
+                ballotBox.registerCommittee(proposalId, 8); // quorum = 8/2+1 = 5
+                for (int i = 0; i < 4; i++) {
+                    ballotBox.addVote(proposalId, new Vote(proposalId,
+                        DigestAlgorithm.DEFAULT.digest("yes-" + i + "-run-" + run), true, viewId));
+                }
+                assertFalse(ballotBox.getResult(proposalId).isDone(),
+                    "Run " + run + " order-A: 4-YES burst must NOT reach quorum=5");
+                for (int i = 0; i < 4; i++) {
+                    ballotBox.addVote(proposalId, new Vote(proposalId,
+                        DigestAlgorithm.DEFAULT.digest("no-" + i + "-run-" + run), false, viewId));
+                }
+                assertFalse(ballotBox.getResult(proposalId).isDone(),
+                    "Run " + run + " order-A: {4Y,4N} split must NOT decide (no-decision)");
+            }
+            // Order B: 4 NO then 4 YES
+            {
+                var ballotBox = new CommitteeBallotBox(mockContext);
+                var proposalId = UUID.randomUUID();
+                ballotBox.registerCommittee(proposalId, 8); // quorum = 8/2+1 = 5
+                for (int i = 0; i < 4; i++) {
+                    ballotBox.addVote(proposalId, new Vote(proposalId,
+                        DigestAlgorithm.DEFAULT.digest("no-" + i + "-run-" + run), false, viewId));
+                }
+                assertFalse(ballotBox.getResult(proposalId).isDone(),
+                    "Run " + run + " order-B: 4-NO burst must NOT reach quorum=5");
+                for (int i = 0; i < 4; i++) {
+                    ballotBox.addVote(proposalId, new Vote(proposalId,
+                        DigestAlgorithm.DEFAULT.digest("yes-" + i + "-run-" + run), true, viewId));
+                }
+                assertFalse(ballotBox.getResult(proposalId).isDone(),
+                    "Run " + run + " order-B: {4Y,4N} split must NOT decide (no-decision)");
+            }
+        }
+    }
+
+    /**
+     * Even committee n=8: quorum = 8/2+1 = 5.
+     * Tie-break guard: interleaved 4-YES/4-NO at 4-4 tally — neither at quorum=5,
+     * tie-break guard fires on equal count. Then 5th YES breaks tie and reaches quorum.
+     */
+    @Test
+    void testEvenCommitteeTieBreakGuardAndQuorum() {
+        var ballotBox = new CommitteeBallotBox(mockContext);
+        var proposalId = UUID.randomUUID();
+        ballotBox.registerCommittee(proposalId, 8); // quorum = 8/2+1 = 5
+
+        var future = ballotBox.getResult(proposalId);
+
+        // Interleave: 4 YES/NO pairs — 4-4 tie, neither at quorum=5
+        for (int i = 0; i < 4; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-" + i), true, viewId));
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("no-" + i), false, viewId));
+        }
+        // 4-4 tie, neither at quorum=5
+        assertFalse(future.isDone(), "4-YES/4-NO tie (neither at quorum=5) must not complete");
+
+        // 5th YES breaks tie and reaches quorum=5 (YES=5 > NO=4)
+        ballotBox.addVote(proposalId, new Vote(proposalId,
+            DigestAlgorithm.DEFAULT.digest("yes-4"), true, viewId));
+        assertTrue(future.isDone(), "5th YES reaches quorum=5 with YES > NO, must complete");
+        try {
+            assertTrue(future.get(0, java.util.concurrent.TimeUnit.MILLISECONDS),
+                "5-YES/4-NO: must decide YES");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Even committee n=8: quorum = 8/2+1 = 5.
+     * A 5-YES / 3-NO tally: 5 YES >= quorum=5 and YES > NO → must complete with TRUE.
+     */
+    @Test
+    void testEvenCommitteeMajorityYesDecides() throws Exception {
+        var ballotBox = new CommitteeBallotBox(mockContext);
+        var proposalId = UUID.randomUUID();
+        ballotBox.registerCommittee(proposalId, 8); // even, quorum = 8/2+1 = 5
+
+        var future = ballotBox.getResult(proposalId);
+
+        // 3 NO votes first — below quorum=5
+        for (int i = 0; i < 3; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("no-" + i), false, viewId));
+        }
+        assertFalse(future.isDone(), "3 NO votes alone must not complete (quorum=5)");
+
+        // 5 YES votes reach quorum=5 and outnumber NO (5 > 3)
+        for (int i = 0; i < 5; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-" + i), true, viewId));
+        }
+
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertTrue(result, "5 YES vs 3 NO with n=8 (quorum=5): must decide YES");
+    }
+
+    /**
+     * Even committee n=8: quorum = 8/2+1 = 5.
+     * A 3-YES / 5-NO tally: 5 NO >= quorum=5 and NO > YES → must complete with FALSE.
+     */
+    @Test
+    void testEvenCommitteeMajorityNoDecides() throws Exception {
+        var ballotBox = new CommitteeBallotBox(mockContext);
+        var proposalId = UUID.randomUUID();
+        ballotBox.registerCommittee(proposalId, 8); // even, quorum = 8/2+1 = 5
+
+        var future = ballotBox.getResult(proposalId);
+
+        // 5 NO votes reach quorum=5
+        for (int i = 0; i < 5; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("no-" + i), false, viewId));
+        }
+        // 3 YES below quorum=5
+        for (int i = 0; i < 3; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-" + i), true, viewId));
+        }
+
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertFalse(result, "5 NO vs 3 YES with n=8 (quorum=5): must decide NO");
+    }
+
+    /**
+     * Odd committee n=7: quorum = 7/2+1 = 4. For ODD n, n/2+1 == (n-1)/2+1 (same result).
+     * The new formula leaves odd-n quorum unchanged.
+     * Splits (3-YES/3-NO) cannot reach quorum since quorum=4.
+     * Majority (4-YES) must decide correctly.
+     */
+    @Test
+    void testOddCommitteeUnaffectedByFix() throws Exception {
+        var ballotBox = new CommitteeBallotBox(mockContext);
+        var proposalId = UUID.randomUUID();
+        ballotBox.registerCommittee(proposalId, 7); // odd, quorum = 7/2+1 = 4
+
+        var future = ballotBox.getResult(proposalId);
+
+        // 3 YES, 3 NO — neither at quorum=4, future not done
+        for (int i = 0; i < 3; i++) {
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-" + i), true, viewId));
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("no-" + i), false, viewId));
+        }
+        assertFalse(future.isDone(), "3-YES/3-NO under n=7 must not complete (quorum=4 not reached)");
+
+        // 4th YES pushes YES to 4, reaching quorum=4 with YES > NO
+        ballotBox.addVote(proposalId, new Vote(proposalId,
+            DigestAlgorithm.DEFAULT.digest("yes-3"), true, viewId));
+
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertTrue(result, "4th YES vote on n=7 odd committee reaches quorum=4 and must decide YES");
+    }
+
+    /**
+     * Two-node cluster (n=2): quorum = 1 (special-cased owner-vote design).
+     * n=2 is special-cased to 1 (not n/2+1=2) so a single owner vote approves its
+     * own migration. This is the INTENTIONAL contract (TwoNodeIntegrationTest documents it).
+     */
+    @Test
+    void testTwoNodeClusterSingleVoteApproves() throws Exception {
+        var ballotBox = new CommitteeBallotBox(mockContext);
+        var proposalId = UUID.randomUUID();
+        ballotBox.registerCommittee(proposalId, 2); // n=2, quorum = 1 (special case)
+
+        var future = ballotBox.getResult(proposalId);
+
+        // Single YES vote from owner — must reach quorum=1 immediately
+        ballotBox.addVote(proposalId, new Vote(proposalId,
+            DigestAlgorithm.DEFAULT.digest("owner"), true, viewId));
+
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertTrue(result, "n=2 cluster: owner's single YES vote must reach quorum=1 and approve migration");
+    }
+
+    /**
+     * Even committee n=4: quorum = 4/2+1 = 3.
+     * Validates non-deciding partial tallies and the deciding majority case.
+     */
+    @Test
+    void testEvenCommitteeN4SplitAndMajority() throws Exception {
+        // Partial tally: 1-YES/1-NO — both below quorum=3, must not complete
+        {
+            var ballotBox = new CommitteeBallotBox(mockContext);
+            var proposalId = UUID.randomUUID();
+            ballotBox.registerCommittee(proposalId, 4); // quorum = 4/2+1 = 3
+            var future = ballotBox.getResult(proposalId);
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-0"), true, viewId));
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("no-0"), false, viewId));
+            assertFalse(future.isDone(), "n=4: 1-YES/1-NO (below quorum=3) must not complete");
+        }
+        // Strict majority: 1-NO then 3-YES → 3rd YES reaches quorum=3 with YES > NO
+        {
+            var ballotBox = new CommitteeBallotBox(mockContext);
+            var proposalId = UUID.randomUUID();
+            ballotBox.registerCommittee(proposalId, 4);
+            var future = ballotBox.getResult(proposalId);
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("no-0"), false, viewId));
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-0"), true, viewId));
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-1"), true, viewId));
+            assertFalse(future.isDone(), "n=4: 2-YES/1-NO must not complete yet (quorum=3 not reached)");
+            ballotBox.addVote(proposalId, new Vote(proposalId,
+                DigestAlgorithm.DEFAULT.digest("yes-2"), true, viewId));
+            var result = future.get(1, TimeUnit.SECONDS);
+            assertTrue(result, "n=4: 3-YES/1-NO must decide YES (quorum=3 reached, YES > NO)");
+        }
     }
 
     /**

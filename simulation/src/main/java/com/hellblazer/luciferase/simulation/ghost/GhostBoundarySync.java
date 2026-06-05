@@ -180,6 +180,12 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
                 continue;
             }
 
+            // NOTE: velocity is (0,0,0) here because GhostEntityHalo carries no velocity and
+            // neither addGhost's callers (TetreeGhostSyncAdapter, GridGhostSyncAdapter) nor the
+            // notifyEntityNearBoundary API carry velocity. Wiring requires adding velocity to
+            // addGhost(), GhostEntry, and the adapter call-sites — tracked in Luciferase-chmxx
+            // (.186 completion, 2026-06-04). Dead-reckoning is inactive on this
+            // outbound path until that schema plumbing is complete.
             var ghostBatch = toSend.stream()
                 .map(e -> new SimulationGhostEntity<>(
                     e.ghost,

@@ -28,6 +28,7 @@ import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * EnhancedVolumeAnimator - Animation controller for EnhancedBubble with ghost support (Phase 7B.4).
@@ -68,7 +69,7 @@ public class EnhancedVolumeAnimator {
 
     private final EnhancedBubble       bubble;
     private final RealTimeController   controller;
-    private       long                 frameCount;
+    private final AtomicLong           frameCount = new AtomicLong(0);
 
     /**
      * Create an EnhancedVolumeAnimator for an EnhancedBubble.
@@ -79,8 +80,6 @@ public class EnhancedVolumeAnimator {
     public EnhancedVolumeAnimator(EnhancedBubble bubble, RealTimeController controller) {
         this.bubble = bubble;
         this.controller = controller;
-        this.frameCount = 0L;
-
         log.debug("EnhancedVolumeAnimator created: bubble={}", bubble.id());
     }
 
@@ -141,16 +140,16 @@ public class EnhancedVolumeAnimator {
      * via the RealTimeController tick mechanism.
      */
     public void tick() {
-        frameCount++;
+        long frame = frameCount.incrementAndGet();
 
-        if (frameCount % 100 == 0) {
+        if (frame % 100 == 0) {
             var currentTime = controller.getSimulationTime();
             var entityCount = getAnimatedEntities().size();
             var ownedCount = bubble.entityCount();
             var ghostCount = bubble.getGhostStateManager().getActiveGhostCount();
 
             log.debug("Animation tick: frame={}, time={}, entities={} (owned={}, ghosts={})",
-                frameCount, currentTime, entityCount, ownedCount, ghostCount);
+                frame, currentTime, entityCount, ownedCount, ghostCount);
         }
     }
 
@@ -160,7 +159,7 @@ public class EnhancedVolumeAnimator {
      * @return Number of frames processed since creation
      */
     public long getFrameCount() {
-        return frameCount;
+        return frameCount.get();
     }
 
     /**

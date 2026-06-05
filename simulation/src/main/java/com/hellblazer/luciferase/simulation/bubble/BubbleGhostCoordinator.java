@@ -49,12 +49,17 @@ public class BubbleGhostCoordinator implements AutoCloseable {
         // Register ghost reception handler using GhostChannel interface
         ghostChannel.onReceive((sourceBubbleId, ghosts) -> {
             for (var ghost : ghosts) {
-                // Convert SimulationGhostEntity to EntityUpdateEvent for GhostStateManager
-                // Note: Phase 7B.2 sets velocity to (0,0,0) placeholder
+                // Convert SimulationGhostEntity to EntityUpdateEvent for GhostStateManager.
+                // ghost.velocity() carries the real velocity (Luciferase-7wzml.186): with a
+                // non-zero velocity the dead-reckoning estimator will extrapolate position
+                // between authoritative updates.  Sites that do not yet supply real velocity
+                // use the backward-compat 5-arg SimulationGhostEntity constructor, which
+                // defaults to (0,0,0) — dead-reckoning is inactive for those ghosts.
+                var vel = ghost.velocity();
                 var event = new com.hellblazer.luciferase.simulation.events.EntityUpdateEvent(
                     ghost.entityId(),
                     ghost.position(),
-                    new javax.vecmath.Point3f(0f, 0f, 0f), // Placeholder velocity
+                    new javax.vecmath.Point3f(vel.x, vel.y, vel.z),
                     ghost.timestamp(),
                     ghost.bucket() // Use bucket as lamport clock
                 );

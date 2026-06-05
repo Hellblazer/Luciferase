@@ -110,6 +110,7 @@ public class VolumeAnimator implements AutoCloseable {
 
     public void start() {
         bindingThread = Thread.currentThread();
+        frame.running = true;
         frame.track();
         controller.start();
     }
@@ -130,6 +131,7 @@ public class VolumeAnimator implements AutoCloseable {
     @Override
     @NonEvent
     public void close() {
+        frame.stop();
         controller.stop();
         var bt = bindingThread;
         if (bt != null && bt != Thread.currentThread()) {
@@ -187,15 +189,35 @@ public class VolumeAnimator implements AutoCloseable {
 
     @Entity
     public class AnimationFrame {
-        private final long frameRateNs;
-        private       long frameCount          = 0;
-        private       long cumulativeDurations = 0;
-        private       long cumulativeDelay     = 0;
-        private       long lastActive          = clock.nanoTime();
-        private       long eventOverhead       = 0;
+        private final long    frameRateNs;
+        private       long    frameCount          = 0;
+        private       long    cumulativeDurations = 0;
+        private       long    cumulativeDelay     = 0;
+        private       long    lastActive          = clock.nanoTime();
+        private       long    eventOverhead       = 0;
+        /**
+         * Guard that allows track() to terminate.
+         * Set true on first entry; stop() sets it false, which causes the
+         * next scheduled invocation to return immediately rather than
+         * re-scheduling itself. Under PrimeMover @Entity semantics, the
+         * self-call at the end of track() is an event reschedule, NOT a
+         * real stack call — the guard ensures that chain terminates when
+         * stop() is called.
+         */
+        private volatile boolean running = false;
 
         public AnimationFrame(int frameRate) {
             this.frameRateNs = (TimeUnit.NANOSECONDS.convert(1, TimeUnit.SECONDS) / frameRate);
+        }
+
+        /**
+         * Stop the animation loop. The next scheduled track() invocation will
+         * return immediately without rescheduling itself. Safe to call from any
+         * thread; volatile write is visible to the event thread.
+         */
+        @NonEvent
+        public void stop() {
+            running = false;
         }
 
         @NonEvent
@@ -213,19 +235,36 @@ public class VolumeAnimator implements AutoCloseable {
             return frameCount;
         }
 
+        /**
+         * Per-frame animation tick.
+         * <p>
+         * Under PrimeMover {@code @Entity} bytecode transformation the self-call at the
+         * end of this method becomes an event reschedule, NOT literal recursion. The
+         * {@code running} guard is checked first so that calling {@link #stop()} halts
+         * the reschedule chain cleanly: the next dispatched invocation returns early.
+         * <p>
+         * {@code lastActive} and {@code eventOverhead} are updated <em>before</em> the
+         * reschedule so they are captured under both interpretations (literal and event).
+         */
         public void track() {
+            if (!running) {
+                return; // termination guard: stop() was called
+            }
             frameCount++;
             long start = clock.nanoTime();
             cumulativeDelay += start - lastActive;
-            // No rebuild needed! SpatialIndex updates are incremental.
-            // The old MutableGrid.rebuild() call is eliminated.
+            // No rebuild needed — SpatialIndex updates are incremental.
             var now = clock.nanoTime();
             var duration = now - start;
             cumulativeDurations += duration;
-            Kronos.sleep(VolumeAnimator.frameSleepNs(frameRateNs, duration, eventOverhead));
-            this.track();
+            // Update accounting BEFORE rescheduling so post-call statements
+            // are not dead under literal-recursion semantics.
             lastActive = clock.nanoTime();
             eventOverhead = (lastActive - now) / 2;
+            Kronos.sleep(VolumeAnimator.frameSleepNs(frameRateNs, duration, eventOverhead));
+            if (running) {
+                this.track(); // reschedule next frame (PrimeMover event, not real recursion)
+            }
         }
     }
 }

@@ -110,6 +110,39 @@ class GhostStateManagerTest {
         assertEquals(0.3f, extrapolatedPos.z, 0.01f, "Z position extrapolated");
     }
 
+    /**
+     * Luciferase-7wzml.186: site-4 consistency fix — SimulationGhostEntity.velocity() must
+     * return the real velocity (not zero) after updateGhost(), so that any consumer calling
+     * getGhost(id).velocity() directly (e.g. BubbleGhostCoordinator.onReceive on a local
+     * re-delivery path) sees the correct value.
+     */
+    @Test
+    void testGhostEntityVelocityFieldConsistentWithGhostStateVelocity() {
+        var entityId = new StringEntityID("entity-vel-consistency");
+        var position = new Point3f(0.0f, 0.0f, 0.0f);
+        var velocity = new Point3f(5.0f, 0.0f, 0.0f); // 5 units/s in X
+        long timestamp = 1000L;
+
+        var event = new EntityUpdateEvent(entityId, position, velocity, timestamp, 1L);
+        manager.updateGhost(sourceBubbleId, event);
+
+        var ghost = manager.getGhost(entityId);
+        assertNotNull(ghost, "Ghost must exist after updateGhost");
+
+        // Luciferase-7wzml.186: createGhostEntity now passes velocity to the 6-arg ctor,
+        // so SimulationGhostEntity.velocity() is consistent with GhostState.velocity.
+        var ghostVel = ghost.velocity();
+        assertEquals(5.0f, ghostVel.x, 0.001f,
+            "ghost.velocity().x must match the velocity supplied to updateGhost (was 0 before fix)");
+        assertEquals(0.0f, ghostVel.y, 0.001f, "ghost.velocity().y must be 0");
+        assertEquals(0.0f, ghostVel.z, 0.001f, "ghost.velocity().z must be 0");
+
+        // Sanity: getGhostVelocity() (reads GhostState.velocity) must agree
+        var stateVel = manager.getGhostVelocity(entityId);
+        assertEquals(ghostVel.x, stateVel.x, 0.001f,
+            "SimulationGhostEntity.velocity() and GhostState.velocity must be consistent");
+    }
+
     @Test
     void testStalenessTracking() {
         var entityId = new StringEntityID("entity1");

@@ -398,7 +398,11 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
             );
         // Note: GhostEntity sets timestamp internally, we use event.timestamp() for SimulationGhostEntity
 
-        // Wrap in SimulationGhostEntity with metadata
+        // Wrap in SimulationGhostEntity with metadata.
+        // NOTE: DelosSocketTransport is @Deprecated(forRemoval=true) — bead Luciferase-j877j tracks
+        // its removal. Velocity is available via event.velocity() but NOT wired here: the class is
+        // pending deletion and investment in wiring is deferred. Remaining zero-velocity sites
+        // tracked in Luciferase-chmxx (.186 completion, 2026-06-04).
         var bucket = event.lamportClock();
         return new SimulationGhostEntity<>(
             ghostEntity,

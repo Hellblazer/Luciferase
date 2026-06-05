@@ -81,6 +81,7 @@ public class PredatorPreyGridDemo {
         log.info("Phase 2: Spawn Entities");
         var accountant = new EntityAccountant();
         var preyBehavior = new PreyBehavior();
+        // No-arg ctor delegates to DEFAULT_SEED — deterministic.
         var predatorBehavior = new PackHuntingBehavior();
 
         var entityVelocities = new ConcurrentHashMap<String, Vector3f>();

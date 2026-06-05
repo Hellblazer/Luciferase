@@ -479,7 +479,16 @@ public class MessageConverter {
     private static Double snapY(EntitySnapshot s) { return (s == null || s.position() == null) ? null : s.position().getY(); }
     private static Double snapZ(EntitySnapshot s) { return (s == null || s.position() == null) ? null : s.position().getZ(); }
     private static String snapContent(EntitySnapshot s) {
-        return (s == null || s.content() == null) ? null : s.content().toString();
+        if (s == null || s.content() == null) {
+            return null;
+        }
+        if (!(s.content() instanceof String str)) {
+            throw new IllegalArgumentException(
+                "EntitySnapshot.content must be String for wire transport; "
+                + "found " + s.content().getClass().getName()
+                + " (silent toString() collapse is forbidden — RDR-004 / Luciferase-7wzml.179)");
+        }
+        return str;
     }
     private static String snapAuthority(EntitySnapshot s) { return s == null ? null : uuidStr(s.authorityBubbleId()); }
     private static Long snapEpoch(EntitySnapshot s) { return s == null ? null : s.epoch(); }

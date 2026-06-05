@@ -50,6 +50,14 @@ public class PackHuntingBehavior implements EntityBehavior {
     private static final float DEFAULT_MAX_FORCE = 0.8f;
 
     /**
+     * Fixed seed used by the no-arg constructor so that callers that do not supply a
+     * {@link Random} still get fully reproducible, deterministic behaviour.
+     * Documented here so that any regression in wander output can be traced back to
+     * this constant.
+     */
+    static final long DEFAULT_SEED = 0L;
+
+    /**
      * Pack formation radius (fraction of AOI).
      * Predators within this distance coordinate as a pack.
      */
@@ -92,14 +100,19 @@ public class PackHuntingBehavior implements EntityBehavior {
     /**
      * Create pack hunting behavior with default parameters.
      *
-     * @deprecated Uses an unseeded {@link Random}; simulation results are not reproducible
-     *             across runs. Use the constructor that accepts an explicit {@code Random}
-     *             with a seed for deterministic / replayable behavior.
+     * <p>Uses {@link #DEFAULT_SEED} so results are reproducible across runs.
+     * Prefer the full constructor with an explicit {@link Random} when you need
+     * a different seed or to share a single RNG across multiple behaviors.
+     *
+     * @deprecated Callers should supply an explicit {@link Random} with a chosen
+     *             seed via the full constructor so that the seed is visible at the
+     *             call-site. This constructor's fixed {@link #DEFAULT_SEED} is
+     *             retained only for backwards compatibility.
      */
     @Deprecated(since = "0.0.5")
     public PackHuntingBehavior() {
         this(DEFAULT_AOI_RADIUS, DEFAULT_MAX_SPEED, DEFAULT_PURSUIT_SPEED,
-             DEFAULT_MAX_FORCE, WorldBounds.DEFAULT, new Random());
+             DEFAULT_MAX_FORCE, WorldBounds.DEFAULT, new Random(DEFAULT_SEED));
     }
 
     /**

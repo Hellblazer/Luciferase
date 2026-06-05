@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.von;
 
+import com.hellblazer.luciferase.simulation.distributed.migration.EntitySnapshot;
+import com.hellblazer.luciferase.simulation.distributed.migration.IdempotencyToken;
 import javax.vecmath.Point3d;
 import org.junit.jupiter.api.Test;
 
@@ -288,6 +290,80 @@ class MessageConverterTest {
         assertInstanceOf(Message.GhostSync.class, recovered);
         var recoveredGhostSync = (Message.GhostSync) recovered;
         assertEquals(0, recoveredGhostSync.ghosts().size());
+    }
+
+    // ---- EntitySnapshot content fidelity (Luciferase-7wzml.179) ----
+
+    /**
+     * String content in an EntitySnapshot must survive the PrepareRequest round-trip unchanged.
+     */
+    @Test
+    void testPrepareRequestStringContentRoundTrip() {
+        var txId = UUID.randomUUID();
+        var entityId = UUID.randomUUID();
+        var snapshot = new EntitySnapshot(
+            entityId.toString(),
+            new Point3d(1.0, 2.0, 3.0),
+            "hello-world",          // String content
+            UUID.randomUUID(),
+            7L, 3L, 1000L
+        );
+        var token = new IdempotencyToken(
+            entityId.toString(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1000L,
+            UUID.randomUUID()
+        );
+        var msg = new MigrationProtocolMessages.PrepareRequest(
+            txId, token, snapshot,
+            UUID.randomUUID(), UUID.randomUUID(),
+            1000L
+        );
+
+        var transport = MessageConverter.toTransport(msg);
+        var recovered = MessageConverter.fromTransport(transport);
+
+        assertInstanceOf(MigrationProtocolMessages.PrepareRequest.class, recovered);
+        var req = (MigrationProtocolMessages.PrepareRequest) recovered;
+        assertNotNull(req.entitySnapshot());
+        assertEquals("hello-world", req.entitySnapshot().content(),
+            "String content must survive the round-trip unchanged");
+    }
+
+    /**
+     * Non-String content in an EntitySnapshot must be rejected at serialization time
+     * (fail-loud) rather than silently collapsed via toString().
+     */
+    @Test
+    void testPrepareRequestNonStringContentFailsLoud() {
+        var txId = UUID.randomUUID();
+        var entityId = UUID.randomUUID();
+
+        // A structured non-String content object — e.g. an Integer
+        var snapshot = new EntitySnapshot(
+            entityId.toString(),
+            new Point3d(1.0, 2.0, 3.0),
+            42,                     // NON-String content
+            UUID.randomUUID(),
+            7L, 3L, 1000L
+        );
+        var token = new IdempotencyToken(
+            entityId.toString(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1000L,
+            UUID.randomUUID()
+        );
+        var msg = new MigrationProtocolMessages.PrepareRequest(
+            txId, token, snapshot,
+            UUID.randomUUID(), UUID.randomUUID(),
+            1000L
+        );
+
+        // Must throw, not silently return "42"
+        assertThrows(IllegalArgumentException.class, () -> MessageConverter.toTransport(msg),
+            "Non-String EntitySnapshot content must be rejected at toTransport, not silently collapsed");
     }
 
     @Test

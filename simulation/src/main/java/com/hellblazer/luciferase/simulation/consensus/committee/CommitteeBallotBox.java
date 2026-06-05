@@ -18,8 +18,6 @@
 package com.hellblazer.luciferase.simulation.consensus.committee;
 
 import com.google.common.collect.HashMultiset;
-import com.google.common.collect.Multiset;
-import com.google.common.collect.Ordering;
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.membership.Member;
@@ -154,24 +152,45 @@ public class CommitteeBallotBox {
     }
 
     /**
-     * Committee simple-majority quorum bounded by the committee that can actually vote
-     * (Luciferase-ltxta).
+     * Committee strict-majority quorum bounded by the committee that can actually vote
+     * (Luciferase-ltxta, Luciferase-7wzml.195).
      * <p>
-     * The formula is {@code floor((n-1)/2) + 1} — a <em>committee simple-majority quorum</em>,
-     * NOT a Byzantine (n/3) quorum. It tolerates {@code floor((n-1)/2)} crash faults and,
-     * combined with the per-voter deduplication in {@link #addVote} (one vote per member),
-     * prevents single-voter ballot stuffing. It does <em>not</em> by itself tolerate
-     * {@code floor((n-1)/3)} equivocating Byzantine voters; raising the threshold to the
-     * BFT {@code (n-1)/3 + 1} form is deliberately out of scope here (would require separate
-     * fault-model analysis). Safety is not weakened relative to the previous wording — this
-     * quorum is {@code >=} the BFT minimum — only the "BFT formula" label was inaccurate.
+     * Formula: {@code n == 2 ? 1 : n/2 + 1}
+     * <ul>
+     *   <li>n=2: 1  — special-cased owner-vote design (INTENTIONAL: a single owner vote
+     *       approves its own migration; TwoNodeIntegrationTest documents this contract)
+     *   <li>n=3 (odd):  3/2+1 = 1+1 = 2
+     *   <li>n=4 (even): 4/2+1 = 2+1 = 3  (strict majority — eliminates arrival-order race)
+     *   <li>n=5 (odd):  5/2+1 = 2+1 = 3
+     *   <li>n=6 (even): 6/2+1 = 3+1 = 4
+     *   <li>n=7 (odd):  7/2+1 = 3+1 = 4
+     *   <li>n=8 (even): 8/2+1 = 4+1 = 5
+     * </ul>
      * <p>
-     * It coincides numerically with the project's {@code toleranceLevel()+1} convention
-     * because DynamicContext.toleranceLevel() in this codebase is {@code floor((n-1)/2)}
-     * (see QuorumCalculationTest's size→tolerance table: 7→3, 9→4).
+     * For ODD n: {@code n/2+1 == (n-1)/2+1} (integer division: same result as prior formula).
+     * For EVEN n (n≥4): {@code n/2+1 > (n-1)/2+1} — quorum is now a TRUE strict majority,
+     * so a perfect n/2-vs-n/2 split (e.g. {2Y, 2N} for n=4) can NEVER reach quorum from
+     * either side. The outcome is deterministically no-decision regardless of vote arrival
+     * order — the exact nondeterminism .195 was meant to eliminate.
+     * <p>
+     * Why the old {@code (n-1)/2+1} formula was wrong for even n:
+     * For n=4 it gave quorum=2. A burst of 2 YES votes would reach quorum=2 at 2-0 (before
+     * any NO arrives), deciding YES. A burst of 2 NO votes would decide NO. The same vote
+     * SET {2Y, 2N} produced different decisions depending purely on arrival order —
+     * a consensus violation. The tie-break guard in {@link #completeIfQuorum} does NOT
+     * catch this: it only fires when {@code yesCount == noCount} at check-time, which
+     * never happens in the 2-0 burst scenario.
+     * <p>
+     * With the corrected formula (n=4 quorum=3): neither the YES burst nor the NO burst
+     * reaches quorum; both orderings ({2Y then 2N} and {2N then 2Y}) produce no-decision
+     * → timeout → re-proposal. The tie-break guard is complementary and correct — it
+     * prevents an equal-tally from deciding even when quorum is set to a non-strict value
+     * by some future configuration, but it is not sufficient on its own for even-n.
+     * <p>
+     * Package-private for unit testing (QuorumCalculationTest, CommitteeBallotBoxTest).
      */
-    private static int committeeQuorum(int committeeSize) {
-        return committeeSize <= 1 ? 1 : ((committeeSize - 1) / 2) + 1;
+    static int committeeQuorum(int committeeSize) {
+        return committeeSize == 2 ? 1 : (committeeSize / 2 + 1);
     }
 
     /**
@@ -187,17 +206,19 @@ public class CommitteeBallotBox {
      *     result.complete(max.getElement());
      * }
      * </pre>
+     * <p>
+     * Split-tally determinism (Luciferase-7wzml.195): when yesCount == noCount the method
+     * returns without completing — a split tally is not a majority and deterministically
+     * yields no decision (fall-through to timeout). With the corrected {@code n/2+1} quorum
+     * (see {@link #committeeQuorum}), an even-N split (e.g. {2Y,2N} for n=4) can never
+     * reach quorum from either side, so the arrival-order race is eliminated at the quorum
+     * level. The tie-break guard here is a complementary safety net — it prevents
+     * an equal tally from deciding even under unusual quorum configurations.
      */
     private void completeIfQuorum(UUID proposalId, VoteState state) {
         if (state.result.isDone()) {
             return;  // Already completed
         }
-
-        // Find the vote option (YES or NO) with the most votes
-        var max = state.votes.entrySet()
-                             .stream()
-                             .max(Ordering.natural().onResultOf(Multiset.Entry::getCount))
-                             .orElse(null);
 
         // Quorum bounded by the committee that can actually vote when registered
         // (Luciferase-ltxta); otherwise fall back to the full-cluster context formula.
@@ -206,10 +227,24 @@ public class CommitteeBallotBox {
             ? committeeQuorum(committeeSize)
             : (context.size() == 1 ? 1 : context.toleranceLevel() + 1);
 
-        // If max vote count >= quorum, complete with that vote option
-        if (max != null && max.getCount() >= majority) {
-            state.result.complete(max.getElement());
+        // Tally YES and NO counts directly — no stream needed since Multiset is at most 2-element.
+        var yesCount = state.votes.count(Boolean.TRUE);
+        var noCount = state.votes.count(Boolean.FALSE);
+
+        // Tie-break rule: a split tally (yesCount == noCount) is NOT a majority.
+        // Do NOT complete — fall through to timeout for a deterministic no-decision.
+        // This prevents nondeterministic max() results when both sides hit quorum simultaneously.
+        if (yesCount == noCount) {
+            return;
         }
+
+        // Determine the leading side and whether it has reached quorum.
+        if (yesCount > noCount && yesCount >= majority) {
+            state.result.complete(Boolean.TRUE);
+        } else if (noCount > yesCount && noCount >= majority) {
+            state.result.complete(Boolean.FALSE);
+        }
+        // Otherwise: neither side has a strict majority at quorum — wait for more votes.
     }
 
     /**
