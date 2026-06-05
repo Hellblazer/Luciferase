@@ -141,9 +141,10 @@ public class ESVOPerformanceBenchmark {
         );
         
         log.info("ESVO benchmark completed in {} ms", totalBenchmarkTimeMs);
-        log.info("Performance summary: avg FPS={:.1f}, avg frame time={:.2f}ms, ray throughput={:.0f}/sec",
-                report.frameStats().averageFPS, report.frameStats().averageFrameTimeMs,
-                report.throughputStats().averageRaysPerSecond);
+        log.info("Performance summary: avg FPS={}, avg frame time={}ms, ray throughput={}/sec",
+                 String.format("%.1f", report.frameStats().averageFPS),
+                 String.format("%.2f", report.frameStats().averageFrameTimeMs),
+                 String.format("%.0f", report.throughputStats().averageRaysPerSecond));
         
         return report;
     }

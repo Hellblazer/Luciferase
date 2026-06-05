@@ -317,4 +317,59 @@ public class ESVTNodeUnifiedTest {
         assertTrue(str.contains("childMask=FF"));
         assertTrue(str.contains("ptr=100"));
     }
+
+    // --- getChildIndex far-pointer fail-loud tests (Luciferase-7wzml S2/.170 fix) ---
+
+    @Test
+    void testGetChildIndex_FarNode_NullFarPointers_ThrowsISE() {
+        // A far node with null farPointers = data corruption; must throw, not silently return wrong offset.
+        var node = new ESVTNodeUnified((byte) 0);
+        node.setChildMask(0xFF);
+        node.setChildPtr(5);   // childPtr is index into farPointers[]
+        node.setFar(true);
+
+        assertThrows(IllegalStateException.class,
+            () -> node.getChildIndex(0, 10, null),
+            "far node with null farPointers must fail loud (data corruption)");
+    }
+
+    @Test
+    void testGetChildIndex_FarNode_ShortFarPointers_ThrowsISE() {
+        // Far node whose childPtr is OOB for the supplied table = data corruption.
+        var node = new ESVTNodeUnified((byte) 0);
+        node.setChildMask(0xFF);
+        node.setChildPtr(3);   // expects farPointers[3], but array length is 2
+        node.setFar(true);
+
+        int[] shortTable = {100, 200};
+        assertThrows(IllegalStateException.class,
+            () -> node.getChildIndex(0, 10, shortTable),
+            "far node with OOB farPointers must fail loud (data corruption)");
+    }
+
+    @Test
+    void testGetChildIndex_FarNode_ValidTable_ReturnsCorrectIndex() {
+        // Far node with a valid table must resolve through the table correctly.
+        var node = new ESVTNodeUnified((byte) 0);
+        node.setChildMask(0xFF);
+        node.setChildPtr(2);   // farPointers[2] = 50
+        node.setFar(true);
+
+        int[] farTable = {10, 20, 50, 80};
+        // Expected: currentNodeIdx(5) + farPointers[2](50) + childOffset(0) = 55
+        assertEquals(55, node.getChildIndex(0, 5, farTable));
+    }
+
+    @Test
+    void testGetChildIndex_NearNode_UnchangedByFix() {
+        // Near nodes must be unaffected regardless of farPointers argument.
+        var node = new ESVTNodeUnified((byte) 0);
+        node.setChildMask(0xFF);
+        node.setChildPtr(10);
+        // isFar() == false; farPointers is ignored entirely
+
+        assertEquals(10, node.getChildIndex(0, 0, null));
+        assertEquals(110, node.getChildIndex(0, 100, null));
+        assertEquals(10, node.getChildIndex(0, 0, new int[0]));
+    }
 }

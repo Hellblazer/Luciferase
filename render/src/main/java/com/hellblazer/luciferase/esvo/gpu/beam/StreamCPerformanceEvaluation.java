@@ -115,8 +115,8 @@ public class StreamCPerformanceEvaluation {
 
         // Calculate improvement
         var improvement = optimized.compareToBaseline(baseline);
-        log.info("Performance improvement: {:.2f}% ({:.2f}x speedup)",
-                 improvement, optimized.speedupFactor(baseline));
+        log.info("Performance improvement: {}% ({}x speedup)",
+                 String.format("%.2f", improvement), String.format("%.2f", optimized.speedupFactor(baseline)));
 
         return new EvaluationResult(baseline, optimized, coherence);
     }

@@ -4,6 +4,7 @@
 
 package com.hellblazer.luciferase.esvo.dag.metrics;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
 import com.hellblazer.luciferase.sparse.core.SparseVoxelData;
@@ -69,6 +70,31 @@ public class CompressionMetricsCollector {
 
     private final List<CompressionMetrics> metrics = Collections.synchronizedList(new ArrayList<>());
     private final Lock                     lock    = new ReentrantLock();
+    private volatile Clock                 clock   = Clock.system();
+
+    /**
+     * Construct a collector using the system clock (production default).
+     */
+    public CompressionMetricsCollector() {
+    }
+
+    /**
+     * Construct a collector with an injected clock (for deterministic testing).
+     *
+     * @param clock clock to use when stamping recorded metrics
+     */
+    public CompressionMetricsCollector(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock cannot be null");
+    }
+
+    /**
+     * Replace the clock at runtime (test-support setter following the project pattern).
+     *
+     * @param clock the clock to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock cannot be null");
+    }
 
     /**
      * Record a compression operation with automatic metric extraction.
@@ -112,7 +138,7 @@ public class CompressionMetricsCollector {
         var buildTime = result.getMetadata().buildTime();
 
         var metric = new CompressionMetrics(compressedNodeCount, sourceNodeCount, uniqueInternalNodes,
-                                             uniqueLeafNodes, buildTime);
+                                             uniqueLeafNodes, buildTime, clock.currentTimeMillis());
 
         lock.lock();
         try {

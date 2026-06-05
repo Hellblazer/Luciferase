@@ -151,7 +151,7 @@ public class FileMetricsExporter implements MetricsExporter {
             headerWritten = true;
         }
 
-        var line = String.format("%d,%d,%d,%d,%d,%.2f,%.2f,%d,%d\n", metrics.timestamp_value(),
+        var line = String.format("%d,%d,%d,%d,%d,%.2f,%.2f,%d,%d\n", metrics.timestamp(),
                                  metrics.sourceNodeCount(), metrics.compressedNodeCount(),
                                  metrics.uniqueInternalNodes(), metrics.uniqueLeafNodes(), metrics.compressionRatio(),
                                  metrics.compressionPercent(), metrics.memorySavedBytes(),
@@ -178,7 +178,7 @@ public class FileMetricsExporter implements MetricsExporter {
           "compressionPercent": %.2f,
           "memorySavedBytes": %d,
           "buildTimeMs": %d
-        }""", metrics.timestamp_value(), metrics.sourceNodeCount(), metrics.compressedNodeCount(),
+        }""", metrics.timestamp(), metrics.sourceNodeCount(), metrics.compressedNodeCount(),
         metrics.uniqueInternalNodes(), metrics.uniqueLeafNodes(), metrics.compressionRatio(),
         metrics.compressionPercent(), metrics.memorySavedBytes(), metrics.buildTime().toMillis());
 

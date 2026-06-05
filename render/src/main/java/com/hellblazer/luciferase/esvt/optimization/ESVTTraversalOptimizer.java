@@ -133,7 +133,19 @@ public class ESVTTraversalOptimizer implements Optimizer<ESVTData> {
     }
 
     /**
-     * Moller-Trumbore intersection statistics.
+     * Heuristic prediction of Moller-Trumbore intersection statistics.
+     *
+     * <p><b>All fields are synthetic estimates derived from closed-form heuristics,
+     * not measured values from an actual traversal.</b> Do not treat any field as
+     * a profiled ground-truth measurement.  Use only for pre-traversal planning
+     * (e.g. workgroup sizing) where an approximate prediction is acceptable.
+     *
+     * <p>Callers MUST check {@link #isSynthetic()} before treating any field as a
+     * measured ground-truth value.  When {@code isSynthetic()} is {@code true} the
+     * numbers are heuristic estimates; when {@code false} they were obtained from an
+     * actual traversal measurement.
+     *
+     * @see ESVTTraversalOptimizer#predictIntersectionStatsHeuristic
      */
     public static class IntersectionStats {
         private final int totalTests;
@@ -141,14 +153,28 @@ public class ESVTTraversalOptimizer implements Optimizer<ESVTData> {
         private final int culledEarly;
         private final float avgEdgeCrossings;
         private final Map<Integer, Integer> hitsByTetType;
+        private final boolean synthetic;
 
+        /**
+         * Construct an {@code IntersectionStats} instance.
+         *
+         * @param totalTests       estimated or measured total intersection tests
+         * @param hits             estimated or measured hit count
+         * @param culledEarly      estimated or measured early-cull count
+         * @param avgEdgeCrossings estimated or measured average edge crossings per test
+         * @param hitsByTetType    estimated or measured per-tet-type hit distribution
+         * @param isSynthetic      {@code true} if the values are heuristic estimates;
+         *                         {@code false} if they are real measured values
+         */
         public IntersectionStats(int totalTests, int hits, int culledEarly,
-                                float avgEdgeCrossings, Map<Integer, Integer> hitsByTetType) {
+                                float avgEdgeCrossings, Map<Integer, Integer> hitsByTetType,
+                                boolean isSynthetic) {
             this.totalTests = totalTests;
             this.hits = hits;
             this.culledEarly = culledEarly;
             this.avgEdgeCrossings = avgEdgeCrossings;
             this.hitsByTetType = new HashMap<>(hitsByTetType);
+            this.synthetic = isSynthetic;
         }
 
         public int getTotalTests() { return totalTests; }
@@ -158,6 +184,16 @@ public class ESVTTraversalOptimizer implements Optimizer<ESVTData> {
         public Map<Integer, Integer> getHitsByTetType() { return Collections.unmodifiableMap(hitsByTetType); }
         public float getHitRate() { return totalTests > 0 ? (float) hits / totalTests : 0.0f; }
         public float getEarlyCullRate() { return totalTests > 0 ? (float) culledEarly / totalTests : 0.0f; }
+
+        /**
+         * Returns {@code true} if these statistics are synthetic heuristic estimates
+         * rather than values measured from an actual traversal.
+         *
+         * <p>Callers must check this flag before trusting numbers as ground-truth
+         * measurements.  {@link ESVTTraversalOptimizer#predictIntersectionStatsHeuristic}
+         * always returns {@code true} here.
+         */
+        public boolean isSynthetic() { return synthetic; }
     }
 
     /**
@@ -371,12 +407,29 @@ public class ESVTTraversalOptimizer implements Optimizer<ESVTData> {
     }
 
     /**
-     * Estimate Moller-Trumbore intersection statistics.
+     * Predict Moller-Trumbore intersection statistics using closed-form heuristics.
+     *
+     * <p><b>All returned values are synthetic estimates, not measured statistics.</b>
+     * The formulas used are:
+     * <ul>
+     *   <li>{@code totalTests = rayCount * log4(nodeCount)} — approximates traversal depth</li>
+     *   <li>{@code hitRate = 0.15 + overallCoherence * 0.1} — empirical constant baseline</li>
+     *   <li>{@code cullRate = 0.6 + tetFaceCoherence * 0.2} — empirical constant baseline</li>
+     *   <li>{@code avgEdgeCrossings = 2.5 - directionalCoherence} — empirical constant</li>
+     *   <li>{@code hitsByTetType} — uniform distribution across all 6 types (never measured)</li>
+     * </ul>
+     * None of these constants are derived from profiling real traversals.  Treat the
+     * returned {@link IntersectionStats} as a planning prediction only.
+     *
+     * @param rayOrigins         origin points of the ray batch
+     * @param rayDirections      direction vectors of the ray batch
+     * @param estimatedNodeCount approximate node count in the tree being traversed
+     * @return heuristic prediction; every field is a synthetic estimate
      */
-    public IntersectionStats estimateIntersectionStats(Vector3f[] rayOrigins,
-                                                      Vector3f[] rayDirections,
-                                                      int estimatedNodeCount) {
-        // Estimate based on ray coherence and typical traversal patterns
+    public IntersectionStats predictIntersectionStatsHeuristic(Vector3f[] rayOrigins,
+                                                               Vector3f[] rayDirections,
+                                                               int estimatedNodeCount) {
+        // Predict based on ray coherence and empirical heuristics — NOT measured data
         var coherence = analyzeRayCoherence(rayOrigins, rayDirections);
 
         var totalTests = rayOrigins.length * (int) (Math.log(estimatedNodeCount) / Math.log(4));
@@ -394,7 +447,7 @@ public class ESVTTraversalOptimizer implements Optimizer<ESVTData> {
         }
 
         return new IntersectionStats(totalTests, hits, culledEarly,
-                                    avgEdgeCrossings, hitsByTetType);
+                                    avgEdgeCrossings, hitsByTetType, true);
     }
 
     // Private helper methods

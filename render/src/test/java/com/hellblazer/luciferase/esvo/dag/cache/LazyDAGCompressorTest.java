@@ -180,6 +180,36 @@ class LazyDAGCompressorTest {
     }
 
     @Test
+    void testAwaitCompletion_TimeoutFires_Deterministically() {
+        // Inject a TestClock so we can control deadline arithmetic deterministically.
+        // timeoutMs = 0 → deadline = clock + 0 = clock.currentTimeMillis()
+        //              → remaining = deadline - clock.currentTimeMillis() = 0 ≤ 0
+        //              → awaitCompletion returns false immediately without any real sleep.
+        var testClock = new TestClock(1000L);
+        compressor.setClock(testClock);
+
+        compressor.shutdown(); // required before awaitCompletion
+
+        var result = compressor.awaitCompletion(0);
+
+        assertFalse(result, "awaitCompletion must return false when timeout is zero (deadline already elapsed)");
+    }
+
+    @Test
+    void testAwaitCompletion_TimeoutNotYetElapsed_DelegatesToExecutor() throws InterruptedException {
+        // Clock starts at 1000; timeoutMs = 10_000 → deadline = 11_000.
+        // Clock stays at 1000 → remaining = 10_000 ms, positive.
+        // No tasks are running; executor.shutdown() + awaitTermination(10s) should return true quickly.
+        var testClock = new TestClock(1000L);
+        compressor.setClock(testClock);
+
+        compressor.shutdown();
+        var result = compressor.awaitCompletion(10_000);
+
+        assertTrue(result, "awaitCompletion should return true when deadline is not yet reached and executor has no pending tasks");
+    }
+
+    @Test
     void testScheduleCompression_DelayTiming() throws InterruptedException {
         var source = createESVOData();
 

@@ -5,6 +5,7 @@
 package com.hellblazer.luciferase.esvo.dag.metrics;
 
 import java.time.Duration;
+import com.hellblazer.luciferase.common.time.Clock;
 
 /**
  * Immutable compression performance metrics record.
@@ -73,24 +74,17 @@ import java.time.Duration;
  * @param uniqueInternalNodes Number of unique internal (non-leaf) nodes in DAG
  * @param uniqueLeafNodes     Number of unique leaf nodes in DAG
  * @param buildTime           Time taken to build the compressed DAG (all phases)
+ * @param timestamp           Time when these metrics were recorded (milliseconds since epoch),
+ *                            supplied by the caller's {@link Clock} for deterministic testability
  * @author hal.hildebrand
  * @see CompressionMetricsCollector
  * @see com.hellblazer.luciferase.esvo.dag.DAGBuilder
  */
 public record CompressionMetrics(int compressedNodeCount, int sourceNodeCount, int uniqueInternalNodes,
-                                 int uniqueLeafNodes, Duration buildTime) {
+                                 int uniqueLeafNodes, Duration buildTime, long timestamp) {
 
     /** Assumed bytes per node reference (64-bit pointer) for memory calculations */
     private static final int BYTES_PER_NODE_REFERENCE = 8;
-
-    /**
-     * Internal timestamp when metrics were created.
-     *
-     * @return current system time in milliseconds
-     */
-    private long timestamp() {
-        return System.currentTimeMillis();
-    }
 
     /**
      * Calculate compression ratio as source/compressed node count.
@@ -220,15 +214,4 @@ public record CompressionMetrics(int compressedNodeCount, int sourceNodeCount, i
         return "HASH_BASED"; // Default strategy for now
     }
 
-    /**
-     * Get the timestamp when these metrics were created.
-     * <p>
-     * This is primarily used for serialization and test verification.
-     * The timestamp is generated at call time, not captured during construction.
-     *
-     * @return timestamp in milliseconds since epoch
-     */
-    public long timestamp_value() {
-        return timestamp();
-    }
 }

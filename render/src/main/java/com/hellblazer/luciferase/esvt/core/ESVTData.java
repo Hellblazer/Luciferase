@@ -176,7 +176,12 @@ public record ESVTData(
      */
     public int resolveChildPtr(ESVTNodeUnified node) {
         int ptr = node.getChildPtr();
-        if (node.isFar() && farPointers != null && ptr < farPointers.length) {
+        if (node.isFar()) {
+            if (farPointers == null || ptr >= farPointers.length) {
+                throw new IllegalStateException(
+                    "Far node requires far-pointer table but table is "
+                    + (farPointers == null ? "null" : "too short (length=" + farPointers.length + ", ptr=" + ptr + ")"));
+            }
             return farPointers[ptr];
         }
         return ptr;

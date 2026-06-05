@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.esvo.dag.cache;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
 import com.hellblazer.luciferase.esvo.dag.pipeline.DAGPipelineAdapter;
@@ -69,6 +70,7 @@ public class LazyDAGCompressor {
     private final CopyOnWriteArrayList<Future<?>> pendingTasks;
 
     private volatile boolean shutdown = false;
+    private volatile Clock clock = Clock.system();
 
     /**
      * Create a lazy DAG compressor.
@@ -84,6 +86,15 @@ public class LazyDAGCompressor {
         this.executor = executor;
         this.adapter = adapter;
         this.pendingTasks = new CopyOnWriteArrayList<>();
+    }
+
+    /**
+     * Inject a clock for deterministic testing.
+     *
+     * @param clock clock to use for timeout computation (must not be null)
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock cannot be null");
     }
 
     /**
@@ -186,11 +197,11 @@ public class LazyDAGCompressor {
      * @return true if all tasks completed, false if timeout occurred
      */
     public boolean awaitCompletion(long timeoutMs) {
-        var deadline = System.currentTimeMillis() + timeoutMs;
+        var deadline = clock.currentTimeMillis() + timeoutMs;
 
         try {
             // Wait for executor to terminate
-            var remaining = deadline - System.currentTimeMillis();
+            var remaining = deadline - clock.currentTimeMillis();
             if (remaining <= 0) {
                 return false;
             }

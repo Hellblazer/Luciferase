@@ -184,19 +184,27 @@ public class ESVONode {
      * @param octantMask Octant mask from ray traversal
      * @return Actual node index after octant transformation
      */
+    // Note: this method has no live traversal caller — ESVOTraversal uses getChildNodeIndex directly.
+    // It is kept as reference/algorithm-documentation for the CUDA child_shift formula; the wave-19
+    // .152 fix made its bitsBeforeChild rank consistent with the existence-test slot (actualSlot).
     public int getChildNodeIndexWithOctant(int childIdx, int octantMask) {
         int childShift = childIdx ^ octantMask;
-        
-        // Apply shift to check existence (this is the CUDA algorithm)
+
+        // The CUDA algorithm shifts the descriptor left by childShift so that
+        // the actual child slot (7 - childShift) lands at bit 15 for the
+        // existence test.  Both the existence check and the sparse-index rank
+        // MUST use the same actual slot: actualSlot = 7 ^ childShift.
         int childMasks = childDescriptor << childShift;
         if ((childMasks & 0x8000) == 0) {
             return -1; // Child doesn't exist
         }
-        
-        // Calculate sparse index using CUDA reference algorithm
+
+        // Sparse index: count set bits in the child mask below actualSlot.
+        // actualSlot = 7 ^ childShift = 7 ^ (childIdx ^ octantMask)
+        int actualSlot = 7 ^ childShift;
         int childMask = getChildMask();
-        int bitsBeforeChild = Integer.bitCount(childMask & ((1 << childIdx) - 1));
-        
+        int bitsBeforeChild = Integer.bitCount(childMask & ((1 << actualSlot) - 1));
+
         return getChildPointer() + bitsBeforeChild;
     }
     

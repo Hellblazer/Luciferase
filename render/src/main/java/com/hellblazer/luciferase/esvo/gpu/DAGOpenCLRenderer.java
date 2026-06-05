@@ -383,8 +383,8 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
                 currentRaysPerItem = 1; // Single-ray mode
             }
 
-            log.debug("Coherence + BeamTree analysis: score={:.3f}, kernel={}, raysPerItem={}, beams={}",
-                    coherence, useBatchKernel ? "BATCH" : "SINGLE_RAY", currentRaysPerItem,
+            log.debug("Coherence + BeamTree analysis: score={}, kernel={}, raysPerItem={}, beams={}",
+                    String.format("%.3f", coherence), useBatchKernel ? "BATCH" : "SINGLE_RAY", currentRaysPerItem,
                     beamTree.getStatistics().totalBeams());
 
         } catch (Exception e) {
