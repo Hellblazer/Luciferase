@@ -253,17 +253,15 @@ class TetreeNeighborDetectorTest {
     void testNeighborsWithOwners() {
         var keys = tetree.getSortedSpatialIndices();
         assertFalse(keys.isEmpty(), "Tree should have keys after insertion");
-        
+
         var testKey = keys.first();
-        
-        var neighborsWithOwners = detector.findNeighborsWithOwners(testKey, GhostType.FACES);
-        assertFalse(neighborsWithOwners.isEmpty(), "Should have some neighbors with owners");
-        
-        // Verify all neighbors are marked as local (current implementation)
-        for (var info : neighborsWithOwners) {
-            assertTrue(info.isLocal(), "All neighbors should be local in current implementation");
-            assertEquals(0, info.ownerRank(), "Local neighbors should have rank 0");
-            assertEquals(0, info.treeId(), "Local neighbors should have tree ID 0");
-        }
+
+        // TetreeNeighborDetector has no partition/ownership resolver wired.
+        // Returning isLocal=true with rank=0 for every neighbor would silently
+        // degrade the distributed ghost layer. The method must throw fail-loud
+        // until a real resolver is injected via the constructor.
+        assertThrows(UnsupportedOperationException.class,
+                     () -> detector.findNeighborsWithOwners(testKey, GhostType.FACES),
+                     "findNeighborsWithOwners must throw — no owner-resolver wired into TetreeNeighborDetector");
     }
 }

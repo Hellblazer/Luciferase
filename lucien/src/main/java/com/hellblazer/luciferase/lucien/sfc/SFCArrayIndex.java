@@ -142,14 +142,26 @@ public class SFCArrayIndex<ID extends EntityID, Content> extends AbstractSpatial
      */
     public List<MortonKeyInterval> cellsQ(VolumeBounds queryBounds, byte level) {
         var cellSize = Constants.lengthAtLevel(level);
+        // Maximum valid cell index at this level: (2^level) - 1
+        var maxCell = (1 << level) - 1;
 
-        // Compute integer bounds (grid cell coordinates)
-        var minX = Math.max(0, (int) Math.floor(queryBounds.minX() / cellSize));
-        var minY = Math.max(0, (int) Math.floor(queryBounds.minY() / cellSize));
-        var minZ = Math.max(0, (int) Math.floor(queryBounds.minZ() / cellSize));
-        var maxX = Math.max(0, (int) Math.floor(queryBounds.maxX() / cellSize));
-        var maxY = Math.max(0, (int) Math.floor(queryBounds.maxY() / cellSize));
-        var maxZ = Math.max(0, (int) Math.floor(queryBounds.maxZ() / cellSize));
+        // Compute raw (unclamped) min cell indices to detect out-of-domain queries.
+        // If any raw minX/Y/Z exceeds maxCell the query is entirely outside the domain
+        // on that axis; return empty immediately rather than producing bogus intervals.
+        var rawMinX = (int) Math.floor(queryBounds.minX() / cellSize);
+        var rawMinY = (int) Math.floor(queryBounds.minY() / cellSize);
+        var rawMinZ = (int) Math.floor(queryBounds.minZ() / cellSize);
+        if (rawMinX > maxCell || rawMinY > maxCell || rawMinZ > maxCell) {
+            return Collections.emptyList();
+        }
+
+        // Compute integer bounds (grid cell coordinates), clamped to [0, maxCell].
+        var minX = Math.max(0, rawMinX);
+        var minY = Math.max(0, rawMinY);
+        var minZ = Math.max(0, rawMinZ);
+        var maxX = Math.min(maxCell, Math.max(0, (int) Math.floor(queryBounds.maxX() / cellSize)));
+        var maxY = Math.min(maxCell, Math.max(0, (int) Math.floor(queryBounds.maxY() / cellSize)));
+        var maxZ = Math.min(maxCell, Math.max(0, (int) Math.floor(queryBounds.maxZ() / cellSize)));
 
         // Use unified LITMAX/BIGMIN algorithm
         var sfcIntervals = LitmaxBigmin.computeIntervals(minX, minY, minZ, maxX, maxY, maxZ);

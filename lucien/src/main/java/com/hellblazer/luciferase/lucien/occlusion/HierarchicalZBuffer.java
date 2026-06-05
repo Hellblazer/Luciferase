@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.occlusion;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import javax.vecmath.Point3f;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -36,9 +37,12 @@ public class HierarchicalZBuffer {
     private float[][] zBuffers;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     
+    // Clock injection for deterministic testing
+    private volatile Clock clock = Clock.system();
+
     // Adaptive sizing support
     private AdaptiveZBufferConfig.DimensionConfig currentConfig;
-    private long lastAdaptationTime = 0;
+    private volatile long lastAdaptationTime = 0;
     private static final long ADAPTATION_COOLDOWN_MS = 5000; // 5 seconds between adaptations
     
     // Camera parameters
@@ -67,6 +71,15 @@ public class HierarchicalZBuffer {
         initializeBuffers(config);
     }
     
+    /**
+     * Inject a clock for deterministic testing.
+     *
+     * @param clock the clock to use; must not be null
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
     /**
      * Initialize Z-buffers with given configuration
      */
@@ -430,22 +443,30 @@ public class HierarchicalZBuffer {
      * @return true if buffer was resized
      */
     public boolean adaptResolution(double effectiveness, double memoryPressure) {
-        // Check cooldown to prevent thrashing
-        long currentTime = System.currentTimeMillis();
+        // Fast pre-check outside lock: only reads lastAdaptationTime (not currentConfig)
+        long currentTime = clock.currentTimeMillis();
         if (currentTime - lastAdaptationTime < ADAPTATION_COOLDOWN_MS) {
             return false;
         }
-        
-        // Determine if adaptation is needed
-        var newConfig = AdaptiveZBufferConfig.adaptForEffectiveness(currentConfig, effectiveness, memoryPressure);
-        
-        if (newConfig != null && AdaptiveZBufferConfig.isChangeWorthwhile(currentConfig, newConfig)) {
-            resizeBuffers(newConfig);
+
+        // Acquire write lock; re-read currentConfig under lock to avoid stale-read race
+        lock.writeLock().lock();
+        try {
+            currentTime = clock.currentTimeMillis();
+            if (currentTime - lastAdaptationTime < ADAPTATION_COOLDOWN_MS) {
+                return false;
+            }
+            var newConfig = AdaptiveZBufferConfig.adaptForEffectiveness(currentConfig, effectiveness, memoryPressure);
+            if (newConfig == null || !AdaptiveZBufferConfig.isChangeWorthwhile(currentConfig, newConfig)) {
+                return false;
+            }
+            initializeBuffers(newConfig);
+            this.currentConfig = newConfig;
             lastAdaptationTime = currentTime;
             return true;
+        } finally {
+            lock.writeLock().unlock();
         }
-        
-        return false;
     }
     
     /**

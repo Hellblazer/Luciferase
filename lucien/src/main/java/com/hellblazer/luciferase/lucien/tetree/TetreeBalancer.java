@@ -173,10 +173,108 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
         return true;
     }
 
+    /**
+     * Rebalance the subtree rooted at {@code rootNodeIndex}.
+     *
+     * <p>Returns the number of <em>logical node operations</em> performed in this pass.
+     * The unit is consistent across both operation types:
+     * <ul>
+     *   <li>SPLIT: +1 (one split of a parent, regardless of how many children were created).
+     *       After a successful split the now-empty parent is removed from the spatial index —
+     *       all entities have been redistributed to children and {@code getChildNodesInIndex}
+     *       probes child tet keys directly (it does not rely on the parent key being present).</li>
+     *   <li>MERGE: +1 (one merge collapse of N siblings into their parent).</li>
+     * </ul>
+     * A return of 0 means "no operations were necessary" (tree is already balanced in this
+     * subtree), not "unsupported". Callers can use non-zero as the convergence signal in an
+     * outer loop.
+     */
     @Override
     public int rebalanceSubtree(TetreeKey<? extends TetreeKey<?>> rootNodeIndex) {
-        // Not implemented for tetree - could recursively balance subtree
-        return 0;
+        return rebalanceSubtreeImpl(rootNodeIndex, new HashSet<>());
+    }
+
+    private int rebalanceSubtreeImpl(TetreeKey<? extends TetreeKey<?>> rootNodeIndex, Set<TetreeKey<? extends TetreeKey<?>>> visited) {
+        if (!visited.add(rootNodeIndex)) {
+            return 0;
+        }
+
+        int modifications = 0;
+
+        var node = tetree.getSpatialIndex().get(rootNodeIndex);
+        if (node == null) {
+            return 0;
+        }
+
+        var level = rootNodeIndex.getLevel();
+
+        var action = checkNodeBalance(rootNodeIndex);
+        switch (action) {
+            case SPLIT -> {
+                if (level < maxDepth) {
+                    var children = splitNode(rootNodeIndex, level);
+                    if (!children.isEmpty()) {
+                        // +1 logical split operation (unit: one node operation, not child count)
+                        modifications++;
+                        // splitNode redistributed all parent entities into children and
+                        // cleared the parent node; remove the now-empty parent so it doesn't
+                        // persist in the spatial index inflating traversals and stats.
+                        tetree.getSpatialIndex().remove(rootNodeIndex);
+                        tetree.getSortedSpatialIndices().remove(rootNodeIndex);
+                        for (var child : children) {
+                            modifications += rebalanceSubtreeImpl(child, visited);
+                        }
+                    }
+                }
+            }
+            case MERGE -> {
+                var siblings = findSiblings(rootNodeIndex);
+                if (!siblings.isEmpty()) {
+                    Tet tet = Tet.tetrahedron(rootNodeIndex);
+                    TetreeKey<? extends TetreeKey<?>> parentIndex = tet.parent().tmIndex();
+                    var allNodes = new HashSet<>(siblings);
+                    allNodes.add(rootNodeIndex);
+                    if (mergeNodes(allNodes, parentIndex)) {
+                        // +1 logical merge operation
+                        modifications++;
+                        visited.addAll(allNodes);
+                    }
+                }
+            }
+            default -> {
+                // NONE or REDISTRIBUTE: recurse into children present in the index
+                var children = getChildNodesInIndex(rootNodeIndex);
+                for (var child : children) {
+                    modifications += rebalanceSubtreeImpl(child, visited);
+                }
+            }
+        }
+
+        return modifications;
+    }
+
+    /**
+     * Find child tet nodes of the given node that exist in the spatial index.
+     */
+    private List<TetreeKey<? extends TetreeKey<?>>> getChildNodesInIndex(TetreeKey<? extends TetreeKey<?>> nodeIndex) {
+        var level = nodeIndex.getLevel();
+        if (level >= maxDepth) {
+            return Collections.emptyList();
+        }
+
+        Tet tet = Tet.tetrahedron(nodeIndex);
+        List<TetreeKey<? extends TetreeKey<?>>> children = new ArrayList<>();
+        // Loop index 0-7 is always valid (no IllegalArgumentException from child()).
+        // The level < maxDepth guard above prevents IllegalStateException from max-depth refinement.
+        // Any other exception here is a genuine bug and must propagate, not be silently swallowed.
+        for (int i = 0; i < 8; i++) {
+            var childTet = tet.child(i);
+            var childIndex = childTet.tmIndex();
+            if (tetree.getSpatialIndex().containsKey(childIndex)) {
+                children.add(childIndex);
+            }
+        }
+        return children;
     }
 
     @Override

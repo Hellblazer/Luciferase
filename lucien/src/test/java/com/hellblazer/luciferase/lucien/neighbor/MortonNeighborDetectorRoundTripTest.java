@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import org.junit.jupiter.api.BeforeEach;
@@ -319,5 +320,39 @@ class MortonNeighborDetectorRoundTripTest {
                              "Face neighbor at level " + level + " must be exactly one cellSize away");
             }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // 8. findNeighborsWithOwners: fail-loud — no partition resolver wired
+    // -----------------------------------------------------------------------
+
+    /**
+     * MortonNeighborDetector has no partition/ownership resolver.
+     * Returning isLocal=true with rank=0 for every neighbor would silently
+     * degrade the distributed ghost layer. The method must throw
+     * UnsupportedOperationException (fail-loud) until a real resolver is wired.
+     */
+    @Test
+    void testFindNeighborsWithOwnersFaceThrowsUnsupported() {
+        var key = MortonKey.fromCellIndices(10, 10, 10, (byte) 10);
+        assertThrows(UnsupportedOperationException.class,
+                     () -> detector.findNeighborsWithOwners(key, GhostType.FACES),
+                     "findNeighborsWithOwners(FACES) must throw — no owner-resolver wired");
+    }
+
+    @Test
+    void testFindNeighborsWithOwnersEdgeThrowsUnsupported() {
+        var key = MortonKey.fromCellIndices(10, 10, 10, (byte) 10);
+        assertThrows(UnsupportedOperationException.class,
+                     () -> detector.findNeighborsWithOwners(key, GhostType.EDGES),
+                     "findNeighborsWithOwners(EDGES) must throw — no owner-resolver wired");
+    }
+
+    @Test
+    void testFindNeighborsWithOwnersVertexThrowsUnsupported() {
+        var key = MortonKey.fromCellIndices(10, 10, 10, (byte) 10);
+        assertThrows(UnsupportedOperationException.class,
+                     () -> detector.findNeighborsWithOwners(key, GhostType.VERTICES),
+                     "findNeighborsWithOwners(VERTICES) must throw — no owner-resolver wired");
     }
 }

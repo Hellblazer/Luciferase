@@ -66,6 +66,12 @@ public final class PrismKey implements SpatialKey<PrismKey> {
 
     // Lazily-computed cache of consecutiveIndex() (immutable key; deterministic; volatile to
     // avoid a torn long read). compareTo() is on the ConcurrentSkipListMap hot path. -1 sentinel.
+    //
+    // BENIGN-RECOMPUTE PRECONDITION (Luciferase-7wzml.138): concurrent threads may race to fill
+    // this cache; correctness relies on ALL THREE caches (this one, Triangle.cachedIndex,
+    // Line.consecutiveIndex) being pure deterministic functions of immutable state. If any
+    // delegate ever becomes order- or state-dependent the publication-order race becomes a
+    // real bug. See Triangle.cachedIndex and Line.consecutiveIndex for their matching notes.
     private volatile long cachedIndex = -1L;
     
     /**

@@ -1268,6 +1268,9 @@ implements SpatialIndex<Key, ID, Content>,
      */
     public void setClock(Clock clock) {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        if (dsoc != null) {
+            dsoc.setClock(clock);
+        }
     }
 
     /**
@@ -3110,6 +3113,8 @@ implements SpatialIndex<Key, ID, Content>,
     public void enableDSOC(DSOCConfiguration config, int bufferWidth, int bufferHeight) {
         // RDR-008 P1: the DSOC cluster is encapsulated in DsocController.
         this.dsoc = new DsocController<>(core, new FrustumGeometryImpl(), culler, config, bufferWidth, bufferHeight);
+        // Forward any pre-installed clock so frame-timing is deterministic (Luciferase-7wzml.144).
+        this.dsoc.setClock(this.clock);
     }
     
     /**

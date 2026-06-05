@@ -184,10 +184,124 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
         return true;
     }
 
+    /**
+     * Rebalance the subtree rooted at {@code rootNodeIndex}.
+     *
+     * <p>Returns the number of <em>logical node operations</em> performed in this pass.
+     * The unit is consistent across both operation types:
+     * <ul>
+     *   <li>SPLIT: +1 (one split of a parent, regardless of how many children were created).
+     *       After a successful split the now-empty parent is removed from the spatial index —
+     *       all entities have been redistributed to children and {@code getChildNodesInIndex}
+     *       probes child octants directly (it does not rely on the parent key being present).</li>
+     *   <li>MERGE: +1 (one merge collapse of N siblings into their parent).</li>
+     * </ul>
+     * A return of 0 means "no operations were necessary" (tree is already balanced in this
+     * subtree), not "unsupported". Callers can use non-zero as the convergence signal in an
+     * outer loop.
+     */
     @Override
     public int rebalanceSubtree(MortonKey rootNodeIndex) {
-        // Not implemented for octree - could recursively balance subtree
-        return 0;
+        return rebalanceSubtreeImpl(rootNodeIndex, new HashSet<>());
+    }
+
+    private int rebalanceSubtreeImpl(MortonKey rootNodeIndex, Set<MortonKey> visited) {
+        if (!visited.add(rootNodeIndex)) {
+            return 0;
+        }
+
+        int modifications = 0;
+
+        var node = octree.getSpatialIndex().get(rootNodeIndex);
+        if (node == null) {
+            return 0;
+        }
+
+        var level = rootNodeIndex.getLevel();
+
+        var action = checkNodeBalance(rootNodeIndex);
+        switch (action) {
+            case SPLIT -> {
+                if (level < maxDepth) {
+                    var children = splitNode(rootNodeIndex, level);
+                    if (!children.isEmpty()) {
+                        // +1 logical split operation (unit: one node operation, not child count)
+                        modifications++;
+                        // splitNode redistributed all parent entities into children and
+                        // cleared the parent node; remove the now-empty parent so it doesn't
+                        // persist in the spatial index inflating traversals and stats.
+                        octree.getSpatialIndex().remove(rootNodeIndex);
+                        octree.getSortedSpatialIndices().remove(rootNodeIndex);
+                        // Recursively balance the newly created children
+                        for (var child : children) {
+                            modifications += rebalanceSubtreeImpl(child, visited);
+                        }
+                    }
+                }
+            }
+            case MERGE -> {
+                var siblings = findSiblings(rootNodeIndex);
+                if (!siblings.isEmpty()) {
+                    var coords = MortonCurve.decode(rootNodeIndex.getMortonCode());
+                    var cellSize = Constants.lengthAtLevel(level);
+                    var parentCellSize = cellSize * 2;
+                    var parentX = (coords[0] / parentCellSize) * parentCellSize;
+                    var parentY = (coords[1] / parentCellSize) * parentCellSize;
+                    var parentZ = (coords[2] / parentCellSize) * parentCellSize;
+                    var parentIndex = new MortonKey(MortonCurve.encode(parentX, parentY, parentZ),
+                                                   (byte) (level - 1));
+                    var allNodes = new HashSet<>(siblings);
+                    allNodes.add(rootNodeIndex);
+                    if (mergeNodes(allNodes, parentIndex)) {
+                        // +1 logical merge operation
+                        modifications++;
+                        // Mark merged nodes as visited so we don't revisit them
+                        visited.addAll(allNodes);
+                    }
+                }
+            }
+            default -> {
+                // NONE or REDISTRIBUTE: recurse into children
+                var children = getChildNodesInIndex(rootNodeIndex);
+                for (var child : children) {
+                    modifications += rebalanceSubtreeImpl(child, visited);
+                }
+            }
+        }
+
+        return modifications;
+    }
+
+    /**
+     * Find child nodes of the given node that exist in the spatial index.
+     * Children are nodes at (level + 1) whose Morton codes fall within the 8 octants
+     * of the given node's cell.
+     */
+    private List<MortonKey> getChildNodesInIndex(MortonKey nodeIndex) {
+        var level = nodeIndex.getLevel();
+        if (level >= maxDepth) {
+            return Collections.emptyList();
+        }
+
+        var childLevel = (byte) (level + 1);
+        var coords = MortonCurve.decode(nodeIndex.getMortonCode());
+        var childCellSize = Constants.lengthAtLevel(childLevel);
+
+        var children = new ArrayList<MortonKey>(8);
+        for (var dx = 0; dx < 2; dx++) {
+            for (var dy = 0; dy < 2; dy++) {
+                for (var dz = 0; dz < 2; dz++) {
+                    var cx = coords[0] + dx * childCellSize;
+                    var cy = coords[1] + dy * childCellSize;
+                    var cz = coords[2] + dz * childCellSize;
+                    var childIndex = new MortonKey(MortonCurve.encode(cx, cy, cz), childLevel);
+                    if (octree.getSpatialIndex().containsKey(childIndex)) {
+                        children.add(childIndex);
+                    }
+                }
+            }
+        }
+        return children;
     }
 
     @Override

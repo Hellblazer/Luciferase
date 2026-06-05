@@ -17,14 +17,16 @@
 package com.hellblazer.luciferase.lucien.occlusion;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -34,18 +36,17 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 public class HierarchicalZBufferTest {
-    
+
     private HierarchicalZBuffer zBuffer;
-    
+
     @BeforeEach
     void setUp() {
         // Create a 256x256 buffer with 4 levels
         zBuffer = new HierarchicalZBuffer(256, 256, 4);
     }
-    
+
     @Test
     void testInitialization() {
-        // Check dimensions
         assertEquals(256, zBuffer.getWidthAtLevel(0));
         assertEquals(256, zBuffer.getHeightAtLevel(0));
         assertEquals(128, zBuffer.getWidthAtLevel(1));
@@ -55,99 +56,67 @@ public class HierarchicalZBufferTest {
         assertEquals(32, zBuffer.getWidthAtLevel(3));
         assertEquals(32, zBuffer.getHeightAtLevel(3));
     }
-    
+
     @Test
     void testCameraUpdate() {
         float[] viewMatrix = new float[16];
         float[] projMatrix = new float[16];
-        
-        // Identity matrices
         for (int i = 0; i < 16; i++) {
             viewMatrix[i] = (i % 5 == 0) ? 1.0f : 0.0f;
             projMatrix[i] = (i % 5 == 0) ? 1.0f : 0.0f;
         }
-        
-        // Should not throw
-        assertDoesNotThrow(() -> {
-            zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000.0f);
-        });
+        assertDoesNotThrow(() -> zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000.0f));
     }
-    
+
     @Test
     void testClear() {
-        // Clear should reset all buffers to far plane (1.0)
         zBuffer.clear();
-        
-        // Create bounds and test - should not be occluded after clear
         var bounds = new EntityBounds(new Point3f(10, 10, 10), new Point3f(20, 20, 20));
         assertFalse(zBuffer.isOccluded(bounds));
     }
-    
+
     @Test
     void testOcclusionWithoutCamera() {
-        // Without camera setup, bounds should not be occluded
         var bounds = new EntityBounds(new Point3f(10, 10, 10), new Point3f(20, 20, 20));
         assertFalse(zBuffer.isOccluded(bounds));
     }
-    
+
     @Test
     void testRenderOccluder() {
-        // Set up a simple orthographic camera
         float[] viewMatrix = createIdentityMatrix();
         float[] projMatrix = createOrthographicMatrix(-100, 100, -100, 100, 0.1f, 1000);
-        
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000);
-        
-        // Render an occluder
         var occluderBounds = new EntityBounds(new Point3f(0, 0, 10), new Point3f(50, 50, 20));
         zBuffer.renderOccluder(occluderBounds);
-        
-        // Update hierarchy
         zBuffer.updateHierarchy();
-        
-        // Test object behind should be occluded
-        var behindBounds = new EntityBounds(new Point3f(10, 10, 30), new Point3f(40, 40, 40));
-        // Note: Actual occlusion depends on proper projection implementation
-        // This is a simplified test
+        // Smoke test only - actual occlusion depends on projection implementation
     }
-    
+
     @Test
     void testHierarchyUpdate() {
-        // Render something at base level
         var bounds = new EntityBounds(new Point3f(0, 0, 10), new Point3f(10, 10, 20));
-        
         float[] viewMatrix = createIdentityMatrix();
         float[] projMatrix = createOrthographicMatrix(-100, 100, -100, 100, 0.1f, 1000);
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000);
-        
         zBuffer.renderOccluder(bounds);
-        
-        // Update should propagate to higher levels
-        assertDoesNotThrow(() -> {
-            zBuffer.updateHierarchy();
-        });
+        assertDoesNotThrow(zBuffer::updateHierarchy);
     }
-    
+
     @Test
     void testBoundsOutsideFrustum() {
         float[] viewMatrix = createIdentityMatrix();
         float[] projMatrix = createOrthographicMatrix(-10, 10, -10, 10, 0.1f, 100);
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 100);
-        
-        // Bounds far outside frustum
         var bounds = new EntityBounds(new Point3f(1000, 1000, 1000), new Point3f(1100, 1100, 1100));
-        
-        // Should not be occluded (actually outside frustum)
         assertFalse(zBuffer.isOccluded(bounds));
     }
-    
+
     @Test
     void testMultipleLevels() {
-        // Test that we can create buffers with different level counts
         var smallBuffer = new HierarchicalZBuffer(64, 64, 2);
         assertEquals(64, smallBuffer.getWidthAtLevel(0));
         assertEquals(32, smallBuffer.getWidthAtLevel(1));
-        
+
         var largeBuffer = new HierarchicalZBuffer(512, 512, 6);
         assertEquals(512, largeBuffer.getWidthAtLevel(0));
         assertEquals(256, largeBuffer.getWidthAtLevel(1));
@@ -156,47 +125,35 @@ public class HierarchicalZBufferTest {
         assertEquals(32, largeBuffer.getWidthAtLevel(4));
         assertEquals(16, largeBuffer.getWidthAtLevel(5));
     }
-    
+
     @Test
     void testThreadSafety() throws InterruptedException {
         float[] viewMatrix = createIdentityMatrix();
         float[] projMatrix = createOrthographicMatrix(-100, 100, -100, 100, 0.1f, 1000);
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000);
-
         int numThreads = 10;
         Thread[] threads = new Thread[numThreads];
-
-        // Create threads that render occluders
         for (int i = 0; i < numThreads; i++) {
             final int threadId = i;
             threads[i] = new Thread(() -> {
                 for (int j = 0; j < 100; j++) {
                     float offset = threadId * 20;
-                    var bounds = new EntityBounds(
-                        new Point3f(offset, offset, 10),
-                        new Point3f(offset + 10, offset + 10, 20)
-                    );
-                    zBuffer.renderOccluder(bounds);
+                    var b = new EntityBounds(new Point3f(offset, offset, 10), new Point3f(offset + 10, offset + 10, 20));
+                    zBuffer.renderOccluder(b);
                 }
             });
         }
-
         for (Thread thread : threads) {
             thread.start();
         }
         for (Thread thread : threads) {
             thread.join();
         }
-
-        // Should complete without errors
-        assertDoesNotThrow(() -> zBuffer.updateHierarchy());
+        assertDoesNotThrow(zBuffer::updateHierarchy);
     }
 
     /**
-     * Concurrency / visibility: concurrent renderOccluder (write path) and
-     * updateHierarchy (simulating endFrame from HierarchicalOcclusionCuller) must
-     * not produce a torn pyramid. We verify by running both for 500 ms and
-     * asserting no exception is thrown and no thread observes an error.
+     * Concurrency: concurrent renderOccluder + updateHierarchy must not produce a torn pyramid.
      */
     @Test
     void testConcurrentRenderAndUpdateHierarchyNoTornPyramid() throws InterruptedException {
@@ -205,19 +162,16 @@ public class HierarchicalZBufferTest {
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000);
 
         AtomicBoolean failed = new AtomicBoolean(false);
-        AtomicBoolean stop   = new AtomicBoolean(false);
+        AtomicBoolean stop = new AtomicBoolean(false);
         List<Thread> threads = new ArrayList<>();
 
-        // 4 writer threads calling renderOccluder
         for (int i = 0; i < 4; i++) {
             final float offset = i * 15f;
             Thread t = new Thread(() -> {
                 try {
                     while (!stop.get()) {
-                        var b = new EntityBounds(
-                            new Point3f(offset, offset, 5f),
-                            new Point3f(offset + 10f, offset + 10f, 15f)
-                        );
+                        var b = new EntityBounds(new Point3f(offset, offset, 5f),
+                                                 new Point3f(offset + 10f, offset + 10f, 15f));
                         zBuffer.renderOccluder(b);
                     }
                 } catch (Exception e) {
@@ -227,7 +181,6 @@ public class HierarchicalZBufferTest {
             threads.add(t);
         }
 
-        // 4 endFrame-simulation threads calling the public updateHierarchy()
         for (int i = 0; i < 4; i++) {
             Thread t = new Thread(() -> {
                 try {
@@ -247,12 +200,79 @@ public class HierarchicalZBufferTest {
         for (Thread t : threads) {
             t.join(2000);
         }
-
         assertFalse(failed.get(), "Concurrent renderOccluder + updateHierarchy threw an exception (torn pyramid)");
     }
-    
+
+    /**
+     * Clock injection: adaptResolution cooldown must flip deterministically when an injected
+     * TestClock is used. ADAPTATION_COOLDOWN_MS=5000. Trigger: effectiveness&lt;0.1 AND memoryPressure&gt;0.7.
+     */
+    @Test
+    void testAdaptResolutionCooldownDeterministicWithInjectedClock() {
+        TestClock testClock = new TestClock(6000L);
+        zBuffer.setClock(testClock);
+
+        double lowEff = 0.05; // < LOW_EFFECTIVENESS_THRESHOLD (0.1)
+        double highMem = 0.8; // > 0.7
+
+        // No prior adaptation — gate open → resize
+        assertTrue(zBuffer.adaptResolution(lowEff, highMem),
+                   "First call should succeed (no prior adaptation)");
+
+        // Same instant — cooldown active → blocked
+        assertFalse(zBuffer.adaptResolution(lowEff, highMem),
+                    "Second call within cooldown must return false");
+
+        // 4999 ms later — still in cooldown
+        testClock.advance(4999L);
+        assertFalse(zBuffer.adaptResolution(lowEff, highMem),
+                    "Call 1 ms before expiry must return false");
+
+        // 1 ms more — boundary crossed → resize (use upgrade params since buffer is now at MINIMAL)
+        testClock.advance(1L);
+        assertTrue(zBuffer.adaptResolution(0.9, 0.1),
+                   "Call at cooldown boundary should succeed (upgrade from MINIMAL)");
+    }
+
+    /**
+     * Concurrency: multiple threads racing through adaptResolution when clock is frozen past cooldown
+     * must result in exactly one resize (double-checked lock under write lock).
+     */
+    @Test
+    void testAdaptResolutionCooldownNoConcurrentDoubleResize() throws InterruptedException {
+        TestClock testClock = new TestClock(10_000L);
+        zBuffer.setClock(testClock);
+
+        int numThreads = 8;
+        CyclicBarrier barrier = new CyclicBarrier(numThreads);
+        AtomicInteger resizeCount = new AtomicInteger(0);
+        AtomicBoolean errors = new AtomicBoolean(false);
+        Thread[] threads = new Thread[numThreads];
+
+        for (int i = 0; i < numThreads; i++) {
+            threads[i] = new Thread(() -> {
+                try {
+                    barrier.await();
+                    if (zBuffer.adaptResolution(0.05, 0.8)) {
+                        resizeCount.incrementAndGet();
+                    }
+                } catch (Exception e) {
+                    errors.set(true);
+                }
+            });
+            threads[i].start();
+        }
+        for (Thread t : threads) {
+            t.join(2000);
+        }
+
+        assertFalse(errors.get(), "No thread should throw during concurrent adaptResolution");
+        assertEquals(1, resizeCount.get(),
+                     "Exactly one thread wins the double-checked lock; no double-resize");
+    }
+
     // Helper methods
-    
+
     private float[] createIdentityMatrix() {
         float[] matrix = new float[16];
         for (int i = 0; i < 16; i++) {
@@ -260,12 +280,9 @@ public class HierarchicalZBufferTest {
         }
         return matrix;
     }
-    
-    private float[] createOrthographicMatrix(float left, float right, float bottom, float top,
-                                            float near, float far) {
+
+    private float[] createOrthographicMatrix(float left, float right, float bottom, float top, float near, float far) {
         float[] matrix = new float[16];
-        
-        // Simple orthographic projection
         matrix[0] = 2.0f / (right - left);
         matrix[5] = 2.0f / (top - bottom);
         matrix[10] = -2.0f / (far - near);
@@ -273,7 +290,6 @@ public class HierarchicalZBufferTest {
         matrix[13] = -(top + bottom) / (top - bottom);
         matrix[14] = -(far + near) / (far - near);
         matrix[15] = 1.0f;
-        
         return matrix;
     }
 }

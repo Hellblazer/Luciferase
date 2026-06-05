@@ -64,8 +64,15 @@ public interface TreeBalancer<Key extends SpatialKey<Key>, ID extends EntityID> 
     /**
      * Rebalance a subtree starting from the given node.
      *
+     * <p>Implementations must either perform real rebalancing work or signal non-support
+     * via an exception. A return value of 0 means zero nodes were modified (either the
+     * subtree was already balanced, or the subtree rooted at {@code rootNodeIndex} did not
+     * exist). Implementations must NOT return 0 as a silent no-op when the operation is
+     * unsupported — throw {@link UnsupportedOperationException} instead.
+     *
      * @param rootNodeIndex the root of the subtree to rebalance
-     * @return number of nodes modified
+     * @return number of nodes modified (0 if the subtree is already balanced or empty;
+     *         never 0 as a silent not-supported sentinel)
      */
     int rebalanceSubtree(Key rootNodeIndex);
 

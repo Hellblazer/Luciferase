@@ -185,16 +185,15 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<? exte
     
     @Override
     public List<NeighborInfo<TetreeKey<?>>> findNeighborsWithOwners(TetreeKey<?> element, GhostType type) {
-        var neighbors = findNeighbors(element, type);
-        var result = new ArrayList<NeighborInfo<TetreeKey<?>>>(neighbors.size());
-        
-        for (var neighbor : neighbors) {
-            // For now, assume all neighbors are local
-            // This will be extended when distributed support is added
-            result.add(new NeighborInfo<>(neighbor, 0, 0, true));
-        }
-        
-        return result;
+        // No partition/ownership resolver is wired into this detector.
+        // Returning isLocal=true with rank=0 for every neighbor would silently
+        // degrade the ghost layer in distributed configurations.
+        // Fail loud until a real owner-resolver is injected via the constructor.
+        throw new UnsupportedOperationException(
+            "findNeighborsWithOwners requires a partition ownership resolver that has not been wired into TetreeNeighborDetector. "
+            + "Either inject an owner-resolver through the constructor or use the local-only neighbor methods "
+            + "(findFaceNeighbors/findEdgeNeighbors/findVertexNeighbors) for single-node use. "
+            + "Remediation tracked in bead Luciferase-8neqb.");
     }
     
     /**

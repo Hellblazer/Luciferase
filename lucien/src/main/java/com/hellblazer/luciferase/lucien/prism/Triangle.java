@@ -103,6 +103,11 @@ public final class Triangle {
     // Lazily-computed cache of consecutiveIndex(). Triangle is immutable and the index is a
     // deterministic function of (level, type, x, y), so a benign race is harmless; volatile
     // avoids a torn read of the long. -1 is the "not yet computed" sentinel (the index is >= 0).
+    //
+    // BENIGN-RECOMPUTE PRECONDITION (Luciferase-7wzml.138): PrismKey.consecutiveIndex() reads
+    // this cache concurrently without external synchronisation; correctness requires that this
+    // value remains a pure function of immutable Triangle state. See also PrismKey.cachedIndex
+    // and Line.consecutiveIndex for coordinated notes.
     private volatile long cachedIndex = -1L;
     
     /**
@@ -355,12 +360,11 @@ public final class Triangle {
     /**
      * Test if this triangle contains the given world coordinates.
      *
-     * <p><b>Diagonal boundary (RDR-009 P3).</b> The S0 and S1 roots share the main diagonal
-     * {@code y == x} as a closed edge, and the barycentric test is inclusive, so a point exactly on
-     * the diagonal is contained by <em>both</em> halves (geometrically correct — it lies on the
-     * shared edge). For canonical single-half point classification (which prism owns a point) use
-     * {@link #fromWorldCoordinates}, which assigns {@code y == x} to S0 by convention; do not rely
-     * on {@code contains()} alone to pick a half on the diagonal.
+     * <p><b>Diagonal boundary (RDR-009 P3 / Luciferase-7wzml.139).</b> The S0 and S1 roots share
+     * the main diagonal {@code y == x} as a boundary edge. This method applies the same tie-break
+     * as {@link #fromWorldCoordinates}: the diagonal {@code y == x} belongs exclusively to S0
+     * (half=0). An S1 triangle (half=1) never contains a point where {@code worldY <= worldX},
+     * ensuring that insert-key and contains-match agree for diagonal and near-diagonal points.
      *
      * @param worldX the world x-coordinate [0.0, 1.0)
      * @param worldY the world y-coordinate [0.0, 1.0)
@@ -371,24 +375,33 @@ public final class Triangle {
             return false;
         }
 
-        // Per-root containment (RDR-009 P3): there is no level-0 full-square special case any more.
-        // getWorldBounds()/getVertices() already reflect for the S1 half, so the bounding-box +
-        // barycentric test below is correct for both roots — the S0 root contains only its
-        // lower-right half {y <= x} and the S1 root only its upper-left half {y >= x}.
+        // Diagonal tie-break (Luciferase-7wzml.139): the S0 and S1 roots share the main diagonal
+        // y == x. fromWorldCoordinates assigns y==x to S0 exclusively ((worldY > worldX) ? 1 : 0).
+        // The inclusive barycentric test would claim diagonal points for S1 as well, causing
+        // insert-key (S0) and contains-match (S1) to disagree. By rejecting exact-diagonal points
+        // from any S1 triangle we preserve the single-owner invariant. Note: this is exact float
+        // equality — an interior S1 point where worldX > worldY (valid after reflection) will have
+        // worldX != worldY and is not affected.
+        if (half == 1 && worldX == worldY) {
+            return false;
+        }
+
+        // Per-root containment (RDR-009 P3): getWorldBounds()/getVertices() already reflect for the
+        // S1 half, so the bounding-box + barycentric test below is correct for both roots.
         var bounds = getWorldBounds();
         float minX = bounds[0];
         float minY = bounds[1];
         float maxX = bounds[2];
         float maxY = bounds[3];
-        
+
         // First check if point is within bounding box
         if (worldX < minX || worldX > maxX || worldY < minY || worldY > maxY) {
             return false;
         }
-        
+
         // Use proper geometric test based on triangle type and vertices
         float[][] vertices = getVertices();
-        
+
         // Use barycentric coordinates or point-in-triangle test
         return isPointInTriangle(worldX, worldY, vertices[0], vertices[1], vertices[2]);
     }

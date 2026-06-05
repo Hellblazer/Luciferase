@@ -20,7 +20,12 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -526,5 +531,92 @@ class PrismKeyTest {
         assertNotEquals(keyA, keyB, "Keys differing in Line.z must not be equal");
         assertNotEquals(0, keyA.compareTo(keyB),
             "compareTo must distinguish keys that differ only in Line.z at MAX_LEVEL");
+    }
+
+    // -------------------------------------------------------------------------
+    // Luciferase-7wzml.138 — benign-recompute precondition tests
+    // consecutiveIndex() uses a volatile-cached benign-recompute pattern; these
+    // tests pin the invariants that make it safe: idempotence, stability, and
+    // equal-key consistency.
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("consecutiveIndex is stable across repeated calls for same key")
+    void testConsecutiveIndexStable() {
+        var keys = new ArrayList<PrismKey>();
+        // Sample across levels and types
+        for (int level = 1; level <= 5; level++) {
+            int maxCoord = 1 << level;
+            for (int x = 0; x < Math.min(maxCoord, 4); x++) {
+                for (int y = 0; y <= x && y < Math.min(maxCoord, 4); y++) {
+                    for (int z = 0; z < Math.min(maxCoord, 4); z++) {
+                        var t = new Triangle(level, 0, x, y);
+                        var l = new Line(level, z);
+                        keys.add(new PrismKey(t, l));
+                    }
+                }
+            }
+        }
+        for (var key : keys) {
+            long first = key.consecutiveIndex();
+            for (int i = 0; i < 10; i++) {
+                assertEquals(first, key.consecutiveIndex(),
+                    "consecutiveIndex must be idempotent for key " + key);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("equal keys return equal consecutiveIndex")
+    void testConsecutiveIndexEqualKeys() {
+        var t1 = new Triangle(4, 0, 3, 2);
+        var l1 = new Line(4, 5);
+        var keyA = new PrismKey(t1, l1);
+        // Construct an independent equal key (same field values, separate objects)
+        var t2 = new Triangle(4, 0, 3, 2);
+        var l2 = new Line(4, 5);
+        var keyB = new PrismKey(t2, l2);
+        assertEquals(keyA, keyB, "precondition: keys must be equal");
+        assertEquals(keyA.consecutiveIndex(), keyB.consecutiveIndex(),
+            "equal keys must produce equal consecutiveIndex");
+    }
+
+    @Test
+    @DisplayName("consecutiveIndex is consistent under concurrent reads (benign-recompute contract)")
+    void testConsecutiveIndexConcurrent() throws InterruptedException {
+        var triangle = new Triangle(5, 0, 7, 3);
+        var line = new Line(5, 5);
+        var key = new PrismKey(triangle, line);
+
+        // Compute expected value on this thread first (warm cache for comparison)
+        long expected = key.consecutiveIndex();
+
+        int threadCount = 16;
+        var latch = new CountDownLatch(1);
+        var firstMismatch = new AtomicReference<String>(null);
+        var executor = Executors.newFixedThreadPool(threadCount);
+
+        for (int i = 0; i < threadCount; i++) {
+            executor.submit(() -> {
+                try {
+                    latch.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                long val = key.consecutiveIndex();
+                if (val != expected) {
+                    firstMismatch.compareAndSet(null,
+                        "Thread saw " + val + ", expected " + expected);
+                }
+            });
+        }
+
+        latch.countDown(); // release all threads simultaneously
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS), "Threads did not finish in time");
+
+        assertNull(firstMismatch.get(),
+            "consecutiveIndex must return the same value across concurrent calls: " + firstMismatch.get());
     }
 }
