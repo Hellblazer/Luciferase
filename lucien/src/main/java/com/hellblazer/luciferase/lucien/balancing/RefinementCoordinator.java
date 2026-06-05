@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.balancing;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import org.slf4j.Logger;
@@ -51,6 +52,8 @@ import java.util.concurrent.TimeUnit;
 public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
 
     private static final Logger log = LoggerFactory.getLogger(RefinementCoordinator.class);
+
+    private volatile Clock clock = Clock.system();
 
     private final RefinementExchange<Key, ID, Content> exchange;
     private final RefinementRequestManager requestManager;
@@ -114,6 +117,18 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
     }
 
     /**
+     * Inject a clock for deterministic time in tests. Propagates to the owned
+     * RefinementRequestManager so both use the same virtual timeline and RTT
+     * measurements are consistent.
+     *
+     * @param clock the clock to use; must not be null
+     */
+    public void setClock(Clock clock) {
+        this.clock = java.util.Objects.requireNonNull(clock, "clock cannot be null");
+        requestManager.setClock(clock);
+    }
+
+    /**
      * Coordinate refinement across all partitions in O(log P) rounds.
      *
      * <p>The algorithm executes up to ceil(log₂(P)) rounds, where P is the total
@@ -137,7 +152,7 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
         log.info("Coordinating refinement: partitions={}, maxRounds={}, initiator={}",
                 totalPartitions, maxRounds, initiatorRank);
 
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
         var totalRefinements = 0;
         var converged = false;
         var roundsExecuted = 0;
@@ -180,7 +195,7 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
             }
         }
 
-        var elapsed = System.currentTimeMillis() - startTime;
+        var elapsed = clock.currentTimeMillis() - startTime;
 
         log.info("Coordination complete: executed {} rounds, refinements={}, converged={}",
                 roundsExecuted, totalRefinements, converged);
@@ -201,7 +216,7 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
     public RoundResult executeRefinementRound(int roundNumber, int targetRounds) {
         log.debug("Executing refinement round {} (rank {}/{})", roundNumber, myRank, totalPartitions);
 
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
 
         // Convert from 1-based to 0-based for ButterflyPattern
         var zeroBasedRound = roundNumber - 1;
@@ -250,7 +265,7 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
         }
 
         var needsMoreRefinement = (roundNumber < targetRounds);
-        var elapsed = System.currentTimeMillis() - startTime;
+        var elapsed = clock.currentTimeMillis() - startTime;
 
         log.trace("Completed refinement round {}: refinements={}, needsMore={}",
                  roundNumber, refinementsApplied, needsMoreRefinement);
@@ -336,7 +351,7 @@ public class RefinementCoordinator<Key extends SpatialKey<Key>, ID extends Entit
 
         for (var request : requests) {
             // Track request for monitoring
-            requestManager.trackRequest(request, System.currentTimeMillis());
+            requestManager.trackRequest(request, clock.currentTimeMillis());
 
             // Send async with timeout via domain exchange. The request travels to the butterfly PARTNER
             // (targetRank); request.requesterRank() is the LOCAL reply-to rank (Luciferase-uhsn D1/w3lm S1),

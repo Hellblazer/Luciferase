@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.migration;
 
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.EntityIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
@@ -25,7 +26,6 @@ import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -49,33 +49,33 @@ public class SpatialIndexConverter {
     public static <ID extends EntityID, Content> Tetree<ID, Content> octreeToTetree(
             Octree<ID, Content> source, EntityIDGenerator<ID> idGenerator) {
         log.info("Starting Octree to Tetree conversion");
-        
+
         var startTime = System.currentTimeMillis();
         var stats = new ConversionStats();
-        
+
         // Create target Tetree with similar configuration
         var targetMaxDepth = source.getMaxDepth();
         var targetMaxEntities = source.getMaxEntitiesPerNode();
         var tetree = new Tetree<ID, Content>(idGenerator, targetMaxEntities, targetMaxDepth);
-        
+
         // Enable bulk loading for better performance
         tetree.enableBulkLoading();
-        
+
         try {
             // Get all entities with their positions
             var entitiesWithPositions = source.getEntitiesWithPositions();
             stats.totalEntities = entitiesWithPositions.size();
-            
+
             // Migrate entities
             migrateEntities(source, tetree, entitiesWithPositions, stats);
-            
+
             // Finalize bulk loading
             tetree.finalizeBulkLoading();
-            
+
             // Log statistics
             var duration = System.currentTimeMillis() - startTime;
             logConversionStats("Octree to Tetree", stats, duration);
-            
+
             return tetree;
         } catch (Exception e) {
             log.error("Error during Octree to Tetree conversion", e);
@@ -94,33 +94,33 @@ public class SpatialIndexConverter {
     public static <ID extends EntityID, Content> Octree<ID, Content> tetreeToOctree(
             Tetree<ID, Content> source, EntityIDGenerator<ID> idGenerator) {
         log.info("Starting Tetree to Octree conversion");
-        
+
         var startTime = System.currentTimeMillis();
         var stats = new ConversionStats();
-        
+
         // Create target Octree with similar configuration
         var targetMaxDepth = source.getMaxDepth();
         var targetMaxEntities = source.getMaxEntitiesPerNode();
         var octree = new Octree<ID, Content>(idGenerator, targetMaxEntities, targetMaxDepth);
-        
+
         // Enable bulk loading for better performance
         octree.enableBulkLoading();
-        
+
         try {
             // Get all entities with their positions
             var entitiesWithPositions = source.getEntitiesWithPositions();
             stats.totalEntities = entitiesWithPositions.size();
-            
+
             // Migrate entities
             migrateEntities(source, octree, entitiesWithPositions, stats);
-            
+
             // Finalize bulk loading
             octree.finalizeBulkLoading();
-            
+
             // Log statistics
             var duration = System.currentTimeMillis() - startTime;
             logConversionStats("Tetree to Octree", stats, duration);
-            
+
             return octree;
         } catch (Exception e) {
             log.error("Error during Tetree to Octree conversion", e);
@@ -140,18 +140,18 @@ public class SpatialIndexConverter {
      * @return The converted spatial index
      */
     public static <ID extends EntityID, Content> Object convertWithProgress(
-            Object source, 
+            Object source,
             SpatialIndexType targetType,
             EntityIDGenerator<ID> idGenerator,
             ProgressCallback progressCallback) {
-        
+
         if (source instanceof Octree<?, ?> && targetType == SpatialIndexType.TETREE) {
             return octreeToTetreeWithProgress((Octree<ID, Content>) source, idGenerator, progressCallback);
         } else if (source instanceof Tetree<?, ?> && targetType == SpatialIndexType.OCTREE) {
             return tetreeToOctreeWithProgress((Tetree<ID, Content>) source, idGenerator, progressCallback);
         } else {
-            throw new IllegalArgumentException("Unsupported conversion: " + 
-                                             source.getClass().getSimpleName() + " to " + targetType);
+            throw new IllegalArgumentException("Unsupported conversion: "
+                                               + source.getClass().getSimpleName() + " to " + targetType);
         }
     }
 
@@ -173,28 +173,28 @@ public class SpatialIndexConverter {
             EntityIDGenerator<ID> idGenerator,
             byte maxDepth,
             int maxEntitiesPerNode) {
-        
-        log.info("Batch converting {} entities from {} to {}", 
-                entities.size(), sourceType, targetType);
-        
+
+        log.info("Batch converting {} entities from {} to {}",
+                 entities.size(), sourceType, targetType);
+
         if (targetType == SpatialIndexType.OCTREE) {
             var octree = new Octree<ID, Content>(idGenerator, maxEntitiesPerNode, maxDepth);
             octree.enableBulkLoading();
-            
+
             for (var entity : entities) {
                 octree.insert(entity.id, entity.position, entity.level, entity.content);
             }
-            
+
             octree.finalizeBulkLoading();
             return octree;
         } else if (targetType == SpatialIndexType.TETREE) {
             var tetree = new Tetree<ID, Content>(idGenerator, maxEntitiesPerNode, maxDepth);
             tetree.enableBulkLoading();
-            
+
             for (var entity : entities) {
                 tetree.insert(entity.id, entity.position, entity.level, entity.content);
             }
-            
+
             tetree.finalizeBulkLoading();
             return tetree;
         } else {
@@ -204,54 +204,82 @@ public class SpatialIndexConverter {
 
     // Private helper methods
 
+    /**
+     * Migrate entities from source to target, preserving all spanning locations.
+     *
+     * <p>Bead Luciferase-7wzml.16: null-content entities are SKIPPED — they are not
+     * inserted into the target and do not increment {@code successfulEntities}.  A separate
+     * {@code skippedEntities} tally is recorded and logged so callers have an honest count.
+     *
+     * <p>Bead Luciferase-7wzml.17: spanning entities (present at multiple levels in the
+     * source) are preserved by calling {@code getEntityLocations} on the source and inserting
+     * the entity at EVERY location key, not just the deepest one.  The first insert creates
+     * the entity in the target's entity manager; subsequent inserts for the same ID add the
+     * additional location keys via {@code createOrUpdate + addEntityLocation} without
+     * duplicating the content or changing the position.
+     */
     private static <ID extends EntityID, Content, Target> void migrateEntities(
             Object source,
             Target target,
             Map<ID, Point3f> entitiesWithPositions,
             ConversionStats stats) {
-        
+
         var processedCount = new AtomicInteger(0);
         // Luciferase-2qpd2: atomic failure counter mirroring processedCount, so the tally is correct even if the
         // iteration is ever parallelized (Map.forEach is sequential today). errors is collected sequentially.
         var failedCount = new AtomicInteger(0);
+        var skippedCount = new AtomicInteger(0);
         var errors = java.util.Collections.synchronizedList(new ArrayList<String>());
 
         entitiesWithPositions.forEach((entityId, position) -> {
             try {
                 // Get entity content from source
                 Content content = null;
-                byte level = 0;
-                
+
                 if (source instanceof Octree<?, ?>) {
                     var octree = (Octree<ID, Content>) source;
                     content = octree.getEntity(entityId);
-                    level = findEntityLevel(octree, entityId, position);
                 } else if (source instanceof Tetree<?, ?>) {
                     var tetree = (Tetree<ID, Content>) source;
                     content = tetree.getEntity(entityId);
-                    level = findEntityLevel(tetree, entityId, position);
                 }
-                
-                // Insert into target
-                if (target instanceof Octree<?, ?>) {
-                    var octree = (Octree<ID, Content>) target;
-                    octree.insert(entityId, position, level, content);
-                } else if (target instanceof Tetree<?, ?>) {
-                    var tetree = (Tetree<ID, Content>) target;
-                    tetree.insert(entityId, position, level, content);
+
+                // Luciferase-7wzml.16: skip null-content entities — do NOT count as success.
+                if (content == null) {
+                    skippedCount.incrementAndGet();
+                    log.warn("Skipping entity {} at {} — content is null (not migrated)", entityId, position);
+                    return;
                 }
-                
+
+                // Luciferase-7wzml.17: preserve spanning — insert at EVERY location key, not just deepest.
+                // getEntityLocations returns all keys (levels) at which the source stores this entity.
+                // For a point entity this is a single key; for a spanning entity it is multiple.
+                final Content finalContent = content;
+                if (source instanceof Octree<?, ?>) {
+                    var octree = (Octree<ID, Content>) source;
+                    insertAtAllLocations(entityId, position, finalContent, octree.getEntityLocations(entityId),
+                                        octree.getMaxDepth(), target);
+                } else if (source instanceof Tetree<?, ?>) {
+                    var tetree = (Tetree<ID, Content>) source;
+                    insertAtAllLocations(entityId, position, finalContent, tetree.getEntityLocations(entityId),
+                                        tetree.getMaxDepth(), target);
+                }
+
                 processedCount.incrementAndGet();
             } catch (Exception e) {
                 failedCount.incrementAndGet();
                 errors.add(String.format("Failed to migrate entity %s: %s",
-                                       entityId, e.getMessage()));
+                                         entityId, e.getMessage()));
             }
         });
 
         stats.successfulEntities = processedCount.get();
         stats.failedEntities = failedCount.get();
-        
+        stats.skippedEntities = skippedCount.get();
+
+        if (skippedCount.get() > 0) {
+            log.warn("Migration skipped {} entities with null content", skippedCount.get());
+        }
         if (!errors.isEmpty()) {
             log.warn("Migration completed with {} errors", errors.size());
             errors.stream().limit(10).forEach(log::warn);
@@ -261,76 +289,88 @@ public class SpatialIndexConverter {
         }
     }
 
-    private static <ID extends EntityID, Content> byte findEntityLevel(
-            Octree<ID, Content> octree, ID entityId, Point3f position) {
-        // Find the level by checking nodes containing the entity
-        var nodes = octree.nodes()
-                         .filter(node -> node.entityIds().contains(entityId))
-                         .toList();
-        
-        if (!nodes.isEmpty()) {
-            // Return the deepest level where entity exists
-            return (byte) nodes.stream()
-                       .mapToInt(node -> node.sfcIndex().getLevel())
-                       .max()
-                       .orElse(0);
+    /**
+     * Insert {@code entityId} into {@code target} at every spatial key in {@code locations}.
+     *
+     * <p>If {@code locations} is empty (entity has no recorded location in source) we fall back
+     * to a single insert at {@code min(3, maxDepth)} to preserve prior behaviour for that
+     * degenerate case.
+     *
+     * <p>The first call to {@code insert(entityId, position, level, content)} creates the
+     * entity record in the target's entity manager; subsequent calls for the same ID reach
+     * {@code createOrUpdateEntity} (no-op for content/position) and then {@code addEntityLocation}
+     * — accumulating the spanning key set without duplicating the entity.
+     */
+    @SuppressWarnings("unchecked")
+    private static <ID extends EntityID, Content, Target> void insertAtAllLocations(
+            ID entityId, Point3f position, Content content,
+            java.util.Set<?> locations, byte maxDepth, Target target) {
+
+        if (locations.isEmpty()) {
+            // Fallback: no recorded locations — single insert at a sensible default level.
+            byte defaultLevel = (byte) Math.min(3, maxDepth);
+            insertIntoTarget(target, entityId, position, defaultLevel, content);
+            return;
         }
-        
-        // Default to a reasonable level based on tree depth
-        return (byte) Math.min(3, octree.getMaxDepth());
+
+        // Insert at every source location key to preserve the full spanning set.
+        for (var rawKey : locations) {
+            byte level = (byte) ((SpatialKey<?>) rawKey).getLevel();
+            insertIntoTarget(target, entityId, position, level, content);
+        }
     }
 
-    private static <ID extends EntityID, Content> byte findEntityLevel(
-            Tetree<ID, Content> tetree, ID entityId, Point3f position) {
-        // Find the level by checking nodes containing the entity
-        var nodes = tetree.nodes()
-                         .filter(node -> node.entityIds().contains(entityId))
-                         .toList();
-        
-        if (!nodes.isEmpty()) {
-            // Return the deepest level where entity exists
-            // Luciferase-2qpd2: call SpatialKey.getLevel() directly (TetreeKey implements it) instead of a reflective
-            // getMethod("getLevel") with a swallowing catch — the reflection silently returned level 0 for every
-            // entity if the method were ever renamed; a direct call makes a rename a compile error.
-            return (byte) nodes.stream()
-                       .mapToInt(node -> node.sfcIndex().getLevel())
-                       .max()
-                       .orElse(0);
+    /** Dispatch insert to the concrete target type. */
+    @SuppressWarnings("unchecked")
+    private static <ID extends EntityID, Content, Target> void insertIntoTarget(
+            Target target, ID entityId, Point3f position, byte level, Content content) {
+        if (target instanceof Octree<?, ?>) {
+            ((Octree<ID, Content>) target).insert(entityId, position, level, content);
+        } else if (target instanceof Tetree<?, ?>) {
+            ((Tetree<ID, Content>) target).insert(entityId, position, level, content);
         }
-        
-        // Default to a reasonable level based on tree depth
-        return (byte) Math.min(3, tetree.getMaxDepth());
     }
 
     private static <ID extends EntityID, Content> Tetree<ID, Content> octreeToTetreeWithProgress(
             Octree<ID, Content> source,
             EntityIDGenerator<ID> idGenerator,
             ProgressCallback callback) {
-        
+
         var tetree = new Tetree<ID, Content>(idGenerator, source.getMaxEntitiesPerNode(), source.getMaxDepth());
         tetree.enableBulkLoading();
-        
+
         var entities = source.getEntitiesWithPositions();
         var total = entities.size();
         var processed = new AtomicInteger(0);
-        
+
         entities.forEach((entityId, position) -> {
             var content = source.getEntity(entityId);
-            var level = findEntityLevel(source, entityId, position);
-            tetree.insert(entityId, position, level, content);
-            
+            if (content == null) {
+                log.warn("Skipping entity {} in progress-conversion — content is null", entityId);
+                return;
+            }
+            var locations = source.getEntityLocations(entityId);
+            if (locations.isEmpty()) {
+                tetree.insert(entityId, position, (byte) Math.min(3, source.getMaxDepth()), content);
+            } else {
+                for (var rawKey : locations) {
+                    byte level = (byte) ((SpatialKey<?>) rawKey).getLevel();
+                    tetree.insert(entityId, position, level, content);
+                }
+            }
+
             var count = processed.incrementAndGet();
             if (callback != null && count % 100 == 0) {
                 callback.onProgress(count, total);
             }
         });
-        
+
         tetree.finalizeBulkLoading();
-        
+
         if (callback != null) {
             callback.onComplete(total);
         }
-        
+
         return tetree;
     }
 
@@ -338,39 +378,53 @@ public class SpatialIndexConverter {
             Tetree<ID, Content> source,
             EntityIDGenerator<ID> idGenerator,
             ProgressCallback callback) {
-        
+
         var octree = new Octree<ID, Content>(idGenerator, source.getMaxEntitiesPerNode(), source.getMaxDepth());
         octree.enableBulkLoading();
-        
+
         var entities = source.getEntitiesWithPositions();
         var total = entities.size();
         var processed = new AtomicInteger(0);
-        
+
         entities.forEach((entityId, position) -> {
             var content = source.getEntity(entityId);
-            var level = findEntityLevel(source, entityId, position);
-            octree.insert(entityId, position, level, content);
-            
+            if (content == null) {
+                log.warn("Skipping entity {} in progress-conversion — content is null", entityId);
+                return;
+            }
+            var locations = source.getEntityLocations(entityId);
+            if (locations.isEmpty()) {
+                octree.insert(entityId, position, (byte) Math.min(3, source.getMaxDepth()), content);
+            } else {
+                for (var rawKey : locations) {
+                    byte level = (byte) ((SpatialKey<?>) rawKey).getLevel();
+                    octree.insert(entityId, position, level, content);
+                }
+            }
+
             var count = processed.incrementAndGet();
             if (callback != null && count % 100 == 0) {
                 callback.onProgress(count, total);
             }
         });
-        
+
         octree.finalizeBulkLoading();
-        
+
         if (callback != null) {
             callback.onComplete(total);
         }
-        
+
         return octree;
     }
 
     private static void logConversionStats(String conversionType, ConversionStats stats, long duration) {
         log.info("{} conversion completed in {}ms", conversionType, duration);
-        log.info("Total entities: {}, Successful: {}, Failed: {}", 
-                stats.totalEntities, stats.successfulEntities, stats.failedEntities);
-        
+        log.info("Total entities: {}, Successful: {}, Skipped (null content): {}, Failed: {}",
+                 stats.totalEntities, stats.successfulEntities, stats.skippedEntities, stats.failedEntities);
+
+        if (stats.skippedEntities > 0) {
+            log.warn("Conversion skipped {} entities with null content", stats.skippedEntities);
+        }
         if (stats.failedEntities > 0) {
             log.warn("Conversion completed with {} failures", stats.failedEntities);
         }
@@ -418,6 +472,8 @@ public class SpatialIndexConverter {
         int totalEntities = 0;
         int successfulEntities = 0;
         int failedEntities = 0;
+        /** Entities skipped because their content was null (Luciferase-7wzml.16). */
+        int skippedEntities = 0;
     }
 
     /**

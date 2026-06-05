@@ -10,6 +10,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 /**
@@ -45,12 +46,13 @@ import java.util.function.Function;
  * @see BarrierRecoveryImpl
  * @see NoOpRecoveryImpl
  */
-public final class CascadingRecoveryImpl implements PartitionRecovery {
+public final class CascadingRecoveryImpl implements PartitionRecovery, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(CascadingRecoveryImpl.class);
     private static final String STRATEGY_NAME = "cascading-recovery";
 
     private volatile boolean simulatedRecoveryEnabled = false;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
     private volatile Clock clock = Clock.system(); // Clock injection (Luciferase-mt7hi)
     /**
      * Per-level outcome predicate (Luciferase-7wzml.11).
@@ -344,8 +346,9 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         return config;
     }
 
+    @Override
     public void close() {
-        if (shutdownExecutorOnClose) {
+        if (closed.compareAndSet(false, true) && shutdownExecutorOnClose) {
             executor.shutdown();
         }
     }
@@ -368,7 +371,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         if (observers.isEmpty()) {
             return;
         }
-        var event = RecoveryEvent.now(partitionId, eventType, details);
+        var event = RecoveryEvent.at(partitionId, eventType, details, clock.currentTimeMillis());
         for (var observer : observers) {
             try {
                 observer.onEvent(event);

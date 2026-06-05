@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.balancing;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +44,12 @@ import java.util.concurrent.atomic.AtomicLong;
 public class RefinementRequestManager {
 
     private static final Logger log = LoggerFactory.getLogger(RefinementRequestManager.class);
+
+    private volatile Clock clock = Clock.system();
+
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     // Request tracking
     private final Map<String, Long> requestTimestamps = new ConcurrentHashMap<>();
@@ -80,7 +87,7 @@ public class RefinementRequestManager {
                  requesterRank, roundNumber, treeLevel, boundaryKeys.size());
 
         return new RefinementRequest<>(requesterRank, 0L, roundNumber, treeLevel, boundaryKeys,
-                                       System.currentTimeMillis());
+                                       clock.currentTimeMillis());
     }
 
     /**
@@ -131,9 +138,10 @@ public class RefinementRequestManager {
         var key = generateResponseKey(response);
         var requestTime = requestTimestamps.get(key);
         if (requestTime != null) {
-            var roundTripTime = System.currentTimeMillis() - requestTime;
+            var now = clock.currentTimeMillis();
+            var roundTripTime = now - requestTime;
             totalRoundTripTime.addAndGet(roundTripTime);
-            responseTimestamps.put(key, System.currentTimeMillis());
+            responseTimestamps.put(key, now);
 
             log.trace("Tracked response: key={}, round-trip={}ms", key, roundTripTime);
         }

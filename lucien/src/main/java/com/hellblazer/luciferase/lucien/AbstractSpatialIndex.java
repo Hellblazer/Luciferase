@@ -180,7 +180,7 @@ implements SpatialIndex<Key, ID, Content>,
         this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
         this.spatialIndex = new ConcurrentSkipListMap<>();
         this.lock = new ReentrantReadWriteLock();
-        this.balancingStrategy = new DefaultBalancingStrategy<>();
+        this.balancingStrategy = new DefaultBalancingStrategy<>(0.25, 0.9, 0.3, 60000, maxEntitiesPerNode);
         this.treeBalancer = createTreeBalancer();
         this.bulkProcessor = new BulkOperationProcessor<>(this);
         this.subdivisionManager = new DeferredSubdivisionManager<>();
@@ -1280,6 +1280,15 @@ implements SpatialIndex<Key, ID, Content>,
             this.balancingStrategy = Objects.requireNonNull(strategy);
         } finally {
             lock.writeLock().unlock();
+        }
+    }
+
+    public TreeBalancingStrategy<ID> getBalancingStrategy() {
+        lock.readLock().lock();
+        try {
+            return balancingStrategy;
+        } finally {
+            lock.readLock().unlock();
         }
     }
 

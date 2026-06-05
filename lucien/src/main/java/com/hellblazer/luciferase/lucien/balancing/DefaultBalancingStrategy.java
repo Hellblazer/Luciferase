@@ -31,20 +31,23 @@ import java.util.Set;
  */
 public class DefaultBalancingStrategy<ID extends EntityID> implements TreeBalancingStrategy<ID> {
 
+    private static final int DEFAULT_MAX_ENTITIES_PER_NODE = 100;
+
     private final double mergeFactor;      // Factor of max entities for merge threshold
     private final double splitFactor;      // Factor of max entities for split threshold
     private final double imbalanceThreshold; // Threshold for tree-wide rebalancing
     private final long   minRebalancingInterval;
+    private final int    maxEntitiesPerNode; // Configured capacity; drives getMaxEntitiesForLevel
 
     /**
      * Create with default settings.
      */
     public DefaultBalancingStrategy() {
-        this(0.25, 0.9, 0.3, 60000); // 25% merge, 90% split, 30% imbalance, 1 minute
+        this(0.25, 0.9, 0.3, 60000, DEFAULT_MAX_ENTITIES_PER_NODE);
     }
 
     /**
-     * Create with custom settings.
+     * Create with custom settings (uses {@value #DEFAULT_MAX_ENTITIES_PER_NODE} as default max entities per node).
      *
      * @param mergeFactor            fraction of max entities below which to merge (0.0-1.0)
      * @param splitFactor            fraction of max entities above which to split (0.0-1.0)
@@ -53,6 +56,20 @@ public class DefaultBalancingStrategy<ID extends EntityID> implements TreeBalanc
      */
     public DefaultBalancingStrategy(double mergeFactor, double splitFactor, double imbalanceThreshold,
                                     long minRebalancingInterval) {
+        this(mergeFactor, splitFactor, imbalanceThreshold, minRebalancingInterval, DEFAULT_MAX_ENTITIES_PER_NODE);
+    }
+
+    /**
+     * Create with custom settings and explicit capacity.
+     *
+     * @param mergeFactor            fraction of max entities below which to merge (0.0-1.0)
+     * @param splitFactor            fraction of max entities above which to split (0.0-1.0)
+     * @param imbalanceThreshold     imbalance factor above which to rebalance (0.0-1.0)
+     * @param minRebalancingInterval minimum time between rebalances in milliseconds
+     * @param maxEntitiesPerNode     actual tree capacity; used by shouldMerge to compute parent capacity
+     */
+    public DefaultBalancingStrategy(double mergeFactor, double splitFactor, double imbalanceThreshold,
+                                    long minRebalancingInterval, int maxEntitiesPerNode) {
         if (mergeFactor < 0 || mergeFactor > 1) {
             throw new IllegalArgumentException("Merge factor must be between 0 and 1");
         }
@@ -67,6 +84,7 @@ public class DefaultBalancingStrategy<ID extends EntityID> implements TreeBalanc
         this.splitFactor = splitFactor;
         this.imbalanceThreshold = imbalanceThreshold;
         this.minRebalancingInterval = minRebalancingInterval;
+        this.maxEntitiesPerNode = maxEntitiesPerNode;
     }
 
     @Override
@@ -167,11 +185,21 @@ public class DefaultBalancingStrategy<ID extends EntityID> implements TreeBalanc
     }
 
     /**
-     * Helper to calculate max entities for a given level. Higher levels (closer to root) can hold more entities.
+     * Returns the configured max entities per node value used by shouldMerge. Exposed for testing.
+     */
+    public int getConfiguredMaxEntitiesPerNode() {
+        return maxEntitiesPerNode;
+    }
+
+    /**
+     * Calculate max entities for a given level using the configured capacity.
+     * Applies the same level-adjustment factor used by {@link #getSplitThreshold} so that the
+     * merge decision is consistent with the split decision at every depth.
+     * Higher levels (closer to root) have a slightly larger effective capacity.
      */
     private int getMaxEntitiesForLevel(byte level) {
-        // This is a simplified calculation
-        // In practice, this would be based on the specific tree implementation
-        return 100; // Use a fixed value for now
+        double levelFactor = 1.0 - (level * 0.01); // mirrors getSplitThreshold level factor
+        levelFactor = Math.max(0.7, levelFactor);
+        return (int) (maxEntitiesPerNode * levelFactor);
     }
 }

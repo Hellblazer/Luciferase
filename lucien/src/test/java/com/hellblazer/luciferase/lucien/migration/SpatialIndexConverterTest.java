@@ -263,6 +263,109 @@ public class SpatialIndexConverterTest {
         assertEquals(size, tetree.entityCount());
     }
 
+    // ---- Bead .16: null-content entity must not inflate processedCount ----
+
+    @Test
+    public void testNullContentEntityNotCountedAsSuccess() {
+        // Build an octree with one real entity, then manually poison a second entity whose
+        // content lookup will return null (simulated via a subclass that returns null for one ID).
+        var idGenerator = new SequentialLongIDGenerator();
+
+        // We cannot easily inject a null from the real Octree API, so we test via batchConvert
+        // with an EntityData carrying null content — the target index receives null content.
+        // The deeper null-content path in migrateEntities is exercised by verifying that
+        // the converter's success counter only counts the non-null entity.
+
+        // Insert one entity with non-null content and one with null content via EntityData batch
+        var goodId = idGenerator.generateID();
+        var nullId = idGenerator.generateID();
+        var entities = new java.util.ArrayList<SpatialIndexConverter.EntityData<LongEntityID, String>>();
+        entities.add(new SpatialIndexConverter.EntityData<>(goodId, new Point3f(10, 10, 10), (byte) 2, "valid"));
+        entities.add(new SpatialIndexConverter.EntityData<>(nullId, new Point3f(20, 20, 20), (byte) 2, null));
+
+        // batchConvert inserts unconditionally — this tests the EntityData path, not migrateEntities.
+        // To test migrateEntities we use a NullContentOctree helper that returns null for one entity.
+        var nullOctree = new NullContentOctree(idGenerator);
+        var realId = nullOctree.insert(new Point3f(50, 50, 50), (byte) 2, "present");
+        var ghostId = nullOctree.insertGhostWithNullContent(new Point3f(80, 80, 80), (byte) 2, idGenerator);
+
+        var tetree = SpatialIndexConverter.octreeToTetree(nullOctree, idGenerator);
+
+        // Only the entity with real content should be in the target
+        assertTrue(tetree.containsEntity(realId), "Real entity must survive conversion");
+        assertFalse(tetree.containsEntity(ghostId), "Null-content entity must NOT appear in target");
+        // Entity count reflects only successful (non-null) migrations
+        assertEquals(1, tetree.entityCount(),
+                     "processedCount / entityCount must equal number of entities with non-null content");
+    }
+
+    /** Octree subclass that can produce a null-content entity for testing .16 */
+    private static class NullContentOctree extends Octree<LongEntityID, String> {
+        private LongEntityID nullContentId;
+
+        NullContentOctree(SequentialLongIDGenerator gen) {
+            super(gen, 5, (byte) 4);
+        }
+
+        /** Insert a position into the tree but record its ID so getEntity returns null. */
+        LongEntityID insertGhostWithNullContent(Point3f pos, byte level, SequentialLongIDGenerator gen) {
+            nullContentId = insert(pos, level, "__SENTINEL__");
+            return nullContentId;
+        }
+
+        @Override
+        public String getEntity(LongEntityID entityId) {
+            if (entityId.equals(nullContentId)) {
+                return null;
+            }
+            return super.getEntity(entityId);
+        }
+    }
+
+    // ---- Bead .17: spanning entity must be preserved at all source levels ----
+
+    @Test
+    public void testSpanningEntityPreservedAcrossConversion() {
+        // Insert the same entity at two different levels (simulating a spanning entity).
+        // getEntityLocations() on the source will return both keys; after conversion the
+        // target must also contain the entity at both levels.
+        var idGenerator = new SequentialLongIDGenerator();
+        var source = new Octree<LongEntityID, String>(idGenerator, 5, (byte) 6);
+
+        // Insert at level 2 first to establish the entity
+        var pos = new Point3f(100, 100, 100);
+        var entityId = source.insert(pos, (byte) 2, "spanning");
+
+        // Add the same entity at a second, deeper level to make it spanning.
+        // AbstractSpatialIndex.insert(ID,pos,level,content) calls createOrUpdate + addLocation,
+        // so the entity accumulates two location keys.
+        source.insert(entityId, pos, (byte) 4, "spanning");
+
+        var sourceLocations = source.getEntityLocations(entityId);
+        assertTrue(sourceLocations.size() >= 2,
+                   "Source must have >= 2 location keys for the spanning entity (got " + sourceLocations.size() + ")");
+
+        var target = SpatialIndexConverter.octreeToTetree(source, idGenerator);
+
+        // Entity must be present in target
+        assertTrue(target.containsEntity(entityId), "Spanning entity must survive conversion");
+
+        // Target must also carry all source levels
+        var targetLocations = target.getEntityLocations(entityId);
+        assertEquals(sourceLocations.size(), targetLocations.size(),
+                     "Target must preserve all spanning levels. source=" + sourceLocations.size()
+                     + " target=" + targetLocations.size());
+
+        // The set of levels must match exactly
+        var sourceLevels = sourceLocations.stream()
+                                          .map(k -> (int) k.getLevel())
+                                          .collect(java.util.stream.Collectors.toSet());
+        var targetLevels = targetLocations.stream()
+                                          .map(k -> (int) k.getLevel())
+                                          .collect(java.util.stream.Collectors.toSet());
+        assertEquals(sourceLevels, targetLevels, "Target spanning levels must match source spanning levels");
+    }
+
     // Helper methods
 
     private Octree<LongEntityID, String> createSampleOctree(SequentialLongIDGenerator idGenerator) {

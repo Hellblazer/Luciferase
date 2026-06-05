@@ -59,33 +59,34 @@ public class SimpleFaultHandler implements FaultHandler {
         volatile FaultMetrics metrics;
         final Set<UUID> failedNodes;
 
-        PartitionState(UUID partitionId) {
+        PartitionState(UUID partitionId, long nowMs) {
             this.partitionId = partitionId;
             this.status = PartitionStatus.HEALTHY;
-            this.lastSeenMs = System.currentTimeMillis(); // TODO(clock-injection bead)
+            this.lastSeenMs = nowMs;
             this.nodeCount = 1;
             this.healthyNodes = 1;
             this.metrics = FaultMetrics.zero();
             this.failedNodes = ConcurrentHashMap.newKeySet();
         }
 
-        synchronized void updateStatus(PartitionStatus newStatus) {
+        synchronized void updateStatus(PartitionStatus newStatus, long nowMs) {
             this.status = newStatus;
-            this.lastSeenMs = System.currentTimeMillis(); // TODO(clock-injection bead)
+            this.lastSeenMs = nowMs;
         }
 
         /**
-         * Atomically escalate fault status: HEALTHY→SUSPECTED or SUSPECTED→FAILED.
+         * Atomically escalate fault status: HEALTHY->SUSPECTED or SUSPECTED->FAILED.
          * Reads and updates status under this object's monitor to close the TOCTOU
          * window where two concurrent callers both observe HEALTHY and both transition
-         * to SUSPECTED (or both skip the SUSPECTED→FAILED step).
+         * to SUSPECTED (or both skip the SUSPECTED->FAILED step).
          *
-         * @param firstStepReason  reason used when HEALTHY→SUSPECTED
-         * @param secondStepReason reason used when SUSPECTED→FAILED
-         * @return a PartitionChangeEvent describing the transition, or {@code null}
+         * @param firstStepReason  reason used when HEALTHY->SUSPECTED
+         * @param secondStepReason reason used when SUSPECTED->FAILED
+         * @param nowMs            current time from the outer handler's injected Clock
+         * @return a PartitionChangeEvent describing the transition, or null
          *         if no transition was needed (status already FAILED)
          */
-        synchronized PartitionChangeEvent escalate(String firstStepReason, String secondStepReason) {
+        synchronized PartitionChangeEvent escalate(String firstStepReason, String secondStepReason, long nowMs) {
             var oldStatus = this.status;
             PartitionStatus newStatus;
             String reason;
@@ -99,7 +100,7 @@ public class SimpleFaultHandler implements FaultHandler {
                 return null; // already FAILED, no further escalation
             }
             this.status = newStatus;
-            this.lastSeenMs = System.currentTimeMillis(); // TODO(clock-injection bead)
+            this.lastSeenMs = nowMs;
             this.metrics = metrics.withIncrementedFailureCount();
             return new PartitionChangeEvent(partitionId, oldStatus, newStatus, this.lastSeenMs, reason);
         }
@@ -107,7 +108,7 @@ public class SimpleFaultHandler implements FaultHandler {
         /**
          * Atomically transition directly to FAILED regardless of current status.
          * Returns a PartitionChangeEvent if the status actually changed, or
-         * {@code null} if the partition was already FAILED.
+         * null if the partition was already FAILED.
          *
          * @param reason description of why the partition was forced to FAILED
          * @param nowMs  current time from the injected Clock (not System.currentTimeMillis())
@@ -286,28 +287,29 @@ public class SimpleFaultHandler implements FaultHandler {
     public void markHealthy(UUID partitionId) {
         Objects.requireNonNull(partitionId, "partitionId must not be null");
 
+        var nowMs = clock.currentTimeMillis();
         // Check if partition exists - throw if unknown
         var state = partitions.get(partitionId);
         if (state == null) {
             // Auto-register on first markHealthy call
-            state = partitions.computeIfAbsent(partitionId, PartitionState::new);
+            state = partitions.computeIfAbsent(partitionId, id -> new PartitionState(id, nowMs));
             notifySubscribers(new PartitionChangeEvent(
                 partitionId,
                 PartitionStatus.HEALTHY,
                 PartitionStatus.HEALTHY,
-                System.currentTimeMillis(),
+                nowMs,
                 "Partition registered as healthy"
             ));
             log.info("Partition {} registered as HEALTHY", partitionId);
         } else {
             var oldStatus = state.status;
             if (oldStatus != PartitionStatus.HEALTHY) {
-                state.updateStatus(PartitionStatus.HEALTHY);
+                state.updateStatus(PartitionStatus.HEALTHY, nowMs);
                 notifySubscribers(new PartitionChangeEvent(
                     partitionId,
                     oldStatus,
                     PartitionStatus.HEALTHY,
-                    System.currentTimeMillis(),
+                    nowMs,
                     "Partition marked healthy"
                 ));
                 log.info("Partition {} transitioned {} -> HEALTHY", partitionId, oldStatus);
@@ -320,39 +322,44 @@ public class SimpleFaultHandler implements FaultHandler {
     @Override
     public void reportBarrierTimeout(UUID partitionId) {
         Objects.requireNonNull(partitionId, "partitionId must not be null");
-        var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
-        applyEscalation(state, "Barrier timeout detected", "Repeated barrier timeout");
+        var nowMs = clock.currentTimeMillis();
+        var state = partitions.computeIfAbsent(partitionId, id -> new PartitionState(id, nowMs));
+        applyEscalation(state, "Barrier timeout detected", "Repeated barrier timeout", nowMs);
     }
 
     @Override
     public void reportSyncFailure(UUID partitionId) {
         Objects.requireNonNull(partitionId, "partitionId must not be null");
-        var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
-        applyEscalation(state, "Ghost sync failure", "Repeated sync failure");
+        var nowMs = clock.currentTimeMillis();
+        var state = partitions.computeIfAbsent(partitionId, id -> new PartitionState(id, nowMs));
+        applyEscalation(state, "Ghost sync failure", "Repeated sync failure", nowMs);
     }
 
     @Override
     public void reportHeartbeatFailure(UUID partitionId, UUID nodeId) {
         Objects.requireNonNull(partitionId, "partitionId must not be null");
         Objects.requireNonNull(nodeId, "nodeId must not be null");
-        var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
+        var nowMs = clock.currentTimeMillis();
+        var state = partitions.computeIfAbsent(partitionId, id -> new PartitionState(id, nowMs));
         state.failedNodes.add(nodeId);
-        applyEscalation(state, "Heartbeat failure for node " + nodeId, "Multiple heartbeat failures");
+        applyEscalation(state, "Heartbeat failure for node " + nodeId, "Multiple heartbeat failures", nowMs);
     }
 
     @Override
     public void reportHeartbeatFailure(UUID partitionId) {
         Objects.requireNonNull(partitionId, "partitionId must not be null");
-        var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
-        // No nodeId added — avoids polluting failedNodes with fabricated UUIDs
-        applyEscalation(state, "Heartbeat timeout for partition", "Multiple heartbeat timeouts");
+        var nowMs = clock.currentTimeMillis();
+        var state = partitions.computeIfAbsent(partitionId, id -> new PartitionState(id, nowMs));
+        // No nodeId added - avoids polluting failedNodes with fabricated UUIDs
+        applyEscalation(state, "Heartbeat timeout for partition", "Multiple heartbeat timeouts", nowMs);
     }
 
     @Override
     public void reportPartitionFailed(UUID partitionId) {
         Objects.requireNonNull(partitionId, "partitionId must not be null");
-        var state = partitions.computeIfAbsent(partitionId, PartitionState::new);
-        var event = state.forceFailed("Definitive partition failure reported", clock.currentTimeMillis());
+        var nowMs = clock.currentTimeMillis();
+        var state = partitions.computeIfAbsent(partitionId, id -> new PartitionState(id, nowMs));
+        var event = state.forceFailed("Definitive partition failure reported", nowMs);
         if (event != null) {
             notifySubscribers(event);
             log.error("Partition {} driven directly to FAILED: {} -> FAILED", partitionId, event.oldStatus());
@@ -399,7 +406,7 @@ public class SimpleFaultHandler implements FaultHandler {
                 partitionId,
                 oldStatus,
                 oldStatus, // TEMP: Keep same status until Phase 4.2
-                System.currentTimeMillis(),
+                clock.currentTimeMillis(),
                 "Recovery initiated"
             ));
 
@@ -424,8 +431,9 @@ public class SimpleFaultHandler implements FaultHandler {
 
         var oldStatus = state.status;
         var newStatus = success ? PartitionStatus.HEALTHY : PartitionStatus.FAILED;
+        var nowMs = clock.currentTimeMillis();
 
-        state.updateStatus(newStatus);
+        state.updateStatus(newStatus, nowMs);
 
         if (success) {
             state.recordRecoverySuccess();
@@ -437,7 +445,7 @@ public class SimpleFaultHandler implements FaultHandler {
             partitionId,
             oldStatus,
             newStatus,
-            System.currentTimeMillis(),
+            nowMs,
             success ? "Recovery completed successfully" : "Recovery failed"
         ));
 
@@ -480,16 +488,17 @@ public class SimpleFaultHandler implements FaultHandler {
     // ===== Internal Helpers =====
 
     /**
-     * Atomically escalate {@code state} by one fault level (HEALTHY→SUSPECTED or
-     * SUSPECTED→FAILED) under {@code state}'s monitor, then notify subscribers and log.
+     * Atomically escalate state by one fault level (HEALTHY->SUSPECTED or
+     * SUSPECTED->FAILED) under state's monitor, then notify subscribers and log.
      * If the state is already FAILED, this is a no-op.
      *
      * @param state             the partition to escalate
-     * @param firstStepReason   reason string for the HEALTHY→SUSPECTED transition
-     * @param secondStepReason  reason string for the SUSPECTED→FAILED transition
+     * @param firstStepReason   reason string for the HEALTHY->SUSPECTED transition
+     * @param secondStepReason  reason string for the SUSPECTED->FAILED transition
+     * @param nowMs             current time from the outer handler's injected Clock
      */
-    private void applyEscalation(PartitionState state, String firstStepReason, String secondStepReason) {
-        var event = state.escalate(firstStepReason, secondStepReason);
+    private void applyEscalation(PartitionState state, String firstStepReason, String secondStepReason, long nowMs) {
+        var event = state.escalate(firstStepReason, secondStepReason, nowMs);
         if (event == null) {
             return; // already FAILED, no further escalation
         }

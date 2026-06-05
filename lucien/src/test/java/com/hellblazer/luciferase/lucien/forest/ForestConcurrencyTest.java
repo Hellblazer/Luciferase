@@ -631,6 +631,126 @@ public class ForestConcurrencyTest {
         });
     }
     
+    /**
+     * Concurrent membership consistency test (Luciferase-7wzml.99).
+     * <p>
+     * The old Forest kept a parallel CopyOnWriteArrayList ({@code trees}) alongside
+     * {@code treeMap}. addTree did {@code trees.add} then {@code treeMap.put} (and removeTree
+     * the reverse). Between those two steps a reader could see a tree in one structure but
+     * not the other — a structural inconsistency. The fix drops the list; getAllTrees() now
+     * derives from {@code treeMap.values()}, so both views always agree.
+     * <p>
+     * This test verifies:
+     * 1. No null-pointer or structural exception occurs during concurrent add/remove + reads.
+     * 2. Every node returned by getAllTrees() has a non-null spatial index (structural integrity).
+     * 3. getTreeCount() never goes negative (accounting never corrupts).
+     * 4. After all mutations, the forest state is self-consistent.
+     *
+     * Note: it is valid for getTree(id) to return null after getAllTrees() returned that id —
+     * a concurrent remove between the two calls is a correct concurrent outcome, not a bug.
+     * The old bug required the list and map to diverge instantaneously, which cannot be tested
+     * directly; we test the absence of crashes and structural invariants instead.
+     */
+    @Test
+    void testConcurrentMembershipConsistency() throws InterruptedException {
+        int numMutators = 4;
+        int numReaders = 4;
+        int mutationsPerThread = 50;
+        int readIterationsPerThread = 200;
+
+        ExecutorService executor = Executors.newFixedThreadPool(numMutators + numReaders);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(numMutators + numReaders);
+        AtomicBoolean structuralErrorDetected = new AtomicBoolean(false);
+        AtomicInteger boundsCounter = new AtomicInteger(1000);
+
+        // Mutator threads: interleave addTree / removeTree
+        for (int t = 0; t < numMutators; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    Random rand = new Random(threadId);
+                    List<String> myIds = new ArrayList<>();
+
+                    for (int op = 0; op < mutationsPerThread; op++) {
+                        if (myIds.isEmpty() || rand.nextBoolean()) {
+                            // add
+                            int x = boundsCounter.getAndIncrement() * 10;
+                            var tree = new Octree<LongEntityID, String>(idGenerator);
+                            var meta = TreeMetadata.builder()
+                                .name("cmt_tree_" + threadId + "_" + op)
+                                .treeType(TreeMetadata.TreeType.OCTREE)
+                                .property("bounds", new EntityBounds(
+                                    new Point3f(x, 0, 0),
+                                    new Point3f(x + 10, 10, 10)
+                                ))
+                                .build();
+                            String id = forest.addTree(tree, meta);
+                            myIds.add(id);
+                        } else {
+                            // remove
+                            String id = myIds.remove(rand.nextInt(myIds.size()));
+                            forest.removeTree(id);
+                        }
+                        Thread.yield();
+                    }
+                } catch (Exception e) {
+                    log.error("Mutator failed", e);
+                    structuralErrorDetected.set(true);
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        // Reader threads: verify structural invariants on every observed snapshot.
+        // Each node returned by getAllTrees() must have a non-null spatial index,
+        // and getTreeCount() must always be >= 0 (no counting corruption).
+        for (int t = 0; t < numReaders; t++) {
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    for (int i = 0; i < readIterationsPerThread; i++) {
+                        // Structural invariant 1: count never negative
+                        int count = forest.getTreeCount();
+                        if (count < 0) {
+                            log.error("STRUCTURAL ERROR: getTreeCount() returned negative: {}", count);
+                            structuralErrorDetected.set(true);
+                        }
+
+                        // Structural invariant 2: every node in the list snapshot is fully initialized
+                        var allTrees = forest.getAllTrees();
+                        for (var node : allTrees) {
+                            if (node.getSpatialIndex() == null) {
+                                log.error("STRUCTURAL ERROR: tree {} has null spatialIndex in getAllTrees() snapshot",
+                                         node.getTreeId());
+                                structuralErrorDetected.set(true);
+                            }
+                        }
+                        Thread.yield();
+                    }
+                } catch (Exception e) {
+                    log.error("Reader failed with exception", e);
+                    structuralErrorDetected.set(true);
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        startLatch.countDown();
+        assertTrue(doneLatch.await(30, TimeUnit.SECONDS), "All threads should finish within 30s");
+        executor.shutdown();
+
+        assertFalse(structuralErrorDetected.get(),
+            "Concurrent reader observed a structural error (null spatial index or negative count)");
+
+        // Final consistency: getTreeCount() == getAllTrees().size() (single source of truth)
+        assertEquals(forest.getTreeCount(), forest.getAllTrees().size(),
+            "getTreeCount() and getAllTrees().size() must agree after all mutations");
+    }
+
     private com.hellblazer.luciferase.lucien.Frustum3D createRandomFrustum(Random rand) {
         // Ensure center is far enough from edges to avoid negative values
         float centerX = 100 + rand.nextFloat() * 200;

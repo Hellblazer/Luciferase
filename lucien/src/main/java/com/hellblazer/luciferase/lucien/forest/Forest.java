@@ -28,7 +28,6 @@ import org.slf4j.LoggerFactory;
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -61,11 +60,13 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     
     private static final Logger log = LoggerFactory.getLogger(Forest.class);
     
-    /** Thread-safe collection of trees in the forest */
-    private final CopyOnWriteArrayList<TreeNode<Key, ID, Content>> trees;
-    
-    /** Map for fast tree lookup by ID */
-    private final Map<String, TreeNode<Key, ID, Content>> treeMap;
+    /**
+     * Single source of truth for all trees: concurrent map keyed by tree ID.
+     * Eliminates the dual-structure (CopyOnWriteArrayList + ConcurrentHashMap) that
+     * previously allowed readers to observe a tree in one structure but not the other
+     * between addTree/removeTree's two non-atomic mutation steps (Luciferase-7wzml.99).
+     */
+    private final ConcurrentHashMap<String, TreeNode<Key, ID, Content>> treeMap;
     
     /** Tree ID generator */
     private final AtomicInteger treeIdGenerator;
@@ -86,7 +87,6 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      */
     public Forest(ForestConfig config) {
         this.config = Objects.requireNonNull(config, "Forest config cannot be null");
-        this.trees = new CopyOnWriteArrayList<>();
         this.treeMap = new ConcurrentHashMap<>();
         this.treeIdGenerator = new AtomicInteger(0);
         this.forestMetadata = new ConcurrentHashMap<>();
@@ -118,8 +118,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
             treeNode.setMetadata("metadata", metadata);
         }
         
-        // Add to collections
-        trees.add(treeNode);
+        // Single atomic publication via treeMap; no dual-structure inconsistency window.
         treeMap.put(treeId, treeNode);
         
         // Update statistics
@@ -151,8 +150,8 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     public boolean removeTree(String treeId) {
         var treeNode = treeMap.remove(treeId);
         if (treeNode != null) {
-            trees.remove(treeNode);
-            
+            // treeMap.remove is the single atomic retraction; no dual-structure step needed.
+
             // Update neighbor relationships
             for (var neighbor : treeNode.getNeighbors()) {
                 var neighborNode = treeMap.get(neighbor);
@@ -184,7 +183,9 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      * @return unmodifiable list of all trees
      */
     public List<TreeNode<Key, ID, Content>> getAllTrees() {
-        return Collections.unmodifiableList(new ArrayList<>(trees));
+        return treeMap.values().stream()
+                      .sorted(Comparator.comparing(TreeNode::getTreeId))
+                      .collect(Collectors.toUnmodifiableList());
     }
     
     /**
@@ -193,7 +194,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      * @return the tree count
      */
     public int getTreeCount() {
-        return trees.size();
+        return treeMap.size();
     }
     
     /**
@@ -230,7 +231,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
         var results = new ArrayList<ID>();
         var seen = new HashSet<ID>();
 
-        for (var tree : trees) {
+        for (var tree : treeMap.values()) {
             var spatialIndex = tree.getSpatialIndex();
             var bounds = tree.getGlobalBounds();
 
@@ -308,7 +309,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
         // Collect candidates from all trees
         var candidates = new ArrayList<EntityDistance<ID>>();
         
-        for (var tree : trees) {
+        for (var tree : treeMap.values()) {
             var spatialIndex = tree.getSpatialIndex();
             var neighbors = spatialIndex.kNearestNeighbors(point, k, Float.MAX_VALUE);
             
@@ -337,7 +338,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      * @return stream of trees that potentially contain relevant data
      */
     public Stream<TreeNode<Key, ID, Content>> routeQuery(EntityBounds queryBounds) {
-        return trees.stream()
+        return treeMap.values().stream()
             .filter(tree -> {
                 var treeBounds = tree.getGlobalBounds();
                 return treeBounds != null && boundsOverlap(queryBounds, treeBounds);
@@ -401,8 +402,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      * implementation (Octree, Tetree, etc.) during subsequent balance operations. This method
      * prepares the forest state for refinement by marking affected trees.
      *
-     * <p>Thread Safety: This method is thread-safe. It iterates over trees using the
-     * CopyOnWriteArrayList without locking, and forest metadata updates are atomic.
+     * <p>Thread Safety: This method is thread-safe. It iterates over trees via treeMap.values(), which is always consistent with the map.
      *
      * @param key the spatial key to refine - trees containing this key will be marked
      * @return true if refinement was applied (key found in at least one tree), false otherwise
@@ -415,7 +415,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
         var refined = false;
 
         // Search all trees for the specified spatial key
-        for (var tree : trees) {
+        for (var tree : treeMap.values()) {
             var spatialIndex = tree.getSpatialIndex();
 
             // Check if this tree's spatial index contains the key
@@ -433,7 +433,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
             // Update statistics after marking trees for refinement
             refreshAllStatistics();
             log.info("Forest refinement applied for key {}: {} tree(s) updated",
-                    key, trees.size());
+                    key, treeMap.size());
         }
 
         return refined;
@@ -443,7 +443,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      * Refresh statistics for all trees.
      */
     public void refreshAllStatistics() {
-        for (var tree : trees) {
+        for (var tree : treeMap.values()) {
             tree.refreshStatistics();
         }
         updateTotalEntityCount();
@@ -456,7 +456,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      */
     public Map<String, Object> getForestStatistics() {
         var stats = new HashMap<String, Object>();
-        stats.put("treeCount", trees.size());
+        stats.put("treeCount", treeMap.size());
         stats.put("totalEntityCount", totalEntityCount.get());
         stats.put("configuration", config.toString());
         
@@ -464,15 +464,15 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
         var totalNodes = 0L;
         var maxDepth = 0;
         
-        for (var tree : trees) {
+        for (var tree : treeMap.values()) {
             totalNodes += tree.getNodeCount();
             maxDepth = Math.max(maxDepth, tree.getMaxDepth());
         }
         
         stats.put("totalNodeCount", totalNodes);
         stats.put("maxTreeDepth", maxDepth);
-        stats.put("averageEntitiesPerTree", trees.isEmpty() ? 0 : 
-            totalEntityCount.get() / (double) trees.size());
+        stats.put("averageEntitiesPerTree", treeMap.isEmpty() ? 0 : 
+            totalEntityCount.get() / (double) treeMap.size());
         
         return stats;
     }
@@ -559,7 +559,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     }
     
     private void updateTotalEntityCount() {
-        var count = trees.stream()
+        var count = treeMap.values().stream()
             .mapToInt(TreeNode::getEntityCount)
             .sum();
         totalEntityCount.set(count);
@@ -597,7 +597,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     @Override
     public String toString() {
         return String.format("Forest[trees=%d, entities=%d, config=%s]",
-                           trees.size(), totalEntityCount.get(), config);
+                           treeMap.size(), totalEntityCount.get(), config);
     }
     
     /**

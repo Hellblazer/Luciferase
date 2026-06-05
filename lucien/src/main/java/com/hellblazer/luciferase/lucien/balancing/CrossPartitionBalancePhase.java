@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.balancing;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
@@ -63,6 +64,8 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     private final RefinementExchange<Key, ID, Content> exchange;
     private final ParallelBalancer.PartitionRegistry registry;
     private final BalanceConfiguration config;
+
+    private volatile Clock clock = Clock.system();
 
     // Forest context for violation detection and ghost element application
     private volatile Forest<Key, ID, Content> forest;
@@ -129,6 +132,15 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
     }
 
     /**
+     * Inject a clock for deterministic testing (Clock-injection mandate, Luciferase-mt7hi).
+     *
+     * @param clock the clock to use (must not be null)
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock cannot be null");
+    }
+
+    /**
      * Execute O(log P) refinement rounds for cross-partition balance.
      *
      * <p>The algorithm performs ceil(log₂(P)) rounds where P is the total partition count,
@@ -156,7 +168,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         // discard the response->ghostLayer application that executeRefinementRound performs).
 
         var metrics = new BalanceMetrics();
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
 
         try {
             // Luciferase-uhsn (B10b — D2): iterate until a global Allreduce-LAND reports EVERY partition is locally
@@ -202,7 +214,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                 }
             }
 
-            var elapsed = System.currentTimeMillis() - startTime;
+            var elapsed = clock.currentTimeMillis() - startTime;
             log.info("Cross-partition balance complete: refinements={}, converged={}, time={}ms",
                     totalRefinements, converged, elapsed);
 
@@ -232,14 +244,14 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
      */
     private RefinementRoundResult executeRefinementRound(int roundNumber) {
         log.debug("Executing refinement round {}", roundNumber);
-        var startTime = System.nanoTime();
+        var startTime = clock.nanoTime();
 
         try {
             // No forest context => nothing to detect; the partition is trivially locally balanced
             // (t8_forest_balance's done=1). No vacuous request is synthesized (Luciferase-uhsn).
             if (balanceChecker == null || forest == null || ghostLayer == null) {
                 log.warn("Forest context not set; round {} has no violations to process", roundNumber);
-                var elapsed0 = Math.max(1L, (System.nanoTime() - startTime) / 1_000_000L);
+                var elapsed0 = Math.max(1L, (clock.nanoTime() - startTime) / 1_000_000L);
                 return new RefinementRoundResult(0, true, elapsed0);
             }
 
@@ -257,7 +269,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
             // local-coarser -> the checker's local refinement queue for m27q/B10c) and yields one request per remote
             // rank. Overwrite the placeholder roundNumber with the actual round (D1; 0 collides with the butterfly
             // sentinel and must never reach the wire).
-            var ts = System.currentTimeMillis();
+            var ts = clock.currentTimeMillis();
             var localRank = registry.getCurrentPartitionId();
             var byRank = violations.stream()
                 .collect(Collectors.groupingBy(TwoOneBalanceChecker.BalanceViolation::sourceRank));
@@ -304,7 +316,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                      roundNumber, violations.size(), requestsByRank.size(), responses.size(), localSubdivides,
                      locallyBalanced);
 
-            var elapsedMs = Math.max(1L, (System.nanoTime() - startTime) / 1_000_000L);
+            var elapsedMs = Math.max(1L, (clock.nanoTime() - startTime) / 1_000_000L);
             // refinementsApplied counts ACTUAL local subdivisions this round (review MEDIUM-1) — not the violation
             // count — so totalRefinements / converged() reflect work done, and a round that drains keys but cannot
             // subdivide any of them (see applyLocalRefinements warn) is distinguishable from real progress.
@@ -312,7 +324,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
 
         } catch (Exception e) {
             log.error("Error in refinement round {}", roundNumber, e);
-            var elapsedMs = Math.max(1L, (System.nanoTime() - startTime) / 1_000_000L);
+            var elapsedMs = Math.max(1L, (clock.nanoTime() - startTime) / 1_000_000L);
             // On error, do not claim convergence — let the loop continue up to maxRounds.
             return new RefinementRoundResult(0, false, elapsedMs);
         }
@@ -391,7 +403,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         TwoOneBalanceChecker<Key, ID, Content> balanceChecker,
         RefinementRequestSender<Key, ID, Content> sender
     ) throws java.util.concurrent.TimeoutException, InterruptedException {
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
 
         // Step 1: Identify violations using balanceChecker
         var violations = balanceChecker.findViolations(ghostLayer, forest);
@@ -400,7 +412,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
 
         // Return empty result if no violations
         if (violations.isEmpty()) {
-            var elapsed = System.currentTimeMillis() - startTime;
+            var elapsed = clock.currentTimeMillis() - startTime;
             return new RefinementCoordinator.RoundResult(
                 roundNumber,
                 0,  // refinementsApplied
@@ -442,7 +454,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
                 roundNumber,
                 maxLevel,
                 boundaryKeys,
-                System.currentTimeMillis()
+                clock.currentTimeMillis()
             );
 
             requests.add(request);
@@ -475,7 +487,7 @@ public class CrossPartitionBalancePhase<Key extends SpatialKey<Key>, ID extends 
         // Step 6: Build RoundResult
         var refinementsApplied = violations.size();
         var needsMoreRefinement = roundNumber < targetRounds;
-        var elapsed = System.currentTimeMillis() - startTime;
+        var elapsed = clock.currentTimeMillis() - startTime;
 
         log.info("Round {}: Processed {} violations, {} responses, time={}ms",
                 roundNumber, refinementsApplied, responses.size(), elapsed);

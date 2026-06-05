@@ -39,12 +39,28 @@ public record RecoveryEvent(
     }
 
     /**
-     * Create event with current timestamp.
+     * Create event with an explicit timestamp (clock-injectable, Luciferase-7wzml.103).
      *
      * @param partitionId partition undergoing recovery
      * @param eventType type of event
      * @param details event details
-     * @return RecoveryEvent with current timestamp
+     * @param timestampMs explicit timestamp in ms (e.g. from injected Clock)
+     * @return RecoveryEvent with the given timestamp
+     */
+    public static RecoveryEvent at(UUID partitionId, RecoveryEventType eventType, String details, long timestampMs) {
+        return new RecoveryEvent(partitionId, eventType, details, timestampMs);
+    }
+
+    /**
+     * Create event with current wall-clock timestamp.
+     * <p>
+     * Prefer {@link #at(UUID, RecoveryEventType, String, long)} when a {@link com.hellblazer.luciferase.common.time.Clock}
+     * is available so that tests can control event timestamps deterministically.
+     *
+     * @param partitionId partition undergoing recovery
+     * @param eventType type of event
+     * @param details event details
+     * @return RecoveryEvent with current system timestamp
      */
     public static RecoveryEvent now(UUID partitionId, RecoveryEventType eventType, String details) {
         return new RecoveryEvent(partitionId, eventType, details, System.currentTimeMillis());

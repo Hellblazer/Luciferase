@@ -6,9 +6,12 @@
 package com.hellblazer.luciferase.lucien.balancing.fault;
 
 import com.hellblazer.luciferase.lucien.balancing.fault.test.MockFaultHandler;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -198,5 +201,100 @@ class CascadingRecoveryExecutorTest {
         assertTrue(result.statusMessage().contains("barrier") || result.statusMessage().contains("Level 1"),
                    "must succeed at Level 1: " + result.statusMessage());
         assertEquals(1, handler.getCallCount("markHealthy"), "markHealthy called exactly once");
+    }
+
+    // ── Luciferase-7wzml.102: AutoCloseable + idempotent close ──────────────
+
+    /**
+     * CascadingRecoveryImpl is AutoCloseable and try-with-resources compiles (Luciferase-7wzml.102).
+     * After close(), executor is shut down; a second close() is a no-op (idempotent).
+     */
+    @Test
+    void autoCloseableAndIdempotentClose() {
+        var config = FaultConfiguration.defaultConfig();
+        CascadingRecoveryImpl recovery;
+        try (var r = new CascadingRecoveryImpl(config)) {
+            recovery = r;
+            // executor is alive inside the block
+            assertFalse(r.executor().isShutdown(), "executor must be alive before close");
+        }
+        // try-with-resources called close() — executor must be shut down
+        assertTrue(recovery.executor().isShutdown(), "executor must be shut down after close");
+
+        // second close() must be a no-op (no exception, no double-shutdown)
+        assertDoesNotThrow(recovery::close, "second close() must not throw (idempotent)");
+        assertTrue(recovery.executor().isShutdown(), "executor must still be shut down after second close");
+    }
+
+    /**
+     * When shutdownExecutorOnClose=false the caller owns the executor; close() must not shut it down
+     * (still idempotent, Luciferase-7wzml.102).
+     */
+    @Test
+    void closeDoesNotShutDownExternalExecutor() {
+        var config = FaultConfiguration.defaultConfig();
+        var externalExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var recovery = new CascadingRecoveryImpl(config, externalExecutor, false);
+            recovery.close();
+            recovery.close(); // idempotent
+            assertFalse(externalExecutor.isShutdown(),
+                        "external executor must NOT be shut down when shutdownExecutorOnClose=false");
+        } finally {
+            externalExecutor.shutdown();
+        }
+    }
+
+    // ── Luciferase-7wzml.103: clock injection into RecoveryEvent timestamps ──
+
+    /**
+     * RecoveryEvent timestamps produced by notifyEvent must come from the injected clock,
+     * NOT System.currentTimeMillis() (Luciferase-7wzml.103).
+     */
+    @Test
+    void recoveryEventTimestampUsesInjectedClock() throws Exception {
+        var partitionId = UUID.randomUUID();
+        var config = FaultConfiguration.defaultConfig().withMaxRetries(1);
+        var handler = new MockFaultHandler(config);
+        handler.injectStatusChange(partitionId, PartitionStatus.SUSPECTED);
+
+        long fixedTime = 1_000_000L;
+        var testClock = new TestClock(fixedTime);
+
+        List<RecoveryEvent> capturedEvents = new ArrayList<>();
+        RecoveryProgressObserver observer = new RecoveryProgressObserver() {
+            @Override
+            public void onProgress(RecoveryProgress progress) { /* not under test */ }
+
+            @Override
+            public void onEvent(RecoveryEvent event) {
+                capturedEvents.add(event);
+            }
+        };
+
+        var recovery = new CascadingRecoveryImpl(config)
+            .enableSimulatedRecovery()
+            .setClock(testClock);
+        recovery.addObserver(observer);
+
+        recovery.recover(partitionId, handler).get(10, TimeUnit.SECONDS);
+
+        assertFalse(capturedEvents.isEmpty(), "at least one RecoveryEvent must be emitted");
+        for (var event : capturedEvents) {
+            assertEquals(fixedTime, event.timestamp(),
+                         "RecoveryEvent.timestamp() must equal the injected clock time, not System.currentTimeMillis(). "
+                         + "Event: " + event.eventType());
+        }
+    }
+
+    /**
+     * RecoveryEvent.at() factory creates an event with the supplied explicit timestamp (Luciferase-7wzml.103).
+     */
+    @Test
+    void recoveryEventAtFactoryUsesExplicitTimestamp() {
+        var partitionId = UUID.randomUUID();
+        long explicitTs = 42_000L;
+        var event = RecoveryEvent.at(partitionId, RecoveryEventType.RECOVERY_STARTED, "test", explicitTs);
+        assertEquals(explicitTs, event.timestamp(), "RecoveryEvent.at() must preserve the explicit timestamp");
     }
 }

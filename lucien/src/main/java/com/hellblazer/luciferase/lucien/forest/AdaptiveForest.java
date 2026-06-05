@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.forest;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
@@ -178,11 +179,12 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         final AtomicInteger entityCount = new AtomicInteger(0);
         final AtomicReference<Float> density = new AtomicReference<>(0.0f);
         final ConcurrentHashMap<ID, Point3f> entityPositions = new ConcurrentHashMap<>();
-        volatile long lastUpdateTime = System.currentTimeMillis();
+        volatile long lastUpdateTime;
 
-        DensityRegion(String treeId, EntityBounds bounds) {
+        DensityRegion(String treeId, EntityBounds bounds, Clock clock) {
             this.treeId = treeId;
             this.bounds = bounds;
+            this.lastUpdateTime = clock.currentTimeMillis();
         }
 
         void updateDensity() {
@@ -213,6 +215,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
     private final AtomicInteger subdivisionCount;
     private final AtomicInteger mergeCount;
     private volatile boolean adaptationEnabled = true;
+    private volatile Clock clock = Clock.system();
 
     // Phase 3: Event system
     private final String forestId;
@@ -329,7 +332,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         if (eventBounds == null && node != null && node.getGlobalBounds() != null) {
             eventBounds = new CubicBounds(node.getGlobalBounds());
         }
-        emitEvent(new ForestEvent.TreeAdded(System.currentTimeMillis(), forestId, treeId, eventBounds,
+        emitEvent(new ForestEvent.TreeAdded(clock.currentTimeMillis(), forestId, treeId, eventBounds,
                                             RegionShape.of(spatialIndex), null));
         return treeId;
     }
@@ -372,7 +375,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
                 }
             }
 
-            var region = new DensityRegion<ID>(treeId, bounds);
+            var region = new DensityRegion<ID>(treeId, bounds, clock);
             densityRegions.put(treeId, region);
         }
 
@@ -387,7 +390,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             // clear the tree's server assignment on TreeRemoved — without this emission handleTreeRemoved
             // is dead code and a standalone removeTree leaks the assignment. mergeTrees deliberately uses
             // removeTreeInternal (no emit) so a merge announces source removal exactly once via TreesMerged.
-            emitEvent(new ForestEvent.TreeRemoved(System.currentTimeMillis(), forestId, treeId));
+            emitEvent(new ForestEvent.TreeRemoved(clock.currentTimeMillis(), forestId, treeId));
         }
         return removed;
     }
@@ -674,7 +677,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             .collect(Collectors.toList());
 
         emitEvent(new ForestEvent.TreeSubdivided(
-            System.currentTimeMillis(),
+            clock.currentTimeMillis(),
             forestId,
             parent.getTreeId(),
             childIds,
@@ -1042,7 +1045,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
                      TreeMetadata.TreeType.TETREE : TreeMetadata.TreeType.OCTREE)
             .property("parentId", parentTree.getTreeId())
             .property("childIndex", childIndex)
-            .property("subdivisionTime", System.currentTimeMillis())
+            .property("subdivisionTime", clock.currentTimeMillis())
             .build();
 
         // Add to forest
@@ -1061,7 +1064,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
 
         // Emit TreeAdded event
         emitEvent(new ForestEvent.TreeAdded(
-            System.currentTimeMillis(),
+            clock.currentTimeMillis(),
             forestId,
             childId,
             bounds,
@@ -1366,7 +1369,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
                      ((TreeMetadata)parentMetadata).getTreeType() : TreeMetadata.TreeType.OCTREE)
             .property("parentId", parentTree.getTreeId())
             .property("childIndex", childIndex)
-            .property("subdivisionTime", System.currentTimeMillis())
+            .property("subdivisionTime", clock.currentTimeMillis())
             .build();
         
         // Add to forest
@@ -1382,7 +1385,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
 
         // Emit TreeAdded event
         emitEvent(new ForestEvent.TreeAdded(
-            System.currentTimeMillis(),
+            clock.currentTimeMillis(),
             forestId,
             childId,
             cubicBounds,
@@ -1534,7 +1537,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
             .treeType(tree1.getSpatialIndex() instanceof Octree ? 
                      TreeMetadata.TreeType.OCTREE : TreeMetadata.TreeType.TETREE)
             .property("mergedFrom", Arrays.asList(tree1.getTreeId(), tree2.getTreeId()))
-            .property("mergeTime", System.currentTimeMillis())
+            .property("mergeTime", clock.currentTimeMillis())
             .build();
         
         var mergedId = addTreeInternal(mergedIndex, mergedMetadata);
@@ -1550,7 +1553,7 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         // (ForestToTumblerBridge) clear the source assignments and assign the merged tree on this event —
         // without it, handleTreesMerged is dead code and source server assignments leak. Emitted BEFORE
         // removeTree so the source trees are still reachable (getTree) for any listener that inspects them.
-        emitEvent(new ForestEvent.TreesMerged(System.currentTimeMillis(), forestId,
+        emitEvent(new ForestEvent.TreesMerged(clock.currentTimeMillis(), forestId,
                                               Arrays.asList(tree1.getTreeId(), tree2.getTreeId()), mergedId));
 
         // Remove original trees WITHOUT emitting TreeRemoved — the TreesMerged event above is the single
@@ -1616,6 +1619,13 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
     public void setAdaptationEnabled(boolean enabled) {
         this.adaptationEnabled = enabled;
         log.info("Adaptation {} for forest", enabled ? "enabled" : "disabled");
+    }
+
+    /**
+     * Inject a clock for deterministic time control in tests.
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock);
     }
     
     /**
