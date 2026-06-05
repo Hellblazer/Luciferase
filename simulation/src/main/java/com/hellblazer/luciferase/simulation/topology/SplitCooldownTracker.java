@@ -183,14 +183,31 @@ public class SplitCooldownTracker {
     /**
      * Gets the number of bubbles currently on cooldown.
      * <p>
+     * Counts entries whose cooldown deadline has not yet passed. This method is
+     * purely observational and does not mutate the map; concurrent
+     * {@link #recordFailure} / {@link #recordSuccess} calls are not obstructed.
+     * Expired entries are lazily removed by subsequent {@link #isOnCooldown}
+     * calls or an explicit {@link #pruneExpired()} call.
+     * <p>
      * Useful for monitoring and metrics.
      *
-     * @return number of bubbles on cooldown
+     * @return number of bubbles currently on cooldown
      */
     public int getActiveCooldownCount() {
-        // Clean up expired cooldowns before counting
+        var now = clock.currentTimeMillis();
+        return (int) splitCooldowns.values().stream().filter(until -> until > now).count();
+    }
+
+    /**
+     * Removes expired cooldown entries from the map.
+     * <p>
+     * Call periodically to reclaim memory when many bubbles cycle through
+     * failures and recoveries. Not required for correctness — expired entries
+     * are ignored by {@link #isOnCooldown} — but useful for long-running
+     * deployments with high bubble turnover.
+     */
+    public void pruneExpired() {
         var now = clock.currentTimeMillis();
         splitCooldowns.entrySet().removeIf(entry -> now >= entry.getValue());
-        return splitCooldowns.size();
     }
 }

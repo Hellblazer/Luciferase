@@ -26,14 +26,18 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
  */
 class ESVTChildOrderShaderParityTest {
 
-    /** The CHILD_ORDER[6][4][4] literal currently in shaders/raycast_esvt.comp (kept in sync by this test). */
+    /**
+     * The CHILD_ORDER[6][4][4] literal currently in shaders/raycast_esvt.comp (kept in sync by this test).
+     * Regenerated after Luciferase-7wzml.171 fix: CHILD_CENTROIDS now derives centroids via correct
+     * Morton→Bey mapping (INDEX_TO_BEY_NUMBER) rather than treating Morton indices as Bey indices.
+     */
     private static final int[][][] SHADER_CHILD_ORDER = {
-        { { 7, 5, 1, 4 }, { 6, 7, 4, 0 }, { 1, 7, 0, 2 }, { 4, 1, 0, 3 } }, // Type 0
-        { { 7, 5, 1, 4 }, { 6, 0, 7, 5 }, { 7, 3, 0, 1 }, { 5, 2, 1, 0 } }, // Type 1
-        { { 7, 3, 5, 4 }, { 6, 7, 4, 0 }, { 1, 7, 0, 3 }, { 4, 0, 2, 3 } }, // Type 2
-        { { 7, 5, 1, 6 }, { 6, 4, 0, 7 }, { 7, 3, 0, 1 }, { 6, 2, 1, 0 } }, // Type 3
-        { { 7, 6, 3, 5 }, { 7, 4, 5, 0 }, { 1, 7, 0, 3 }, { 5, 0, 2, 3 } }, // Type 4
-        { { 7, 5, 6, 3 }, { 6, 4, 0, 7 }, { 7, 3, 0, 2 }, { 6, 1, 3, 0 } }  // Type 5
+        { { 5, 4, 7, 1 }, { 6, 4, 7, 0 }, { 2, 1, 0, 7 }, { 3, 1, 0, 4 } }, // Type 0
+        { { 4, 5, 1, 7 }, { 6, 7, 0, 5 }, { 3, 7, 0, 1 }, { 2, 5, 1, 0 } }, // Type 1
+        { { 5, 4, 7, 3 }, { 6, 4, 7, 0 }, { 1, 3, 0, 7 }, { 2, 3, 0, 4 } }, // Type 2
+        { { 5, 6, 1, 7 }, { 4, 7, 0, 6 }, { 3, 7, 0, 1 }, { 2, 6, 1, 0 } }, // Type 3
+        { { 6, 5, 7, 3 }, { 4, 5, 7, 0 }, { 1, 3, 0, 7 }, { 2, 3, 0, 5 } }, // Type 4
+        { { 5, 6, 3, 7 }, { 4, 7, 0, 6 }, { 2, 7, 0, 3 }, { 1, 6, 3, 0 } }  // Type 5
     };
 
     @Test

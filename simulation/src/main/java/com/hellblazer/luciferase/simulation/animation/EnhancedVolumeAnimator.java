@@ -87,13 +87,27 @@ public class EnhancedVolumeAnimator {
      * Get all animated entities (owned + ghosts).
      * <p>
      * Combines:
-     * - Owned entities from bubble's spatial index
-     * - Ghost entities from GhostStateManager
+     * <ul>
+     *   <li>Owned entities from bubble's spatial index</li>
+     *   <li>Ghost entities from GhostStateManager</li>
+     * </ul>
      * <p>
      * This method creates a new collection on each call, ensuring thread-safe access
      * without blocking the animation loop.
+     * <p>
+     * <b>Consistency note (Luciferase-7wzml.193):</b> The ghost snapshot and each
+     * ghost's position are fetched in two separate reads against a concurrently-mutated
+     * {@code ConcurrentHashMap}. This means the returned collection is a
+     * <em>best-effort, non-atomic view</em>: it reflects ghost membership and positions
+     * at slightly different instants. A ghost evicted between the membership snapshot
+     * and its position lookup yields a {@code null} position, which is silently skipped
+     * (see guard at the per-ghost loop body below), so no {@code NullPointerException}
+     * can occur. Callers that require a consistent snapshot of a single instant should
+     * use a dedicated {@code GhostStateManager.getActiveGhostsAt(time)} API that
+     * returns id+position pairs atomically; that API does not currently exist and is
+     * deferred until a caller demonstrates the atomicity requirement.
      *
-     * @return Collection of all entities to animate (owned + ghosts)
+     * @return best-effort collection of all entities to animate (owned + ghosts)
      */
     public Collection<AnimatedEntity> getAnimatedEntities() {
         var result = new ArrayList<AnimatedEntity>();

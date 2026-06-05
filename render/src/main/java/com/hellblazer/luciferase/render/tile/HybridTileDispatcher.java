@@ -26,17 +26,28 @@ import java.util.List;
 /**
  * Hybrid tile dispatcher with 3-way decision: GPU batch, GPU single, or CPU.
  *
- * <p>Extends tile-based dispatch with optimal work distribution between CPU and GPU
- * based on tile coherence and GPU saturation levels.
- *
- * <p>Decision thresholds:
+ * <p>Partitions frame tiles across three execution paths based on per-tile coherence
+ * and GPU saturation:
  * <ul>
  *   <li>Coherence &gt;= 0.7: GPU batch (SIMD factor 4)</li>
- *   <li>Coherence 0.3-0.7: GPU single-ray</li>
+ *   <li>Coherence 0.3–0.7: GPU single-ray</li>
  *   <li>Coherence &lt; 0.3 OR GPU saturated: CPU traversal</li>
  * </ul>
  *
- * <p>When GPU saturation exceeds 0.8, dispatcher shifts more work to CPU
+ * <p><b>Execution model — sequential partitioning, not concurrent overlap.</b>
+ * All GPU-batch tiles execute first, then GPU-single tiles, then CPU tiles.
+ * The "hybrid" name refers to <em>partitioning work</em> across three paths to match
+ * each tile to the most efficient executor, not to simultaneous CPU/GPU execution.
+ * The reported {@link HybridDispatchMetrics#gpuTimeNs()} and
+ * {@link HybridDispatchMetrics#cpuTimeNs()} are sequential wall-clock spans;
+ * they do not imply concurrent utilization.
+ *
+ * <p>True concurrent GPU/CPU overlap would require the GPU executor to enqueue
+ * work asynchronously (non-blocking submit) so that the CPU phase can proceed
+ * in parallel while the GPU executes. The {@link HybridKernelExecutor} interface
+ * is currently synchronous, so concurrent overlap is deferred to a future enhancement.
+ *
+ * <p>When GPU saturation exceeds 0.8, the dispatcher shifts more work to CPU
  * regardless of coherence to maintain throughput.
  *
  * @see HybridKernelExecutor
@@ -135,14 +146,21 @@ public class HybridTileDispatcher {
     }
 
     /**
-     * Dispatches frame using hybrid CPU/GPU execution.
+     * Dispatches frame using 3-way sequential tile partitioning.
+     *
+     * <p>Execution order: GPU-batch tiles → GPU-single tiles → CPU tiles.
+     * All three phases execute sequentially on the calling thread.
+     * The returned {@link HybridDispatchMetrics#gpuTimeNs()} and
+     * {@link HybridDispatchMetrics#cpuTimeNs()} are sequential wall-clock spans
+     * (measured with {@code System.nanoTime()}); they represent time spent in each
+     * phase, not concurrent utilization.
      *
      * @param rays        global ray array
      * @param frameWidth  frame width in pixels
      * @param frameHeight frame height in pixels
      * @param dag         DAG data for traversal
      * @param executor    hybrid kernel executor
-     * @return hybrid dispatch metrics
+     * @return hybrid dispatch metrics with sequential timing spans
      */
     public HybridDispatchMetrics dispatchFrame(Ray[] rays, int frameWidth, int frameHeight,
                                                 DAGOctreeData dag, HybridKernelExecutor executor) {
@@ -190,7 +208,8 @@ public class HybridTileDispatcher {
             }
         }
 
-        // Execute GPU tiles first (batch, then single)
+        // Phase A: Execute GPU tiles sequentially (batch, then single).
+        // gpuTimeNs in the returned metrics is the wall-clock span of this phase only.
         gpuTimeStart = System.nanoTime();
         for (var tile : gpuBatchTiles) {
             executeTileGPUBatch(tile, rays, frameWidth, frameHeight, dag, executor);
@@ -200,7 +219,9 @@ public class HybridTileDispatcher {
         }
         gpuTimeEnd = System.nanoTime();
 
-        // Execute CPU tiles
+        // Phase B: Execute CPU tiles sequentially (after GPU phase completes).
+        // cpuTimeNs in the returned metrics is the wall-clock span of this phase only.
+        // These two spans are sequential — no CPU/GPU overlap occurs.
         cpuTimeStart = System.nanoTime();
         for (var tile : cpuTiles) {
             executeTileCPU(tile, rays, frameWidth, frameHeight, executor);

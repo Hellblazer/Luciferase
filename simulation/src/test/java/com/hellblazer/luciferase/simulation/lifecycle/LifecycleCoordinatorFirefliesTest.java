@@ -9,6 +9,7 @@
 package com.hellblazer.luciferase.simulation.lifecycle;
 
 import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,13 +29,27 @@ import static org.mockito.Mockito.*;
 class LifecycleCoordinatorFirefliesTest {
     private static final Logger log = LoggerFactory.getLogger(LifecycleCoordinatorFirefliesTest.class);
 
+    /** Track gates so their shared schedulers are shut down after each test (ViewStabilityGate is AutoCloseable). */
+    private final List<ViewStabilityGate> gates = new ArrayList<>();
+
+    private ViewStabilityGate gate(ViewStabilityGate g) {
+        gates.add(g);
+        return g;
+    }
+
+    @AfterEach
+    void closeGates() {
+        gates.forEach(ViewStabilityGate::close);
+        gates.clear();
+    }
+
     @Test
     void testShutdownWithViewStability() {
         // Given: Coordinator with stable view
         var mockMonitor = mock(FirefliesViewMonitor.class);
         when(mockMonitor.isViewStable()).thenReturn(true);
 
-        var gate = new ViewStabilityGate(mockMonitor, 5000);
+        var gate = gate(new ViewStabilityGate(mockMonitor, 5000));
         var coordinator = new LifecycleCoordinator(gate);
 
         // Register mock components
@@ -64,7 +79,7 @@ class LifecycleCoordinatorFirefliesTest {
         var mockMonitor = mock(FirefliesViewMonitor.class);
         when(mockMonitor.isViewStable()).thenReturn(false);
 
-        var gate = new ViewStabilityGate(mockMonitor, 100);  // Fast timeout
+        var gate = gate(new ViewStabilityGate(mockMonitor, 100));  // Fast timeout
         var coordinator = new LifecycleCoordinator(gate);
 
         var startOrder = new ArrayList<String>();
@@ -112,7 +127,7 @@ class LifecycleCoordinatorFirefliesTest {
         var mockMonitor = mock(FirefliesViewMonitor.class);
         when(mockMonitor.isViewStable()).thenReturn(true);
 
-        var gate = new ViewStabilityGate(mockMonitor, 5000);
+        var gate = gate(new ViewStabilityGate(mockMonitor, 5000));
         var coordinator = new LifecycleCoordinator(gate);
 
         var startOrder = new ArrayList<String>();
@@ -155,7 +170,7 @@ class LifecycleCoordinatorFirefliesTest {
             .thenReturn(false)  // Second poll
             .thenReturn(true);  // Third poll - stable
 
-        var gate = new ViewStabilityGate(mockMonitor, 5000);
+        var gate = gate(new ViewStabilityGate(mockMonitor, 5000));
         var coordinator = new LifecycleCoordinator(gate);
 
         var startOrder = new ArrayList<String>();

@@ -203,6 +203,17 @@ public class FakeNetworkChannel implements BubbleNetworkChannel {
         log.debug("Packet loss rate set to {}", packetLossRate);
     }
 
+    /**
+     * Seed the packet-loss RNG for deterministic test scenarios.
+     * Call before any packet-loss-enabled sends to guarantee a reproducible
+     * drop sequence (and therefore a deterministic successCount assertion).
+     *
+     * @param seed RNG seed
+     */
+    public void setSeed(long seed) {
+        random.setSeed(seed);
+    }
+
     @Override
     public boolean isNodeReachable(UUID nodeId) {
         return nodeAddresses.containsKey(nodeId) && NETWORK.containsKey(nodeId);

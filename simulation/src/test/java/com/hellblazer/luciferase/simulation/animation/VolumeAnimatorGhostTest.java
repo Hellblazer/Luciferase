@@ -393,6 +393,39 @@ class VolumeAnimatorGhostTest {
     }
 
     /**
+     * Test: getAnimatedEntities is resilient to concurrent ghost eviction.
+     * <p>
+     * Documents that the method is a best-effort non-atomic view (Luciferase-7wzml.193):
+     * a ghost removed between the membership snapshot and the per-ghost position lookup
+     * results in a skipped entry (null guard), never an NPE or incorrect data.
+     */
+    @Test
+    void testGetAnimatedEntitiesHandlesGhostEviction() {
+        var ghostId = new StringEntityID("evicted-ghost");
+        var position = new Point3f(0.5f, 0.5f, 0.5f);
+        var velocity = new Point3f(0.0f, 0.0f, 0.0f);
+
+        var event = new EntityUpdateEvent(
+            ghostId,
+            position,
+            velocity,
+            controller.getSimulationTime(),
+            controller.getLamportClock()
+        );
+        bubble.getGhostStateManager().updateGhost(remoteBubbleId, event);
+
+        // Remove the ghost immediately — simulates eviction between snapshot and position lookup
+        bubble.getGhostStateManager().removeGhost(ghostId);
+
+        // Must not throw; evicted ghost should simply be absent from result
+        assertDoesNotThrow(() -> {
+            var entities = animator.getAnimatedEntities();
+            assertFalse(entities.stream().anyMatch(e -> e.entityId().equals(ghostId)),
+                "Evicted ghost must not appear in animated entities");
+        }, "getAnimatedEntities must not NPE on concurrent ghost eviction");
+    }
+
+    /**
      * Test 8: Ghosts don't modify spatial index (read-only).
      */
     @Test

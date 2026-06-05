@@ -11,7 +11,6 @@ import com.hellblazer.luciferase.simulation.causality.*;
 import com.hellblazer.luciferase.simulation.distributed.migration.*;
 import com.hellblazer.luciferase.simulation.events.*;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +38,8 @@ class TwoNodeDistributedMigrationTest {
     private EnhancedBubble bubble2;
     private OptimisticMigratorImpl migrator1;
     private OptimisticMigratorImpl migrator2;
+    private FakeNetworkChannel channel1;
+    private FakeNetworkChannel channel2;
 
     @BeforeEach
     void setUp() {
@@ -71,8 +72,8 @@ class TwoNodeDistributedMigrationTest {
             bubble2, fsm2, oracle2, migrator2, viewMonitor2, 3);
 
         // Create network channels
-        var channel1 = new FakeNetworkChannel(bubbleId1);
-        var channel2 = new FakeNetworkChannel(bubbleId2);
+        channel1 = new FakeNetworkChannel(bubbleId1);
+        channel2 = new FakeNetworkChannel(bubbleId2);
 
         channel1.initialize(bubbleId1, "localhost:7001");
         channel2.initialize(bubbleId2, "localhost:7002");
@@ -229,9 +230,13 @@ class TwoNodeDistributedMigrationTest {
     }
 
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Flaky: probabilistic test with 30% packet loss - ~2.8% chance all 10 succeed")
     @DisplayName("Entity migration with packet loss and retry")
     void testMigrationWithPacketLoss() {
+        // Seed the packet-loss RNG for a deterministic drop sequence (Luciferase-4tpb7).
+        // With java.util.Random(42) and p=0.3 over 10 sends, exactly 2 packets drop -> 8 succeed.
+        // The exact count is pinned below so a regression to "never drops" (or a different RNG/draw
+        // count) fails loudly rather than slipping past a loose 1..9 bound.
+        channel1.setSeed(42L);
         node1.setPacketLoss(0.3); // 30% loss rate
 
         var entityIds = new java.util.ArrayList<UUID>();
@@ -258,9 +263,9 @@ class TwoNodeDistributedMigrationTest {
             }
         }
 
-        // Some should succeed, some should fail
-        assertTrue(successCount < 10, "Some migrations should fail due to packet loss");
-        assertTrue(successCount > 0, "Some migrations should succeed");
+        // Deterministic with seed 42: exactly 2 of 10 sends are dropped by the 30% loss filter.
+        assertEquals(8, successCount,
+                     "seed 42 @ p=0.3 must drop exactly 2 of 10 sends (deterministic packet-loss sequence)");
 
         log.info("✓ Migration with packet loss: {}/10 successful", successCount);
     }

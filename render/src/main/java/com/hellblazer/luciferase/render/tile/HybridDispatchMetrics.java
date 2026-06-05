@@ -30,9 +30,9 @@ package com.hellblazer.luciferase.render.tile;
  * @param cpuRatio         fraction of tiles using CPU
  * @param avgCoherence     average coherence across all tiles
  * @param gpuSaturation    GPU saturation level at dispatch time
- * @param dispatchTimeNs   total dispatch time in nanoseconds
- * @param gpuTimeNs        time spent on GPU execution
- * @param cpuTimeNs        time spent on CPU execution
+ * @param dispatchTimeNs   total dispatch wall-clock time in nanoseconds
+ * @param gpuTimeNs        wall-clock span of the GPU execution phase (sequential; not concurrent with CPU)
+ * @param cpuTimeNs        wall-clock span of the CPU execution phase (sequential; starts after GPU phase)
  */
 public record HybridDispatchMetrics(
     int totalTiles,
