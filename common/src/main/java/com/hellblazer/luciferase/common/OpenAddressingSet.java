@@ -39,7 +39,14 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
     private static final float  THRESHOLD = 0.75f;
     int                         load;
     int                         modCount  = 0;
+    /** Live entries only. */
     int                         size      = 0;
+    /**
+     * Occupied slots = live entries + tombstone (DELETED) entries. Used to
+     * trigger rehash when tombstones accumulate and the table would saturate
+     * even though the live count stays below the threshold.
+     */
+    int                         occupied  = 0;
     Object                      table[];
 
     public OpenAddressingSet() {
@@ -57,7 +64,7 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
         }
         if (table == null) {
             init(1);
-        } else if (size >= table.length * THRESHOLD) {
+        } else if (occupied >= table.length * THRESHOLD) {
             rehash();
         }
         boolean added = insert(key);
@@ -70,8 +77,11 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
     @Override
     public void clear() {
         modCount++;
-        table = null;
+        if (table != null) {
+            java.util.Arrays.fill(table, null);
+        }
         size = 0;
+        occupied = 0;
     }
 
     @Override
@@ -214,6 +224,11 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
                 int target = (firstDeleted >= 0) ? firstDeleted : index;
                 table[target] = key;
                 size += 1;
+                // Only consume a new null slot when no tombstone was reused;
+                // reusing a tombstone does not increase occupied.
+                if (firstDeleted < 0) {
+                    occupied += 1;
+                }
                 return true;
             }
             if (ob == DELETED) {
@@ -247,6 +262,7 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
         // double-increment modCount for one logical add.
         table = new Object[oldCapacity * 2];
         size = 0;
+        occupied = 0;
         for (int i = oldCapacity - 1; i >= 0; i -= 1) {
             Object ob = oldMap[i];
             if (ob != null && ob != DELETED) {
@@ -271,6 +287,8 @@ public abstract class OpenAddressingSet<T> extends AbstractSet<T> {
         }
         table = new Object[cap];
         load = 32 - load;
+        size = 0;
+        occupied = 0;
     }
 
 }

@@ -97,13 +97,21 @@ public class MutableGrid extends Grid {
         DIRECT     // Direct allocation without pooling
     }
     
-    private static final String ALLOCATION_PROPERTY = "sentry.allocation.strategy";
+    private static final String ALLOCATION_PROPERTY  = "sentry.allocation.strategy";
+    private static final String REBUILD_DIRECT_PROPERTY = "sentry.rebuild.direct";
+    /** Default seed for deterministic landmark selection (used when no Random is injected). */
+    public  static final long   DEFAULT_LANDMARK_SEED = 0xDEAD_BEEF_CAFE_BABEL;
+
     private final List<Vertex>    vertices = new ArrayList<>();
     private final TetrahedronAllocator allocator;
     private final AllocationStrategy strategy;
+    /** Read once at construction; controls whether small rebuilds bypass the pool. */
+    private final boolean         rebuildDirect;
+    /** Seeded Random used for landmark selection; injectable for deterministic tests. */
+    private final Random          landmarkRandom;
     protected     Tetrahedron     last;  // Changed to protected for testing
     protected     LandmarkIndex   landmarkIndex;  // Changed to protected for testing
-    
+
     private static AllocationStrategy getDefaultStrategy() {
         String prop = System.getProperty(ALLOCATION_PROPERTY);
         if ("direct".equalsIgnoreCase(prop)) {
@@ -112,15 +120,19 @@ public class MutableGrid extends Grid {
         return AllocationStrategy.POOLED; // Default
     }
 
+    private static boolean readRebuildDirect() {
+        return "true".equals(System.getProperty(REBUILD_DIRECT_PROPERTY));
+    }
+
     public MutableGrid() {
-        this(getFourCorners(), getDefaultStrategy());
+        this(getFourCorners(), getDefaultStrategy(), new Random(DEFAULT_LANDMARK_SEED));
     }
 
     /**
      * Create with specified allocation strategy.
      */
     public MutableGrid(AllocationStrategy strategy) {
-        this(getFourCorners(), strategy);
+        this(getFourCorners(), strategy, new Random(DEFAULT_LANDMARK_SEED));
     }
 
     /**
@@ -129,16 +141,39 @@ public class MutableGrid extends Grid {
      * @param fourCorners The four corner vertices
      */
     public MutableGrid(Vertex[] fourCorners) {
-        this(fourCorners, getDefaultStrategy());
+        this(fourCorners, getDefaultStrategy(), new Random(DEFAULT_LANDMARK_SEED));
     }
-    
+
+    /**
+     * Create with specified allocation strategy and a seeded Random for deterministic landmark selection.
+     *
+     * @param strategy      allocation strategy
+     * @param landmarkRandom seeded Random for landmark add/replace decisions
+     */
+    public MutableGrid(AllocationStrategy strategy, Random landmarkRandom) {
+        this(getFourCorners(), strategy, landmarkRandom);
+    }
+
     /**
      * Create with specified allocation strategy.
      */
     public MutableGrid(Vertex[] fourCorners, AllocationStrategy strategy) {
+        this(fourCorners, strategy, new Random(DEFAULT_LANDMARK_SEED));
+    }
+
+    /**
+     * Create with specified allocation strategy and a seeded Random for deterministic landmark selection.
+     *
+     * @param fourCorners    corner vertices
+     * @param strategy       allocation strategy
+     * @param landmarkRandom seeded Random for landmark add/replace decisions
+     */
+    public MutableGrid(Vertex[] fourCorners, AllocationStrategy strategy, Random landmarkRandom) {
         super(fourCorners);
         this.strategy = strategy;
         this.allocator = createAllocator(strategy);
+        this.rebuildDirect = readRebuildDirect();
+        this.landmarkRandom = landmarkRandom;
         initialize();
         // Note: Validation is now handled externally via GridValidator and ValidationManager
     }
@@ -233,7 +268,7 @@ public class MutableGrid extends Grid {
      */
     private void rebuildOptimized(List<Vertex> verticesList, Random entropy) {
         // For small rebuilds like 256 points, use direct allocation to avoid pooling overhead
-        boolean useDirectForRebuild = verticesList.size() <= 256 || "true".equals(System.getProperty("sentry.rebuild.direct"));
+        boolean useDirectForRebuild = verticesList.size() <= 256 || rebuildDirect;
         TetrahedronAllocator rebuildAllocator = useDirectForRebuild ? new DirectAllocator() : allocator;
         
         // Release all tetrahedrons back to the allocator before rebuilding
@@ -634,7 +669,7 @@ public class MutableGrid extends Grid {
         // Warm up allocator for initial operations
         allocator.warmUp(128);
         last = allocator.acquire(fourCorners);
-        landmarkIndex = new LandmarkIndex(new Random());
+        landmarkIndex = new LandmarkIndex(landmarkRandom);
     }
 
     /**

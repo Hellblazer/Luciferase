@@ -213,6 +213,7 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
             return null;
         }
         var elements = new ArrayList<GhostElement<Key, ID, Content>>();
+        var total = batch.getElementsList().size();
         for (var proto : batch.getElementsList()) {
             // PER-ELEMENT try/catch is LOAD-BEARING: one malformed proto must NOT abort the whole
             // batch — log and continue.
@@ -229,6 +230,15 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
             } catch (Exception e) {
                 log.error("Error processing received ghost element: {}", e.getMessage(), e);
             }
+        }
+        // Wholesale-unparseable guard (Luciferase-7wzml.90): if the peer sent a non-empty batch and
+        // every element failed to parse, treat the batch as a delivery failure (return null) so the
+        // caller's "Failed to fetch" path fires — a fully-corrupt batch must not be indistinguishable
+        // from a legitimately empty ghost set.
+        if (total > 0 && elements.isEmpty()) {
+            log.error("All {} ghost element(s) in batch from rank {} failed to parse; treating as request failure",
+                      total, targetRank);
+            return null;
         }
         return elements;
     }

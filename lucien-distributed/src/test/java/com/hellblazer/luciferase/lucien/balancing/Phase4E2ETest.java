@@ -681,7 +681,7 @@ class Phase4E2ETest {
             // GrpcBalanceExchange adapter bridges to the proto gRPC wire (its serializer is unused on
             // the violation-exchange path but required by the adapter contract).
             this.client = new InProcessBalanceCoordinatorClient(rank, serviceDiscovery);
-            var exchange = new GrpcBalanceExchange<MortonKey, LongEntityID, String>(client, STRING_SERIALIZER, LongEntityID.class);
+            var exchange = new GrpcBalanceExchange<MortonKey, LongEntityID, String>(client, STRING_SERIALIZER, LongEntityID.class, MortonKey.class);
             this.aggregator = new DistributedViolationAggregator<>(rank, totalPartitions, exchange, 2000);
         }
 

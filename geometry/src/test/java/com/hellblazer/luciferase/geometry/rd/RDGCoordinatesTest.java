@@ -38,6 +38,9 @@ class RDGCoordinatesTest {
     /**
      * toRDG(toCartesian(p)) == p for integer points — the round-trip identity that Luciferase-6oa's
      * Math.round fix established (C-style truncation broke it for unit-magnitude points).
+     * Covers [-3, 3] exhaustively and spot-checks at ±1000 to verify the double-precision
+     * intermediate arithmetic introduced in Luciferase-7wzml.82 holds at larger magnitudes
+     * (float-only arithmetic broke the identity around |coord| > ~1000).
      */
     @Test
     void roundTripIdentityForIntegerPoints() {
@@ -51,6 +54,49 @@ class RDGCoordinatesTest {
                 }
             }
         }
+
+        // Spot-check at large magnitudes: float intermediate would lose precision here
+        int[] large = { -1000, -100, -10, 10, 100, 1000 };
+        for (int x : large) {
+            for (int y : large) {
+                for (int z : large) {
+                    var rdg = new Point3i(x, y, z);
+                    var cart = RDGCoordinates.toCartesian(rdg);
+                    var back = RDGCoordinates.toRDG(new Point3f((float) cart.x, (float) cart.y, (float) cart.z));
+                    assertThat(back).as("round-trip for (%d,%d,%d)", x, y, z).isEqualTo(rdg);
+                }
+            }
+        }
+    }
+
+    /**
+     * Luciferase-7wzml.82: toRDG must sum the (±x±y±z) terms in double precision, not float. This pins the
+     * fix with an adversarial large-magnitude input where the OLD float-sum arithmetic rounds to a different
+     * integer than the double-sum arithmetic. The test is self-proving: it computes both paths inline and
+     * asserts (a) toRDG matches the double-precision reference and (b) the float-sum path genuinely diverges
+     * (so the input actually witnesses the bug, not a vacuous pass). Removing the double-promotion in toRDG
+     * makes assertion (a) fail.
+     */
+    @Test
+    void toRDGSumsInDoublePrecisionAtLargeMagnitude() {
+        // Float-exact integer inputs whose float-summed (±x±y±z) terms round to a different integer than
+        // the double-summed terms (found by float32 simulation; the middle component diverges by 1).
+        float cx = 13727664f, cy = -4524454f, cz = 22930328f;
+        double k = RDGCoordinates.DIVIDE_ROOT_2;
+
+        // Double-sum reference (what the fixed toRDG must produce):
+        var expected = new Point3i((int) Math.round((-(double) cx + cy + cz) * k),
+                                   (int) Math.round(((double) cx - cy + cz) * k),
+                                   (int) Math.round(((double) cx + cy - cz) * k));
+        // Old float-sum path: cx/cy/cz are float, so (-cx + cy + cz) is evaluated in float before scaling.
+        var floatSum = new Point3i((int) Math.round((-cx + cy + cz) * k),
+                                   (int) Math.round((cx - cy + cz) * k),
+                                   (int) Math.round((cx + cy - cz) * k));
+
+        var actual = RDGCoordinates.toRDG(new Point3f(cx, cy, cz));
+        assertThat(actual).as("toRDG must use double-precision summation").isEqualTo(expected);
+        assertThat(floatSum).as("input must be adversarial — float-sum arithmetic must diverge from double-sum")
+                            .isNotEqualTo(expected);
     }
 
     /** Specifically the (1,0,0) case from the Luciferase-6oa audit. */

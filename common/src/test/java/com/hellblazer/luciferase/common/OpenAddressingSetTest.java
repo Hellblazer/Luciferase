@@ -164,4 +164,99 @@ class OpenAddressingSetTest {
         actual.iterator().forEachRemaining(drained::add);
         assertEquals(reference, drained);
     }
+
+    /**
+     * Bead Luciferase-7wzml.56 — rehash trigger must count tombstones.
+     *
+     * <p>The defect: {@code add()} gated rehash on the live {@code size} count only.
+     * A churn pattern (add unique key, remove it) accumulates tombstone (DELETED)
+     * slots without increasing {@code size}, so rehash never fires even when the
+     * table has nearly no null slots left — degrading {@code contains()} misses
+     * to O(capacity).</p>
+     *
+     * <p>The fix: gate rehash on {@code occupied} (= live + tombstones). After any
+     * {@code add()} completes, {@code occupied} must be strictly less than
+     * {@code table.length} — i.e. the table can never be fully saturated because
+     * rehash fires at {@code occupied >= table.length * THRESHOLD (0.75)}.</p>
+     *
+     * <p>Secondary correctness check: after 500 churn cycles all original live
+     * keys must still be reachable and an absent-key {@code contains()} must
+     * terminate and return {@code false}.</p>
+     */
+    @Test
+    void tombstoneAccumulationTriggersRehash() {
+        var set = new OaHashSet<Integer>(4);
+
+        // Seed a baseline of permanent live entries (never removed).
+        final int LIVE_COUNT = 2;
+        for (int i = 0; i < LIVE_COUNT; i++) {
+            set.add(1000 + i);
+        }
+
+        // Churn: each cycle adds a unique transient key then removes it,
+        // leaving a tombstone. Unique keys maximise tombstone accumulation by
+        // landing at different slots rather than immediately recycling the same
+        // deleted slot on the next insert.
+        final int CYCLES = 500;
+        for (int i = 0; i < CYCLES; i++) {
+            set.add(2000 + i);
+            set.remove(2000 + i);
+        }
+
+        // Correctness: all permanent live keys must still be reachable.
+        for (int i = 0; i < LIVE_COUNT; i++) {
+            assertTrue(set.contains(1000 + i), "live key " + (1000 + i) + " must survive churn");
+        }
+        // Absent-key lookup must terminate (not O(n) infinite-like behaviour).
+        assertFalse(set.contains(99999), "absent key must not be found");
+        assertEquals(LIVE_COUNT, set.size());
+
+        // Core invariant: occupied (live + tombstones) must always be < table.length
+        // after add() completes, because the rehash threshold is 0.75 * capacity.
+        // If the old size-only gate was still in place, occupied would keep growing
+        // toward table.length with no rehash, eventually saturating the table.
+        assertTrue(set.occupied < set.table.length,
+                   "occupied (" + set.occupied + ") must be < table.length (" + set.table.length
+                   + ") — tombstones must trigger rehash before saturation");
+    }
+
+    /**
+     * Bead Luciferase-7wzml.112 — clear() must retain capacity.
+     *
+     * After {@code clear()}, the backing table should be null-filled (all
+     * slots null) rather than discarded and later re-initialized to capacity 1.
+     * Verifies: (1) size==0 after clear, (2) capacity unchanged (table length
+     * preserved), (3) add/contains/iterate work normally after clear.
+     */
+    @Test
+    void clearRetainsCapacity() {
+        var set = new OaHashSet<Integer>(64);
+        for (int i = 0; i < 40; i++) {
+            set.add(i);
+        }
+        int capacityBeforeClear = set.table.length;
+        assertTrue(capacityBeforeClear >= 64, "table must have been grown to at least 64");
+
+        set.clear();
+
+        assertEquals(0, set.size(), "size must be 0 after clear");
+        // After the fix, table must still be allocated (not null) and keep its capacity.
+        org.junit.jupiter.api.Assertions.assertNotNull(set.table,
+                                                        "table must not be null after clear — capacity should be retained");
+        assertEquals(capacityBeforeClear, set.table.length,
+                     "table length must be unchanged after clear");
+
+        // All slots must be null (no stale entries, no tombstones).
+        for (Object slot : set.table) {
+            org.junit.jupiter.api.Assertions.assertNull(slot, "all slots must be null after clear");
+        }
+
+        // add/contains/iterate after clear must work.
+        set.add(99);
+        assertTrue(set.contains(99));
+        assertEquals(1, set.size());
+        var drained = new HashSet<Integer>();
+        set.iterator().forEachRemaining(drained::add);
+        assertEquals(Set.of(99), drained);
+    }
 }

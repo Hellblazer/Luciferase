@@ -49,17 +49,9 @@ public interface ContentSerializer<Content> {
     /**
      * Deserializes content from bytes.
      *
-     * <p>As of Luciferase-7wzml.53, implementations that use the 1-byte presence-flag wire
-     * format (e.g. {@link #STRING_SERIALIZER}) accept {@code null} bytes as equivalent to
-     * an absent payload and return {@code null}. The {@code bytes} parameter may therefore
-     * be {@code null} (treated as absent content) or a non-empty array whose first byte is
-     * the presence flag (0 = null value, 1 = value follows).
-     *
-     * @param bytes the serialized bytes, or {@code null} to indicate an absent payload;
-     *              implementations using the presence-flag format also treat an empty array
-     *              or a leading {@code 0x00} flag as a null-valued payload
-     * @return the deserialized content, or {@code null} when the payload encodes a null value
-     *         (presence flag = 0, null bytes, or empty array)
+     * @param bytes the serialized bytes; may be {@code null} or empty, which implementations
+     *              treat as absent content (returning {@code null})
+     * @return the deserialized content, or {@code null} for null/empty input
      * @throws SerializationException if deserialization fails
      */
     Content deserialize(byte[] bytes) throws SerializationException;
@@ -108,29 +100,31 @@ public interface ContentSerializer<Content> {
     /**
      * String content serializer for simple text content.
      *
-     * <p>Wire format: a 1-byte presence flag (0 = null, 1 = present) followed by the UTF-8 bytes of the
-     * string content. This disambiguates {@code null} from the empty string {@code ""}, which would both
-     * serialize to an empty byte array under a flag-free scheme (Luciferase-7wzml.53).
+     * <p>Wire format: the raw UTF-8 bytes of the string, with no framing. The serialized bytes ARE the
+     * content (the gRPC ghost transport copies them verbatim into the protobuf {@code content} field),
+     * so consumers — including non-Java peers — read them as the literal payload.
+     *
+     * <p><strong>Known limitation (Luciferase-7wzml.53):</strong> {@code null} and the empty string
+     * {@code ""} are indistinguishable on the wire — both serialize to an empty byte array and
+     * deserialize to {@code null}. Disambiguating them would require a framing byte prepended to
+     * <em>every</em> payload, changing the on-wire representation of all ghost string content and
+     * breaking raw-bytes consumers (and cross-version peers). For a P3 with no production path that
+     * relies on round-tripping {@code ""} distinctly from {@code null}, that wire-format change is not
+     * justified; callers needing the distinction must use a richer content type. Round-trip of all
+     * non-empty strings is exact.
      */
     ContentSerializer<String> STRING_SERIALIZER = new ContentSerializer<>() {
         @Override
         public byte[] serialize(String content) {
-            if (content == null) {
-                return new byte[] { 0 };
-            }
-            var utf8 = content.getBytes(StandardCharsets.UTF_8);
-            var result = new byte[1 + utf8.length];
-            result[0] = 1; // presence flag
-            System.arraycopy(utf8, 0, result, 1, utf8.length);
-            return result;
+            return content == null ? new byte[0] : content.getBytes(StandardCharsets.UTF_8);
         }
 
         @Override
         public String deserialize(byte[] bytes) {
-            if (bytes == null || bytes.length == 0 || bytes[0] == 0) {
+            if (bytes == null || bytes.length == 0) {
                 return null;
             }
-            return new String(bytes, 1, bytes.length - 1, StandardCharsets.UTF_8);
+            return new String(bytes, StandardCharsets.UTF_8);
         }
 
         @Override
