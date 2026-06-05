@@ -170,6 +170,11 @@ class GhostStreamCapConcurrencyTest {
     void testStreamGhostUpdates_concurrentRace_neverExceedsCap() throws Exception {
         final int TEST_CAP = 5;
         final int THREADS = 50;
+        // CI-safe window for a rejection verdict (onError) to be delivered. Admitted streams
+        // never fire their latch and deliberately reach this timeout (they are then closed by
+        // the test). 5s >> onError delivery latency on a contended CI runner; the 50 virtual
+        // threads wait in parallel, so admitted streams add ~5s of wall time, not 50*5s.
+        final long REJECT_VERDICT_WAIT_MS = 5_000L;
 
         var serviceImpl = new GhostExchangeServiceImpl<>(new NoOpProvider(), SERIALIZER, LongEntityID.class);
 
@@ -217,7 +222,6 @@ class GhostStreamCapConcurrencyTest {
                             if (t instanceof StatusRuntimeException sre
                                     && sre.getStatus().getCode() == io.grpc.Status.Code.RESOURCE_EXHAUSTED) {
                                 wasRejected.set(true);
-                                rejectedCount.incrementAndGet();
                             }
                             responseLatch.countDown();
                         }
@@ -227,13 +231,20 @@ class GhostStreamCapConcurrencyTest {
                     });
                     requestObsRef.set(requestObs);
 
-                    // Rejected streams receive onError almost immediately (counter pre-seeded path).
+                    // Classify by the DETERMINISTIC rejection signal — onError(RESOURCE_EXHAUSTED) —
+                    // NOT by a short timeout. An admitted stream stays silently open (never fires the
+                    // latch) and deliberately reaches the timeout; a rejected stream fires onError.
+                    // The original 500ms window mis-classified rejected streams whose onError was
+                    // delivered late under CI load/virtual-thread scheduling as "admitted" (49-vs-5
+                    // overshoot). REJECT_VERDICT_WAIT (5s) >> onError delivery latency even on a
+                    // contended CI runner, so every rejected stream's verdict lands before timeout.
                     try {
-                        boolean completed = responseLatch.await(500, TimeUnit.MILLISECONDS);
-                        if (completed && wasRejected.get()) {
-                            // Already counted in rejectedCount above.
+                        boolean verdictArrived = responseLatch.await(REJECT_VERDICT_WAIT_MS, TimeUnit.MILLISECONDS);
+                        if (verdictArrived && wasRejected.get()) {
+                            rejectedCount.incrementAndGet();
                         } else {
-                            // Admitted — keep stream open until after race, then close.
+                            // No rejection verdict within the window → genuinely admitted.
+                            // Keep stream open until after the race, then close.
                             admittedCount.incrementAndGet();
                             openObservers.add(requestObs);
                         }
