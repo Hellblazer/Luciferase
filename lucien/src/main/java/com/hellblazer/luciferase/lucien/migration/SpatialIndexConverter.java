@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.migration;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.EntityIDGenerator;
@@ -39,18 +40,35 @@ public class SpatialIndexConverter {
     private static final Logger log = LoggerFactory.getLogger(SpatialIndexConverter.class);
 
     /**
+     * Pluggable clock for deterministic testing of conversion duration.
+     * Defaults to the system clock; replace via {@link #setClock(Clock)} in tests.
+     * Bead Luciferase-7wzml.128.
+     */
+    private static volatile Clock clock = Clock.system();
+
+    /**
+     * Inject a clock for deterministic conversion-duration reporting.
+     *
+     * @param c the clock to use; must not be null
+     */
+    public static void setClock(Clock c) {
+        clock = c;
+    }
+
+    /**
      * Convert an Octree to a Tetree, preserving all entities and their content.
      *
      * @param source The source Octree
      * @param <ID>   The entity ID type
      * @param <Content> The content type
      * @return A new Tetree containing all entities from the source
+     * @throws ConversionException if any per-entity migrations fail (Luciferase-7wzml.130)
      */
     public static <ID extends EntityID, Content> Tetree<ID, Content> octreeToTetree(
             Octree<ID, Content> source, EntityIDGenerator<ID> idGenerator) {
         log.info("Starting Octree to Tetree conversion");
 
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
         var stats = new ConversionStats();
 
         // Create target Tetree with similar configuration
@@ -67,16 +85,26 @@ public class SpatialIndexConverter {
             stats.totalEntities = entitiesWithPositions.size();
 
             // Migrate entities
-            migrateEntities(source, tetree, entitiesWithPositions, stats);
+            var migrationErrors = migrateEntities(source, tetree, entitiesWithPositions, stats);
 
             // Finalize bulk loading
             tetree.finalizeBulkLoading();
 
             // Log statistics
-            var duration = System.currentTimeMillis() - startTime;
+            var duration = clock.currentTimeMillis() - startTime;
             logConversionStats("Octree to Tetree", stats, duration);
 
+            // Bead Luciferase-7wzml.130: surface per-entity failures — callers must be able to
+            // detect a lossy conversion; swallowing into a warn log is not sufficient.
+            if (stats.failedEntities > 0) {
+                throw new ConversionException(
+                    String.format("Octree to Tetree conversion lost %d of %d entities. Errors: %s",
+                                  stats.failedEntities, stats.totalEntities, migrationErrors));
+            }
+
             return tetree;
+        } catch (ConversionException ce) {
+            throw ce;
         } catch (Exception e) {
             log.error("Error during Octree to Tetree conversion", e);
             throw new ConversionException("Failed to convert Octree to Tetree", e);
@@ -90,12 +118,13 @@ public class SpatialIndexConverter {
      * @param <ID>   The entity ID type
      * @param <Content> The content type
      * @return A new Octree containing all entities from the source
+     * @throws ConversionException if any per-entity migrations fail (Luciferase-7wzml.130)
      */
     public static <ID extends EntityID, Content> Octree<ID, Content> tetreeToOctree(
             Tetree<ID, Content> source, EntityIDGenerator<ID> idGenerator) {
         log.info("Starting Tetree to Octree conversion");
 
-        var startTime = System.currentTimeMillis();
+        var startTime = clock.currentTimeMillis();
         var stats = new ConversionStats();
 
         // Create target Octree with similar configuration
@@ -112,16 +141,25 @@ public class SpatialIndexConverter {
             stats.totalEntities = entitiesWithPositions.size();
 
             // Migrate entities
-            migrateEntities(source, octree, entitiesWithPositions, stats);
+            var migrationErrors = migrateEntities(source, octree, entitiesWithPositions, stats);
 
             // Finalize bulk loading
             octree.finalizeBulkLoading();
 
             // Log statistics
-            var duration = System.currentTimeMillis() - startTime;
+            var duration = clock.currentTimeMillis() - startTime;
             logConversionStats("Tetree to Octree", stats, duration);
 
+            // Bead Luciferase-7wzml.130: surface per-entity failures.
+            if (stats.failedEntities > 0) {
+                throw new ConversionException(
+                    String.format("Tetree to Octree conversion lost %d of %d entities. Errors: %s",
+                                  stats.failedEntities, stats.totalEntities, migrationErrors));
+            }
+
             return octree;
+        } catch (ConversionException ce) {
+            throw ce;
         } catch (Exception e) {
             log.error("Error during Tetree to Octree conversion", e);
             throw new ConversionException("Failed to convert Tetree to Octree", e);
@@ -217,8 +255,10 @@ public class SpatialIndexConverter {
      * the entity in the target's entity manager; subsequent inserts for the same ID add the
      * additional location keys via {@code createOrUpdate + addEntityLocation} without
      * duplicating the content or changing the position.
+     *
+     * @return the list of per-entity error messages (empty if all succeeded)
      */
-    private static <ID extends EntityID, Content, Target> void migrateEntities(
+    private static <ID extends EntityID, Content, Target> List<String> migrateEntities(
             Object source,
             Target target,
             Map<ID, Point3f> entitiesWithPositions,
@@ -287,6 +327,7 @@ public class SpatialIndexConverter {
                 log.warn("... and {} more errors", errors.size() - 10);
             }
         }
+        return new ArrayList<>(errors);
     }
 
     /**

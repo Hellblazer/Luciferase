@@ -20,6 +20,13 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -101,6 +108,101 @@ public class SpatialNodePoolTest {
         SpatialNodeImpl<LongEntityID> recycled = pool.acquire();
         assertEquals(0, recycled.getChildrenMask(), "recycled node must have childrenMask == 0 even after partial dirty");
         assertFalse(recycled.hasChildren());
+    }
+
+    /**
+     * Bounded-pool invariant: concurrent releases from N threads must never push the
+     * pool past maxSize, and currentSize must match the actual queue depth after
+     * all threads complete (no counter drift).
+     *
+     * Regression for Luciferase-7wzml.124: the old get-then-act TOCTOU allowed
+     * concurrent releasers each observing size < maxSize and all offering, inflating
+     * both pool and currentSize past the cap.
+     */
+    @Test
+    void concurrentRelease_neverExceedsMaxSize() throws InterruptedException {
+        int maxSize = 20;
+        int nThreads = 16;
+        int nodesPerThread = 50;
+
+        SpatialNodePool<LongEntityID> cappedPool = new SpatialNodePool<>(
+            () -> new SpatialNodeImpl<>(10),
+            new SpatialNodePool.PoolConfig()
+                .withInitialSize(0)
+                .withMaxSize(maxSize)
+                .withPreAllocation(false)
+                .withStatistics(false)
+        );
+
+        // Pre-create nodes outside the pool (simulates nodes acquired and now being returned)
+        List<List<SpatialNodeImpl<LongEntityID>>> threadNodes = new ArrayList<>();
+        for (int t = 0; t < nThreads; t++) {
+            List<SpatialNodeImpl<LongEntityID>> nodes = new ArrayList<>();
+            for (int i = 0; i < nodesPerThread; i++) {
+                nodes.add(new SpatialNodeImpl<>(10));
+            }
+            threadNodes.add(nodes);
+        }
+
+        CountDownLatch ready = new CountDownLatch(nThreads);
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService exec = Executors.newFixedThreadPool(nThreads);
+
+        for (int t = 0; t < nThreads; t++) {
+            List<SpatialNodeImpl<LongEntityID>> nodes = threadNodes.get(t);
+            exec.submit(() -> {
+                ready.countDown();
+                try {
+                    go.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                for (SpatialNodeImpl<LongEntityID> node : nodes) {
+                    cappedPool.release(node);
+                }
+            });
+        }
+
+        ready.await();
+        go.countDown();
+        exec.shutdown();
+        assertTrue(exec.awaitTermination(10, TimeUnit.SECONDS), "threads did not finish in time");
+
+        int reportedSize = cappedPool.size();
+        int queueDepth = cappedPool.getQueueDepth();
+
+        assertTrue(reportedSize <= maxSize,
+                   "currentSize " + reportedSize + " exceeded maxSize " + maxSize);
+        assertEquals(reportedSize, queueDepth,
+                     "currentSize " + reportedSize + " drifted from actual queue depth " + queueDepth);
+    }
+
+    /**
+     * Serial over-release: releasing more nodes than maxSize must never grow the pool
+     * beyond the configured cap (basic single-threaded bound check).
+     */
+    @Test
+    void release_beyondMaxSize_doesNotGrowPool() {
+        int maxSize = 5;
+        SpatialNodePool<LongEntityID> cappedPool = new SpatialNodePool<>(
+            () -> new SpatialNodeImpl<>(10),
+            new SpatialNodePool.PoolConfig()
+                .withInitialSize(0)
+                .withMaxSize(maxSize)
+                .withPreAllocation(false)
+                .withStatistics(false)
+        );
+
+        // Release 3x more nodes than the cap
+        for (int i = 0; i < maxSize * 3; i++) {
+            cappedPool.release(new SpatialNodeImpl<>(10));
+        }
+
+        assertTrue(cappedPool.size() <= maxSize,
+                   "pool size " + cappedPool.size() + " must not exceed maxSize " + maxSize);
+        assertEquals(cappedPool.size(), cappedPool.getQueueDepth(),
+                     "currentSize must equal actual queue depth after serial over-release");
     }
 
     /**

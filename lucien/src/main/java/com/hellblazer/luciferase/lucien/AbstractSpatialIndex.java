@@ -48,6 +48,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import com.hellblazer.luciferase.common.time.Clock;
 
 /**
  * Abstract base class for spatial index implementations. Provides common functionality for entity management,
@@ -167,7 +168,9 @@ implements SpatialIndex<Key, ID, Content>,
     // Tree balancing support
     private         TreeBalancingStrategy<ID>                        balancingStrategy;
     private         boolean                                          autoBalancingEnabled     = false;
-    private         long                                             lastBalancingTime        = 0;
+    private final   java.util.concurrent.atomic.AtomicLong          lastBalancingTime        = new java.util.concurrent.atomic.AtomicLong(0);
+    // Luciferase-7wzml.125: volatile for safe publication when setClock() swaps the implementation.
+    private volatile Clock                                           clock                    = Clock.system();
 
     /**
      * Constructor with common parameters
@@ -1260,6 +1263,14 @@ implements SpatialIndex<Key, ID, Content>,
     }
 
     /**
+     * Inject a clock for deterministic time control in tests (Luciferase-7wzml.125 / mt7hi).
+     * Defaults to {@link Clock#system()} at construction time.
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
+    /**
      * Enable or disable automatic balancing.
      */
     public void setAutoBalancingEnabled(boolean enabled) {
@@ -1488,22 +1499,33 @@ implements SpatialIndex<Key, ID, Content>,
 
     /**
      * Check and perform automatic balancing if needed.
+     *
+     * <p>Thread-safe: uses a CAS on {@code lastBalancingTime} so that at most one concurrent caller per interval
+     * proceeds to rebalance (Luciferase-7wzml.125). Time is sourced from the injected {@link Clock} (mt7hi).
      */
     protected void checkAutoBalance() {
         if (!autoBalancingEnabled) {
             return;
         }
 
-        var currentTime = System.currentTimeMillis();
-        if (currentTime - lastBalancingTime < balancingStrategy.getMinRebalancingInterval()) {
+        var currentTime = clock.currentTimeMillis();
+        var prev = lastBalancingTime.get();
+        if (currentTime - prev < balancingStrategy.getMinRebalancingInterval()) {
+            return;
+        }
+
+        // CAS: only the winner proceeds; others see the updated timestamp on their next check.
+        if (!lastBalancingTime.compareAndSet(prev, currentTime)) {
             return;
         }
 
         var stats = getBalancingStats();
-        if (balancingStrategy.shouldRebalanceTree(stats)) {
-            lastBalancingTime = currentTime;
-            treeBalancer.rebalanceTree();
+        if (!balancingStrategy.shouldRebalanceTree(stats)) {
+            // Strategy decided against rebalancing; restore prev so the interval is not consumed.
+            lastBalancingTime.compareAndSet(currentTime, prev);
+            return;
         }
+        treeBalancer.rebalanceTree();
     }
 
     // ===== Frustum Culling Implementation =====

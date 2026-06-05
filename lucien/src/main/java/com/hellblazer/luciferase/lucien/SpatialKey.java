@@ -86,8 +86,6 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
      * Get the level of this key in the spatial hierarchy. Level 0 represents the root, with increasing levels
      * representing finer subdivisions of space.
      *
-     * This method is required for optimizations like SpatialIndexSet that need efficient level-based operations.
-     *
      * @return the hierarchical level (0-based)
      */
     byte getLevel();

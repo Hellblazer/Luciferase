@@ -187,20 +187,24 @@ public class SpatialNodePool<ID extends EntityID> {
             return;
         }
 
-        int size = currentSize.get();
-        if (size < config.getMaxSize()) {
+        // Claim the slot atomically before offering to avoid TOCTOU race where
+        // concurrent releasers each observe size < maxSize and all proceed to offer,
+        // pushing the pool past maxSize. Rollback if over capacity.
+        int newSize = currentSize.incrementAndGet();
+        if (newSize <= config.getMaxSize()) {
             // Clear node state before returning to pool
             node.clear();
 
             pool.offer(node);
-            int newSize = currentSize.incrementAndGet();
 
             if (config.isEnableStatistics()) {
                 deallocations.incrementAndGet();
                 updatePeakSize(newSize);
             }
+        } else {
+            // Pool full: undo the claim and let GC handle the node
+            currentSize.decrementAndGet();
         }
-        // If pool is full, let GC handle the node
     }
 
     /**
@@ -240,10 +244,18 @@ public class SpatialNodePool<ID extends EntityID> {
     }
 
     /**
-     * Get current pool size
+     * Get current pool size (the counter value)
      */
     public int size() {
         return currentSize.get();
+    }
+
+    /**
+     * Get the actual number of nodes waiting in the queue.
+     * Under correct operation this equals {@link #size()}; drift indicates a counter bug.
+     */
+    public int getQueueDepth() {
+        return pool.size();
     }
 
     // Private helper methods

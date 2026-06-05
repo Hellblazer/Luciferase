@@ -182,26 +182,27 @@ implements KnnProvider<Key, ID> {
                     performKNNExpandingRadiusSearch(queryPoint, k, maxDistance, candidates, addedToCandidates);
                 }
 
-                // Convert to sorted list (closest first) and extract distances
-                var sorted = ObjectPools.<EntityDistance<ID>>borrowArrayList(candidates.size());
-                try {
-                    sorted.addAll(candidates);
-                    sorted.sort(EntityDistance.minHeapComparator());
+                // Convert to sorted list (closest first) and extract distances.
+                // Plain allocation (not pooled): this list is local to the lambda on the calling
+                // thread, so the ObjectPools ThreadLocal pool offers no real benefit and pooling
+                // would only add borrow/return bookkeeping. (The earlier content-equality
+                // BORROW_OWNER aliasing hazard is itself fixed in ObjectPools via IdentityHashMap,
+                // Luciferase-7wzml.129.)
+                var sorted = new ArrayList<EntityDistance<ID>>(candidates.size());
+                sorted.addAll(candidates);
+                sorted.sort(EntityDistance.minHeapComparator());
 
-                    var entityIds = new ArrayList<ID>(sorted.size());
-                    var distances = new ArrayList<Float>(sorted.size());
-                    for (var entry : sorted) {
-                        entityIds.add(entry.entityId());
-                        distances.add(entry.distance());
-                    }
-
-                    // Store in cache for future queries
-                    knnCache.put(queryKey, entityIds, distances, currentVersion);
-
-                    return entityIds;
-                } finally {
-                    ObjectPools.returnArrayList(sorted);
+                var entityIds = new ArrayList<ID>(sorted.size());
+                var distances = new ArrayList<Float>(sorted.size());
+                for (var entry : sorted) {
+                    entityIds.add(entry.entityId());
+                    distances.add(entry.distance());
                 }
+
+                // Store in cache for future queries
+                knnCache.put(queryKey, entityIds, distances, currentVersion);
+
+                return entityIds;
             } finally {
                 ObjectPools.returnPriorityQueue(candidates);
                 ObjectPools.returnHashSet(addedToCandidates);

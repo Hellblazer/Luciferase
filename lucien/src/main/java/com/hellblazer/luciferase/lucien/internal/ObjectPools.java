@@ -20,42 +20,110 @@ import java.util.*;
 
 /**
  * Object pools for frequently allocated objects to reduce GC pressure.
- * 
+ *
+ * <p><strong>Thread-ownership contract (Luciferase-7wzml.129):</strong> All pool operations
+ * ({@code borrow*} / {@code return*}) are backed by {@link ThreadLocal} and must be called on the
+ * <em>same thread</em>. Returning a list on a different thread silently deposits it into the wrong
+ * thread's pool and leaks the borrowing thread's pool slot. When Java assertions are enabled
+ * ({@code -ea}), {@code returnArrayList} verifies ownership and throws {@link AssertionError} on a
+ * violation. Callers that cross thread boundaries (e.g. inside a {@code CompletableFuture} continuation)
+ * must use the try-finally wrappers {@link #withArrayList} / {@link #withHashSet} and ensure the
+ * finally block runs on the borrowing thread, or accept a fresh allocation instead of pooling.
+ *
  * @author hal.hildebrand
  */
 public class ObjectPools {
-    
-    // Thread-local pools for single-threaded access patterns
-    private static final ThreadLocal<ArrayListPool> ARRAY_LIST_POOL = ThreadLocal.withInitial(ArrayListPool::new);
-    private static final ThreadLocal<HashSetPool> HASH_SET_POOL = ThreadLocal.withInitial(HashSetPool::new);
-    private static final ThreadLocal<PriorityQueuePool> PRIORITY_QUEUE_POOL = ThreadLocal.withInitial(PriorityQueuePool::new);
 
     /**
-     * Borrow an ArrayList from the thread-local pool
+     * Registry used (only when assertions are enabled) to tag each borrowed ArrayList with its
+     * owning thread so that {@link #returnArrayList} can detect cross-thread returns.
+     *
+     * <p><strong>Identity semantics (Luciferase-7wzml.129 fix):</strong> Uses
+     * {@link IdentityHashMap} wrapped in {@code Collections.synchronizedMap} so that map keys are
+     * compared by object identity ({@code ==} / {@link System#identityHashCode}), not by
+     * {@link ArrayList#equals}/{@link ArrayList#hashCode} (which are content-based via
+     * {@link AbstractList}). The content-based path caused two problems:
+     * <ol>
+     *   <li>Two threads borrowing empty lists produced equal keys (all empty ArrayLists have
+     *       {@code hashCode=1}), so thread B's {@code put} silently overwrote thread A's owner
+     *       entry, causing spurious {@link AssertionError} on thread A's return.</li>
+     *   <li>{@code ConcurrentHashMap.put} traversed the ArrayList's content via
+     *       {@code hashCode()} while another thread was concurrently mutating the list, causing
+     *       {@link java.util.ConcurrentModificationException} inside the map.</li>
+     * </ol>
+     * With identity semantics, distinct list instances never collide and no content traversal
+     * occurs.
+     */
+    private static final Map<ArrayList<?>, Thread> BORROW_OWNER =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+
+    // Thread-local pools for single-threaded access patterns
+    private static final ThreadLocal<ArrayListPool>      ARRAY_LIST_POOL    = ThreadLocal.withInitial(ArrayListPool::new);
+    private static final ThreadLocal<HashSetPool>        HASH_SET_POOL      = ThreadLocal.withInitial(HashSetPool::new);
+    private static final ThreadLocal<PriorityQueuePool>  PRIORITY_QUEUE_POOL = ThreadLocal.withInitial(PriorityQueuePool::new);
+
+    /**
+     * Borrow an ArrayList from the thread-local pool.
+     *
+     * <p><strong>Same-thread contract:</strong> the returned list must be returned via
+     * {@link #returnArrayList} on the <em>same thread</em> that called this method.
+     * Cross-thread returns silently corrupt the pool; use {@link #withArrayList} for
+     * call-sites that span thread boundaries.
      */
     @SuppressWarnings("unchecked")
     public static <T> ArrayList<T> borrowArrayList() {
-        return (ArrayList<T>) ARRAY_LIST_POOL.get().borrow();
+        var list = (ArrayList<T>) ARRAY_LIST_POOL.get().borrow();
+        assert registerBorrow(list);
+        return list;
     }
-    
+
     /**
-     * Borrow an ArrayList with initial capacity
+     * Borrow an ArrayList with an initial capacity hint from the thread-local pool.
+     *
+     * <p><strong>Same-thread contract:</strong> see {@link #borrowArrayList()}.
      */
     @SuppressWarnings("unchecked")
     public static <T> ArrayList<T> borrowArrayList(int initialCapacity) {
         var list = (ArrayList<T>) ARRAY_LIST_POOL.get().borrow();
         list.ensureCapacity(initialCapacity);
+        assert registerBorrow(list);
         return list;
     }
-    
+
     /**
-     * Return an ArrayList to the pool
+     * Return an ArrayList to the thread-local pool.
+     *
+     * <p><strong>Same-thread contract:</strong> this method must be called on the same thread
+     * that originally called {@link #borrowArrayList()}. When Java assertions are enabled
+     * ({@code -ea}), a cross-thread return throws {@link AssertionError}.
      */
     public static <T> void returnArrayList(ArrayList<T> list) {
         if (list != null) {
+            assert checkReturnThread(list) : "returnArrayList called on a thread that did not borrow this list"
+                    + " — ThreadLocal pool corruption (Luciferase-7wzml.129)";
             list.clear();
             ARRAY_LIST_POOL.get().returnToPool(list);
         }
+    }
+
+    // ---- assertion helpers (compiled away when -ea is absent) ----
+
+    /** Registers the borrow; always returns {@code true} so it is usable inside {@code assert}. */
+    private static boolean registerBorrow(ArrayList<?> list) {
+        BORROW_OWNER.put(list, Thread.currentThread());
+        return true;
+    }
+
+    /**
+     * Checks that the returning thread matches the borrowing thread; removes the registry entry.
+     * Returns {@code true} on success so it is usable inside {@code assert expr : message}.
+     * Returns {@code false} (triggering the AssertionError) on mismatch.
+     */
+    private static boolean checkReturnThread(ArrayList<?> list) {
+        Thread owner = BORROW_OWNER.remove(list);
+        // If no owner is registered (list was not borrowed via this API, or assertions were off
+        // at borrow time), we allow the return silently to avoid false positives.
+        return owner == null || owner == Thread.currentThread();
     }
     
     /**
