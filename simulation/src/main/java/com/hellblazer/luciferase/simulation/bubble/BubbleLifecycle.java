@@ -174,6 +174,8 @@ public class BubbleLifecycle {
         // Get all entities from source
         var entities = source.getAllEntityRecords();
 
+        // LOCK MISSING (Luciferase-n7io1): acquire source+target getMutationLock() in UUID order;
+        // races concurrent migration/merge
         // Transfer each entity to target
         for (var entity : entities) {
             target.addEntity(entity.id(), entity.position(), entity.content());

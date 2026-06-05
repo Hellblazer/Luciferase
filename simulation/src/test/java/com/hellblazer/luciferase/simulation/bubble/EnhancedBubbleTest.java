@@ -1,7 +1,5 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
-import com.hellblazer.luciferase.simulation.bubble.*;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -334,22 +332,6 @@ public class EnhancedBubbleTest {
 
         var utilization = bubble.frameUtilization();
         assertEquals(1.0f, utilization, EPSILON, "Utilization should be 1.0 at exact budget");
-    }
-
-    /**
-     * Test 15: Single frame processing
-     * <p>
-     * Validates: tick() processes a simulation bucket
-     */
-    @Test
-    public void testTickProcessing() {
-        var content = new EntityContent();
-        bubble.addEntity("entity-1", new Point3f(10.0f, 10.0f, 10.0f), content);
-
-        long bucket = 100L;
-
-        // tick() should execute without error
-        assertDoesNotThrow(() -> bubble.tick(bucket), "tick() should not throw exception");
     }
 
     /**

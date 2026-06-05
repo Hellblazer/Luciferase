@@ -161,6 +161,16 @@ public class BubbleEntityStore {
     }
 
     /**
+     * Expose the mutation lock for cross-store atomic sequences (e.g. cross-bubble migration).
+     * Callers must acquire multiple locks in a consistent order to avoid deadlock.
+     *
+     * @return the ReentrantLock that serializes add/remove/update on this store
+     */
+    public ReentrantLock getMutationLock() {
+        return mutationLock;
+    }
+
+    /**
      * Get the number of entities in this store.
      *
      * @return Entity count
@@ -180,20 +190,28 @@ public class BubbleEntityStore {
 
     /**
      * Get all entities with their data (position, content, bucket).
+     * Holds the mutation lock so the snapshot is consistent: no entity is
+     * concurrently added, removed, or position-updated mid-iteration.
+     * Re-entrant: callers that already hold the lock (e.g. migration) do not deadlock.
      *
      * @return List of all entity records
      */
     public List<BubbleEntityRecord> getAllEntityRecords() {
-        var results = new ArrayList<BubbleEntityRecord>();
-        for (var entry : idMapping.entrySet()) {
-            var originalId = entry.getKey();
-            var internalId = entry.getValue();
-            var data = spatialIndex.getEntity(internalId);
-            if (data != null) {
-                results.add(new BubbleEntityRecord(originalId, data.position, data.content, data.addedBucket));
+        mutationLock.lock();
+        try {
+            var results = new ArrayList<BubbleEntityRecord>();
+            for (var entry : idMapping.entrySet()) {
+                var originalId = entry.getKey();
+                var internalId = entry.getValue();
+                var data = spatialIndex.getEntity(internalId);
+                if (data != null) {
+                    results.add(new BubbleEntityRecord(originalId, data.position, data.content, data.addedBucket));
+                }
             }
+            return results;
+        } finally {
+            mutationLock.unlock();
         }
-        return results;
     }
 
     /**

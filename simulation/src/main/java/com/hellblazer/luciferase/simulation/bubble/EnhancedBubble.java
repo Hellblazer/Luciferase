@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Enhanced Bubble with tetrahedral bounds, spatial index, and VON integration.
@@ -37,6 +38,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * interface, enabling loose coupling for bounds updates on entity changes.
  * <p>
  * Thread-safe for concurrent entity operations via component delegation.
+ * <p>
+ * Per-tick driving: this class does NOT have a {@code tick(bucket)} entry point.
+ * Per-tick work is wired externally:
+ * <ul>
+ *   <li>Ghost state updates: {@link BubbleGhostCoordinator} registers a
+ *       {@link RealTimeController.TickListener} on construction and calls
+ *       {@link #tickGhosts(long)} internally on each tick.</li>
+ *   <li>Entity updates: {@link com.hellblazer.luciferase.simulation.tick.SimulationTickOrchestrator}
+ *       iterates bubbles and invokes its injected {@code BubbleEntityUpdater} callback.</li>
+ * </ul>
+ * Note: the old {@code tick(bucket)} stub listed 'interaction handling' as one of its four
+ * responsibilities. That bullet was NEVER IMPLEMENTED — the method body was a comment-only
+ * placeholder. No interaction-handling logic was dropped when the stub was deleted; it was
+ * never live. Per-tick interaction/physics is not currently a responsibility of this class.
  *
  * @author hal.hildebrand
  */
@@ -224,6 +239,17 @@ public class EnhancedBubble implements AutoCloseable {
     }
 
     /**
+     * Expose the entity store's mutation lock for cross-bubble atomic sequences.
+     * Callers (e.g. TetrahedralMigration) must acquire multiple bubble locks in a
+     * consistent total order (by bubble UUID) to avoid deadlock.
+     *
+     * @return the ReentrantLock that serializes add/remove/update on this bubble's entity store
+     */
+    public ReentrantLock getMutationLock() {
+        return entityStore.getMutationLock();
+    }
+
+    /**
      * Tick ghost state on simulation step (Phase 7B.3).
      * Updates ghost positions via dead reckoning and culls stale ghosts.
      * Should be called once per simulation tick.
@@ -394,20 +420,6 @@ public class EnhancedBubble implements AutoCloseable {
      */
     public boolean needsSplit() {
         return frameMonitor.needsSplit();
-    }
-
-    /**
-     * Process a single simulation tick for a time bucket.
-     *
-     * @param bucket Simulation time bucket
-     */
-    public void tick(long bucket) {
-        // Placeholder for simulation tick processing
-        // In a full implementation, this would:
-        // 1. Process all entities scheduled for this bucket
-        // 2. Update entity states
-        // 3. Handle interactions
-        // 4. Measure frame time
     }
 
     /**

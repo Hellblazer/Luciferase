@@ -165,6 +165,8 @@ public class AdaptiveSplitPolicy {
             recordsById.put(record.id(), record);
         }
 
+        // LOCK MISSING (Luciferase-n7io1): acquire source+target getMutationLock() in UUID order;
+        // races concurrent migration/merge
         var childBubbles = new ArrayList<EnhancedBubble>();
         for (var cluster : analysis.clusters()) {
             var childId = UUID.randomUUID();

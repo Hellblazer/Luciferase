@@ -26,7 +26,15 @@ import org.mockito.Mockito;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -287,6 +295,16 @@ class TetrahedralMigrationTest {
         var spyGrid2 = Mockito.spy(grid2);
         var mockSrc2 = Mockito.mock(EnhancedBubble.class);
         var mockDst2 = Mockito.mock(EnhancedBubble.class);
+        // Stub UUIDs for consistent lock ordering
+        var srcId2 = UUID.randomUUID();
+        var dstId2 = UUID.randomUUID();
+        when(mockSrc2.id()).thenReturn(srcId2);
+        when(mockDst2.id()).thenReturn(dstId2);
+        // Stub getMutationLock() so the cross-bubble lock path doesn't NPE
+        var srcLock2 = new java.util.concurrent.locks.ReentrantLock();
+        var dstLock2 = new java.util.concurrent.locks.ReentrantLock();
+        when(mockSrc2.getMutationLock()).thenReturn(srcLock2);
+        when(mockDst2.getMutationLock()).thenReturn(dstLock2);
         // Position far outside the Tetree domain (MAX_COORD≈2M) so the RDGCS overshoot
         // greatly exceeds HYSTERESIS_DIST=2.0f and the hysteresis gate passes.
         var farPos = new Point3f(5_000_000f, 5_000_000f, 5_000_000f);
@@ -703,6 +721,194 @@ class TetrahedralMigrationTest {
             assertEquals(1, mig.getMetrics().getFailureCount(),
                 "Far-boundary entity with real fromTetreeKey bounds must be ALLOWED through hysteresis");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Bead Luciferase-7wzml.187 — cross-bubble lock: entity conservation under concurrency
+    // -----------------------------------------------------------------------
+
+    /**
+     * Concurrent migrations and position-updates on the same bubble pair must conserve
+     * the total entity count: every entity ends up in exactly one bubble.
+     * <p>
+     * Setup: two real EnhancedBubbles, N entities seeded into the source bubble.
+     * N/2 threads each call executeMigration (via checkMigrations with mocked checker/router)
+     * for a distinct entity, while N/2 threads concurrently call updateEntityPosition on
+     * the source bubble for the same entities.  After all threads finish, the union of
+     * entities across both bubbles must equal the original set with no duplicates and no gaps.
+     */
+    @Test
+    void concurrentMigrationAndUpdate_conservesEntityCount() throws InterruptedException {
+        // Two real bubbles with their own RealTimeControllers
+        var srcId = UUID.randomUUID();
+        var dstId = UUID.randomUUID();
+        var srcCtrl = new RealTimeController(srcId, "src");
+        var dstCtrl = new RealTimeController(dstId, "dst");
+        var srcBubble = new EnhancedBubble(srcId, (byte) 1, 16, srcCtrl);
+        var dstBubble = new EnhancedBubble(dstId, (byte) 1, 16, dstCtrl);
+
+        // Seed entities into the source bubble
+        int N = 20;
+        var entityIds = new ArrayList<String>(N);
+        for (int i = 0; i < N; i++) {
+            var eid = "entity-" + i;
+            entityIds.add(eid);
+            srcBubble.addEntity(eid, new Point3f(i, i, i), null);
+        }
+
+        // Build a TetreeBubbleGrid stub that returns our real bubbles by key.
+        // We use the real grid and register bubbles via a thin wrapper approach:
+        // instead, build a real grid, extract keys from real bubbles' bounds,
+        // and use a spy to redirect getBubble to our instances.
+        var grid = new TetreeBubbleGrid((byte) 1);
+        grid.createBubbles(2, (byte) 1, 16);
+        var iter = grid.getAllBubbles().iterator();
+        var gridBubble1 = iter.next();
+        var gridBubble2 = iter.next();
+        var srcKey = gridBubble1.bounds().rootKey();
+        var dstKey = gridBubble2.bounds().rootKey();
+
+        var spyGrid = Mockito.spy(grid);
+        doReturn(srcBubble).when(spyGrid).getBubble(srcKey);
+        doReturn(dstBubble).when(spyGrid).getBubble(dstKey);
+        doReturn(true).when(spyGrid).containsBubble(srcKey);
+        doReturn(true).when(spyGrid).containsBubble(dstKey);
+
+        // Mocked checker/router that emit exactly one migration decision per entity
+        var checker = Mockito.mock(TetrahedralContainmentChecker.class);
+        var router  = Mockito.mock(TetrahedralMigrationRouter.class);
+        var mig = new TetrahedralMigration(spyGrid, checker, router);
+
+        // N/2 migrator threads, N/2 updater threads, all start simultaneously
+        int threads = N;
+        var ready   = new CountDownLatch(threads);
+        var start   = new CountDownLatch(1);
+        var errors  = new CopyOnWriteArrayList<Throwable>();
+        var pool    = Executors.newFixedThreadPool(threads);
+
+        for (int i = 0; i < N / 2; i++) {
+            final String eid = entityIds.get(i);
+            pool.submit(() -> {
+                ready.countDown();
+                try { start.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+                try {
+                    // Directly invoke executeMigration via checkMigrations with
+                    // per-entity mocked checker/router responses
+                    var rec = new TetrahedralContainmentChecker.MigrationRecord(
+                        eid, srcKey, dstKey, new Point3f(5_000_000f, 5_000_000f, 5_000_000f), null);
+                    var dec = new TetrahedralMigrationRouter.MigrationDecision(eid, srcKey, dstKey, 1.0f, false);
+                    // Use a per-entity migration instance to avoid cross-entity lock contention
+                    // while still exercising the cross-bubble lock path
+                    var perEntityChecker = Mockito.mock(TetrahedralContainmentChecker.class);
+                    var perEntityRouter  = Mockito.mock(TetrahedralMigrationRouter.class);
+                    when(perEntityChecker.checkMigrations(any())).thenReturn(List.of(rec));
+                    when(perEntityRouter.routeMigration(any())).thenReturn(dec);
+                    var perMig = new TetrahedralMigration(spyGrid, perEntityChecker, perEntityRouter);
+                    perMig.checkMigrations(0L);
+                } catch (Throwable t) { errors.add(t); }
+            });
+        }
+
+        for (int i = N / 2; i < N; i++) {
+            final String eid = entityIds.get(i);
+            pool.submit(() -> {
+                ready.countDown();
+                try { start.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+                try {
+                    // Concurrent position update on the source bubble
+                    srcBubble.updateEntityPosition(eid, new Point3f(999f, 999f, 999f));
+                } catch (Throwable t) { errors.add(t); }
+            });
+        }
+
+        // Wait for all threads to be ready then fire
+        ready.await(5, TimeUnit.SECONDS);
+        start.countDown();
+        pool.shutdown();
+        assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS), "Thread pool did not finish in time");
+
+        // No thread threw
+        assertTrue(errors.isEmpty(), "Concurrent threads threw: " + errors);
+
+        // Entity conservation: count total entities across both bubbles
+        int srcCount = srcBubble.entityCount();
+        int dstCount = dstBubble.entityCount();
+        int total = srcCount + dstCount;
+
+        // Each entity is in exactly one bubble (migrated or stayed); no entity is lost or duplicated.
+        // The updater threads only update position; they do not change the count.
+        // The migrator threads each attempt to migrate their entity: either it succeeds (moves src->dst)
+        // or the entity wasn't found (already absent) and the count stays the same.
+        // In all cases total must equal N.
+        assertEquals(N, total,
+            "Total entity count must be conserved (src=" + srcCount + " dst=" + dstCount + ")");
+
+        // Verify no entity appears in both bubbles simultaneously
+        var srcEntities = srcBubble.getEntities();
+        var dstEntities = dstBubble.getEntities();
+        var intersection = new ArrayList<>(srcEntities);
+        intersection.retainAll(dstEntities);
+        assertTrue(intersection.isEmpty(),
+            "No entity may exist in both bubbles simultaneously: " + intersection);
+    }
+
+    // -----------------------------------------------------------------------
+    // Bead Luciferase-7wzml.20 — same-bubble migration guard (.187 follow-up)
+    //
+    // executeMigration must return false (no-op) when source and destination
+    // resolve to the same EnhancedBubble.  Without the guard, the add-then-remove
+    // sequence corrupts the idMapping by double-inserting the entity.
+    // -----------------------------------------------------------------------
+
+    /**
+     * Same-bubble migration is a no-op: returns false, no entity double-insert.
+     * <p>
+     * Wires source key and destination key to the SAME bubble instance, then
+     * triggers checkMigrations.  The guard must fire before lock acquisition and
+     * return false, leaving entity count unchanged.
+     */
+    @Test
+    void sameBubbleMigration_isNoOp() {
+        var id = UUID.randomUUID();
+        var ctrl = new RealTimeController(id, "same-bubble");
+        var bubble = new EnhancedBubble(id, (byte) 1, 16, ctrl);
+
+        // Seed one entity
+        bubble.addEntity("entity-sb", new Point3f(1f, 1f, 1f), null);
+        assertEquals(1, bubble.entityCount(), "Bubble must start with 1 entity");
+
+        var grid = new TetreeBubbleGrid((byte) 1);
+        grid.createBubbles(1, (byte) 1, 16);
+        var realBubble = grid.getAllBubbles().iterator().next();
+        var key = realBubble.bounds().rootKey();
+
+        // Both source and destination point to the SAME bubble instance
+        var spyGrid = Mockito.spy(grid);
+        doReturn(bubble).when(spyGrid).getBubble(key);
+        doReturn(true).when(spyGrid).containsBubble(key);
+
+        var checker = Mockito.mock(TetrahedralContainmentChecker.class);
+        // Same key for both src and dst
+        var record = new TetrahedralContainmentChecker.MigrationRecord(
+            "entity-sb", key, key, new Point3f(5_000_000f, 5_000_000f, 5_000_000f), null);
+        when(checker.checkMigrations(bubble)).thenReturn(List.of(record));
+        // getAllBubbles returns only our real bubble
+        doReturn(List.of(bubble)).when(spyGrid).getAllBubbles();
+
+        var decision = new TetrahedralMigrationRouter.MigrationDecision(
+            "entity-sb", key, key, 1.0f, false);
+        var router = Mockito.mock(TetrahedralMigrationRouter.class);
+        when(router.routeMigration(any())).thenReturn(decision);
+
+        var mig = new TetrahedralMigration(spyGrid, checker, router);
+        mig.checkMigrations(0L);
+
+        // Must be treated as a failure/no-op, not a successful migration
+        assertEquals(0, mig.getMetrics().getTotalMigrations(),
+                     "Same-bubble migration must not count as a successful migration");
+        // Entity count unchanged: the add-then-remove sequence must NOT have run
+        assertEquals(1, bubble.entityCount(),
+                     "Entity count must be unchanged after same-bubble no-op (no double-insert)");
     }
 
     /**

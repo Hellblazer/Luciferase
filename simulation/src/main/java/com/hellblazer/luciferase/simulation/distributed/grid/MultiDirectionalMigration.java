@@ -257,6 +257,8 @@ public class MultiDirectionalMigration {
         var sourceBubble = bubbleGrid.getBubble(intent.sourceCoord());
         var targetBubble = bubbleGrid.getBubble(intent.targetCoord());
 
+        // LOCK MISSING (Luciferase-n7io1): acquire source+target getMutationLock() in UUID order;
+        // races concurrent migration/merge
         try {
             // Step 1: Add entity to target bubble (target now owns entity)
             targetBubble.addEntity(entityId, intent.position(), intent.content());
