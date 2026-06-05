@@ -115,11 +115,24 @@ public class EventRecovery {
         // interleaving partial JSON lines and corrupting the log. WalLogReader opens files for
         // reading only.
         var reader = new WalLogReader(nodeId, logDirectory);
-        List<Map<String, Object>> allEvents;
+        WalReadResult readResult;
         if (checkpoint != null) {
-            allEvents = reader.readEventsSince(checkpoint.sequenceNumber());
+            readResult = reader.readEventsSinceResult(checkpoint.sequenceNumber());
         } else {
-            allEvents = reader.readAllEvents();
+            readResult = reader.readAllEventsResult();
+        }
+        List<Map<String, Object>> allEvents = readResult.events();
+        int skippedCorrupt = readResult.skippedCorrupt();
+        if (skippedCorrupt > 0) {
+            // C1 — RDR-004-class silent-data-loss: detect-but-proceed is NOT acceptable.
+            // Proceeding with partial state as if it were complete can replay a corrupted view,
+            // causing split-brain, ghost entities, or lost migrations.  Fail loud so an operator
+            // can inspect and explicitly intervene before the node re-joins the cluster.
+            // (Luciferase-7wzml.209)
+            throw new IOException(
+                "WAL recovery for node " + nodeId + ": " + skippedCorrupt
+                + " mid-file corrupt line(s) detected — manual inspection required before "
+                + "recovery can proceed. Inspect the log files in " + logDirectory);
         }
 
         // Replay events with validation
@@ -162,7 +175,19 @@ public class EventRecovery {
         // here (the prior behavior) would silently overflow to a negative/wrong count.
         var totalReplayed = checkpointedPrefix + validEvents.size();
 
-        return new RecoveredState(checkpoint, validEvents, totalReplayed, skippedCount);
+        var recovered = new RecoveredState(checkpoint, validEvents, totalReplayed, skippedCount, skippedCorrupt);
+
+        // M1 — wire the integrity gate: non-monotonic sequences or a replay that overlaps the
+        // checkpoint indicate a corrupt or double-opened WAL.  Fail loud; same rationale as C1.
+        // (Luciferase-7wzml.209)
+        if (!validateRecoveryIntegrity(recovered)) {
+            throw new IOException(
+                "WAL recovery integrity failure for node " + nodeId
+                + ": non-monotonic sequence or checkpoint overlap detected — "
+                + "manual inspection required before recovery can proceed");
+        }
+
+        return recovered;
     }
 
     /**
@@ -242,7 +267,7 @@ public class EventRecovery {
                 log.warn("Recovery integrity failure: event missing type: {}", event);
                 return false;
             }
-            var seqRaw = event.get("sequenceNumber");
+            var seqRaw = event.get("sequence");
             if (seqRaw instanceof Number num) {
                 long seq = num.longValue();
                 if (first && checkpointSeq >= 0 && seq <= checkpointSeq) {

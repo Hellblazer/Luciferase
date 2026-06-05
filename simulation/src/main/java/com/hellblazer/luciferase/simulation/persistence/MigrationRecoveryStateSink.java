@@ -129,4 +129,21 @@ public class MigrationRecoveryStateSink implements RecoveryStateSink {
     public void onViewSynchronyAck(String entityId, boolean success) {
         log.debug("Recovery: VIEW_SYNC_ACK for {} success={}", entityId, success);
     }
+
+    /**
+     * Test-only entry point: calls {@link EntityMigrationStateMachine#recoverEntityState} via a
+     * lambda to exercise the filter-based caller guard from this class's declaring context.
+     *
+     * <p>This proves that {@code enforceRecoveryCaller} is robust to synthetic lambda frames: the
+     * JVM pushes a bridge frame for the lambda, but the filter skips all
+     * {@code EntityMigrationStateMachine} frames and stops at the first external frame, whose
+     * {@code getDeclaringClass()} returns {@code MigrationRecoveryStateSink} — the permitted
+     * caller — so no {@link IllegalCallerException} is thrown.
+     *
+     * <p>Package-private. Called only from {@code MigrationRecoveryStateSinkTest}.
+     */
+    void recoverViaLambdaForTest(Object entityId, EntityMigrationState state) {
+        Runnable r = () -> fsm.recoverEntityState(entityId, state);
+        r.run();
+    }
 }

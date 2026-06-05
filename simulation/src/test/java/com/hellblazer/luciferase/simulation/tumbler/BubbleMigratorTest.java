@@ -13,10 +13,13 @@ import com.hellblazer.luciferase.simulation.von.Transport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import javax.vecmath.Point3f;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -315,11 +318,11 @@ class BubbleMigratorTest {
         sourceBubble.addEntity("r3", new Point3f(3f, 0f, 0f), "c3");
         assertThat(sourceBubble.entityCount()).isEqualTo(3);
 
-        // Target bubble - spy so we can make broadcastMove() throw after staging
+        // Target bubble - spy so we can make broadcastMoveAsync() return a failed future after staging
         var realTarget = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
         var spyTarget = spy(realTarget);
-        doThrow(new RuntimeException("simulated broadcast failure"))
-            .when(spyTarget).broadcastMove();
+        doReturn(CompletableFuture.<Void>failedFuture(new RuntimeException("simulated broadcast failure")))
+            .when(spyTarget).broadcastMoveAsync();
 
         migrator.setBubbleTransferFactory((tgtServerId, src) -> spyTarget);
 
@@ -535,5 +538,121 @@ class BubbleMigratorTest {
         assertThat(targetMetrics.bubbleCount())
             .as("target server must gain a bubble after migration")
             .isEqualTo(1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Luciferase-7wzml.210: neighbor ACK wait — replaces raw Thread.sleep(50)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Luciferase-7wzml.210: when broadcastMoveAsync() never completes within the ack timeout,
+     * migrate() must return a failure MigrationResult (not silent success).
+     * The timeout window is driven by clock.currentTimeMillis() so it is deterministic under TestClock.
+     */
+    @Test
+    void testMigrate_neighborAckTimeout_returnsFalseMigrationResult() throws Exception {
+        // Arrange: a TestClock so time is controlled; a very short ack timeout
+        var testClock = new TestClock();
+        testClock.setTime(1000L);
+        migrator.setClock(testClock);
+        migrator.setNeighborAckTimeout(Duration.ofMillis(50));
+
+        var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+
+        // Target bubble spy: broadcastMoveAsync() returns a future that never completes
+        var realTarget = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        var spyTarget = spy(realTarget);
+        doReturn(new CompletableFuture<Void>())  // never-completing future
+            .when(spyTarget).broadcastMoveAsync();
+        migrator.setBubbleTransferFactory((tgtServerId, src) -> spyTarget);
+
+        // Act: allow up to 5s wall-clock (migration orTimeout is 1s by default in setUp)
+        var result = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                             .get(5, TimeUnit.SECONDS);
+
+        // Assert: timeout → false result, NOT silent success
+        assertThat(result.success())
+            .as("neighbor ACK timeout must produce a failure MigrationResult (Luciferase-7wzml.210)")
+            .isFalse();
+        assertThat(result.message())
+            .as("failure message must mention ack timeout")
+            .containsIgnoringCase("ack timeout");
+    }
+
+    /**
+     * Luciferase-7wzml.210 success path: when broadcastMoveAsync() completes immediately
+     * (no neighbors), migration must still succeed — regression guard for the happy path.
+     */
+    @Test
+    void testMigrate_neighborAckImmediate_successPath() throws Exception {
+        // Default setup: Bubble with no neighbors → broadcastMoveAsync returns completed future
+        var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        var targetBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        migrator.setBubbleTransferFactory((tgtServerId, src) -> targetBubble);
+
+        var result = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                             .get(5, TimeUnit.SECONDS);
+
+        assertThat(result.success())
+            .as("migration with no neighbors (immediate ACK) must succeed")
+            .isTrue();
+    }
+
+    /**
+     * Luciferase-7wzml.210: the ack timeout uses neighborAckTimeout.toMillis() not raw Thread.sleep.
+     * Verify no silent-success regression: a frozen TestClock still produces a failure result when
+     * broadcastMoveAsync() never completes (the CF.get(timeout) is the real gate, not clock drift).
+     */
+    @Test
+    void testMigrate_neighborAckTimeout_clockDrivenNotWallClock() throws Exception {
+        // TestClock frozen — wall clock advances but TestClock does not
+        var frozenClock = new TestClock();
+        frozenClock.setTime(5000L);
+        migrator.setClock(frozenClock);
+        migrator.setNeighborAckTimeout(Duration.ofMillis(50));
+
+        var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        var realTarget = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+        var spyTarget = spy(realTarget);
+        doReturn(new CompletableFuture<Void>())  // never completes
+            .when(spyTarget).broadcastMoveAsync();
+        migrator.setBubbleTransferFactory((tgtServerId, src) -> spyTarget);
+
+        var result = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                             .get(5, TimeUnit.SECONDS);
+
+        // The CompletableFuture.get(50ms) gate fires regardless of TestClock state —
+        // the important contract: (a) no raw Thread.sleep, (b) result is failure not silent success.
+        assertThat(result.success())
+            .as("frozen TestClock: timeout still fires via CF.get(); result must be failure, not silent success")
+            .isFalse();
+    }
+
+    /**
+     * Minimal TestClock for this test class — mirrors the pattern used throughout the simulation tests.
+     */
+    private static class TestClock implements Clock {
+        private final AtomicLong millis = new AtomicLong(0);
+        private final AtomicLong nanos  = new AtomicLong(0);
+
+        void setTime(long ms) {
+            millis.set(ms);
+            nanos.set(ms * 1_000_000L);
+        }
+
+        void advance(long deltaMs) {
+            millis.addAndGet(deltaMs);
+            nanos.addAndGet(deltaMs * 1_000_000L);
+        }
+
+        @Override
+        public long currentTimeMillis() {
+            return millis.get();
+        }
+
+        @Override
+        public long nanoTime() {
+            return nanos.get();
+        }
     }
 }

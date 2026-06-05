@@ -260,8 +260,8 @@ public class PersistenceManager implements AutoCloseable {
             var recovery = new EventRecovery(writeAheadLog.logDirectory, recoverySink);
             var recovered = recovery.recover(nodeId);
 
-            log.info("Recovery completed: {} events replayed, {} skipped",
-                    recovered.totalEventsReplayed(), recovered.skippedEvents());
+            log.info("Recovery completed: {} events replayed, {} skipped, {} corrupt WAL lines",
+                    recovered.totalEventsReplayed(), recovered.skippedEvents(), recovered.skippedCorrupt());
 
             return recovered;
         } finally {

@@ -364,7 +364,7 @@ public final class BarrierRecoveryImpl implements PartitionRecovery {
             return;
         }
 
-        var event = RecoveryEvent.now(partitionId, eventType, details);
+        var event = RecoveryEvent.at(partitionId, eventType, details, clock.currentTimeMillis());
 
         for (var observer : observers) {
             try {

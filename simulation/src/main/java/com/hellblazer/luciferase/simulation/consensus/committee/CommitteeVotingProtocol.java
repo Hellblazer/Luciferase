@@ -235,20 +235,29 @@ public class CommitteeVotingProtocol {
             var proposalId = entry.getKey();
             var state = entry.getValue();
 
-            // Abort the proposal's result future
-            var result = ballotBox.getResult(proposalId);
-            if (!result.isDone()) {
-                result.completeExceptionally(new IllegalStateException("Proposal aborted due to view change from view " + state.proposal.viewId()));
+            // Mirror handleTimeout: use getResultIfPresent (NOT getResult) so a proposal
+            // already cleared by a concurrent quorum-completing vote (recordVote cleanup
+            // :173-180 runs WITHOUT viewLock) is not resurrected into a zombie VoteState
+            // and then completed exceptionally with a misleading "view change" outcome
+            // (Luciferase-0frcy.92 / Luciferase-7wzml.196).
+            // If Optional is empty the quorum path already settled+cleared this proposal;
+            // skip the abort but still cancel the timeout task and remove from proposals.
+            var result = ballotBox.getResultIfPresent(proposalId);
+            if (result.isPresent()) {
+                if (!result.get().isDone()) {
+                    result.get().completeExceptionally(new IllegalStateException(
+                        "Proposal aborted due to view change from view " + state.proposal.viewId()));
+                }
+                ballotBox.clear(proposalId);
             }
 
-            // Cancel scheduled timeout task
+            // Cancel scheduled timeout task regardless (safe even if already cancelled)
             if (state.timeoutTask != null) {
                 state.timeoutTask.cancel(false);
             }
 
             // Remove from tracking (safe now that we're not iterating)
             proposals.remove(proposalId);
-            ballotBox.clear(proposalId);
         }
     }
 

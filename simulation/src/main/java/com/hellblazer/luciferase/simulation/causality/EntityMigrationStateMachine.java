@@ -75,6 +75,20 @@ public class EntityMigrationStateMachine {
     private static final Logger log = LoggerFactory.getLogger(EntityMigrationStateMachine.class);
 
     /**
+     * The only class permitted to call {@link #recoverEntityState}. Enforced at runtime by
+     * {@link #enforceRecoveryCaller()}.
+     */
+    // NOTE: importing MigrationRecoveryStateSink directly would create a causality↔persistence
+    // dependency cycle (persistence already imports causality). The string is therefore intentional.
+    // The companion test EntityMigrationStateMachineTest#recoveryCaller_fqnMatchesMigrationRecoveryStateSink
+    // asserts this constant equals MigrationRecoveryStateSink.class.getName() so a rename breaks loudly.
+    private static final String RECOVERY_CALLER =
+        "com.hellblazer.luciferase.simulation.persistence.MigrationRecoveryStateSink";
+
+    /** Exposed for the rename-guard test only. Do not use in production code. */
+    static final String RECOVERY_CALLER_FOR_TEST = RECOVERY_CALLER;
+
+    /**
      * Per-entity migration state tracking.
      */
     private final ConcurrentHashMap<Object, EntityMigrationState> entityStates;
@@ -452,16 +466,29 @@ public class EntityMigrationStateMachine {
     /**
      * Directly set entity state during crash recovery, bypassing normal transition guards.
      *
-     * <p>Use ONLY during WAL replay / crash recovery. Normal state transitions must go through
-     * {@link #transition} so that view-stability and invariant checks are enforced.
+     * <p><strong>RECOVERY-PATH ONLY.</strong> This method must only be called from
+     * {@code com.hellblazer.luciferase.simulation.persistence.MigrationRecoveryStateSink}
+     * during WAL replay before the view is formed.  All other callers are defects: the
+     * method bypasses the view-stability guard and listener dispatch that
+     * {@link #transition} enforces, so calling it on a live FSM silently corrupts
+     * ownership invariants.
      *
-     * <p>If {@code state} is {@code null} the entity is removed from the tracking map (equivalent
-     * to "was never tracked on this node").
+     * <p>A runtime guard enforces this restriction: any caller outside
+     * {@code MigrationRecoveryStateSink} receives an {@link IllegalCallerException}
+     * immediately, regardless of test or production context.
+     *
+     * <p>Normal state transitions must always go through {@link #transition}.
+     *
+     * <p>If {@code state} is {@code null} the entity is removed from the tracking map
+     * (equivalent to "was never tracked on this node").
      *
      * @param entityId recovered entity identifier (same type used at insert time)
      * @param state    state to forcibly set, or {@code null} to remove
+     * @throws IllegalCallerException if the immediate caller is not
+     *                                {@code MigrationRecoveryStateSink}
      */
     public void recoverEntityState(Object entityId, EntityMigrationState state) {
+        enforceRecoveryCaller();
         Objects.requireNonNull(entityId, "entityId must not be null");
         if (state == null) {
             entityStates.remove(entityId);
@@ -469,6 +496,34 @@ public class EntityMigrationStateMachine {
             entityStates.put(entityId, state);
         }
         log.debug("Recovery: set entity {} to state {}", entityId, state);
+    }
+
+    /**
+     * Guard for {@link #recoverEntityState}: throws {@link IllegalCallerException} if the
+     * first caller outside {@code EntityMigrationStateMachine} is not
+     * {@code MigrationRecoveryStateSink}.
+     *
+     * <p>Uses {@link StackWalker} to inspect the call stack, filtering out all frames
+     * whose declaring class is {@code EntityMigrationStateMachine} (this class, plus any
+     * lambda or method-reference synthetic frames the JVM inserts for internal dispatch).
+     * The first remaining frame is the external caller. This is robust to any number of
+     * internal frames and tolerates lambda/stream/method-ref dispatch from the recovery
+     * path — unlike a fixed {@code skip(N)} which breaks if a synthetic frame shifts the
+     * depth.
+     */
+    private static void enforceRecoveryCaller() {
+        var caller = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
+                                .walk(frames -> frames
+                                    .filter(f -> !f.getDeclaringClass().equals(EntityMigrationStateMachine.class))
+                                    .findFirst())
+                                .map(f -> f.getDeclaringClass().getName())
+                                .orElse("<unknown>");
+        if (!RECOVERY_CALLER.equals(caller)) {
+            throw new IllegalCallerException(
+                "recoverEntityState is reserved for crash-recovery replay only. "
+                + "Caller must be MigrationRecoveryStateSink; actual caller: " + caller
+                + ". Use EntityMigrationStateMachine.transition() for all live FSM changes.");
+        }
     }
 
     /**

@@ -279,6 +279,102 @@ class CommitteeVotingProtocolTest {
         assertFalse(future2.get(1, TimeUnit.SECONDS), "NO majority should return false");
     }
 
+    /**
+     * Regression for Luciferase-7wzml.196: quorum-completing vote concurrent with view-change rollback.
+     * <p>
+     * If recordVote() drives the ballot box to quorum (clears the VoteState) at the same time
+     * rollbackOnViewChange() iterates its snapshot, the rollback path must NOT resurrect a new
+     * zombie VoteState via getResult(computeIfAbsent) and complete it exceptionally.
+     * <p>
+     * Assertion:
+     * - If the future completed normally (quorum path won) → no spurious abort, result is true.
+     * - If the future completed exceptionally (rollback path won) → must be IllegalStateException
+     *   "view change", NOT a zombie future that never completes.
+     * - Either way the future must be done within the timeout — no blocking zombie.
+     */
+    @Test
+    void testConcurrentQuorumAndViewChangeNoZombieFuture() throws Exception {
+        when(mockContext.size()).thenReturn(3);
+        when(mockContext.toleranceLevel()).thenReturn(1);
+
+        // Use a single-thread scheduler so timeout fires are serialised (no interference).
+        var protocol = new CommitteeVotingProtocol(mockContext, config, scheduler);
+        var oldViewId = DigestAlgorithm.DEFAULT.getOrigin();
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            DigestAlgorithm.DEFAULT.digest("source"),
+            DigestAlgorithm.DEFAULT.digest("target"),
+            oldViewId,
+            System.currentTimeMillis()
+        );
+        // committee of 3: quorum = (3-1)/2 + 1 = 2 votes needed
+        var committee = createCommittee(3);
+        var committeeIds = new java.util.ArrayList<>(committee);
+
+        var future = protocol.requestConsensus(proposal, committee);
+
+        // Use a CountDownLatch so both operations start as simultaneously as possible.
+        var startGate = new CountDownLatch(1);
+        var newViewId = DigestAlgorithm.DEFAULT.digest("new-view");
+
+        // Thread 1: supply the quorum-completing second vote
+        var voteThread = new Thread(() -> {
+            try {
+                startGate.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            // Vote 1 (pre-gate so quorum needs one more)
+            protocol.recordVote(new Vote(proposal.proposalId(), committeeIds.get(0), true, oldViewId));
+            // Vote 2 — this one completes the quorum and triggers cleanup
+            protocol.recordVote(new Vote(proposal.proposalId(), committeeIds.get(1), true, oldViewId));
+        });
+
+        // Thread 2: trigger the view-change rollback
+        var rollbackThread = new Thread(() -> {
+            try {
+                startGate.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            protocol.rollbackOnViewChange(newViewId);
+        });
+
+        voteThread.start();
+        rollbackThread.start();
+        startGate.countDown();   // release both threads simultaneously
+
+        // assertTimeoutPreemptively fails the test if either thread is still alive after 2 s
+        // (raw join(2000)+isDone silently passes on deadlock — stuck threads are not detected).
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(2), () -> {
+            voteThread.join();
+            rollbackThread.join();
+        }, "Concurrent vote+rollback threads must complete within 2 s — possible deadlock");
+        assertEquals(Thread.State.TERMINATED, voteThread.getState(), "voteThread must be TERMINATED");
+        assertEquals(Thread.State.TERMINATED, rollbackThread.getState(), "rollbackThread must be TERMINATED");
+
+        // The future MUST be done — never a blocking zombie.
+        assertTrue(future.isDone(), "Future must not be a zombie — must complete regardless of interleaving");
+
+        // Determine which path won and assert the outcome is coherent.
+        if (future.isCompletedExceptionally()) {
+            // Rollback path won: must be the expected view-change exception, not an NPE
+            // or some internal error from resurrected state.
+            var ex = assertThrows(ExecutionException.class, () -> future.get(100, TimeUnit.MILLISECONDS));
+            assertInstanceOf(IllegalStateException.class, ex.getCause(),
+                "Exceptional completion must be an IllegalStateException (view change)");
+            assertTrue(ex.getCause().getMessage().contains("view change"),
+                "Exception message must reference view change");
+        } else {
+            // Quorum path won: result must be true (all votes were YES).
+            assertTrue(future.get(100, TimeUnit.MILLISECONDS),
+                "Quorum-completing path must yield true");
+        }
+    }
+
     // Helper methods
 
     private MigrationProposal createProposal() {

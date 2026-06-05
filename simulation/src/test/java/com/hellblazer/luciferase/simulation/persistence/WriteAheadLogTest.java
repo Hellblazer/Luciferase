@@ -27,11 +27,13 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -327,6 +329,146 @@ class WriteAheadLogTest {
 
         // Then: Should return empty list
         assertTrue(eventsSinceLast.isEmpty(), "Should return no events after last sequence");
+    }
+
+    // ---- Bead Luciferase-7wzml.211: torn-tail vs mid-file corruption distinction ----
+    // Pre-fix: readLogFile silently skipped ALL parse failures (RDR-004 'ACK success while
+    // dropping data'). Fix: distinguish torn final line (acceptable) from mid-file corruption
+    // (must surface as skippedCorrupt > 0 in RecoveredState).
+
+    @Test
+    void midFileCorruptLineIsCountedInSkippedCorrupt(@TempDir Path logDir) throws IOException {
+        // Write 3 valid events, inject a corrupt line in the middle (line 2), write 1 more valid.
+        var localNodeId = UUID.randomUUID();
+        try (var localWal = new WriteAheadLog(localNodeId, logDir)) {
+            localWal.append(createTestEvent("EVENT_1"));
+            localWal.append(createTestEvent("EVENT_2"));
+            localWal.append(createTestEvent("EVENT_3"));
+            localWal.flush();
+        }
+
+        // Find the log file and inject corruption in the middle
+        var logFile = logDir.resolve("node-" + localNodeId + ".log");
+        var lines = Files.readAllLines(logFile);
+        // lines: [event1, event2, event3]. Replace line index 1 (middle) with garbage.
+        lines.set(1, "NOT_VALID_JSON{{{");
+        // Append a valid 4th event line so the corrupt line is clearly mid-file
+        lines.add("{\"version\":1,\"type\":\"EVENT_4\",\"sequence\":4}");
+        Files.write(logFile, lines, StandardOpenOption.TRUNCATE_EXISTING);
+
+        var reader = new WalLogReader(localNodeId, logDir);
+        var result = reader.readAllEventsResult();
+
+        assertThat(result.skippedCorrupt())
+            .as("A corrupt line in the middle of the log must increment skippedCorrupt")
+            .isGreaterThan(0);
+        assertThat(result.events())
+            .as("Valid events around the corrupt line must still be returned")
+            .isNotEmpty();
+    }
+
+    @Test
+    void tornFinalLineIsNotCountedAsCorrupt(@TempDir Path logDir) throws IOException {
+        // Write 3 valid events, then append a truncated (torn) final line.
+        var localNodeId = UUID.randomUUID();
+        try (var localWal = new WriteAheadLog(localNodeId, logDir)) {
+            localWal.append(createTestEvent("EVENT_1"));
+            localWal.append(createTestEvent("EVENT_2"));
+            localWal.flush();
+        }
+
+        // Append a partial/truncated JSON line to simulate crash-flush truncation.
+        var logFile = logDir.resolve("node-" + localNodeId + ".log");
+        Files.writeString(logFile, "{\"version\":1,\"type\":\"TORN", StandardOpenOption.APPEND);
+
+        var reader = new WalLogReader(localNodeId, logDir);
+        var result = reader.readAllEventsResult();
+
+        assertThat(result.skippedCorrupt())
+            .as("A torn tail (partial last line after crash) must NOT be counted as corrupt")
+            .isEqualTo(0);
+        assertThat(result.events())
+            .as("The two good events before the torn tail must be recovered")
+            .hasSize(2);
+    }
+
+    /**
+     * TDD test 3: corrupt last line in a SEALED/rotated file must cause recover() to throw.
+     * H1 — torn-tail exemption must NOT apply to sealed files (Luciferase-7wzml.211).
+     */
+    @Test
+    void corruptLastLineInSealedFileCausesRecoverToThrow(@TempDir Path logDir) throws IOException {
+        // Write enough events to force rotation (use a 1-byte rotation threshold to guarantee it).
+        var localNodeId = UUID.randomUUID();
+        try (var localWal = new WriteAheadLog(localNodeId, logDir, 1)) {
+            localWal.append(createTestEvent("EVENT_SEALED_1"));
+            localWal.append(createTestEvent("EVENT_SEALED_2"));
+            localWal.flush();
+        }
+
+        // After rotation, node-<id>.log is sealed (suffix=0), node-<id>-1.log is active (suffix=1).
+        // Corrupt the LAST LINE of the sealed file (suffix=0).
+        var sealedFile = logDir.resolve("node-" + localNodeId + ".log");
+        assertThat(sealedFile).exists();
+        var lines = Files.readAllLines(sealedFile);
+        assertThat(lines).isNotEmpty();
+        // Replace the last line with garbage — sealed file has no legitimate torn tail.
+        lines.set(lines.size() - 1, "CORRUPT_LAST_LINE_IN_SEALED_FILE{{{");
+        Files.write(sealedFile, lines, StandardOpenOption.TRUNCATE_EXISTING);
+
+        var recovery = new EventRecovery(logDir);
+        var ex = assertThrows(IOException.class, () -> recovery.recover(localNodeId),
+            "Corrupt last line in a sealed/rotated file must cause recover() to throw (H1)");
+        assertThat(ex.getMessage())
+            .contains("mid-file corrupt")
+            .contains("manual inspection required");
+    }
+
+    @Test
+    void cleanLogHasZeroSkippedCorrupt(@TempDir Path logDir) throws IOException {
+        // A clean log with no parse failures must report skippedCorrupt == 0.
+        var localNodeId = UUID.randomUUID();
+        try (var localWal = new WriteAheadLog(localNodeId, logDir)) {
+            localWal.append(createTestEvent("CLEAN_1"));
+            localWal.append(createTestEvent("CLEAN_2"));
+            localWal.append(createTestEvent("CLEAN_3"));
+            localWal.flush();
+        }
+
+        var reader = new WalLogReader(localNodeId, logDir);
+        var result = reader.readAllEventsResult();
+
+        assertThat(result.skippedCorrupt())
+            .as("A clean log must report zero skipped-corrupt lines")
+            .isEqualTo(0);
+        assertThat(result.events()).hasSize(3);
+    }
+
+    @Test
+    void skippedCorruptCausesRecoverToThrow(@TempDir Path logDir) throws IOException {
+        // C1 — RDR-004-class: mid-file corruption must cause recover() to throw IOException,
+        // not silently proceed with partial state as if complete (Luciferase-7wzml.209).
+        // Pre-fix: recover() only logged a WARN and returned a RecoveredState with skippedCorrupt>0.
+        var localNodeId = UUID.randomUUID();
+        try (var localWal = new WriteAheadLog(localNodeId, logDir)) {
+            localWal.append(createTestEvent("EVENT_1"));
+            localWal.append(createTestEvent("EVENT_2"));
+            localWal.flush();
+        }
+
+        var logFile = logDir.resolve("node-" + localNodeId + ".log");
+        var lines = Files.readAllLines(logFile);
+        // Inject corruption in the middle and add a valid trailing event so corruption is mid-file.
+        lines.set(0, "CORRUPT_GARBAGE");
+        lines.add("{\"version\":1,\"type\":\"EVENT_3\",\"sequence\":3}");
+        Files.write(logFile, lines, StandardOpenOption.TRUNCATE_EXISTING);
+
+        var recovery = new EventRecovery(logDir);
+        assertThat(org.junit.jupiter.api.Assertions.assertThrows(IOException.class,
+                       () -> recovery.recover(localNodeId)))
+            .as("Mid-file corrupt line must cause recover() to throw IOException (C1 fail-loud)")
+            .hasMessageContaining("mid-file corrupt")
+            .hasMessageContaining("manual inspection required");
     }
 
     // ========== Helper Methods ==========

@@ -267,6 +267,34 @@ public class Bubble extends EnhancedBubble implements Node {
     }
 
     /**
+     * Send a MOVE notification to all neighbors asynchronously and wait for ACKs.
+     * <p>
+     * Used by the migration protocol to wait for neighbor acknowledgments before committing.
+     * If there are no neighbors, returns an already-completed future.
+     *
+     * @return CompletableFuture&lt;Void&gt; that completes when all neighbors have acknowledged,
+     *         or fails if any neighbor transport throws
+     */
+    public CompletableFuture<Void> broadcastMoveAsync() {
+        var ctx = clockContext;  // Single volatile read
+        var moveMsg = ctx.factory.createMove(id(), position(), bounds());
+
+        var neighborSnapshot = new ArrayList<>(neighbors());
+        if (neighborSnapshot.isEmpty()) {
+            log.trace("broadcastMoveAsync: no neighbors, returning completed future");
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @SuppressWarnings("unchecked")
+        CompletableFuture<Message.Ack>[] ackFutures = neighborSnapshot.stream()
+            .map(neighborId -> transport.sendToNeighborAsync(neighborId, moveMsg))
+            .toArray(CompletableFuture[]::new);
+
+        log.trace("broadcastMoveAsync: awaiting ACKs from {} neighbors", neighborSnapshot.size());
+        return CompletableFuture.allOf(ackFutures);
+    }
+
+    /**
      * Send a LEAVE notification to all neighbors.
      * <p>
      * Called during graceful shutdown.

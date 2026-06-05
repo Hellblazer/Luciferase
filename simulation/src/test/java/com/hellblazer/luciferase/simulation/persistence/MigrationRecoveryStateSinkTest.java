@@ -185,6 +185,39 @@ class MigrationRecoveryStateSinkTest {
     }
 
     /**
+     * Proves that {@code enforceRecoveryCaller} uses a class-filter (not a fixed skip depth) and
+     * is therefore robust to synthetic lambda frames injected by the JVM.
+     *
+     * <p>When {@code MigrationRecoveryStateSink.recoverViaLambdaForTest()} dispatches
+     * {@code recoverEntityState} via a lambda, the JVM inserts a synthetic bridge frame between
+     * the {@code EntityMigrationStateMachine} frame and the {@code MigrationRecoveryStateSink}
+     * frame. The old {@code skip(2).findFirst()} implementation would have placed the synthetic
+     * frame at depth 2, hiding the real caller one level deeper and causing a false
+     * {@link IllegalCallerException} on the legitimate caller.
+     *
+     * <p>The filter-based implementation strips all {@code EntityMigrationStateMachine} frames
+     * (regardless of how many are present), so the first remaining frame — the lambda's
+     * declaring class, which is {@code MigrationRecoveryStateSink} — is correctly identified as
+     * the permitted caller.
+     */
+    @Test
+    void recoverEntityState_viaLambdaDoesNotThrow() {
+        var fsm  = freshFsm();
+        var sink = new MigrationRecoveryStateSink(fsm);
+        var entityId = UUID.randomUUID().toString();
+
+        // Must NOT throw: the lambda's declaring class is MigrationRecoveryStateSink, which
+        // is the permitted RECOVERY_CALLER. With skip(2) this would have thrown.
+        assertDoesNotThrow(
+            () -> sink.recoverViaLambdaForTest(entityId, EntityMigrationState.MIGRATING_OUT),
+            "enforceRecoveryCaller must not throw when recoverEntityState is dispatched via "
+            + "a lambda inside MigrationRecoveryStateSink — filter-based guard is lambda-robust"
+        );
+        assertEquals(EntityMigrationState.MIGRATING_OUT, fsm.getState(entityId),
+            "state must be applied when the permitted caller dispatches via lambda");
+    }
+
+    /**
      * VIEW_SYNC_ACK and DEFERRED_UPDATE are handled without throwing; FSM state is unaffected.
      */
     @Test

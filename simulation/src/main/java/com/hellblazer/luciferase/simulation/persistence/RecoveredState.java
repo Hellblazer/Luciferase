@@ -31,7 +31,8 @@ public record RecoveredState(
     CheckpointMetadata checkpoint,
     List<Map<String, Object>> events,
     long totalEventsReplayed,
-    int skippedEvents
+    int skippedEvents,
+    int skippedCorrupt
 ) {
 
     public RecoveredState {
@@ -43,6 +44,18 @@ public record RecoveredState(
         if (skippedEvents < 0) {
             throw new IllegalArgumentException("skippedEvents must be non-negative");
         }
+        if (skippedCorrupt < 0) {
+            throw new IllegalArgumentException("skippedCorrupt must be non-negative");
+        }
+    }
+
+    /**
+     * Create a {@link RecoveredState} without the {@code skippedCorrupt} field (backwards-compat shim).
+     * Callers that do not yet pass a corrupt count get zero.
+     */
+    public RecoveredState(CheckpointMetadata checkpoint, List<Map<String, Object>> events,
+                          long totalEventsReplayed, int skippedEvents) {
+        this(checkpoint, events, totalEventsReplayed, skippedEvents, 0);
     }
 
     /**
@@ -52,6 +65,6 @@ public record RecoveredState(
      * @return Empty recovered state
      */
     public static RecoveredState empty(CheckpointMetadata checkpoint) {
-        return new RecoveredState(checkpoint, List.of(), 0, 0);
+        return new RecoveredState(checkpoint, List.of(), 0, 0, 0);
     }
 }

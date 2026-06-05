@@ -47,6 +47,11 @@ public class BubbleMigrator {
     private final Duration cooldownPeriod;
     private final int maxConcurrentMigrations;
 
+    // How long to wait for neighbor ACKs after broadcastMoveAsync().
+    // Defaults to half of migrationTimeout so the overall timeout still catches hangs.
+    // Settable for testing (TestClock / deterministic scenarios).
+    private volatile Duration neighborAckTimeout;
+
     // Track in-flight migrations
     private final Map<UUID, MigrationState> inFlightMigrations = new ConcurrentHashMap<>();
 
@@ -80,6 +85,9 @@ public class BubbleMigrator {
         this.migrationTimeout = migrationTimeout;
         this.cooldownPeriod = cooldownPeriod;
         this.maxConcurrentMigrations = maxConcurrentMigrations;
+        // Floor at 50 ms: integer division produces 0 when migrationTimeout < 2 ms, which
+        // causes ~100% migration failure because every neighbor-ack times out immediately.
+        this.neighborAckTimeout = Duration.ofMillis(Math.max(50, migrationTimeout.toMillis() / 2));
         this.migrationExecutor = Executors.newFixedThreadPool(
             Math.max(1, maxConcurrentMigrations),
             r -> {
@@ -104,6 +112,14 @@ public class BubbleMigrator {
      */
     public void setClock(Clock clock) {
         this.clock = clock;
+    }
+
+    /**
+     * Override the neighbor-ack timeout. Default is half of migrationTimeout.
+     * Use in tests to set an explicit window (e.g., very short for timeout tests).
+     */
+    public void setNeighborAckTimeout(Duration timeout) {
+        this.neighborAckTimeout = timeout;
     }
 
     /**
@@ -273,13 +289,32 @@ public class BubbleMigrator {
             log.debug("Staged {} entities onto target {} (source {} still authoritative)",
                       entities.size(), targetBubble.id(), bubbleId);
 
-            // Step 3: Target bubble sends MOVE to neighbors (position unchanged).
-            // Notifies neighbors about the server change while source is still live.
-            targetBubble.broadcastMove();
-
-            // Step 4: Wait for neighbor acknowledgments.
-            // In practice we'd wait for explicit ACKs; here we use a small delay.
-            Thread.sleep(50);
+            // Step 3: Target bubble sends MOVE to neighbors (position unchanged) and
+            // Step 4: Wait for neighbor ACKs with a clock-derived deadline.
+            // broadcastMoveAsync fires sendToNeighborAsync per neighbor and returns a
+            // CompletableFuture<Void> that completes when all ACKs arrive (or
+            // immediately when there are no neighbors).
+            // On timeout we treat the migration as failed — no silent success when
+            // neighbors haven't confirmed the server change (mt7hi clock-injection sweep).
+            var ackTimeoutMs = neighborAckTimeout.toMillis();
+            var ackDeadline = clock.currentTimeMillis() + ackTimeoutMs;
+            try {
+                targetBubble.broadcastMoveAsync()
+                            .get(ackTimeoutMs, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException ackTimeout) {
+                var elapsed = clock.currentTimeMillis() - (ackDeadline - ackTimeoutMs);
+                log.warn("Neighbor ACK timeout after {}ms for bubble {} migration to server {}",
+                         elapsed, bubbleId, targetServerId);
+                throw new RuntimeException("neighbor ack timeout after " + elapsed + "ms");
+            } catch (ExecutionException ackEx) {
+                log.warn("Neighbor ACK failed for bubble {} migration to server {}: {}",
+                         bubbleId, targetServerId, ackEx.getCause().getMessage());
+                throw new RuntimeException("neighbor ack failed: " + ackEx.getCause().getMessage(), ackEx.getCause());
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("neighbor ack interrupted", ie);
+            }
+            // ackDeadline used only for the elapsed-time log message above; no raw sleep.
 
             // COMMIT POINT — no rollback after this line.
             // WAL bracket close: MIGRATION_COMMIT logged per entity before source is deactivated.
