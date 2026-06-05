@@ -32,7 +32,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ul>
  *   <li>State transitions: CREATED → ACTIVE → STALE → EXPIRED</li>
  *   <li>TTL management (configurable, default 500ms)</li>
- *   <li>Staleness detection (configurable threshold, default 300ms)</li>
+ *   <li>Staleness detection (configurable threshold, default 300ms — intentionally less than TTL
+ *       so STALE is a true warning state before EXPIRED)</li>
  *   <li>Thread-safe concurrent operations (ConcurrentHashMap)</li>
  *   <li>Clock injection for deterministic testing</li>
  *   <li>Metrics hooks (optional callback interface)</li>
@@ -86,10 +87,15 @@ public class GhostLifecycleStateMachine {
     public static final long DEFAULT_TTL_MS = 500L;
 
     /**
-     * Default staleness threshold in milliseconds (500ms, same as TTL for compatibility).
-     * Can be configured separately for gradual warning states.
+     * Default staleness threshold in milliseconds (300ms).
+     * <p>
+     * The staleness threshold is intentionally less than the TTL (500ms) so that STALE
+     * functions as a genuine warning state: a ghost is STALE (no recent update) for the
+     * 300–500ms window before it becomes EXPIRED and is removed.  Setting this equal to
+     * the TTL would collapse the warning window to zero — STALE and EXPIRED would fire
+     * at the same instant, defeating the purpose of the state.
      */
-    public static final long DEFAULT_STALENESS_THRESHOLD_MS = 500L;
+    public static final long DEFAULT_STALENESS_THRESHOLD_MS = 300L;
 
     /**
      * Ghost lifecycle state enum.
@@ -256,14 +262,52 @@ public class GhostLifecycleStateMachine {
     }
 
     /**
-     * Get current state for a ghost.
+     * Get the authoritative computed state for a ghost.
+     * <p>
+     * The stored record only holds CREATED or ACTIVE (the last transition driven by an explicit
+     * update).  STALE and EXPIRED are time-derived states that are computed on every read so that
+     * {@code getState()} is always consistent with {@link #isStale(String)} and
+     * {@link #isExpired(String)} — callers do not need to call both predicates separately.
+     * <p>
+     * State derivation at read time (uses the injected clock):
+     * <ul>
+     *   <li>If {@code timeSinceUpdate > ttlMillis}                  → EXPIRED</li>
+     *   <li>If {@code timeSinceUpdate > stalenessThresholdMillis}   → STALE</li>
+     *   <li>Otherwise                                               → stored state (CREATED / ACTIVE)</li>
+     * </ul>
+     * <p>
+     * <strong>NON-IDEMPOTENT — do not cache the result.</strong>
+     * Each call does a live clock read via the injected {@link Clock}. Two sequential calls on the
+     * same entity may return different values (e.g. ACTIVE → STALE → EXPIRED) as wall-clock time
+     * advances between calls, with no mutation of the ghost record. Callers must:
+     * <ul>
+     *   <li>Read the state exactly once per decision and act on that snapshot immediately.</li>
+     *   <li>Never serialize, store, or compare the returned value as a stable identity.</li>
+     *   <li>Use {@link #isStale(String)} or {@link #isExpired(String)} for point-in-time
+     *       predicate checks when only a boolean answer is needed.</li>
+     * </ul>
      *
      * @param entityId Entity identifier
-     * @return Current state, or null if ghost doesn't exist
+     * @return Computed authoritative state, or {@code null} if the ghost does not exist
      */
     public State getState(String entityId) {
-        var state = states.get(entityId);
-        return state != null ? state.state : null;
+        var lifecycleState = states.get(entityId);
+        if (lifecycleState == null) {
+            return null;
+        }
+        long now = clock.currentTimeMillis();
+        long timeSinceUpdate = now - lifecycleState.lastUpdateAt;
+        if (timeSinceUpdate < 0) {
+            // Clock skew: treat as fresh
+            return lifecycleState.state;
+        }
+        if (timeSinceUpdate > ttlMillis) {
+            return State.EXPIRED;
+        }
+        if (timeSinceUpdate > stalenessThresholdMillis) {
+            return State.STALE;
+        }
+        return lifecycleState.state;
     }
 
     /**

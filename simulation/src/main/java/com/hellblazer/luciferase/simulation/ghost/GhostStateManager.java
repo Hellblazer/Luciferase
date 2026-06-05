@@ -188,8 +188,13 @@ public class GhostStateManager {
 
     /**
      * Performance metrics (optional, null-safe).
+     * <p>
+     * Declared volatile so that a post-construction {@link #setMetrics} call from any thread is
+     * immediately visible to the {@code updateGhost}/{@code removeGhost} hot-paths, which may
+     * execute on network or tick threads concurrently.  Mirrors the discipline already applied to
+     * the sibling {@link #clock} field.
      */
-    private GhostPhysicsMetrics metrics;
+    private volatile GhostPhysicsMetrics metrics;
 
     /**
      * Clock for deterministic testing.
@@ -229,7 +234,7 @@ public class GhostStateManager {
         Objects.requireNonNull(boundsSupplier.get(), "bounds must not be null");
         this.maxGhosts = maxGhosts;
         this.deadReckoning = new DeadReckoningEstimator();
-        this.lifecycle = new GhostLifecycleStateMachine(); // 500ms TTL, 300ms staleness threshold
+        this.lifecycle = new GhostLifecycleStateMachine(); // 500ms TTL, 300ms staleness threshold (STALE precedes EXPIRED)
         this.ghostStates = new ConcurrentHashMap<>();
 
         log.debug("GhostStateManager initialized with bounds {} and max ghosts {}", boundsSupplier.get(), maxGhosts);

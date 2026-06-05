@@ -206,9 +206,17 @@ public class MigrationLogPersistence {
      * - PREPARE-only: Rollback to source (entity was removed but not committed)
      * - PREPARE + COMMIT: Assume successful (entity in destination, ignore duplicate)
      * - PREPARE + ABORT: Cleanup only (rollback already started)
+     * <p>
+     * Torn-tail vs mid-corruption discipline (mirrors WalLogReader, Luciferase-7wzml.198):
+     * A malformed <em>final</em> physical line is tolerated as an expected crash-flush artifact
+     * (the process died mid-write on the last append). Any malformed line that is <em>not</em>
+     * the final physical line is interior corruption — silently skipping it would drop
+     * recovery-critical PREPARE records (RDR-004-class silent data loss). Such interior
+     * corruption causes this method to throw {@link IOException} so the operator is forced to
+     * intervene before recovery proceeds.
      *
      * @return List of incomplete transactions (PREPARE state)
-     * @throws IOException If read fails
+     * @throws IOException If read fails, or if an interior (non-final) malformed line is found
      */
     public List<TransactionState> loadIncomplete() throws IOException {
         lock.readLock().lock();
@@ -220,33 +228,76 @@ public class MigrationLogPersistence {
                 return List.of();  // No WAL file yet
             }
 
+            // Physical-position torn-tail discipline (Luciferase-7wzml.198 S3 fix):
+            //
+            // A parse failure is a legitimate torn tail ONLY if:
+            //   (a) the failed line is the LAST PHYSICAL line in the file, AND
+            //   (b) the file does NOT end with a newline (the last write was truncated mid-line).
+            //
+            // If the file ends with '\n' every line is newline-terminated (complete write), so
+            // ANY parse failure is real corruption → throw. If a corrupt line is followed by
+            // trailing blank lines it is NOT the last physical line → interior → throw.
+            //
+            // Using blank-stripped index (i == rawLines.size()-1) was wrong: a mid-file corrupt
+            // line followed by trailing blank lines is the last NON-BLANK entry but not the last
+            // PHYSICAL line, causing it to be silently tolerated as a torn tail.
+            var rawFileBytes = Files.readAllBytes(walFile);
+            boolean fileEndsWithNewline = rawFileBytes.length > 0
+                && (rawFileBytes[rawFileBytes.length - 1] == '\n'
+                    || rawFileBytes[rawFileBytes.length - 1] == '\r');
+
+            // Collect ALL physical non-empty lines (preserving physical order/index).
+            // We still need blank-line skipping for empty separator lines, but we track whether
+            // a non-blank line is ALSO the last physical line by checking file-ends-with-newline.
+            var rawLines = new ArrayList<String>();
             try (var br = new BufferedReader(new FileReader(walFile.toFile(), StandardCharsets.UTF_8))) {
                 String line;
-                int lineNumber = 0;
                 while ((line = br.readLine()) != null) {
-                    lineNumber++;
-                    if (line.isBlank()) {
-                        continue;
+                    if (!line.isBlank()) {
+                        rawLines.add(line);
                     }
+                }
+            }
 
-                    try {
-                        // Parse JSON to extract transactionId and phase
-                        var jsonObject = mapper.readTree(line);
-                        var txnId = UUID.fromString(jsonObject.get("transactionId").asText());
-                        var phaseStr = jsonObject.get("phase").asText();
-                        var phase = TransactionState.MigrationPhase.valueOf(phaseStr);
+            for (int i = 0; i < rawLines.size(); i++) {
+                var line = rawLines.get(i);
+                // A line qualifies as a torn tail only if it is the last non-blank entry AND
+                // the file does not end with a newline (truncated last write). If the file ends
+                // with a newline, the write completed; any parse failure is real corruption.
+                boolean isLastNonBlankLine = (i == rawLines.size() - 1);
+                boolean isTornTailCandidate = isLastNonBlankLine && !fileEndsWithNewline;
+                try {
+                    // Parse JSON to extract transactionId and phase
+                    var jsonObject = mapper.readTree(line);
+                    var txnId = UUID.fromString(jsonObject.get("transactionId").asText());
+                    var phaseStr = jsonObject.get("phase").asText();
+                    var phase = TransactionState.MigrationPhase.valueOf(phaseStr);
 
-                        if (phase == TransactionState.MigrationPhase.PREPARE) {
-                            // Full transaction record
-                            var state = mapper.treeToValue(jsonObject, TransactionState.class);
-                            transactions.put(txnId, state);
-                        } else if (phase == TransactionState.MigrationPhase.COMMIT ||
-                                   phase == TransactionState.MigrationPhase.ABORT) {
-                            // Mark as completed/aborted
-                            completed.add(txnId);
-                        }
-                    } catch (Exception e) {
-                        log.warn("Skipping malformed WAL entry at line {}: {}", lineNumber, e.getMessage());
+                    if (phase == TransactionState.MigrationPhase.PREPARE) {
+                        // Full transaction record
+                        var state = mapper.treeToValue(jsonObject, TransactionState.class);
+                        transactions.put(txnId, state);
+                    } else if (phase == TransactionState.MigrationPhase.COMMIT ||
+                               phase == TransactionState.MigrationPhase.ABORT) {
+                        // Mark as completed/aborted
+                        completed.add(txnId);
+                    }
+                } catch (Exception e) {
+                    if (isTornTailCandidate) {
+                        // Torn tail — process crashed mid-write on the last append (file not
+                        // newline-terminated, so the last write was truncated). This is an
+                        // expected artifact of append-only logs; do not count as corruption.
+                        log.debug("Ignoring torn tail at {}:{} (likely crash-flush truncation) - {}",
+                                  walFile, i + 1, e.getMessage());
+                    } else {
+                        // Interior malformed line (or newline-terminated final line): the write
+                        // completed (file ends with '\n') but the content is corrupt, OR this
+                        // line has valid trailing lines after it. Either way, silently skipping
+                        // could drop a recovery-critical PREPARE record — fail loud.
+                        throw new IOException(
+                            "Interior malformed WAL line at " + walFile + ":" + (i + 1)
+                            + " — mid-file corruption detected; recovery aborted to prevent "
+                            + "silent data loss of in-flight migrations. Cause: " + e.getMessage(), e);
                     }
                 }
             }

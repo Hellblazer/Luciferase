@@ -126,7 +126,8 @@ public class SimpleMigrationNode {
         // Initialize network
         nodeId = UUID.randomUUID();
         peerNodeId = UUID.randomUUID();
-        networkChannel = new GrpcBubbleNetworkChannel();
+        // Explicit plaintext opt-in for benchmark harness (Luciferase-7wzml.200).
+        networkChannel = new GrpcBubbleNetworkChannel(true);
         networkChannel.initialize(nodeId, "localhost:" + serverPort);
         networkChannel.registerNode(peerNodeId, "localhost:" + peerPort);
 

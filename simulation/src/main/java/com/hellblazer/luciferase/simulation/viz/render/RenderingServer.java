@@ -67,6 +67,10 @@ public class RenderingServer implements AutoCloseable {
     private final AdaptiveRegionManager regionManager;
     private final EntityStreamConsumer entityConsumer;
     private final AtomicBoolean started = new AtomicBoolean(false);
+    // Single-use guard: set permanently after a failed start() so a retry on the same object
+    // is rejected rather than silently submitting work to a shutdown executor pool (S1 fix,
+    // Luciferase-7wzml.207). After a failed start() construct a new RenderingServer.
+    private final AtomicBoolean failed = new AtomicBoolean(false);
 
     private Javalin app;
     private volatile long startTimeMs;
@@ -136,9 +140,18 @@ public class RenderingServer implements AutoCloseable {
     /**
      * Start the rendering server.
      *
-     * @throws IllegalStateException if already started
+     * <p>RenderingServer is single-use. If a previous call to {@code start()} failed and triggered
+     * the partial-startup rollback, this method will throw {@link IllegalStateException} rather than
+     * silently submitting work to a shutdown executor pool. Construct a new {@code RenderingServer}
+     * after a failed start.
+     *
+     * @throws IllegalStateException if already started, or if a previous start() failed (single-use)
      */
     public void start() {
+        if (failed.get()) {
+            throw new IllegalStateException(
+                "RenderingServer is single-use; construct a new instance after a failed start()");
+        }
         if (!started.compareAndSet(false, true)) {
             throw new IllegalStateException("RenderingServer already started");
         }
@@ -386,14 +399,35 @@ public class RenderingServer implements AutoCloseable {
             ws.onError(regionStreamer::onError);
         });
 
-        app.start(config.port());
+        // Start consuming upstream entity streams and Phase 3 streaming BEFORE opening
+        // the HTTP/WS listener. An incoming WS onConnect arriving between app.start() and
+        // regionStreamer.start() would reach an unstarted streamer. Both start() calls are
+        // outbound-only (gRPC reconnect loop + daemon thread) — neither requires the
+        // listener to be open first, so this reorder is safe.
+        //
+        // Partial-startup rollback (Luciferase-7wzml.207 I2): if app.start() throws (e.g.
+        // port already in use), entityConsumer and regionStreamer are already running but
+        // `started` stays false, so stop() would no-op and leak the reconnect loop + daemon
+        // thread. Roll them back on failure so the caller sees a clean state.
+        try {
+            entityConsumer.start();
+
+            // Start Phase 3 streaming
+            regionStreamer.start();
+
+            app.start(config.port());
+        } catch (Exception e) {
+            // Mark this instance permanently failed (single-use guard, Luciferase-7wzml.207 S1).
+            // A second start() will throw IllegalStateException rather than re-submitting work
+            // to the now-shutdown entityConsumer executor pool.
+            failed.set(true);
+            started.set(false);
+            try { entityConsumer.close(); } catch (Exception ignored) {}
+            try { regionStreamer.stop();  } catch (Exception ignored) {}
+            try { regionStreamer.close(); } catch (Exception ignored) {}
+            throw e;
+        }
         startTimeMs = clock.currentTimeMillis();
-
-        // Start consuming upstream entity streams
-        entityConsumer.start();
-
-        // Start Phase 3 streaming
-        regionStreamer.start();
 
         log.info("RenderingServer started on port {}", port());
     }

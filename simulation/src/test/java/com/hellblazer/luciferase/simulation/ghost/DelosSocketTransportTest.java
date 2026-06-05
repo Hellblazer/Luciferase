@@ -426,7 +426,7 @@ class DelosSocketTransportTest {
         var transport = new DelosSocketTransport(UUID.randomUUID());
 
         // Transport should be usable immediately after construction
-        assertTrue(transport.isConnected(bubbleId2));
+        assertTrue(transport.isConnected(bubbleId2), "Should be connected before close");
 
         // Queue a ghost
         var ghost = createTestGhost("lifecycle-test", 100f, 200f, 50f, 1000L, 1L, 1L);
@@ -436,8 +436,90 @@ class DelosSocketTransportTest {
         transport.close();
         assertEquals(0, transport.getPendingCount(bubbleId2));
 
-        // Transport should still report connected (no network resources to close yet)
-        assertTrue(transport.isConnected(bubbleId2));
+        // Transport must report NOT connected after close — isConnected was previously a hardcoded lie
+        assertFalse(transport.isConnected(bubbleId2), "Should not be connected after close");
+    }
+
+    /**
+     * Test 13: Poison ghost (serialization failure) is counted, not silently dropped.
+     *
+     * <p>A ghost whose ghostToEvent conversion throws must increment
+     * {@code getDroppedGhostCount()}.  The remaining healthy ghosts in the same batch
+     * must still be delivered to the receiver (no all-or-nothing failure).
+     * This prevents RDR-004-class silent data loss.
+     */
+    @Test
+    void testPoisonGhostDropIsReported() throws InterruptedException {
+        // Subclass overrides package-private ghostToEvent to throw for "poison-entity"
+        var senderBubbleId = UUID.randomUUID();
+        var receiverBubbleId = UUID.randomUUID();
+        var poisonTransport = new DelosSocketTransport(senderBubbleId) {
+            @Override
+            EntityUpdateEvent ghostToEvent(SimulationGhostEntity<StringEntityID, EntityData> ghost) {
+                if ("poison-entity".equals(ghost.entityId().getValue())) {
+                    throw new RuntimeException("Simulated conversion failure for poison-entity");
+                }
+                return super.ghostToEvent(ghost);
+            }
+        };
+        var receiver = new DelosSocketTransport(receiverBubbleId);
+        poisonTransport.connectTo(receiver);
+
+        var latch = new CountDownLatch(1);
+        var deliveredIds = new CopyOnWriteArrayList<String>();
+        receiver.onReceive((src, ghosts) -> {
+            for (var g : ghosts) {
+                deliveredIds.add(g.entityId().getValue());
+            }
+            latch.countDown();
+        });
+
+        // Counter must start at zero
+        assertEquals(0L, poisonTransport.getDroppedGhostCount(), "No drops before any sends");
+
+        // Queue: 1 healthy, 1 poison, 1 healthy
+        poisonTransport.queueGhost(receiverBubbleId, createTestGhost("ok-before", 1f, 2f, 3f, 1000L, 1L, 0L));
+        poisonTransport.queueGhost(receiverBubbleId, createTestGhost("poison-entity", 4f, 5f, 6f, 1001L, 2L, 0L));
+        poisonTransport.queueGhost(receiverBubbleId, createTestGhost("ok-after", 7f, 8f, 9f, 1002L, 3L, 0L));
+        poisonTransport.flush(1L);
+
+        // Poison ghost MUST be counted
+        assertEquals(1L, poisonTransport.getDroppedGhostCount(),
+                     "Dropped count must be 1 after one poison ghost");
+
+        // Remaining healthy ghosts MUST be delivered
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "Healthy ghosts should be delivered");
+        assertEquals(2, deliveredIds.size(), "2 healthy ghosts must be delivered");
+        assertTrue(deliveredIds.contains("ok-before"), "ok-before must be delivered");
+        assertTrue(deliveredIds.contains("ok-after"), "ok-after must be delivered");
+
+        poisonTransport.close();
+        receiver.close();
+    }
+
+    /**
+     * Test 14: isConnected returns false after close.
+     */
+    @Test
+    void testIsConnectedFalseAfterClose() {
+        assertTrue(transport1.isConnected(bubbleId2), "Should be connected before close");
+        transport1.close();
+        assertFalse(transport1.isConnected(bubbleId2), "Should not be connected after close");
+        // Prevent double-close in tearDown from masking other issues
+        transport1 = null;
+    }
+
+    /**
+     * Test 15: testCreation isConnected must be consistent with pre-close state.
+     * (Replaces the old hardcoded-true assertion with a state-aware one.)
+     */
+    @Test
+    void testIsConnectedBeforeClose() {
+        // New transport (not closed): must report connected
+        var fresh = new DelosSocketTransport(UUID.randomUUID());
+        assertTrue(fresh.isConnected(bubbleId2), "Freshly created transport must report connected");
+        fresh.close();
+        assertFalse(fresh.isConnected(bubbleId2), "Transport must report disconnected after close");
     }
 
     // ========== Helper Methods ==========

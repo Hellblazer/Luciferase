@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -80,6 +81,10 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
 
     // Active streaming sessions
     private final Map<String, StreamSession> activeStreams;
+
+    // Atomic counter for exact cap enforcement — incremented BEFORE map.put() so no two concurrent
+    // callers can both observe count < cap and both be admitted (TOCTOU-free). Mirrors BalanceCoordinatorServer.
+    private final AtomicInteger activeStreamCount = new AtomicInteger(0);
     
     /**
      * Creates a new ghost exchange service implementation.
@@ -159,15 +164,26 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     
     /**
      * Handles streaming ghost updates for real-time synchronization.
-     * 
+     *
+     * <p>The concurrent-session cap is enforced atomically via {@link #activeStreamCount}:
+     * the counter is incremented <em>before</em> the map put, so no two racing callers can
+     * both observe {@code count < cap} and both be admitted (TOCTOU-free).
+     * On rejection the counter is decremented immediately before returning. On stream close
+     * (either {@code onCompleted} or {@code onError}) the counter is decremented exactly once
+     * via {@code remove(sessionId) != null} to guard against double-decrement.
+     * Mirrors BalanceCoordinatorServer.streamBalanceUpdates (Luciferase-7wzml.6 / Luciferase-zufll).
+     *
      * @param responseObserver observer for sending acknowledgments
      * @return observer for receiving updates
      */
     @Override
     public StreamObserver<GhostUpdate> streamGhostUpdates(StreamObserver<GhostAck> responseObserver) {
-        // RDR-013 / Luciferase-06ujn: reject new streams once the concurrent-session cap is reached (DoS).
-        if (activeStreams.size() >= MAX_ACTIVE_STREAMS) {
-            log.warn("Rejecting ghost stream: {} active streams at cap {}", activeStreams.size(), MAX_ACTIVE_STREAMS);
+        // RDR-013 / Luciferase-zufll: atomic cap — increment FIRST, then check.
+        // If over cap, decrement and reject without touching the map (no leak-before-put).
+        int count = activeStreamCount.incrementAndGet();
+        if (count > MAX_ACTIVE_STREAMS) {
+            activeStreamCount.decrementAndGet();
+            log.warn("Rejecting ghost stream: {} active streams at cap {}", count - 1, MAX_ACTIVE_STREAMS);
             responseObserver.onError(Status.RESOURCE_EXHAUSTED
                                          .withDescription("too many concurrent ghost streams")
                                          .asRuntimeException());
@@ -180,25 +196,29 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
         var sessionId = "stream-" + streamUpdateCount.incrementAndGet();
         var session = new StreamSession(sessionId, responseObserver);
         activeStreams.put(sessionId, session);
-        
+
         log.debug("Started streaming session: {}", sessionId);
-        
+
         return new StreamObserver<GhostUpdate>() {
             @Override
             public void onNext(GhostUpdate update) {
                 virtualExecutor.submit(() -> processStreamUpdate(session, update));
             }
-            
+
             @Override
             public void onError(Throwable t) {
                 log.error("Streaming error in session {}: {}", sessionId, t.getMessage(), t);
-                activeStreams.remove(sessionId);
+                if (activeStreams.remove(sessionId) != null) {
+                    activeStreamCount.decrementAndGet();
+                }
             }
-            
+
             @Override
             public void onCompleted() {
                 log.debug("Streaming session completed: {}", sessionId);
-                activeStreams.remove(sessionId);
+                if (activeStreams.remove(sessionId) != null) {
+                    activeStreamCount.decrementAndGet();
+                }
                 responseObserver.onCompleted();
             }
         };
@@ -384,7 +404,10 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
             // Remove the terminated session (Luciferase-m2k3u review): this server-originated onError does not
             // trigger the client-callback removal path, so without this the session leaks in activeStreams and
             // shutdown() would call onCompleted() on an already-errored observer (gRPC terminal-event violation).
-            activeStreams.remove(session.sessionId);
+            // Decrement counter only if remove() returns non-null (guard against double-decrement — Luciferase-zufll).
+            if (activeStreams.remove(session.sessionId) != null) {
+                activeStreamCount.decrementAndGet();
+            }
         } catch (Exception e) {
             log.error("Error processing stream update in session {}: {}",
                      session.sessionId, e.getMessage(), e);
@@ -420,7 +443,11 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     public void shutdown() {
         log.info("Shutting down GhostExchangeService");
         
-        // Close all active streams
+        // Close all active streams.
+        // Safety: processStreamUpdate's onError path calls activeStreams.remove(sessionId) BEFORE
+        // calling responseObserver.onError(), so any session that already received onError is gone
+        // from the map before this forEach iterates it. The forEach therefore never calls
+        // onCompleted() on a stream that has already received a terminal onError event.
         activeStreams.values().forEach(session -> {
             try {
                 session.responseObserver.onCompleted();
@@ -429,7 +456,12 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
             }
         });
         activeStreams.clear();
-        
+        // Reset to 0 rather than addAndGet(-cleared): a stream admitted concurrently between the
+        // forEach above and this clear() would be erased by clear() without a paired decrement
+        // (its onCompleted/onError finds remove()==null and skips), leaving the counter negative.
+        // After shutdown the map is empty, so the count is definitively 0. Mirrors BalanceCoordinatorServer.
+        activeStreamCount.set(0);
+
         // Shutdown virtual thread executor
         virtualExecutor.shutdown();
     }

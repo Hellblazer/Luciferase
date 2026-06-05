@@ -30,7 +30,8 @@ class GrpcBubbleNetworkChannelReachabilityTest {
 
     @BeforeEach
     void setUp() {
-        channel = new GrpcBubbleNetworkChannel();
+        // Explicit plaintext opt-in for tests (Luciferase-7wzml.200).
+        channel = new GrpcBubbleNetworkChannel(true);
         channel.initialize(UUID.randomUUID(), "localhost:0");
     }
 

@@ -75,6 +75,19 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
             return t;
         });
 
+    /**
+     * Transport-security opt-in flag (Luciferase-7wzml.200).
+     *
+     * <p>Full mTLS with peer-identity binding is tracked in Luciferase-l9dny (coordinates
+     * with RDR-005/RDR-013 cert plumbing). Until that work is done this flag is the only
+     * way to enable the channel: callers must explicitly opt into plaintext rather than
+     * silently inheriting an insecure default.
+     *
+     * <p>Set via {@link #setAllowPlaintext(boolean)} or the constructor overload
+     * {@link #GrpcBubbleNetworkChannel(boolean)}.
+     */
+    private volatile boolean allowPlaintext = false;
+
     private volatile EntityDepartureListener departureListener;
     private volatile ViewSynchronyAckListener ackListener;
     private volatile EntityRollbackListener rollbackListener;
@@ -85,7 +98,32 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
     private volatile Clock clock = Clock.system();
 
     public GrpcBubbleNetworkChannel() {
-        // Default constructor
+        // allowPlaintext defaults to false; callers must opt in via setAllowPlaintext(true)
+        // or GrpcBubbleNetworkChannel(true) before calling initialize().
+    }
+
+    /**
+     * Constructor with explicit transport-security opt-in.
+     *
+     * @param allowPlaintext {@code true} to permit unencrypted plaintext transport.
+     *                       Should only be {@code true} in tests or controlled environments
+     *                       where TLS is not yet available (see Luciferase-l9dny).
+     */
+    public GrpcBubbleNetworkChannel(boolean allowPlaintext) {
+        this.allowPlaintext = allowPlaintext;
+    }
+
+    /**
+     * Explicitly opt into plaintext (unencrypted) transport.
+     *
+     * <p>Must be called before {@link #initialize} if no TLS is configured.
+     * Production deployments should not call this method — see Luciferase-l9dny for
+     * the mTLS implementation roadmap.
+     *
+     * @param allowPlaintext {@code true} to permit plaintext; {@code false} (default) to require TLS
+     */
+    public void setAllowPlaintext(boolean allowPlaintext) {
+        this.allowPlaintext = allowPlaintext;
     }
 
     /**
@@ -100,6 +138,20 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
     @Override
     public void initialize(UUID nodeId, String nodeAddress) {
         this.localNodeId = nodeId;
+
+        // Server-side plaintext gate (Luciferase-7wzml.200 I1).
+        // Mirror the client-side gate in getOrCreateChannel(): both directions must opt in.
+        //
+        // NOTE: TLS does not yet exist — this gate is a construction-time reminder that plaintext
+        // is the only transport, NOT runtime security enforcement. Real mTLS (with peer-identity
+        // binding) is tracked in Luciferase-l9dny. Do not interpret passing this gate as a
+        // security guarantee; it is an explicit acknowledgement that plaintext is intentional.
+        if (!allowPlaintext) {
+            throw new IllegalStateException(
+                "Server: plaintext transport requires explicit opt-in via setAllowPlaintext(true). "
+                + "Full mTLS with peer-identity binding is tracked in Luciferase-l9dny "
+                + "(coordinates with RDR-005/RDR-013 cert plumbing).");
+        }
 
         try {
             // Parse port from address (format: "host:port")
@@ -400,6 +452,9 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
 
     /**
      * Get or create a gRPC channel to the target node (connection pooling).
+     *
+     * @throws IllegalStateException if plaintext has not been explicitly opted into and
+     *                               TLS is not yet configured (see Luciferase-l9dny)
      */
     private ManagedChannel getOrCreateChannel(UUID targetNodeId) {
         return remoteChannels.computeIfAbsent(targetNodeId, nodeId -> {
@@ -408,13 +463,29 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
                 throw new IllegalStateException("No address registered for node: " + nodeId);
             }
 
+            // Client-side plaintext gate (Luciferase-7wzml.200).
+            //
+            // NOTE: TLS does not yet exist — this gate is a construction-time reminder that
+            // plaintext is the only transport, NOT runtime security enforcement. Real mTLS
+            // (with peer-identity binding) is tracked in Luciferase-l9dny. Passing this gate
+            // is an explicit acknowledgement that plaintext is intentional, not a security
+            // guarantee.
+            if (!allowPlaintext) {
+                throw new IllegalStateException(
+                    "plaintext transport requires explicit opt-in: call setAllowPlaintext(true) "
+                    + "or use GrpcBubbleNetworkChannel(true). "
+                    + "Full mTLS with peer-identity binding is tracked in Luciferase-l9dny "
+                    + "(coordinates with RDR-005/RDR-013 cert plumbing).");
+            }
+
             var parts = address.split(":");
             var host = parts[0];
             var port = Integer.parseInt(parts[1]);
 
-            log.debug("Creating gRPC channel to {}:{}", host, port);
+            log.debug("Creating plaintext gRPC channel to {}:{} (opt-in; see Luciferase-l9dny for TLS roadmap)",
+                      host, port);
             return NettyChannelBuilder.forAddress(host, port)
-                .usePlaintext() // For testing; use TLS in production
+                .usePlaintext()
                 .executor(executorService)
                 .build();
         });
