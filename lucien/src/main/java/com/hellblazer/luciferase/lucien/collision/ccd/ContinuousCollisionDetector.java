@@ -69,7 +69,28 @@ public class ContinuousCollisionDetector {
     }
     
     /**
-     * Swept sphere vs sphere collision detection
+     * Swept sphere vs sphere continuous collision detection.
+     *
+     * <p><b>Contact-point convention:</b> the returned
+     * {@link ContinuousCollisionResult#contactPoint()} is placed on the surface of
+     * {@code sphere1} at the time of impact:
+     * <pre>
+     *   contactPoint = center1(toi) - normal * sphere1.radius
+     * </pre>
+     * where {@code normal} points from sphere2 toward sphere1 (i.e. the direction
+     * from sphere2's center to sphere1's center at impact).  At the exact time of
+     * impact the two spheres are tangent, so this point is simultaneously
+     * {@code center2(toi) + normal * sphere2.radius}, i.e. on sphere2's surface
+     * as well — the two expressions are equivalent.
+     *
+     * <p><b>Normal convention:</b> the normal is always directed from sphere2
+     * toward sphere1 ({@code normalize(center1 - center2)}), giving a consistent
+     * "push sphere1 away from sphere2" direction.
+     *
+     * <p><b>Penetration depth:</b> reported as {@code 0.0f} at an exact TOI.
+     * Floating-point rounding in the quadratic solver may introduce tiny residual
+     * overlap; callers requiring strict separation should clamp to
+     * {@code max(0, depth)}.
      */
     private static ContinuousCollisionResult sphereVsSphereCCD(MovingShape movingSphere1, MovingShape movingSphere2) {
         var sphere1 = (SphereShape) movingSphere1.getShape();

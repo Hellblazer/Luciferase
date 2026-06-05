@@ -103,6 +103,83 @@ class LitmaxBigminTest {
     }
 
     // ================================
+    // bigmin() edge cases (Luciferase-7wzml.141)
+    // ================================
+
+    /**
+     * Edge case (a): current is already above the entire query box in all dimensions.
+     * bigmin() must return Long.MAX_VALUE (the guard at the end normalises this),
+     * and findNextInRange must terminate and return -1 (not loop forever).
+     */
+    @Test
+    void testBigminCurrentAboveBox_findNextInRangeTerminates() {
+        int minX = 2, minY = 2, minZ = 2;
+        int maxX = 4, maxY = 4, maxZ = 4;
+
+        // current is well above the box
+        long current = MortonCurve.encode(10, 10, 10);
+        long maxMorton = MortonCurve.encode(5, 5, 5);  // also above box, but below current
+
+        // bigmin must return MAX_VALUE (no in-box code above current)
+        long bm = LitmaxBigmin.bigmin(current, minX, minY, minZ, maxX, maxY, maxZ);
+        assertEquals(Long.MAX_VALUE, bm, "bigmin should return MAX_VALUE when current is above the box");
+
+        // findNextInRange with maxMorton < current: must return -1, not hang
+        long next = assertTimeoutPreemptively(Duration.ofSeconds(1),
+            () -> LitmaxBigmin.findNextInRange(current, minX, minY, minZ, maxX, maxY, maxZ, maxMorton),
+            "findNextInRange must terminate when current > maxMorton");
+        assertEquals(-1, next, "findNextInRange returns -1 when start is above maxMorton");
+    }
+
+    /**
+     * Edge case (b): single-cell box (min==max). findNextInRange must return the cell
+     * if current equals it, and return -1 if current is already past it.
+     */
+    @Test
+    void testBigminSingleCellBox_findNextInRangeTerminates() {
+        int cx = 5, cy = 5, cz = 5;
+        long cell = MortonCurve.encode(cx, cy, cz);
+        long maxMorton = MortonCurve.encode(cx + 2, cy + 2, cz + 2);
+
+        // Start at the cell itself — must be found
+        long found = LitmaxBigmin.findNextInRange(cell, cx, cy, cz, cx, cy, cz, maxMorton);
+        assertEquals(cell, found, "findNextInRange on single-cell box returns the cell when start==cell");
+
+        // Start past the cell — must return -1 (not hang via MAX_VALUE loop)
+        long past = MortonCurve.encode(cx + 1, cy + 1, cz + 1);
+        long notFound = assertTimeoutPreemptively(Duration.ofSeconds(1),
+            () -> LitmaxBigmin.findNextInRange(past, cx, cy, cz, cx, cy, cz, maxMorton),
+            "findNextInRange must terminate for single-cell box when start > cell");
+        assertEquals(-1, notFound, "findNextInRange returns -1 when past the only cell in box");
+    }
+
+    /**
+     * Edge case (c): current == maxMorton.
+     * findNextInRange must check the single remaining code and return -1 or the code,
+     * then terminate.  It must not advance past maxMorton.
+     */
+    @Test
+    void testBigminCurrentEqualsMaxMorton_findNextInRangeTerminates() {
+        int minX = 2, minY = 2, minZ = 2;
+        int maxX = 5, maxY = 5, maxZ = 5;
+
+        // maxMorton is inside the box
+        long maxMorton = MortonCurve.encode(3, 3, 3);
+
+        long result = assertTimeoutPreemptively(Duration.ofSeconds(1),
+            () -> LitmaxBigmin.findNextInRange(maxMorton, minX, minY, minZ, maxX, maxY, maxZ, maxMorton),
+            "findNextInRange must terminate when current == maxMorton");
+        assertEquals(maxMorton, result, "findNextInRange returns maxMorton when it is inside the box");
+
+        // maxMorton is outside the box (above): must return -1
+        long outsideMax = MortonCurve.encode(10, 10, 10);
+        long result2 = assertTimeoutPreemptively(Duration.ofSeconds(1),
+            () -> LitmaxBigmin.findNextInRange(outsideMax, minX, minY, minZ, maxX, maxY, maxZ, outsideMax),
+            "findNextInRange must terminate when current == maxMorton and both outside box");
+        assertEquals(-1, result2, "findNextInRange returns -1 when current == maxMorton and outside box");
+    }
+
+    // ================================
     // findNextInRange() Tests
     // ================================
 

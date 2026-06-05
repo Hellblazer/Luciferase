@@ -12,6 +12,9 @@ import javax.vecmath.Vector3f;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+// Note: all assertions using EPSILON=0.001f; contact-point convention is documented
+// on ContinuousCollisionDetector.sphereVsSphereCCD (Luciferase-7wzml.95).
+
 /**
  * Tests for continuous collision detection.
  *
@@ -181,6 +184,59 @@ public class ContinuousCollisionDetectorTest {
         assertFalse(result.collides(), "Spheres moving apart should not collide");
     }
     
+    /**
+     * Acceptance test for Luciferase-7wzml.95.
+     *
+     * At the exact TOI the two spheres are tangent.  The contact point must lie on
+     * sphere1's surface (|contact - center1| ≈ r1) AND on sphere2's surface
+     * (|contact - center2| ≈ r2), because center1 - n*r1 == center2 + n*r2 at
+     * exact contact.  The normal must point from sphere2 toward sphere1.
+     * Validated with unequal radii so that any radius-mix-up produces a
+     * measurable geometric error.
+     */
+    @Test
+    void testContactPointConventionUnequalRadii() {
+        float r1 = 1.0f;
+        float r2 = 3.0f;
+
+        // sphere1 at x=-20, sphere2 at x=+20, moving toward each other
+        var sphere1 = new SphereShape(new Point3f(-20, 0, 0), r1);
+        var sphere2 = new SphereShape(new Point3f(20, 0, 0), r2);
+
+        // both approach origin; they touch when center separation == r1+r2 = 4
+        var moving1 = new MovingShape(sphere1, new Point3f(-20, 0, 0), new Point3f(0, 0, 0), 0, 1);
+        var moving2 = new MovingShape(sphere2, new Point3f(20, 0, 0), new Point3f(0, 0, 0), 0, 1);
+
+        var result = ContinuousCollisionDetector.detectCollision(moving1, moving2);
+
+        assertTrue(result.collides(), "Spheres moving toward each other should collide");
+
+        float toi = result.timeOfImpact();
+        assertTrue(toi > 0 && toi <= 1, "TOI must be in (0,1]");
+
+        // centers at TOI
+        var c1 = moving1.getPositionAtTime(toi);
+        var c2 = moving2.getPositionAtTime(toi);
+
+        var contact = result.contactPoint();
+        var normal  = result.contactNormal();
+
+        // |contact - center1| must equal r1 (contact on sphere1 surface)
+        var d1 = new Vector3f(contact.x - c1.x, contact.y - c1.y, contact.z - c1.z);
+        assertEquals(r1, d1.length(), EPSILON, "Contact point must lie on sphere1 surface (distance == r1)");
+
+        // |contact - center2| must equal r2 (contact on sphere2 surface — equivalent at exact TOI)
+        var d2 = new Vector3f(contact.x - c2.x, contact.y - c2.y, contact.z - c2.z);
+        assertEquals(r2, d2.length(), EPSILON, "Contact point must lie on sphere2 surface (distance == r2)");
+
+        // normal must point from sphere2 toward sphere1 (positive x direction here)
+        var expectedDir = new Vector3f(c1.x - c2.x, c1.y - c2.y, c1.z - c2.z);
+        expectedDir.normalize();
+        assertEquals(expectedDir.x, normal.x, EPSILON, "Normal x must point sphere2→sphere1");
+        assertEquals(expectedDir.y, normal.y, EPSILON, "Normal y");
+        assertEquals(expectedDir.z, normal.z, EPSILON, "Normal z");
+    }
+
     @Test
     void testGrazingCollision() {
         // Sphere just grazing another sphere

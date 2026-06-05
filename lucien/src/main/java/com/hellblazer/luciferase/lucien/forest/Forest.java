@@ -31,8 +31,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 
 /**
  * A Forest manages multiple spatial index trees, providing coordinated operations across
@@ -518,44 +516,26 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     
     // Helper methods
     
+    /**
+     * Generate a deterministic tree ID from metadata and a per-forest monotone counter.
+     *
+     * <p><strong>Scope:</strong> IDs are unique <em>within a single Forest instance</em>. Two
+     * independently constructed Forest instances both start their counter at zero, so a tree added
+     * first to Forest A and first to Forest B will receive the same ID string. Callers that cross
+     * Forest boundaries — distributed ghost layers, shared registries, gRPC balance clients — must
+     * namespace the returned ID with a Forest-level identifier (e.g. a UUID assigned to the Forest
+     * at construction) before using it as a global key (Luciferase-7wzml.100).
+     */
     private String generateTreeId(TreeMetadata metadata) {
         var id = treeIdGenerator.getAndIncrement();
-        String input;
-        
+
+        // Simple, readable, deterministic ID. The per-forest counter guarantees within-forest
+        // uniqueness. SHA-256 hashing was removed (Luciferase-7wzml.100): it added no
+        // uniqueness beyond the counter and silently swallowed NoSuchAlgorithmException.
         if (metadata != null && metadata.getName() != null) {
-            // Use metadata name + id + timestamp for uniqueness
-            input = metadata.getName() + "_" + id + "_" + System.nanoTime();
-        } else {
-            input = "tree_" + id + "_" + System.nanoTime();
+            return metadata.getName() + "_" + id;
         }
-        
-        try {
-            // Generate SHA-256 hash
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes());
-            
-            // Take first 12 bytes (96 bits) for a shorter but still unique ID
-            byte[] truncated = Arrays.copyOf(hash, 12);
-            
-            // Base64 encode (will produce 16 characters for 12 bytes)
-            String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(truncated);
-            
-            // Add a short prefix for readability
-            if (metadata != null && metadata.getName() != null) {
-                String prefix = metadata.getName();
-                // Extract a short prefix from the name
-                if (prefix.length() > 4) {
-                    prefix = prefix.substring(0, 4);
-                }
-                return prefix + "_" + encoded;
-            }
-            return "T_" + encoded;
-            
-        } catch (NoSuchAlgorithmException e) {
-            // Fallback to simple ID if hashing fails
-            log.warn("Failed to generate hash-based tree ID, using fallback", e);
-            return "tree_" + id;
-        }
+        return "tree_" + id;
     }
     
     private void updateTotalEntityCount() {

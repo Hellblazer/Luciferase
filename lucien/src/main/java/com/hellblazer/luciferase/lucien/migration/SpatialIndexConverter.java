@@ -383,26 +383,35 @@ public class SpatialIndexConverter {
         var entities = source.getEntitiesWithPositions();
         var total = entities.size();
         var processed = new AtomicInteger(0);
+        // Bead Luciferase-f6di1: align with .130 fail-loud contract — track per-entity failures.
+        var failedCount = new AtomicInteger(0);
+        var errors = java.util.Collections.synchronizedList(new ArrayList<String>());
 
         entities.forEach((entityId, position) -> {
-            var content = source.getEntity(entityId);
-            if (content == null) {
-                log.warn("Skipping entity {} in progress-conversion — content is null", entityId);
-                return;
-            }
-            var locations = source.getEntityLocations(entityId);
-            if (locations.isEmpty()) {
-                tetree.insert(entityId, position, (byte) Math.min(3, source.getMaxDepth()), content);
-            } else {
-                for (var rawKey : locations) {
-                    byte level = (byte) ((SpatialKey<?>) rawKey).getLevel();
-                    tetree.insert(entityId, position, level, content);
+            try {
+                var content = source.getEntity(entityId);
+                if (content == null) {
+                    log.warn("Skipping entity {} in progress-conversion — content is null", entityId);
+                    return;
                 }
-            }
+                var locations = source.getEntityLocations(entityId);
+                if (locations.isEmpty()) {
+                    tetree.insert(entityId, position, (byte) Math.min(3, source.getMaxDepth()), content);
+                } else {
+                    for (var rawKey : locations) {
+                        byte level = (byte) ((SpatialKey<?>) rawKey).getLevel();
+                        tetree.insert(entityId, position, level, content);
+                    }
+                }
 
-            var count = processed.incrementAndGet();
-            if (callback != null && count % 100 == 0) {
-                callback.onProgress(count, total);
+                var count = processed.incrementAndGet();
+                if (callback != null && count % 100 == 0) {
+                    callback.onProgress(count, total);
+                }
+            } catch (Exception e) {
+                failedCount.incrementAndGet();
+                errors.add(String.format("Failed to migrate entity %s: %s", entityId, e.getMessage()));
+                log.warn("Progress-conversion: failed to migrate entity {}: {}", entityId, e.getMessage(), e);
             }
         });
 
@@ -410,6 +419,13 @@ public class SpatialIndexConverter {
 
         if (callback != null) {
             callback.onComplete(total);
+        }
+
+        // Bead Luciferase-f6di1: surface per-entity failures — consistent with .130 fail-loud contract.
+        if (failedCount.get() > 0) {
+            throw new ConversionException(
+                String.format("Octree to Tetree (progress) conversion lost %d of %d entities. Errors: %s",
+                              failedCount.get(), total, errors));
         }
 
         return tetree;
@@ -426,26 +442,35 @@ public class SpatialIndexConverter {
         var entities = source.getEntitiesWithPositions();
         var total = entities.size();
         var processed = new AtomicInteger(0);
+        // Bead Luciferase-f6di1: align with .130 fail-loud contract — track per-entity failures.
+        var failedCount = new AtomicInteger(0);
+        var errors = java.util.Collections.synchronizedList(new ArrayList<String>());
 
         entities.forEach((entityId, position) -> {
-            var content = source.getEntity(entityId);
-            if (content == null) {
-                log.warn("Skipping entity {} in progress-conversion — content is null", entityId);
-                return;
-            }
-            var locations = source.getEntityLocations(entityId);
-            if (locations.isEmpty()) {
-                octree.insert(entityId, position, (byte) Math.min(3, source.getMaxDepth()), content);
-            } else {
-                for (var rawKey : locations) {
-                    byte level = (byte) ((SpatialKey<?>) rawKey).getLevel();
-                    octree.insert(entityId, position, level, content);
+            try {
+                var content = source.getEntity(entityId);
+                if (content == null) {
+                    log.warn("Skipping entity {} in progress-conversion — content is null", entityId);
+                    return;
                 }
-            }
+                var locations = source.getEntityLocations(entityId);
+                if (locations.isEmpty()) {
+                    octree.insert(entityId, position, (byte) Math.min(3, source.getMaxDepth()), content);
+                } else {
+                    for (var rawKey : locations) {
+                        byte level = (byte) ((SpatialKey<?>) rawKey).getLevel();
+                        octree.insert(entityId, position, level, content);
+                    }
+                }
 
-            var count = processed.incrementAndGet();
-            if (callback != null && count % 100 == 0) {
-                callback.onProgress(count, total);
+                var count = processed.incrementAndGet();
+                if (callback != null && count % 100 == 0) {
+                    callback.onProgress(count, total);
+                }
+            } catch (Exception e) {
+                failedCount.incrementAndGet();
+                errors.add(String.format("Failed to migrate entity %s: %s", entityId, e.getMessage()));
+                log.warn("Progress-conversion: failed to migrate entity {}: {}", entityId, e.getMessage(), e);
             }
         });
 
@@ -453,6 +478,13 @@ public class SpatialIndexConverter {
 
         if (callback != null) {
             callback.onComplete(total);
+        }
+
+        // Bead Luciferase-f6di1: surface per-entity failures — consistent with .130 fail-loud contract.
+        if (failedCount.get() > 0) {
+            throw new ConversionException(
+                String.format("Tetree to Octree (progress) conversion lost %d of %d entities. Errors: %s",
+                              failedCount.get(), total, errors));
         }
 
         return octree;

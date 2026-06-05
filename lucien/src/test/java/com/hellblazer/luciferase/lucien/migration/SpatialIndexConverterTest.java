@@ -505,6 +505,101 @@ public class SpatialIndexConverterTest {
         }
     }
 
+    // ---- Bead Luciferase-f6di1: progress variants must honour .130 fail-loud contract ----
+
+    /**
+     * Verifies that octreeToTetreeWithProgress (called via convertWithProgress) throws
+     * ConversionException when a per-entity migration fails — matching the .130 fail-loud
+     * contract of the non-progress variant.
+     */
+    @Test
+    public void testProgressVariantOctreeToTetreeThrowsOnFailure() {
+        var idGenerator = new SequentialLongIDGenerator();
+
+        var throwingOctree = new ThrowingOctree(idGenerator);
+        throwingOctree.insert(new Point3f(10, 10, 10), (byte) 2, "good-1");
+        throwingOctree.insert(new Point3f(20, 20, 20), (byte) 2, "good-2");
+        throwingOctree.insertBadEntity(new Point3f(50, 50, 50), (byte) 2, "will-fail");
+
+        var ex = assertThrows(SpatialIndexConverter.ConversionException.class,
+                              () -> SpatialIndexConverter.convertWithProgress(
+                                  throwingOctree,
+                                  SpatialIndexConverter.SpatialIndexType.TETREE,
+                                  idGenerator,
+                                  null),
+                              "ConversionException expected from progress variant when a per-entity migration fails (Luciferase-f6di1)");
+
+        var msg = ex.getMessage();
+        assertTrue(msg.contains("lost 1"), "Exception must mention 1 lost entity; was: " + msg);
+        assertTrue(msg.contains("of 3"), "Exception must mention total=3; was: " + msg);
+    }
+
+    /**
+     * Verifies that tetreeToOctreeWithProgress (called via convertWithProgress) throws
+     * ConversionException when a per-entity migration fails — matching the .130 fail-loud
+     * contract of the non-progress variant.
+     */
+    @Test
+    public void testProgressVariantTetreeToOctreeThrowsOnFailure() {
+        var idGenerator = new SequentialLongIDGenerator();
+
+        var throwingTetree = new ThrowingTetree(idGenerator);
+        throwingTetree.insert(new Point3f(10, 10, 10), (byte) 2, "good-1");
+        throwingTetree.insert(new Point3f(20, 20, 20), (byte) 2, "good-2");
+        throwingTetree.insertBadEntity(new Point3f(50, 50, 50), (byte) 2, "will-fail");
+
+        var ex = assertThrows(SpatialIndexConverter.ConversionException.class,
+                              () -> SpatialIndexConverter.convertWithProgress(
+                                  throwingTetree,
+                                  SpatialIndexConverter.SpatialIndexType.OCTREE,
+                                  idGenerator,
+                                  null),
+                              "ConversionException expected from progress variant when a per-entity migration fails (Luciferase-f6di1)");
+
+        var msg = ex.getMessage();
+        assertTrue(msg.contains("lost 1"), "Exception must mention 1 lost entity; was: " + msg);
+        assertTrue(msg.contains("of 3"), "Exception must mention total=3; was: " + msg);
+    }
+
+    /**
+     * Verifies that clean progress-variant conversions do NOT throw.
+     */
+    @Test
+    public void testCleanProgressConversionDoesNotThrow() {
+        var idGenerator = new SequentialLongIDGenerator();
+        var octree = createSampleOctree(idGenerator);
+
+        assertDoesNotThrow(() -> SpatialIndexConverter.convertWithProgress(
+            octree, SpatialIndexConverter.SpatialIndexType.TETREE, idGenerator, null),
+                           "Clean progress-variant conversion must not throw ConversionException (Luciferase-f6di1)");
+    }
+
+    /**
+     * Tetree subclass that throws during {@code getEntityLocations} for one specific entity,
+     * triggering the per-entity catch block inside the progress-variant path.
+     */
+    private static class ThrowingTetree extends Tetree<LongEntityID, String> {
+        private LongEntityID badEntityId;
+
+        ThrowingTetree(SequentialLongIDGenerator gen) {
+            super(gen, 5, (byte) 4);
+        }
+
+        LongEntityID insertBadEntity(Point3f pos, byte level, String content) {
+            badEntityId = insert(pos, level, content);
+            return badEntityId;
+        }
+
+        @Override
+        public java.util.Set<com.hellblazer.luciferase.lucien.tetree.TetreeKey<? extends com.hellblazer.luciferase.lucien.tetree.TetreeKey<?>>> getEntityLocations(
+                LongEntityID entityId) {
+            if (entityId.equals(badEntityId)) {
+                throw new RuntimeException("Simulated per-entity failure for entity " + entityId);
+            }
+            return super.getEntityLocations(entityId);
+        }
+    }
+
     // Helper methods
 
     private Octree<LongEntityID, String> createSampleOctree(SequentialLongIDGenerator idGenerator) {

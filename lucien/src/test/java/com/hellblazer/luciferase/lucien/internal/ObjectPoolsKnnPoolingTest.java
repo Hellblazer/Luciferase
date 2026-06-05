@@ -7,6 +7,7 @@ package com.hellblazer.luciferase.lucien.internal;
 
 import com.hellblazer.luciferase.lucien.entity.EntityDistance;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -32,6 +33,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * @author hal.hildebrand
  */
 class ObjectPoolsKnnPoolingTest {
+
+    /**
+     * Drain this thread's pools before each test. The pools are per-thread {@link ThreadLocal} state
+     * shared across the whole surefire fork, so a sibling test that borrows+returns a comparator-bearing
+     * queue leaves residue at the head of the comparator deque, which defeats the reuse-identity assertions
+     * below (the mismatch path allocates fresh on every borrow). Draining makes these tests deterministic.
+     */
+    @BeforeEach
+    void drainPools() {
+        ObjectPools.clearThreadLocalPoolsForTesting();
+    }
 
     @Test
     void maxHeapComparatorIsACachedSingleton() {

@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.lucien.Constants;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * High-performance caching and lookup tables for Tetree operations. Converts O(log n) operations to O(1) through
@@ -89,13 +90,16 @@ public final class TetreeLevelCache {
     private static final int                        MAX_SHALLOW_LEVEL   = 5;
     private static final Map<Integer, TetreeKey<?>> SHALLOW_LEVEL_CACHE = new HashMap<>();
 
-    // Cache statistics for monitoring (advisory; non-atomic is intentional — reads are consistent enough)
-    private static long cacheHits         = 0;
-    private static long cacheMisses       = 0;
-    private static long parentChainHits   = 0;
-    private static long parentChainMisses = 0;
-    private static long parentCacheHits   = 0;
-    private static long parentCacheMisses = 0;
+    // Cache statistics for monitoring (Luciferase-7wzml.133).
+    // Plain static long fields incremented from concurrent read paths caused torn reads and lost updates.
+    // LongAdder provides wait-free, scalable increments with no false-sharing on hot paths, while
+    // still giving accurate-enough statistics for monitoring purposes.
+    private static final LongAdder cacheHits         = new LongAdder();
+    private static final LongAdder cacheMisses       = new LongAdder();
+    private static final LongAdder parentChainHits   = new LongAdder();
+    private static final LongAdder parentChainMisses = new LongAdder();
+    private static final LongAdder parentCacheHits   = new LongAdder();
+    private static final LongAdder parentCacheMisses = new LongAdder();
 
     static {
         initializeLevelTables();
@@ -268,8 +272,10 @@ public final class TetreeLevelCache {
      * @return the cache hit rate as a percentage (0.0 to 1.0)
      */
     public static double getCacheHitRate() {
-        var total = cacheHits + cacheMisses;
-        return total > 0 ? (double) cacheHits / total : 0.0;
+        long h = cacheHits.sum();
+        long m = cacheMisses.sum();
+        long total = h + m;
+        return total > 0 ? (double) h / total : 0.0;
     }
 
     public static long getCachedIndex(int x, int y, int z, byte level, byte type) {
@@ -301,10 +307,10 @@ public final class TetreeLevelCache {
         var slot = (int) (key & (PARENT_CACHE_SIZE - 1));
         var holder = PARENT_CACHE.get(slot);
         if (holder != null && holder.key() == key) {
-            parentCacheHits++;
+            parentCacheHits.increment();
             return holder.value();
         }
-        parentCacheMisses++;
+        parentCacheMisses.increment();
         return null;
     }
 
@@ -319,10 +325,10 @@ public final class TetreeLevelCache {
         var slot = (int) (key & (PARENT_CHAIN_CACHE_SIZE - 1));
         var holder = PARENT_CHAIN_CACHE.get(slot);
         if (holder != null && holder.key() == key) {
-            parentChainHits++;
+            parentChainHits.increment();
             return holder.value();
         }
-        parentChainMisses++;
+        parentChainMisses.increment();
         return null;
     }
 
@@ -361,10 +367,10 @@ public final class TetreeLevelCache {
         var slot = (int) (key & (TETREE_KEY_CACHE_SIZE - 1));
         var holder = TETREE_KEY_CACHE.get(slot);
         if (holder != null && holder.key() == key) {
-            cacheHits++;
+            cacheHits.increment();
             return holder.value();
         }
-        cacheMisses++;
+        cacheMisses.increment();
         return null;
     }
 
@@ -411,8 +417,10 @@ public final class TetreeLevelCache {
      * @return the cache hit rate as a percentage (0.0 to 1.0)
      */
     public static double getParentCacheHitRate() {
-        var total = parentCacheHits + parentCacheMisses;
-        return total > 0 ? (double) parentCacheHits / total : 0.0;
+        long h = parentCacheHits.sum();
+        long m = parentCacheMisses.sum();
+        long total = h + m;
+        return total > 0 ? (double) h / total : 0.0;
     }
 
     /**
@@ -421,8 +429,10 @@ public final class TetreeLevelCache {
      * @return hit rate as a percentage
      */
     public static double getParentChainHitRate() {
-        long total = parentChainHits + parentChainMisses;
-        return total > 0 ? (double) parentChainHits / total : 0.0;
+        long h = parentChainHits.sum();
+        long m = parentChainMisses.sum();
+        long total = h + m;
+        return total > 0 ? (double) h / total : 0.0;
     }
 
     /**
@@ -555,11 +565,11 @@ public final class TetreeLevelCache {
      * Reset cache statistics for benchmarking.
      */
     public static void resetCacheStats() {
-        cacheHits = 0;
-        cacheMisses = 0;
-        parentChainHits = 0;
-        parentChainMisses = 0;
-        parentCacheHits = 0;
-        parentCacheMisses = 0;
+        cacheHits.reset();
+        cacheMisses.reset();
+        parentChainHits.reset();
+        parentChainMisses.reset();
+        parentCacheHits.reset();
+        parentCacheMisses.reset();
     }
 }

@@ -30,6 +30,26 @@ import java.util.*;
  * must use the try-finally wrappers {@link #withArrayList} / {@link #withHashSet} and ensure the
  * finally block runs on the borrowing thread, or accept a fresh allocation instead of pooling.
  *
+ * <p><strong>Type-safety contract (Luciferase-7wzml.131):</strong> All pooled collections are
+ * stored type-erased ({@code ArrayList<?>}, {@code HashSet<?>}, {@code PriorityQueue<?>}) and
+ * returned to callers via an unchecked cast to the requested element type {@code <T>}. Because each
+ * pool is a per-thread {@link ThreadLocal} shared across <em>all</em> callers on that thread, a
+ * list borrowed as {@code ArrayList<MortonKey>} may be the same instance previously used as
+ * {@code ArrayList<EntityID>}.  This is safe at runtime <em>only because</em> every
+ * {@code returnX} method calls {@code clear()} before returning the collection to the pool —
+ * the collection is always empty when handed to a new caller.  Two invariants must therefore
+ * hold at every call-site:
+ * <ol>
+ *   <li><strong>Empty on return:</strong> call {@code returnX(collection)} (or rely on the
+ *       scoped wrapper) immediately after use; never return a non-empty collection.</li>
+ *   <li><strong>No escape:</strong> borrowed collections must not outlive the borrow scope
+ *       (must not be stored in fields or passed to code that could retain a reference after
+ *       the return call).</li>
+ * </ol>
+ * Prefer the scoped wrappers {@link #withArrayList}, {@link #withHashSet}, and
+ * {@link #withPriorityQueue} at call-sites: they guarantee return-in-finally and make the
+ * lifetime explicit.
+ *
  * @author hal.hildebrand
  */
 public class ObjectPools {
@@ -193,7 +213,48 @@ public class ObjectPools {
             PRIORITY_QUEUE_POOL.get().returnToPool(queue);
         }
     }
-    
+
+    /**
+     * Test-only: drain the calling thread's pools so identity-sensitive pooling tests start from a
+     * known-empty state. The pools are per-thread {@link ThreadLocal} and shared across all callers
+     * on that thread, so a sibling test that borrows+returns (e.g. a comparator-bearing queue) leaves
+     * residue that defeats reuse-identity assertions (Luciferase-7wzml.131). Not part of the public API.
+     */
+    static void clearThreadLocalPoolsForTesting() {
+        ARRAY_LIST_POOL.get().clear();
+        HASH_SET_POOL.get().clear();
+        PRIORITY_QUEUE_POOL.get().clear();
+    }
+
+    /**
+     * Execute a function with a borrowed natural-order PriorityQueue, returning the result.
+     * Guarantees return-in-finally; prefer over bare {@link #borrowPriorityQueue()} at call-sites
+     * that do not cross thread boundaries.
+     */
+    public static <T, R> R withPriorityQueue(java.util.function.Function<PriorityQueue<T>, R> function) {
+        PriorityQueue<T> queue = borrowPriorityQueue();
+        try {
+            return function.apply(queue);
+        } finally {
+            returnPriorityQueue(queue);
+        }
+    }
+
+    /**
+     * Execute a function with a borrowed comparator-ordered PriorityQueue, returning the result.
+     * Guarantees return-in-finally; prefer over bare {@link #borrowPriorityQueue(Comparator)} at call-sites
+     * that do not cross thread boundaries.
+     */
+    public static <T, R> R withPriorityQueue(Comparator<? super T> comparator,
+                                              java.util.function.Function<PriorityQueue<T>, R> function) {
+        PriorityQueue<T> queue = borrowPriorityQueue(comparator);
+        try {
+            return function.apply(queue);
+        } finally {
+            returnPriorityQueue(queue);
+        }
+    }
+
     /**
      * Thread-local pool for ArrayLists
      */
@@ -211,6 +272,10 @@ public class ObjectPools {
             if (pool.size() < MAX_POOL_SIZE && list.size() == 0) {
                 pool.offerLast(list);
             }
+        }
+
+        void clear() {
+            pool.clear();
         }
     }
     
@@ -232,6 +297,10 @@ public class ObjectPools {
                 pool.offerLast(set);
             }
         }
+
+        void clear() {
+            pool.clear();
+        }
     }
     
     /**
@@ -246,6 +315,11 @@ public class ObjectPools {
         private final Deque<PriorityQueue<?>> plainPool      = new ArrayDeque<>(10);
         private final Deque<PriorityQueue<?>> comparatorPool = new ArrayDeque<>(10);
         private static final int MAX_POOL_SIZE = 10;
+
+        void clear() {
+            plainPool.clear();
+            comparatorPool.clear();
+        }
 
         @SuppressWarnings("unchecked")
         public <T> PriorityQueue<T> borrow() {

@@ -24,6 +24,8 @@ import com.hellblazer.luciferase.lucien.entity.EntityManager;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
@@ -34,7 +36,9 @@ import java.util.*;
  * @author hal.hildebrand
  */
 public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonKey, ID> {
-    
+
+    private static final Logger log = LoggerFactory.getLogger(OctreeBalancer.class);
+
     private final Octree<ID, ?> octree;
     private final EntityManager<MortonKey, ID, ?> entityManager;
     private final byte maxDepth;
@@ -356,6 +360,11 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
             );
 
         } catch (Exception e) {
+            // Bead Luciferase-7wzml.142: swallowed exception replaced with logged failure.
+            // Log at ERROR so operators get a diagnostic; return failure-shaped result (success=false)
+            // so callers still see a well-typed result rather than a propagated exception.
+            log.error("rebalanceTree failed after {}ns — returning failure result (Luciferase-7wzml.142): {}",
+                      clock.nanoTime() - startTime, e.getMessage(), e);
             var timeTaken = clock.nanoTime() - startTime;
             return new TreeBalancer.RebalancingResult(0, 0, 0, 0, 0, timeTaken, false);
         }

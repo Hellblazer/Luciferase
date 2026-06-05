@@ -196,4 +196,56 @@ class DefaultFailureDetectorTest {
         handler.reportPartitionFailed(pid); // must be a no-op
         assertThat(handler.checkHealth(pid)).isEqualTo(PartitionStatus.FAILED);
     }
+
+    /**
+     * Luciferase-7wzml.109: DefaultFailureDetector must implement AutoCloseable.
+     * close() delegates to stop(), shutting down the executor; idempotent on repeated calls.
+     */
+    @Test
+    void autoCloseable_tryWithResources_shutsDownExecutor() throws Exception {
+        var detConfig = new FailureDetectionConfig(
+            Duration.ofMillis(100),
+            Duration.ofMillis(200),
+            Duration.ofMillis(400),
+            50
+        );
+        var h = new SimpleFaultHandler(FaultConfiguration.defaultConfig());
+        h.start();
+
+        DefaultFailureDetector det;
+        try (var closeable = new DefaultFailureDetector(detConfig, h)) {
+            det = closeable;
+            closeable.start();
+            assertThat(closeable.isRunning()).isTrue();
+            // close() will be called at end of try block
+        }
+
+        // After close(), executor must be shut down
+        assertThat(det.isRunning()).isFalse();
+        h.stop();
+    }
+
+    @Test
+    void close_isIdempotent() {
+        var detConfig = new FailureDetectionConfig(
+            Duration.ofMillis(100),
+            Duration.ofMillis(200),
+            Duration.ofMillis(400),
+            50
+        );
+        var h = new SimpleFaultHandler(FaultConfiguration.defaultConfig());
+        h.start();
+
+        var det = new DefaultFailureDetector(detConfig, h);
+        det.start();
+
+        det.close();
+        assertThat(det.isRunning()).isFalse();
+
+        // Second close must not throw
+        det.close();
+        assertThat(det.isRunning()).isFalse();
+
+        h.stop();
+    }
 }

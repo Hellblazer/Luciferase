@@ -26,6 +26,15 @@ import java.util.Set;
 /**
  * Default implementation of tree balancing strategy with configurable thresholds.
  *
+ * <p><b>Spatial locality warning</b>: {@link #distributeEntities} uses a simple round-robin
+ * assignment that ignores entity positions. This means entities may be assigned to child nodes
+ * that do not contain their spatial location, degrading range-query and k-NN performance after
+ * a split. This is a known limitation of the DEFAULT strategy (see Luciferase-7wzml.108).
+ * A spatially-correct implementation would require the entity positions or child-octant
+ * information to be threaded through the {@link TreeBalancingStrategy} interface, which is a
+ * follow-up scope item. Callers requiring spatial locality should override
+ * {@link #distributeEntities} or provide an alternative {@link TreeBalancingStrategy}.
+ *
  * @param <ID> The type of EntityID used for entity identification
  * @author hal.hildebrand
  */
@@ -87,6 +96,25 @@ public class DefaultBalancingStrategy<ID extends EntityID> implements TreeBalanc
         this.maxEntitiesPerNode = maxEntitiesPerNode;
     }
 
+    /**
+     * Distributes entities across child nodes using a simple round-robin assignment.
+     *
+     * <p><b>Non-spatial</b>: entities are assigned by index modulo {@code childCount},
+     * without regard to their spatial location. This is intentionally simple — the
+     * {@link TreeBalancingStrategy} interface provides only the entity ID set and the
+     * child count, not entity positions or octant membership, so true spatial assignment
+     * cannot be performed at this layer without an API change.
+     *
+     * <p>After a split, query performance may degrade because entities may reside in
+     * child nodes that do not spatially contain them (Luciferase-7wzml.108). Callers
+     * requiring locality-preserving distribution should provide a custom
+     * {@link TreeBalancingStrategy} implementation that has access to entity positions.
+     *
+     * @param entities   the set of entity IDs to distribute
+     * @param childCount the number of child partitions
+     * @return one non-null {@link Set} per child, containing the assigned entity IDs;
+     *         all input entities appear in exactly one child set
+     */
     @Override
     @SuppressWarnings("unchecked")
     public Set<ID>[] distributeEntities(Set<ID> entities, int childCount) {
@@ -95,8 +123,7 @@ public class DefaultBalancingStrategy<ID extends EntityID> implements TreeBalanc
             distribution[i] = new HashSet<>();
         }
 
-        // Simple round-robin distribution
-        // In practice, this should use spatial information
+        // Round-robin: deterministic, but spatially unaware (see class Javadoc).
         List<ID> entityList = new ArrayList<>(entities);
         for (int i = 0; i < entityList.size(); i++) {
             distribution[i % childCount].add(entityList.get(i));

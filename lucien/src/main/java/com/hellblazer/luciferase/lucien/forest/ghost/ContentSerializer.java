@@ -49,8 +49,17 @@ public interface ContentSerializer<Content> {
     /**
      * Deserializes content from bytes.
      *
-     * @param bytes the serialized bytes (never null; empty array for absent content)
-     * @return the deserialized content, or null if bytes are empty
+     * <p>As of Luciferase-7wzml.53, implementations that use the 1-byte presence-flag wire
+     * format (e.g. {@link #STRING_SERIALIZER}) accept {@code null} bytes as equivalent to
+     * an absent payload and return {@code null}. The {@code bytes} parameter may therefore
+     * be {@code null} (treated as absent content) or a non-empty array whose first byte is
+     * the presence flag (0 = null value, 1 = value follows).
+     *
+     * @param bytes the serialized bytes, or {@code null} to indicate an absent payload;
+     *              implementations using the presence-flag format also treat an empty array
+     *              or a leading {@code 0x00} flag as a null-valued payload
+     * @return the deserialized content, or {@code null} when the payload encodes a null value
+     *         (presence flag = 0, null bytes, or empty array)
      * @throws SerializationException if deserialization fails
      */
     Content deserialize(byte[] bytes) throws SerializationException;
@@ -98,16 +107,30 @@ public interface ContentSerializer<Content> {
 
     /**
      * String content serializer for simple text content.
+     *
+     * <p>Wire format: a 1-byte presence flag (0 = null, 1 = present) followed by the UTF-8 bytes of the
+     * string content. This disambiguates {@code null} from the empty string {@code ""}, which would both
+     * serialize to an empty byte array under a flag-free scheme (Luciferase-7wzml.53).
      */
     ContentSerializer<String> STRING_SERIALIZER = new ContentSerializer<>() {
         @Override
         public byte[] serialize(String content) {
-            return content != null ? content.getBytes(StandardCharsets.UTF_8) : new byte[0];
+            if (content == null) {
+                return new byte[] { 0 };
+            }
+            var utf8 = content.getBytes(StandardCharsets.UTF_8);
+            var result = new byte[1 + utf8.length];
+            result[0] = 1; // presence flag
+            System.arraycopy(utf8, 0, result, 1, utf8.length);
+            return result;
         }
 
         @Override
         public String deserialize(byte[] bytes) {
-            return (bytes == null || bytes.length == 0) ? null : new String(bytes, StandardCharsets.UTF_8);
+            if (bytes == null || bytes.length == 0 || bytes[0] == 0) {
+                return null;
+            }
+            return new String(bytes, 1, bytes.length - 1, StandardCharsets.UTF_8);
         }
 
         @Override
