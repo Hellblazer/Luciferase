@@ -8,6 +8,7 @@ package com.hellblazer.luciferase.lucien.balancing.fault;
 import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -33,6 +34,32 @@ class BarrierCascadingClockInjectionTest {
 
         assertEquals(0L, result.durationMs(),
                      "duration must come from the (fixed) injected clock, not the wall clock (Luciferase-mt7hi)");
+    }
+
+    @Test
+    void barrierRecoveryEventTimestampFromInjectedClock() throws Exception {
+        var fixedTime = 42_000L;
+        var recovery = new BarrierRecoveryImpl().enableSimulatedRecovery();
+        recovery.setClock(new TestClock(fixedTime));
+        var handler = new SimpleFaultHandler(FaultConfiguration.defaultConfig().withMaxRetries(1));
+
+        var capturedEvents = new ArrayList<RecoveryEvent>();
+        recovery.addObserver(new RecoveryProgressObserver() {
+            @Override
+            public void onEvent(RecoveryEvent event) {
+                capturedEvents.add(event);
+            }
+            @Override
+            public void onProgress(RecoveryProgress progress) { }
+        });
+
+        recovery.recover(UUID.randomUUID(), handler).get();
+
+        assertFalse(capturedEvents.isEmpty(), "expected at least one RecoveryEvent");
+        for (var event : capturedEvents) {
+            assertEquals(fixedTime, event.timestamp(),
+                         "event timestamp must come from injected clock, not System.currentTimeMillis() (Luciferase-my5mf)");
+        }
     }
 
     @Test

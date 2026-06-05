@@ -29,6 +29,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Coordinates topology change proposals through committee consensus voting.
@@ -83,11 +84,25 @@ public class TopologyConsensusCoordinator {
     private volatile Clock clock;
 
     /**
+     * Monotonic sequence counter used to mint unique per-reservation ABA tokens.
+     * <p>
+     * Luciferase-7wzml.181: the previous implementation stored the raw clock millis as the ABA
+     * token. Two concurrent proposals on the same bubble at the same clock tick (likely under a
+     * frozen TestClock, or under coarse wall-clock granularity) would produce identical tokens,
+     * allowing a rejected loser's restore to clobber the concurrent winner's live reservation.
+     * Using a monotonic sequence guarantees every reservation has a unique token regardless of
+     * clock granularity.
+     */
+    private final AtomicLong reservationSeq = new AtomicLong(0);
+
+    /**
      * Track last topology change per bubble.
      * <p>
-     * Key: bubbleId, Value: timestamp of last change (simulation time)
+     * Key: bubbleId, Value: the {@link CooldownEntry} written by the most-recent reservation,
+     * carrying both the unique token (ABA guard, Luciferase-7wzml.181) and the clock timestamp
+     * used for cooldown-elapsed arithmetic.
      */
-    private final ConcurrentHashMap<UUID, Long> lastChangeTimestamps = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, CooldownEntry> lastChangeTimestamps = new ConcurrentHashMap<>();
 
     /**
      * Underlying consensus protocol for Byzantine fault tolerance.
@@ -286,14 +301,14 @@ public class TopologyConsensusCoordinator {
         var affectedBubbles = getAffectedBubbles(proposal);
 
         for (var bubbleId : affectedBubbles) {
-            Long lastChange = lastChangeTimestamps.get(bubbleId);
+            var lastEntry = lastChangeTimestamps.get(bubbleId);
 
             // If no prior change, allow the proposal (no cooldown yet)
-            if (lastChange == null) {
+            if (lastEntry == null) {
                 continue;
             }
 
-            var elapsed = now - lastChange;
+            var elapsed = now - lastEntry.timestamp();
 
             if (elapsed < cooldownMillis) {
                 log.debug("Bubble {} still in cooldown: elapsed={}ms, required={}ms",
@@ -325,54 +340,64 @@ public class TopologyConsensusCoordinator {
      * Atomically tests and reserves the cooldown for every bubble affected by a proposal.
      * <p>
      * For each affected bubble, performs a single {@link ConcurrentHashMap#compute} test-and-set:
-     * if the bubble is still within its cooldown window the prior timestamp is left untouched and
-     * the reservation fails; otherwise the timestamp is advanced to {@code now}, claiming the
-     * cooldown for this caller. This closes the check-then-act race
-     * (Luciferase-0frcy.43/.44): two concurrent callers racing on the same bubble cannot both
-     * succeed because {@code compute} serializes per-key.
+     * if the bubble is still within its cooldown window the prior value is left untouched and
+     * the reservation fails; otherwise a <em>unique per-reservation token</em> (from
+     * {@link #reservationSeq}) is written, claiming the slot for this caller. This closes the
+     * check-then-act race (Luciferase-0frcy.43/.44): two concurrent callers racing on the same
+     * bubble cannot both succeed because {@code compute} serializes per-key.
+     * <p>
+     * The unique token (not the raw clock millis) is the ABA guard
+     * (Luciferase-7wzml.181): because every reservation writes a distinct token,
+     * {@link #restoreCooldown} can reliably distinguish "we still own this slot" from
+     * "a concurrent winner has already claimed it" even when two proposals share the
+     * same clock millis (e.g. under a frozen TestClock).
      * <p>
      * If a multi-bubble proposal (e.g. merge) fails to reserve a later bubble, the already-claimed
      * bubbles are restored to their prior values and the method returns {@code null}.
      *
      * @param proposal the topology change proposal
-     * @return a map of bubbleId to prior timestamp (null value = no prior entry) for every
-     *         reserved bubble, to support restoration on later rejection; {@code null} if the
-     *         reservation could not be acquired (cooldown still active for some bubble)
+     * @return a {@link CooldownReservation} recording the unique token written and the prior slot
+     *         values for every reserved bubble, to support restoration on later rejection;
+     *         {@code null} if the reservation could not be acquired (cooldown still active for
+     *         some bubble)
      */
     private CooldownReservation tryReserveCooldown(TopologyProposal proposal) {
         long now = clock.currentTimeMillis();
+        // Unique token for this reservation — distinct from any concurrent proposal's token
+        // regardless of clock granularity (Luciferase-7wzml.181 ABA fix).
+        long token = reservationSeq.incrementAndGet();
         var affectedBubbles = getAffectedBubbles(proposal);
-        var priorTimestamps = new java.util.LinkedHashMap<UUID, Long>();
+        var priorEntries = new java.util.LinkedHashMap<UUID, CooldownEntry>();
 
         for (var bubbleId : affectedBubbles) {
             // Box to detect "reservation refused" without ambiguity.
             var refused = new boolean[]{false};
-            var prior = new Long[]{null};
+            var prior = new CooldownEntry[]{null};
             lastChangeTimestamps.compute(bubbleId, (id, last) -> {
-                if (last != null && (now - last) < cooldownMillis) {
+                if (last != null && (now - last.timestamp()) < cooldownMillis) {
                     refused[0] = true;
-                    return last; // still in cooldown - leave unchanged
+                    return last; // still in cooldown — leave unchanged
                 }
                 prior[0] = last;
-                return now; // claim the cooldown for this caller
+                return new CooldownEntry(token, now); // claim the cooldown for this caller
             });
 
             if (refused[0]) {
                 log.debug("Bubble {} still in cooldown; reservation refused for proposal {}",
                          bubbleId, proposal.proposalId());
-                // Roll back any reservations already made for this proposal. Restore conditionally
-                // on {@code now} so we only revert entries this reservation still owns (ABA-safe).
-                restoreCooldown(new CooldownReservation(priorTimestamps, now));
+                // Roll back any reservations already made for this proposal. Restore only if
+                // the current slot value carries our unique token (ABA-safe).
+                restoreCooldown(new CooldownReservation(priorEntries, token));
                 return null;
             }
-            priorTimestamps.put(bubbleId, prior[0]);
+            priorEntries.put(bubbleId, prior[0]);
         }
 
-        return new CooldownReservation(priorTimestamps, now);
+        return new CooldownReservation(priorEntries, token);
     }
 
     /**
-     * Restores cooldown timestamps to the values captured before a reservation, used when a
+     * Restores cooldown entries to the values captured before a reservation, used when a
      * reserved proposal is subsequently rejected (validation or consensus). A {@code null} prior
      * value means there was no entry before the reservation, so it is removed.
      *
@@ -384,21 +409,23 @@ public class TopologyConsensusCoordinator {
     }
 
     /**
-     * Conditionally reverts each reserved bubble's timestamp to its prior value. The revert only
-     * happens if the bubble's current value still equals what this reservation wrote
-     * ({@code reservation.written}); otherwise a concurrent winner has since claimed the bubble and
-     * we leave it untouched. This is the ABA guard (Luciferase-0frcy): a rejected loser must never
-     * clobber a concurrent winner's live reservation. The {@code compute} callback serializes per
-     * key, so the compare-and-revert is atomic.
+     * Conditionally reverts each reserved bubble's entry to its prior value. The revert only
+     * happens if the bubble's current entry carries <em>this reservation's unique token</em>;
+     * otherwise a concurrent winner has since claimed the slot and we leave it untouched.
+     * <p>
+     * Luciferase-7wzml.181 ABA fix: comparing by unique token (not by clock millis) ensures that
+     * two concurrent proposals issued at the same clock tick produce distinct tokens, so a rejected
+     * loser's restore cannot mistake the concurrent winner's live entry as its own and clobber it.
+     * The {@code compute} callback serializes per key, so the compare-and-revert is atomic.
      */
     private void restoreCooldown(CooldownReservation reservation) {
-        long written = reservation.written();
-        for (var entry : reservation.priorTimestamps().entrySet()) {
+        long token = reservation.token();
+        for (var entry : reservation.priorEntries().entrySet()) {
             var bubbleId = entry.getKey();
             var prior = entry.getValue();
             lastChangeTimestamps.compute(bubbleId, (id, current) -> {
-                if (!java.util.Objects.equals(current, written)) {
-                    // A concurrent reservation overwrote our value (or it was already restored);
+                if (current == null || current.token() != token) {
+                    // A concurrent reservation overwrote our slot (or it was already restored);
                     // leave the live value untouched.
                     return current;
                 }
@@ -408,29 +435,28 @@ public class TopologyConsensusCoordinator {
     }
 
     /**
-     * A held cooldown reservation: the prior timestamps to restore on rejection (keyed by bubbleId,
-     * null value = no prior entry), plus {@code written} — the timestamp this reservation wrote into
-     * every reserved bubble. {@code written} is the ABA token: {@link #restoreCooldown} only reverts
-     * a bubble whose current value still equals {@code written}.
+     * A held cooldown reservation: the prior entries to restore on rejection (keyed by bubbleId,
+     * null value = no prior entry), plus {@code token} — the unique sequence value written into
+     * every reserved bubble's slot by this reservation.
+     * <p>
+     * Luciferase-7wzml.181: {@code token} is minted from {@link #reservationSeq} (not from the
+     * clock) so it is globally unique per reservation regardless of clock granularity. {@link
+     * #restoreCooldown} only reverts a slot whose current entry still carries this token, ensuring
+     * a rejected loser never clobbers a concurrent winner's live reservation even when both ran
+     * at the same clock millisecond.
      */
-    private record CooldownReservation(java.util.Map<UUID, Long> priorTimestamps, long written) {
+    private record CooldownReservation(java.util.Map<UUID, CooldownEntry> priorEntries, long token) {
     }
 
     /**
-     * Updates cooldown timestamps for bubbles affected by a proposal.
+     * An entry in {@link #lastChangeTimestamps}: pairs a unique per-reservation {@code token} with
+     * the clock {@code timestamp} at which the reservation was made.
      * <p>
-     * Called after successful proposal approval to prevent rapid changes.
-     *
-     * @param proposal the approved topology proposal
+     * The {@code token} is the ABA guard (Luciferase-7wzml.181); the {@code timestamp} is used for
+     * cooldown-elapsed arithmetic in {@link #canProposeTopologyChange} and {@link
+     * #getRemainingCooldown}.
      */
-    private void updateCooldownTimestamps(TopologyProposal proposal) {
-        long now = clock.currentTimeMillis();
-        var affectedBubbles = getAffectedBubbles(proposal);
-
-        for (var bubbleId : affectedBubbles) {
-            lastChangeTimestamps.put(bubbleId, now);
-            log.debug("Updated cooldown timestamp for bubble {}: timestamp={}", bubbleId, now);
-        }
+    private record CooldownEntry(long token, long timestamp) {
     }
 
     /**
@@ -442,15 +468,15 @@ public class TopologyConsensusCoordinator {
      * @return remaining cooldown milliseconds (0 if cooldown elapsed)
      */
     public long getRemainingCooldown(UUID bubbleId) {
-        Long lastChange = lastChangeTimestamps.get(bubbleId);
+        var lastEntry = lastChangeTimestamps.get(bubbleId);
 
         // If no prior change, no cooldown remaining
-        if (lastChange == null) {
+        if (lastEntry == null) {
             return 0L;
         }
 
         long now = clock.currentTimeMillis();
-        var elapsed = now - lastChange;
+        var elapsed = now - lastEntry.timestamp();
         var remaining = cooldownMillis - elapsed;
         return Math.max(0, remaining);
     }

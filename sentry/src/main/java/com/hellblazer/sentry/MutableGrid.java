@@ -21,6 +21,9 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 import java.util.*;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import static com.hellblazer.sentry.V.*;
 
 /**
@@ -86,19 +89,29 @@ import static com.hellblazer.sentry.V.*;
  */
 
 public class MutableGrid extends Grid {
+    private static final Logger log = LoggerFactory.getLogger(MutableGrid.class);
+
     // Configuration options
     public enum AllocationStrategy {
         POOLED,    // Use TetrahedronPool (default)
         DIRECT     // Direct allocation without pooling
     }
     
-    private static final String ALLOCATION_PROPERTY = "sentry.allocation.strategy";
+    private static final String ALLOCATION_PROPERTY  = "sentry.allocation.strategy";
+    private static final String REBUILD_DIRECT_PROPERTY = "sentry.rebuild.direct";
+    /** Default seed for deterministic landmark selection (used when no Random is injected). */
+    public  static final long   DEFAULT_LANDMARK_SEED = 0xDEAD_BEEF_CAFE_BABEL;
+
     private final List<Vertex>    vertices = new ArrayList<>();
     private final TetrahedronAllocator allocator;
     private final AllocationStrategy strategy;
+    /** Read once at construction; controls whether small rebuilds bypass the pool. */
+    private final boolean         rebuildDirect;
+    /** Seeded Random used for landmark selection; injectable for deterministic tests. */
+    private final Random          landmarkRandom;
     protected     Tetrahedron     last;  // Changed to protected for testing
     protected     LandmarkIndex   landmarkIndex;  // Changed to protected for testing
-    
+
     private static AllocationStrategy getDefaultStrategy() {
         String prop = System.getProperty(ALLOCATION_PROPERTY);
         if ("direct".equalsIgnoreCase(prop)) {
@@ -107,15 +120,19 @@ public class MutableGrid extends Grid {
         return AllocationStrategy.POOLED; // Default
     }
 
+    private static boolean readRebuildDirect() {
+        return "true".equals(System.getProperty(REBUILD_DIRECT_PROPERTY));
+    }
+
     public MutableGrid() {
-        this(getFourCorners(), getDefaultStrategy());
+        this(getFourCorners(), getDefaultStrategy(), new Random(DEFAULT_LANDMARK_SEED));
     }
 
     /**
      * Create with specified allocation strategy.
      */
     public MutableGrid(AllocationStrategy strategy) {
-        this(getFourCorners(), strategy);
+        this(getFourCorners(), strategy, new Random(DEFAULT_LANDMARK_SEED));
     }
 
     /**
@@ -124,16 +141,39 @@ public class MutableGrid extends Grid {
      * @param fourCorners The four corner vertices
      */
     public MutableGrid(Vertex[] fourCorners) {
-        this(fourCorners, getDefaultStrategy());
+        this(fourCorners, getDefaultStrategy(), new Random(DEFAULT_LANDMARK_SEED));
     }
-    
+
+    /**
+     * Create with specified allocation strategy and a seeded Random for deterministic landmark selection.
+     *
+     * @param strategy      allocation strategy
+     * @param landmarkRandom seeded Random for landmark add/replace decisions
+     */
+    public MutableGrid(AllocationStrategy strategy, Random landmarkRandom) {
+        this(getFourCorners(), strategy, landmarkRandom);
+    }
+
     /**
      * Create with specified allocation strategy.
      */
     public MutableGrid(Vertex[] fourCorners, AllocationStrategy strategy) {
+        this(fourCorners, strategy, new Random(DEFAULT_LANDMARK_SEED));
+    }
+
+    /**
+     * Create with specified allocation strategy and a seeded Random for deterministic landmark selection.
+     *
+     * @param fourCorners    corner vertices
+     * @param strategy       allocation strategy
+     * @param landmarkRandom seeded Random for landmark add/replace decisions
+     */
+    public MutableGrid(Vertex[] fourCorners, AllocationStrategy strategy, Random landmarkRandom) {
         super(fourCorners);
         this.strategy = strategy;
         this.allocator = createAllocator(strategy);
+        this.rebuildDirect = readRebuildDirect();
+        this.landmarkRandom = landmarkRandom;
         initialize();
         // Note: Validation is now handled externally via GridValidator and ValidationManager
     }
@@ -228,7 +268,7 @@ public class MutableGrid extends Grid {
      */
     private void rebuildOptimized(List<Vertex> verticesList, Random entropy) {
         // For small rebuilds like 256 points, use direct allocation to avoid pooling overhead
-        boolean useDirectForRebuild = verticesList.size() <= 256 || "true".equals(System.getProperty("sentry.rebuild.direct"));
+        boolean useDirectForRebuild = verticesList.size() <= 256 || rebuildDirect;
         TetrahedronAllocator rebuildAllocator = useDirectForRebuild ? new DirectAllocator() : allocator;
         
         // Release all tetrahedrons back to the allocator before rebuilding
@@ -255,12 +295,17 @@ public class MutableGrid extends Grid {
         last = rebuildAllocator.acquire(fourCorners);
         allocator.warmUp(128); // Keep original allocator warm
 
+        // Counts of vertices that locate() could not place — used for fail-loud check below.
+        final int[] dropped = { 0 };
+
         if (useDirectForRebuild) {
             // Skip context overhead entirely for direct allocation
             for (var v : verticesList) {
                 var containedIn = locate(v, last, entropy);
                 if (containedIn != null) {
                     insertDirectly(v, containedIn, rebuildAllocator);
+                } else {
+                    dropped[0]++;
                 }
             }
         } else {
@@ -272,12 +317,23 @@ public class MutableGrid extends Grid {
                     var containedIn = locate(v, last, entropy);
                     if (containedIn != null) {
                         insertOptimized(v, containedIn);
+                    } else {
+                        dropped[0]++;
                     }
                 }
             });
         }
 
-        // Note: Call GridValidator.validateAndRepairVertexReferences() if needed
+        // Fail-loud: any vertex whose locate() returned null for a domain-interior point
+        // signals a mesh-consistency or robustness fault — not expected normal behaviour.
+        // A silent drop here corrupts the grid silently; surface it immediately.
+        if (dropped[0] > 0) {
+            log.warn("rebuildOptimized: {} of {} vertices could not be re-inserted (locate returned null)",
+                     dropped[0], verticesList.size());
+            throw new IllegalStateException(
+                "rebuildOptimized: " + dropped[0] + " of " + verticesList.size()
+                + " vertices dropped (locate returned null); mesh-consistency fault");
+        }
     }
 
     /**
@@ -300,10 +356,14 @@ public class MutableGrid extends Grid {
      * Track the point into the tetrahedralization. See "Computing the 3D Voronoi Diagram Robustly: An Easy
      * Explanation", by Hugo Ledoux
      * <p>
+     * The {@code near} vertex is used as a walk starting hint.  If the walk from {@code near} is
+     * inconclusive (hull-exit or step-cap in {@link Tetrahedron#locate}), this method falls back
+     * to the full deterministic {@link #locate(Tuple3f, Random)} rather than silently dropping the
+     * point.  A null return means the point is genuinely outside the mesh per {@link #contains}.
      *
      * @param p    - the point to be inserted
-     * @param near - the nearby vertex
-     * @return the new Vertex in the tetrahedralization or null if the point is contained in the tetrahedralization
+     * @param near - the nearby vertex used as a walk hint; must not be null
+     * @return the new Vertex in the tetrahedralization, or null if p is outside the mesh
      */
     public Vertex track(Point3f p, Vertex near, Random entropy) {
         assert p != null;
@@ -313,7 +373,15 @@ public class MutableGrid extends Grid {
         final var v = new Vertex(p);
         var containedIn = near.locate(p, entropy);
         if (containedIn == null) {
-            return null;
+            // near.locate() hit a hull face or returned inconclusive — fall back to the full
+            // robust locate so a valid interior point is never silently dropped.
+            containedIn = locate(p, entropy);
+        }
+        if (containedIn == null) {
+            // Both walks failed.  This can only happen for a genuinely exterior point,
+            // but contains() already passed — signal as a diagnostic rather than a silent drop.
+            throw new IllegalStateException(
+                "track(Point3f, Vertex, Random): locate inconclusive for a contained point: " + p);
         }
         add(v, containedIn);
         return v;
@@ -323,9 +391,17 @@ public class MutableGrid extends Grid {
      * Track the point into the tetrahedralization. See "Computing the 3D Voronoi Diagram Robustly: An Easy
      * Explanation", by Hugo Ledoux
      * <p>
+     * If the fast landmark walk in {@link #locate(Tuple3f, Random)} is inconclusive (hull-exit or
+     * step-cap), the underlying {@link Tetrahedron#locate} fallback is used.  If that also fails
+     * for a point {@link #contains} confirms is inside, an {@link IllegalStateException} is thrown
+     * (not a silent drop).
      *
      * @param p - the point to be inserted
      * @return the Vertex in the tetrahedralization
+     * @throws IllegalStateException if {@link #contains} returns true but both the landmark walk
+     *                               and the deterministic fallback locate are inconclusive —
+     *                               this indicates a mesh-consistency fault, not an expected
+     *                               exterior-point return
      */
     public Vertex track(Point3f p, Random entropy) {
         assert p != null;
@@ -335,10 +411,9 @@ public class MutableGrid extends Grid {
         final var v = new Vertex(p);
         var located = locate(p, entropy);
         if (located == null) {
-            if (contains(p)) {
-                throw new IllegalStateException("This grid should contain: " + p);
-            }
-            throw new IllegalArgumentException("There is no located vertex for " + p);
+            // locate() already tried the landmark walk + deterministic fallback.  If both
+            // returned null for a point contains() accepts, that is a mesh-consistency fault.
+            throw new IllegalStateException("locate inconclusive for a contained point: " + p);
         }
         add(v, located);
         return v;
@@ -594,7 +669,7 @@ public class MutableGrid extends Grid {
         // Warm up allocator for initial operations
         allocator.warmUp(128);
         last = allocator.acquire(fourCorners);
-        landmarkIndex = new LandmarkIndex(new Random());
+        landmarkIndex = new LandmarkIndex(landmarkRandom);
     }
 
     /**

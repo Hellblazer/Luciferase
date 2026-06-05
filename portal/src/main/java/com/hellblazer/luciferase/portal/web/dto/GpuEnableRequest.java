@@ -9,13 +9,26 @@ public record GpuEnableRequest(
         Integer frameWidth,
         Integer frameHeight
 ) {
+    /** Maximum allowed dimension (width or height) in pixels. */
+    public static final int MAX_FRAME_DIMENSION = 4096;
+
     @JsonIgnore
     public int getFrameWidthOrDefault() {
-        return frameWidth != null ? frameWidth : 800;
+        int w = frameWidth != null ? frameWidth : 800;
+        if (w <= 0 || w > MAX_FRAME_DIMENSION) {
+            throw new IllegalArgumentException(
+                    "frameWidth must be in [1, " + MAX_FRAME_DIMENSION + "], got: " + w);
+        }
+        return w;
     }
 
     @JsonIgnore
     public int getFrameHeightOrDefault() {
-        return frameHeight != null ? frameHeight : 600;
+        int h = frameHeight != null ? frameHeight : 600;
+        if (h <= 0 || h > MAX_FRAME_DIMENSION) {
+            throw new IllegalArgumentException(
+                    "frameHeight must be in [1, " + MAX_FRAME_DIMENSION + "], got: " + h);
+        }
+        return h;
     }
 }

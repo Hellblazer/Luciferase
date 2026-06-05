@@ -40,7 +40,8 @@ import java.util.stream.IntStream;
  * @param <NodeType> The type of spatial node used by the implementation
  * @author hal.hildebrand
  */
-public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
+public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+implements AutoCloseable {
     
     private static final Logger log = LoggerFactory.getLogger(ParallelBulkOperations.class);
 
@@ -71,7 +72,9 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
             this.fixedThreadPool = null;
         } else {
             this.workStealingPool = null;
-            this.fixedThreadPool = Executors.newFixedThreadPool(config.getThreadCount());
+            // Daemon threads so stray pool threads never block JVM exit (Luciferase-7wzml.60)
+            var daemonFactory = new DaemonThreadFactory("lucien-parallel");
+            this.fixedThreadPool = Executors.newFixedThreadPool(config.getThreadCount(), daemonFactory);
         }
     }
 
@@ -224,7 +227,28 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
     }
 
     /**
-     * Clean up resources
+     * AutoCloseable entry point — shuts down pools and waits for orderly termination (Luciferase-7wzml.60).
+     * Suitable for try-with-resources.
+     */
+    @Override
+    public void close() {
+        shutdown();
+        // Await termination with a reasonable timeout so callers get deterministic cleanup
+        try {
+            if (workStealingPool != null) {
+                workStealingPool.awaitTermination(5, TimeUnit.SECONDS);
+            }
+            if (fixedThreadPool != null) {
+                fixedThreadPool.awaitTermination(5, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Interrupted while awaiting parallel-operations pool termination");
+        }
+    }
+
+    /**
+     * Clean up resources (initiates shutdown without waiting; use {@link #close()} for orderly termination).
      */
     public void shutdown() {
         if (workStealingPool != null && !workStealingPool.isShutdown()) {
@@ -237,25 +261,25 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
     }
 
     /**
-     * Batch update (remove + reinsert each entity at its new position). Runs serially under one global write-lock
+     * Batch update each entity to a new position, preserving its entity ID. Runs serially under one global write-lock
      * critical section so the batch is atomic versus concurrent readers that take the global read lock (range
      * queries, collision, {@code entityCount}); kNN's independent fine-grained path is not excluded
      * (Luciferase-us4zr). Despite the {@code Parallel} name, the mutation is serial.
      *
-     * <p><b>ID semantics (pre-existing):</b> each update reinserts via {@code insert}, which assigns a NEW entity id;
-     * the returned list holds the new ids and the input ids become stale after this call.
+     * <p><b>ID semantics:</b> uses {@code updateEntity} which moves each entity in-place; the entity ID is
+     * preserved across the call. The returned list contains the same IDs as the input list (in the same order,
+     * skipping any entity that was absent or threw). Callers' held IDs remain valid after this call
+     * (Luciferase-7wzml.61).
      */
     public CompletableFuture<List<ID>> updateBatchParallel(List<ID> entityIds, List<Point3f> newPositions, byte level) {
         if (entityIds.size() != newPositions.size()) {
             throw new IllegalArgumentException("Entity IDs and positions lists must have the same size");
         }
 
-        // Luciferase-aqx6x: perform every remove+reinsert under ONE write-lock critical section, serially. The
-        // previous parallel per-entity update took three separate locks (getEntity read, removeEntity write,
-        // insert write) per entity across parallel threads; between an entity's remove and its reinsert it was
-        // absent from the index, so concurrent range/kNN/collision queries missed it or saw partial batch state.
-        // Holding the write lock across the whole batch makes it atomic vs concurrent readers (the lock is
-        // reentrant, so the nested getEntity/removeEntity/insert calls re-acquire it safely).
+        // Luciferase-aqx6x: hold ONE write-lock critical section across the whole batch so the update is atomic
+        // versus concurrent readers. The write lock is reentrant; spatialIndex.updateEntity() re-acquires it safely.
+        // Luciferase-7wzml.61: use updateEntity (id-preserving) instead of the old remove+insert pattern which
+        // silently assigned new IDs, invalidating every caller-held ID after the batch.
         return CompletableFuture.supplyAsync(() -> {
             var updatedIds = new ArrayList<ID>(entityIds.size());
             spatialIndex.lock.writeLock().lock();
@@ -264,15 +288,11 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
                     try {
                         ID id = entityIds.get(i);
                         Point3f newPos = newPositions.get(i);
-                        Content content = spatialIndex.getEntity(id);
-                        if (content != null && spatialIndex.removeEntity(id)) {
-                            ID newId = spatialIndex.insert(newPos, level, content);
-                            if (newId != null) {
-                                updatedIds.add(newId);
-                            }
-                        }
+                        spatialIndex.updateEntity(id, newPos, level);
+                        updatedIds.add(id);
                     } catch (Exception e) {
                         // skip individual failures, preserving the prior best-effort contract
+                        log.debug("updateBatchParallel: skipping entity {} — {}", entityIds.get(i), e.getMessage());
                     }
                 }
             } finally {
@@ -519,6 +539,26 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
 
         public boolean hasErrors() {
             return !errors.isEmpty();
+        }
+    }
+
+    /**
+     * ThreadFactory that creates daemon threads so stray pool threads never pin JVM exit (Luciferase-7wzml.60).
+     */
+    private static class DaemonThreadFactory implements java.util.concurrent.ThreadFactory {
+        private final String namePrefix;
+        private final java.util.concurrent.atomic.AtomicInteger counter = new java.util.concurrent.atomic.AtomicInteger(
+        1);
+
+        DaemonThreadFactory(String namePrefix) {
+            this.namePrefix = namePrefix;
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            var t = new Thread(r, namePrefix + "-" + counter.getAndIncrement());
+            t.setDaemon(true);
+            return t;
         }
     }
 

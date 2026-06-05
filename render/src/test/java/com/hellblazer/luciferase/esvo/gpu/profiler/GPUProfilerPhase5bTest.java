@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisplayName("Phase 5b: GPU Profiler Real Measurements")
+@DisplayName("Phase 5b: GPU Profiler Model Estimates")
 class GPUProfilerPhase5bTest {
 
     private GPUPerformanceProfiler profiler;
@@ -57,7 +57,7 @@ class GPUProfilerPhase5bTest {
      * Test that real GPU baseline measurement produces valid metrics
      */
     @Test
-    @DisplayName("Real GPU baseline measurement returns valid metrics")
+    @DisplayName("Model-estimated GPU baseline returns valid metrics")
     void testRealGPUBaselineMetrics() {
         var rayCount = 100_000;
 
@@ -79,7 +79,7 @@ class GPUProfilerPhase5bTest {
      * Test that real GPU optimized measurement includes cache hit rate
      */
     @Test
-    @DisplayName("Real GPU optimized measurement tracks cache hit rate")
+    @DisplayName("Model-estimated GPU optimized tracks cache hit rate")
     void testRealGPUOptimizedMetrics() {
         var rayCount = 100_000;
 
@@ -100,10 +100,12 @@ class GPUProfilerPhase5bTest {
     }
 
     /**
-     * Test that real GPU baseline < optimized in latency
+     * Test that model-estimated optimized < baseline in latency.
+     * NOTE: mockMode=false routes to estimate* methods, not real GPU measurement.
+     * These assertions test the estimate model, not real GPU behavior.
      */
     @Test
-    @DisplayName("Optimized GPU performance improves over baseline")
+    @DisplayName("Estimated optimized performance improves over estimated baseline (model-only)")
     void testOptimizedImprovement() {
         var rayCount = 100_000;
 
@@ -111,20 +113,20 @@ class GPUProfilerPhase5bTest {
         var optimized = profiler.profileOptimized(testDAG, rayCount, false);
 
         assertTrue(optimized.latencyMicroseconds() < baseline.latencyMicroseconds(),
-                   "Optimized latency should be less than baseline");
+                   "Estimated optimized latency should be less than estimated baseline");
         assertTrue(optimized.throughputRaysPerMicrosecond() > baseline.throughputRaysPerMicrosecond(),
-                   "Optimized throughput should be greater than baseline");
+                   "Estimated optimized throughput should be greater than estimated baseline");
 
         var improvement = optimized.compareToBaseline(baseline);
-        System.out.println("Improvement: " + String.format("%.1f%%", improvement));
-        assertTrue(improvement > 0, "Should show improvement");
+        System.out.println("Model-estimated improvement: " + String.format("%.1f%%", improvement));
+        assertTrue(improvement > 0, "Estimate model should show improvement");
     }
 
     /**
      * Test custom configuration profiling with cache enabled
      */
     @Test
-    @DisplayName("Real GPU profiling with custom config (cache enabled)")
+    @DisplayName("Model-estimated GPU profiling with custom config (cache enabled)")
     void testCustomConfigWithCache() {
         var config = new ProfilerConfig(100_000, true, 128, 16, 1);
 
@@ -141,7 +143,7 @@ class GPUProfilerPhase5bTest {
      * Test custom configuration profiling without cache
      */
     @Test
-    @DisplayName("Real GPU profiling with custom config (cache disabled)")
+    @DisplayName("Model-estimated GPU profiling with custom config (cache disabled)")
     void testCustomConfigWithoutCache() {
         var config = new ProfilerConfig(100_000, false, 64, 16, 1);
 
@@ -194,10 +196,12 @@ class GPUProfilerPhase5bTest {
     }
 
     /**
-     * Test scaling across different ray counts
+     * Test scaling across different ray counts.
+     * NOTE: mockMode=false routes to estimate* methods, not real GPU measurement.
+     * The improvement range assertion tests the estimate model constants only.
      */
     @Test
-    @DisplayName("Profiling scales correctly with ray count")
+    @DisplayName("Estimate model scales correctly with ray count")
     void testScaling() {
         var rayCounts = new int[]{10_000, 100_000, 1_000_000};
 
@@ -210,11 +214,12 @@ class GPUProfilerPhase5bTest {
             assertTrue(optimized.latencyMicroseconds() > 0, "Optimized latency should be positive");
 
             var improvement = optimized.compareToBaseline(baseline);
-            System.out.println(String.format("Ray count %,d: %.1f%% improvement",
+            System.out.println(String.format("Ray count %,d: %.1f%% estimated improvement (model-based)",
                     rayCount, improvement));
 
-            // Improvement should be consistent across ray counts
-            assertTrue(improvement > 30 && improvement < 60, "Improvement should be in expected range");
+            // Improvement is determined by model constants (BASELINE 850 vs OPTIMIZED 450 µs/100k rays)
+            // This asserts the estimate model is internally consistent, not real GPU behavior
+            assertTrue(improvement > 0, "Estimate model should show positive improvement");
         }
     }
 

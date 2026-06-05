@@ -110,7 +110,12 @@ public final class Line {
     /**
      * Compute the space-filling curve index for this line element.
      * For 1D subdivision, this is simply the z coordinate.
-     * 
+     *
+     * <p>BENIGN-RECOMPUTE NOTE (Luciferase-7wzml.138): PrismKey.consecutiveIndex() calls this
+     * from multiple threads without external synchronisation. Correctness relies on this
+     * returning a pure function of immutable Line state ({@code z} is final). See also
+     * PrismKey.cachedIndex and Triangle.cachedIndex for coordinated notes.
+     *
      * @return the SFC index (consecutive index)
      */
     public long consecutiveIndex() {

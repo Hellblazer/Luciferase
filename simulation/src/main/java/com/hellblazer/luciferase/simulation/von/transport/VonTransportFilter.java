@@ -43,9 +43,29 @@ final class VonTransportFilter {
     /**
      * Allow-list pattern for {@link ObjectInputFilter.Config#createFilter(String)}. Concrete wire types
      * only; the trailing {@code !*} rejects everything not explicitly named.
+     *
+     * <p>Resource-limit directives (Luciferase-7wzml.33) are prepended to close the heap-exhaustion
+     * DoS vector that exists when the class allow-list alone is applied.  Sizing rationale:
+     * <ul>
+     *   <li><b>maxbytes=524288</b> (512 KiB) — the largest legitimate payload is a GhostSync carrying
+     *       ~256 {@link com.hellblazer.luciferase.simulation.von.TransportGhostData} records (10 fields
+     *       each, ~500 bytes serialized per record → ~128 KiB); 512 KiB is 4× headroom.</li>
+     *   <li><b>maxarray=65536</b> — the dominant cost is String-internal byte arrays: 256 ghosts × 4
+     *       String fields × ~50 chars = ~51 200 elements plus the ArrayList backing array; 65 536 is
+     *       ~1.3× headroom while blocking a 100 M-element ArrayList attack.</li>
+     *   <li><b>maxdepth=10</b> — the deepest legitimate chain is 5 levels:
+     *       TransportVonMessage → ArrayList → TransportGhostData/TransportNeighborInfo →
+     *       TransportBubbleBounds/String → byte[]; 10 is 2× the legitimate maximum.</li>
+     *   <li><b>maxrefs=5000</b> — a 256-ghost GhostSync produces ~1 282 unique object references
+     *       (1 outer + 1 list + 256 records + 1 024 Strings); 5 000 is ~4× headroom.</li>
+     * </ul>
      */
     static final String PATTERN =
-        "com.hellblazer.luciferase.simulation.von.TransportVonMessage;"
+        "maxbytes=524288;"
+        + "maxarray=65536;"
+        + "maxdepth=10;"
+        + "maxrefs=5000;"
+        + "com.hellblazer.luciferase.simulation.von.TransportVonMessage;"
         + "com.hellblazer.luciferase.simulation.von.TransportGhostData;"
         + "com.hellblazer.luciferase.simulation.von.TransportNeighborInfo;"
         + "com.hellblazer.luciferase.simulation.von.TransportBubbleBounds;"

@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.occlusion;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
@@ -43,6 +44,7 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
     private HierarchicalZBuffer zBuffer; // Now lazy-initialized
     private final DSOCConfiguration config;
     private final OcclusionStatistics statistics;
+    private volatile Clock clock = Clock.system();
     // Comparator removed - front-to-back sorting handled in AbstractSpatialIndex
     private final Set<ID> entitiesNeedingUpdate = ConcurrentHashMap.newKeySet();
     
@@ -69,7 +71,20 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
         this.zBuffer = null; // Lazy initialization
         // Front-to-back comparator removed - handled in AbstractSpatialIndex
     }
-    
+
+    /**
+     * Injects a clock for deterministic time control (primarily for testing).
+     *
+     * @param clock the clock to use for frame timing; must support {@code nanoTime()}
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+        this.statistics.setClock(clock);
+        if (this.zBuffer != null) {
+            this.zBuffer.setClock(clock);
+        }
+    }
+
     /**
      * Tests if a node is occluded
      * 
@@ -267,6 +282,7 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
                 MIN_ENTITIES_FOR_ZBUFFER, sceneBounds, occluderDensity);
         
         this.zBuffer = new HierarchicalZBuffer(optimalConfig);
+        this.zBuffer.setClock(this.clock);
         this.zBufferActivated = true;
         
         statistics.zBufferActivations.incrementAndGet();
@@ -301,6 +317,13 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
             activateZBuffer();
         }
     }
+
+    /**
+     * Package-private accessor for the Z-buffer, used in tests to verify clock injection.
+     */
+    HierarchicalZBuffer getZBuffer() {
+        return zBuffer;
+    }
     
     /**
      * Occlusion statistics tracking
@@ -323,15 +346,20 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
         final AtomicLong tbvUpdates = new AtomicLong();
         final AtomicLong activeTBVs = new AtomicLong();
         
-        private long frameStartTime;
+        private volatile long frameStartTime;
         private final AtomicLong totalFrameTime = new AtomicLong();
-        
-        void beginFrame() {
-            frameStartTime = System.nanoTime();
+        private volatile Clock clock = Clock.system();
+
+        void setClock(Clock clock) {
+            this.clock = clock;
         }
-        
+
+        void beginFrame() {
+            frameStartTime = clock.nanoTime();
+        }
+
         void endFrame() {
-            long frameTime = System.nanoTime() - frameStartTime;
+            long frameTime = clock.nanoTime() - frameStartTime;
             totalFrameTime.addAndGet(frameTime);
             frameCount.incrementAndGet();
         }

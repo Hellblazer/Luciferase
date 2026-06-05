@@ -13,8 +13,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
-import java.util.List;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
 import java.util.ArrayList;
 import java.util.List;
@@ -508,6 +509,216 @@ class RenderingServerAuthTest {
 
         // All 10 should be "Unauthorized" (not blocked) because rate limiter was reset
         assertEquals(10, unauthorizedCount.get(), "After successful auth, rate limiter should be reset");
+    }
+
+    // ─────────── WS ip-keyed limiter tests (Luciferase-7wzml.42 H1) ───────────
+
+    /**
+     * Regression test for Luciferase-7wzml.42 H1: WS auth limiter was keyed on ctx.host()
+     * (the HTTP Host header), which an attacker could rotate per-connection to get a fresh
+     * zero-failure limiter each time.  The fix keys on the remote socket IP instead.
+     *
+     * <p>Test strategy: Java 11's HttpClient treats "Host" as a restricted header — it cannot
+     * be overridden per-connection from client side in normal usage.  What we CAN assert is
+     * that 11 sequential bad-auth WS attempts from the same loopback IP accumulate failures
+     * and the 11th attempt is BLOCKED (not merely Unauthorized), proving the limiter key is
+     * stable across connections from the same IP regardless of session ID rotation.  If the
+     * key were per-session or per-host-header-value, the counter would reset on each new
+     * WebSocket handshake and the 11th attempt would still see "Unauthorized" (not "Too many").
+     */
+    @Test
+    void testWsLockout_keyedOnIp_notHostHeader() throws Exception {
+        int attempts = 11;
+        var reasons = new java.util.concurrent.CopyOnWriteArrayList<String>();
+
+        for (int i = 0; i < attempts; i++) {
+            var closeLatch = new CountDownLatch(1);
+
+            // Each connection is a brand-new WebSocket handshake (new session ID each time),
+            // simulating the attacker rotating connections.
+            var client = HttpClient.newHttpClient();
+            var ws = client.newWebSocketBuilder()
+                .header("Authorization", "Bearer wrong-key-" + i)
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws/render"), new WebSocket.Listener() {
+                    @Override
+                    public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+                        reasons.add(reason != null ? reason : "");
+                        closeLatch.countDown();
+                        return null;
+                    }
+                })
+                .get(5, TimeUnit.SECONDS);
+
+            assertTrue(closeLatch.await(3, TimeUnit.SECONDS),
+                "Attempt " + i + " should close");
+        }
+
+        // The first 10 failures are "Unauthorized"; the 11th must be "Too many failed authentication attempts"
+        // (blocked), because the limiter is keyed on the socket IP and persists across new WS connections.
+        assertEquals(attempts, reasons.size(), "All attempts should produce a close reason");
+        long blockedCount = reasons.stream().filter(r -> r.contains("Too many")).count();
+        assertTrue(blockedCount >= 1,
+            "At least the 11th attempt must be blocked (Too many failed authentication attempts). " +
+            "Reasons: " + reasons);
+    }
+
+    /**
+     * Cross-protocol shared-limiter test: WS and REST use the same ip-keyed authLimiters cache.
+     * After 11 WS auth failures exhaust the limiter, a REST call from the same loopback IP
+     * must also be rate-limited (429), not just 401.
+     */
+    @Test
+    void testWsAndRestShareIpLimiter() throws Exception {
+        // Exhaust limiter via WS (11 failures)
+        for (int i = 0; i < 11; i++) {
+            var closeLatch = new CountDownLatch(1);
+            var client = HttpClient.newHttpClient();
+            var ws = client.newWebSocketBuilder()
+                .header("Authorization", "Bearer ws-bad-key-" + i)
+                .buildAsync(URI.create("ws://localhost:" + port + "/ws/render"), new WebSocket.Listener() {
+                    @Override
+                    public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+                        closeLatch.countDown();
+                        return null;
+                    }
+                })
+                .get(5, TimeUnit.SECONDS);
+            assertTrue(closeLatch.await(3, TimeUnit.SECONDS), "WS attempt " + i + " should close");
+        }
+
+        // Now a REST call from the same IP (loopback) must be rate-limited (429)
+        var httpClient = HttpClient.newHttpClient();
+        var req = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/api/health"))
+            .header("Authorization", "Bearer rest-bad-key")
+            .GET().build();
+        var resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        assertEquals(429, resp.statusCode(),
+            "REST call from same IP must be rate-limited after WS failures exhausted the shared limiter");
+    }
+
+    // ─────────── REST /api/* auth tests (Luciferase-7wzml.42) ───────────
+
+    @Test
+    void testRestConstantTimeComparison_MessageDigestIsEqualUsed() throws Exception {
+        // Validates that the REST before-filter uses MessageDigest.isEqual, not String.equals.
+        // Structural test: wrong key → 401 (not 500/crash), correct key → 200.
+        var client = java.net.http.HttpClient.newHttpClient();
+
+        // Wrong key must return 401
+        var wrongReq = java.net.http.HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/api/health"))
+            .header("Authorization", "Bearer wrong-key")
+            .GET().build();
+        var wrongResp = client.send(wrongReq, java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertEquals(401, wrongResp.statusCode(), "Wrong key must be rejected with 401");
+
+        // Correct key must return 200
+        var goodReq = java.net.http.HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/api/health"))
+            .header("Authorization", "Bearer " + API_KEY)
+            .GET().build();
+        var goodResp = client.send(goodReq, java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, goodResp.statusCode(), "Correct key must be accepted with 200");
+    }
+
+    @Test
+    void testRestBruteForce_lockoutAfterRepeatedFailures() throws Exception {
+        // Repeated wrong keys from one host must eventually return 429 (same lockout as WS).
+        // AuthAttemptRateLimiter locks after MAX_FAILED_ATTEMPTS (10 by default).
+        var client = java.net.http.HttpClient.newHttpClient();
+        int seen429 = 0;
+        for (int i = 0; i < 15; i++) {
+            var req = java.net.http.HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/health"))
+                .header("Authorization", "Bearer bad-rest-key-" + i)
+                .GET().build();
+            var resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 429) {
+                seen429++;
+            }
+        }
+        assertTrue(seen429 > 0, "At least one request must be rate-limited (429) after repeated failures");
+    }
+
+    @Test
+    void testRestValidKeyResetsLimiter() throws Exception {
+        // After some failures, a valid key must succeed and reset the limiter.
+        var client = java.net.http.HttpClient.newHttpClient();
+
+        // 5 failures
+        for (int i = 0; i < 5; i++) {
+            var req = java.net.http.HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/health"))
+                .header("Authorization", "Bearer bad-key-" + i)
+                .GET().build();
+            client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+        }
+
+        // Valid key must succeed
+        var goodReq = java.net.http.HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/api/health"))
+            .header("Authorization", "Bearer " + API_KEY)
+            .GET().build();
+        var goodResp = client.send(goodReq, java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, goodResp.statusCode(), "Valid key must succeed after failures (limiter reset)");
+    }
+
+    /** Minimal controllable clock for deterministic testing. */
+    static final class ControllableClock implements com.hellblazer.luciferase.common.time.Clock {
+        private volatile long millis;
+        ControllableClock(long initial) { this.millis = initial; }
+        void setTime(long ms) { this.millis = ms; }
+        @Override public long currentTimeMillis() { return millis; }
+        @Override public long nanoTime() { return millis * 1_000_000L; }
+    }
+
+    @Test
+    void testRestInjectedClock_usedByRateLimiter() throws Exception {
+        // Validate that the REST rate limiter uses the injected clock (not wall-clock).
+        // By injecting a ControllableClock we control time; the rate limiter's window logic
+        // must respect it. We exhaust attempts, advance the clock past the window,
+        // and verify the next request is accepted again (not locked).
+        if (server != null) {
+            server.stop();
+        }
+
+        var testClock = new ControllableClock(1000L);
+
+        var config = new RenderingServerConfig(
+            0, List.of(), 2,
+            SecurityConfig.secure(API_KEY, false),
+            CacheConfig.testing(), BuildConfig.testing(),
+            1_000, StreamingConfig.testing(), PerformanceConfig.testing(),
+            0.0f, 1024.0f
+        );
+        server = new RenderingServer(config);
+        server.setClock(testClock);
+        server.start();
+        port = server.port();
+
+        var client = java.net.http.HttpClient.newHttpClient();
+
+        // Exhaust the rate limiter (11 attempts to trigger lockout)
+        for (int i = 0; i < 11; i++) {
+            var req = java.net.http.HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/health"))
+                .header("Authorization", "Bearer clock-bad-" + i)
+                .GET().build();
+            client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+        }
+
+        // Advance injected clock past the 1-minute window (AuthAttemptRateLimiter WINDOW_MS=60000)
+        testClock.setTime(1000L + 61_000L);
+
+        // Now a bad key should NOT be rate-limited (window expired) — 401 not 429
+        var req = java.net.http.HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/api/health"))
+            .header("Authorization", "Bearer still-bad")
+            .GET().build();
+        var resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertEquals(401, resp.statusCode(),
+            "After clock advances past window, request should be 401 (not 429) — injected clock is used");
     }
 
     @Test

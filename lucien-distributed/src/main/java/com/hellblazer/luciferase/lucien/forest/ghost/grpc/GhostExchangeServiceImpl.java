@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
@@ -30,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -73,9 +75,16 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     private final AtomicLong requestCount;
     private final AtomicLong streamUpdateCount;
     private final AtomicLong syncRequestCount;
-    
+
+    // Clock for deterministic time — injectable for testing (Luciferase-7wzml.86)
+    private volatile Clock clock = Clock.system();
+
     // Active streaming sessions
     private final Map<String, StreamSession> activeStreams;
+
+    // Atomic counter for exact cap enforcement — incremented BEFORE map.put() so no two concurrent
+    // callers can both observe count < cap and both be admitted (TOCTOU-free). Mirrors BalanceCoordinatorServer.
+    private final AtomicInteger activeStreamCount = new AtomicInteger(0);
     
     /**
      * Creates a new ghost exchange service implementation.
@@ -96,10 +105,20 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
         this.syncRequestCount = new AtomicLong(0);
         this.activeStreams = new ConcurrentHashMap<>();
         
-        log.info("GhostExchangeService initialized with content type: {}", 
+        log.info("GhostExchangeService initialized with content type: {}",
                 contentSerializer.getContentType());
     }
-    
+
+    /**
+     * Replaces the clock used for Timestamp generation.  Inject a {@code TestClock} in tests
+     * to produce deterministic, single-read timestamps (Luciferase-7wzml.86).
+     *
+     * @param clock the clock to use; must not be null
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
     /**
      * Handles ghost element requests from remote processes.
      * 
@@ -145,15 +164,26 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     
     /**
      * Handles streaming ghost updates for real-time synchronization.
-     * 
+     *
+     * <p>The concurrent-session cap is enforced atomically via {@link #activeStreamCount}:
+     * the counter is incremented <em>before</em> the map put, so no two racing callers can
+     * both observe {@code count < cap} and both be admitted (TOCTOU-free).
+     * On rejection the counter is decremented immediately before returning. On stream close
+     * (either {@code onCompleted} or {@code onError}) the counter is decremented exactly once
+     * via {@code remove(sessionId) != null} to guard against double-decrement.
+     * Mirrors BalanceCoordinatorServer.streamBalanceUpdates (Luciferase-7wzml.6 / Luciferase-zufll).
+     *
      * @param responseObserver observer for sending acknowledgments
      * @return observer for receiving updates
      */
     @Override
     public StreamObserver<GhostUpdate> streamGhostUpdates(StreamObserver<GhostAck> responseObserver) {
-        // RDR-013 / Luciferase-06ujn: reject new streams once the concurrent-session cap is reached (DoS).
-        if (activeStreams.size() >= MAX_ACTIVE_STREAMS) {
-            log.warn("Rejecting ghost stream: {} active streams at cap {}", activeStreams.size(), MAX_ACTIVE_STREAMS);
+        // RDR-013 / Luciferase-zufll: atomic cap — increment FIRST, then check.
+        // If over cap, decrement and reject without touching the map (no leak-before-put).
+        int count = activeStreamCount.incrementAndGet();
+        if (count > MAX_ACTIVE_STREAMS) {
+            activeStreamCount.decrementAndGet();
+            log.warn("Rejecting ghost stream: {} active streams at cap {}", count - 1, MAX_ACTIVE_STREAMS);
             responseObserver.onError(Status.RESOURCE_EXHAUSTED
                                          .withDescription("too many concurrent ghost streams")
                                          .asRuntimeException());
@@ -163,28 +193,32 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 @Override public void onCompleted() { }
             };
         }
-        var sessionId = "stream-" + System.currentTimeMillis() + "-" + streamUpdateCount.incrementAndGet();
+        var sessionId = "stream-" + streamUpdateCount.incrementAndGet();
         var session = new StreamSession(sessionId, responseObserver);
         activeStreams.put(sessionId, session);
-        
+
         log.debug("Started streaming session: {}", sessionId);
-        
+
         return new StreamObserver<GhostUpdate>() {
             @Override
             public void onNext(GhostUpdate update) {
                 virtualExecutor.submit(() -> processStreamUpdate(session, update));
             }
-            
+
             @Override
             public void onError(Throwable t) {
                 log.error("Streaming error in session {}: {}", sessionId, t.getMessage(), t);
-                activeStreams.remove(sessionId);
+                if (activeStreams.remove(sessionId) != null) {
+                    activeStreamCount.decrementAndGet();
+                }
             }
-            
+
             @Override
             public void onCompleted() {
                 log.debug("Streaming session completed: {}", sessionId);
-                activeStreams.remove(sessionId);
+                if (activeStreams.remove(sessionId) != null) {
+                    activeStreamCount.decrementAndGet();
+                }
                 responseObserver.onCompleted();
             }
         };
@@ -208,6 +242,8 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 var responseBuilder = SyncResponse.newBuilder();
                 int totalElements = 0;
                 
+                long now = clock.currentTimeMillis();
+
                 // Process each requested tree
                 for (var treeId : request.getTreeIdsList()) {
                     var ghostLayer = ghostLayerProvider.getGhostLayer(treeId);
@@ -216,17 +252,18 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                             ghostLayer,
                             ghostLayerProvider.getCurrentRank(),
                             treeId,
-                            contentSerializer);
+                            contentSerializer,
+                            now);
                         responseBuilder.addBatches(batch);
                         totalElements += batch.getElementsCount();
                     }
                 }
-                
+
                 var response = responseBuilder
                     .setTotalElements(totalElements)
                     .setSyncTime(com.google.protobuf.Timestamp.newBuilder()
-                        .setSeconds(System.currentTimeMillis() / 1000)
-                        .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                        .setSeconds(now / 1000)
+                        .setNanos((int) ((now % 1000) * 1_000_000))
                         .build())
                     .build();
                 
@@ -269,27 +306,29 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     /**
      * Creates a ghost batch for a specific request.
      */
-    private GhostBatch createGhostBatch(GhostRequest request, GhostLayer<Key, ID, Content> ghostLayer) 
+    private GhostBatch createGhostBatch(GhostRequest request, GhostLayer<Key, ID, Content> ghostLayer)
             throws ContentSerializer.SerializationException {
-        
+
+        long now = clock.currentTimeMillis();
+
         if (request.getBoundaryKeysCount() > 0) {
             // Request for specific boundary keys
             var batchBuilder = GhostBatch.newBuilder()
                 .setSourceRank(ghostLayerProvider.getCurrentRank())
                 .setSourceTreeId(request.getRequesterTreeId())
                 .setTimestamp(com.google.protobuf.Timestamp.newBuilder()
-                    .setSeconds(System.currentTimeMillis() / 1000)
-                    .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                    .setSeconds(now / 1000)
+                    .setNanos((int) ((now % 1000) * 1_000_000))
                     .build());
-            
+
             for (var keyProto : request.getBoundaryKeysList()) {
                 var key = ProtobufConverters.spatialKeyFromProtobuf(keyProto);
                 var elements = ghostLayer.getGhostElements((Key) key);
                 for (var element : elements) {
-                    batchBuilder.addElements(ProtobufConverters.ghostElementToProtobuf(element, contentSerializer));
+                    batchBuilder.addElements(ProtobufConverters.ghostElementToProtobuf(element, contentSerializer, now));
                 }
             }
-            
+
             return batchBuilder.build();
         } else {
             // Request for all ghosts
@@ -297,7 +336,8 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 ghostLayer,
                 ghostLayerProvider.getCurrentRank(),
                 request.getRequesterTreeId(),
-                contentSerializer);
+                contentSerializer,
+                now);
         }
     }
     
@@ -329,10 +369,16 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 }
                 case REMOVE -> {
                     var removal = update.getRemove();
-                    ghostLayerProvider.removeGhostElement(removal.getEntityId(), removal.getSourceTreeId());
                     entityId = removal.getEntityId();
-                    success = true;
-                    log.debug("Removed ghost element: {}", entityId);
+                    success = ghostLayerProvider.removeGhostElement(entityId, removal.getSourceTreeId());
+                    if (success) {
+                        log.debug("Removed ghost element: {}", entityId);
+                    } else {
+                        errorMessage = "Ghost element not found or layer absent: entityId=" + entityId
+                                       + " treeId=" + removal.getSourceTreeId();
+                        log.warn("REMOVE failed — element not found: entityId={} treeId={}", entityId,
+                                 removal.getSourceTreeId());
+                    }
                 }
                 case UPDATETYPE_NOT_SET -> {
                     errorMessage = "Update type not set";
@@ -358,7 +404,10 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
             // Remove the terminated session (Luciferase-m2k3u review): this server-originated onError does not
             // trigger the client-callback removal path, so without this the session leaks in activeStreams and
             // shutdown() would call onCompleted() on an already-errored observer (gRPC terminal-event violation).
-            activeStreams.remove(session.sessionId);
+            // Decrement counter only if remove() returns non-null (guard against double-decrement — Luciferase-zufll).
+            if (activeStreams.remove(session.sessionId) != null) {
+                activeStreamCount.decrementAndGet();
+            }
         } catch (Exception e) {
             log.error("Error processing stream update in session {}: {}",
                      session.sessionId, e.getMessage(), e);
@@ -394,7 +443,11 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     public void shutdown() {
         log.info("Shutting down GhostExchangeService");
         
-        // Close all active streams
+        // Close all active streams.
+        // Safety: processStreamUpdate's onError path calls activeStreams.remove(sessionId) BEFORE
+        // calling responseObserver.onError(), so any session that already received onError is gone
+        // from the map before this forEach iterates it. The forEach therefore never calls
+        // onCompleted() on a stream that has already received a terminal onError event.
         activeStreams.values().forEach(session -> {
             try {
                 session.responseObserver.onCompleted();
@@ -403,7 +456,12 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
             }
         });
         activeStreams.clear();
-        
+        // Reset to 0 rather than addAndGet(-cleared): a stream admitted concurrently between the
+        // forEach above and this clear() would be erased by clear() without a paired decrement
+        // (its onCompleted/onError finds remove()==null and skips), leaving the counter negative.
+        // After shutdown the map is empty, so the count is definitively 0. Mirrors BalanceCoordinatorServer.
+        activeStreamCount.set(0);
+
         // Shutdown virtual thread executor
         virtualExecutor.shutdown();
     }
@@ -457,11 +515,13 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
         
         /**
          * Removes a ghost element.
-         * 
+         *
          * @param entityId the entity ID to remove
-         * @param treeId the tree ID
+         * @param treeId   the tree ID
+         * @return {@code true} if at least one element with the given entityId was removed,
+         *         {@code false} if the layer was absent or no matching element was found
          */
-        void removeGhostElement(String entityId, long treeId);
+        boolean removeGhostElement(String entityId, long treeId);
         
         /**
          * Gets global statistics across all ghost layers.

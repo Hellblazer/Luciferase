@@ -78,8 +78,9 @@ public class MigrationTestNode {
         System.out.println("[" + nodeName + "]   Entity count: " + entityCount);
 
         try {
-            // Create network channel
-            networkChannel = new GrpcBubbleNetworkChannel();
+            // Create network channel — plaintext opt-in required (Luciferase-7wzml.200 I1).
+            // This test node runs without TLS; full mTLS is tracked in Luciferase-l9dny.
+            networkChannel = new GrpcBubbleNetworkChannel(true);
             networkChannel.initialize(nodeId, "localhost:" + serverPort);
             System.out.println("[" + nodeName + "] gRPC server initialized");
 

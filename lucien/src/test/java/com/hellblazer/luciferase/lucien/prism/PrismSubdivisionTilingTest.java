@@ -139,17 +139,18 @@ class PrismSubdivisionTilingTest {
     }
 
     @Test
-    @DisplayName("on the shared diagonal both roots contain the point (intentional shared edge, pinned)")
-    void diagonalIsSharedEdgeOfBothRoots() {
-        // The S0 and S1 roots share the main diagonal y=x as a closed edge, so a point exactly on
-        // it is contained by both (geometrically correct). This pins the documented overlap as a
-        // specification rather than a bug; canonical single-half assignment is via
-        // fromWorldCoordinates (which gives the diagonal to S0). See Triangle.contains javadoc.
+    @DisplayName("diagonal y==x belongs exclusively to S0 — S1 children must not claim it (Luciferase-7wzml.139)")
+    void diagonalBelongsExclusivelyToS0() {
+        // Luciferase-7wzml.139: contains() now applies the same y==x → S0 tie-break as
+        // fromWorldCoordinates. A point exactly on the diagonal is owned by S0 only. S1 children
+        // must return zero matches, so insert-key and contains-match agree.
         var s0Root = new PrismKey(new Triangle(0, 0, 0, 0), new Line(0, 0));
         var s1Root = PrismKey.createRootS1();
         for (float t = 0.1f; t < 1.0f; t += 0.1f) {
-            assertTrue(countContaining(s0Root, t, t, 0.5f) >= 1 && countContaining(s1Root, t, t, 0.5f) >= 1,
-                String.format("diagonal point (%.2f,%.2f) must lie in both roots (shared edge)", t, t));
+            assertTrue(countContaining(s0Root, t, t, 0.5f) >= 1,
+                String.format("S0 must contain diagonal point (%.2f,%.2f)", t, t));
+            assertEquals(0, countContaining(s1Root, t, t, 0.5f),
+                String.format("S1 must NOT contain diagonal point (%.2f,%.2f) — diagonal belongs to S0", t, t));
         }
     }
 

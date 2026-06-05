@@ -242,7 +242,7 @@ public class GhostPerformanceBenchmark {
                 var serializeTime = benchmarkSerialization(ghostLayer, ghostCount);
                 
                 // Benchmark deserialization
-                var batch = ProtobufConverters.ghostLayerToProtobufBatch(ghostLayer, 0, 1000L, ContentSerializer.STRING_SERIALIZER);
+                var batch = ProtobufConverters.ghostLayerToProtobufBatch(ghostLayer, 0, 1000L, ContentSerializer.STRING_SERIALIZER, System.currentTimeMillis());
                 var deserializeTime = benchmarkDeserialization(batch, ghostCount);
                 
                 // Calculate throughput
@@ -499,17 +499,19 @@ public class GhostPerformanceBenchmark {
         return System.nanoTime() - start;
     }
     
-    private long benchmarkSerialization(GhostLayer<MortonKey, LongEntityID, String> layer, int count) 
+    private long benchmarkSerialization(GhostLayer<MortonKey, LongEntityID, String> layer, int count)
             throws ContentSerializer.SerializationException {
         // Warmup
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            ProtobufConverters.ghostLayerToProtobufBatch(layer, 0, 1000L, ContentSerializer.STRING_SERIALIZER);
+            ProtobufConverters.ghostLayerToProtobufBatch(layer, 0, 1000L, ContentSerializer.STRING_SERIALIZER,
+                                                        System.currentTimeMillis());
         }
-        
+
         // Benchmark
         var start = System.nanoTime();
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-            ProtobufConverters.ghostLayerToProtobufBatch(layer, 0, 1000L, ContentSerializer.STRING_SERIALIZER);
+            ProtobufConverters.ghostLayerToProtobufBatch(layer, 0, 1000L, ContentSerializer.STRING_SERIALIZER,
+                                                        System.currentTimeMillis());
         }
         return (System.nanoTime() - start) / BENCHMARK_ITERATIONS;
     }

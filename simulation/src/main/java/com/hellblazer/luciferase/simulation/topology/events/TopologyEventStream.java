@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -142,7 +143,7 @@ public class TopologyEventStream implements TopologyEventListener {
     }
 
     private String splitEventToJson(SplitEvent event) {
-        return String.format(
+        return String.format(Locale.ROOT,
             """
             {"eventType":"split","eventId":"%s","timestamp":%d,"sourceBubbleId":"%s","newBubbleId":"%s","entitiesMoved":%d,"success":%b}""",
             event.eventId(), event.timestamp(), event.sourceBubbleId(), event.newBubbleId(),
@@ -151,7 +152,7 @@ public class TopologyEventStream implements TopologyEventListener {
     }
 
     private String mergeEventToJson(MergeEvent event) {
-        return String.format(
+        return String.format(Locale.ROOT,
             """
             {"eventType":"merge","eventId":"%s","timestamp":%d,"sourceBubbleId":"%s","targetBubbleId":"%s","entitiesMoved":%d,"success":%b}""",
             event.eventId(), event.timestamp(), event.sourceBubbleId(), event.targetBubbleId(),
@@ -160,7 +161,7 @@ public class TopologyEventStream implements TopologyEventListener {
     }
 
     private String moveEventToJson(MoveEvent event) {
-        return String.format(
+        return String.format(Locale.ROOT,
             """
             {"eventType":"move","eventId":"%s","timestamp":%d,"bubbleId":"%s","oldCentroid":{"x":%f,"y":%f,"z":%f},"newCentroid":{"x":%f,"y":%f,"z":%f},"success":%b}""",
             event.eventId(), event.timestamp(), event.bubbleId(),
@@ -171,7 +172,7 @@ public class TopologyEventStream implements TopologyEventListener {
     }
 
     private String densityStateChangeEventToJson(DensityStateChangeEvent event) {
-        return String.format(
+        return String.format(Locale.ROOT,
             """
             {"eventType":"density_state_change","eventId":"%s","timestamp":%d,"bubbleId":"%s","oldState":"%s","newState":"%s","entityCount":%d,"densityRatio":%f}""",
             event.eventId(), event.timestamp(), event.bubbleId(),
@@ -180,7 +181,7 @@ public class TopologyEventStream implements TopologyEventListener {
     }
 
     private String consensusVoteEventToJson(ConsensusVoteEvent event) {
-        return String.format(
+        return String.format(Locale.ROOT,
             """
             {"eventType":"consensus_vote","eventId":"%s","timestamp":%d,"proposalId":"%s","voterId":"%s","vote":"%s","quorum":%d,"needed":%d}""",
             event.eventId(), event.timestamp(), event.proposalId(), event.voterId(),

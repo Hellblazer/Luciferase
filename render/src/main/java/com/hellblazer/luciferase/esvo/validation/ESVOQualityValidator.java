@@ -65,8 +65,9 @@ public class ESVOQualityValidator {
 
         var report = new QualityReport(psnr, ssim, mse, perceptualError);
         
-        log.info("Quality validation complete: PSNR={:.2f}dB, SSIM={:.3f}, MSE={:.2f}, PE={:.3f}", 
-                 psnr, ssim, mse, perceptualError);
+        log.info("Quality validation complete: PSNR={}dB, SSIM={}, MSE={}, PE={}",
+                 String.format("%.2f", psnr), String.format("%.3f", ssim),
+                 String.format("%.2f", mse), String.format("%.3f", perceptualError));
 
         return report;
     }
@@ -96,7 +97,7 @@ public class ESVOQualityValidator {
         var maxPixelValue = 255.0; // For 8-bit images
         var psnr = 20.0 * Math.log10(maxPixelValue / Math.sqrt(mse));
         
-        log.debug("PSNR calculated: {:.2f} dB (MSE: {:.2f})", psnr, mse);
+        log.debug("PSNR calculated: {} dB (MSE: {})", String.format("%.2f", psnr), String.format("%.2f", mse));
         return psnr;
     }
 
@@ -133,7 +134,8 @@ public class ESVOQualityValidator {
 
         var ssim = numerator / denominator;
         
-        log.debug("SSIM calculated: {:.3f} (means: {:.2f}, {:.2f})", ssim, meanX, meanY);
+        log.debug("SSIM calculated: {} (means: {}, {})", String.format("%.3f", ssim),
+                  String.format("%.2f", meanX), String.format("%.2f", meanY));
         return Math.max(0.0, Math.min(1.0, ssim)); // Clamp to [0,1]
     }
 
@@ -167,7 +169,7 @@ public class ESVOQualityValidator {
 
         mse /= (totalPixels * bytesPerPixel);
         
-        log.debug("MSE calculated: {:.2f} over {} pixels", mse, totalPixels);
+        log.debug("MSE calculated: {} over {} pixels", String.format("%.2f", mse), totalPixels);
         return mse;
     }
 
@@ -219,7 +221,7 @@ public class ESVOQualityValidator {
 
         perceptualError = Math.sqrt(perceptualError / totalPixels);
         
-        log.debug("Perceptual error calculated: {:.3f}", perceptualError);
+        log.debug("Perceptual error calculated: {}", String.format("%.3f", perceptualError));
         return perceptualError;
     }
 

@@ -51,7 +51,8 @@ public class Edge {
 
     @Override
     public boolean equals(Object obj) {
-        Edge other = (Edge) obj;
+        if (this == obj) return true;
+        if (!(obj instanceof Edge other)) return false;
         return (ends[0] == other.ends[0] && ends[1] == other.ends[1]) || (ends[0] == other.ends[1]
                                                                           && ends[1] == other.ends[0]);
     }
@@ -135,7 +136,10 @@ public class Edge {
 
     @Override
     public int hashCode() {
-        return Integer.valueOf(ends[0]).hashCode() * Integer.valueOf(ends[1]).hashCode();
+        // Additive combination: commutative (matches unordered equals), and no
+        // zero-degenerate — vertex-0 edges (ends[0]=0, ends[1]=k) hash to k,
+        // not to 0*k=0 as the old product formula produced.
+        return Integer.hashCode(ends[0]) + Integer.hashCode(ends[1]);
     }
 
     /**

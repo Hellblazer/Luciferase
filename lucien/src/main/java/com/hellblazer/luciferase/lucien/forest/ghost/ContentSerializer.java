@@ -49,8 +49,9 @@ public interface ContentSerializer<Content> {
     /**
      * Deserializes content from bytes.
      *
-     * @param bytes the serialized bytes (never null; empty array for absent content)
-     * @return the deserialized content, or null if bytes are empty
+     * @param bytes the serialized bytes; may be {@code null} or empty, which implementations
+     *              treat as absent content (returning {@code null})
+     * @return the deserialized content, or {@code null} for null/empty input
      * @throws SerializationException if deserialization fails
      */
     Content deserialize(byte[] bytes) throws SerializationException;
@@ -98,16 +99,32 @@ public interface ContentSerializer<Content> {
 
     /**
      * String content serializer for simple text content.
+     *
+     * <p>Wire format: the raw UTF-8 bytes of the string, with no framing. The serialized bytes ARE the
+     * content (the gRPC ghost transport copies them verbatim into the protobuf {@code content} field),
+     * so consumers — including non-Java peers — read them as the literal payload.
+     *
+     * <p><strong>Known limitation (Luciferase-7wzml.53):</strong> {@code null} and the empty string
+     * {@code ""} are indistinguishable on the wire — both serialize to an empty byte array and
+     * deserialize to {@code null}. Disambiguating them would require a framing byte prepended to
+     * <em>every</em> payload, changing the on-wire representation of all ghost string content and
+     * breaking raw-bytes consumers (and cross-version peers). For a P3 with no production path that
+     * relies on round-tripping {@code ""} distinctly from {@code null}, that wire-format change is not
+     * justified; callers needing the distinction must use a richer content type. Round-trip of all
+     * non-empty strings is exact.
      */
     ContentSerializer<String> STRING_SERIALIZER = new ContentSerializer<>() {
         @Override
         public byte[] serialize(String content) {
-            return content != null ? content.getBytes(StandardCharsets.UTF_8) : new byte[0];
+            return content == null ? new byte[0] : content.getBytes(StandardCharsets.UTF_8);
         }
 
         @Override
         public String deserialize(byte[] bytes) {
-            return (bytes == null || bytes.length == 0) ? null : new String(bytes, StandardCharsets.UTF_8);
+            if (bytes == null || bytes.length == 0) {
+                return null;
+            }
+            return new String(bytes, StandardCharsets.UTF_8);
         }
 
         @Override

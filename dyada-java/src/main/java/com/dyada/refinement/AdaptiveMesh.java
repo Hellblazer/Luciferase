@@ -10,6 +10,7 @@ import com.dyada.discretization.SpatialDiscretizer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
 import java.util.stream.IntStream;
 
 /**
@@ -131,6 +132,7 @@ public class AdaptiveMesh {
     private final AtomicInteger refinementGeneration;
     private final int maxRefinementLevel;
     private final double minCellSize;
+    private volatile LongSupplier timeSource = System::currentTimeMillis;
     
     public AdaptiveMesh(Bounds bounds, int initialResolution, int maxRefinementLevel, double minCellSize) {
         if (bounds == null) {
@@ -164,7 +166,15 @@ public class AdaptiveMesh {
         
         initializeMesh(initialResolution);
     }
-    
+
+    /**
+     * Injects a custom time source for deterministic testing.
+     * Defaults to {@code System::currentTimeMillis}.
+     */
+    public void setTimeSource(LongSupplier timeSource) {
+        this.timeSource = Objects.requireNonNull(timeSource, "timeSource cannot be null");
+    }
+
     private void initializeMesh(int resolution) {
         // Create initial uniform grid
         var dimensions = meshBounds.dimensions();
@@ -232,7 +242,7 @@ public class AdaptiveMesh {
      * Applies adaptive refinement using the specified strategy and criteria.
      */
     public RefinementResult refineAdaptively(AdaptiveRefinementStrategy strategy, RefinementCriteria criteria) {
-        var startTime = System.currentTimeMillis();
+        var startTime = timeSource.getAsLong();
         var generation = refinementGeneration.incrementAndGet();
         
         int cellsRefined = 0;
@@ -274,7 +284,7 @@ public class AdaptiveMesh {
         activeCells.addAll(newCells);
         activeCells.removeAll(cellsToRemove);
         
-        var executionTime = System.currentTimeMillis() - startTime;
+        var executionTime = timeSource.getAsLong() - startTime;
         var statistics = computeStatistics();
         
         return new RefinementResult(cellsRefined, cellsCoarsened, newCells.size(), executionTime, statistics);

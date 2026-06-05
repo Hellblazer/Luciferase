@@ -93,11 +93,17 @@ public final class SparseVoxelIOUtils {
         if (count <= 0) {
             return new int[0];
         }
+        if (count > Integer.MAX_VALUE / 4) {
+            throw new IOException("count " + count + " would overflow buffer allocation (max " + (Integer.MAX_VALUE / 4) + ")");
+        }
 
-        var buffer = ByteBuffer.allocate(count * 4).order(BYTE_ORDER);
-        int bytesRead = channel.read(buffer);
-        if (bytesRead != count * 4) {
-            throw new IOException("Expected " + (count * 4) + " bytes, read " + bytesRead);
+        long bytes = (long) count * 4;
+        var buffer = ByteBuffer.allocate((int) bytes).order(BYTE_ORDER);
+        while (buffer.hasRemaining()) {
+            int n = channel.read(buffer);
+            if (n < 0) {
+                throw new EOFException("unexpected EOF, read " + buffer.position() + " of " + bytes + " bytes");
+            }
         }
 
         buffer.flip();

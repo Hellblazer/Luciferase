@@ -17,6 +17,8 @@ package com.hellblazer.luciferase.render.mesh;
 import javafx.scene.shape.MeshView;
 import javafx.scene.shape.TriangleMesh;
 import javafx.scene.shape.VertexFormat;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -26,6 +28,9 @@ import java.util.ArrayList;
  *
  */
 public class MeshLoader {
+
+    private static final Logger log = LoggerFactory.getLogger(MeshLoader.class);
+
     /**
      * error()
      *
@@ -35,7 +40,7 @@ public class MeshLoader {
      * @param msg  The message to be displayed as a result.
      **/
     private static void error(String mthd, String msg) {
-        System.out.println(System.currentTimeMillis() + " [!!] Loader->" + mthd + "() " + msg);
+        log.error("Loader->{}() {}", mthd, msg);
     }
 
     /**
@@ -247,6 +252,6 @@ public class MeshLoader {
      * @param msg  The message to be displayed as a result.
      **/
     private static void warning(String mthd, String msg) {
-        System.out.println(System.currentTimeMillis() + " [??] Loader->" + mthd + "() " + msg);
+        log.warn("Loader->{}() {}", mthd, msg);
     }
 }

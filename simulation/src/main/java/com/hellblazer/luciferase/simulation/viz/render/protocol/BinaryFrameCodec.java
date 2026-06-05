@@ -194,6 +194,19 @@ public final class BinaryFrameCodec {
             var buildVersion = buffer.getInt(originalPos + 16);
             var dataSize = buffer.getInt(originalPos + 20);
 
+            // Luciferase-7wzml.208: guard against malformed / malicious payloads — a crafted
+            // frame could set dataSize to an arbitrarily large value, causing downstream
+            // callers to allocate oversized buffers or read past the end of the supplied data.
+            if (dataSize < 0) {
+                throw new IllegalArgumentException(
+                    "Malformed frame: dataSize is negative (" + dataSize + ")");
+            }
+            int available = buffer.remaining() - ProtocolConstants.FRAME_HEADER_SIZE;
+            if (dataSize > available) {
+                throw new IllegalArgumentException(
+                    "Malformed frame: dataSize " + dataSize + " exceeds available payload bytes " + available);
+            }
+
             return new FrameHeader(magic, format, keyType, level, key, buildVersion, dataSize);
         } finally {
             // Restore original position (don't mutate input buffer)

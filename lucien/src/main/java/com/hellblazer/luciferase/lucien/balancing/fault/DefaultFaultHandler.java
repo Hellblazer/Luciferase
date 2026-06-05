@@ -596,6 +596,46 @@ public class DefaultFaultHandler implements FaultHandler {
         }
     }
 
+    @Override
+    public void reportHeartbeatFailure(UUID partitionId) {
+        var state = healthStates.computeIfAbsent(partitionId, uuid -> new PartitionHealthState(now()));
+        synchronized (state) {
+            state.lastSeenAt = now();
+            var rank = topology.rankFor(partitionId).orElse(-1);
+            log.debug("Partition {} (rank {}) heartbeat failure (no node id)", partitionId, rank);
+            if (state.status == PartitionStatus.HEALTHY) {
+                state.consecutiveTimeouts++;
+                if (state.consecutiveTimeouts >= CONSECUTIVE_TIMEOUT_THRESHOLD) {
+                    state.status = PartitionStatus.SUSPECTED;
+                    state.suspectedAt = now();
+                    state.detectionStartTime = now();
+                    log.warn("Partition {} (rank {}) marked SUSPECTED after {} timeouts", partitionId, rank,
+                             state.consecutiveTimeouts);
+                    var event = new PartitionChangeEvent(partitionId, PartitionStatus.HEALTHY, PartitionStatus.SUSPECTED,
+                                                         now(), "Consecutive heartbeat timeouts");
+                    notifyListeners(event);
+                }
+            }
+        }
+    }
+
+    @Override
+    public void reportPartitionFailed(UUID partitionId) {
+        var state = healthStates.computeIfAbsent(partitionId, uuid -> new PartitionHealthState(now()));
+        synchronized (state) {
+            if (state.status == PartitionStatus.FAILED) {
+                return;
+            }
+            var previous = state.status;
+            state.status = PartitionStatus.FAILED;
+            var rank = topology.rankFor(partitionId).orElse(-1);
+            log.warn("Partition {} (rank {}) marked FAILED directly (was {})", partitionId, rank, previous);
+            var event = new PartitionChangeEvent(partitionId, previous, PartitionStatus.FAILED,
+                                                 now(), "Terminal failure reported by caller");
+            notifyListeners(event);
+        }
+    }
+
     /**
      * Get current time from injected time source.
      */

@@ -142,10 +142,33 @@ public class ESVTDeserializer implements AutoCloseable {
         }
     }
 
+    /**
+     * Reads bytes from the channel until the buffer is full, looping on short reads.
+     *
+     * <p>Callers always pass a freshly-allocated buffer positioned at index 0, so
+     * {@code capacity()} equals the number of bytes requested and {@code remaining()}
+     * at EOF equals the number not yet delivered.  The message reports both for clarity:
+     * {@code "expected N bytes but channel ended with M bytes remaining"} where N is the
+     * full requested size and M is the shortfall.
+     *
+     * @param channel the channel to read from
+     * @param buf     the buffer to fill; must be a freshly-allocated buffer at position 0
+     * @throws IOException if EOF is reached before the buffer is full, or on any I/O error
+     */
+    private static void readFully(FileChannel channel, ByteBuffer buf) throws IOException {
+        while (buf.hasRemaining()) {
+            int n = channel.read(buf);
+            if (n == -1) {
+                throw new IOException("Unexpected EOF: expected " + buf.capacity()
+                    + " bytes but channel ended with " + buf.remaining() + " bytes remaining");
+            }
+        }
+    }
+
     private ESVTFileFormat.Header readHeader(FileChannel channel) throws IOException {
         // First read minimal header to get version
         var minBuffer = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
-        channel.read(minBuffer);
+        readFully(channel, minBuffer);
         minBuffer.flip();
 
         int magic = minBuffer.getInt();
@@ -162,7 +185,7 @@ public class ESVTDeserializer implements AutoCloseable {
 
         channel.position(0);
         var headerBuffer = ByteBuffer.allocate(headerSize).order(ByteOrder.LITTLE_ENDIAN);
-        channel.read(headerBuffer);
+        readFully(channel, headerBuffer);
         headerBuffer.flip();
 
         var header = new ESVTFileFormat.Header(version);
@@ -196,7 +219,7 @@ public class ESVTDeserializer implements AutoCloseable {
         int size = header.nodeCount * ESVTNodeUnified.SIZE_BYTES;
         var buffer = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN);
         channel.position(header.getNodesOffset());
-        channel.read(buffer);
+        readFully(channel, buffer);
         buffer.flip();
 
         var nodes = new ESVTNodeUnified[header.nodeCount];
@@ -215,7 +238,7 @@ public class ESVTDeserializer implements AutoCloseable {
         int size = header.contourCount * 4;
         var buffer = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN);
         channel.position(header.getContoursOffset());
-        channel.read(buffer);
+        readFully(channel, buffer);
         buffer.flip();
 
         var contours = new int[header.contourCount];
@@ -234,7 +257,7 @@ public class ESVTDeserializer implements AutoCloseable {
         int size = header.farPtrCount * 4;
         var buffer = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN);
         channel.position(header.getFarPointersOffset());
-        channel.read(buffer);
+        readFully(channel, buffer);
         buffer.flip();
 
         var farPtrs = new int[header.farPtrCount];
@@ -253,7 +276,7 @@ public class ESVTDeserializer implements AutoCloseable {
         int size = header.voxelCoordsCount * 4;
         var buffer = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN);
         channel.position(header.getVoxelCoordsOffset());
-        channel.read(buffer);
+        readFully(channel, buffer);
         buffer.flip();
 
         var coords = new int[header.voxelCoordsCount];
@@ -271,7 +294,7 @@ public class ESVTDeserializer implements AutoCloseable {
 
         var buffer = ByteBuffer.allocate((int) header.metadataSize);
         channel.position(header.metadataOffset);
-        channel.read(buffer);
+        readFully(channel, buffer);
         buffer.flip();
 
         try (var bais = new ByteArrayInputStream(buffer.array());

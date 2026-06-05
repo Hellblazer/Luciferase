@@ -41,20 +41,33 @@ public class SpatialLocalityCache {
      * Pre-cache neighborhoods for multiple tetrahedra. Useful for operations that will access several regions.
      *
      * @param centers array of center tetrahedra
+     * @return the number of neighborhood tets whose {@link Tet#tmIndex()} was computed/warmed
+     *         across all neighborhoods (invocation count, not a guarantee of live cache residency
+     *         — {@link TetreeLevelCache} is a bounded probe cache that may evict)
      */
-    public void preCacheMultipleNeighborhoods(Tet[] centers) {
+    public int preCacheMultipleNeighborhoods(Tet[] centers) {
+        var total = 0;
         for (var center : centers) {
-            preCacheNeighborhood(center);
+            total += preCacheNeighborhood(center);
         }
+        return total;
     }
 
     /**
      * Pre-cache the neighborhood around a center tetrahedron. This improves performance for operations that access
-     * nearby tetrahedra.
+     * nearby tetrahedra by warming the global {@link TetreeLevelCache} via {@link Tet#tmIndex()}.
+     *
+     * <p>Note: this class holds no per-instance cache. All warmed entries go into the shared static
+     * {@link TetreeLevelCache}. Two {@code SpatialLocalityCache} instances therefore share and contend on
+     * the same global state; there is no way to scope or clear a neighborhood independently
+     * (Luciferase-7wzml.134).
      *
      * @param center the center tetrahedron
+     * @return the number of neighborhood tets whose {@link Tet#tmIndex()} was computed/warmed
+     *         (invocation count, not a guarantee of live cache residency — {@link TetreeLevelCache}
+     *         is a bounded probe cache that may evict)
      */
-    public void preCacheNeighborhood(Tet center) {
+    public int preCacheNeighborhood(Tet center) {
         var cellSize = center.length();
         var cacheCount = 0;
 
@@ -74,13 +87,14 @@ public class SpatialLocalityCache {
                     // Pre-compute all 6 tetrahedron types at this position
                     for (byte type = 0; type < 6; type++) {
                         var tet = new Tet(x, y, z, center.l(), type);
-                        // This will compute and cache the ExtendedTetreeKey
+                        // This will compute and cache the ExtendedTetreeKey into TetreeLevelCache
                         tet.tmIndex();
                         cacheCount++;
                     }
                 }
             }
         }
+        return cacheCount;
     }
 
     /**

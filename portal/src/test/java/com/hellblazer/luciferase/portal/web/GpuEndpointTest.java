@@ -247,6 +247,81 @@ class GpuEndpointTest {
         });
     }
 
+    /**
+     * Set up a session with a TETREE index, one entity, and an ESVT render structure
+     * so the endpoint gets past the ESVT guard and reaches dimension validation.
+     */
+    private String setupEsvtSession(io.javalin.testtools.HttpClient client) throws Exception {
+        var sessionId = extractJsonField(client.post("/api/session/create").body().string(), "sessionId");
+        var indexRequest = new CreateIndexRequest(IndexType.TETREE, (byte) 8, 5);
+        client.post("/api/spatial/create?sessionId=" + sessionId,
+                objectMapper.writeValueAsString(indexRequest));
+        var insertRequest = new InsertEntityRequest(0.5f, 0.5f, 0.5f, null);
+        client.post("/api/spatial/entities/insert?sessionId=" + sessionId,
+                objectMapper.writeValueAsString(insertRequest));
+        var renderRequest = new CreateRenderRequest(RenderType.ESVT, 8, 64);
+        client.post("/api/render/create?sessionId=" + sessionId,
+                objectMapper.writeValueAsString(renderRequest));
+        return sessionId;
+    }
+
+    @Test
+    void enableGpuRejectsOversizedDimensions() throws Exception {
+        var server = new SpatialInspectorServer(0);
+        JavalinTest.test(server.app(), (javalin, client) -> {
+            var sessionId = setupEsvtSession(client);
+
+            // 100000x100000 would overflow int and cause NegativeArraySizeException — must be 400
+            var enableRequest = new GpuEnableRequest(100000, 100000);
+            var response = client.post("/api/gpu/enable?sessionId=" + sessionId,
+                    objectMapper.writeValueAsString(enableRequest));
+
+            assertEquals(400, response.code());
+            var body = response.body().string();
+            assertTrue(body.contains("frameWidth") || body.contains("frameHeight") || body.contains("4096"),
+                    "Expected validation error message, got: " + body);
+        });
+    }
+
+    @Test
+    void enableGpuRejectsZeroOrNegativeDimensions() throws Exception {
+        var server = new SpatialInspectorServer(0);
+        JavalinTest.test(server.app(), (javalin, client) -> {
+            // width=0 must be rejected with 400
+            var sessionId = setupEsvtSession(client);
+            var enableRequest = new GpuEnableRequest(0, 300);
+            var response = client.post("/api/gpu/enable?sessionId=" + sessionId,
+                    objectMapper.writeValueAsString(enableRequest));
+            assertEquals(400, response.code());
+
+            // height=-1 must also be rejected
+            var sessionId2 = setupEsvtSession(client);
+            var enableRequest2 = new GpuEnableRequest(800, -1);
+            var response2 = client.post("/api/gpu/enable?sessionId=" + sessionId2,
+                    objectMapper.writeValueAsString(enableRequest2));
+            assertEquals(400, response2.code());
+        });
+    }
+
+    @Test
+    void enableGpuDefaultDimensionsUnchanged() throws Exception {
+        var server = new SpatialInspectorServer(0);
+        JavalinTest.test(server.app(), (javalin, client) -> {
+            var sessionId = setupEsvtSession(client);
+
+            // Default 800x600 must pass bounds validation.
+            // Will reach enableGpu — may get 409 (OpenCL unavailable in CI) or 201 (GPU tests),
+            // but must NOT be 400 (validation reject) or 500 (crash).
+            var enableRequest = new GpuEnableRequest(null, null);
+            var response = client.post("/api/gpu/enable?sessionId=" + sessionId,
+                    objectMapper.writeValueAsString(enableRequest));
+
+            int code = response.code();
+            assertNotEquals(400, code, "Default 800x600 should pass dimension validation");
+            assertNotEquals(500, code, "Default 800x600 must not crash");
+        });
+    }
+
     @Test
     void gpuRenderRequiresGpuEnabled() throws Exception {
         var server = new SpatialInspectorServer(0);

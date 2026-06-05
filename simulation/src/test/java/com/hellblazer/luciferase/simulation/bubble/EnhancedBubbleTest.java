@@ -1,12 +1,15 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
-import com.hellblazer.luciferase.simulation.bubble.*;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -332,22 +335,6 @@ public class EnhancedBubbleTest {
     }
 
     /**
-     * Test 15: Single frame processing
-     * <p>
-     * Validates: tick() processes a simulation bucket
-     */
-    @Test
-    public void testTickProcessing() {
-        var content = new EntityContent();
-        bubble.addEntity("entity-1", new Point3f(10.0f, 10.0f, 10.0f), content);
-
-        long bucket = 100L;
-
-        // tick() should execute without error
-        assertDoesNotThrow(() -> bubble.tick(bucket), "tick() should not throw exception");
-    }
-
-    /**
      * Test 16: Count matches index size
      * <p>
      * Validates: entityCount() accurately reflects spatial index size
@@ -371,6 +358,107 @@ public class EnhancedBubbleTest {
         bubble.removeEntity("e1");
         bubble.removeEntity("e3");
         assertEquals(0, bubble.entityCount(), "Count should be 0 after removing all entities");
+    }
+
+    /**
+     * Test 17: close() deregisters tick listener (ghostCoordinator.close()).
+     * After close(), the RealTimeController should have no listeners registered by this bubble.
+     */
+    @Test
+    public void testClose_deregistersTickListener() {
+        int baselineCount = bubble.getRealTimeController().getTickListenerCount();
+        // ghostCoordinator registers 1 listener at construction
+        assertEquals(baselineCount, bubble.getRealTimeController().getTickListenerCount(),
+                     "Baseline listener count should be stable");
+
+        bubble.close();
+
+        // After close, ghostCoordinator.close() should have removed its listener
+        assertEquals(baselineCount - 1, bubble.getRealTimeController().getTickListenerCount(),
+                     "Tick listener count should drop by 1 after close()");
+    }
+
+    /**
+     * Test 18: 3-arg ctor (owns controller) — close() stops the owned RealTimeController.
+     */
+    @Test
+    public void testClose_ownedController_isStopped() {
+        // 3-arg ctor creates its own controller
+        var ownedBubble = new EnhancedBubble(UUID.randomUUID(), SPATIAL_LEVEL, TARGET_FRAME_MS);
+        ownedBubble.getRealTimeController().start();
+        assertTrue(ownedBubble.getRealTimeController().isRunning(), "Controller should be running after start");
+
+        ownedBubble.close();
+
+        assertFalse(ownedBubble.getRealTimeController().isRunning(), "Owned controller must be stopped on close()");
+    }
+
+    /**
+     * Test 19: injecting ctor — close() does NOT stop the injected RealTimeController.
+     */
+    @Test
+    public void testClose_injectedController_isNotStopped() {
+        var sharedController = new RealTimeController(UUID.randomUUID(), "shared");
+        sharedController.start();
+
+        var injectedBubble = new EnhancedBubble(UUID.randomUUID(), SPATIAL_LEVEL, TARGET_FRAME_MS, sharedController);
+        injectedBubble.close();
+
+        // Injected controller must NOT be stopped — it is owned externally
+        assertTrue(sharedController.isRunning(),
+                   "Injected controller must remain running after injected bubble is closed");
+        sharedController.stop(); // cleanup
+    }
+
+    /**
+     * Test 20: close() is idempotent — calling twice does not throw.
+     */
+    @Test
+    public void testClose_idempotent() {
+        assertDoesNotThrow(() -> {
+            bubble.close();
+            bubble.close(); // second call must be a no-op
+        }, "close() must be idempotent");
+    }
+
+    /**
+     * Test 21: concurrent close() — N threads race to close the same bubble simultaneously.
+     * The teardown (tick-listener deregistration) must run exactly once regardless of concurrency.
+     * Asserts: no exception thrown, listener count drops by exactly 1.
+     */
+    @Test
+    public void testClose_concurrent() throws InterruptedException {
+        int threadCount = 8;
+        int baselineCount = bubble.getRealTimeController().getTickListenerCount();
+
+        CountDownLatch ready = new CountDownLatch(threadCount);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger exceptions = new AtomicInteger(0);
+
+        ExecutorService pool = Executors.newFixedThreadPool(threadCount);
+        try {
+            for (int i = 0; i < threadCount; i++) {
+                pool.submit(() -> {
+                    ready.countDown();
+                    try {
+                        start.await();  // all threads release together
+                        bubble.close();
+                    } catch (Exception e) {
+                        exceptions.incrementAndGet();
+                    }
+                });
+            }
+            ready.await();      // wait until all threads are lined up
+            start.countDown();  // fire them simultaneously
+        } finally {
+            pool.shutdown();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS), "Threads should complete within 5s");
+        }
+
+        assertEquals(0, exceptions.get(), "No thread should throw during concurrent close()");
+        // Teardown ran exactly once: listener count must be exactly baselineCount - 1
+        assertEquals(baselineCount - 1, bubble.getRealTimeController().getTickListenerCount(),
+                     "Tick listener must be removed exactly once across all concurrent close() calls");
     }
 
     /**

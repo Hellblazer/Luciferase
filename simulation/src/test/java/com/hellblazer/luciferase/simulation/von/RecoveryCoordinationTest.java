@@ -408,6 +408,8 @@ class RecoveryCoordinationTest {
         @Override public PartitionView getPartitionView(UUID partitionId) { return null; }
         @Override public void reportBarrierTimeout(UUID partitionId) { }
         @Override public void reportHeartbeatFailure(UUID partitionId, UUID nodeId) { }
+        @Override public void reportHeartbeatFailure(UUID partitionId) { }
+        @Override public void reportPartitionFailed(UUID partitionId) { }
         @Override public void registerRecovery(UUID partitionId, PartitionRecovery recovery) { }
         @Override public java.util.concurrent.CompletableFuture<Boolean> initiateRecovery(UUID partitionId) { return null; }
         @Override public void notifyRecoveryComplete(UUID partitionId, boolean success) { }

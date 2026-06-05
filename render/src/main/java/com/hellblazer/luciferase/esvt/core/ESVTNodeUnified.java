@@ -335,14 +335,29 @@ public final class ESVTNodeUnified implements SparseVoxelNode {
      * Calculate the actual index of a child, resolving far pointers if needed.
      * Uses relative pointer - adds currentNodeIdx to the stored offset.
      *
+     * <p>A far node stores an index into {@code farPointers} rather than the direct
+     * relative offset. If {@code isFar()} is {@code true} but {@code farPointers} is
+     * {@code null} or too short to cover {@code childPtr}, the data is corrupt — the
+     * far-pointer table is a mandatory companion of any far node. This method
+     * throws {@link IllegalStateException} in that case rather than silently
+     * returning a wrong child index (which would cause silent memory-corruption-style
+     * traversal on the hot path).
+     *
      * @param childIdx The child index (0-7)
      * @param currentNodeIdx The index of this node in the array
-     * @param farPointers Array of far pointers (may be null or empty)
+     * @param farPointers Array of far pointers (required when {@code isFar()}, may be null/empty otherwise)
      * @return The actual index in the node array
+     * @throws IllegalStateException if this is a far node but {@code farPointers} is null or too short
      */
     public int getChildIndex(int childIdx, int currentNodeIdx, int[] farPointers) {
         int relativeOffset = getChildPtr();
-        if (isFar() && farPointers != null && relativeOffset < farPointers.length) {
+        if (isFar()) {
+            if (farPointers == null || relativeOffset >= farPointers.length) {
+                throw new IllegalStateException(
+                    "Far node requires far-pointer table but table is "
+                    + (farPointers == null ? "null" : "too short (length=" + farPointers.length
+                       + ", ptr=" + relativeOffset + ")") + " — absent or short far table = data corruption");
+            }
             relativeOffset = farPointers[relativeOffset];
         }
         return currentNodeIdx + relativeOffset + getChildOffset(childIdx);

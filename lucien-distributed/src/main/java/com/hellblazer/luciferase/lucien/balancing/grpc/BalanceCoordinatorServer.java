@@ -17,8 +17,10 @@
 
 package com.hellblazer.luciferase.lucien.balancing.grpc;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.balancing.proto.*;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement;
+import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +29,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.Map;
 
@@ -53,6 +56,9 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
     // Balance provider for accessing balance state
     private final BalanceProvider balanceProvider;
 
+    // Injected clock for deterministic time (testable)
+    private volatile Clock clock = Clock.system();
+
     // Virtual thread executor for concurrent operations
     private final ExecutorService virtualExecutor;
 
@@ -61,8 +67,15 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
     private final AtomicLong coordinationCount;
     private final AtomicLong streamUpdateCount;
 
+    // RDR-013 / Luciferase-7wzml.6: cap concurrent streaming sessions. Many cheap streams would otherwise pin
+    // unbounded virtual-thread tasks + activeStreams entries (connection-level DoS). Mirror GhostExchangeServiceImpl.
+    private static final int MAX_ACTIVE_STREAMS = 1024;
+
     // Active streaming sessions
     private final Map<String, StreamSession> activeStreams;
+
+    // Atomic counter for exact cap enforcement — gates before map.put() so size-check and admission are atomic.
+    private final AtomicInteger activeStreamCount = new AtomicInteger(0);
 
     /**
      * Creates a new balance coordinator service implementation.
@@ -78,6 +91,15 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
         this.activeStreams = new ConcurrentHashMap<>();
 
         log.info("BalanceCoordinatorServer initialized for rank {}", balanceProvider.getCurrentRank());
+    }
+
+    /**
+     * Injects a clock for deterministic testing. Uses {@link Clock#system()} by default.
+     *
+     * @param clock the clock to use
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -107,7 +129,7 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
                     .setResponderRank(balanceProvider.getCurrentRank())
                     .setResponderTreeId(request.getRequesterTreeId())
                     .setRoundNumber(request.getRoundNumber())
-                    .setTimestamp(System.currentTimeMillis());
+                    .setTimestamp(clock.currentTimeMillis());
 
                 // Add ghost elements
                 for (var element : ghostElements) {
@@ -192,6 +214,13 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
     /**
      * Handles streaming balance updates for real-time monitoring.
      *
+     * <p>The concurrent-session cap is enforced atomically via {@link #activeStreamCount}:
+     * the counter is incremented <em>before</em> the map put, so no two racing callers can
+     * both observe {@code count < cap} and both be admitted (TOCTOU-free).
+     * On rejection the counter is decremented immediately before returning. On stream close
+     * (either {@code onCompleted} or {@code onError}) the counter is decremented exactly once
+     * via the session's own decrement-and-remove helper to guard against double-decrement.
+     *
      * @param responseObserver observer for sending statistics
      * @return observer for receiving statistics
      */
@@ -199,7 +228,23 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
     public StreamObserver<BalanceStatistics> streamBalanceUpdates(
             StreamObserver<BalanceStatistics> responseObserver) {
 
-        var sessionId = "stream-" + System.currentTimeMillis() + "-" + streamUpdateCount.incrementAndGet();
+        // RDR-013 / Luciferase-7wzml.6: atomic cap — increment FIRST, then check.
+        // If over cap, decrement and reject without touching the map (no leak-before-put).
+        int count = activeStreamCount.incrementAndGet();
+        if (count > MAX_ACTIVE_STREAMS) {
+            activeStreamCount.decrementAndGet();
+            log.warn("Rejecting balance stream: {} active streams at cap {}", count - 1, MAX_ACTIVE_STREAMS);
+            responseObserver.onError(Status.RESOURCE_EXHAUSTED
+                                         .withDescription("too many concurrent balance streams")
+                                         .asRuntimeException());
+            return new StreamObserver<BalanceStatistics>() {
+                @Override public void onNext(BalanceStatistics s) { }
+                @Override public void onError(Throwable t) { }
+                @Override public void onCompleted() { }
+            };
+        }
+
+        var sessionId = "stream-" + streamUpdateCount.incrementAndGet();
         var session = new StreamSession(sessionId, responseObserver);
         activeStreams.put(sessionId, session);
 
@@ -214,13 +259,17 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
             @Override
             public void onError(Throwable t) {
                 log.error("Streaming error in session {}: {}", sessionId, t.getMessage(), t);
-                activeStreams.remove(sessionId);
+                if (activeStreams.remove(sessionId) != null) {
+                    activeStreamCount.decrementAndGet();
+                }
             }
 
             @Override
             public void onCompleted() {
                 log.debug("Streaming session completed: {}", sessionId);
-                activeStreams.remove(sessionId);
+                if (activeStreams.remove(sessionId) != null) {
+                    activeStreamCount.decrementAndGet();
+                }
                 responseObserver.onCompleted();
             }
         };
@@ -322,7 +371,7 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
     public void shutdown() {
         log.info("Shutting down BalanceCoordinatorServer");
 
-        // Close all active streams
+        // Close all active streams; decrement counter for each removed session.
         activeStreams.values().forEach(session -> {
             try {
                 session.responseObserver.onCompleted();
@@ -331,6 +380,11 @@ public class BalanceCoordinatorServer extends BalanceCoordinatorGrpc.BalanceCoor
             }
         });
         activeStreams.clear();
+        // Reset to 0 rather than addAndGet(-cleared): a stream admitted concurrently between the
+        // forEach above and this clear() would be erased by clear() without a paired decrement
+        // (its onCompleted/onError finds remove()==null and skips), leaving the counter negative.
+        // After shutdown the map is empty, so the count is definitively 0.
+        activeStreamCount.set(0);
 
         // Shutdown virtual thread executor
         virtualExecutor.shutdown();

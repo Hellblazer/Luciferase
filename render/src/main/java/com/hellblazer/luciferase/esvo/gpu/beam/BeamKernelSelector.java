@@ -72,8 +72,8 @@ public class BeamKernelSelector {
             metrics.recordSingleRay();
         }
 
-        log.debug("Kernel selection: {} (coherence={:.3f}, threshold={:.3f})",
-                choice, avgCoherence, coherenceThreshold);
+        log.debug("Kernel selection: {} (coherence={}, threshold={})",
+                choice, String.format("%.3f", avgCoherence), String.format("%.3f", coherenceThreshold));
 
         return choice;
     }

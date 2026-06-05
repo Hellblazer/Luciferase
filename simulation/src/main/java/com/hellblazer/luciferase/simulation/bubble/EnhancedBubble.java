@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Enhanced Bubble with tetrahedral bounds, spatial index, and VON integration.
@@ -36,10 +38,24 @@ import java.util.UUID;
  * interface, enabling loose coupling for bounds updates on entity changes.
  * <p>
  * Thread-safe for concurrent entity operations via component delegation.
+ * <p>
+ * Per-tick driving: this class does NOT have a {@code tick(bucket)} entry point.
+ * Per-tick work is wired externally:
+ * <ul>
+ *   <li>Ghost state updates: {@link BubbleGhostCoordinator} registers a
+ *       {@link RealTimeController.TickListener} on construction and calls
+ *       {@link #tickGhosts(long)} internally on each tick.</li>
+ *   <li>Entity updates: {@link com.hellblazer.luciferase.simulation.tick.SimulationTickOrchestrator}
+ *       iterates bubbles and invokes its injected {@code BubbleEntityUpdater} callback.</li>
+ * </ul>
+ * Note: the old {@code tick(bucket)} stub listed 'interaction handling' as one of its four
+ * responsibilities. That bullet was NEVER IMPLEMENTED — the method body was a comment-only
+ * placeholder. No interaction-handling logic was dropped when the stub was deleted; it was
+ * never live. Per-tick interaction/physics is not currently a responsibility of this class.
  *
  * @author hal.hildebrand
  */
-public class EnhancedBubble {
+public class EnhancedBubble implements AutoCloseable {
 
     private final UUID id;
     private final byte spatialLevel;
@@ -49,20 +65,28 @@ public class EnhancedBubble {
     private final BubbleBoundsTracker boundsTracker;
     private final BubbleEntityStore entityStore;
     private final BubbleGhostCoordinator ghostCoordinator;
+    /** True only when this bubble created (owns) the RealTimeController. */
+    private final boolean ownsController;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     /**
      * Create an enhanced bubble with spatial indexing and monitoring.
+     * This constructor creates and owns its own RealTimeController.
      *
      * @param id                   Unique bubble identifier
      * @param spatialLevel         Tetree refinement level for spatial index
      * @param targetFrameMs        Target frame time budget in milliseconds
      */
     public EnhancedBubble(UUID id, byte spatialLevel, long targetFrameMs) {
-        this(id, spatialLevel, targetFrameMs, new RealTimeController(id, "bubble-" + id.toString().substring(0, 8)));
+        this(id, spatialLevel, targetFrameMs,
+             new RealTimeController(id, "bubble-" + id.toString().substring(0, 8)),
+             new InMemoryGhostChannel<>(),
+             true);
     }
 
     /**
      * Create an enhanced bubble with spatial indexing and monitoring.
+     * Uses an externally-managed RealTimeController (not owned by this bubble).
      *
      * @param id                   Unique bubble identifier
      * @param spatialLevel         Tetree refinement level for spatial index
@@ -70,11 +94,12 @@ public class EnhancedBubble {
      * @param realTimeController   RealTimeController for simulation time management
      */
     public EnhancedBubble(UUID id, byte spatialLevel, long targetFrameMs, RealTimeController realTimeController) {
-        this(id, spatialLevel, targetFrameMs, realTimeController, new InMemoryGhostChannel<>());
+        this(id, spatialLevel, targetFrameMs, realTimeController, new InMemoryGhostChannel<>(), false);
     }
 
     /**
      * Create an enhanced bubble with spatial indexing, monitoring, and custom ghost channel.
+     * Uses an externally-managed RealTimeController (not owned by this bubble).
      * <p>
      * This constructor allows injection of different GhostChannel implementations:
      * - InMemoryGhostChannel: For testing and single-bubble scenarios (default)
@@ -96,9 +121,16 @@ public class EnhancedBubble {
     @SuppressWarnings("rawtypes") // EntityData used as raw type throughout EnhancedBubble
     public EnhancedBubble(UUID id, byte spatialLevel, long targetFrameMs, RealTimeController realTimeController,
                           GhostChannel<StringEntityID, EntityData> ghostChannel) {
+        this(id, spatialLevel, targetFrameMs, realTimeController, ghostChannel, false);
+    }
+
+    @SuppressWarnings("rawtypes")
+    private EnhancedBubble(UUID id, byte spatialLevel, long targetFrameMs, RealTimeController realTimeController,
+                           GhostChannel<StringEntityID, EntityData> ghostChannel, boolean ownsController) {
         this.id = id;
         this.spatialLevel = spatialLevel;
         this.realTimeController = realTimeController;
+        this.ownsController = ownsController;
         this.frameMonitor = new BubbleFrameMonitor(targetFrameMs);
         this.vonCoordinator = new BubbleVonCoordinator();
         this.boundsTracker = new BubbleBoundsTracker(spatialLevel);
@@ -113,6 +145,22 @@ public class EnhancedBubble {
             boundsTracker::bounds,
             realTimeController
         );
+    }
+
+    /**
+     * Release resources held by this bubble.
+     * Deregisters the ghost coordinator's tick listener, and stops the RealTimeController
+     * only if this bubble created it (3-arg constructor). Idempotent.
+     */
+    @Override
+    public void close() {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
+        ghostCoordinator.close();
+        if (ownsController) {
+            realTimeController.stop();
+        }
     }
 
     /**
@@ -188,6 +236,17 @@ public class EnhancedBubble {
      */
     public RealTimeController getRealTimeController() {
         return realTimeController;
+    }
+
+    /**
+     * Expose the entity store's mutation lock for cross-bubble atomic sequences.
+     * Callers (e.g. TetrahedralMigration) must acquire multiple bubble locks in a
+     * consistent total order (by bubble UUID) to avoid deadlock.
+     *
+     * @return the ReentrantLock that serializes add/remove/update on this bubble's entity store
+     */
+    public ReentrantLock getMutationLock() {
+        return entityStore.getMutationLock();
     }
 
     /**
@@ -361,20 +420,6 @@ public class EnhancedBubble {
      */
     public boolean needsSplit() {
         return frameMonitor.needsSplit();
-    }
-
-    /**
-     * Process a single simulation tick for a time bucket.
-     *
-     * @param bucket Simulation time bucket
-     */
-    public void tick(long bucket) {
-        // Placeholder for simulation tick processing
-        // In a full implementation, this would:
-        // 1. Process all entities scheduled for this bucket
-        // 2. Update entity states
-        // 3. Handle interactions
-        // 4. Measure frame time
     }
 
     /**

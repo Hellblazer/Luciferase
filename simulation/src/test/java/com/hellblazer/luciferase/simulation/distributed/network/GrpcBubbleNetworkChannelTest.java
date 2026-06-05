@@ -30,8 +30,10 @@ public class GrpcBubbleNetworkChannelTest {
         sourceNodeId = UUID.randomUUID();
         targetNodeId = UUID.randomUUID();
 
-        sourceChannel = new GrpcBubbleNetworkChannel();
-        targetChannel = new GrpcBubbleNetworkChannel();
+        // Explicit plaintext opt-in for tests (Luciferase-7wzml.200).
+        // Production use requires TLS — see Luciferase-l9dny for mTLS roadmap.
+        sourceChannel = new GrpcBubbleNetworkChannel(true);
+        targetChannel = new GrpcBubbleNetworkChannel(true);
     }
 
     @AfterEach
@@ -43,6 +45,120 @@ public class GrpcBubbleNetworkChannelTest {
             targetChannel.close();
         }
     }
+
+    // ==================== Transport-security opt-in gate (Luciferase-7wzml.200 / I1) ====================
+
+    /**
+     * Server-side plaintext gate (I1): initialize() without opt-in must throw immediately.
+     * The default constructor leaves {@code allowPlaintext=false}; the SERVER must not start
+     * in plaintext mode without an explicit opt-in, mirroring the client-side gate.
+     */
+    @Test
+    void testServerStartWithoutPlaintextOptInThrows() {
+        var noTlsChannel = new GrpcBubbleNetworkChannel(); // no opt-in
+        try {
+            assertThrows(IllegalStateException.class,
+                         () -> noTlsChannel.initialize(UUID.randomUUID(), "localhost:0"),
+                         "initialize() without plaintext opt-in must throw ISE on the server path");
+        } finally {
+            try { noTlsChannel.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Server-side plaintext gate (I1): initialize() with opt-in must succeed and
+     * assign a local address.
+     */
+    @Test
+    void testServerStartWithPlaintextOptInSucceeds() throws Exception {
+        // Via constructor
+        var channelViaConstructor = new GrpcBubbleNetworkChannel(true);
+        try {
+            assertDoesNotThrow(
+                () -> channelViaConstructor.initialize(UUID.randomUUID(), "localhost:0"),
+                "initialize() with boolean constructor opt-in must not throw");
+            assertNotNull(channelViaConstructor.getLocalAddress(),
+                          "channel constructed with allowPlaintext=true must report a local address");
+        } finally {
+            channelViaConstructor.close();
+        }
+
+        // Via setter
+        var channelViaSetter = new GrpcBubbleNetworkChannel();
+        channelViaSetter.setAllowPlaintext(true);
+        try {
+            assertDoesNotThrow(
+                () -> channelViaSetter.initialize(UUID.randomUUID(), "localhost:0"),
+                "initialize() with setAllowPlaintext(true) must not throw");
+            assertNotNull(channelViaSetter.getLocalAddress(),
+                          "channel with setAllowPlaintext(true) must report a local address");
+        } finally {
+            channelViaSetter.close();
+        }
+    }
+
+    /**
+     * Client-side plaintext gate: attempting to SEND without opt-in returns false (caught
+     * internally in sendEntityDeparture). The server-gate test above is the primary I1
+     * validation; this test documents the client-gate behavior is unchanged.
+     */
+    @Test
+    void testChannelWithoutPlaintextOptInThrowsOnSend() {
+        // With the I1 fix, initialize() itself now throws, so we opt-in to start the server
+        // and leave allowPlaintext=false only on the SENDING channel to isolate the client gate.
+        var serverChannel = new GrpcBubbleNetworkChannel(true);
+        var noTlsChannel = new GrpcBubbleNetworkChannel(); // no opt-in — client side only
+        try {
+            var nodeId = UUID.randomUUID();
+            var remoteId = UUID.randomUUID();
+            serverChannel.initialize(nodeId, "localhost:0");
+
+            // noTlsChannel never calls initialize() — we only test the send-path gate
+            noTlsChannel.registerNode(remoteId, "localhost:1"); // some remote addr
+
+            var event = new EntityDepartureEvent(
+                UUID.randomUUID(), nodeId, remoteId,
+                EntityMigrationState.MIGRATING_OUT, System.nanoTime());
+
+            // The outer try/catch in sendEntityDeparture catches the ISE from getOrCreateChannel
+            // and returns false — fail-loud is preserved, but not via exception to caller.
+            boolean result = noTlsChannel.sendEntityDeparture(remoteId, event);
+            assertFalse(result, "send without plaintext opt-in must fail (return false)");
+        } finally {
+            try { serverChannel.close(); } catch (Exception ignored) {}
+            try { noTlsChannel.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Verify that setting allowPlaintext=true before initialize allows channel creation.
+     * Both the boolean constructor and setAllowPlaintext(true) must work.
+     */
+    @Test
+    void testChannelWithPlaintextOptInSucceeds() throws Exception {
+        // Via constructor
+        var channelViaConstructor = new GrpcBubbleNetworkChannel(true);
+        try {
+            channelViaConstructor.initialize(UUID.randomUUID(), "localhost:0");
+            assertNotNull(channelViaConstructor.getLocalAddress(),
+                          "channel constructed with allowPlaintext=true must initialize");
+        } finally {
+            channelViaConstructor.close();
+        }
+
+        // Via setter
+        var channelViaSetter = new GrpcBubbleNetworkChannel();
+        channelViaSetter.setAllowPlaintext(true);
+        try {
+            channelViaSetter.initialize(UUID.randomUUID(), "localhost:0");
+            assertNotNull(channelViaSetter.getLocalAddress(),
+                          "channel with setAllowPlaintext(true) must initialize");
+        } finally {
+            channelViaSetter.close();
+        }
+    }
+
+    // ==================== Functional tests ====================
 
     /**
      * Test 1: Basic Initialization
@@ -404,9 +520,10 @@ public class GrpcBubbleNetworkChannelTest {
         var node2Id = UUID.randomUUID();
         var node3Id = UUID.randomUUID();
 
-        var channel1 = new GrpcBubbleNetworkChannel();
-        var channel2 = new GrpcBubbleNetworkChannel();
-        var channel3 = new GrpcBubbleNetworkChannel();
+        // Explicit plaintext opt-in for tests (Luciferase-7wzml.200).
+        var channel1 = new GrpcBubbleNetworkChannel(true);
+        var channel2 = new GrpcBubbleNetworkChannel(true);
+        var channel3 = new GrpcBubbleNetworkChannel(true);
 
         try {
             channel1.initialize(node1Id, "localhost:0");
@@ -433,6 +550,53 @@ public class GrpcBubbleNetworkChannelTest {
             channel1.close();
             channel2.close();
             channel3.close();
+        }
+    }
+
+    // ==================== .201: sendWithRetry onNext exception must not be silently swallowed ====================
+
+    /**
+     * Luciferase-7wzml.201: if the {@code onNext} handler inside {@code sendWithRetry} throws,
+     * the exception must NOT be silently swallowed (previous code had {@code catch (Exception ignored)}).
+     * <p>
+     * This test drives a successful round-trip RPC and verifies that the channel remains operational
+     * after the call. The production fix ensures the exception is logged at WARN rather than dropped.
+     * We cannot inject a throwing lambda from outside the private method, so we verify the channel
+     * continues working after a real successful exchange and that the onNext path is exercised.
+     *
+     * @see GrpcBubbleNetworkChannel#sendWithRetry
+     */
+    @Test
+    void sendWithRetry_channelRemainsOperationalAfterSuccessfulExchange() throws Exception {
+        var nodeId1 = UUID.randomUUID();
+        var nodeId2 = UUID.randomUUID();
+        var ch1 = new GrpcBubbleNetworkChannel(true);
+        var ch2 = new GrpcBubbleNetworkChannel(true);
+        try {
+            ch1.initialize(nodeId1, "localhost:0");
+            ch2.initialize(nodeId2, "localhost:0");
+            ch1.registerNode(nodeId2, ch2.getLocalAddress());
+            ch2.registerNode(nodeId1, ch1.getLocalAddress());
+
+            var latch = new CountDownLatch(1);
+            ch2.setEntityDepartureListener((srcId, evt) -> latch.countDown());
+
+            var event = new EntityDepartureEvent(
+                UUID.randomUUID(), nodeId1, nodeId2,
+                EntityMigrationState.MIGRATING_OUT, System.nanoTime());
+            assertTrue(ch1.sendEntityDeparture(nodeId2, event),
+                       "sendEntityDeparture must return true (dispatched)");
+
+            // Wait for delivery — confirms the onNext path completed without crashing the channel.
+            assertTrue(latch.await(3, TimeUnit.SECONDS),
+                       "EntityDepartureEvent must be received — onNext path must execute");
+
+            // Channel must still be reachable after the exchange.
+            assertTrue(ch1.isNodeReachable(nodeId2),
+                       "Channel must remain operational after onNext execution");
+        } finally {
+            ch1.close();
+            ch2.close();
         }
     }
 }

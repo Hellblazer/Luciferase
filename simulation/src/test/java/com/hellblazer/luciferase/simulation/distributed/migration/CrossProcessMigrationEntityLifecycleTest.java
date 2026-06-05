@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.simulation.distributed.migration;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import javax.vecmath.Point3d;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -258,7 +260,117 @@ class CrossProcessMigrationEntityLifecycleTest {
                     "Both concurrent attempts should be cleaned up");
     }
 
+    // ===== Luciferase-7wzml.41 tests =====
+
+    /**
+     * Luciferase-7wzml.41: Orphan cleanup must complete resultFuture so blocked callers unblock.
+     * <p>
+     * Scenario: an entity is stuck in activeEntities with a phaseStartTime >5 min ago (simulates
+     * a programming-error orphan). When triggerOrphanCleanupForTesting() fires:
+     * - The returned future must be done (isDone() == true).
+     * - future.get(timeout) must return immediately (not hang).
+     * - The result must be a failure with reason "ORPHANED_CLEANUP".
+     * - The entity must be removed from activeEntities.
+     */
+    @Test
+    void testOrphanCleanupCompletesFuturePromptly() throws Exception {
+        var testClock = new SimpleTestClock(1_000L);
+        migration.setClock(testClock);
+
+        var entityId = "orphan-entity";
+        var future = new CompletableFuture<MigrationResult>();
+
+        // Build a minimal entity; supply a no-op lock (already unlocked) and a clock
+        // that returns the current testClock time.
+        var lock = new ReentrantLock();
+        var entity = new CrossProcessMigration.CrossProcessMigrationEntity(
+            entityId,
+            source, dest,
+            future,
+            lock,
+            testClock::currentTimeMillis,
+            () -> {}, // incrementConcurrent
+            () -> {}, // decrementConcurrent
+            token -> {}, // checkAndStoreMigration
+            () -> {}, // recordDuplicateRejection
+            reason -> {}, // recordFailure
+            latency -> {}, // recordSuccess
+            () -> {}, // recordAlreadyMigrating
+            () -> {}, // recordRollbackFailure
+            reason -> {}, // recordAbort
+            dedup,
+            id -> {}, // recordOrphanedEntity
+            MigrationConfig.defaults(),
+            state -> {}, // walRecordPrepare
+            txnId -> {}, // walRecordCommit
+            txnId -> {}  // walRecordAbort
+        );
+
+        // Back-date phaseStartTime to 6 minutes ago (well past the 5-min orphan threshold).
+        long sixMinutesAgoMs = testClock.currentTimeMillis() - (6 * 60 * 1000);
+        entity.phaseStartTime = sixMinutesAgoMs;
+
+        // Inject the stuck entity directly (simulates the "orphan" bug scenario).
+        migration.injectActiveEntityForTesting(entityId, entity);
+        assertFalse(future.isDone(), "Future must be incomplete before cleanup");
+
+        // Trigger cleanup — must complete the future before returning.
+        migration.triggerOrphanCleanupForTesting();
+
+        // Future must be done immediately (no blocking).
+        assertTrue(future.isDone(), "Orphan cleanup must complete the resultFuture");
+
+        // Bounded get — if this hangs the fix regressed (fail fast, not hang the suite).
+        var result = future.get(1, TimeUnit.SECONDS);
+        assertNotNull(result, "Result must not be null");
+        assertFalse(result.success(), "Orphaned entity result must be a failure");
+        assertEquals("ORPHANED_CLEANUP", result.reason(),
+                     "Failure reason must be ORPHANED_CLEANUP");
+
+        // Entity must be removed from active tracking.
+        assertEquals(0, migration.getActiveEntityCount(),
+                     "Orphaned entity must be removed from activeEntities after cleanup");
+    }
+
+    /**
+     * Luciferase-7wzml.41: phaseStartTime must be declared volatile.
+     * Verifies the field annotation via reflection so a refactor that drops volatile is caught.
+     */
+    @Test
+    void testPhaseStartTimeIsVolatile() throws Exception {
+        var field = CrossProcessMigration.CrossProcessMigrationEntity.class
+                        .getDeclaredField("phaseStartTime");
+        int modifiers = field.getModifiers();
+        assertTrue(java.lang.reflect.Modifier.isVolatile(modifiers),
+                   "CrossProcessMigrationEntity.phaseStartTime must be volatile for cross-thread visibility");
+    }
+
     // ===== Helper Classes =====
+
+    /**
+     * Minimal controllable clock for deterministic testing (local to avoid cross-module deps).
+     */
+    private static class SimpleTestClock implements Clock {
+        private volatile long millis;
+
+        SimpleTestClock(long initialMillis) {
+            this.millis = initialMillis;
+        }
+
+        void advance(long deltaMs) {
+            millis += deltaMs;
+        }
+
+        @Override
+        public long currentTimeMillis() {
+            return millis;
+        }
+
+        @Override
+        public long nanoTime() {
+            return millis * 1_000_000L;
+        }
+    }
 
     /**
      * Test bubble reference that implements TestableEntityStore.

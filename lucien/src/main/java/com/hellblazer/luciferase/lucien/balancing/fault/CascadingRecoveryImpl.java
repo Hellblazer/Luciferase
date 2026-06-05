@@ -10,6 +10,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 /**
  * Multi-level recovery with fallback strategies.
@@ -44,13 +46,20 @@ import java.util.concurrent.Executors;
  * @see BarrierRecoveryImpl
  * @see NoOpRecoveryImpl
  */
-public final class CascadingRecoveryImpl implements PartitionRecovery {
+public final class CascadingRecoveryImpl implements PartitionRecovery, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(CascadingRecoveryImpl.class);
     private static final String STRATEGY_NAME = "cascading-recovery";
 
     private volatile boolean simulatedRecoveryEnabled = false;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
     private volatile Clock clock = Clock.system(); // Clock injection (Luciferase-mt7hi)
+    /**
+     * Per-level outcome predicate (Luciferase-7wzml.11).
+     * Default: every level succeeds. Inject via setLevelOutcome to drive escalation/retry in tests.
+     * Evaluated BEFORE markHealthy — a false return skips markHealthy, eliminating the tautology.
+     */
+    private volatile Function<RecoveryLevel, Boolean> levelOutcome = level -> true;
     private final FaultConfiguration config;
     private final ExecutorService executor;
     private final CopyOnWriteArrayList<RecoveryProgressObserver> observers;
@@ -58,8 +67,9 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
 
     /**
      * Recovery levels for cascading recovery.
+     * Package-private so tests can inject per-level outcomes via setLevelOutcome (Luciferase-7wzml.11).
      */
-    private enum RecoveryLevel {
+    enum RecoveryLevel {
         BARRIER("Barrier Synchronization"),
         STATE_TRANSFER("State Transfer"),
         FULL_REBUILD("Full Rebuild");
@@ -75,90 +85,52 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         }
     }
 
-    /**
-     * Create cascading recovery with default configuration.
-     */
     public CascadingRecoveryImpl() {
         this(FaultConfiguration.defaultConfig());
     }
 
-    /**
-     * Create cascading recovery with custom configuration.
-     *
-     * @param config fault configuration
-     */
     public CascadingRecoveryImpl(FaultConfiguration config) {
-        // Virtual-thread-per-task (Luciferase-h08sd), matching BalanceCoordinatorServer: cascading recovery is
-        // invoked when many partitions fail at once and each task parks on a Thread.sleep backoff. A cached platform
-        // pool would spawn N unbounded OS threads (thread explosion); virtual threads make N concurrent parked
-        // backoffs cheap. Virtual threads are daemon-equivalent (never block JVM shutdown).
         this(config, Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("cascading-recovery-", 0).factory()),
              true);
     }
 
-    /**
-     * Create cascading recovery with custom executor.
-     *
-     * @param config fault configuration
-     * @param executor executor for async recovery operations
-     * @param shutdownExecutorOnClose whether to shutdown executor on close
-     */
-    public CascadingRecoveryImpl(
-        FaultConfiguration config,
-        ExecutorService executor,
-        boolean shutdownExecutorOnClose
-    ) {
+    public CascadingRecoveryImpl(FaultConfiguration config, ExecutorService executor, boolean shutdownExecutorOnClose) {
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.executor = Objects.requireNonNull(executor, "executor cannot be null");
         this.shutdownExecutorOnClose = shutdownExecutorOnClose;
         this.observers = new CopyOnWriteArrayList<>();
     }
 
-    /**
-     * The executor backing async recovery operations. Package-private for tests that need to verify the
-     * threading model (Luciferase-h08sd) without reflection.
-     */
+    /** Package-private for tests (Luciferase-h08sd). */
     ExecutorService executor() {
         return executor;
     }
 
-    /**
-     * Enable the simulation scaffolding for this recovery instance.
-     * <p>
-     * By default, {@link #recover(UUID, FaultHandler)} returns an explicit failure
-     * because all recovery levels (barrier, state transfer, full rebuild) are stubs —
-     * calling it would silently do nothing useful and report success. Call this method
-     * to opt into the simulation scaffolding. Intended for scaffolding tests only;
-     * it does NOT perform real partition-state restoration.
-     *
-     * @return this instance for fluent use
-     */
     public CascadingRecoveryImpl enableSimulatedRecovery() {
         this.simulatedRecoveryEnabled = true;
         return this;
     }
 
-    /** Inject a deterministic clock for tests (Luciferase-mt7hi). Defaults to {@code Clock.system()}. */
+    /** Inject a deterministic clock for tests (Luciferase-mt7hi). */
     public CascadingRecoveryImpl setClock(Clock clock) {
         this.clock = Objects.requireNonNull(clock, "clock");
         return this;
     }
 
     /**
-     * Add progress observer for monitoring recovery operations.
-     *
-     * @param observer observer to receive progress updates
+     * Inject per-level outcome predicate (Luciferase-7wzml.11).
+     * false = that level's verifyRecovery fails without calling markHealthy.
      */
+    public CascadingRecoveryImpl setLevelOutcome(Function<RecoveryLevel, Boolean> levelOutcome) {
+        this.levelOutcome = Objects.requireNonNull(levelOutcome, "levelOutcome");
+        return this;
+    }
+
     public void addObserver(RecoveryProgressObserver observer) {
         Objects.requireNonNull(observer, "observer cannot be null");
         observers.add(observer);
     }
 
-    /**
-     * Remove progress observer.
-     *
-     * @param observer observer to remove
-     */
     public void removeObserver(RecoveryProgressObserver observer) {
         observers.remove(observer);
     }
@@ -170,8 +142,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         if (!simulatedRecoveryEnabled) {
             return CompletableFuture.completedFuture(RecoveryResult.failure(
                 partitionId, 0L, STRATEGY_NAME, 1,
-                "Real partition recovery is not implemented (entity redistribution / state transfer / rebalancing are stubs). " +
-                "Call enableSimulatedRecovery() to run the scaffolding simulation, or use NoOpRecoveryImpl for an explicit no-op.",
+                "Real partition recovery is not implemented. Call enableSimulatedRecovery() to run scaffolding.",
                 null));
         }
 
@@ -184,34 +155,20 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
             try {
                 return executeCascadingRecovery(partitionId, handler, startTime);
             } catch (Exception e) {
-                log.error("Cascading recovery failed for partition {}: {}",
-                    partitionId, e.getMessage(), e);
+                log.error("Cascading recovery failed for partition {}: {}", partitionId, e.getMessage(), e);
                 var duration = clock.currentTimeMillis() - startTime;
-                notifyEvent(partitionId, RecoveryEventType.RECOVERY_FAILED,
-                    "Recovery failed: " + e.getMessage());
-                return RecoveryResult.failure(
-                    partitionId,
-                    duration,
-                    STRATEGY_NAME,
-                    1,
-                    "Recovery failed with exception: " + e.getMessage(),
-                    e
-                );
+                notifyEvent(partitionId, RecoveryEventType.RECOVERY_FAILED, "Recovery failed: " + e.getMessage());
+                return RecoveryResult.failure(partitionId, duration, STRATEGY_NAME, 1,
+                    "Recovery failed with exception: " + e.getMessage(), e);
             }
         }, executor);
     }
 
-    private RecoveryResult executeCascadingRecovery(
-        UUID partitionId,
-        FaultHandler handler,
-        long startTime
-    ) {
+    private RecoveryResult executeCascadingRecovery(UUID partitionId, FaultHandler handler, long startTime) {
         var totalAttempts = 0;
 
-        // Try each recovery level in sequence
         for (var level : RecoveryLevel.values()) {
-            log.info("Attempting recovery level: {} for partition {}",
-                level.getDescription(), partitionId);
+            log.info("Attempting recovery level: {} for partition {}", level.getDescription(), partitionId);
 
             var result = attemptRecoveryLevel(partitionId, handler, level, startTime, totalAttempts);
             totalAttempts += result.attemptsNeeded();
@@ -226,30 +183,18 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
                 level.getDescription(), partitionId);
         }
 
-        // All levels failed
         var duration = clock.currentTimeMillis() - startTime;
         log.error("Cascading recovery exhausted all levels for partition {} (total attempts: {})",
             partitionId, totalAttempts);
         notifyEvent(partitionId, RecoveryEventType.RECOVERY_FAILED,
             "All recovery levels exhausted after " + totalAttempts + " attempts");
 
-        return RecoveryResult.failure(
-            partitionId,
-            duration,
-            STRATEGY_NAME,
-            totalAttempts,
-            "All recovery levels exhausted (barrier, state transfer, rebuild)",
-            null
-        );
+        return RecoveryResult.failure(partitionId, duration, STRATEGY_NAME, totalAttempts,
+            "All recovery levels exhausted (barrier, state transfer, rebuild)", null);
     }
 
-    private RecoveryResult attemptRecoveryLevel(
-        UUID partitionId,
-        FaultHandler handler,
-        RecoveryLevel level,
-        long startTime,
-        int previousAttempts
-    ) {
+    private RecoveryResult attemptRecoveryLevel(UUID partitionId, FaultHandler handler, RecoveryLevel level,
+                                                 long startTime, int previousAttempts) {
         var maxRetries = config.maxRecoveryRetries();
 
         for (var attempt = 1; attempt <= maxRetries; attempt++) {
@@ -266,7 +211,6 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
                 return result;
             }
 
-            // Retry with exponential backoff
             if (attempt < maxRetries) {
                 var backoffMs = (long) (100 * Math.pow(2, attempt - 1));
                 log.debug("Level {} failed, retrying after {}ms", level.getDescription(), backoffMs);
@@ -275,161 +219,78 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     var duration = clock.currentTimeMillis() - startTime;
-                    return RecoveryResult.failure(
-                        partitionId,
-                        duration,
-                        STRATEGY_NAME,
-                        previousAttempts + attempt,
-                        "Recovery interrupted during retry backoff at level " + level.getDescription(),
-                        e
-                    );
+                    return RecoveryResult.failure(partitionId, duration, STRATEGY_NAME, previousAttempts + attempt,
+                        "Recovery interrupted during retry backoff at level " + level.getDescription(), e);
                 }
             }
         }
 
-        // Level failed after all retries
         var duration = clock.currentTimeMillis() - startTime;
-        return RecoveryResult.failure(
-            partitionId,
-            duration,
-            STRATEGY_NAME,
-            previousAttempts + maxRetries,
-            "Recovery level " + level.getDescription() + " failed after " + maxRetries + " attempts",
-            null
-        );
+        return RecoveryResult.failure(partitionId, duration, STRATEGY_NAME, previousAttempts + maxRetries,
+            "Recovery level " + level.getDescription() + " failed after " + maxRetries + " attempts", null);
     }
 
-    private RecoveryResult attemptBarrierSync(
-        UUID partitionId,
-        FaultHandler handler,
-        long startTime,
-        int attemptNumber
-    ) {
-        notifyProgress(partitionId, "barrier-sync", 30, startTime,
-            "Attempting barrier synchronization (Level 1)");
-        notifyEvent(partitionId, RecoveryEventType.RECOVERY_BARRIER,
-            "Barrier synchronization at level 1");
+    private RecoveryResult attemptBarrierSync(UUID partitionId, FaultHandler handler, long startTime, int attemptNumber) {
+        notifyProgress(partitionId, "barrier-sync", 30, startTime, "Attempting barrier synchronization (Level 1)");
+        notifyEvent(partitionId, RecoveryEventType.RECOVERY_BARRIER, "Barrier synchronization at level 1");
 
-        // Validate partition state
         if (!validatePartitionState(partitionId, handler)) {
             var duration = clock.currentTimeMillis() - startTime;
-            return RecoveryResult.failure(
-                partitionId,
-                duration,
-                STRATEGY_NAME,
-                attemptNumber,
-                "Partition validation failed at barrier sync level",
-                null
-            );
+            return RecoveryResult.failure(partitionId, duration, STRATEGY_NAME, attemptNumber,
+                "Partition validation failed at barrier sync level", null);
         }
 
-        // Simulate barrier synchronization
         log.debug("Performing barrier sync for partition {}", partitionId);
 
-        // Verify recovery
-        if (verifyRecovery(partitionId, handler)) {
+        if (verifyRecovery(partitionId, handler, RecoveryLevel.BARRIER)) {
             var duration = clock.currentTimeMillis() - startTime;
             notifyProgress(partitionId, "complete", 100, startTime, "Recovery completed via barrier sync");
-            notifyEvent(partitionId, RecoveryEventType.RECOVERY_COMPLETED,
-                "Recovery completed at barrier sync level");
-            return RecoveryResult.success(
-                partitionId,
-                duration,
-                STRATEGY_NAME,
-                attemptNumber,
-                "Recovery succeeded via barrier synchronization (Level 1)"
-            );
+            notifyEvent(partitionId, RecoveryEventType.RECOVERY_COMPLETED, "Recovery completed at barrier sync level");
+            return RecoveryResult.success(partitionId, duration, STRATEGY_NAME, attemptNumber,
+                "Recovery succeeded via barrier synchronization (Level 1)");
         }
 
         var duration = clock.currentTimeMillis() - startTime;
-        return RecoveryResult.failure(
-            partitionId,
-            duration,
-            STRATEGY_NAME,
-            attemptNumber,
-            "Barrier synchronization failed",
-            null
-        );
+        return RecoveryResult.failure(partitionId, duration, STRATEGY_NAME, attemptNumber,
+            "Barrier synchronization failed", null);
     }
 
-    private RecoveryResult attemptStateTransfer(
-        UUID partitionId,
-        FaultHandler handler,
-        long startTime,
-        int attemptNumber
-    ) {
-        notifyProgress(partitionId, "state-transfer", 60, startTime,
-            "Attempting state transfer (Level 2)");
-        notifyEvent(partitionId, RecoveryEventType.RECOVERY_STATE_SYNC,
-            "State transfer at level 2");
+    private RecoveryResult attemptStateTransfer(UUID partitionId, FaultHandler handler, long startTime, int attemptNumber) {
+        notifyProgress(partitionId, "state-transfer", 60, startTime, "Attempting state transfer (Level 2)");
+        notifyEvent(partitionId, RecoveryEventType.RECOVERY_STATE_SYNC, "State transfer at level 2");
 
         log.debug("Performing state transfer for partition {}", partitionId);
 
-        // Simulate state transfer (would involve ghost layer sync in real implementation)
-
-        if (verifyRecovery(partitionId, handler)) {
+        if (verifyRecovery(partitionId, handler, RecoveryLevel.STATE_TRANSFER)) {
             var duration = clock.currentTimeMillis() - startTime;
             notifyProgress(partitionId, "complete", 100, startTime, "Recovery completed via state transfer");
-            notifyEvent(partitionId, RecoveryEventType.RECOVERY_COMPLETED,
-                "Recovery completed at state transfer level");
-            return RecoveryResult.success(
-                partitionId,
-                duration,
-                STRATEGY_NAME,
-                attemptNumber,
-                "Recovery succeeded via state transfer (Level 2)"
-            );
+            notifyEvent(partitionId, RecoveryEventType.RECOVERY_COMPLETED, "Recovery completed at state transfer level");
+            return RecoveryResult.success(partitionId, duration, STRATEGY_NAME, attemptNumber,
+                "Recovery succeeded via state transfer (Level 2)");
         }
 
         var duration = clock.currentTimeMillis() - startTime;
-        return RecoveryResult.failure(
-            partitionId,
-            duration,
-            STRATEGY_NAME,
-            attemptNumber,
-            "State transfer failed",
-            null
-        );
+        return RecoveryResult.failure(partitionId, duration, STRATEGY_NAME, attemptNumber,
+            "State transfer failed", null);
     }
 
-    private RecoveryResult attemptFullRebuild(
-        UUID partitionId,
-        FaultHandler handler,
-        long startTime,
-        int attemptNumber
-    ) {
-        notifyProgress(partitionId, "full-rebuild", 90, startTime,
-            "Attempting full rebuild (Level 3)");
-        notifyEvent(partitionId, RecoveryEventType.RECOVERY_STATE_SYNC,
-            "Full rebuild at level 3");
+    private RecoveryResult attemptFullRebuild(UUID partitionId, FaultHandler handler, long startTime, int attemptNumber) {
+        notifyProgress(partitionId, "full-rebuild", 90, startTime, "Attempting full rebuild (Level 3)");
+        notifyEvent(partitionId, RecoveryEventType.RECOVERY_STATE_SYNC, "Full rebuild at level 3");
 
         log.debug("Performing full rebuild for partition {}", partitionId);
 
-        // Simulate full rebuild (would trigger complete partition reconstruction)
-
-        if (verifyRecovery(partitionId, handler)) {
+        if (verifyRecovery(partitionId, handler, RecoveryLevel.FULL_REBUILD)) {
             var duration = clock.currentTimeMillis() - startTime;
             notifyProgress(partitionId, "complete", 100, startTime, "Recovery completed via full rebuild");
-            notifyEvent(partitionId, RecoveryEventType.RECOVERY_COMPLETED,
-                "Recovery completed at full rebuild level");
-            return RecoveryResult.success(
-                partitionId,
-                duration,
-                STRATEGY_NAME,
-                attemptNumber,
-                "Recovery succeeded via full rebuild (Level 3)"
-            );
+            notifyEvent(partitionId, RecoveryEventType.RECOVERY_COMPLETED, "Recovery completed at full rebuild level");
+            return RecoveryResult.success(partitionId, duration, STRATEGY_NAME, attemptNumber,
+                "Recovery succeeded via full rebuild (Level 3)");
         }
 
         var duration = clock.currentTimeMillis() - startTime;
-        return RecoveryResult.failure(
-            partitionId,
-            duration,
-            STRATEGY_NAME,
-            attemptNumber,
-            "Full rebuild failed",
-            null
-        );
+        return RecoveryResult.failure(partitionId, duration, STRATEGY_NAME, attemptNumber,
+            "Full rebuild failed", null);
     }
 
     private boolean validatePartitionState(UUID partitionId, FaultHandler handler) {
@@ -438,17 +299,23 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
             log.warn("Partition {} is unknown to fault handler", partitionId);
             return false;
         }
-
         return status == PartitionStatus.SUSPECTED || status == PartitionStatus.FAILED;
     }
 
-    private boolean verifyRecovery(UUID partitionId, FaultHandler handler) {
-        log.debug("Verifying recovery for partition {}", partitionId);
+    /**
+     * Verify simulated recovery outcome (Luciferase-7wzml.11).
+     * Consults injected levelOutcome predicate BEFORE calling markHealthy.
+     * A false result does NOT call markHealthy — no tautological self-confirmation.
+     */
+    private boolean verifyRecovery(UUID partitionId, FaultHandler handler, RecoveryLevel level) {
+        log.debug("Verifying recovery for partition {} at level {}", partitionId, level.getDescription());
 
-        // Mark partition healthy to indicate successful recovery
+        if (!levelOutcome.apply(level)) {
+            log.debug("Injected outcome says level {} failed for partition {}", level.getDescription(), partitionId);
+            return false;
+        }
+
         handler.markHealthy(partitionId);
-
-        // Verify status transition
         var status = handler.checkHealth(partitionId);
         return status == PartitionStatus.HEALTHY;
     }
@@ -464,10 +331,8 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
             return false;
         }
 
-        // Can recover if partition is in SUSPECTED or FAILED state
         var canRecover = status == PartitionStatus.SUSPECTED || status == PartitionStatus.FAILED;
         log.debug("Partition {} status: {}, canRecover: {}", partitionId, status, canRecover);
-
         return canRecover;
     }
 
@@ -481,11 +346,9 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         return config;
     }
 
-    /**
-     * Shutdown recovery executor (if owned by this instance).
-     */
+    @Override
     public void close() {
-        if (shutdownExecutorOnClose) {
+        if (closed.compareAndSet(false, true) && shutdownExecutorOnClose) {
             executor.shutdown();
         }
     }
@@ -494,15 +357,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         if (observers.isEmpty()) {
             return;
         }
-
-        var progress = new RecoveryProgress(
-            partitionId,
-            phase,
-            percent,
-            clock.currentTimeMillis() - startTime,
-            message
-        );
-
+        var progress = new RecoveryProgress(partitionId, phase, percent, clock.currentTimeMillis() - startTime, message);
         for (var observer : observers) {
             try {
                 observer.onProgress(progress);
@@ -516,9 +371,7 @@ public final class CascadingRecoveryImpl implements PartitionRecovery {
         if (observers.isEmpty()) {
             return;
         }
-
-        var event = RecoveryEvent.now(partitionId, eventType, details);
-
+        var event = RecoveryEvent.at(partitionId, eventType, details, clock.currentTimeMillis());
         for (var observer : observers) {
             try {
                 observer.onEvent(event);

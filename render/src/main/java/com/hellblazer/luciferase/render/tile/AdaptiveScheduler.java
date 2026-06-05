@@ -40,6 +40,17 @@ import com.hellblazer.luciferase.render.tile.SchedulingDecision.RenderMode;
  *   <li>GPU saturation threshold (default 0.8): adjusted based on actual saturation</li>
  * </ul>
  *
+ * <p><b>Thread-safety contract:</b> This class is <em>not thread-safe</em>.
+ * {@link #decide}, {@link #reset}, and {@link #recordPerformance} must be called
+ * from a single thread (the render-loop thread). The mutable state fields
+ * ({@code currentMode}, {@code framesInCurrentMode}, and the three threshold fields)
+ * are declared {@code volatile} so that observer threads (e.g., a monitoring or
+ * stats thread) may read the current mode and thresholds via {@link #getCurrentMode}
+ * and {@link #getCurrentConfig} without torn reads, but <em>write-side
+ * mutual-exclusion is the caller's responsibility</em>. If a concurrent writer is
+ * ever added, the entire {@code decide()} body plus {@code adaptThresholds} must be
+ * guarded by a single lock shared with {@link PerformanceTracker}.
+ *
  * @see PerformanceTracker
  * @see SchedulingDecision
  * @see HybridTileDispatcher
@@ -84,14 +95,24 @@ public class AdaptiveScheduler {
     private final AdaptiveConfig adaptiveConfig;
     private final PerformanceTracker tracker;
 
-    // Current thresholds (dynamically adjusted)
-    private double currentHighThreshold;
-    private double currentLowThreshold;
-    private double currentSaturationThreshold;
+    // Current thresholds (dynamically adjusted).
+    // volatile: write-side is single-threaded (render loop); volatile ensures
+    // observer threads reading getCurrentConfig()/getCurrentMode() see current
+    // values without torn reads. If a concurrent writer is ever added, guard the
+    // full decide()+adaptThresholds() body with a shared lock instead.
+    private volatile double currentHighThreshold;
+    private volatile double currentLowThreshold;
+    private volatile double currentSaturationThreshold;
 
-    // State for hysteresis
-    private RenderMode currentMode;
-    private int framesInCurrentMode;
+    // State for hysteresis — same volatile rationale as threshold fields above.
+    // NOTE: framesInCurrentMode++ (and analogous increments in decide()) is a
+    // non-atomic read-modify-write on a volatile int.  volatile guarantees
+    // observer-read visibility but NOT atomic RMW.  Under the documented
+    // single-writer contract this is safe; if a concurrent writer is ever
+    // added, the entire decide()+adaptThresholds() body must be guarded by a
+    // shared lock — volatile alone is insufficient to prevent lost increments.
+    private volatile RenderMode currentMode;
+    private volatile int framesInCurrentMode;
     private static final int MIN_FRAMES_BEFORE_SWITCH = 5;
 
     /**

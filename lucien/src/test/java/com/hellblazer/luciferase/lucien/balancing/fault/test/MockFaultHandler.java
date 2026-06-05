@@ -122,6 +122,20 @@ public class MockFaultHandler implements FaultHandler {
     }
 
     @Override
+    public void reportHeartbeatFailure(UUID partitionId) {
+        incrementCallCount("reportHeartbeatFailure");
+        var currentStatus = partitionStates.getOrDefault(partitionId, PartitionStatus.HEALTHY);
+        var newStatus = currentStatus == PartitionStatus.HEALTHY ? PartitionStatus.SUSPECTED : PartitionStatus.FAILED;
+        transitionStatus(partitionId, newStatus, "heartbeat timeout");
+    }
+
+    @Override
+    public void reportPartitionFailed(UUID partitionId) {
+        incrementCallCount("reportPartitionFailed");
+        transitionStatus(partitionId, PartitionStatus.FAILED, "terminal failure");
+    }
+
+    @Override
     public void registerRecovery(UUID partitionId, PartitionRecovery recovery) {
         incrementCallCount("registerRecovery");
         recoveryStrategies.put(partitionId, recovery);

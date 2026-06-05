@@ -11,6 +11,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
 import java.util.UUID;
 
 /**
@@ -28,7 +29,17 @@ import java.util.UUID;
  * <p>
  * Usage:
  * <pre>
- * // Wrap a ghost with simulation metadata
+ * // Wrap a ghost with simulation metadata including velocity
+ * var simGhost = new SimulationGhostEntity<>(
+ *     ghostEntity,
+ *     sourceBubbleId,
+ *     currentBucket,
+ *     entityEpoch,
+ *     entityVersion,
+ *     velocity          // real velocity for dead-reckoning (units/s)
+ * );
+ *
+ * // Backward-compat 5-arg form (zero velocity — dead-reckoning inactive)
  * var simGhost = new SimulationGhostEntity<>(
  *     ghostEntity,
  *     sourceBubbleId,
@@ -40,6 +51,7 @@ import java.util.UUID;
  * // Access ghost data
  * var entityId = simGhost.entityId();
  * var position = simGhost.position();
+ * var vel = simGhost.velocity(); // for dead-reckoning
  *
  * // Access simulation metadata
  * var bubbleId = simGhost.sourceBubbleId();
@@ -55,21 +67,47 @@ public record SimulationGhostEntity<ID extends EntityID, Content>(
     UUID sourceBubbleId,
     long bucket,
     long epoch,
-    long version
+    long version,
+    Vector3f velocity
 ) {
 
     /**
-     * Compact constructor for validation (Luciferase-r73c).
+     * Compact constructor for validation (Luciferase-r73c, Luciferase-7wzml.186).
      * Fail-fast approach: validates ghost position is non-null at construction time.
-     * This prevents null positions from entering the system.
+     * Copies velocity defensively so callers cannot mutate the stored vector.
      *
-     * @throws NullPointerException if ghost or ghost.getPosition() is null
+     * @throws NullPointerException if ghost, ghost.getPosition(), sourceBubbleId, or velocity is null
      */
     public SimulationGhostEntity {
         java.util.Objects.requireNonNull(ghost, "Ghost entity must not be null");
         java.util.Objects.requireNonNull(ghost.getPosition(),
             "Ghost entity position must not be null (id=" + (ghost.getEntityId() != null ? ghost.getEntityId() : "unknown") + ")");
         java.util.Objects.requireNonNull(sourceBubbleId, "Source bubble ID must not be null");
+        java.util.Objects.requireNonNull(velocity, "Velocity must not be null — use new Vector3f() for stationary ghosts");
+        velocity = new Vector3f(velocity); // defensive copy — Vector3f is mutable
+    }
+
+    /**
+     * Backward-compatible 5-arg constructor for sites that do not (yet) carry velocity.
+     * Sets velocity to (0,0,0) — dead-reckoning is inactive for these ghosts.
+     * Prefer the 6-arg constructor whenever real velocity is available.
+     */
+    public SimulationGhostEntity(GhostEntityHalo<ID, Content> ghost,
+                                 UUID sourceBubbleId,
+                                 long bucket,
+                                 long epoch,
+                                 long version) {
+        this(ghost, sourceBubbleId, bucket, epoch, version, new Vector3f(0f, 0f, 0f));
+    }
+
+    /**
+     * Returns a defensive copy of the velocity so callers cannot mutate this record's state.
+     *
+     * @return velocity vector (units per second)
+     */
+    @Override
+    public Vector3f velocity() {
+        return new Vector3f(velocity);
     }
 
     /**

@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.causality;
 
 import com.hellblazer.luciferase.simulation.delos.mock.MockFirefliesView;
+import com.hellblazer.luciferase.simulation.persistence.MigrationRecoveryStateSink;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -374,6 +375,43 @@ class EntityMigrationStateMachineTest {
         fsm.transition(entityId, EntityMigrationState.MIGRATING_OUT);
         fsm.onViewChange();
         assertEquals(2L, fsm.getTotalRollbacks(), "Should have 2 rollbacks");
+    }
+
+    /**
+     * Guards the hardcoded RECOVERY_CALLER FQN string in EntityMigrationStateMachine against
+     * rename/move of MigrationRecoveryStateSink. A class rename would leave the string stale,
+     * permanently blocking all crash-recovery replay with no compile error. This test fails
+     * loudly on any rename so the string is kept in sync.
+     *
+     * <p>The direct import in EntityMigrationStateMachine is intentionally avoided because
+     * persistence already imports causality, and a bidirectional import would create a
+     * dependency cycle. The string + this test is the approved pattern (wave-14 H3).
+     */
+    @Test
+    void recoveryCaller_fqnMatchesMigrationRecoveryStateSink() {
+        assertEquals(
+            MigrationRecoveryStateSink.class.getName(),
+            EntityMigrationStateMachine.RECOVERY_CALLER_FOR_TEST,
+            "RECOVERY_CALLER string is stale — rename MigrationRecoveryStateSink and update the constant"
+        );
+    }
+
+    /**
+     * Verifies that the filter-based {@code enforceRecoveryCaller} still rejects callers whose
+     * class does not match the permitted recovery caller.
+     *
+     * <p>This test class ({@code EntityMigrationStateMachineTest}) is not the permitted caller,
+     * so a direct call must throw {@link IllegalCallerException}. Combined with
+     * {@code MigrationRecoveryStateSinkTest#recoverEntityState_viaLambdaDoesNotThrow}, which
+     * calls through an actual lambda from {@code MigrationRecoveryStateSink}, these two tests
+     * together prove that the filter is both robust (no false-negative on lambda dispatch from
+     * the legitimate caller) and strict (no false-positive for a wrong caller).
+     */
+    @Test
+    void enforceRecoveryCaller_wrongCallerStillThrows() {
+        assertThrows(IllegalCallerException.class,
+            () -> fsm.recoverEntityState(entityId, EntityMigrationState.MIGRATING_OUT),
+            "filter-based guard must throw for a caller class that is not RECOVERY_CALLER");
     }
 
     @Test

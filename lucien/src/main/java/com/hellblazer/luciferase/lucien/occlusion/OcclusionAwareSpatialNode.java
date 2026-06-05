@@ -264,7 +264,9 @@ public class OcclusionAwareSpatialNode<ID extends EntityID> extends SpatialNodeI
     }
     
     /**
-     * Clear all occlusion-related data
+     * Clear all occlusion-related data, including active TBVs.
+     * Intentionally clears {@code activeTBVs} here so that this method is correct
+     * when called independently (e.g. an occlusion-reset without a full entity purge).
      */
     public void clearOcclusionData() {
         occlusionScore.set(0.0f);
@@ -274,7 +276,19 @@ public class OcclusionAwareSpatialNode<ID extends EntityID> extends SpatialNodeI
         occludedSinceFrame.set(-1);
         activeTBVs.clear();
     }
-    
+
+    @Override
+    public void clear() {
+        super.clear(); // resets entityIds + childrenMask
+        clearOcclusionData();
+    }
+
+    /**
+     * Clear entities only, leaving occlusion metadata intact.
+     * {@code activeTBVs} is cleared here (in addition to {@link #clearOcclusionData()})
+     * so that each method is correct when called independently: TBVs are entity-scoped
+     * and must not outlive the entities they track.
+     */
     @Override
     public void clearEntities() {
         super.clearEntities();

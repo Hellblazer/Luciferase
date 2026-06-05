@@ -27,6 +27,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -628,6 +634,104 @@ class F323AdaptiveSchedulingTest {
             var config = scheduler.getCurrentConfig();
             var defaults = HybridTileDispatcher.HybridConfig.defaults();
             assertEquals(defaults.highCoherenceThreshold(), config.highCoherenceThreshold());
+        }
+    }
+
+    /**
+     * Validates the documented single-threaded write / volatile-read contract:
+     * <ul>
+     *   <li>decide() produces consistent, non-torn state when called sequentially
+     *       (the normal single-threaded render-loop usage).</li>
+     *   <li>An observer thread reading getCurrentMode() / getCurrentConfig() after
+     *       decide() completes sees the updated values (volatile publication guarantee).</li>
+     * </ul>
+     */
+    @Nested
+    @DisplayName("Thread-safety contract: single writer, volatile observer reads")
+    class ThreadSafetyContractTests {
+
+        @Test
+        @DisplayName("Sequential decide() calls produce consistent framesInCurrentMode and mode")
+        void testSequentialDecideConsistency() {
+            // Warm up: drive into GPU_ONLY mode
+            for (int i = 0; i < 6; i++) {
+                scheduler.decide(true, true, 0.85, 0.3);
+            }
+            assertEquals(RenderMode.GPU_ONLY, scheduler.getCurrentMode());
+
+            // Continuing in the same mode increments framesInCurrentMode without mode flip
+            var d1 = scheduler.decide(true, true, 0.85, 0.3);
+            var d2 = scheduler.decide(true, true, 0.85, 0.3);
+            assertEquals(d1.mode(), d2.mode(), "Mode must be stable under constant conditions");
+            assertNotNull(d1.rationale(), "Rationale must be non-null");
+        }
+
+        @Test
+        @DisplayName("Observer thread reads current mode via volatile without torn value")
+        void testObserverThreadSeesCurrentModeAfterDecide() throws Exception {
+            // This test validates that the volatile keyword on currentMode provides
+            // safe publication to a reader thread — a concurrency smoke test for
+            // the documented single-writer / multi-reader contract.
+
+            // Drive into GPU_ONLY mode on the test (writer) thread
+            for (int i = 0; i < 6; i++) {
+                scheduler.decide(true, true, 0.85, 0.3);
+            }
+
+            var observedMode = new AtomicReference<RenderMode>();
+            var observedHighThreshold = new AtomicReference<Double>();
+            var readerError = new AtomicBoolean(false);
+            var latch = new CountDownLatch(1);
+
+            // Observer thread: reads mode and config once the writer is done
+            var executor = Executors.newSingleThreadExecutor();
+            try {
+                executor.submit(() -> {
+                    try {
+                        // volatile read — no torn value, no stale cache
+                        observedMode.set(scheduler.getCurrentMode());
+                        observedHighThreshold.set(scheduler.getCurrentConfig().highCoherenceThreshold());
+                    } catch (Exception e) {
+                        readerError.set(true);
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+
+                assertTrue(latch.await(2, TimeUnit.SECONDS), "Observer thread timed out");
+            } finally {
+                executor.shutdownNow();
+            }
+
+            assertFalse(readerError.get(), "Observer thread must not throw");
+            assertEquals(RenderMode.GPU_ONLY, observedMode.get(),
+                "Observer must see the mode written by decide() — volatile publication");
+            assertTrue(observedHighThreshold.get() > 0,
+                "Observer must read a valid (non-zero / non-torn) high threshold");
+        }
+
+        @Test
+        @DisplayName("reset() restores defaults visible to a subsequent decide() call")
+        void testResetRestoredDefaultsVisibleToDecide() {
+            // Mutate state
+            for (int i = 0; i < 6; i++) {
+                scheduler.decide(true, true, 0.85, 0.3);
+            }
+            assertEquals(RenderMode.GPU_ONLY, scheduler.getCurrentMode());
+
+            // Reset on same thread (single-writer contract respected)
+            scheduler.reset();
+
+            // decide() on the same thread sees the reset defaults, not stale state
+            var decision = scheduler.decide(true, true, 0.5, 0.3);
+            // After reset, framesInCurrentMode=0 and mode=ADAPTIVE; with coherence 0.5
+            // and low saturation, the first decide() after reset should return ADAPTIVE
+            assertNotNull(decision.mode(), "Mode must be non-null after reset");
+            var config = decision.adjustedConfig();
+            var defaults = HybridTileDispatcher.HybridConfig.defaults();
+            // Threshold should be at or near the reset default (no adaptation data yet)
+            assertEquals(defaults.highCoherenceThreshold(), config.highCoherenceThreshold(), 1e-9,
+                "High threshold must be restored to default by reset()");
         }
     }
 }

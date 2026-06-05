@@ -236,4 +236,176 @@ class LinearTransformationTest extends InvertibleTransformationTestBase {
     void testNullMatrix() {
         assertThrows(IllegalArgumentException.class, () -> new LinearTransformation(null));
     }
+
+    // --- Bead Luciferase-7wzml.59: no-reflection inverse constructor tests ---
+
+    @Test
+    @DisplayName("Inverse-of-inverse round-trip returns original transform result")
+    void testInverseOfInverseRoundTrip() throws TransformationException {
+        var matrix = new double[][]{
+            {2.0, 1.0},
+            {1.0, 1.0}
+        };
+        var t = new LinearTransformation(matrix);
+        var inv = t.inverse().orElseThrow();
+        var invInv = inv.inverse().orElseThrow();
+
+        // inv.inverse() should be equal to the original
+        var point = new Coordinate(new double[]{3.0, 5.0});
+        assertArrayEquals(t.transform(point).values(), invInv.transform(point).values(), 1e-10);
+    }
+
+    @Test
+    @DisplayName("Cached determinant of inverse equals 1/det(original)")
+    void testInverseDeterminantIsReciprocal() throws TransformationException {
+        var matrix = new double[][]{
+            {3.0, 1.0},
+            {2.0, 4.0}  // det = 3*4 - 1*2 = 10
+        };
+        var t = new LinearTransformation(matrix);
+        var inv = (LinearTransformation) t.inverse().orElseThrow();
+
+        var anyPoint = new Coordinate(new double[]{0.0, 0.0});
+        double detOrig = t.computeJacobianDeterminant(anyPoint);          // 10.0
+        double detInv  = inv.computeJacobianDeterminant(anyPoint);        // 0.1
+
+        assertEquals(1.0 / detOrig, detInv, 1e-12);
+    }
+
+    @Test
+    @DisplayName("No reflection API is used — inverse constructor assigns final fields directly")
+    void testNoReflectionInInverseConstruction() {
+        // If the old reflection path were used it would throw under strong JPMS encapsulation
+        // (--illegal-access=deny). Simply exercising the path without an exception is the gate.
+        var matrix = new double[][]{
+            {4.0, 7.0},
+            {2.0, 6.0}
+        };
+        var t = new LinearTransformation(matrix);
+        // Must not throw InaccessibleObjectException / any reflection error
+        var inv = assertDoesNotThrow(() -> t.inverse().orElseThrow());
+        assertNotNull(inv);
+    }
+
+    // --- Bead Luciferase-7wzml.113: composeWithLinear wrong column count for non-square ---
+
+    @Test
+    @DisplayName("compose A(3x2).compose(B=2x3): result is B*A = 2x2")
+    void testComposeNonSquare_3x2_with_2x3() throws TransformationException {
+        // this = A: 3x2  (targetDim=3, sourceDim=2)
+        // other = B: 2x3 (targetDim=2, sourceDim=3)
+        // result = B * A: 2x2
+        // A:
+        // [1 2]
+        // [3 4]
+        // [5 6]
+        var matrixA = new double[][]{
+            {1.0, 2.0},
+            {3.0, 4.0},
+            {5.0, 6.0}
+        };
+        // B:
+        // [7  8  9 ]
+        // [10 11 12]
+        var matrixB = new double[][]{
+            {7.0,  8.0,  9.0},
+            {10.0, 11.0, 12.0}
+        };
+        var A = new LinearTransformation(matrixA);  // 3x2
+        var B = new LinearTransformation(matrixB);  // 2x3
+
+        // compose: A.compose(B) computes B*A (other=B applied first, then this=A)
+        // B*A: (2x3)*(3x2) = 2x2
+        // row0: [7*1+8*3+9*5, 7*2+8*4+9*6] = [7+24+45, 14+32+54] = [76, 100]
+        // row1: [10*1+11*3+12*5, 10*2+11*4+12*6] = [10+33+60, 20+44+72] = [103, 136]
+        var composed = (LinearTransformation) A.compose(B);
+
+        double[][] m = composed.getMatrix();
+        assertEquals(2, m.length,    "result must have 2 rows (B.targetDimension)");
+        assertEquals(2, m[0].length, "result must have 2 columns (A.sourceDimension)");
+        assertArrayEquals(new double[]{76.0, 100.0},  m[0], 1e-10);
+        assertArrayEquals(new double[]{103.0, 136.0}, m[1], 1e-10);
+    }
+
+    @Test
+    @DisplayName("compose A(2x3).compose(B=3x2): result is B*A = 3x3")
+    void testComposeNonSquare_2x3_with_3x2() throws TransformationException {
+        // this = A: 2x3  (targetDim=2, sourceDim=3)
+        // other = B: 3x2 (targetDim=3, sourceDim=2)
+        // result = B * A: 3x3
+        // A:
+        // [1 2 3]
+        // [4 5 6]
+        var matrixA = new double[][]{
+            {1.0, 2.0, 3.0},
+            {4.0, 5.0, 6.0}
+        };
+        // B:
+        // [7  8 ]
+        // [9  10]
+        // [11 12]
+        var matrixB = new double[][]{
+            {7.0,  8.0},
+            {9.0,  10.0},
+            {11.0, 12.0}
+        };
+        var A = new LinearTransformation(matrixA);  // 2x3
+        var B = new LinearTransformation(matrixB);  // 3x2
+
+        // B*A: (3x2)*(2x3) = 3x3
+        // row0: [7*1+8*4, 7*2+8*5, 7*3+8*6] = [7+32, 14+40, 21+48] = [39, 54, 69]
+        // row1: [9*1+10*4, 9*2+10*5, 9*3+10*6] = [9+40, 18+50, 27+60] = [49, 68, 87]
+        // row2: [11*1+12*4, 11*2+12*5, 11*3+12*6] = [11+48, 22+60, 33+72] = [59, 82, 105]
+        var composed = (LinearTransformation) A.compose(B);
+
+        double[][] m = composed.getMatrix();
+        assertEquals(3, m.length,    "result must have 3 rows (B.targetDimension)");
+        assertEquals(3, m[0].length, "result must have 3 columns (A.sourceDimension)");
+        assertArrayEquals(new double[]{39.0,  54.0,  69.0},  m[0], 1e-10);
+        assertArrayEquals(new double[]{49.0,  68.0,  87.0},  m[1], 1e-10);
+        assertArrayEquals(new double[]{59.0,  82.0, 105.0},  m[2], 1e-10);
+    }
+
+    @Test
+    @DisplayName("compose square matrices (regression guard — existing behavior preserved)")
+    void testComposeSquare_2x2() throws TransformationException {
+        // A.compose(B) computes result = B*A (other=B applied first)
+        // A = [[1,2],[3,4]], B = [[5,6],[7,8]]
+        // B*A: row0=[5*1+6*3, 5*2+6*4]=[23,34], row1=[7*1+8*3, 7*2+8*4]=[31,46]
+        var matrixA = new double[][]{{1.0, 2.0}, {3.0, 4.0}};
+        var matrixB = new double[][]{{5.0, 6.0}, {7.0, 8.0}};
+        var A = new LinearTransformation(matrixA);
+        var B = new LinearTransformation(matrixB);
+        var composed = (LinearTransformation) A.compose(B);
+        double[][] m = composed.getMatrix();
+        assertEquals(2, m.length);
+        assertEquals(2, m[0].length);
+        assertArrayEquals(new double[]{23.0, 34.0}, m[0], 1e-10);
+        assertArrayEquals(new double[]{31.0, 46.0}, m[1], 1e-10);
+    }
+
+    @Test
+    @DisplayName("compose guard regression: this.source==other.target but this.target!=other.source must throw")
+    void testComposeIncompatibleDimensions_regressionGuard() {
+        // this = A: 3x2 (targetDim=3, sourceDim=2)
+        // other = B: 4x2 (targetDim=2, sourceDim=4... wait, see below)
+        // We need: this.sourceDim(2) == other.targetDim(2)  [passes BROKEN guard]
+        //      AND this.targetDim(3) != other.sourceDim(4)  [thrown by FIXED guard]
+        // B is 2x4: targetDim=2, sourceDim=4 — a 2-row 4-column matrix
+        var matrixA = new double[][]{
+            {1.0, 2.0},
+            {3.0, 4.0},
+            {5.0, 6.0}
+        };  // A: 3 rows x 2 cols → targetDim=3, sourceDim=2
+        var matrixB = new double[][]{
+            {1.0, 2.0, 3.0, 4.0},
+            {5.0, 6.0, 7.0, 8.0}
+        };  // B: 2 rows x 4 cols → targetDim=2, sourceDim=4
+        var A = new LinearTransformation(matrixA);
+        var B = new LinearTransformation(matrixB);
+        // Broken guard would NOT throw (A.sourceDim=2 == B.targetDim=2), then AIOOBE in k-loop.
+        // Fixed guard MUST throw (A.targetDim=3 != B.sourceDim=4).
+        assertThrows(IllegalArgumentException.class, () -> A.compose(B),
+            "Fixed guard must throw when this.targetDimension != other.sourceDimension");
+    }
 }

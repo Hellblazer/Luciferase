@@ -48,6 +48,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import com.hellblazer.luciferase.common.time.Clock;
 
 /**
  * Abstract base class for spatial index implementations. Provides common functionality for entity management,
@@ -85,7 +86,7 @@ import java.util.stream.Stream;
  */
 public abstract class AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
 implements SpatialIndex<Key, ID, Content>,
-           com.hellblazer.luciferase.lucien.balancing.ShapeWeightProvider {
+           com.hellblazer.luciferase.lucien.balancing.ShapeWeightProvider, AutoCloseable {
 
     /**
      * Record representing a neighbor search result with distance information.
@@ -167,7 +168,9 @@ implements SpatialIndex<Key, ID, Content>,
     // Tree balancing support
     private         TreeBalancingStrategy<ID>                        balancingStrategy;
     private         boolean                                          autoBalancingEnabled     = false;
-    private         long                                             lastBalancingTime        = 0;
+    private final   java.util.concurrent.atomic.AtomicLong          lastBalancingTime        = new java.util.concurrent.atomic.AtomicLong(0);
+    // Luciferase-7wzml.125: volatile for safe publication when setClock() swaps the implementation.
+    private volatile Clock                                           clock                    = Clock.system();
 
     /**
      * Constructor with common parameters
@@ -180,7 +183,7 @@ implements SpatialIndex<Key, ID, Content>,
         this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
         this.spatialIndex = new ConcurrentSkipListMap<>();
         this.lock = new ReentrantReadWriteLock();
-        this.balancingStrategy = new DefaultBalancingStrategy<>();
+        this.balancingStrategy = new DefaultBalancingStrategy<>(0.25, 0.9, 0.3, 60000, maxEntitiesPerNode);
         this.treeBalancer = createTreeBalancer();
         this.bulkProcessor = new BulkOperationProcessor<>(this);
         this.subdivisionManager = new DeferredSubdivisionManager<>();
@@ -353,13 +356,18 @@ implements SpatialIndex<Key, ID, Content>,
     }
 
     /**
-     * Configure parallel bulk operations
+     * Configure parallel bulk operations. Shuts down the OLD pool before the volatile swap to avoid leaking the
+     * replaced pool (Luciferase-7wzml.60).
      */
     public void configureParallelOperations(ParallelBulkOperations.ParallelConfig config) {
         if (config == null) {
             throw new IllegalArgumentException("Parallel config cannot be null");
         }
+        var old = this.parallelOperations;
         this.parallelOperations = new ParallelBulkOperations<>(this, bulkProcessor, config);
+        if (old != null) {
+            old.close(); // shutdown + awaitTermination; safe to call after the swap
+        }
     }
 
     /**
@@ -857,6 +865,24 @@ implements SpatialIndex<Key, ID, Content>,
         }
     }
 
+    /**
+     * O(log N) entity-ID lookup by spatial key (Luciferase-7wzml.2 H1). Backed by a direct
+     * {@link java.util.concurrent.ConcurrentSkipListMap#get} — no stream scan needed.
+     */
+    @Override
+    public Set<ID> getEntityIdsAt(Key key) {
+        lock.readLock().lock();
+        try {
+            var node = getSpatialIndex().get(key);
+            if (node == null || node.isEmpty()) {
+                return java.util.Collections.emptySet();
+            }
+            return node.getEntityIdsAsSet();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     /** Auto-id insert (no bounds). RDR-008 P6: delegates to {@code EntityLifecycleManager}. */
     @Override
     public ID insert(Point3f position, byte level, Content content) {
@@ -1237,6 +1263,17 @@ implements SpatialIndex<Key, ID, Content>,
     }
 
     /**
+     * Inject a clock for deterministic time control in tests (Luciferase-7wzml.125 / mt7hi).
+     * Defaults to {@link Clock#system()} at construction time.
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        if (dsoc != null) {
+            dsoc.setClock(clock);
+        }
+    }
+
+    /**
      * Enable or disable automatic balancing.
      */
     public void setAutoBalancingEnabled(boolean enabled) {
@@ -1260,6 +1297,15 @@ implements SpatialIndex<Key, ID, Content>,
         }
     }
 
+    public TreeBalancingStrategy<ID> getBalancingStrategy() {
+        lock.readLock().lock();
+        try {
+            return balancingStrategy;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     @Override
     public void setCollisionShape(ID entityId, CollisionShape shape) {
         collisions.setCollisionShape(entityId, shape);
@@ -1272,6 +1318,19 @@ implements SpatialIndex<Key, ID, Content>,
         if (parallelOperations != null) {
             parallelOperations.shutdown();
         }
+    }
+
+    /**
+     * Release all resources held by this index: parallel operation pools and distributed ghost subsystem.
+     * Implements {@link AutoCloseable} so try-with-resources works (Luciferase-7wzml.60).
+     */
+    @Override
+    public void close() {
+        var ops = parallelOperations;
+        if (ops != null) {
+            ops.close();
+        }
+        ghost.shutdownDistributedGhosts();
     }
 
     // ===== Plane Intersection Abstract Methods =====
@@ -1443,22 +1502,33 @@ implements SpatialIndex<Key, ID, Content>,
 
     /**
      * Check and perform automatic balancing if needed.
+     *
+     * <p>Thread-safe: uses a CAS on {@code lastBalancingTime} so that at most one concurrent caller per interval
+     * proceeds to rebalance (Luciferase-7wzml.125). Time is sourced from the injected {@link Clock} (mt7hi).
      */
     protected void checkAutoBalance() {
         if (!autoBalancingEnabled) {
             return;
         }
 
-        var currentTime = System.currentTimeMillis();
-        if (currentTime - lastBalancingTime < balancingStrategy.getMinRebalancingInterval()) {
+        var currentTime = clock.currentTimeMillis();
+        var prev = lastBalancingTime.get();
+        if (currentTime - prev < balancingStrategy.getMinRebalancingInterval()) {
+            return;
+        }
+
+        // CAS: only the winner proceeds; others see the updated timestamp on their next check.
+        if (!lastBalancingTime.compareAndSet(prev, currentTime)) {
             return;
         }
 
         var stats = getBalancingStats();
-        if (balancingStrategy.shouldRebalanceTree(stats)) {
-            lastBalancingTime = currentTime;
-            treeBalancer.rebalanceTree();
+        if (!balancingStrategy.shouldRebalanceTree(stats)) {
+            // Strategy decided against rebalancing; restore prev so the interval is not consumed.
+            lastBalancingTime.compareAndSet(currentTime, prev);
+            return;
         }
+        treeBalancer.rebalanceTree();
     }
 
     // ===== Frustum Culling Implementation =====
@@ -2393,8 +2463,8 @@ implements SpatialIndex<Key, ID, Content>,
         return entityManager.generateEntityId();
     }
 
-    // Package-private accessors for StackBasedTreeBuilder
-    EntityManager<Key, ID, Content> getEntityManager() {
+    // Accessible to sub-packages (e.g. lucien.octree.OctreeBalancer) and tests
+    public EntityManager<Key, ID, Content> getEntityManager() {
         return entityManager;
     }
 
@@ -3043,6 +3113,8 @@ implements SpatialIndex<Key, ID, Content>,
     public void enableDSOC(DSOCConfiguration config, int bufferWidth, int bufferHeight) {
         // RDR-008 P1: the DSOC cluster is encapsulated in DsocController.
         this.dsoc = new DsocController<>(core, new FrustumGeometryImpl(), culler, config, bufferWidth, bufferHeight);
+        // Forward any pre-installed clock so frame-timing is deterministic (Luciferase-7wzml.144).
+        this.dsoc.setClock(this.clock);
     }
     
     /**

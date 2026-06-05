@@ -17,6 +17,9 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.MultiBubbleSimulation;
+import com.hellblazer.luciferase.simulation.bubble.RealTimeController;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -273,9 +276,37 @@ class MultiBubbleSimulationTest {
         simulation.start();
         Thread.sleep(100);
 
-        // Close should stop simulation and release resources
+        // Snapshot tick-listener counts per bubble before close
+        var bubblesBeforeClose = simulation.getAllBubbles();
+        var bubbleControllers = bubblesBeforeClose.stream()
+            .map(EnhancedBubble::getRealTimeController)
+            .toList();
+        var listenerCountsBefore = bubbleControllers.stream()
+            .mapToInt(RealTimeController::getTickListenerCount)
+            .toArray();
+
         simulation.close();
 
-        assertFalse(simulation.isRunning());
+        assertFalse(simulation.isRunning(), "Simulation should not be running after close()");
+
+        // Every bubble's ghostCoordinator tick listener must have been removed
+        for (int i = 0; i < bubbleControllers.size(); i++) {
+            int after = bubbleControllers.get(i).getTickListenerCount();
+            assertTrue(after < listenerCountsBefore[i],
+                "Bubble[" + i + "]: tick listener count should drop after close(); before=" +
+                listenerCountsBefore[i] + " after=" + after);
+        }
+    }
+
+    @Test
+    void testClose_idempotent() throws Exception {
+        simulation = new MultiBubbleSimulation(3, (byte) 1, 30, WorldBounds.DEFAULT, new FlockingBehavior());
+        simulation.start();
+        Thread.sleep(50);
+
+        assertDoesNotThrow(() -> {
+            simulation.close();
+            simulation.close(); // must not throw
+        }, "MultiBubbleSimulation.close() must be idempotent");
     }
 }

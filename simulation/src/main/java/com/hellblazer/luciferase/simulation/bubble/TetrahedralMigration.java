@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Coordinates entity migration across tetrahedral bubble boundaries.
@@ -70,8 +71,20 @@ public class TetrahedralMigration {
     private static final int COOLDOWN_TICKS = 30;
 
     /**
-     * Hysteresis distance: minimum distance entity must escape past boundary.
-     * Prevents migrations for entities barely outside bounds (floating-point errors).
+     * Hysteresis distance: minimum Cartesian distance an entity must have crossed past
+     * the bubble boundary before a migration is triggered. This anti-thrash band prevents
+     * pathological back-and-forth migration for entities hovering near a boundary (e.g.
+     * due to floating-point imprecision or small velocity jitter).
+     * <p>
+     * Geometric basis: 2.0f is chosen relative to the typical tetrahedral cell size at
+     * boundary edges — it is large enough to filter boundary noise but small enough to
+     * not create a perceptible stuck-band for entities with normal traversal velocities.
+     * <p>
+     * Trade-off: entities within 2.0 Cartesian units of the boundary will not migrate
+     * even if technically outside the owning bubble. This is intentional — a small
+     * stuck-band is preferable to continuous re-migration. The value is a tunable
+     * threshold: decrease for finer-grained migration (more boundary sensitivity),
+     * increase to widen the no-migrate band (more anti-thrash protection).
      */
     private static final float HYSTERESIS_DIST = 2.0f;
 
@@ -98,6 +111,18 @@ public class TetrahedralMigration {
     }
 
     /**
+     * Package-private constructor for testing: accepts pre-built checker and router.
+     */
+    TetrahedralMigration(TetreeBubbleGrid bubbleGrid, TetrahedralContainmentChecker checker,
+                         TetrahedralMigrationRouter router) {
+        this.bubbleGrid = Objects.requireNonNull(bubbleGrid, "BubbleGrid cannot be null");
+        this.checker = Objects.requireNonNull(checker, "Checker cannot be null");
+        this.router = Objects.requireNonNull(router, "Router cannot be null");
+        this.migrationCooldowns = new ConcurrentHashMap<>();
+        this.metrics = new TetrahedralMigrationMetrics();
+    }
+
+    /**
      * Check for and execute migrations across all bubbles.
      * <p>
      * Algorithm:
@@ -118,8 +143,9 @@ public class TetrahedralMigration {
             var bubbleMigrations = checker.checkMigrations(bubble);
 
             // Filter by migration candidate criteria
+            var bounds = bubble.bounds();
             for (var migration : bubbleMigrations) {
-                if (migrationCandidate(migration, currentTick)) {
+                if (migrationCandidate(migration, currentTick, bounds)) {
                     allMigrations.add(migration);
                 }
             }
@@ -153,15 +179,18 @@ public class TetrahedralMigration {
      * Three conditions must be met:
      * <ol>
      *   <li>Entity escaped bubble bounds (checked by containment checker)</li>
-     *   <li>Entity passed hysteresis distance (2.0f from boundary)</li>
      *   <li>Entity cooled down (30 ticks since last migration)</li>
+     *   <li>Entity is sufficiently far from the boundary (>= HYSTERESIS_DIST in Cartesian units)
+     *       to suppress migrations caused by floating-point jitter at the edge</li>
      * </ol>
      *
      * @param migration   Migration record
      * @param currentTick Current simulation tick
+     * @param bounds      The source bubble's spatial bounds (used for hysteresis distance check)
      * @return true if entity should migrate, false otherwise
      */
-    private boolean migrationCandidate(TetrahedralContainmentChecker.MigrationRecord migration, long currentTick) {
+    private boolean migrationCandidate(TetrahedralContainmentChecker.MigrationRecord migration, long currentTick,
+                                       BubbleBounds bounds) {
         var entityId = migration.entityId();
 
         // Check cooldown: wait 30 ticks minimum
@@ -170,13 +199,40 @@ public class TetrahedralMigration {
             return false;  // Still cooling down
         }
 
-        // Check hysteresis: entity must be sufficiently far from bounds
-        // For simplicity, if entity escaped containment check, assume it passed hysteresis
-        // (In practice, containment check with tetrahedral bounds provides natural hysteresis)
+        // Check hysteresis: entity must be sufficiently far past the boundary.
+        // Uses RDGCS coordinates: toRDG computes round((-x+y+z)/√2), so
+        // 1 RDGCS integer unit ≈ √2 Cartesian units (not the other way around).
+        // overshootCartesian = overshootRdg_euclidean * √2.
+        // For HYSTERESIS_DIST=2.0 Cartesian:
+        //   rdg overshoot 1 → Cartesian ≈ 1*√2 ≈ 1.41 < 2.0 → BLOCKED
+        //   rdg overshoot 2 → Cartesian ≈ 2*√2 ≈ 2.83 > 2.0 → ALLOWED
+        if (bounds != null) {
+            var rdg = bounds.toRDG(migration.position());
+            var rdgMin = bounds.rdgMin();
+            var rdgMax = bounds.rdgMax();
 
-        // NOTE: Tetrahedral containment check is more precise than AABB,
-        // so entities escaping containment are genuinely outside the bubble.
-        // Additional hysteresis distance check not needed for tetrahedra.
+            // Compute the minimum overshoot (distance past the nearest boundary face
+            // in RDGCS space). The entity has already escaped so at least one component
+            // is outside; we want the maximum — the "most-escaped" dimension — to be
+            // large enough to confirm genuine displacement rather than jitter.
+            // We use the minimum non-zero overshoot (closest boundary axis).
+            int overshootX = rdg.x < rdgMin.x ? rdgMin.x - rdg.x : (rdg.x > rdgMax.x ? rdg.x - rdgMax.x : 0);
+            int overshootY = rdg.y < rdgMin.y ? rdgMin.y - rdg.y : (rdg.y > rdgMax.y ? rdg.y - rdgMax.y : 0);
+            int overshootZ = rdg.z < rdgMin.z ? rdgMin.z - rdg.z : (rdg.z > rdgMax.z ? rdg.z - rdgMax.z : 0);
+
+            // Total Euclidean RDGCS overshoot magnitude
+            double overshootRdg = Math.sqrt(
+                (double) overshootX * overshootX + (double) overshootY * overshootY + (double) overshootZ * overshootZ);
+
+            // Convert to approximate Cartesian distance: each RDGCS unit ≈ √2 Cartesian units
+            double overshootCartesian = overshootRdg * Math.sqrt(2.0);
+
+            if (overshootCartesian < HYSTERESIS_DIST) {
+                log.trace("Hysteresis suppressed migration for entity {}: overshoot={} < threshold={}",
+                          entityId, String.format("%.3f", overshootCartesian), HYSTERESIS_DIST);
+                return false;  // Too close to boundary — suppress thrashing migration
+            }
+        }
 
         return true;  // Passed all checks
     }
@@ -225,52 +281,72 @@ public class TetrahedralMigration {
                         bubbleGrid.getBubble(decision.destinationKey()) : null;
 
         if (srcBubble == null || dstBubble == null) {
-            metrics.recordFailedMigration();
             return false;
         }
 
-        try {
-            // PHASE 1: Get entity from source (must exist)
-            var entityRecords = srcBubble.getAllEntityRecords();
-            var entityRecord = entityRecords.stream()
-                                           .filter(e -> e.id().equals(entityId))
-                                           .findFirst()
-                                           .orElse(null);
-
-            if (entityRecord == null) {
-                return false;  // Entity not found
-            }
-
-            // PHASE 2: Add to destination (atomic)
-            dstBubble.addEntity(entityId, entityRecord.position(), entityRecord.content());
-
-            // PHASE 3: Remove from source (may fail)
-            try {
-                srcBubble.removeEntity(entityId);
-            } catch (Exception e) {
-                // ROLLBACK: Remove from destination if source remove fails
-                try {
-                    dstBubble.removeEntity(entityId);
-                } catch (Exception rollbackEx) {
-                    // Rollback failed: the entity now exists in BOTH source and destination
-                    // bubbles (duplicate-entity state). This is unrecoverable here and must be
-                    // observable for downstream reconciliation, so log at ERROR.
-                    log.error("Rollback failed for entity {} migrating {}->{}: entity now exists in "
-                              + "both source and destination (duplicate state)",
-                              entityId, srcBubble.id(), dstBubble.id(), rollbackEx);
-                }
-                metrics.recordFailedMigration();
-                return false;
-            }
-
-            // Success: Record cooldown
-            migrationCooldowns.put(entityId, currentTick);
-
-            return true;
-
-        } catch (Exception e) {
-            metrics.recordFailedMigration();
+        // Same-bubble guard: migrating to itself is a no-op.  Without this guard the
+        // add-then-remove sequence below would double-insert the entity in the same bubble,
+        // corrupting idMapping integrity.  Check BEFORE lock acquisition to keep the path cheap.
+        if (srcBubble.id().equals(dstBubble.id())) {
+            log.debug("Skipping self-migration for entity {} in bubble {}", entityId, srcBubble.id());
             return false;
+        }
+
+        // Acquire BOTH bubble mutation locks in consistent UUID order to prevent deadlock.
+        // Any two concurrent migrations involving the same pair always acquire in the same order,
+        // so no lock-ordering cycle is possible.
+        int cmp = srcBubble.id().compareTo(dstBubble.id());
+        ReentrantLock firstLock  = cmp <= 0 ? srcBubble.getMutationLock() : dstBubble.getMutationLock();
+        ReentrantLock secondLock = cmp <= 0 ? dstBubble.getMutationLock() : srcBubble.getMutationLock();
+
+        firstLock.lock();
+        try {
+            secondLock.lock();
+            try {
+                // PHASE 1: Get entity from source under lock (latest snapshot, not stale)
+                var entityRecords = srcBubble.getAllEntityRecords();
+                var entityRecord = entityRecords.stream()
+                                               .filter(e -> e.id().equals(entityId))
+                                               .findFirst()
+                                               .orElse(null);
+
+                if (entityRecord == null) {
+                    return false;  // Entity not found (already migrated or removed)
+                }
+
+                // PHASE 2: Add to destination (atomic, still under both locks)
+                dstBubble.addEntity(entityId, entityRecord.position(), entityRecord.content());
+
+                // PHASE 3: Remove from source (may fail)
+                try {
+                    srcBubble.removeEntity(entityId);
+                } catch (Exception e) {
+                    // ROLLBACK: Remove from destination if source remove fails
+                    try {
+                        dstBubble.removeEntity(entityId);
+                    } catch (Exception rollbackEx) {
+                        // Rollback failed: the entity now exists in BOTH source and destination
+                        // bubbles (duplicate-entity state). This is unrecoverable here and must be
+                        // observable for downstream reconciliation, so log at ERROR.
+                        log.error("Rollback failed for entity {} migrating {}->{}: entity now exists in "
+                                  + "both source and destination (duplicate state)",
+                                  entityId, srcBubble.id(), dstBubble.id(), rollbackEx);
+                    }
+                    return false;
+                }
+
+                // Success: Record cooldown
+                migrationCooldowns.put(entityId, currentTick);
+
+                return true;
+
+            } finally {
+                secondLock.unlock();
+            }
+        } catch (Exception e) {
+            return false;
+        } finally {
+            firstLock.unlock();
         }
     }
 

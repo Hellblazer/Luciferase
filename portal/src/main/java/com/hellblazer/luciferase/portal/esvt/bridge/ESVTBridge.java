@@ -325,16 +325,17 @@ public class ESVTBridge implements SpatialBridge<ESVTData> {
     @Override
     public BuildResult<ESVTData> buildFromVoxels(List<Point3i> voxels, int maxDepth, int gridResolution) {
         long startMs = System.currentTimeMillis();
+        int voxelCount = voxels != null ? voxels.size() : 0;
         try {
             long startNs = System.nanoTime();
             this.data = builder.buildFromVoxels(voxels, maxDepth, gridResolution);
             this.lastBuildTimeNs = System.nanoTime() - startNs;
             long buildTimeMs = System.currentTimeMillis() - startMs;
-            return new BuildResult<>(data, buildTimeMs, voxels.size(),
+            return BuildResult.success(data, buildTimeMs, voxelCount,
                 String.format("Built ESVT with %d nodes in %d ms", data.nodeCount(), buildTimeMs));
         } catch (Exception e) {
             long buildTimeMs = System.currentTimeMillis() - startMs;
-            return new BuildResult<>(null, buildTimeMs, voxels.size(), "Build failed: " + e.getMessage());
+            return BuildResult.failure(buildTimeMs, voxelCount, "Build failed: " + e.getMessage());
         }
     }
 

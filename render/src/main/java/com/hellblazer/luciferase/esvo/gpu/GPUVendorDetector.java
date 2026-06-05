@@ -53,8 +53,11 @@ public class GPUVendorDetector {
         GPUCapabilities detected;
         try {
             detected = detectGPU();
-        } catch (Exception e) {
-            log.debug("GPU detection failed: {}", e.getMessage());
+        } catch (Throwable e) {
+            // Catch LinkageError / UnsatisfiedLinkError / NoClassDefFoundError when
+            // libOpenCL.so is absent (headless CI, servers without OpenCL drivers).
+            // Must catch Throwable — these are Errors, not Exceptions.
+            log.debug("OpenCL not available, using UNKNOWN device capabilities: {}", e.getMessage());
             detected = GPUCapabilities.none();
         }
 
@@ -131,7 +134,9 @@ public class GPUVendorDetector {
             log.debug("No GPU devices found on any platform");
             return GPUCapabilities.none();
 
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // Catch LinkageError family (UnsatisfiedLinkError, NoClassDefFoundError) in
+            // addition to Exception — libOpenCL.so may be absent on headless hosts.
             log.warn("Error detecting GPU: {}", e.getMessage(), e);
             return GPUCapabilities.none();
         }

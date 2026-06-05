@@ -58,16 +58,20 @@ public class GrpcBalanceExchange<Key extends SpatialKey<Key>, ID extends EntityI
     private final BalanceCoordinatorClient client;
     private final ContentSerializer<Content> contentSerializer;
     private final Class<ID> idType;
+    private final Class<Key> keyType;
 
     public GrpcBalanceExchange(BalanceCoordinatorClient client,
                                ContentSerializer<Content> contentSerializer,
-                               Class<ID> idType) {
+                               Class<ID> idType,
+                               Class<Key> keyType) {
         // The serializer and idType are required: the old CrossPartitionBalancePhase "skip deserialization
         // when contentSerializer == null" backward-compat path is intentionally NOT carried over — that was
         // a crutch for incomplete wiring, not a designed-for state. The boundary always deserializes.
+        // keyType enables the type-id guard in toDomainViolation (Luciferase-7wzml.89).
         this.client = Objects.requireNonNull(client, "client cannot be null");
         this.contentSerializer = Objects.requireNonNull(contentSerializer, "contentSerializer cannot be null");
         this.idType = Objects.requireNonNull(idType, "idType cannot be null");
+        this.keyType = Objects.requireNonNull(keyType, "keyType cannot be null");
     }
 
     @Override
@@ -159,9 +163,21 @@ public class GrpcBalanceExchange<Key extends SpatialKey<Key>, ID extends EntityI
     private ViolationBatch<Key> toDomainBatch(com.hellblazer.luciferase.lucien.balancing.proto.ViolationBatch proto) {
         var violations = new ArrayList<TwoOneBalanceChecker.BalanceViolation<Key>>();
         for (var protoViolation : proto.getViolationsList()) {
-            var domain = toDomainViolation(protoViolation);
-            if (domain != null) {
-                violations.add(domain);
+            // Per-element guard: a wrong-type key (ClassCastException) or an unregistered/malformed
+            // type_id (IllegalArgumentException from spatialKeyFromProtobuf) must skip this violation
+            // and log loudly — not abort the whole batch.  Mirrors the per-element resilience used in
+            // toDomainResponse for ghost elements (Luciferase-7wzml.89).
+            try {
+                var domain = toDomainViolation(protoViolation);
+                if (domain != null) {
+                    violations.add(domain);
+                }
+            } catch (ClassCastException | IllegalArgumentException e) {
+                // ERROR, not WARN: a key-type mismatch means a peer is sending a fundamentally wrong index
+                // type (e.g. TetreeKey into a MortonKey exchange) — a systematic misconfiguration, not a
+                // transient per-element glitch. WARN risks silent suppression in high-volume distributed
+                // deployments, stalling balancing invisibly (RDR-004-class drop).
+                log.error("Skipping violation with incompatible or malformed key type: {}", e.getMessage());
             }
         }
         return new ViolationBatch<>(
@@ -182,8 +198,20 @@ public class GrpcBalanceExchange<Key extends SpatialKey<Key>, ID extends EntityI
             log.warn("Skipping wire violation with non-violating levelDifference={}", proto.getLevelDifference());
             return null;
         }
-        var localKey = (Key) ProtobufConverters.spatialKeyFromProtobuf(proto.getLocalKey());
-        var ghostKey = (Key) ProtobufConverters.spatialKeyFromProtobuf(proto.getGhostKey());
+        var rawLocalKey = ProtobufConverters.spatialKeyFromProtobuf(proto.getLocalKey());
+        var rawGhostKey = ProtobufConverters.spatialKeyFromProtobuf(proto.getGhostKey());
+        // Type-id guard (Luciferase-7wzml.89): because the cast (Key) is erased at runtime and would
+        // not throw, perform an explicit instanceof check here so a peer sending a wrong-type key
+        // (e.g. TetreeKey into a MortonKey-typed exchange) fails loudly per element rather than
+        // silently corrupting downstream consumers.
+        if (!keyType.isInstance(rawLocalKey) || !keyType.isInstance(rawGhostKey)) {
+            throw new IllegalArgumentException(
+                "Violation key type mismatch: expected " + keyType.getSimpleName()
+                + " but received local=" + rawLocalKey.getClass().getSimpleName()
+                + " ghost=" + rawGhostKey.getClass().getSimpleName());
+        }
+        var localKey = (Key) rawLocalKey;
+        var ghostKey = (Key) rawGhostKey;
         return new TwoOneBalanceChecker.BalanceViolation<>(
             localKey, ghostKey, proto.getLocalLevel(), proto.getGhostLevel(),
             proto.getLevelDifference(), proto.getSourceRank());

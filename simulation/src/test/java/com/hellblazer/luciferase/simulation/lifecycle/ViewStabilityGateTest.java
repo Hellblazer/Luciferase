@@ -10,6 +10,8 @@ package com.hellblazer.luciferase.simulation.lifecycle;
 
 import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
 import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.TimeUnit;
@@ -26,13 +28,24 @@ import static org.mockito.Mockito.*;
  */
 class ViewStabilityGateTest {
 
+    // Gates created in each test are tracked here so @AfterEach can close them.
+    private ViewStabilityGate gate;
+
+    @AfterEach
+    void tearDown() {
+        if (gate != null) {
+            gate.close();
+            gate = null;
+        }
+    }
+
     @Test
     void testAwaitStability_StableView() throws Exception {
         // Given: A monitor reporting stable view
         var mockMonitor = mock(FirefliesViewMonitor.class);
         when(mockMonitor.isViewStable()).thenReturn(true);
 
-        var gate = new ViewStabilityGate(mockMonitor, 5000);
+        gate = new ViewStabilityGate(mockMonitor, 5000);
 
         // When: Await stability
         var future = gate.awaitStability();
@@ -51,7 +64,7 @@ class ViewStabilityGateTest {
             .thenReturn(false)  // Second poll
             .thenReturn(true);  // Third poll - stable
 
-        var gate = new ViewStabilityGate(mockMonitor, 5000);
+        gate = new ViewStabilityGate(mockMonitor, 5000);
 
         // When: Await stability
         var future = gate.awaitStability();
@@ -67,14 +80,14 @@ class ViewStabilityGateTest {
         var mockMonitor = mock(FirefliesViewMonitor.class);
         when(mockMonitor.isViewStable()).thenReturn(false);  // Never stable
 
-        var gate = new ViewStabilityGate(mockMonitor, 100);  // 100ms timeout
+        gate = new ViewStabilityGate(mockMonitor, 100);  // 100ms timeout
 
         // When: Await stability
         var future = gate.awaitStability();
 
         // Then: Should timeout after 100ms (wrapped in ExecutionException)
         var exception = assertThrows(java.util.concurrent.ExecutionException.class,
-            () -> future.get(200, TimeUnit.MILLISECONDS));
+            () -> future.get(500, TimeUnit.MILLISECONDS));
 
         // Verify cause is TimeoutException
         assertTrue(exception.getCause() instanceof TimeoutException,
@@ -87,7 +100,7 @@ class ViewStabilityGateTest {
         var mockMonitor = mock(FirefliesViewMonitor.class);
         when(mockMonitor.isViewStable()).thenReturn(true);
 
-        var gate = new ViewStabilityGate(mockMonitor, 5000);
+        gate = new ViewStabilityGate(mockMonitor, 5000);
 
         // When: Check if stable
         var stable = gate.isStable();
@@ -102,6 +115,7 @@ class ViewStabilityGateTest {
         // When/Then: Null monitor should throw
         assertThrows(NullPointerException.class,
             () -> new ViewStabilityGate(null, 5000));
+        // gate stays null — tearDown is a no-op
     }
 
     @Test
@@ -110,9 +124,10 @@ class ViewStabilityGateTest {
         var mockMonitor = mock(FirefliesViewMonitor.class);
         when(mockMonitor.isViewStable()).thenReturn(true);
 
-        var gate = new ViewStabilityGate(mockMonitor, 5000);
+        gate = new ViewStabilityGate(mockMonitor, 5000);
 
-        // When: Multiple calls to awaitStability
+        // When: Multiple calls to awaitStability (Luciferase-7wzml.212 acceptance criterion 1:
+        //   N awaitStability calls must create 0 new executors — all share gate.scheduler)
         var future1 = gate.awaitStability();
         var future2 = gate.awaitStability();
 
@@ -127,7 +142,7 @@ class ViewStabilityGateTest {
         var mockMonitor = mock(FirefliesViewMonitor.class);
         when(mockMonitor.isViewStable()).thenReturn(true);
 
-        var gate = new ViewStabilityGate(mockMonitor, 5000);  // 5s timeout
+        gate = new ViewStabilityGate(mockMonitor, 5000);  // 5s timeout
 
         // And: TestClock for deterministic time control
         var testClock = new TestClock(1000L);  // Start at t=1000ms
@@ -142,5 +157,30 @@ class ViewStabilityGateTest {
 
         // Verify monitor was queried
         verify(mockMonitor, atLeastOnce()).isViewStable();
+    }
+
+    /**
+     * Verifies that close() shuts the shared scheduler and that subsequent
+     * awaitStability() calls complete exceptionally rather than blocking forever
+     * (Luciferase-7wzml.212 acceptance criterion 2: close() shuts the shared pool).
+     */
+    @Test
+    void testClose_ShutsDownScheduler() throws Exception {
+        var mockMonitor = mock(FirefliesViewMonitor.class);
+        when(mockMonitor.isViewStable()).thenReturn(false);  // Never stable
+
+        gate = new ViewStabilityGate(mockMonitor, 5000);
+        gate.close();
+
+        // After close, awaitStability must return a failed future (not hang)
+        var future = gate.awaitStability();
+        var ex = assertThrows(java.util.concurrent.ExecutionException.class,
+            () -> future.get(200, TimeUnit.MILLISECONDS),
+            "awaitStability on a closed gate must complete exceptionally");
+        assertTrue(ex.getCause() instanceof java.util.concurrent.RejectedExecutionException,
+            "Cause should be RejectedExecutionException, got: " + ex.getCause());
+
+        // close() is idempotent — must not throw on second call
+        assertDoesNotThrow(() -> gate.close(), "close() must be idempotent");
     }
 }

@@ -62,10 +62,10 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
     private final ReentrantLock lock = new ReentrantLock();
     private final int maxEntries;
 
-    // Statistics — incremented under the cache lock but exposed via Atomic
-    // for approximate, lock-free reads from getHitRate(). getStats takes
-    // the lock so the (hits, misses, invalidations, size) snapshot is
-    // mutually consistent at the moment of the call.
+    // Statistics — incremented under the cache lock. Counters are read under
+    // the cache lock via getStats() for a consistent (hits, misses, invalidations, size)
+    // snapshot; they are no longer a lock-free approximate read. AtomicLong is retained
+    // for the increment-without-result pattern (no return value needed at write sites).
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
     private final AtomicLong invalidations = new AtomicLong();
@@ -216,16 +216,12 @@ public class KNNCache<Key extends SpatialKey<Key>, ID extends EntityID> {
     }
 
     /**
-     * Get cache hit rate (0.0 to 1.0). Lock-free — reads the atomic counters
-     * without coordination; the two reads can straddle a concurrent
-     * increment so the returned ratio is best-effort under contention.
-     * Acceptable for statistics; do not use as a correctness signal.
+     * Get cache hit rate (0.0 to 1.0). Takes the cache lock to produce a snapshot
+     * consistent with {@link #getStats()} — the two methods now agree on the hit rate
+     * for the same moment in time (Luciferase-7wzml.149).
      */
     public double getHitRate() {
-        long h = hits.get();
-        long m = misses.get();
-        long total = h + m;
-        return total == 0 ? 0.0 : (double) h / total;
+        return getStats().hitRate();
     }
 
     /**

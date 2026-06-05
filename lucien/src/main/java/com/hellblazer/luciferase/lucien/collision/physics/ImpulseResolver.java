@@ -57,6 +57,24 @@ public class ImpulseResolver {
                 bodyA, bodyB, contactPoint, collision.contactNormal,
                 velocityAlongNormal, combinedMaterial.restitution());
 
+            // Skip separating contacts — bodies are already moving apart; applying an
+            // impulse would attract them (attractive-impulse bug Luciferase-7wzml.7).
+            // Convention-independent, allocation-free guard: detect normal orientation from
+            // the A→B position vector, then check if velocity has a separating component.
+            // normalDotAtoB > 0 means normal points A→B; < 0 means B→A.
+            // Separating iff normalDotAtoB * velocityAlongNormal < 0:
+            //   A→B normal (dot > 0): separating when velocityAlongNormal < 0 (A receding from B)
+            //   B→A normal (dot < 0): separating when velocityAlongNormal > 0 (A receding from B)
+            // Coincident bodies (dot ≈ 0): guard does not fire; impulse is applied (safe default).
+            var posA = bodyA.getPosition();
+            var posB = bodyB.getPosition();
+            float normalDotAtoB = collision.contactNormal.x * (posB.x - posA.x)
+                                 + collision.contactNormal.y * (posB.y - posA.y)
+                                 + collision.contactNormal.z * (posB.z - posA.z);
+            if (normalDotAtoB * velocityAlongNormal < 0) {
+                continue;
+            }
+
             var impulse = new Vector3f(collision.contactNormal);
             impulse.scale(impulseMagnitude);
 

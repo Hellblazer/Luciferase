@@ -188,8 +188,13 @@ public class GhostStateManager {
 
     /**
      * Performance metrics (optional, null-safe).
+     * <p>
+     * Declared volatile so that a post-construction {@link #setMetrics} call from any thread is
+     * immediately visible to the {@code updateGhost}/{@code removeGhost} hot-paths, which may
+     * execute on network or tick threads concurrently.  Mirrors the discipline already applied to
+     * the sibling {@link #clock} field.
      */
-    private GhostPhysicsMetrics metrics;
+    private volatile GhostPhysicsMetrics metrics;
 
     /**
      * Clock for deterministic testing.
@@ -229,7 +234,7 @@ public class GhostStateManager {
         Objects.requireNonNull(boundsSupplier.get(), "bounds must not be null");
         this.maxGhosts = maxGhosts;
         this.deadReckoning = new DeadReckoningEstimator();
-        this.lifecycle = new GhostLifecycleStateMachine(); // 500ms TTL, 300ms staleness threshold
+        this.lifecycle = new GhostLifecycleStateMachine(); // 500ms TTL, 300ms staleness threshold (STALE precedes EXPIRED)
         this.ghostStates = new ConcurrentHashMap<>();
 
         log.debug("GhostStateManager initialized with bounds {} and max ghosts {}", boundsSupplier.get(), maxGhosts);
@@ -260,8 +265,9 @@ public class GhostStateManager {
         var velocity = new Vector3f(event.velocity());
         var timestamp = event.timestamp();
 
-        // Create SimulationGhostEntity
-        var ghostEntity = createGhostEntity(entityId, position, sourceBubbleId, timestamp, event.lamportClock());
+        // Create SimulationGhostEntity — pass velocity so the record carries the real value
+        // (Luciferase-7wzml.186: consistency between SimulationGhostEntity.velocity and GhostState.velocity)
+        var ghostEntity = createGhostEntity(entityId, position, velocity, sourceBubbleId, timestamp, event.lamportClock());
         var newState = new GhostState(ghostEntity, velocity);
 
         // Atomic admission + insert (Luciferase-0frcy.65): the size check and the put must be
@@ -438,19 +444,24 @@ public class GhostStateManager {
     /**
      * Create SimulationGhostEntity from EntityUpdateEvent.
      * Luciferase-r73c: Validates position is non-null (fail-fast approach).
+     * Luciferase-7wzml.186: velocity is now passed through so SimulationGhostEntity.velocity()
+     * is consistent with GhostState.velocity — callers that read ghost.velocity() directly
+     * (e.g. BubbleGhostCoordinator.onReceive) get the real value, not (0,0,0).
      *
      * @param entityId Entity identifier
      * @param position Entity position (must not be null)
+     * @param velocity Entity velocity for dead-reckoning (must not be null)
      * @param sourceBubbleId Source bubble ID
      * @param timestamp Creation timestamp
      * @param bucket Simulation time bucket
-     * @return SimulationGhostEntity with validated non-null position
-     * @throws NullPointerException if position is null
+     * @return SimulationGhostEntity with validated non-null position and real velocity
+     * @throws NullPointerException if position or velocity is null
      */
     @SuppressWarnings("rawtypes")
     private SimulationGhostEntity<StringEntityID, EntityData> createGhostEntity(
         StringEntityID entityId,
         Point3f position,
+        Vector3f velocity,
         UUID sourceBubbleId,
         long timestamp,
         long bucket
@@ -473,13 +484,15 @@ public class GhostStateManager {
             clock.currentTimeMillis()
         );
 
-        // Wrap in SimulationGhostEntity with metadata
+        // Wrap in SimulationGhostEntity with metadata. Luciferase-7wzml.186: pass real velocity
+        // so SimulationGhostEntity.velocity() is consistent with GhostState.velocity.
         return new SimulationGhostEntity<>(
             ghostEntity,
             sourceBubbleId,
             bucket,
             deriveEpoch(bucket),             // epoch from bucket
-            versionCounter.incrementAndGet() // monotonic version
+            versionCounter.incrementAndGet(), // monotonic version
+            velocity                          // real velocity — dead-reckoning in downstream consumers
         );
     }
 

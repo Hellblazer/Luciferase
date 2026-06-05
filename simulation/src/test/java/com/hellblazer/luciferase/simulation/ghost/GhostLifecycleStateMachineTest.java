@@ -28,6 +28,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.hellblazer.luciferase.simulation.ghost.GhostLifecycleStateMachine.State;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -128,11 +129,11 @@ class GhostLifecycleStateMachineTest {
         lifecycle.onCreate(entityId, sourceBubbleId, 1000L);
         lifecycle.onUpdate(entityId, 1000L); // CREATED → ACTIVE
 
-        // Advance time beyond staleness threshold (500ms default, same as TTL)
+        // Advance time beyond staleness threshold (300ms default)
         testClock.setMillis(1501L);
 
         assertTrue(lifecycle.isStale(entityId, testClock.currentTimeMillis()),
-                  "Ghost should be stale after 501ms (threshold 500ms)");
+                  "Ghost should be stale after 501ms (threshold 300ms)");
     }
 
     @Test
@@ -333,6 +334,121 @@ class GhostLifecycleStateMachineTest {
                    "Should handle negative time delta gracefully (not stale)");
         assertFalse(lifecycle.isExpired(entityId, testClock.currentTimeMillis()),
                    "Should handle negative time delta gracefully (not expired)");
+    }
+
+    /**
+     * Verify that no-arg overloads (isStale/isExpired/expireStaleGhosts/expireStaleGhostsReturningIds)
+     * read the injected clock rather than being dead code.  Advancing testClock across each
+     * boundary must flip the result without passing a time argument.
+     */
+    @Test
+    void testNoArgOverloadsReadInjectedClock() {
+        var entityId = "entity-noarg";
+        var sourceBubbleId = UUID.randomUUID();
+
+        // Create at t=1000, update (CREATED → ACTIVE) at t=1000.
+        // Default staleness threshold = 300ms, TTL = 500ms.
+        lifecycle.onCreate(entityId, sourceBubbleId, testClock.currentTimeMillis());
+        lifecycle.onUpdate(entityId, testClock.currentTimeMillis());
+
+        // Clock still at 1000 — not yet stale or expired.
+        assertFalse(lifecycle.isStale(entityId),
+                    "isStale() no-arg: should be false before threshold");
+        assertFalse(lifecycle.isExpired(entityId),
+                    "isExpired() no-arg: should be false before TTL");
+
+        // Advance clock past staleness threshold (500ms) and TTL (500ms).
+        testClock.setMillis(1501L);
+
+        assertTrue(lifecycle.isStale(entityId),
+                   "isStale() no-arg: clock advance must flip to true (clock is live)");
+        assertTrue(lifecycle.isExpired(entityId),
+                   "isExpired() no-arg: clock advance must flip to true (clock is live)");
+
+        // expireStaleGhosts() no-arg should remove the expired ghost.
+        var removedIds = lifecycle.expireStaleGhostsReturningIds();
+        assertFalse(removedIds.isEmpty(),
+                    "expireStaleGhostsReturningIds() no-arg: must remove the expired ghost");
+        assertTrue(removedIds.contains(entityId),
+                   "expireStaleGhostsReturningIds() no-arg: returned list must contain entityId");
+
+        // Ghost is gone — isStale/isExpired must now return false.
+        assertFalse(lifecycle.isStale(entityId),
+                    "isStale() no-arg: false after removal");
+        assertFalse(lifecycle.isExpired(entityId),
+                    "isExpired() no-arg: false after removal");
+
+        // Verify expireStaleGhosts() (count-returning overload) via a fresh ghost.
+        var entityId2 = "entity-noarg-2";
+        testClock.setMillis(2000L);
+        lifecycle.onCreate(entityId2, sourceBubbleId, testClock.currentTimeMillis());
+        lifecycle.onUpdate(entityId2, testClock.currentTimeMillis());
+        testClock.setMillis(2501L);
+        int count = lifecycle.expireStaleGhosts();
+        assertEquals(1, count, "expireStaleGhosts() no-arg: must expire exactly 1 ghost");
+    }
+
+    // ===== Luciferase-7wzml.202: STALE warning window — getState() is authoritative =====
+
+    /**
+     * Verifies that the default configuration gives STALE a real non-zero warning window
+     * (DEFAULT_STALENESS_THRESHOLD_MS 300ms < DEFAULT_TTL_MS 500ms), and that
+     * {@code getState()} returns STALE during the window and EXPIRED after TTL.
+     * <p>
+     * Before the fix STALE and EXPIRED fired at the same instant (both thresholds were 500ms);
+     * getState() also never returned STALE or EXPIRED regardless of time.
+     */
+    @Test
+    void testDefaultStalenessWindowIsNonZero() {
+        // Verify the constants themselves encode a meaningful warning gap
+        assertTrue(GhostLifecycleStateMachine.DEFAULT_STALENESS_THRESHOLD_MS
+                       < GhostLifecycleStateMachine.DEFAULT_TTL_MS,
+                   "DEFAULT_STALENESS_THRESHOLD_MS must be < DEFAULT_TTL_MS (non-zero warning window)");
+    }
+
+    @Test
+    void testGetStateReturnsStaleDuringWarningWindow() {
+        // Custom lifecycle with explicit 300ms stale / 500ms TTL
+        var lc = new GhostLifecycleStateMachine(500L, 300L);
+        lc.setClock(testClock);
+
+        var id = "stale-window";
+        var bubble = UUID.randomUUID();
+
+        testClock.setMillis(1000L);
+        lc.onCreate(id, bubble, 1000L);
+        lc.onUpdate(id, 1000L);   // → ACTIVE, lastUpdate = 1000
+
+        // t=1350: 350ms > 300ms threshold, < 500ms TTL → STALE
+        testClock.setMillis(1350L);
+        assertEquals(State.STALE, lc.getState(id),
+                     "getState() must return STALE during the 300–500ms warning window");
+        assertTrue(lc.isStale(id), "isStale() must agree with getState()=STALE");
+        assertFalse(lc.isExpired(id), "isExpired() must be false before TTL");
+
+        // t=1501: 501ms > 500ms TTL → EXPIRED
+        testClock.setMillis(1501L);
+        assertEquals(State.EXPIRED, lc.getState(id),
+                     "getState() must return EXPIRED past TTL");
+        assertTrue(lc.isExpired(id), "isExpired() must agree with getState()=EXPIRED");
+    }
+
+    @Test
+    void testGetStateReturnsFreshStateBeforeThreshold() {
+        var id = "fresh-entity";
+        var bubble = UUID.randomUUID();
+
+        testClock.setMillis(1000L);
+        lifecycle.onCreate(id, bubble, 1000L);
+
+        // CREATED state before first update
+        assertEquals(State.CREATED, lifecycle.getState(id),
+                     "getState() must return CREATED before first update");
+
+        // First update → ACTIVE
+        lifecycle.onUpdate(id, 1000L);
+        assertEquals(State.ACTIVE, lifecycle.getState(id),
+                     "getState() must return ACTIVE after first update (time still at threshold)");
     }
 
     // Helper class for metrics testing

@@ -383,8 +383,8 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
                 currentRaysPerItem = 1; // Single-ray mode
             }
 
-            log.debug("Coherence + BeamTree analysis: score={:.3f}, kernel={}, raysPerItem={}, beams={}",
-                    coherence, useBatchKernel ? "BATCH" : "SINGLE_RAY", currentRaysPerItem,
+            log.debug("Coherence + BeamTree analysis: score={}, kernel={}, raysPerItem={}, beams={}",
+                    String.format("%.3f", coherence), useBatchKernel ? "BATCH" : "SINGLE_RAY", currentRaysPerItem,
                     beamTree.getStatistics().totalBeams());
 
         } catch (Exception e) {
@@ -521,10 +521,13 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
 
     @Override
     protected void executeKernel() throws ComputeKernel.KernelExecutionException {
-        // Phase 5a.3: Check if tile-based dispatch is enabled
-        if (useTileBasedDispatch && tileDispatcher != null && cpuRayBuffer != null && lastDAGData != null) {
-            // Use tile-based adaptive execution
-            executeTileBasedDispatch();
+        // Phase 5a.3: Fail loud when tile-based dispatch is requested but the
+        // KernelExecutor implementation is not complete. Both the fully-initialized
+        // path (tileDispatcher != null) and the partially-initialized path (dispatcher
+        // still null after init) must refuse rather than silently fall through to the
+        // standard kernel and produce an unexpected result.
+        if (useTileBasedDispatch) {
+            executeTileBasedDispatch();  // always throws UnsupportedOperationException
             return;
         }
 
@@ -537,47 +540,43 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         }
         updateCoherenceIfNeeded();
 
-        var activeKernel = useBatchKernel ? batchKernel : kernel;
+        // Snapshot volatile flags ONCE so the kernel selection and the arg-dispatch branch
+        // see an identical view even if another thread toggles useBatchKernel mid-method.
+        final boolean useBatch = this.useBatchKernel;
+        final int raysPerItem = this.currentRaysPerItem;
+
+        var activeKernel = useBatch ? batchKernel : kernel;
         if (activeKernel == null) {
             throw new IllegalStateException("Kernel not initialized");
         }
 
         // Phase 4.2.2a: Set kernel arguments in correct order for dag_ray_traversal.cl
-        // Use temporary kernel swap to set arguments on both kernels with same interface
-        var originalKernel = kernel;
-        try {
-            // Temporarily swap kernel to set arguments on the active one
-            kernel = activeKernel;
+        // Use activeKernel directly (no shared-field mutation) so concurrent executeKernel
+        // calls cannot observe each other's kernel choice via the shared 'kernel' field.
+        activeKernel.setRawBufferArg(0, clNodeBuffer);                      // arg0: nodePool
+        activeKernel.setRawBufferArg(1, clDummyChildPointersBuffer);        // arg1: childPointers (minimal dummy for absolute addressing)
+        activeKernel.setIntArg(2, nodeCount);                               // arg2: nodeCount
+        activeKernel.setBufferArg(3, rayBuffer, ComputeKernel.BufferAccess.READ);  // arg3: rays
+        activeKernel.setIntArg(4, rayCount);                                // arg4: rayCount
 
-            // Set common arguments for both kernels
-            setRawBufferArg(0, clNodeBuffer);                      // arg0: nodePool
-            setRawBufferArg(1, clDummyChildPointersBuffer);        // arg1: childPointers (minimal dummy for absolute addressing)
-            activeKernel.setIntArg(2, nodeCount);                  // arg2: nodeCount
-            activeKernel.setBufferArg(3, rayBuffer, ComputeKernel.BufferAccess.READ);  // arg3: rays
-            activeKernel.setIntArg(4, rayCount);                   // arg4: rayCount
+        if (useBatch) {
+            // Batch kernel: raysPerItem then results
+            activeKernel.setIntArg(5, raysPerItem);            // arg5: raysPerItem
+            activeKernel.setBufferArg(6, resultBuffer, ComputeKernel.BufferAccess.WRITE); // arg6: results
 
-            if (useBatchKernel) {
-                // Batch kernel: raysPerItem then results
-                activeKernel.setIntArg(5, currentRaysPerItem);     // arg5: raysPerItem
-                activeKernel.setBufferArg(6, resultBuffer, ComputeKernel.BufferAccess.WRITE); // arg6: results
+            // Adjust global work size for batch kernel
+            int workItems = (rayCount + raysPerItem - 1) / raysPerItem;
+            long adjustedGlobal = ((workItems + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
+            activeKernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
+        } else {
+            // Single-ray kernel
+            activeKernel.setBufferArg(5, resultBuffer, ComputeKernel.BufferAccess.WRITE); // arg5: results
 
-                // Adjust global work size for batch kernel
-                int workItems = (rayCount + currentRaysPerItem - 1) / currentRaysPerItem;
-                long adjustedGlobal = ((workItems + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
-                activeKernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
-            } else {
-                // Single-ray kernel
-                activeKernel.setBufferArg(5, resultBuffer, ComputeKernel.BufferAccess.WRITE); // arg5: results
-
-                long adjustedGlobal = ((rayCount + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
-                activeKernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
-            }
-
-            activeKernel.finish();
-        } finally {
-            // Restore original kernel
-            kernel = originalKernel;
+            long adjustedGlobal = ((rayCount + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
+            activeKernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
         }
+
+        activeKernel.finish();
     }
 
     /**
@@ -585,6 +584,23 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
      * Converts CPU ray buffer to Ray[] array, dispatches tiles, and collects results.
      */
     private void executeTileBasedDispatch() throws ComputeKernel.KernelExecutionException {
+        // Fail loud: KernelExecutor is not yet implemented. Rather than building rays and
+        // discovering the failure deep inside dispatchFrame, reject here so the caller
+        // gets a clear error and does NOT observe a silent all-miss frame.
+        throw new UnsupportedOperationException(
+            "Tile-based dispatch path (-DENABLE_TILE_DISPATCH) is selected but the "
+            + "KernelExecutor GPU implementation is not yet complete. "
+            + "Unset ENABLE_TILE_DISPATCH to use the standard kernel path.");
+    }
+
+    /**
+     * Phase 5a.3: Execute rendering using tile-based adaptive dispatch.
+     * Converts CPU ray buffer to Ray[] array, dispatches tiles, and collects results.
+     * NOTE: Currently unreachable — executeTileBasedDispatch() throws UnsupportedOperationException
+     * until KernelExecutor is fully implemented.
+     */
+    @SuppressWarnings("unused")
+    private void executeTileBasedDispatchImpl() throws ComputeKernel.KernelExecutionException {
         // Convert cpuRayBuffer to Ray[] array
         cpuRayBuffer.rewind();
         var rays = new Ray[rayCount];
@@ -605,46 +621,40 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         }
 
         // Execute tile-based dispatch
-        var metrics = tileDispatcher.dispatchFrame(rays, frameWidth, frameHeight, lastDAGData, createKernelExecutor());
-
-        // Log metrics (SLF4J doesn't support Python-style format, use correct placeholders)
-        log.debug("Tile dispatch metrics: {} batch tiles, {} single-ray tiles, {} total tiles, batch ratio: {}, avg coherence: {}",
-                metrics.batchTiles(), metrics.singleRayTiles(), metrics.totalTiles(), metrics.batchRatio(), metrics.avgCoherence());
+        tileDispatcher.dispatchFrame(rays, frameWidth, frameHeight, lastDAGData, createKernelExecutor());
     }
 
     /**
-     * Phase 5a.3: Create KernelExecutor adapter for tile-based dispatch.
-     * Wraps existing kernel execution infrastructure.
+     * Phase 5a.3: KernelExecutor adapter stub — NOT IMPLEMENTED.
+     *
+     * <p>This method exists to satisfy the {@link com.hellblazer.luciferase.render.tile.KernelExecutor}
+     * contract required by {@link com.hellblazer.luciferase.render.tile.TileBasedDispatcher}.
+     * GPU tile execution is not yet implemented; every method throws
+     * {@link UnsupportedOperationException} so that enabling the tile-dispatch path
+     * via {@code -DENABLE_TILE_DISPATCH} fails loudly rather than silently producing
+     * an all-miss (zeroed) frame.
      */
     private com.hellblazer.luciferase.render.tile.KernelExecutor createKernelExecutor() {
         return new com.hellblazer.luciferase.render.tile.KernelExecutor() {
             @Override
             public void executeBatch(Ray[] rays, int[] rayIndices, int raysPerItem) {
-                // TODO: Implement batch execution for tile subset
-                // For now, fall back to single-ray
-                executeSingleRay(rays, rayIndices);
+                throw new UnsupportedOperationException(
+                    "Tile-based batch GPU execution is not implemented. "
+                    + "Disable -DENABLE_TILE_DISPATCH until KernelExecutor is fully implemented.");
             }
 
             @Override
             public void executeSingleRay(Ray[] rays, int[] rayIndices) {
-                // TODO: Implement single-ray execution for tile subset
-                // For now, execute on GPU using existing kernel
-                try {
-                    // Upload subset of rays to GPU
-                    // Execute kernel
-                    // Download results
-                } catch (Exception e) {
-                    throw new RuntimeException("Failed to execute tile kernel", e);
-                }
+                throw new UnsupportedOperationException(
+                    "Tile-based single-ray GPU execution is not implemented. "
+                    + "Disable -DENABLE_TILE_DISPATCH until KernelExecutor is fully implemented.");
             }
 
             @Override
             public com.hellblazer.luciferase.render.tile.RayResult getResult(int rayIndex) {
-                // TODO: Implement result retrieval from GPU buffer
-                // For now, return dummy result
-                return new com.hellblazer.luciferase.render.tile.RayResult(
-                    0.0f, 0.0f, 0.0f, -1.0f
-                );
+                throw new UnsupportedOperationException(
+                    "Tile-based result retrieval is not implemented. "
+                    + "Disable -DENABLE_TILE_DISPATCH until KernelExecutor is fully implemented.");
             }
         };
     }
@@ -761,15 +771,18 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
      * Stream B Phase 8: Optimize renderer for detected GPU device
      *
      * Called during initialization to:
-     * 1. Detect GPU capabilities
+     * 1. Detect GPU capabilities from the real OpenCL device
      * 2. Load or generate optimal tuning configuration
      * 3. Log tuning metrics
      * 4. Recompile kernel with GPU-optimized build options
      */
     public void optimizeForDevice() {
-        // Detect GPU capabilities (placeholder - would use OpenCL device queries)
         gpuCapabilities = detectGPUCapabilities();
-        log.info("Detected GPU: {} {}", gpuCapabilities.vendor().getDisplayName(), gpuCapabilities.model());
+        if (gpuCapabilities.vendor() != GPUVendor.UNKNOWN) {
+            log.info("Detected GPU: {} {}", gpuCapabilities.vendor().getDisplayName(), gpuCapabilities.model());
+        } else {
+            log.info("No GPU device detected or OpenCL unavailable; using generic fallback tuning");
+        }
 
         // Try to load cached configuration first
         autoTuner = new GPUAutoTuner(gpuCapabilities, cacheDirectory);
@@ -807,25 +820,50 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     }
 
     /**
-     * Detect GPU capabilities from OpenCL device
+     * Detect GPU capabilities from the real OpenCL device via GPUVendorDetector.
      *
-     * This is a simplified implementation. Production code would query:
-     * - CL_DEVICE_VENDOR
-     * - CL_DEVICE_NAME
-     * - CL_DEVICE_COMPUTE_UNITS
-     * - CL_DEVICE_LOCAL_MEM_SIZE
-     * - CL_DEVICE_MAX_WORK_GROUP_SIZE
+     * Queries CL_DEVICE_VENDOR, CL_DEVICE_NAME, CL_DEVICE_MAX_COMPUTE_UNITS,
+     * CL_DEVICE_LOCAL_MEM_SIZE, and CL_DEVICE_MAX_WORK_GROUP_SIZE.
+     * If no device is available (headless / no-GPU environment) returns an
+     * honest generic fallback with UNKNOWN vendor — never a hardcoded NVIDIA stub.
+     *
+     * <p><b>KNOWN LIMITATION (Luciferase-ie6v8):</b> {@link GPUVendorDetector#getInstance()}
+     * is a JVM singleton that queries the <em>first</em> GPU/platform found globally, not
+     * necessarily this renderer's actual device.  On multi-GPU or multi-platform systems the
+     * detected vendor, wavefront size, compute units, and local memory may not match the
+     * device used at {@code initialize()}, resulting in incorrect workgroup tuning.
+     * The single-GPU common case is correct; the UNKNOWN fallback when no device is present
+     * is honest.  Full fix requires passing this renderer's {@code cl_device_id} to a
+     * non-singleton query path — deferred to Luciferase-ie6v8.
      */
     private com.hellblazer.luciferase.sparse.gpu.GPUCapabilities detectGPUCapabilities() {
-        // Placeholder: would use context.getDeviceInfo() from gpu-support
-        // For now, return default NVIDIA configuration for demonstration
+        var detected = GPUVendorDetector.getInstance().getCapabilities();
+        if (detected.isValid()) {
+            // Map esvo.gpu.GPUVendor to sparse.gpu.GPUVendor via the vendor string.
+            var sparseVendor = GPUVendor.fromVendorString(detected.vendorString());
+            // wavefrontSize: use vendor preferred (NVIDIA=32, AMD=64, INTEL=32, APPLE=32, UNKNOWN=32).
+            int wavefrontSize = sparseVendor.getTypicalWavefrontSize();
+            // localMemoryBytes: cap at Integer.MAX_VALUE for the int field (in practice always < 2 GB).
+            int localMemBytes = (int) Math.min(detected.localMemorySize(), Integer.MAX_VALUE);
+            // maxRegisters: not directly exposed by OpenCL; use a reasonable vendor default.
+            int maxRegisters = 65536;
+            return new com.hellblazer.luciferase.sparse.gpu.GPUCapabilities(
+                detected.computeUnits(),
+                localMemBytes,
+                maxRegisters,
+                sparseVendor,
+                detected.deviceName(),
+                wavefrontSize
+            );
+        }
+        // No device available — return honest generic fallback, not a fake NVIDIA stub.
         return new com.hellblazer.luciferase.sparse.gpu.GPUCapabilities(
-            32,      // compute units (placeholder)
-            65536,   // local memory bytes
-            65536,   // max registers
-            GPUVendor.NVIDIA,
-            "Generic GPU",
-            32       // wavefront size
+            0,                   // computeUnits: unknown
+            0,                   // localMemoryBytes: unknown
+            0,                   // maxRegisters: unknown
+            GPUVendor.UNKNOWN,
+            "Unknown",
+            32                   // wavefrontSize: safe default
         );
     }
 

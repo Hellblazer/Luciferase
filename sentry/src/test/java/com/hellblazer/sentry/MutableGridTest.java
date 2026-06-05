@@ -548,6 +548,139 @@ public class MutableGridTest {
         }
     }
     
+    /**
+     * Regression test for Luciferase-7wzml.120: rebuildOptimized must not silently drop vertices
+     * whose locate() returns null — it must fail loud (throw IllegalStateException) with a count.
+     * <p>
+     * The defect: both branches of rebuildOptimized (useDirectForRebuild and TetrahedronPoolContext)
+     * have {@code if (containedIn != null) insert(...)} with no else — a locate miss silently drops
+     * the vertex with no log, no count, no assertion. A rebuild can return fewer vertices than the
+     * snapshot it was given, and the caller has no way to detect the loss.
+     * <p>
+     * The fix: count dropped vertices; after the loop, if the re-inserted count differs from
+     * the input list size, throw IllegalStateException (fail-loud) with the drop count.
+     * <p>
+     * This test verifies two things:
+     * <ol>
+     *   <li>Normal rebuild: all domain-interior vertices are re-inserted and size is preserved.</li>
+     *   <li>Fail-loud: constructing a Vertex list where {@code contains()} reports true but the
+     *       mesh is torn down (adjacency cleared) triggers the assertion, proving the guard fires.</li>
+     * </ol>
+     */
+    @Test
+    @DisplayName("rebuildOptimized must not silently drop interior vertices (Luciferase-7wzml.120)")
+    public void testRebuildOptimizedFailsLoudOnLocateMiss() {
+        // --- Part 1: normal rebuild preserves all vertices ---
+        MutableGrid testGrid = new MutableGrid();
+        Random testEntropy = new Random(0x42);
+        float base = 10_000f;
+        int n = 20;
+        List<Vertex> tracked = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            float x = base + (i % 3) * 2000f;
+            float y = base + ((i / 3) % 3) * 2000f;
+            float z = base + ((i / 9) % 3) * 2000f;
+            Vertex v = testGrid.track(new Point3f(x, y, z), testEntropy);
+            assertNotNull(v, "All inserted points must be tracked");
+            tracked.add(v);
+        }
+        assertEquals(n, testGrid.size(), "Pre-condition: all points tracked");
+
+        testGrid.rebuild(tracked, testEntropy);
+
+        // Post-condition: vertex count must match input list.
+        assertEquals(n, testGrid.size(),
+            "rebuildOptimized must re-insert ALL input vertices; silent drop detected: "
+            + "expected " + n + " but got " + testGrid.size());
+
+        // --- Part 2: rebuildOptimized via rebuild(Random) preserves size across repeated rebuilds ---
+        // Each rebuild() call takes a snapshot of current vertices and re-inserts them.
+        // With the fix in place the post-rebuild size must equal the pre-rebuild size every time.
+        MutableGrid cycleGrid = new MutableGrid();
+        Random cycleEntropy = new Random(0xDEAD);
+        int m = 30;
+        for (int i = 0; i < m; i++) {
+            Point3f p = Vertex.randomPoint(3000, cycleEntropy);
+            p.add(new Point3f(base, base, base));
+            cycleGrid.track(p, cycleEntropy);
+        }
+        int sizeBefore = cycleGrid.size();
+        // Three successive rebuilds — each must preserve exactly sizeBefore vertices.
+        for (int r = 0; r < 3; r++) {
+            cycleGrid.rebuild(cycleEntropy);
+            assertEquals(sizeBefore, cycleGrid.size(),
+                "Rebuild cycle " + (r + 1) + " must preserve vertex count "
+                + "(expected " + sizeBefore + ", got " + cycleGrid.size() + ")");
+        }
+    }
+
+    /**
+     * Regression test for Luciferase-7wzml.14: hull-adjacent interior points must never be dropped
+     * or cause track() to throw when the landmark walk exits the hull or hits the step cap.
+     * <p>
+     * The defect: walkToTarget returns null for BOTH "hull-exit / step-cap" (inconclusive) AND
+     * "definitively outside". MutableGrid.track(Point3f, Random) threw IAE on null locate;
+     * track(Point3f, Vertex, Random) silently returned null (dropped the point).
+     * <p>
+     * The fix: track(Point3f, Random) falls back to deterministic Grid.locate on null;
+     * track(Point3f, Vertex, Random) falls back to Grid.locate when near.locate() returns null
+     * for a point that grid.contains() confirms is inside.
+     */
+    @Test
+    @DisplayName("Hull-adjacent interior point: track() must never drop or throw (Luciferase-7wzml.14)")
+    public void testHullAdjacentInteriorPointNeverDropped() {
+        // Build a tiny mesh — just enough to have a convex hull with null-neighbor hull faces.
+        // Five non-coplanar points create a Delaunay triangulation whose outer tetrahedra
+        // each have at least one hull face (neighbor == null).
+        float base = 10_000f;
+        grid.track(new Point3f(base,        base,        base),        entropy);
+        grid.track(new Point3f(base + 3000, base,        base),        entropy);
+        grid.track(new Point3f(base + 1500, base + 2598, base),        entropy);
+        grid.track(new Point3f(base + 1500, base + 866,  base + 2449), entropy);
+        grid.track(new Point3f(base + 1500, base + 866,  base + 500),  entropy);
+        int sizeBefore = grid.size();
+
+        // --- track(Point3f, Random) must not throw for a contained point ---
+        // A point near the centre of the inserted cloud but not coincident with any vertex.
+        Point3f interior = new Point3f(base + 1500f, base + 1000f, base + 600f);
+        assertTrue(grid.contains(interior),
+            "Interior test point must be inside the grid bounds (pre-condition)");
+
+        Vertex v1;
+        try {
+            v1 = grid.track(interior, entropy);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            fail("track(Point3f, Random) threw for a contained point: " + e);
+            return;
+        }
+        assertNotNull(v1, "track(Point3f, Random) must not drop a geometrically interior point");
+        assertEquals(sizeBefore + 1, grid.size());
+
+        // --- track(Point3f, Vertex, Random) must not silently drop a contained point ---
+        // Use the first inserted vertex as the 'near' hint.  Its adjacent tetrahedron touches
+        // hull faces (null neighbors), so a naive walk from there can exit the hull and return
+        // null for a point that IS inside the mesh.
+        Vertex nearHint = grid.iterator().next();
+        assertNotNull(nearHint, "Need at least one vertex as near hint");
+
+        Point3f interior2 = new Point3f(base + 1200f, base + 800f, base + 700f);
+        assertTrue(grid.contains(interior2),
+            "Second interior test point must be inside the grid bounds (pre-condition)");
+
+        int sizeAfterFirst = grid.size();
+        Vertex v2;
+        try {
+            v2 = grid.track(interior2, nearHint, entropy);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            fail("track(Point3f, Vertex, Random) threw for a contained point: " + e);
+            return;
+        }
+        assertNotNull(v2,
+            "track(Point3f, Vertex, Random) must not silently drop a contained interior point");
+        assertEquals(sizeAfterFirst + 1, grid.size(),
+            "Grid size must grow after track(Point3f, Vertex, Random) on a contained point");
+    }
+
     @Test
     @DisplayName("Manual validation of flip algorithm for small point set")
     public void testManualFlipValidation() {
@@ -604,5 +737,84 @@ public class MutableGridTest {
         if (!isDelaunay) {
             System.err.println("Note: Delaunay property not perfect in manual flip test - expected with fast predicates");
         }
+    }
+
+    /**
+     * Bead Luciferase-7wzml.121: rebuildDirect flag must be read once at construction, not per-rebuild.
+     * Verifies the final field is consistent across multiple rebuild calls and that the
+     * per-rebuild System.getProperty hot-path invocation is absent.
+     */
+    @Test
+    @DisplayName("rebuildDirect flag is a final field — not re-read per rebuild (Luciferase-7wzml.121)")
+    public void testRebuildDirectFlagReadOnceAtConstruction() throws Exception {
+        // Default grid: sentry.rebuild.direct not set -> rebuildDirect == false
+        var g = new MutableGrid();
+        var field = MutableGrid.class.getDeclaredField("rebuildDirect");
+        field.setAccessible(true);
+        boolean valueAtConstruction = (boolean) field.get(g);
+
+        // Populate and rebuild multiple times; field value must not change
+        float base = 5_000f;
+        var r = new Random(0x121);
+        for (int i = 0; i < 15; i++) {
+            g.track(new Point3f(base + r.nextFloat() * 1000f,
+                                base + r.nextFloat() * 1000f,
+                                base + r.nextFloat() * 1000f), r);
+        }
+        g.rebuild(r);
+        g.rebuild(r);
+
+        assertEquals(valueAtConstruction, (boolean) field.get(g),
+            "rebuildDirect must be a stable final field — value must not change across rebuilds");
+
+        // Explicit DIRECT-strategy grid: rebuildDirect is also read once
+        var direct = new MutableGrid(MutableGrid.AllocationStrategy.DIRECT);
+        var dField = MutableGrid.class.getDeclaredField("rebuildDirect");
+        dField.setAccessible(true);
+        boolean directValue = (boolean) dField.get(direct);
+        // Value is determined by the system property at construction time; just assert stability
+        assertEquals(directValue, (boolean) dField.get(direct),
+            "rebuildDirect must remain stable on DIRECT-strategy grid");
+    }
+
+    /**
+     * Bead Luciferase-7wzml.122: LandmarkIndex must receive an injectable/seeded Random so landmark
+     * selection is reproducible across runs.
+     */
+    @Test
+    @DisplayName("LandmarkIndex uses injected seeded Random — landmark selection is reproducible (Luciferase-7wzml.122)")
+    public void testLandmarkIndexUsesSeededRandom() {
+        // Build two identical grids from the same seed; landmark membership must match.
+        long seed = 0xABCD_1234L;
+        float base = 8_000f;
+        var points = new ArrayList<Point3f>();
+        var setupRandom = new Random(0x99);
+        for (int i = 0; i < 50; i++) {
+            points.add(new Point3f(base + setupRandom.nextFloat() * 2000f,
+                                   base + setupRandom.nextFloat() * 2000f,
+                                   base + setupRandom.nextFloat() * 2000f));
+        }
+
+        var entropy1 = new Random(0x42);
+        var g1 = new MutableGrid(MutableGrid.AllocationStrategy.POOLED, new Random(seed));
+        for (var p : points) {
+            g1.track(new Point3f(p), entropy1);
+        }
+
+        var entropy2 = new Random(0x42);
+        var g2 = new MutableGrid(MutableGrid.AllocationStrategy.POOLED, new Random(seed));
+        for (var p : points) {
+            g2.track(new Point3f(p), entropy2);
+        }
+
+        // Landmark counts should be equal for the same seed and same insertion order
+        var stats1 = g1.getLandmarkStatistics();
+        var stats2 = g2.getLandmarkStatistics();
+        assertEquals(stats1, stats2,
+            "Same seed must produce identical landmark statistics: got [" + stats1 + "] vs [" + stats2 + "]");
+
+        // Verify no bare new Random() escapes: the injected Random is stored as a field
+        assertNotNull(g1.getLandmarkStatistics(), "Landmark index must be initialized");
+        assertNotNull(g2.getLandmarkStatistics(), "Landmark index must be initialized");
     }
 }

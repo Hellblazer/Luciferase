@@ -16,32 +16,41 @@
  */
 package com.hellblazer.luciferase.esvo.gpu;
 
+import com.hellblazer.luciferase.common.time.Clock;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Buffer pool for GPU memory allocation with LRU eviction.
+ * GPU memory quota tracker and byte-accounting gate.
  *
- * <p>Manages a pool of reusable GPU buffers to reduce allocation overhead
- * and fragmentation. Supports multiple buffer size classes with LRU
- * eviction when memory pressure is detected.
+ * <p>Tracks byte quotas for logical GPU memory allocations within a
+ * configurable capacity limit. Allocations and releases adjust
+ * {@code AtomicLong} counters; no actual GPU handle (cl_mem,
+ * MemorySegment, etc.) is created or freed here.
+ *
+ * <p>Size-class buckets allow the accounting layer to round requests up to
+ * powers-of-2 boundaries and enforce a true LRU eviction policy over the
+ * tracked quota when the limit is approached. Eviction selects the idle slot
+ * with the smallest {@code lastAccessNs} across all size classes until enough
+ * bytes are reclaimed.
  *
  * <p>Key features:
  * <ul>
- *   <li>Size-class based pooling (powers of 2)</li>
- *   <li>LRU eviction of least recently used buffers</li>
- *   <li>Thread-safe allocation and release</li>
+ *   <li>Size-class based quota accounting (powers of 2)</li>
+ *   <li>LRU eviction — least-recently-accessed idle slot evicted first</li>
+ *   <li>Thread-safe counter adjustment</li>
  *   <li>Statistics tracking for monitoring</li>
  * </ul>
  *
  * @see GPUMemoryManager
  */
-public class GPUBufferPool {
+public class GPUMemoryAccountant {
 
     /**
-     * Represents a pooled buffer allocation.
+     * Represents a tracked quota slot (metadata only — no GPU handle).
      */
     public record PooledBuffer(
         String id,
@@ -51,15 +60,24 @@ public class GPUBufferPool {
         long lastAccessNs
     ) {
         /**
-         * Updates last access time.
+         * Updates last access time to the given nanosecond timestamp.
+         *
+         * @param nowNs nanosecond timestamp (from an injected clock)
          */
-        public PooledBuffer touch() {
-            return new PooledBuffer(id, sizeBytes, sizeClass, allocatedAtNs, System.nanoTime());
+        public PooledBuffer touch(long nowNs) {
+            return new PooledBuffer(id, sizeBytes, sizeClass, allocatedAtNs, nowNs);
         }
     }
 
     /**
-     * Statistics for buffer pool monitoring.
+     * Statistics for quota accounting monitoring.
+     *
+     * <p><b>Important:</b> {@code hitCount} and {@code hitRate()} measure
+     * <em>quota-slot budget reuse</em>, not GPU buffer-object reuse. A "hit"
+     * means an allocation request found a previously-released quota slot of
+     * the matching size class and reused its byte-accounting entry, avoiding
+     * a fresh counter increment. No actual GPU handle (cl_mem, MemorySegment,
+     * etc.) is created or reused — this class is byte-accounting only.
      */
     public record PoolStats(
         int activeBuffers,
@@ -73,7 +91,11 @@ public class GPUBufferPool {
         long missCount
     ) {
         /**
-         * Returns hit rate (0.0 to 1.0).
+         * Returns the quota-slot reuse rate (0.0 to 1.0).
+         *
+         * <p>This is the fraction of allocations that reused a previously-released
+         * accounting slot rather than minting a fresh one. It does <em>not</em>
+         * reflect GPU buffer-object reuse efficiency.
          */
         public double hitRate() {
             long total = hitCount + missCount;
@@ -99,12 +121,15 @@ public class GPUBufferPool {
     private final AtomicLong hitCount;
     private final AtomicLong missCount;
 
+    // Clock for deterministic testing
+    private volatile Clock clock = Clock.system();
+
     /**
-     * Creates a buffer pool with the specified maximum size.
+     * Creates a quota tracker with the specified byte ceiling.
      *
-     * @param maxPoolBytes maximum bytes the pool can hold
+     * @param maxPoolBytes maximum bytes the accountant will permit active at once
      */
-    public GPUBufferPool(long maxPoolBytes) {
+    public GPUMemoryAccountant(long maxPoolBytes) {
         if (maxPoolBytes <= 0) {
             throw new IllegalArgumentException("Max pool bytes must be positive");
         }
@@ -129,10 +154,24 @@ public class GPUBufferPool {
     }
 
     /**
-     * Allocates a buffer from the pool or creates a new one.
+     * Injects a clock for deterministic testing.
      *
-     * @param requestedBytes requested buffer size
-     * @return pooled buffer, or null if pool is exhausted and eviction failed
+     * @param clock the clock to use for allocation and LRU timestamps
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    /**
+     * Registers a quota slot for the requested byte count.
+     *
+     * <p>No GPU memory is allocated. The returned {@link PooledBuffer} is a
+     * metadata record tracking the quota claim. Returns {@code null} if the
+     * byte ceiling would be exceeded and eviction of idle slots cannot free
+     * enough quota.
+     *
+     * @param requestedBytes requested byte count
+     * @return quota record, or null if quota is exhausted
      */
     public PooledBuffer allocate(long requestedBytes) {
         if (requestedBytes <= 0) {
@@ -141,16 +180,18 @@ public class GPUBufferPool {
 
         long sizeClass = getSizeClass(requestedBytes);
         String id = UUID.randomUUID().toString();
-        long now = System.nanoTime();
+        long now = clock.nanoTime();
 
         lock.writeLock().lock();
         try {
-            // Try to reuse from free pool
+            // Quota slot available in this size class — reuse its byte budget
             var freeList = freeBuffersByClass.get(sizeClass);
             if (freeList != null && !freeList.isEmpty()) {
                 var reused = freeList.removeFirst();
                 totalFreeBytes.addAndGet(-reused.sizeBytes());
 
+                // Mint a fresh quota record (new id/timestamps); actual GPU memory
+                // allocation is the caller's responsibility.
                 var buffer = new PooledBuffer(id, requestedBytes, sizeClass, now, now);
                 activeBuffers.put(id, buffer);
                 totalActiveBytes.addAndGet(requestedBytes);
@@ -159,7 +200,7 @@ public class GPUBufferPool {
                 return buffer;
             }
 
-            // Need to allocate new buffer
+            // No idle slot in this size class — register a new quota entry
             missCount.incrementAndGet();
 
             // Check if we have room
@@ -183,10 +224,13 @@ public class GPUBufferPool {
     }
 
     /**
-     * Releases a buffer back to the pool for reuse.
+     * Releases a quota slot by its ID, adjusting the active-byte counter.
      *
-     * @param bufferId ID of the buffer to release
-     * @return true if buffer was found and released
+     * <p>No GPU memory is freed here. The slot is moved from active to idle
+     * so its quota can be reclaimed by a subsequent eviction pass.
+     *
+     * @param bufferId ID of the quota slot to release
+     * @return true if the slot was found and released
      */
     public boolean release(String bufferId) {
         lock.writeLock().lock();
@@ -199,10 +243,10 @@ public class GPUBufferPool {
             totalActiveBytes.addAndGet(-buffer.sizeBytes());
             deallocations.incrementAndGet();
 
-            // Add to free pool
+            // Park slot as idle so its byte budget can be reclaimed by eviction
             var freeList = freeBuffersByClass.get(buffer.sizeClass());
             if (freeList != null) {
-                freeList.addLast(buffer.touch());
+                freeList.addLast(buffer.touch(clock.nanoTime()));
                 totalFreeBytes.addAndGet(buffer.sizeBytes());
             }
 
@@ -215,20 +259,30 @@ public class GPUBufferPool {
     /**
      * Updates access time for a buffer (touch for LRU).
      *
-     * @param bufferId ID of the buffer
+     * <p>Uses {@link ConcurrentHashMap#computeIfPresent} so the read-then-write
+     * is a single atomic operation on the map entry.  A plain
+     * {@code get}/{@code put} sequence (the prior implementation) was a
+     * non-atomic read-modify-write: a concurrent {@link #release} could remove
+     * the entry between the {@code get} and the {@code put}, causing the
+     * released entry to be resurrected in {@code activeBuffers} — corrupting
+     * accounting and skewing {@code totalActiveBytes}.
+     *
+     * <p>No explicit lock is needed: {@code ConcurrentHashMap.computeIfPresent}
+     * guarantees atomicity for the key's bucket and will silently no-op when
+     * the key is absent (i.e. already released).
+     *
+     * @param bufferId ID of the buffer to touch
      */
     public void touch(String bufferId) {
-        var buffer = activeBuffers.get(bufferId);
-        if (buffer != null) {
-            activeBuffers.put(bufferId, buffer.touch());
-        }
+        final long now = clock.nanoTime();
+        activeBuffers.computeIfPresent(bufferId, (id, buffer) -> buffer.touch(now));
     }
 
     /**
-     * Evicts buffers to free the specified amount of memory.
+     * Evicts idle quota slots to reclaim at least {@code bytesNeeded} from the tracked quota.
      *
-     * @param bytesNeeded bytes to free
-     * @return bytes actually freed
+     * @param bytesNeeded quota bytes to reclaim
+     * @return quota bytes actually reclaimed
      */
     public long evict(long bytesNeeded) {
         lock.writeLock().lock();
@@ -240,7 +294,7 @@ public class GPUBufferPool {
     }
 
     /**
-     * Clears all buffers from the pool.
+     * Clears all quota slots and resets byte counters to zero.
      */
     public void clear() {
         lock.writeLock().lock();
@@ -257,7 +311,7 @@ public class GPUBufferPool {
     }
 
     /**
-     * Returns current pool statistics.
+     * Returns current quota accounting statistics.
      */
     public PoolStats getStats() {
         lock.readLock().lock();
@@ -284,7 +338,7 @@ public class GPUBufferPool {
     }
 
     /**
-     * Returns total bytes currently in use (active + free).
+     * Returns total tracked quota bytes (active + idle).
      */
     public long getTotalBytes() {
         return totalActiveBytes.get() + totalFreeBytes.get();
@@ -319,27 +373,50 @@ public class GPUBufferPool {
     }
 
     /**
-     * Attempts to evict free buffers to make room for new allocation.
+     * Attempts to evict idle quota slots to reclaim enough quota for a new entry.
      * Must be called with write lock held.
      *
-     * @param bytesNeeded bytes to free
-     * @return true if enough space was freed
+     * <p>Uses true LRU eviction: on each iteration, selects the idle slot with
+     * the smallest {@code lastAccessNs} across all size classes and removes it.
+     * This ensures that a buffer re-acquired and re-released more recently will
+     * never be evicted before an older idle slot, regardless of insertion order.
+     *
+     * @param bytesNeeded quota bytes to reclaim
+     * @return true if enough quota was reclaimed
      */
     private boolean evictToMakeRoom(long bytesNeeded) {
         long freed = 0;
 
-        // First, evict from free pool (LRU order - oldest first)
-        for (var entry : freeBuffersByClass.entrySet()) {
-            var freeList = entry.getValue();
-            while (!freeList.isEmpty() && freed < bytesNeeded) {
-                var evicted = freeList.removeFirst();
-                freed += evicted.sizeBytes();
-                totalFreeBytes.addAndGet(-evicted.sizeBytes());
-                evictions.incrementAndGet();
+        while (freed < bytesNeeded) {
+            // Find the globally least-recently-accessed idle slot across all size classes
+            LinkedList<PooledBuffer> lruList = null;
+            PooledBuffer lruCandidate = null;
+
+            for (var freeList : freeBuffersByClass.values()) {
+                if (freeList.isEmpty()) {
+                    continue;
+                }
+                // Find the entry with the minimum lastAccessNs in this size class
+                PooledBuffer classMin = null;
+                for (var buf : freeList) {
+                    if (classMin == null || buf.lastAccessNs() < classMin.lastAccessNs()) {
+                        classMin = buf;
+                    }
+                }
+                if (classMin != null && (lruCandidate == null || classMin.lastAccessNs() < lruCandidate.lastAccessNs())) {
+                    lruCandidate = classMin;
+                    lruList = freeList;
+                }
             }
-            if (freed >= bytesNeeded) {
-                break;
+
+            if (lruCandidate == null) {
+                break; // No more idle slots
             }
+
+            lruList.remove(lruCandidate);
+            freed += lruCandidate.sizeBytes();
+            totalFreeBytes.addAndGet(-lruCandidate.sizeBytes());
+            evictions.incrementAndGet();
         }
 
         return freed >= bytesNeeded;

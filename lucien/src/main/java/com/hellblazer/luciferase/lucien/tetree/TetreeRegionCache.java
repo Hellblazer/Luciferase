@@ -47,13 +47,34 @@ public class TetreeRegionCache {
     }
 
     /**
-     * Pack coordinates and type into a cache key. Uses bit packing for efficient storage.
+     * Pack coordinates and type into a collision-free cache key.
+     *
+     * <p>World coordinates passed by {@code precomputeRegion} are absolute (up to {@code 2^21 - 1}),
+     * so the former 12-bit mask ({@code x & 0xFFF}) silently aliased any two coordinates that differed
+     * only in bits ≥ 12 (e.g. x=64 and x=4160 both mapped to 64). The fix follows the same strategy as
+     * {@code TetreeLevelCache.generateCacheKey}: bit-pack the small-coordinate fast path (here capped at
+     * 2048 to stay within 11 bits, matching the finest grid step at level 10), and fall back to a
+     * golden-ratio hash for larger values (Luciferase-7wzml.62).
      */
     private static long packCacheKey(int x, int y, int z, byte level, byte type) {
-        // Use 12 bits each for x,y,z (4096 cells), 5 bits for level, 3 bits for type
-        // This gives us 44 bits total, well within a long
-        return ((long) (x & 0xFFF) << 32) | ((long) (y & 0xFFF) << 20) | ((long) (z & 0xFFF) << 8) | (
-        (long) (level & 0x1F) << 3) | (type & 0x7);
+        // Fast path: 11 bits each for x,y,z (0–2047), 5 bits level, 3 bits type = 41 bits total.
+        // Layout (low to high): type[0:2], level[3:7], z[8:18], y[19:29], x[30:40] — no overlap.
+        if ((x | y | z) >= 0 && x < 2048 && y < 2048 && z < 2048) {
+            return ((long) x << 30) | ((long) y << 19) | ((long) z << 8) | ((long) (level & 0x1F) << 3) | (type
+            & 0x7);
+        }
+        // Full hash for large coordinates — matches TetreeLevelCache.generateCacheKey mixing strategy
+        var hash = x * 0x9E3779B97F4A7C15L;
+        hash ^= y * 0xBF58476D1CE4E5B9L;
+        hash ^= z * 0x94D049BB133111EBL;
+        hash ^= level * 0x2127599BF4325C37L;
+        hash ^= type * 0xFD5167A1D8E52FB7L;
+        hash ^= (hash >>> 32);
+        hash *= 0xD6E8FEB86659FD93L;
+        hash ^= (hash >>> 32);
+        hash *= 0xD6E8FEB86659FD93L;
+        hash ^= (hash >>> 32);
+        return hash;
     }
 
     /**

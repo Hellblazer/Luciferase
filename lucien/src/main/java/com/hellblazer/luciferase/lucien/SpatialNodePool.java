@@ -187,20 +187,24 @@ public class SpatialNodePool<ID extends EntityID> {
             return;
         }
 
-        int size = currentSize.get();
-        if (size < config.getMaxSize()) {
+        // Claim the slot atomically before offering to avoid TOCTOU race where
+        // concurrent releasers each observe size < maxSize and all proceed to offer,
+        // pushing the pool past maxSize. Rollback if over capacity.
+        int newSize = currentSize.incrementAndGet();
+        if (newSize <= config.getMaxSize()) {
             // Clear node state before returning to pool
             node.clear();
 
             pool.offer(node);
-            int newSize = currentSize.incrementAndGet();
 
             if (config.isEnableStatistics()) {
                 deallocations.incrementAndGet();
                 updatePeakSize(newSize);
             }
+        } else {
+            // Pool full: undo the claim and let GC handle the node
+            currentSize.decrementAndGet();
         }
-        // If pool is full, let GC handle the node
     }
 
     /**
@@ -225,12 +229,27 @@ public class SpatialNodePool<ID extends EntityID> {
     }
 
     /**
-     * Shrink the pool to a target size
+     * Shrink the pool to a target size.
+     *
+     * <p>Uses a CAS-claim protocol identical to {@link #release}: claim the decrement
+     * atomically <em>before</em> polling, so that even if a concurrent {@link #acquire}
+     * races to drain the queue the counter stays in sync with the actual queue depth.
+     * <p>
+     * Uses the same poll-then-decrement protocol as {@link #acquire()}: a node is only
+     * counted as removed once {@code poll()} actually returns it. This avoids the
+     * double-decrement race a claim-the-decrement-first (CAS) approach has against
+     * {@code acquire()} — there, a CAS-claimed decrement plus {@code acquire()}'s own
+     * unconditional decrement for the same physical node could drive {@code currentSize}
+     * negative (Luciferase-7wzml.126 review). Poll is atomic on the ConcurrentLinkedQueue,
+     * so concurrent shrinkers each obtain distinct nodes and decrement exactly once.
      */
     public void shrink(int targetSize) {
         targetSize = Math.max(0, targetSize);
 
         while (currentSize.get() > targetSize) {
+            // Poll first; only decrement when we actually removed a node. If poll returns
+            // null the queue was drained by a concurrent acquire() (which decremented the
+            // counter itself), so there is nothing for us to account for — stop.
             SpatialNodeImpl<ID> node = pool.poll();
             if (node == null) {
                 break;
@@ -240,10 +259,18 @@ public class SpatialNodePool<ID extends EntityID> {
     }
 
     /**
-     * Get current pool size
+     * Get current pool size (the counter value)
      */
     public int size() {
         return currentSize.get();
+    }
+
+    /**
+     * Get the actual number of nodes waiting in the queue.
+     * Under correct operation this equals {@link #size()}; drift indicates a counter bug.
+     */
+    public int getQueueDepth() {
+        return pool.size();
     }
 
     // Private helper methods

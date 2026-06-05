@@ -103,8 +103,8 @@ public class StreamCActivationDecision {
         var latency = optimized.latencyMicroseconds();
         var coherenceScore = coherence.coherenceScore();
 
-        log.debug("Evaluating Stream C activation: latency={}µs, coherence={:.3f}",
-                  latency, coherenceScore);
+        log.debug("Evaluating Stream C activation: latency={}µs, coherence={}",
+                  latency, String.format("%.3f", coherenceScore));
 
         // Decision 1: Check if target already met
         if (latency <= latencyTarget) {

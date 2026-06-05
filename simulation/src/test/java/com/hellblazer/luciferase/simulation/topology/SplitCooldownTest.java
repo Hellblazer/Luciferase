@@ -182,6 +182,52 @@ class SplitCooldownTest {
     // ========================================================================
 
     @Test
+    void testGetActiveCooldownCountIsNonMutating() throws InterruptedException {
+        // Verify that getActiveCooldownCount does not remove entries from the map,
+        // so concurrent recordFailure writes are not disturbed.
+        var bubble1 = UUID.randomUUID();
+        var bubble2 = UUID.randomUUID();
+
+        tracker.recordFailure(bubble1);
+        tracker.recordFailure(bubble2);
+
+        // Expire both cooldowns
+        testClock.advance(30_000L);
+
+        // getActiveCooldownCount must return 0 (all expired) but must NOT remove
+        // entries — we verify this by confirming recordFailure can still fire on
+        // bubble1 and correctly re-registers a fresh cooldown entry afterward.
+        assertEquals(0, tracker.getActiveCooldownCount(), "Expired entries should not count");
+
+        // The map may still hold the stale entries; record a new failure and
+        // confirm it takes effect correctly.
+        testClock.advance(1L); // tiny forward step so new deadline is strictly after now
+        tracker.recordFailure(bubble1);
+        assertEquals(1, tracker.getActiveCooldownCount(), "Fresh failure should be counted");
+    }
+
+    @Test
+    void testPruneExpiredRemovesStaleEntries() {
+        var bubble1 = UUID.randomUUID();
+        var bubble2 = UUID.randomUUID();
+
+        tracker.recordFailure(bubble1);
+        tracker.recordFailure(bubble2);
+
+        assertEquals(2, tracker.getActiveCooldownCount(), "Both should be active");
+
+        testClock.advance(30_000L);
+
+        // pruneExpired is the only mutating cleanup path
+        tracker.pruneExpired();
+
+        // After prune, isOnCooldown returns false (entries gone, nothing to skip)
+        assertFalse(tracker.isOnCooldown(bubble1), "Should not be on cooldown after prune");
+        assertFalse(tracker.isOnCooldown(bubble2), "Should not be on cooldown after prune");
+        assertEquals(0, tracker.getActiveCooldownCount(), "Count should be 0 after prune");
+    }
+
+    @Test
     void testCooldownWithZeroDuration() {
         // Zero duration should be rejected
         assertThrows(IllegalArgumentException.class, () -> new SplitCooldownTracker(0L),

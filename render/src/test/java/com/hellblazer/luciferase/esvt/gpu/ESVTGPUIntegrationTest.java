@@ -18,15 +18,20 @@ package com.hellblazer.luciferase.esvt.gpu;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import com.hellblazer.luciferase.esvt.io.ESVTDeserializer;
+import com.hellblazer.luciferase.esvt.io.ESVTSerializer;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.io.TempDir;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.system.Platform;
 
 import javax.vecmath.Vector3f;
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.lwjgl.glfw.GLFW.*;
@@ -42,6 +47,9 @@ import static org.lwjgl.system.MemoryUtil.NULL;
  * @author hal.hildebrand
  */
 class ESVTGPUIntegrationTest {
+
+    @TempDir
+    Path tempDir;
 
     /**
      * Test ESVTGPUMemory creation and node operations (no GPU required)
@@ -75,10 +83,12 @@ class ESVTGPUIntegrationTest {
     }
 
     /**
-     * Test ESVTData ByteBuffer serialization (no GPU required)
+     * Test ESVTData serialization round-trip via ESVTSerializer/ESVTDeserializer (no GPU required).
+     * Uses the far-pointer-aware file path to avoid the silent data loss of the deleted
+     * fromByteBuffer() helper (Luciferase-7wzml.30).
      */
     @Test
-    void testESVTDataByteBufferSerialization() {
+    void testESVTDataByteBufferSerialization() throws IOException {
         // Create nodes
         var nodes = new ESVTNodeUnified[2];
         nodes[0] = new ESVTNodeUnified((byte) 0);
@@ -92,15 +102,23 @@ class ESVTGPUIntegrationTest {
 
         var esvtData = new ESVTData(nodes, 0, 1, 1, 1);
 
-        // Serialize to ByteBuffer
+        // Verify node-only GPU buffer is still intact
         ByteBuffer buffer = esvtData.toByteBuffer();
         assertNotNull(buffer);
         assertEquals(16, buffer.remaining()); // 2 * 8 bytes
 
-        // Deserialize and verify
-        var restored = ESVTData.fromByteBuffer(buffer, 2, 0, 1, 1, 1);
+        // Round-trip through the far-pointer-aware serializer/deserializer
+        var tmpFile = tempDir.resolve("test.esvt");
+        try (var ser = new ESVTSerializer()) {
+            ser.serialize(esvtData, tmpFile);
+        }
+        ESVTData restored;
+        try (var des = new ESVTDeserializer()) {
+            restored = des.deserialize(tmpFile);
+        }
         assertEquals(esvtData.nodeCount(), restored.nodeCount());
         assertEquals(esvtData.rootType(), restored.rootType());
+        assertEquals(esvtData.farPointerCount(), restored.farPointerCount());
 
         // Verify node content
         assertTrue(restored.root().isValid());

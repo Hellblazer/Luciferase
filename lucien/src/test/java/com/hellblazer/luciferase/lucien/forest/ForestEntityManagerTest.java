@@ -330,11 +330,48 @@ public class ForestEntityManagerTest {
             ids[i] = new LongEntityID(i);
             entityManager.insert(ids[i], "Entity " + i, new Point3f(i * 10, 50, 50), null);
         }
-        
+
         var allIds = entityManager.getAllEntityIds();
         assertEquals(5, allIds.size());
         for (var id : ids) {
             assertTrue(allIds.contains(id));
+        }
+    }
+
+    /**
+     * C1 regression: getAllTrees() must return a STABLE, deterministically-ordered snapshot across
+     * repeated calls so that index-based round-robin (RoundRobinStrategy) maps the same index to
+     * the same tree on every invocation.
+     */
+    @Test
+    void testGetAllTreesIsStableOrderedByTreeId() {
+        // Capture two independent snapshots.
+        var first  = forest.getAllTrees().stream().map(TreeNode::getTreeId).toList();
+        var second = forest.getAllTrees().stream().map(TreeNode::getTreeId).toList();
+
+        // Must be identical (same reference order).
+        assertEquals(first, second, "getAllTrees() must return the same order on every call");
+
+        // Must be sorted by treeId (String natural order).
+        var sorted = first.stream().sorted().toList();
+        assertEquals(sorted, first, "getAllTrees() must be sorted by treeId");
+    }
+
+    /**
+     * C1 regression: RoundRobinStrategy must distribute to trees in a deterministic sequence so
+     * that index 0 always maps to the lowest-id tree, index 1 to the next, etc.
+     */
+    @Test
+    void testRoundRobinStrategyIsIndexDeterministic() {
+        var strategy = new ForestEntityManager.RoundRobinStrategy<MortonKey, LongEntityID, String>();
+        var orderedIds = forest.getAllTrees().stream().map(TreeNode::getTreeId).toList();
+        int n = orderedIds.size();
+
+        // Select 2*n trees in sequence; verify cycling matches sorted order.
+        for (int i = 0; i < 2 * n; i++) {
+            var selected = strategy.selectTree(new LongEntityID(i), new Point3f(0, 0, 0), null, forest);
+            assertEquals(orderedIds.get(i % n), selected,
+                    "RoundRobinStrategy: call " + i + " should map to tree at index " + (i % n));
         }
     }
 }

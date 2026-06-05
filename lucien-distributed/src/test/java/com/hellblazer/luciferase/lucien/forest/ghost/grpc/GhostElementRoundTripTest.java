@@ -27,6 +27,7 @@ import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.ExtendedTetreeKey;
+import com.google.protobuf.Timestamp;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -69,6 +70,8 @@ class GhostElementRoundTripTest {
     };
 
     private static final Point3f POSITION = new Point3f(1.5f, -2.25f, 3.0f);
+    /** Fixed epoch-ms used for all Timestamp assertions — avoids System.currentTimeMillis() non-determinism (Luciferase-7wzml.85). */
+    private static final long NOW_MILLIS = 1_700_000_000_000L;
 
     @Test
     void mortonKeyWithLongIdRoundTrips() throws Exception {
@@ -104,10 +107,16 @@ class GhostElementRoundTripTest {
         layer.addGhostElement(new GhostElement<>(new MortonKey(0x200L, (byte) 3), new LongEntityID(2L), "two",
                                                  POSITION, 3, 99L));
 
-        var batch = ProtobufConverters.ghostLayerToProtobufBatch(layer, 3, 99L, SERIALIZER);
+        var batch = ProtobufConverters.ghostLayerToProtobufBatch(layer, 3, 99L, SERIALIZER, NOW_MILLIS);
         assertEquals(2, batch.getElementsCount());
         assertEquals(3, batch.getSourceRank());
         assertEquals(99L, batch.getSourceTreeId());
+
+        // Timestamp is derived from the single injected value — no double-read (Luciferase-7wzml.85)
+        Timestamp batchTs = batch.getTimestamp();
+        assertEquals(NOW_MILLIS / 1000, batchTs.getSeconds(), "batch timestamp seconds from injected nowMillis");
+        assertEquals((int) ((NOW_MILLIS % 1000) * 1_000_000), batchTs.getNanos(),
+                     "batch timestamp nanos from injected nowMillis");
 
         var contents = batch.getElementsList().stream().map(p -> {
             try {
@@ -122,11 +131,25 @@ class GhostElementRoundTripTest {
     }
 
     @Test
+    void elementTimestampDerivedFromSingleInjectedValue() throws Exception {
+        // Pin the single-read contract: seconds and nanos must both come from the same nowMillis (Luciferase-7wzml.85)
+        var element = new GhostElement<>(new MortonKey(0x1L, (byte) 1), new LongEntityID(1L), "x", POSITION, 0, 0L);
+        var proto = ProtobufConverters.ghostElementToProtobuf(element, SERIALIZER, NOW_MILLIS);
+
+        Timestamp ts = proto.getTimestamp();
+        assertEquals(NOW_MILLIS / 1000, ts.getSeconds(),
+                     "element timestamp seconds derived from injected nowMillis, not a second System.currentTimeMillis call");
+        assertEquals((int) ((NOW_MILLIS % 1000) * 1_000_000), ts.getNanos(),
+                     "element timestamp nanos derived from the same injected nowMillis");
+    }
+
+    @Test
     void malformedContentSurfacesSerializationException() throws Exception {
         // A valid proto (built with the working serializer) deserialised with a failing serializer must surface
         // SerializationException — the exact failure GrpcBalanceExchange's per-element skip-invalid path catches.
         var proto = ProtobufConverters.ghostElementToProtobuf(
-            new GhostElement<>(new MortonKey(0x1L, (byte) 1), new LongEntityID(1L), "x", POSITION, 0, 0L), SERIALIZER);
+            new GhostElement<>(new MortonKey(0x1L, (byte) 1), new LongEntityID(1L), "x", POSITION, 0, 0L), SERIALIZER,
+            NOW_MILLIS);
         ContentSerializer<String> failing = new ContentSerializer<>() {
             @Override
             public byte[] serialize(String content) {
@@ -152,7 +175,7 @@ class GhostElementRoundTripTest {
         var content = "payload-" + id;
         var element = new GhostElement<K, I, String>(key, id, content, POSITION, 3, 99L);
 
-        var proto = ProtobufConverters.ghostElementToProtobuf(element, SERIALIZER);
+        var proto = ProtobufConverters.ghostElementToProtobuf(element, SERIALIZER, NOW_MILLIS);
         var back = ProtobufConverters.<K, I, String>ghostElementFromProtobuf(proto, SERIALIZER, idClass);
 
         assertEquals(key, back.getSpatialKey(), "spatialKey");

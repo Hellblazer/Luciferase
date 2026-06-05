@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class TestClock implements Clock {
 
     private final AtomicLong absoluteTime;
+    private final AtomicLong absoluteNanos;
 
     /**
      * Creates a new test clock with an initial fixed time.
@@ -41,6 +42,29 @@ public class TestClock implements Clock {
      */
     public TestClock(long initialTime) {
         this.absoluteTime = new AtomicLong(initialTime);
+        this.absoluteNanos = new AtomicLong(0L);
+    }
+
+    /**
+     * Advances the nano-time clock by the specified number of nanoseconds.
+     *
+     * @param deltaNanos nanoseconds to advance (must be non-negative)
+     * @throws IllegalArgumentException if deltaNanos is negative
+     */
+    public void advanceNanos(long deltaNanos) {
+        if (deltaNanos < 0) {
+            throw new IllegalArgumentException("Cannot advance by negative amount: " + deltaNanos);
+        }
+        absoluteNanos.addAndGet(deltaNanos);
+    }
+
+    /**
+     * Sets the nano-time clock to an absolute nanosecond value.
+     *
+     * @param nanos the absolute nanosecond value
+     */
+    public void setNanos(long nanos) {
+        absoluteNanos.set(nanos);
     }
 
     /**
@@ -76,5 +100,10 @@ public class TestClock implements Clock {
     @Override
     public long currentTimeMillis() {
         return absoluteTime.get();
+    }
+
+    @Override
+    public long nanoTime() {
+        return absoluteNanos.get();
     }
 }

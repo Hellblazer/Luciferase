@@ -150,6 +150,16 @@ public class EventReprocessor {
     private final AtomicLong totalReprocessed = new AtomicLong(0L);
 
     /**
+     * Metrics: Total events that threw an exception during processor.process().
+     *
+     * Policy: drop-and-count (no requeue). Re-queuing a poison-pill event that
+     * always throws would loop forever and block all subsequent events. The failed
+     * event is permanently discarded; callers can observe the count via
+     * {@link #getTotalFailed()} or {@link #getStats()} and alert/alarm accordingly.
+     */
+    private final AtomicLong totalFailed = new AtomicLong(0L);
+
+    /**
      * Metrics: Total gap cycles detected.
      * A gap cycle begins on the first queue overflow (NONE → DETECTED) and ends when resetGap() is called.
      * Multiple queue overflows during a single gap cycle count as one gap cycle.
@@ -331,7 +341,12 @@ public class EventReprocessor {
                     log.debug("Reprocessed: {} events (queue depth={})", processed, pendingQueue.size());
                 }
             } catch (Exception e) {
-                log.error("Error processing queued event: entity={}, clock={}", event.entityId(), event.lamportClock(), e);
+                // Drop-and-count policy: do NOT requeue — re-queuing a poison-pill event that
+                // always throws would create an infinite loop and block all subsequent events.
+                // The failed event is permanently discarded; observe via getTotalFailed()/getStats().
+                totalFailed.incrementAndGet();
+                log.error("Error processing queued event (dropped, not requeued): entity={}, clock={}",
+                          event.entityId(), event.lamportClock(), e);
             }
 
             // Reset window start if queue is now empty
@@ -380,6 +395,62 @@ public class EventReprocessor {
     }
 
     /**
+     * Get total events that threw an exception during {@link EventProcessor#process} and
+     * were permanently dropped (not requeued — see drop-and-count policy on
+     * {@link #totalFailed}).
+     *
+     * @return Total failed count
+     */
+    public long getTotalFailed() {
+        return totalFailed.get();
+    }
+
+    /**
+     * Immutable snapshot of all reprocessor metrics.
+     *
+     * @param queueDepth      Current number of events waiting in the queue
+     * @param dropped         Total events dropped due to queue overflow
+     * @param reprocessed     Total events successfully processed by the callback
+     * @param forceProcessed  Total events force-processed past the max lookahead window
+     * @param failed          Total events whose processor callback threw an exception
+     *                        (permanently dropped; not requeued)
+     * @param gaps            Total gap cycles detected (each overflow-induced transition
+     *                        to {@link GapState#DETECTED} counts as one gap cycle)
+     * @param gapState        Current gap state
+     * @param healthy         Whether the queue is currently considered healthy
+     */
+    public record Stats(
+        int queueDepth,
+        long dropped,
+        long reprocessed,
+        long forceProcessed,
+        long failed,
+        long gaps,
+        GapState gapState,
+        boolean healthy
+    ) {}
+
+    /**
+     * Return an atomic snapshot of all reprocessor metrics.
+     * Acquires the instance monitor to ensure a consistent view of queue depth
+     * and health alongside the atomic counters.
+     *
+     * @return Immutable {@link Stats} snapshot
+     */
+    public synchronized Stats getStats() {
+        return new Stats(
+            pendingQueue.size(),
+            totalDropped.get(),
+            totalReprocessed.get(),
+            totalForceProcessed.get(),
+            totalFailed.get(),
+            totalGaps.get(),
+            gapState,
+            isHealthy()
+        );
+    }
+
+    /**
      * Check whether an event with the given entity ID and Lamport clock is currently
      * queued (i.e. a duplicate would be a re-arrival of an already-pending event).
      * Keyed on the (entityId, lamportClock) pair so distinct clocks for the same
@@ -398,6 +469,13 @@ public class EventReprocessor {
      * Check if queue is healthy (not overflowing or deadlocked).
      * Returns false if queue is growing beyond expected bounds.
      * Healthy means: queue at or below 50% capacity AND no drops.
+     *
+     * <p>Note: {@code totalFailed} (permanently-discarded events that could not be processed
+     * even after force-processing) is intentionally <em>excluded</em> from this health signal.
+     * Failed events do not block queue liveness — the queue continues to accept and drain new
+     * events normally. {@code isHealthy()} answers the single question "is the queue about to
+     * back-pressure the caller?". Monitor {@link #getTotalFailed()} separately and alarm on
+     * sustained non-zero values, which indicate upstream event loss or causal-clock divergence.
      *
      * @return true if queue appears healthy
      */
@@ -540,8 +618,10 @@ public class EventReprocessor {
 
     @Override
     public String toString() {
-        return String.format("EventReprocessor{queue=%d, dropped=%d, reprocessed=%d, gaps=%d, gapState=%s, healthy=%s}",
-                           pendingQueue.size(), totalDropped.get(), totalReprocessed.get(),
-                           totalGaps.get(), gapState, isHealthy());
+        return String.format(
+            "EventReprocessor{queue=%d, dropped=%d, reprocessed=%d, forceProcessed=%d, failed=%d, gaps=%d, gapState=%s, healthy=%s}",
+            pendingQueue.size(), totalDropped.get(), totalReprocessed.get(),
+            totalForceProcessed.get(), totalFailed.get(),
+            totalGaps.get(), gapState, isHealthy());
     }
 }

@@ -136,21 +136,43 @@ public final class RDGCoordinates {
      * {@code toCartesian((1, 0, 0)) = (0, 1/√2, 1/√2)} and the inverse computation produced floats
      * in the {@code [0.99999..., 1.00000...]} neighbourhood that {@code (int)} cast to {@code 0}
      * (Luciferase-6oa audit finding).
+     * <p>
+     * <b>Precision:</b> the {@code Tuple3f} input fields are promoted to {@code double} before
+     * the {@code 1/√2} inversion to prevent float-arithmetic error accumulating across the
+     * {@code (±x ± y ± z)} sum. Without this promotion the round-trip identity
+     * {@code toRDG(toCartesian(p)) == p} first breaks at very large magnitudes — empirically around
+     * {@code |coord| ≳ 3×10^6} under strict float32 arithmetic, where {@code float}'s 24-bit mantissa
+     * loses the sub-ULP precision that {@link Math#round} needs to land on the correct integer
+     * (Luciferase-7wzml.82). (Note: the precision loss originates at the {@code Tuple3f} input itself;
+     * double-promotion of the arithmetic recovers it.) The identity is validated over
+     * {@code |coord| ≤ 1000} and at an adversarial large-magnitude point that fails under the old
+     * float arithmetic in {@code RDGCoordinatesTest}.
      *
      * @param cartesian Cartesian position
      * @return RDGCS coordinates
      */
     public static Point3i toRDG(Tuple3f cartesian) {
-        return new Point3i((int) Math.round((-cartesian.x + cartesian.y + cartesian.z) * DIVIDE_ROOT_2),
-                           (int) Math.round(( cartesian.x - cartesian.y + cartesian.z) * DIVIDE_ROOT_2),
-                           (int) Math.round(( cartesian.x + cartesian.y - cartesian.z) * DIVIDE_ROOT_2));
+        // Cast each field to double before summing to avoid float-addition error accumulating
+        // before the 1/√2 scale; without the cast the float sub-expressions lose ~7 significant
+        // decimal digits, causing Math.round to tip across the 0.5 boundary at |coord| > ~1000.
+        double cx = cartesian.x, cy = cartesian.y, cz = cartesian.z; // promote before summing (see Javadoc)
+        return new Point3i((int) Math.round((-cx + cy + cz) * DIVIDE_ROOT_2),
+                           (int) Math.round(( cx - cy + cz) * DIVIDE_ROOT_2),
+                           (int) Math.round(( cx + cy - cz) * DIVIDE_ROOT_2));
     }
 
     /**
-     * Return the 6 face-connected + 6 second-shell neighbors (12 total) of {@code cell}.
+     * Return the 12 FCC first-shell (face-connected, rhombic-dodecahedron) neighbors of {@code cell}.
+     * <p>
+     * All 12 returned offsets map to Cartesian points at Euclidean distance exactly 1.0 from
+     * {@code cell} under {@link #toCartesian(Tuple3i)} — they are the full FCC nearest-neighbor
+     * shell, i.e. the 12 faces of the rhombic dodecahedron. There is no "second-shell" subset:
+     * every returned neighbor is equidistant from the origin at distance 1. The genuine FCC second
+     * shell (6 axis-aligned points at distance √2) is returned by
+     * {@link #vertexConnectedNeighbors(Point3i)}.
      *
      * @param cell the cell whose face-connected neighbors to return
-     * @return 12 neighbor offsets
+     * @return 12 neighbor offsets, each at Cartesian distance 1.0 from {@code cell}
      */
     public static Point3i[] faceConnectedNeighbors(Point3i cell) {
         var x = cell.x;

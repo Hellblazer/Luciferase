@@ -398,9 +398,78 @@ class MortonKeyTest {
         
         // Test null validation in record
         MortonKey validKey = new MortonKey(100L);
-        assertThrows(NullPointerException.class, 
+        assertThrows(NullPointerException.class,
                      () -> new MortonKey.SFCRange(null, validKey));
-        assertThrows(NullPointerException.class, 
+        assertThrows(NullPointerException.class,
                      () -> new MortonKey.SFCRange(validKey, null));
+    }
+
+    /**
+     * Regression test for Luciferase-7wzml.137.
+     *
+     * The Z-order curve is NOT monotonic along AABB diagonals.  A single contiguous
+     * [morton(min-corner), morton(max-corner)] range does NOT cover every grid cell
+     * geometrically inside the box — the curve re-enters the box from outside the
+     * two-corner span.
+     *
+     * Classic counter-example (cell indices at max refinement level):
+     *   AABB corners: (0,0,3) and (3,3,0).
+     *   morton(0,0,3)=36, morton(3,3,0)=27  → after swap → [27, 36].
+     *   Cell (2,2,2) is geometrically inside [0,3]^3 but morton(2,2,2)=56 > 36.
+     *
+     * The fix checks all 8 AABB corners for min/max Morton instead of only 2.
+     */
+    @Test
+    void testEstimateSFCRange_allCornersIncluded_zCurveReentryBug() {
+        // Use max-refinement level (21) so cell indices == world coordinates (cellSize=1).
+        byte level = Constants.getMaxRefinementLevel();
+
+        // Construct an AABB whose two diagonal corners' Morton codes do NOT span
+        // the Morton code of an interior cell.
+        //
+        // Classic Z-curve re-entry: corners (0,0,3)↔(3,3,0).
+        // morton(0,0,3) = 36, morton(3,3,0) = 27  → [27,36] after sort.
+        // Cell (2,2,2) has morton = 56 — geometrically inside the box but OUTSIDE [27,36].
+        //
+        // Build a search sphere that covers roughly this AABB.
+        // At level 21 cellSize=1, so world coords == cell indices.
+        // Center of the [0,3]^3 box is (1.5, 1.5, 1.5); radius covers the whole box.
+        float cellSize = Constants.lengthAtLevel(level);  // == 1 at level 21
+        // Place center at (1.5, 1.5, 1.5) in cell-index space
+        Point3f center = new Point3f(1.5f * cellSize, 1.5f * cellSize, 1.5f * cellSize);
+        // radius = sqrt(3)*1.5 * cellSize ≈ 2.6*cellSize to cover whole [0,3]^3
+        float radius = 2.6f * cellSize;
+
+        MortonKey.SFCRange range = MortonKey.estimateSFCRange(center, radius, level);
+
+        // The "victim" cell: world coord (2,2,2) in integer space
+        // (with cellSize=1 this is exactly the cell at indices 2,2,2)
+        long victimMorton = MortonCurve.encode(2, 2, 2); // = 56
+        MortonKey victimKey = new MortonKey(victimMorton, level);
+
+        // The two-diagonal-corner bug would produce a range that MISSES victimKey.
+        // After the fix (all 8 corners checked) the range MUST include it.
+        assertTrue(
+            victimKey.compareTo(range.lower()) >= 0 && victimKey.compareTo(range.upper()) < 0,
+            "Cell (2,2,2) with Morton=" + victimMorton +
+            " is inside the AABB but the 2-corner approach misses it. " +
+            "range=[" + range.lower().getMortonCode() + ", " + range.upper().getMortonCode() + ")"
+        );
+
+        // Also verify exhaustively: every cell in the AABB [0,3]^3 must be covered.
+        for (int x = 0; x <= 3; x++) {
+            for (int y = 0; y <= 3; y++) {
+                for (int z = 0; z <= 3; z++) {
+                    long m = MortonCurve.encode(x, y, z);
+                    MortonKey k = new MortonKey(m, level);
+                    assertTrue(
+                        k.compareTo(range.lower()) >= 0 && k.compareTo(range.upper()) < 0,
+                        "Cell (" + x + "," + y + "," + z + ") Morton=" + m +
+                        " is inside AABB but missing from range [" +
+                        range.lower().getMortonCode() + ", " + range.upper().getMortonCode() + ")"
+                    );
+                }
+            }
+        }
     }
 }

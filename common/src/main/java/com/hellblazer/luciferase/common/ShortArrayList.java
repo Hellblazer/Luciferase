@@ -224,8 +224,9 @@ public class ShortArrayList implements RandomAccess {
     }
 
     public void removeRange(int fromIndex, int toIndex) {
-        if (toIndex < fromIndex) {
-            throw new IndexOutOfBoundsException("toIndex < fromIndex");
+        if (fromIndex < 0 || toIndex > size || fromIndex > toIndex) {
+            throw new IndexOutOfBoundsException(
+            "fromIndex: " + fromIndex + ", toIndex: " + toIndex + ", size: " + size);
         }
 
         System.arraycopy(array, toIndex, array, fromIndex, size - toIndex);

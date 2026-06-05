@@ -160,6 +160,7 @@ public class EntityStreamConsumer implements AutoCloseable {
             new AtomicBoolean(false),
             new AtomicInteger(0),
             new AtomicLong(clock.currentTimeMillis()),
+            new AtomicBoolean(false),
             new AtomicBoolean(false)
         ));
 
@@ -176,6 +177,22 @@ public class EntityStreamConsumer implements AutoCloseable {
 
                     @Override
                     public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                        // Luciferase-7wzml.43: guard against unbounded accumulation / OOM DoS.
+                        // Check BEFORE appending so the cap is not defeated by the final fragment.
+                        int incoming = data.length();
+                        if (messageBuffer.length() + incoming > performanceConfig.maxUpstreamMessageBytes()) {
+                            log.warn("Upstream {} message exceeds size cap ({} bytes); closing and reconnecting",
+                                     upstream.label(), performanceConfig.maxUpstreamMessageBytes());
+                            messageBuffer.setLength(0);
+                            webSocket.abort();
+                            // Luciferase-7wzml.6 (M1): call reconnectWithBackoff explicitly here
+                            // because abort() does NOT guarantee onClose will fire (JDK WebSocket
+                            // contract). reconnectWithBackoff is idempotent via reconnectPending CAS,
+                            // so if onClose does fire and also calls reconnectWithBackoff, the second
+                            // call returns immediately — exactly one reconnect is scheduled.
+                            reconnectWithBackoff(upstream.uri());
+                            return CompletableFuture.completedFuture(null);
+                        }
                         messageBuffer.append(data);
                         if (last) {
                             onMessage(upstream.uri(), messageBuffer.toString());
@@ -187,7 +204,6 @@ public class EntityStreamConsumer implements AutoCloseable {
                     @Override
                     public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
                         log.info("WebSocket closed for {}: {} - {}", upstream.label(), statusCode, reason);
-                        state.connected.set(false);
                         reconnectWithBackoff(upstream.uri());
                         return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
                     }
@@ -195,7 +211,6 @@ public class EntityStreamConsumer implements AutoCloseable {
                     @Override
                     public void onError(WebSocket webSocket, Throwable error) {
                         log.warn("WebSocket error for {}: {}", upstream.label(), error.getMessage());
-                        state.connected.set(false);
                         reconnectWithBackoff(upstream.uri());
                     }
 
@@ -203,7 +218,8 @@ public class EntityStreamConsumer implements AutoCloseable {
                     public void onOpen(WebSocket webSocket) {
                         log.info("WebSocket connected to {}", upstream.label());
                         state.connected.set(true);
-                        state.reconnectAttempts.set(0);  // Reset on successful connection
+                        state.reconnectAttempts.set(0);   // Reset on successful connection
+                        state.reconnectPending.set(false); // M1: re-arm the idempotency gate
                         WebSocket.Listener.super.onOpen(webSocket);
                     }
                 };
@@ -221,7 +237,8 @@ public class EntityStreamConsumer implements AutoCloseable {
                         oldState.connected,
                         oldState.reconnectAttempts,
                         oldState.lastAttemptMs,
-                        oldState.circuitBreakerOpen
+                        oldState.circuitBreakerOpen,
+                        oldState.reconnectPending
                     )
                 );
 
@@ -239,6 +256,15 @@ public class EntityStreamConsumer implements AutoCloseable {
      * Prevents unbounded reconnection attempts when upstream is down for
      * extended periods. After MAX_RECONNECT_ATTEMPTS, enters circuit breaker
      * state and only retries after CIRCUIT_BREAKER_TIMEOUT_MS.
+     * <p>
+     * Luciferase-7wzml.6 (M1): idempotent — {@code reconnectPending} is the single gate.
+     * {@code reconnectPending.compareAndSet(false, true)} atomically claims the "first
+     * reconnector" role; any concurrent caller (onClose racing with onError) that
+     * loses the CAS returns immediately, preventing duplicate reconnect scheduling and
+     * budget burn. The pending flag is reset to {@code false} just before the deferred
+     * {@code connect()} call fires, so the chain connect → fail → reconnect → … continues
+     * to work. It is also reset on early-return paths (circuit-breaker cases) so those
+     * paths do not permanently block future reconnects.
      */
     private void reconnectWithBackoff(URI upstream) {
         if (!running.get()) {
@@ -251,11 +277,23 @@ public class EntityStreamConsumer implements AutoCloseable {
             return;
         }
 
+        // Idempotency gate (M1): exactly one caller wins the CAS and proceeds.
+        // Concurrent callers (onClose racing onError, or any other duplicate trigger)
+        // find reconnectPending already true and return without scheduling a duplicate.
+        // The pending flag is reset to false just before the reconnect task calls connect(),
+        // so the chain of connect → fail → reconnect → fail → reconnect works correctly.
+        if (!state.reconnectPending.compareAndSet(false, true)) {
+            log.debug("Reconnect already pending for {}, skipping duplicate", upstream);
+            return;
+        }
+
         // Check circuit breaker
         if (state.circuitBreakerOpen.get()) {
             long timeSinceLastAttempt = clock.currentTimeMillis() - state.lastAttemptMs.get();
             if (timeSinceLastAttempt < CIRCUIT_BREAKER_TIMEOUT_MS) {
                 log.debug("Circuit breaker open for {}, skipping reconnect", upstream);
+                // M1: release the pending gate so the circuit-breaker recheck can re-enter.
+                state.reconnectPending.set(false);
                 return;
             } else {
                 log.info("Circuit breaker timeout expired for {}, attempting reconnect", upstream);
@@ -270,6 +308,8 @@ public class EntityStreamConsumer implements AutoCloseable {
                       MAX_RECONNECT_ATTEMPTS, upstream);
             state.circuitBreakerOpen.set(true);
             state.lastAttemptMs.set(clock.currentTimeMillis());
+            // M1: release the pending gate so scheduleCircuitBreakerCheck can re-enter.
+            state.reconnectPending.set(false);
             scheduleCircuitBreakerCheck(upstream);
             return;
         }
@@ -292,6 +332,9 @@ public class EntityStreamConsumer implements AutoCloseable {
                     .orElse(null);
 
                 if (upstreamConfig != null) {
+                    // Reset the pending gate BEFORE connect() so that a subsequent
+                    // failure in this connect attempt can re-arm reconnectWithBackoff.
+                    state.reconnectPending.set(false);
                     connect(upstreamConfig);
                 }
             });
@@ -429,7 +472,8 @@ public class EntityStreamConsumer implements AutoCloseable {
         AtomicBoolean connected,
         AtomicInteger reconnectAttempts,
         AtomicLong lastAttemptMs,        // C2: Track last reconnection attempt
-        AtomicBoolean circuitBreakerOpen  // C2: Circuit breaker state
+        AtomicBoolean circuitBreakerOpen, // C2: Circuit breaker state
+        AtomicBoolean reconnectPending    // M1: exactly-one-reconnect gate
     ) {}
 
     /**

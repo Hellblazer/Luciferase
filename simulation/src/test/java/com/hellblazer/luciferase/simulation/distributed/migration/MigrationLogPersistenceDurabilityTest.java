@@ -21,8 +21,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -113,6 +116,92 @@ class MigrationLogPersistenceDurabilityTest {
         assertEquals(7L, roundTripped.epoch());
         assertEquals(3L, roundTripped.version());
         assertEquals(4242L, roundTripped.timestamp());
+    }
+
+    // ---- Luciferase-7wzml.198: torn-tail vs interior-corruption discipline ----
+
+    /**
+     * A clean WAL (no corruption) recovers all PREPARE records and returns them.
+     */
+    @Test
+    void cleanLogRecoversAllPrepares(@TempDir Path tempDir) throws IOException {
+        var processId = UUID.randomUUID();
+        var wal = new TestWal(processId, tempDir);
+        var txn1 = UUID.randomUUID();
+        var txn2 = UUID.randomUUID();
+
+        wal.recordPrepare(prepareState(txn1, null));
+        wal.recordPrepare(prepareState(txn2, null));
+        wal.recordCommit(txn1);
+        wal.close();
+
+        var recovered = new TestWal(processId, tempDir);
+        var incomplete = recovered.loadIncomplete();
+        recovered.close();
+
+        assertEquals(1, incomplete.size(), "Only uncommitted PREPARE should be returned");
+        assertEquals(txn2, incomplete.get(0).transactionId());
+    }
+
+    /**
+     * A truncated FINAL line (torn tail — process crashed mid-write on the last append) must be
+     * tolerated. Prior PREPARE records before it must still be recovered without any exception.
+     */
+    @Test
+    void tornTailOnFinalLineToleratedPriorPreparesRecovered(@TempDir Path tempDir) throws IOException {
+        var processId = UUID.randomUUID();
+        var wal = new TestWal(processId, tempDir);
+        var txnId = UUID.randomUUID();
+
+        wal.recordPrepare(prepareState(txnId, null));
+        wal.close();
+
+        // Append a truncated JSON fragment as the final physical line — simulates crash-mid-write.
+        var walFile = tempDir.resolve(processId.toString()).resolve("transactions.jsonl");
+        try (var writer = new PrintWriter(Files.newBufferedWriter(walFile, StandardCharsets.UTF_8,
+                                                                   StandardOpenOption.APPEND))) {
+            writer.print("{\"transactionId\":\"half");  // no closing brace, no newline
+        }
+
+        var recovered = new TestWal(processId, tempDir);
+        var incomplete = recovered.loadIncomplete();
+        recovered.close();
+
+        // Must NOT throw; prior PREPARE must be present.
+        assertEquals(1, incomplete.size(),
+                     "PREPARE before torn tail must survive recovery without exception");
+        assertEquals(txnId, incomplete.get(0).transactionId());
+    }
+
+    /**
+     * An interior (non-final) malformed line — especially a corrupt PREPARE — must cause
+     * {@link IOException} rather than being silently skipped (RDR-004-class silent data loss).
+     */
+    @Test
+    void interiorCorruptPrepareCausesIOException(@TempDir Path tempDir) throws IOException {
+        var processId = UUID.randomUUID();
+        var wal = new TestWal(processId, tempDir);
+        var txnId = UUID.randomUUID();
+
+        wal.recordPrepare(prepareState(txnId, null));
+        wal.close();
+
+        // Inject a malformed line as an interior line: follow it with a valid line so the
+        // corrupt line is NOT the final physical line (ruling out torn-tail exemption).
+        var walFile = tempDir.resolve(processId.toString()).resolve("transactions.jsonl");
+        try (var writer = new PrintWriter(Files.newBufferedWriter(walFile, StandardCharsets.UTF_8,
+                                                                   StandardOpenOption.APPEND))) {
+            writer.println("CORRUPT_INTERIOR_LINE {{{{");                          // interior corrupt
+            writer.println("{\"transactionId\":\"" + UUID.randomUUID()
+                           + "\",\"phase\":\"COMMIT\"}");                          // valid trailing line
+        }
+
+        // Must FAIL LOUD — not silently drop the corrupt PREPARE.
+        var recovered = new TestWal(processId, tempDir);
+        assertThrows(IOException.class, recovered::loadIncomplete,
+                     "Interior malformed line must throw IOException, not be silently skipped — "
+                     + "dropping a corrupt PREPARE is RDR-004-class silent data loss");
+        recovered.close();
     }
 
     @Test

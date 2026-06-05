@@ -88,27 +88,44 @@ public class Phase5a5BenchmarkRunner {
 
         // Measure
         var startTime = System.nanoTime();
-        double totalReduction = 0.0;
+        long totalGlobalNodes = 0;
+        long totalTiledNodes = 0;
+        int totalBatchTiles = 0;
+        int totalSingleRayTiles = 0;
+        double totalCoherence = 0.0;
+        int measuredFrames = 0;
         for (int i = config.warmupIterations(); i < frames.size(); i++) {
-            var result = comparator.compare(frames.get(i), tileConfig, config.coherenceThreshold(),
-                                           config.frameWidth(), config.frameHeight());
-            totalReduction += result.reductionRatio();
+            var frameRays = frames.get(i);
+            var cmp = comparator.compare(frameRays, tileConfig, config.coherenceThreshold(),
+                                         config.frameWidth(), config.frameHeight());
+            totalGlobalNodes += cmp.globalNodes();
+            totalTiledNodes += cmp.tiledNodes();
+            totalBatchTiles += cmp.highCoherenceTiles();
+            totalSingleRayTiles += cmp.lowCoherenceTiles();
+            totalCoherence += coherenceAnalyzer.analyzeCoherence(frameRays, null);
+            measuredFrames++;
         }
         var endTime = System.nanoTime();
 
-        int measuredFrames = Math.max(0, frames.size() - config.warmupIterations());
-        double avgReduction = measuredFrames > 0 ? totalReduction / measuredFrames : 0.0;
         double execTimeMs = (endTime - startTime) / 1_000_000.0;
+        int avgGlobalNodes = measuredFrames > 0 ? (int) (totalGlobalNodes / measuredFrames) : 0;
+        int avgTiledNodes  = measuredFrames > 0 ? (int) (totalTiledNodes  / measuredFrames) : 0;
+        int avgBatchTiles  = measuredFrames > 0 ? totalBatchTiles  / measuredFrames : 0;
+        int avgSingleTiles = measuredFrames > 0 ? totalSingleRayTiles / measuredFrames : 0;
+        double avgReduction = avgGlobalNodes > 0 ? 1.0 - ((double) avgTiledNodes / avgGlobalNodes) : 0.0;
+        double avgCoherence = measuredFrames > 0 ? totalCoherence / measuredFrames : 0.0;
 
+        // Scenario name surfaces the static-scene reality (CameraMovementScene.generateFrames()
+        // emits identical frames — TODO in CameraMovementScene.getDescription()).
         var result = new BenchmarkResult(
-            "CameraMovementScene",
-            0,  // Global nodes not measured (frame-based)
-            0,  // Tiled nodes not measured (frame-based)
+            "CameraMovementScene-static",
+            avgGlobalNodes,
+            avgTiledNodes,
             avgReduction,
-            0,  // Batch tiles averaged
-            0,  // Single-ray tiles averaged
-            0.6,  // Average coherence (estimated)
-            0.0,  // Dispatch time averaged
+            avgBatchTiles,
+            avgSingleTiles,
+            avgCoherence,
+            0.0,  // Dispatch time (would need instrumentation)
             execTimeMs
         );
 

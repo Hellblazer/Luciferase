@@ -202,6 +202,8 @@ public class DuplicateEntityDetector {
 
         var removedCount = 0;
 
+        // LOCK MISSING (Luciferase-n7io1): acquire source+target getMutationLock() in UUID order;
+        // races concurrent migration/merge
         // Remove from all non-source bubbles
         for (var bubbleId : locations) {
             if (!bubbleId.equals(sourceBubble)) {

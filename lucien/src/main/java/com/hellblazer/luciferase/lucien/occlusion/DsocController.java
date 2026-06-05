@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.occlusion;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.FrameManager;
 import com.hellblazer.luciferase.lucien.Frustum3D;
 import com.hellblazer.luciferase.lucien.FrustumIntersection;
@@ -230,6 +231,17 @@ public final class DsocController<Key extends SpatialKey<Key>, ID extends Entity
     public void resetStatistics() {
         if (occlusionCuller != null) {
             occlusionCuller.resetStatistics();
+        }
+    }
+
+    /**
+     * Inject a clock into the occlusion culler for deterministic frame-timing in tests (Luciferase-7wzml.144).
+     *
+     * @param clock clock supplying {@code nanoTime()} for begin/endFrame measurements
+     */
+    public void setClock(Clock clock) {
+        if (occlusionCuller != null) {
+            occlusionCuller.setClock(clock);
         }
     }
 

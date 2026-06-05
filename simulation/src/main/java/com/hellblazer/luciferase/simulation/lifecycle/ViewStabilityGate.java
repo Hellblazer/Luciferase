@@ -31,7 +31,15 @@ import java.util.concurrent.TimeUnit;
  *   <li>Timeout is reached (graceful degradation)</li>
  * </ul>
  * <p>
- * Thread-safe and supports multiple concurrent awaitStability() calls.
+ * Thread-safe and supports multiple concurrent awaitStability() calls. A single
+ * shared {@link ScheduledExecutorService} is created at construction time and
+ * reused across all calls; closing the gate via {@link #close()} shuts the pool
+ * down. Individual call cleanup is limited to cancelling the call's own
+ * {@code ScheduledFuture} — the shared pool is never shut down per-call.
+ * <p>
+ * <b>Lifecycle (Luciferase-7wzml.212):</b> callers should close the gate when
+ * it is no longer needed (e.g. in a try-with-resources block or a component's
+ * own {@code close()} method) to release the background thread.
  * <p>
  * <b>Fireflies Virtual Synchrony:</b>
  * <ul>
@@ -43,16 +51,21 @@ import java.util.concurrent.TimeUnit;
  *
  * @author hal.hildebrand
  */
-public class ViewStabilityGate {
+public class ViewStabilityGate implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(ViewStabilityGate.class);
     private static final long POLL_INTERVAL_MS = 10;  // Poll every 10ms
 
     private final FirefliesViewMonitor viewMonitor;
     private final long timeoutMs;
+    private final ScheduledExecutorService scheduler;
     private volatile Clock clock = Clock.system();
 
     /**
      * Create a ViewStabilityGate.
+     * <p>
+     * Creates one shared daemon-thread scheduler that is reused for all
+     * {@link #awaitStability()} calls. Release the thread by calling
+     * {@link #close()} when the gate is no longer needed.
      *
      * @param viewMonitor the Fireflies view monitor
      * @param timeoutMs timeout in milliseconds (e.g., 5000 for 5 seconds)
@@ -61,6 +74,11 @@ public class ViewStabilityGate {
     public ViewStabilityGate(FirefliesViewMonitor viewMonitor, long timeoutMs) {
         this.viewMonitor = Objects.requireNonNull(viewMonitor, "viewMonitor must not be null");
         this.timeoutMs = timeoutMs;
+        this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            var thread = new Thread(r, "view-stability-poller");
+            thread.setDaemon(true);
+            return thread;
+        });
 
         log.debug("ViewStabilityGate created: timeout={}ms", timeoutMs);
     }
@@ -80,13 +98,19 @@ public class ViewStabilityGate {
     /**
      * Wait for view stability or timeout.
      * <p>
-     * Polls viewMonitor.isViewStable() every 10ms until:
+     * Polls {@code viewMonitor.isViewStable()} every 10ms on the gate's shared
+     * scheduler until:
      * <ul>
      *   <li>View becomes stable → completes successfully</li>
      *   <li>Timeout reached → completes exceptionally with TimeoutException</li>
      * </ul>
      * <p>
-     * Multiple concurrent calls are safe and will each create independent polling tasks.
+     * Multiple concurrent calls are safe; each schedules an independent polling
+     * task on the shared single-thread executor. Call cleanup cancels only that
+     * call's {@code ScheduledFuture} — the shared pool is never shut down here.
+     * <p>
+     * Throws {@link java.util.concurrent.RejectedExecutionException} (wrapped in
+     * the returned future) if the gate has already been {@link #close() closed}.
      *
      * @return CompletableFuture that completes when view is stable or timeout occurs
      */
@@ -94,53 +118,56 @@ public class ViewStabilityGate {
         var future = new CompletableFuture<Void>();
         var startTime = clock.currentTimeMillis();
 
-        // Use holder array for effectively final access in lambdas (fix for Luciferase-hwgf resource leak)
-        final var schedulerHolder = new ScheduledExecutorService[1];
-
         try {
-            // Create a single-threaded scheduled executor for polling
-            schedulerHolder[0] = Executors.newSingleThreadScheduledExecutor(r -> {
-                var thread = new Thread(r, "view-stability-poller");
-                thread.setDaemon(true);
-                return thread;
-            });
-
-            // Schedule polling task (may throw RejectedExecutionException)
-            var pollingTask = schedulerHolder[0].scheduleAtFixedRate(() -> {
+            // Schedule polling task on the shared executor — no new pool created per call.
+            var pollingTask = scheduler.scheduleAtFixedRate(() -> {
                 try {
-                    // Check for timeout
                     var elapsed = clock.currentTimeMillis() - startTime;
                     if (elapsed >= timeoutMs) {
                         future.completeExceptionally(
-                            new java.util.concurrent.TimeoutException("View stability timeout after " + elapsed + "ms")
-                        );
-                        schedulerHolder[0].shutdown();
+                            new java.util.concurrent.TimeoutException(
+                                "View stability timeout after " + elapsed + "ms"));
                         return;
                     }
 
-                    // Check if view is stable
                     if (viewMonitor.isViewStable()) {
                         log.debug("View stability achieved after {}ms", elapsed);
                         future.complete(null);
-                        schedulerHolder[0].shutdown();
                     }
 
                 } catch (Exception e) {
                     future.completeExceptionally(e);
-                    schedulerHolder[0].shutdown();
                 }
             }, 0, POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
-        } finally {
-            // Guarantee scheduler cleanup even if scheduleAtFixedRate throws
-            future.whenComplete((result, throwable) -> {
-                if (schedulerHolder[0] != null && !schedulerHolder[0].isShutdown()) {
-                    schedulerHolder[0].shutdown();
-                }
-            });
+            // Cancel this call's polling task once the future settles (normal or exceptional).
+            // The shared pool itself is NOT shut down here.
+            future.whenComplete((result, throwable) -> pollingTask.cancel(false));
+
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // Gate has been closed; propagate as a failed future rather than throwing.
+            future.completeExceptionally(e);
         }
 
         return future;
+    }
+
+    /**
+     * Shuts down the shared scheduler.
+     * <p>
+     * Already-scheduled polling tasks are allowed to finish their current
+     * iteration; no new tasks will be accepted after this call returns. Any
+     * in-flight {@link #awaitStability()} futures complete normally or
+     * exceptionally via their own logic before the pool terminates.
+     * <p>
+     * This method is idempotent and safe to call multiple times.
+     */
+    @Override
+    public void close() {
+        if (!scheduler.isShutdown()) {
+            scheduler.shutdown();
+            log.debug("ViewStabilityGate closed");
+        }
     }
 
     /**

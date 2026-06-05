@@ -79,6 +79,9 @@ public class InMemoryGhostChannel<ID extends EntityID, Content> implements Ghost
      */
     private final ScheduledExecutorService delayScheduler;
 
+    /** Count of in-flight delayed batches cancelled by the most recent {@link #close()} (Luciferase-7wzml.205). */
+    private volatile int droppedBatchCount;
+
     /**
      * Create channel with no simulated latency.
      */
@@ -185,12 +188,28 @@ public class InMemoryGhostChannel<ID extends EntityID, Content> implements Ghost
         return pendingBatches.getOrDefault(targetBubbleId, List.of()).size();
     }
 
+    /**
+     * Returns the number of in-flight delayed batches that were cancelled by the most recent
+     * {@link #close()} call. Non-zero only when a latency-configured channel is closed while
+     * scheduled deliveries are still pending (Luciferase-7wzml.205).
+     */
+    public int getDroppedBatchCount() {
+        return droppedBatchCount;
+    }
+
     @Override
     public void close() {
         pendingBatches.clear();
         handlers.clear();
         if (delayScheduler != null) {
-            delayScheduler.shutdownNow();
+            // Luciferase-7wzml.205: shutdownNow() cancels scheduled (in-flight) delayed-delivery
+            // tasks. Report how many were dropped rather than silently losing them.
+            var cancelled = delayScheduler.shutdownNow();
+            droppedBatchCount = cancelled.size();
+            if (droppedBatchCount > 0) {
+                log.warn("InMemoryGhostChannel closed with {} in-flight delayed batch(es) dropped",
+                         droppedBatchCount);
+            }
         }
     }
 }

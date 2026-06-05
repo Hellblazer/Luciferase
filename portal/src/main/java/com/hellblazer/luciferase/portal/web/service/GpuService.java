@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.portal.web.service;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.gpu.ESVTOpenCLRenderer;
 import com.hellblazer.luciferase.portal.web.dto.*;
@@ -37,6 +38,22 @@ public class GpuService {
     private volatile GpuInfo cachedGpuInfo;
 
     /**
+     * Clock used for render/benchmark elapsed-time measurement.
+     * Default is {@link Clock#system()} (backed by {@link System#nanoTime()}).
+     * Injecting a TestClock via {@link #setClock} lets tests control elapsed values —
+     * this is intentional per Luciferase-7wzml.221.
+     */
+    private volatile Clock clock = Clock.system();
+
+    /**
+     * Replaces the clock used for render/benchmark timing.
+     * Default is {@link Clock#system()}. Override in tests for deterministic elapsed values.
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    /**
      * Get GPU device information.
      */
     public GpuInfo getGpuInfo() {
@@ -65,16 +82,29 @@ public class GpuService {
      * Enable GPU mode for a session.
      */
     public GpuStats enableGpu(String sessionId, ESVTData esvtData, GpuEnableRequest request) {
+        // Validate dimensions first — before any state checks so invalid input is always rejected.
+        var width = request.getFrameWidthOrDefault();
+        var height = request.getFrameHeightOrDefault();
+
         if (sessions.containsKey(sessionId)) {
             throw new IllegalStateException("GPU already enabled for session. Disable first.");
         }
 
-        if (!ESVTOpenCLRenderer.isOpenCLAvailable()) {
+        // OpenCL availability probe. isOpenCLAvailable() catches Exception but not Error;
+        // on a headless runner with no OpenCL native binding, loading the LWJGL native can
+        // throw UnsatisfiedLinkError / NoClassDefFoundError (subclasses of Error), which would
+        // otherwise escape to the generic Exception handler as a 500. Treat any Throwable here
+        // as "GPU unavailable" and surface it as a graceful 409 (IllegalStateException), never 500.
+        boolean openCLAvailable;
+        try {
+            openCLAvailable = ESVTOpenCLRenderer.isOpenCLAvailable();
+        } catch (Throwable t) {
+            log.warn("OpenCL availability probe failed; treating GPU as unavailable: {}", t.toString());
+            openCLAvailable = false;
+        }
+        if (!openCLAvailable) {
             throw new IllegalStateException("OpenCL is not available on this system");
         }
-
-        var width = request.getFrameWidthOrDefault();
-        var height = request.getFrameHeightOrDefault();
 
         var renderer = new ESVTOpenCLRenderer(width, height);
         try {
@@ -87,9 +117,20 @@ public class GpuService {
             log.info("Enabled GPU for session {} at {}x{}", sessionId, width, height);
             return getStats(sessionId);
 
-        } catch (Exception e) {
+        } catch (Throwable t) {
+            // Catch Throwable: native GPU init can fail with Error (UnsatisfiedLinkError etc.)
+            // on runners where the OpenCL ICD reports available but no usable device exists.
+            // Surface as a graceful 409 (GPU could not be initialized), not a 500 crash.
+            safeDispose(renderer);
+            throw new IllegalStateException("GPU could not be initialized on this system: " + t.getMessage());
+        }
+    }
+
+    private static void safeDispose(ESVTOpenCLRenderer renderer) {
+        try {
             renderer.dispose();
-            throw new RuntimeException("Failed to enable GPU: " + e.getMessage(), e);
+        } catch (Throwable t) {
+            log.debug("Renderer dispose during failed GPU enable threw: {}", t.toString());
         }
     }
 
@@ -122,9 +163,9 @@ public class GpuService {
         var cameraPos = new Vector3f(request.cameraPosX(), request.cameraPosY(), request.cameraPosZ());
         var lookAt = new Vector3f(request.lookAtX(), request.lookAtY(), request.lookAtZ());
 
-        long startTime = System.nanoTime();
+        long startTime = clock.nanoTime();
         state.renderer.renderFrame(cameraPos, lookAt, request.getFovOrDefault());
-        long renderTime = System.nanoTime() - startTime;
+        long renderTime = clock.nanoTime() - startTime;
 
         // Update stats
         state.framesRendered.incrementAndGet();
@@ -133,7 +174,12 @@ public class GpuService {
 
         // Get output image
         var imageBuffer = state.renderer.getOutputImage();
-        var imageBytes = new byte[state.width * state.height * 4];
+        long bufferSize = (long) state.width * state.height * 4;
+        if (bufferSize > Integer.MAX_VALUE) {
+            throw new IllegalStateException(
+                    "Render buffer size " + bufferSize + " exceeds Integer.MAX_VALUE");
+        }
+        var imageBytes = new byte[(int) bufferSize];
         imageBuffer.get(imageBytes);
         imageBuffer.rewind();
 
@@ -183,9 +229,9 @@ public class GpuService {
         double totalTime = 0;
 
         for (int i = 0; i < iterations; i++) {
-            long startTime = System.nanoTime();
+            long startTime = clock.nanoTime();
             state.renderer.renderFrame(cameraPos, lookAt, fov);
-            long elapsed = System.nanoTime() - startTime;
+            long elapsed = clock.nanoTime() - startTime;
 
             double timeMs = elapsed / 1_000_000.0;
             times[i] = timeMs;

@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.lucien.balancing;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -260,6 +261,28 @@ public class RefinementCoordinatorTest {
 
         assertEquals(3, result.roundsExecuted(), "maxRounds is the safety cap");
         assertFalse(result.converged(), "never reached global convergence");
+    }
+
+    // TEST 16 (Luciferase-7wzml.106): coordinator.setClock propagates to requestManager so RTT uses
+    // a single virtual timeline — not a mix of wall-clock (trackRequest) and virtual-clock (trackResponse).
+    @Test
+    void setClock_propagatesToRequestManager_rttIsDeterministic() {
+        var testClock = new TestClock(1000L);
+        coordinator = new RefinementCoordinator<>(exchange, requestManager, 0, 4);
+        coordinator.setClock(testClock);
+
+        // Stamp the request at virtual t=1000
+        var request = requestManager.<MortonKey>buildRequest(0, 1, List.of(), 0);
+        requestManager.trackRequest(request, testClock.currentTimeMillis());
+
+        // Advance virtual clock by exactly 300 ms, then record response
+        testClock.setTime(1300L);
+        var response = new RefinementResponse<MortonKey, LongEntityID, String>(
+            0, 1, 0L, 1, List.of(), false, 1300L);
+        requestManager.trackResponse(response);
+
+        assertEquals(300L, requestManager.getAverageRoundTripTime(),
+            "RTT must equal virtual clock delta (300 ms); a wall-clock mix would give a wrong/negative value");
     }
 
     // ========== Mock implementations ==========

@@ -328,6 +328,53 @@ class EventReprocessorTest {
     }
 
     /**
+     * Test: processor that throws → totalFailed incremented, totalReprocessed unchanged,
+     * processed count excludes the failed event, getStats() exposes the failed count.
+     *
+     * Covers: Luciferase-7wzml.197 — silent loss in processReady catch block.
+     */
+    @Test
+    void testProcessorExceptionCountedAsFailed() {
+        var reprocessor = new EventReprocessor(MIN_LOOKAHEAD_MS, MAX_LOOKAHEAD_MS);
+        var currentTime = System.currentTimeMillis();
+
+        // One event that will throw, one that will succeed.
+        var throwingEvent  = createEvent(1L, currentTime, "bad");
+        var goodEvent      = createEvent(2L, currentTime, "good");
+        reprocessor.queueEvent(throwingEvent);
+        reprocessor.queueEvent(goodEvent);
+
+        // Processor throws only for the "bad" entity.
+        var processedEntities = new ArrayList<String>();
+        int count = reprocessor.processReady(currentTime + MIN_LOOKAHEAD_MS + 50, event -> {
+            if ("bad".equals(event.entityId().toString())) {
+                throw new RuntimeException("poison-pill");
+            }
+            processedEntities.add(event.entityId().toString());
+        });
+
+        // processReady return value must exclude the failed event.
+        assertEquals(1, count, "processed count must exclude the failed event");
+
+        // Only the good entity was handed to the callback successfully.
+        assertEquals(1, processedEntities.size());
+        assertEquals("good", processedEntities.get(0));
+
+        // Failed counter incremented; reprocessed counter only reflects successes.
+        assertEquals(1L, reprocessor.getTotalFailed(), "totalFailed must be 1");
+        assertEquals(1L, reprocessor.getTotalReprocessed(), "totalReprocessed must be 1 (only the successful event)");
+
+        // getStats() snapshot must expose the failed count.
+        var stats = reprocessor.getStats();
+        assertEquals(1L, stats.failed(), "Stats.failed must be 1");
+        assertEquals(1L, stats.reprocessed(), "Stats.reprocessed must be 1");
+        assertEquals(0, stats.queueDepth(), "Queue should be empty after processing both events");
+
+        // isHealthy() is unaffected by failures (healthy = queue ≤50% and no overflow drops).
+        assertTrue(reprocessor.isHealthy(), "isHealthy() should remain true (failures ≠ overflow drops)");
+    }
+
+    /**
      * Test: Process respects Lamport clock ordering strictly.
      */
     @Test

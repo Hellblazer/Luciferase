@@ -19,6 +19,7 @@ package com.hellblazer.sentry;
 
 import com.hellblazer.luciferase.common.IdentitySet;
 import com.hellblazer.luciferase.geometry.Geometry;
+import com.hellblazer.luciferase.geometry.GeometryAdaptive;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
@@ -146,7 +147,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * the test point is coplanar
      */
     public static double orientation(Tuple3f query, Tuple3f a, Tuple3f b, Tuple3f c) {
-        var result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
+        var result = GeometryAdaptive.leftOfPlaneAdaptive(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z,
+                                                         query.x, query.y, query.z);
         return Math.signum(result);
     }
 
@@ -179,18 +181,31 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     /**
-     * Calculate the circumsphere radius of this tetrahedron. Useful for validating Delaunay constraints.
+     * Calculate the circumsphere radius of this tetrahedron. Diagnostic utility; not used to gate Delaunay decisions.
+     * <p>
+     * Computed in double precision via the robust {@code centerSphere} (uses adaptive {@code leftOfPlane} denominator),
+     * then double-precision distance to vertex a.  Returns {@link Double#MAX_VALUE} if the tetrahedron is
+     * near-degenerate (denominator ≈ 0, i.e. all four vertices nearly co-planar) to avoid NaN/Inf propagation.
      *
-     * @return the circumsphere radius
+     * @return the circumsphere radius as a double, or {@link Double#MAX_VALUE} for near-degenerate configurations
      */
-    public float circumsphereRadius() {
-        float[] center = new float[3];
-        Geometry.centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
-        // Calculate radius as distance from center to any vertex
-        float dx = a.x - center[0];
-        float dy = a.y - center[1];
-        float dz = a.z - center[2];
-        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    public double circumsphereRadius() {
+        // Guard against near-zero orientation denominator (sliver / near-coplanar tet).
+        double orient = Geometry.leftOfPlane(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z);
+        if (orient == 0.0) {
+            return Double.MAX_VALUE;
+        }
+        double[] center = new double[3];
+        Geometry.centerSphere((double) a.x, (double) a.y, (double) a.z,
+                              (double) b.x, (double) b.y, (double) b.z,
+                              (double) c.x, (double) c.y, (double) c.z,
+                              (double) d.x, (double) d.y, (double) d.z,
+                              center);
+        // Calculate radius as distance from center to vertex a — all in double.
+        double dx = a.x - center[0];
+        double dy = a.y - center[1];
+        double dz = a.z - center[2];
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /**

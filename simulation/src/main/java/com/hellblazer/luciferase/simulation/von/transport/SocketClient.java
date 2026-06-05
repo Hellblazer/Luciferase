@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.ObjectOutputStream;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.function.Consumer;
 
@@ -62,6 +63,15 @@ public class SocketClient {
 
     private static final Logger log = LoggerFactory.getLogger(SocketClient.class);
 
+    /**
+     * Default TCP connect timeout in milliseconds. A value of 5 000 ms bounds a hung-connect to a
+     * dead or firewalled host; override via the {@link #SocketClient(ProcessAddress, Consumer, int)}
+     * constructor for tighter or looser requirements.
+     */
+    public static final int DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
+
+    private final int connectTimeoutMs;
+
     private final ProcessAddress remoteAddress;
     /**
      * Retained for source/binary compatibility with {@code SocketConnectionManager}, which
@@ -76,7 +86,7 @@ public class SocketClient {
     private volatile boolean connected = false;
 
     /**
-     * Create a SocketClient.
+     * Create a SocketClient with the default connect timeout ({@value #DEFAULT_CONNECT_TIMEOUT_MS} ms).
      *
      * @param remoteAddress  Target process address
      * @param messageHandler Inbound-message callback; <b>never invoked</b> — the client is
@@ -84,8 +94,21 @@ public class SocketClient {
      *                       unidirectional contract is explicit at the call site.
      */
     public SocketClient(ProcessAddress remoteAddress, Consumer<TransportVonMessage> messageHandler) {
+        this(remoteAddress, messageHandler, DEFAULT_CONNECT_TIMEOUT_MS);
+    }
+
+    /**
+     * Create a SocketClient with a configurable connect timeout.
+     *
+     * @param remoteAddress    Target process address
+     * @param messageHandler   Inbound-message callback; <b>never invoked</b> (send-only, Luciferase-ihy0s).
+     * @param connectTimeoutMs TCP connect timeout in milliseconds; 0 means OS default (not recommended).
+     */
+    public SocketClient(ProcessAddress remoteAddress, Consumer<TransportVonMessage> messageHandler,
+                        int connectTimeoutMs) {
         this.remoteAddress = remoteAddress;
         this.messageHandler = messageHandler;
+        this.connectTimeoutMs = connectTimeoutMs;
     }
 
     /**
@@ -97,10 +120,20 @@ public class SocketClient {
      * @throws IOException if connection fails
      */
     public void connect() throws IOException {
-        this.socket = new Socket(remoteAddress.hostname(), remoteAddress.port());
-        this.outStream = new ObjectOutputStream(socket.getOutputStream());
-        this.outStream.flush();
-        this.connected = true;
+        var sock = new Socket();
+        try {
+            sock.connect(new InetSocketAddress(remoteAddress.hostname(), remoteAddress.port()), connectTimeoutMs);
+            this.outStream = new ObjectOutputStream(sock.getOutputStream());
+            this.outStream.flush();
+            this.socket = sock;
+            this.connected = true;
+        } catch (IOException e) {
+            try {
+                sock.close();
+            } catch (IOException ignored) {
+            }
+            throw e;
+        }
 
         log.info("Connected to {}", remoteAddress.toUrl());
     }
@@ -156,8 +189,30 @@ public class SocketClient {
         log.info("Closing connection to {}", remoteAddress.toUrl());
         connected = false;
 
+        // Close outStream first (flushes buffered bytes and cascades to socket).
+        // Then close the socket explicitly as a safety net in case outStream is null.
+        // Use try/finally so a failure on the first close does not skip the second.
+        IOException firstEx = null;
+        if (outStream != null) {
+            try {
+                outStream.close();
+            } catch (IOException e) {
+                firstEx = e;
+            }
+        }
         if (socket != null && !socket.isClosed()) {
-            socket.close();
+            try {
+                socket.close();
+            } catch (IOException e) {
+                if (firstEx != null) {
+                    firstEx.addSuppressed(e);
+                } else {
+                    firstEx = e;
+                }
+            }
+        }
+        if (firstEx != null) {
+            throw firstEx;
         }
     }
 }

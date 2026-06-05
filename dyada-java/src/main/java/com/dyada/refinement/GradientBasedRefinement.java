@@ -162,27 +162,41 @@ public class GradientBasedRefinement implements AdaptiveRefinementStrategy {
     
     @Override
     public boolean validateRefinementDecisions(Map<com.dyada.core.coordinates.LevelIndex, RefinementDecision> decisions) {
-        // For gradient-based refinement, ensure smooth transitions between refinement levels
-        // This prevents creating discontinuities in regions of smooth gradients
-        
+        // For gradient-based refinement, validate level constraints across ALL dimensions.
+        // Note: neighbour-smoothness ("smooth transitions") is not implemented here;
+        // the Javadoc comment above overstates what this method actually enforces.
+
         for (var entry : decisions.entrySet()) {
             var cellIndex = entry.getKey();
             var decision = entry.getValue();
-            
-            // Basic validation: ensure we don't violate level constraints
+
             if (decision == RefinementDecision.REFINE) {
-                int currentLevel = cellIndex.getLevel(0);
-                if (currentLevel >= getMaxRefinementLevel()) {
+                // Reject if the cell is at the max level in ANY dimension
+                int maxLevelAcrossDims = 0;
+                for (int d = 0; d < cellIndex.dimensions(); d++) {
+                    int lvl = cellIndex.getLevel(d);
+                    if (lvl > maxLevelAcrossDims) {
+                        maxLevelAcrossDims = lvl;
+                    }
+                }
+                if (maxLevelAcrossDims >= getMaxRefinementLevel()) {
                     return false;
                 }
             } else if (decision == RefinementDecision.COARSEN) {
-                int currentLevel = cellIndex.getLevel(0);
-                if (currentLevel <= getMinRefinementLevel()) {
+                // Reject if the cell is at the min level in ANY dimension
+                int minLevelAcrossDims = Integer.MAX_VALUE;
+                for (int d = 0; d < cellIndex.dimensions(); d++) {
+                    int lvl = cellIndex.getLevel(d);
+                    if (lvl < minLevelAcrossDims) {
+                        minLevelAcrossDims = lvl;
+                    }
+                }
+                if (minLevelAcrossDims <= getMinRefinementLevel()) {
                     return false;
                 }
             }
         }
-        
+
         return true;
     }
     

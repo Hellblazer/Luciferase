@@ -33,7 +33,7 @@ class MetricsExporterTest {
         var outputFile = tempDir.resolve("compression_metrics.csv");
         var exporter = new FileMetricsExporter(outputFile, FileMetricsExporter.Format.CSV);
 
-        var metrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123));
+        var metrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123), 0L);
         exporter.exportCompression(metrics);
         exporter.close();
 
@@ -81,7 +81,7 @@ class MetricsExporterTest {
         var outputFile = tempDir.resolve("compression_metrics.json");
         var exporter = new FileMetricsExporter(outputFile, FileMetricsExporter.Format.JSON);
 
-        var metrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123));
+        var metrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123), 0L);
         exporter.exportCompression(metrics);
         exporter.close();
 
@@ -118,8 +118,8 @@ class MetricsExporterTest {
         var outputFile = tempDir.resolve("append_test.csv");
         var exporter = new FileMetricsExporter(outputFile, FileMetricsExporter.Format.CSV);
 
-        var metrics1 = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123));
-        var metrics2 = new CompressionMetrics(200, 600, 20, 60, Duration.ofMillis(456));
+        var metrics1 = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123), 0L);
+        var metrics2 = new CompressionMetrics(200, 600, 20, 60, Duration.ofMillis(456), 0L);
 
         exporter.exportCompression(metrics1);
         exporter.exportCompression(metrics2);
@@ -136,8 +136,8 @@ class MetricsExporterTest {
         var outputFile = tempDir.resolve("append_test.json");
         var exporter = new FileMetricsExporter(outputFile, FileMetricsExporter.Format.JSON);
 
-        var metrics1 = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123));
-        var metrics2 = new CompressionMetrics(200, 600, 20, 60, Duration.ofMillis(456));
+        var metrics1 = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123), 0L);
+        var metrics2 = new CompressionMetrics(200, 600, 20, 60, Duration.ofMillis(456), 0L);
 
         exporter.exportCompression(metrics1);
         exporter.exportCompression(metrics2);
@@ -153,7 +153,7 @@ class MetricsExporterTest {
         var nestedPath = tempDir.resolve("deeply/nested/path/metrics.csv");
         var exporter = new FileMetricsExporter(nestedPath, FileMetricsExporter.Format.CSV);
 
-        var metrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123));
+        var metrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123), 0L);
         exporter.exportCompression(metrics);
         exporter.close();
 
@@ -177,7 +177,7 @@ class MetricsExporterTest {
         var exporter = new FileMetricsExporter(outputFile, FileMetricsExporter.Format.CSV);
         exporter.close();
 
-        var metrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123));
+        var metrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123), 0L);
         assertThrows(IllegalStateException.class, () -> {
             exporter.exportCompression(metrics);
         });
@@ -195,7 +195,7 @@ class MetricsExporterTest {
             executor.submit(() -> {
                 try {
                     var metrics = new CompressionMetrics(index, index * 5, 1, 1,
-                                                          Duration.ofMillis(index));
+                                                          Duration.ofMillis(index), 0L);
                     exporter.exportCompression(metrics);
                 } catch (Exception e) {
                     fail("Export failed: " + e.getMessage());
@@ -220,7 +220,7 @@ class MetricsExporterTest {
         var invalidPath = Path.of("/dev/null/invalid/path.csv");
         var exporter = new FileMetricsExporter(invalidPath, FileMetricsExporter.Format.CSV);
 
-        var metrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123));
+        var metrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123), 0L);
 
         // Should log warning but not throw
         assertDoesNotThrow(() -> exporter.exportCompression(metrics));
@@ -247,7 +247,7 @@ class MetricsExporterTest {
         var exporter = new FileMetricsExporter(outputFile, FileMetricsExporter.Format.CSV);
 
         for (int i = 0; i < 5; i++) {
-            var metrics = new CompressionMetrics(i, i * 5, 1, 1, Duration.ofMillis(i));
+            var metrics = new CompressionMetrics(i, i * 5, 1, 1, Duration.ofMillis(i), 0L);
             exporter.exportCompression(metrics);
         }
         exporter.close();
@@ -262,8 +262,8 @@ class MetricsExporterTest {
         var outputFile = tempDir.resolve("json_array.json");
         var exporter = new FileMetricsExporter(outputFile, FileMetricsExporter.Format.JSON);
 
-        var metrics1 = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123));
-        var metrics2 = new CompressionMetrics(200, 600, 20, 60, Duration.ofMillis(456));
+        var metrics1 = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123), 0L);
+        var metrics2 = new CompressionMetrics(200, 600, 20, 60, Duration.ofMillis(456), 0L);
 
         exporter.exportCompression(metrics1);
         exporter.exportCompression(metrics2);
@@ -280,7 +280,7 @@ class MetricsExporterTest {
         var outputFile = tempDir.resolve("mixed_metrics.csv");
         var exporter = new FileMetricsExporter(outputFile, FileMetricsExporter.Format.CSV);
 
-        var compressionMetrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123));
+        var compressionMetrics = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123), 0L);
         var collector = new CacheMetricsCollector();
         collector.recordHit();
         collector.recordMiss();
@@ -305,13 +305,13 @@ class MetricsExporterTest {
 
         // First export
         var exporter1 = new FileMetricsExporter(outputFile, FileMetricsExporter.Format.CSV);
-        var metrics1 = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123));
+        var metrics1 = new CompressionMetrics(100, 500, 10, 50, Duration.ofMillis(123), 0L);
         exporter1.exportCompression(metrics1);
         exporter1.close();
 
         // Second export (should overwrite)
         var exporter2 = new FileMetricsExporter(outputFile, FileMetricsExporter.Format.CSV);
-        var metrics2 = new CompressionMetrics(200, 600, 20, 60, Duration.ofMillis(456));
+        var metrics2 = new CompressionMetrics(200, 600, 20, 60, Duration.ofMillis(456), 0L);
         exporter2.exportCompression(metrics2);
         exporter2.close();
 

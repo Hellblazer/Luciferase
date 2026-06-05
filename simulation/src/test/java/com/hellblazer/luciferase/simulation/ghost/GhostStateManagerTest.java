@@ -110,6 +110,39 @@ class GhostStateManagerTest {
         assertEquals(0.3f, extrapolatedPos.z, 0.01f, "Z position extrapolated");
     }
 
+    /**
+     * Luciferase-7wzml.186: site-4 consistency fix — SimulationGhostEntity.velocity() must
+     * return the real velocity (not zero) after updateGhost(), so that any consumer calling
+     * getGhost(id).velocity() directly (e.g. BubbleGhostCoordinator.onReceive on a local
+     * re-delivery path) sees the correct value.
+     */
+    @Test
+    void testGhostEntityVelocityFieldConsistentWithGhostStateVelocity() {
+        var entityId = new StringEntityID("entity-vel-consistency");
+        var position = new Point3f(0.0f, 0.0f, 0.0f);
+        var velocity = new Point3f(5.0f, 0.0f, 0.0f); // 5 units/s in X
+        long timestamp = 1000L;
+
+        var event = new EntityUpdateEvent(entityId, position, velocity, timestamp, 1L);
+        manager.updateGhost(sourceBubbleId, event);
+
+        var ghost = manager.getGhost(entityId);
+        assertNotNull(ghost, "Ghost must exist after updateGhost");
+
+        // Luciferase-7wzml.186: createGhostEntity now passes velocity to the 6-arg ctor,
+        // so SimulationGhostEntity.velocity() is consistent with GhostState.velocity.
+        var ghostVel = ghost.velocity();
+        assertEquals(5.0f, ghostVel.x, 0.001f,
+            "ghost.velocity().x must match the velocity supplied to updateGhost (was 0 before fix)");
+        assertEquals(0.0f, ghostVel.y, 0.001f, "ghost.velocity().y must be 0");
+        assertEquals(0.0f, ghostVel.z, 0.001f, "ghost.velocity().z must be 0");
+
+        // Sanity: getGhostVelocity() (reads GhostState.velocity) must agree
+        var stateVel = manager.getGhostVelocity(entityId);
+        assertEquals(ghostVel.x, stateVel.x, 0.001f,
+            "SimulationGhostEntity.velocity() and GhostState.velocity must be consistent");
+    }
+
     @Test
     void testStalenessTracking() {
         var entityId = new StringEntityID("entity1");
@@ -121,13 +154,17 @@ class GhostStateManagerTest {
 
         manager.updateGhost(sourceBubbleId, event);
 
-        // Check staleness - ghost just created, should not be stale
-        assertFalse(manager.isStale(entityId, 1400L),
-                   "Ghost should NOT be stale after 400ms (threshold 500ms)");
+        // Check staleness - ghost just created, should not be stale before threshold (300ms)
+        assertFalse(manager.isStale(entityId, 1250L),
+                   "Ghost should NOT be stale after 250ms (threshold 300ms)");
 
-        // Check staleness after 600ms - should be stale
+        // After staleness threshold (300ms) but before TTL (500ms) — STALE warning window
+        assertTrue(manager.isStale(entityId, 1350L),
+                  "Ghost should be stale after 350ms (threshold 300ms)");
+
+        // Check staleness well past TTL - should still be stale
         assertTrue(manager.isStale(entityId, 1601L),
-                  "Ghost should be stale after 601ms (threshold 500ms)");
+                  "Ghost should be stale after 601ms (past TTL 500ms)");
     }
 
     @Test
@@ -412,5 +449,122 @@ class GhostStateManagerTest {
         assertNotNull(ghost);
         assertTrue(ghost.version() > 0,
                   "Version should be positive (monotonic counter starts at 0, increment gives 1+)");
+    }
+
+    // ===== Luciferase-7wzml.204: metrics volatile publication fix =====
+
+    /**
+     * Verifies that {@code setMetrics}/{@code getMetrics} round-trip correctly.
+     * The {@code metrics} field is now {@code volatile}; this test documents the
+     * publication-ordering fix: a post-construction {@code setMetrics} call is
+     * immediately visible to any reader on any thread (no data race).
+     */
+    @Test
+    void testMetricsRoundTrip_volatilePublication() {
+        // Initially null — no metrics configured
+        assertNull(manager.getMetrics(), "metrics should be null before setMetrics");
+
+        // Install a metrics instance
+        var metrics = new GhostPhysicsMetrics();
+        manager.setMetrics(metrics);
+
+        // getMetrics() must return the same instance (volatile write is visible)
+        assertSame(metrics, manager.getMetrics(),
+                  "getMetrics() must return the same instance after setMetrics (volatile publication)");
+
+        // Clearing is also observable
+        manager.setMetrics(null);
+        assertNull(manager.getMetrics(), "metrics should be null after setMetrics(null)");
+    }
+
+    // ===== Luciferase-7wzml.202: STALE warning window + getState() authoritative =====
+
+    /**
+     * Verifies the STALE warning window: a ghost in the 300–500ms window after its last update
+     * has {@code isStale()==true} but is NOT yet expired, and {@code getState()==STALE}.
+     * After the TTL (500ms) the state must be EXPIRED.
+     * <p>
+     * This test would have failed before the fix because DEFAULT_STALENESS_THRESHOLD_MS was
+     * equal to the TTL (both 500ms), making the STALE window zero.
+     */
+    @Test
+    void testStalenessWarningWindow_getStateIsAuthoritative() {
+        var lc = new GhostLifecycleStateMachine(500L, 300L);
+        var testClock = new TestClock();
+        lc.setClock(testClock);
+
+        var entityId = "stale-window-entity";
+        var sourceBubble = UUID.randomUUID();
+
+        testClock.setMillis(1000L);
+        lc.onCreate(entityId, sourceBubble, 1000L);
+        lc.onUpdate(entityId, 1000L);   // CREATED → ACTIVE, lastUpdate = 1000
+
+        // t=1000: freshly active, not stale
+        assertEquals(GhostLifecycleStateMachine.State.ACTIVE,
+                     lc.getState(entityId), "At t=1000 state should be ACTIVE (fresh)");
+        assertFalse(lc.isStale(entityId), "Should not be stale at t=1000");
+        assertFalse(lc.isExpired(entityId), "Should not be expired at t=1000");
+
+        // t=1350: 350ms elapsed — past staleness threshold (300ms), before TTL (500ms)
+        testClock.setMillis(1350L);
+        assertEquals(GhostLifecycleStateMachine.State.STALE,
+                     lc.getState(entityId), "At t=1350 (350ms > threshold 300ms) state must be STALE");
+        assertTrue(lc.isStale(entityId), "isStale() must be true in warning window");
+        assertFalse(lc.isExpired(entityId), "isExpired() must be false in warning window (before TTL 500ms)");
+
+        // t=1501: 501ms elapsed — past TTL (500ms) → EXPIRED
+        testClock.setMillis(1501L);
+        assertEquals(GhostLifecycleStateMachine.State.EXPIRED,
+                     lc.getState(entityId), "At t=1501 (501ms > TTL 500ms) state must be EXPIRED");
+        assertTrue(lc.isExpired(entityId), "isExpired() must be true past TTL");
+    }
+
+    /**
+     * Verifies that getState() does not return STALE for a freshly updated ghost,
+     * and that getState() / isStale() / isExpired() remain mutually consistent.
+     */
+    @Test
+    void testGetState_consistentWithIsStaleAndIsExpired() {
+        var lc = new GhostLifecycleStateMachine();  // defaults: 300ms stale, 500ms TTL
+        lc.setClock(new TestClock());
+
+        var id = "consistency-entity";
+        var bubble = UUID.randomUUID();
+
+        // Capture the clock reference for advancing
+        var lc2 = new GhostLifecycleStateMachine();
+        var tc2 = new TestClock();
+        tc2.setMillis(1000L);
+        lc2.setClock(tc2);
+        lc2.onCreate(id, bubble, 1000L);
+        lc2.onUpdate(id, 1000L);
+
+        // At creation time: ACTIVE, not stale, not expired
+        assertEquals(GhostLifecycleStateMachine.State.ACTIVE,
+                     lc2.getState(id), "fresh ghost: getState() must be ACTIVE");
+        assertFalse(lc2.isStale(id), "fresh ghost: isStale must be false");
+        assertFalse(lc2.isExpired(id), "fresh ghost: isExpired must be false");
+
+        // In STALE window: isStale true, isExpired false, getState STALE
+        tc2.setMillis(1400L); // 400ms > 300ms threshold, < 500ms TTL
+        assertEquals(GhostLifecycleStateMachine.State.STALE,
+                     lc2.getState(id), "400ms: getState() must return STALE");
+        assertTrue(lc2.isStale(id), "400ms: isStale must be true");
+        assertFalse(lc2.isExpired(id), "400ms: isExpired must be false");
+
+        // Past TTL: getState EXPIRED
+        tc2.setMillis(1600L); // 600ms > 500ms TTL
+        assertEquals(GhostLifecycleStateMachine.State.EXPIRED,
+                     lc2.getState(id), "600ms: getState() must return EXPIRED");
+        assertTrue(lc2.isExpired(id), "600ms: isExpired must be true");
+    }
+
+    // Inner TestClock to avoid importing the lifecycle test's private class
+    private static class TestClock implements com.hellblazer.luciferase.common.time.Clock {
+        private long millis = 0L;
+        void setMillis(long t) { millis = t; }
+        @Override public long currentTimeMillis() { return millis; }
+        @Override public long nanoTime() { return millis * 1_000_000L; }
     }
 }

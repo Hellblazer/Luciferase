@@ -25,6 +25,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.Frustum3D;
 import com.hellblazer.luciferase.lucien.FrustumIntersection;
 import com.hellblazer.luciferase.lucien.Plane3D;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -182,8 +183,97 @@ public class HierarchicalOcclusionCullerTest {
         // Specific reset behavior depends on implementation
     }
     
+    /**
+     * H2: setClock before zBuffer allocation — the zBuffer created after setClock must use the
+     * injected clock, not Clock.system().  Verified by observing that adaptResolution cooldown
+     * is governed by the TestClock: advancing the TestClock by less than ADAPTATION_COOLDOWN_MS
+     * (5000 ms) must keep the cooldown active, and advancing past it must allow adaptation.
+     */
+    /**
+     * H2: setClock before zBuffer allocation — the zBuffer created after setClock must use the
+     * injected clock, not Clock.system().  Verified by observing that adaptResolution cooldown
+     * is governed by the TestClock: advancing the TestClock by less than ADAPTATION_COOLDOWN_MS
+     * (5000 ms) must keep the cooldown active, and advancing past it must allow adaptation.
+     * <p>
+     * Uses upgrade params (high effectiveness, low memory pressure) for the first call because
+     * forceActivate() supplies occluderCount=0 (density 0.0) which causes calculateOptimalDimensions
+     * to produce MINIMAL — the lowest tier — so downgrade would be a no-op.  Upgrade params trigger
+     * MINIMAL→SMALL which is a valid change.
+     */
+    @Test
+    void testZBufferCreatedAfterSetClockUsesInjectedClock() {
+        var culler = new HierarchicalOcclusionCuller<>(512, 512,
+                new DSOCConfiguration().withEnabled(true));
+
+        // zBuffer is null at this point; inject clock BEFORE activation
+        var testClock = new TestClock(6000L); // start well past any 0-based cooldown
+        culler.setClock(testClock);
+
+        // Trigger lazy activation — zBuffer is created here and must receive the injected clock
+        culler.forceActivate();
+        assertNotNull(culler.getZBuffer(), "zBuffer must be non-null after forceActivate");
+
+        // First adapt call: upgrade (MINIMAL→SMALL). Cooldown gate open (time=6000, lastAdapt=0).
+        assertTrue(culler.getZBuffer().adaptResolution(0.9, 0.1),
+                "First adaptResolution (upgrade) must succeed (no prior cooldown)");
+
+        // Advance TestClock by 4999 ms — still inside 5000 ms cooldown
+        testClock.advance(4999L);
+        assertFalse(culler.getZBuffer().adaptResolution(0.9, 0.1),
+                "adaptResolution must be blocked within cooldown window");
+
+        // Advance 1 ms more — cooldown crossed; downgrade path (low-eff, high-mem): SMALL→MINIMAL
+        testClock.advance(1L);
+        assertTrue(culler.getZBuffer().adaptResolution(0.05, 0.8),
+                "adaptResolution must succeed once cooldown expires; " +
+                "failure means zBuffer uses Clock.system() instead of injected TestClock");
+    }
+
+    @Test
+    void testFrameTimingIsDeterministicWithInjectedClock() {
+        // Enable DSOC first, then inject the clock (setClock forwards to dsoc).
+        octree.enableDSOC(config, 512, 512);
+        var testClock = new TestClock(0L);
+        octree.setClock(testClock);
+
+        // Insert enough entities to keep DSOC active.
+        for (int i = 0; i < 10; i++) {
+            LongEntityID id = idGenerator.generateID();
+            octree.insert(id, new Point3f(50 + i * 20f, 50 + i * 20f, 50 + i * 20f), (byte) 10, "E" + i, null);
+        }
+
+        Point3f cameraPos = new Point3f(0, 0, 0);
+        float[] viewMatrix = createIdentityMatrix();
+        float[] projMatrix = createOrthographicMatrix(-300, 300, -300, 300, 0.1f, 1000);
+        octree.updateCamera(viewMatrix, projMatrix, cameraPos);
+
+        // With a fixed TestClock, beginFrame and endFrame both read the same nanoTime value
+        // within a single frustumCullVisible call, so frameTime = 0 for every frame.
+        // This proves the clock is injected: System.nanoTime() would produce a non-zero,
+        // non-deterministic value across any repeated invocations.
+        testClock.setNanos(1_000_000_000L); // 1 s — a non-zero anchor to verify no wall-clock bleed
+        int frames = 3;
+        for (int f = 0; f < frames; f++) {
+            octree.nextFrame();
+            octree.frustumCullVisible(frustum, cameraPos);
+            // Do NOT advance the clock: begin and end both see the same instant.
+        }
+
+        Map<String, Object> stats = octree.getDSOCStatistics();
+        assertNotNull(stats);
+        // avgFrameTimeMs is present only when frameCount > 0 inside OcclusionStatistics.
+        // With an injected fixed clock, every frame records 0 ns → avgFrameTimeMs == 0.0.
+        // If System.nanoTime() were still in use, this would be positive and non-deterministic.
+        if (stats.containsKey("avgFrameTimeMs")) {
+            double avgMs = ((Number) stats.get("avgFrameTimeMs")).doubleValue();
+            assertEquals(0.0, avgMs, 0.0,
+                "avgFrameTimeMs must be exactly 0 with a fixed injected clock; " +
+                "any positive value means System.nanoTime() is still in use");
+        }
+    }
+
     // Helper methods
-    
+
     private Frustum3D createFrustum() {
         // Create a simple frustum using createOrthographic
         Point3f cameraPos = new Point3f(100, 100, 0);

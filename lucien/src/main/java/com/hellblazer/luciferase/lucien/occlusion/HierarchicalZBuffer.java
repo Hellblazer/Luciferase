@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.occlusion;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import javax.vecmath.Point3f;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -36,9 +37,12 @@ public class HierarchicalZBuffer {
     private float[][] zBuffers;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     
+    // Clock injection for deterministic testing
+    private volatile Clock clock = Clock.system();
+
     // Adaptive sizing support
     private AdaptiveZBufferConfig.DimensionConfig currentConfig;
-    private long lastAdaptationTime = 0;
+    private volatile long lastAdaptationTime = 0;
     private static final long ADAPTATION_COOLDOWN_MS = 5000; // 5 seconds between adaptations
     
     // Camera parameters
@@ -67,6 +71,15 @@ public class HierarchicalZBuffer {
         initializeBuffers(config);
     }
     
+    /**
+     * Inject a clock for deterministic testing.
+     *
+     * @param clock the clock to use; must not be null
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
     /**
      * Initialize Z-buffers with given configuration
      */
@@ -168,17 +181,30 @@ public class HierarchicalZBuffer {
             // Rasterize at base level
             rasterizeBounds(screenBounds, 0);
             
-            // Update hierarchy
-            updateHierarchy();
+            // Update hierarchy (already holds writeLock — call unlocked variant)
+            updateHierarchyUnlocked();
         } finally {
             lock.writeLock().unlock();
         }
     }
     
     /**
-     * Builds the Z-pyramid from the base level
+     * Builds the Z-pyramid from the base level.
+     * Acquires writeLock so external callers (e.g. HierarchicalOcclusionCuller.endFrame)
+     * are safe; ReentrantReadWriteLock re-entry keeps the renderOccluder→updateHierarchy
+     * path safe (renderOccluder already holds writeLock).
      */
     public void updateHierarchy() {
+        lock.writeLock().lock();
+        try {
+            updateHierarchyUnlocked();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /** Pyramid build — caller must hold writeLock. */
+    private void updateHierarchyUnlocked() {
         for (int level = 1; level < levels; level++) {
             int srcWidth = getWidthAtLevel(level - 1);
             int srcHeight = getHeightAtLevel(level - 1);
@@ -332,19 +358,25 @@ public class HierarchicalZBuffer {
     }
     
     /**
-     * Tests occlusion at specified level
+     * Tests occlusion at specified level.
+     *
+     * <p>Level coordinates are derived by proportional mapping:
+     * {@code levelCoord = baseCoord * levelDim / baseDim}, clamped to
+     * {@code [0, levelDim-1]}.  This matches the floor-halving used by
+     * {@link #getWidthAtLevel}/{@link #getHeightAtLevel} and is correct for
+     * non-power-of-two base dimensions (unlike the old {@code >> level} shift).
      */
     private boolean testOcclusionAtLevel(ScreenSpaceBounds bounds, int level) {
         int levelWidth = getWidthAtLevel(level);
         int levelHeight = getHeightAtLevel(level);
         float[] buffer = zBuffers[level];
-        
-        // Scale bounds to level resolution
-        int minX = bounds.minX >> level;
-        int minY = bounds.minY >> level;
-        int maxX = Math.min(levelWidth - 1, bounds.maxX >> level);
-        int maxY = Math.min(levelHeight - 1, bounds.maxY >> level);
-        
+
+        // Proportional mapping: coord * levelDim / baseDim, clamped to [0, levelDim-1].
+        int minX = Math.max(0, bounds.minX * levelWidth / width);
+        int minY = Math.max(0, bounds.minY * levelHeight / height);
+        int maxX = Math.min(levelWidth - 1, bounds.maxX * levelWidth / width);
+        int maxY = Math.min(levelHeight - 1, bounds.maxY * levelHeight / height);
+
         // Test if any pixel passes depth test
         for (int y = minY; y <= maxY; y++) {
             for (int x = minX; x <= maxX; x++) {
@@ -354,24 +386,27 @@ public class HierarchicalZBuffer {
                 }
             }
         }
-        
+
         return true; // Fully occluded
     }
     
     /**
-     * Rasterizes bounds into Z-buffer
+     * Rasterizes bounds into Z-buffer.
+     *
+     * <p>Uses proportional mapping (same as {@link #testOcclusionAtLevel}) so
+     * non-power-of-two base dimensions are handled correctly.
      */
     private void rasterizeBounds(ScreenSpaceBounds bounds, int level) {
         int levelWidth = getWidthAtLevel(level);
         int levelHeight = getHeightAtLevel(level);
         float[] buffer = zBuffers[level];
-        
-        // Scale bounds to level resolution
-        int minX = Math.max(0, bounds.minX >> level);
-        int minY = Math.max(0, bounds.minY >> level);
-        int maxX = Math.min(levelWidth - 1, bounds.maxX >> level);
-        int maxY = Math.min(levelHeight - 1, bounds.maxY >> level);
-        
+
+        // Proportional mapping: coord * levelDim / baseDim, clamped to [0, levelDim-1].
+        int minX = Math.max(0, bounds.minX * levelWidth / width);
+        int minY = Math.max(0, bounds.minY * levelHeight / height);
+        int maxX = Math.min(levelWidth - 1, bounds.maxX * levelWidth / width);
+        int maxY = Math.min(levelHeight - 1, bounds.maxY * levelHeight / height);
+
         // Update depth values
         for (int y = minY; y <= maxY; y++) {
             for (int x = minX; x <= maxX; x++) {
@@ -417,22 +452,30 @@ public class HierarchicalZBuffer {
      * @return true if buffer was resized
      */
     public boolean adaptResolution(double effectiveness, double memoryPressure) {
-        // Check cooldown to prevent thrashing
-        long currentTime = System.currentTimeMillis();
+        // Fast pre-check outside lock: only reads lastAdaptationTime (not currentConfig)
+        long currentTime = clock.currentTimeMillis();
         if (currentTime - lastAdaptationTime < ADAPTATION_COOLDOWN_MS) {
             return false;
         }
-        
-        // Determine if adaptation is needed
-        var newConfig = AdaptiveZBufferConfig.adaptForEffectiveness(currentConfig, effectiveness, memoryPressure);
-        
-        if (newConfig != null && AdaptiveZBufferConfig.isChangeWorthwhile(currentConfig, newConfig)) {
-            resizeBuffers(newConfig);
+
+        // Acquire write lock; re-read currentConfig under lock to avoid stale-read race
+        lock.writeLock().lock();
+        try {
+            currentTime = clock.currentTimeMillis();
+            if (currentTime - lastAdaptationTime < ADAPTATION_COOLDOWN_MS) {
+                return false;
+            }
+            var newConfig = AdaptiveZBufferConfig.adaptForEffectiveness(currentConfig, effectiveness, memoryPressure);
+            if (newConfig == null || !AdaptiveZBufferConfig.isChangeWorthwhile(currentConfig, newConfig)) {
+                return false;
+            }
+            initializeBuffers(newConfig);
+            this.currentConfig = newConfig;
             lastAdaptationTime = currentTime;
             return true;
+        } finally {
+            lock.writeLock().unlock();
         }
-        
-        return false;
     }
     
     /**

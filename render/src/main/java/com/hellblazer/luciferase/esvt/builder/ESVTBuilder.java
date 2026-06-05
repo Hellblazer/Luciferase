@@ -62,6 +62,13 @@ public class ESVTBuilder {
     /**
      * Build ESVT data from a Tetree.
      *
+     * <p><b>Precondition (S0-root invariant):</b> all leaf nodes in {@code tetree} must have been
+     * inserted via {@link com.hellblazer.luciferase.lucien.tetree.Tet#locatePointS0Tree} so that
+     * the root is always tet type 0. Pyramid-rooted tetrahedra (where
+     * {@code Tet.minTetLevel() != Tet.NO_TET_ANCESTOR}) are not supported; construction is
+     * deferred to Luciferase-q3p (RDR-012 D2 shallow-only-live contract). Violation fails loud
+     * inside {@link #propagateTypesTopDown} (Luciferase-7wzml.167).
+     *
      * @param tetree The source Tetree spatial index
      * @param <ID> Entity ID type
      * @param <Content> Content type
@@ -143,6 +150,13 @@ public class ESVTBuilder {
      * <p>When gridResolution is positive, coordinates are scaled relative to
      * [0, gridResolution-1] bounds, preserving spatial relationships. When negative,
      * coordinates are scaled to fit the actual voxel bounding box (legacy behavior).
+     *
+     * <p><b>Precondition (S0-root invariant):</b> nodes are located internally via
+     * {@link com.hellblazer.luciferase.lucien.tetree.Tet#locatePointS0Tree}, guaranteeing
+     * a type-0 root. Pyramid-rooted tetrahedra ({@code Tet.minTetLevel() != Tet.NO_TET_ANCESTOR})
+     * are not supported; construction is deferred to Luciferase-q3p (RDR-012 D2
+     * shallow-only-live contract). Violation fails loud inside
+     * {@link #propagateTypesTopDown} (Luciferase-7wzml.167).
      *
      * @param voxels         List of voxel coordinates (Point3i with x, y, z)
      * @param maxDepth       Maximum tree depth (determines resolution)
@@ -621,9 +635,21 @@ public class ESVTBuilder {
             }
         }
 
-        // Root is always type 0
+        // Seed the root type from the actual key-derived tet type (same source build() and
+        // buildWithVoxelTracking use at lines 112 and 331).  All current callers insert only
+        // S0-canonical tets via Tet.locatePointS0Tree, so the root is invariably type 0 —
+        // but fail loud if that invariant is ever violated rather than silently corrupting
+        // every descendant type.  (RDR-012 D2: the S0-root invariant is the shallow-only-live
+        // contract enforced by PyramidBoundaryPinningTest; Luciferase-7wzml.167.)
         if (!nodeList.isEmpty()) {
-            types[0] = 0;
+            byte rootTetType = nodeList.get(0).tetType;
+            if (rootTetType != 0) {
+                throw new IllegalStateException(
+                    "ESVTBuilder.propagateTypesTopDown: root node has tet type " + rootTetType
+                    + " but the S0-root invariant requires type 0. All nodes must be inserted via "
+                    + "Tet.locatePointS0Tree to guarantee a type-0 root. (Luciferase-7wzml.167)");
+            }
+            types[0] = rootTetType; // always 0 by the invariant asserted above; assigned for clarity / future non-S0 root support
         }
 
         // Debug: show first 15 nodes with their levels

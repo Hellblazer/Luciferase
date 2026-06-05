@@ -558,13 +558,29 @@ public final class MortonKey implements SpatialKey<MortonKey> {
             Math.min(maxCoord, center.z + radius + expansion)
         );
 
-        long minMortonCode = Constants.calculateMortonIndex(min, storageLevel);
-        long maxMortonCode = Constants.calculateMortonIndex(max, storageLevel);
+        // Morton codes are NOT monotonic along the AABB diagonal: the Z-order curve
+        // re-enters the box, so cells geometrically inside the AABB can have Morton
+        // codes outside [morton(min-corner), morton(max-corner)].  Checking only the
+        // two diagonal corners UNDERESTIMATES the range and causes missed cells in
+        // k-NN (false negatives).  Improved conservative approximation (Luciferase-7wzml.137):
+        // check all 8 AABB corners for true min/max Morton code over the bounding box.
+        // Exhaustively verified correct at level 3; NOT a general proof for all 21 levels —
+        // Z-order interior can theoretically dip below the 8-corner min at fine levels,
+        // so residual under-inclusion risk is acknowledged for deep levels.
+        float[] xs = { min.x, max.x };
+        float[] ys = { min.y, max.y };
+        float[] zs = { min.z, max.z };
 
-        if (minMortonCode > maxMortonCode) {
-            long tmp = minMortonCode;
-            minMortonCode = maxMortonCode;
-            maxMortonCode = tmp;
+        long minMortonCode = Long.MAX_VALUE;
+        long maxMortonCode = Long.MIN_VALUE;
+        for (float cx : xs) {
+            for (float cy : ys) {
+                for (float cz : zs) {
+                    long m = Constants.calculateMortonIndex(new Point3f(cx, cy, cz), storageLevel);
+                    if (m < minMortonCode) minMortonCode = m;
+                    if (m > maxMortonCode) maxMortonCode = m;
+                }
+            }
         }
 
         var lowerBound = new MortonKey(minMortonCode, storageLevel);

@@ -86,6 +86,22 @@ public abstract sealed class CollisionShape
     public static class CollisionResult {
         public final boolean  collides;
         public final Point3f  contactPoint;
+        /**
+         * Direction convention: points from shape1 (A) toward shape2 (B), unit length.
+         * <p>
+         * Intended convention: points from shape1 (A) toward shape2 (B), unit length.
+         * {@code applyPositionCorrection} assumes A→B and moves A backward along the normal, B forward.
+         * <p>
+         * {@code ImpulseResolver} uses a convention-independent separating-contact guard:
+         * it computes {@code normalDotAtoB = contactNormal · (posB − posA)} to detect the actual
+         * normal orientation at runtime; separating iff {@code normalDotAtoB * velocityAlongNormal < 0}
+         * (works for both A→B and B→A normals; safe no-op for coincident centers).
+         * <p>
+         * Consumers that invert: {@code ContactConstraint} negates the normal to work in its own B→A frame.
+         * <p>
+         * Producers must therefore supply the normal pointing from the first argument shape toward the
+         * second argument shape at the collision site.
+         */
         public final Vector3f contactNormal;
         public final float    penetrationDepth;
         /**

@@ -347,6 +347,37 @@ public class SFCArrayIndexTest {
         assertEquals(1000, sfcIndex.entityCount());
     }
 
+    /**
+     * Regression for Luciferase-7wzml.136: cellsQ must return an empty list (not throw)
+     * when the query VolumeBounds.minX is beyond the domain maximum.
+     *
+     * <p>For level {@code L} the domain spans [0, 2^21) in each axis.
+     * A bounds whose minX > domain max results in minX_cell > maxCell after clamping maxX
+     * to maxCell, giving an interval where min > max. LitmaxBigmin.computeIntervals must
+     * handle this as an empty interval rather than throwing or entering an infinite loop.
+     */
+    @Test
+    void testCellsQ_queryBeyondDomainMax_returnsEmptyWithoutThrowing() {
+        var level = (byte) 10;
+        var cellSize = com.hellblazer.luciferase.lucien.Constants.lengthAtLevel(level);
+        // Domain in grid-cell units: [0, (1<<level)-1].  Push minX well past the end.
+        float domainMaxFloat = (float) ((1 << level) * cellSize);
+        var beyondBounds = new VolumeBounds(
+            domainMaxFloat + cellSize * 10,  // minX far past domain max
+            0, 0,
+            domainMaxFloat + cellSize * 20,  // maxX even further
+            cellSize, cellSize
+        );
+
+        // Must not throw; must return empty list.
+        var intervals = assertDoesNotThrow(
+            () -> sfcIndex.cellsQ(beyondBounds, level),
+            "cellsQ must not throw when query is entirely outside the domain"
+        );
+        assertTrue(intervals.isEmpty(),
+                   "cellsQ with minX > domain max must return empty list (got " + intervals.size() + " intervals)");
+    }
+
     // ===== Clear Tests =====
 
     @Test

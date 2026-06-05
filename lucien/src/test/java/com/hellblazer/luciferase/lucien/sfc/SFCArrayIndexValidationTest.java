@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.sfc;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
@@ -492,5 +493,72 @@ public class SFCArrayIndexValidationTest {
 
         // Sanity check - should be less than 2KB per entity (allowing for JVM/GC measurement variability)
         assertTrue(bytesPerEntity < 2048, "Memory per entity should be reasonable (< 2KB)");
+    }
+
+    // ===== Upper-clamp correctness (7wzml.136) =====
+
+    /**
+     * cellsQ() must clamp maxX/Y/Z to the valid cell range [0, 2^level - 1] before
+     * encoding Morton keys.  A query box that extends beyond Constants.MAX_COORD used
+     * to produce out-of-range cell indices, feeding garbage coordinates into
+     * LitmaxBigmin / MortonCurve.encode.  After the fix the result must equal the
+     * result of the same query whose max coords are clamped to the domain boundary.
+     */
+    @Test
+    void testCellsQClampsOutOfDomainUpperBound() {
+        var level = (byte) 10;
+        var cellSize = Constants.lengthAtLevel(level);
+        // maxCell = (2^level) - 1
+        var maxCell = (1 << level) - 1;
+        // A coordinate that is well beyond the domain
+        var beyond = (float) (Constants.MAX_COORD + cellSize * 10);
+
+        // Query box whose max exceeds the domain in all three axes
+        var oobBounds = new VolumeBounds(100, 100, 100, beyond, beyond, beyond);
+        // Equivalent clamped box: max is the last valid integer coordinate
+        var clampedBounds = new VolumeBounds(100, 100, 100,
+                                              (float) (maxCell * cellSize),
+                                              (float) (maxCell * cellSize),
+                                              (float) (maxCell * cellSize));
+
+        var oobIntervals     = sfcIndex.cellsQ(oobBounds,     level);
+        var clampedIntervals = sfcIndex.cellsQ(clampedBounds, level);
+
+        assertFalse(oobIntervals.isEmpty(), "Out-of-domain query must still return intervals");
+
+        // The clamped and out-of-domain queries must produce identical interval sets
+        assertEquals(clampedIntervals.size(), oobIntervals.size(),
+                     "cellsQ with out-of-domain max must match clamped equivalent interval count");
+
+        for (int i = 0; i < clampedIntervals.size(); i++) {
+            var expected = clampedIntervals.get(i);
+            var actual   = oobIntervals.get(i);
+            assertEquals(expected.start().getMortonCode(), actual.start().getMortonCode(),
+                         "Interval " + i + " start must match clamped reference");
+            assertEquals(expected.end().getMortonCode(),   actual.end().getMortonCode(),
+                         "Interval " + i + " end must match clamped reference");
+        }
+    }
+
+    /**
+     * A normal in-range query must be unaffected by the upper-clamp logic.
+     */
+    @Test
+    void testCellsQInRangeQueryUnchanged() {
+        var level = (byte) 10;
+        // Query fully within domain
+        var bounds1 = new VolumeBounds(500, 500, 500, 2000, 2000, 2000);
+        var bounds2 = new VolumeBounds(500, 500, 500, 2000, 2000, 2000);
+
+        var intervals1 = sfcIndex.cellsQ(bounds1, level);
+        var intervals2 = sfcIndex.cellsQ(bounds2, level);
+
+        assertEquals(intervals1.size(), intervals2.size(), "Identical in-range queries must produce same interval count");
+        for (int i = 0; i < intervals1.size(); i++) {
+            assertEquals(intervals1.get(i).start().getMortonCode(), intervals2.get(i).start().getMortonCode(),
+                         "In-range interval " + i + " start must be stable");
+            assertEquals(intervals1.get(i).end().getMortonCode(), intervals2.get(i).end().getMortonCode(),
+                         "In-range interval " + i + " end must be stable");
+        }
     }
 }

@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Builder for constructing DAG (Directed Acyclic Graph) octrees from SVO octrees.
@@ -61,10 +62,14 @@ public final class DAGBuilder {
     private CompressionStrategy strategy = CompressionStrategy.BALANCED;
     private Consumer<BuildProgress> progressCallback = null;
     private boolean validateResult = true;
+    // Package-private: test injection point to override hasher creation (e.g. collision-forcing stubs).
+    Supplier<Hasher> hasherFactory = null;
 
     // Build state (computed during build())
-    private long[] nodeHashes;
-    private Map<Long, Integer> hashToCanonical;
+    // nodeDigests stores the FULL digest bytes (not truncated) per node so that
+    // hashToCanonical keyed on DigestKey uses the complete hash for collision safety.
+    private byte[][] nodeDigests;
+    private Map<DigestKey, Integer> hashToCanonical;
     private int[] oldToNew;
 
     /**
@@ -129,6 +134,19 @@ public final class DAGBuilder {
      */
     public DAGBuilder withValidation(boolean validate) {
         this.validateResult = validate;
+        return this;
+    }
+
+    /**
+     * Package-private test hook: override the hasher factory used for subtree hashing.
+     * Allows tests to inject deterministic or collision-forcing hashers without modifying
+     * production {@link HashAlgorithm} or {@link Hasher} implementations.
+     *
+     * @param factory supplier that creates a fresh Hasher per node (null reverts to hashAlgorithm)
+     * @return this builder for chaining
+     */
+    DAGBuilder withHasherFactory(Supplier<Hasher> factory) {
+        this.hasherFactory = factory;
         return this;
     }
 
@@ -204,7 +222,7 @@ public final class DAGBuilder {
             maxIdx = Math.max(maxIdx, idx);
         }
 
-        nodeHashes = new long[maxIdx + 1];
+        nodeDigests = new byte[maxIdx + 1][];
 
         // Process nodes in reverse order to ensure children are hashed before parents
         for (int i = indices.length - 1; i >= 0; i--) {
@@ -213,27 +231,31 @@ public final class DAGBuilder {
 
             if (node == null) continue;
 
-            // Create fresh hasher for each node
-            var hasher = hashAlgorithm.createHasher();
+            // Create fresh hasher for each node (test hook overrides hashAlgorithm if set)
+            var hasher = (hasherFactory != null) ? hasherFactory.get() : hashAlgorithm.createHasher();
 
             // Start with node's own data
             hasher.update(node.getChildDescriptor());
             hasher.update(node.getContourDescriptor());
 
-            // Include hashes of all children
+            // Include full digest bytes of all children to propagate structural identity.
+            // Using the full bytes (not a truncated long) ensures two subtrees with
+            // different structures cannot match even if their 64-bit truncations collide.
             var childMask = node.getChildMask();
             if (childMask != 0) {
                 for (int octant = 0; octant < 8; octant++) {
                     if (node.hasChild(octant)) {
                         var childIdx = node.getChildIndex(octant, nodeIdx, source.getFarPointers());
-                        if (childIdx >= 0 && childIdx < nodeHashes.length) {
-                            hasher.update(nodeHashes[childIdx]);
+                        if (childIdx >= 0 && childIdx < nodeDigests.length && nodeDigests[childIdx] != null) {
+                            for (byte b : nodeDigests[childIdx]) {
+                                hasher.update(b);
+                            }
                         }
                     }
                 }
             }
 
-            nodeHashes[nodeIdx] = hasher.digest();
+            nodeDigests[nodeIdx] = hasher.digestBytes();
         }
     }
 
@@ -249,10 +271,10 @@ public final class DAGBuilder {
         var indices = source.getNodeIndices();
 
         for (var nodeIdx : indices) {
-            var hash = nodeHashes[nodeIdx];
+            var key = new DigestKey(nodeDigests[nodeIdx]);
 
             // First occurrence becomes canonical
-            hashToCanonical.putIfAbsent(hash, nodeIdx);
+            hashToCanonical.putIfAbsent(key, nodeIdx);
         }
     }
 
@@ -284,8 +306,8 @@ public final class DAGBuilder {
         // Step 1: Assign new indices to canonical nodes
         var canonicalNodes = new ArrayList<Integer>();
         for (var nodeIdx : indices) {
-            var hash = nodeHashes[nodeIdx];
-            var canonical = hashToCanonical.get(hash);
+            var key = new DigestKey(nodeDigests[nodeIdx]);
+            var canonical = hashToCanonical.get(key);
 
             if (canonical == nodeIdx) {
                 // This is a canonical node
@@ -381,6 +403,16 @@ public final class DAGBuilder {
 
     /**
      * Build comprehensive metadata for the constructed DAG.
+     *
+     * <p>Per-depth sharing is computed by a BFS over the <em>source</em> nodes
+     * (before compaction) that tracks each node's depth and counts, per depth
+     * level, how many source nodes were deduplicated to a canonical node at a
+     * shallower index.  The result has one entry per depth level that contained
+     * at least one shared subtree.
+     *
+     * <p>{@code sourceHash} is the first 8 bytes (little-endian) of the SHA-256
+     * subtree hash already computed for the root node during Phase 1 – a real
+     * content hash that changes whenever the source structure changes.
      */
     private DAGMetadata buildMetadata(ESVONodeUnified[] compactedNodes, int[] childPointers, Duration buildTime) {
         var uniqueCount = compactedNodes.length;
@@ -389,15 +421,69 @@ public final class DAGBuilder {
         // Count shared subtrees (nodes that were deduplicated)
         var sharedCount = originalCount - uniqueCount;
 
-        // Build sharing-by-depth map (simplified - estimate from node structure)
+        // Compute real per-depth sharing via BFS over source nodes.
+        // For each source node that is NOT its own canonical (i.e. was deduplicated),
+        // record a miss at its depth.
         var sharingByDepth = new HashMap<Integer, Integer>();
-        // In a real implementation, would track depth during traversal
         if (sharedCount > 0) {
-            sharingByDepth.put(0, sharedCount);
+            var indices = source.getNodeIndices();
+            // Build a depth map: nodeIdx -> depth, BFS from root (index 0)
+            var depthMap = new HashMap<Integer, Integer>();
+            var bfsQueue = new java.util.ArrayDeque<int[]>(); // [nodeIdx, depth]
+            bfsQueue.offer(new int[] { indices[0], 0 });
+            while (!bfsQueue.isEmpty()) {
+                var cur = bfsQueue.poll();
+                var nIdx = cur[0];
+                var depth = cur[1];
+                if (depthMap.containsKey(nIdx)) continue;
+                depthMap.put(nIdx, depth);
+                var node = source.getNode(nIdx);
+                if (node == null || node.getChildMask() == 0) continue;
+                for (int oct = 0; oct < 8; oct++) {
+                    if (node.hasChild(oct)) {
+                        var childIdx = node.getChildIndex(oct, nIdx, source.getFarPointers());
+                        if (childIdx >= 0 && !depthMap.containsKey(childIdx)) {
+                            bfsQueue.offer(new int[] { childIdx, depth + 1 });
+                        }
+                    }
+                }
+            }
+            // For every source node that is a duplicate (not canonical), count it at its depth.
+            for (var nodeIdx : indices) {
+                if (nodeDigests == null || nodeIdx >= nodeDigests.length || nodeDigests[nodeIdx] == null) continue;
+                var key = new DigestKey(nodeDigests[nodeIdx]);
+                var canonical = hashToCanonical.get(key);
+                if (canonical != null && canonical != nodeIdx) {
+                    // This node was deduplicated; credit the sharing at its depth.
+                    // Skip orphaned/unreachable nodes: they are not part of the rooted DAG
+                    // and must not corrupt per-depth sharing attribution (they would all
+                    // silently land at depth 0 via getOrDefault, which is wrong).
+                    if (!depthMap.containsKey(nodeIdx)) continue;
+                    var depth = depthMap.get(nodeIdx);
+                    sharingByDepth.merge(depth, 1, Integer::sum);
+                }
+            }
         }
 
-        // Compute source hash (simplified - use node count as proxy)
-        var sourceHash = (long) source.getNodeCount();
+        // Compute real sourceHash: first 8 bytes (little-endian) of the root's
+        // subtree digest computed during Phase 1.  Falls back to node-count if
+        // the root digest is unavailable (should not happen in normal flow).
+        long sourceHash;
+        var indices = source.getNodeIndices();
+        if (nodeDigests != null && indices.length > 0) {
+            var rootDigest = nodeDigests[indices[0]];
+            if (rootDigest != null && rootDigest.length >= 8) {
+                long h = 0L;
+                for (int i = 0; i < 8; i++) {
+                    h |= ((long) (rootDigest[i] & 0xFF)) << (i * 8);
+                }
+                sourceHash = h;
+            } else {
+                sourceHash = (long) source.getNodeCount();
+            }
+        } else {
+            sourceHash = (long) source.getNodeCount();
+        }
 
         // Estimate max depth
         var maxDepth = estimateMaxDepth(compactedNodes, childPointers);
@@ -416,20 +502,55 @@ public final class DAGBuilder {
     }
 
     /**
-     * Estimate maximum tree depth from node structure.
+     * Canonical sparse-offset helper: the number of set bits in {@code childMask}
+     * that are strictly below {@code octant}.  This is the compacted-array index
+     * of {@code octant}'s child pointer relative to the node's {@code childPtr}
+     * base.
      *
-     * <p>Traverses from root to find the deepest path using iterative approach
-     * to avoid stack overflow with shared nodes.
+     * <p>All three sites that navigate the compacted {@code childPointers} array
+     * ({@link #buildCompactedDAG}, {@link #estimateMaxDepth}, and
+     * {@link DAGOctreeDataImpl#resolveChildIndex}) must use this method so that a
+     * future change to the layout only needs to be made in one place.
+     *
+     * @param childMask the node's 8-bit child presence mask
+     * @param octant    the octant being looked up (0–7)
+     * @return sparse offset in [0, popcount(childMask))
+     */
+    private static int sparseOffset(int childMask, int octant) {
+        return Integer.bitCount(childMask & ((1 << octant) - 1));
+    }
+
+    /**
+     * Compute the true maximum (longest) root-to-leaf depth in the DAG.
+     *
+     * <p>The DAG may share nodes: the same node can be reached via a short path
+     * <em>and</em> a longer path.  A visited-set BFS would record only the first
+     * (shortest) arrival depth and never revisit the node, causing it to
+     * underestimate the true longest path.  Instead this method tracks the
+     * <em>maximum</em> depth at which each node has been seen and re-enqueues
+     * the node's children whenever a longer path arrives — guaranteed to
+     * terminate because depths are bounded by the number of nodes and the DAG
+     * is acyclic.  Uses {@link #sparseOffset} to index into {@code childPointers}
+     * — the single canonical site for this arithmetic so that layout and
+     * traversal cannot diverge.
+     *
+     * <p>Consumers of {@link DAGMetadata#maxDepth()} (GPU workgroup sizing,
+     * traversal stack allocation, LOD decisions) require a true upper bound;
+     * underestimation would silently truncate traversal stacks.
      */
     private int estimateMaxDepth(ESVONodeUnified[] nodes, int[] childPointers) {
         if (nodes.length == 0) return 0;
         if (nodes.length == 1) return 0;
 
-        // BFS to find maximum depth, tracking visited nodes to avoid cycles
-        var queue = new java.util.ArrayDeque<int[]>(); // [nodeIdx, depth]
-        var visited = new java.util.HashSet<Integer>();
+        // maxDepthAtNode[i] = deepest depth reached so far when visiting node i.
+        // -1 means not yet visited.
+        var maxDepthAtNode = new int[nodes.length];
+        java.util.Arrays.fill(maxDepthAtNode, -1);
 
-        queue.offer(new int[]{0, 0}); // Start at root with depth 0
+        var queue = new java.util.ArrayDeque<int[]>(); // [nodeIdx, depth]
+        queue.offer(new int[]{0, 0});
+        maxDepthAtNode[0] = 0;
+
         var maxDepth = 0;
 
         while (!queue.isEmpty()) {
@@ -437,11 +558,13 @@ public final class DAGBuilder {
             var nodeIdx = current[0];
             var depth = current[1];
 
-            if (nodeIdx < 0 || nodeIdx >= nodes.length || visited.contains(nodeIdx)) {
+            // Stale entry: a longer path was already processed for this node at a
+            // greater depth. Skip — the children were (or will be) enqueued from
+            // that longer path.
+            if (depth < maxDepthAtNode[nodeIdx]) {
                 continue;
             }
 
-            visited.add(nodeIdx);
             maxDepth = Math.max(maxDepth, depth);
 
             var node = nodes[nodeIdx];
@@ -449,18 +572,20 @@ public final class DAGBuilder {
                 continue; // Leaf node
             }
 
-            // Add all children to queue using child pointer indirection
+            // Propagate to children; re-enqueue if a longer path reaches a child
+            var childMask = node.getChildMask();
             for (int octant = 0; octant < 8; octant++) {
                 if (node.hasChild(octant)) {
-                    // Use child pointer indirection array
-                    var sparseIdx = node.getChildOffset(octant);
-                    var childPtrArrayIdx = node.getChildPtr() + sparseIdx;
+                    var childPtrArrayIdx = node.getChildPtr() + sparseOffset(childMask, octant);
 
                     if (childPtrArrayIdx >= 0 && childPtrArrayIdx < childPointers.length) {
                         var childIdx = childPointers[childPtrArrayIdx];
+                        var childDepth = depth + 1;
 
-                        if (childIdx >= 0 && childIdx < nodes.length && !visited.contains(childIdx)) {
-                            queue.offer(new int[]{childIdx, depth + 1});
+                        if (childIdx >= 0 && childIdx < nodes.length
+                                && childDepth > maxDepthAtNode[childIdx]) {
+                            maxDepthAtNode[childIdx] = childDepth;
+                            queue.offer(new int[]{childIdx, childDepth});
                         }
                     }
                 }
@@ -540,8 +665,9 @@ public final class DAGBuilder {
                 throw new IndexOutOfBoundsException("Octant must be in [0, 7], got: " + octant);
             }
 
-            // Compute sparse index (how many children come before this octant)
-            int sparseIdx = Integer.bitCount(node.getChildMask() & ((1 << octant) - 1));
+            // Compute sparse index via the canonical helper (same formula as buildCompactedDAG
+            // and estimateMaxDepth — single source of truth so layout cannot diverge).
+            int sparseIdx = sparseOffset(node.getChildMask(), octant);
 
             // childPtr is an index into the childPointers array
             // childPointers[childPtr + sparseIdx] contains the actual node index

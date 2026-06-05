@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.portal.web;
 
+import com.hellblazer.luciferase.common.time.Clock;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -18,10 +20,19 @@ public record SpatialSession(
 ) implements AutoCloseable {
 
     /**
-     * Create a new session with generated ID.
+     * Create a new session with generated ID, using the system clock.
      */
     public static SpatialSession create() {
-        var now = Instant.now();
+        return create(Clock.system());
+    }
+
+    /**
+     * Create a new session with generated ID, using the supplied clock.
+     * Preferred in server code — pass the server's injected {@link Clock} so all
+     * timestamps share a single consistent time source.
+     */
+    public static SpatialSession create(Clock clock) {
+        var now = Instant.ofEpochMilli(clock.currentTimeMillis());
         return new SpatialSession(
             UUID.randomUUID().toString(),
             now,
@@ -30,22 +41,39 @@ public record SpatialSession(
     }
 
     /**
-     * Create a copy with updated lastAccessed timestamp.
+     * Create a copy with updated lastAccessed timestamp, using the system clock.
      */
     public SpatialSession touch() {
-        return new SpatialSession(id, created, Instant.now());
+        return touch(Clock.system());
     }
 
     /**
-     * Check if session has expired based on timeout duration.
+     * Create a copy with updated lastAccessed timestamp, using the supplied clock.
+     * Preferred in server code — pass the server's injected {@link Clock}.
+     */
+    public SpatialSession touch(Clock clock) {
+        return new SpatialSession(id, created, Instant.ofEpochMilli(clock.currentTimeMillis()));
+    }
+
+    /**
+     * Check if session has expired based on timeout duration, using the system clock.
      */
     public boolean isExpired(long timeoutMillis) {
-        return Instant.now().toEpochMilli() - lastAccessed.toEpochMilli() > timeoutMillis;
+        return isExpired(timeoutMillis, Instant.now().toEpochMilli());
+    }
+
+    /**
+     * Check if session has expired based on timeout duration and an explicit current time.
+     * Preferred for testable code — pass {@code clock.currentTimeMillis()} as {@code nowMillis}.
+     */
+    public boolean isExpired(long timeoutMillis, long nowMillis) {
+        return nowMillis - lastAccessed.toEpochMilli() > timeoutMillis;
     }
 
     @Override
     public void close() {
-        // Placeholder for resource cleanup
-        // Will be expanded in Phase 2+ to dispose GPU resources, spatial indices, etc.
+        // No per-session resources held here; heavyweight cleanup is in the service
+        // layer (GpuService, RenderService, SpatialIndexService) and must be driven
+        // by the server via cleanupSessionResources().
     }
 }

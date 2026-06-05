@@ -339,8 +339,8 @@ public class ESVOReferenceComparator {
         
         boolean isValid = issues.isEmpty();
         
-        log.debug("Comparison completed: valid={}, issues={}, pixelDiff={:.4f}", 
-                 isValid, issues.size(), pixelDifference);
+        log.debug("Comparison completed: valid={}, issues={}, pixelDiff={}",
+                  isValid, issues.size(), String.format("%.4f", pixelDifference));
         
         return new ComparisonResult(isValid, pixelDifference, differingPixels, totalPixels,
                                   voxelStructureValid, traversalComparison, issues, metrics);
@@ -482,8 +482,8 @@ public class ESVOReferenceComparator {
             .mapToDouble(PathDifference::getMagnitude)
             .average().orElse(0.0));
         
-        log.debug("Path comparison: match={}, similarity={:.3f}, differences={}", 
-                 pathsMatch, pathSimilarity, differences.size());
+        log.debug("Path comparison: match={}, similarity={}, differences={}",
+                  pathsMatch, String.format("%.3f", pathSimilarity), differences.size());
         
         return new TraversalComparison(pathsMatch, pathSimilarity, esvoPath.size(), 
                                      referencePath.size(), differences, pathMetrics);
@@ -533,7 +533,8 @@ public class ESVOReferenceComparator {
         }
         
         double avgDifference = totalDifference / pixelCount;
-        log.debug("Pixel comparison: {} pixels, average difference: {:.4f}", pixelCount, avgDifference);
+        log.debug("Pixel comparison: {} pixels, average difference: {}",
+                  pixelCount, String.format("%.4f", avgDifference));
         
         return avgDifference;
     }

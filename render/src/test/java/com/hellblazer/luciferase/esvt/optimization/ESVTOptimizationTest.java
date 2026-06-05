@@ -301,7 +301,11 @@ class ESVTOptimizationTest {
     }
 
     @Test
-    void testIntersectionStatsEstimation() {
+    void testPredictIntersectionStatsHeuristicProducesPlausiblePredictions() {
+        // predictIntersectionStatsHeuristic returns SYNTHETIC ESTIMATES from closed-form
+        // heuristics, NOT measured values from a real traversal.  These assertions only
+        // verify the heuristic formulas produce outputs in plausible ranges — they do NOT
+        // validate accuracy against any ground-truth measurement.
         var rayOrigins = new Vector3f[]{
             new Vector3f(0.0f, 0.0f, 0.0f),
             new Vector3f(0.1f, 0.0f, 0.0f)
@@ -311,12 +315,25 @@ class ESVTOptimizationTest {
             new Vector3f(0.0f, 0.0f, 1.0f)
         };
 
-        var stats = traversalOptimizer.estimateIntersectionStats(rayOrigins, rayDirections, 1000);
+        var stats = traversalOptimizer.predictIntersectionStatsHeuristic(rayOrigins, rayDirections, 1000);
 
-        assertNotNull(stats);
-        assertTrue(stats.getTotalTests() > 0);
-        assertTrue(stats.getHitRate() >= 0.0f && stats.getHitRate() <= 1.0f);
-        assertTrue(stats.getEarlyCullRate() >= 0.0f && stats.getEarlyCullRate() <= 1.0f);
+        assertNotNull(stats, "heuristic prediction must not be null");
+        // totalTests = rayCount * log4(nodeCount) — must be positive for nodeCount > 1
+        assertTrue(stats.getTotalTests() > 0, "heuristic totalTests must be positive");
+        // hitRate and cullRate derive from empirical constants in [0,1]; validate range only
+        assertTrue(stats.getHitRate() >= 0.0f && stats.getHitRate() <= 1.0f,
+                   "heuristic hitRate must be in [0,1]");
+        assertTrue(stats.getEarlyCullRate() >= 0.0f && stats.getEarlyCullRate() <= 1.0f,
+                   "heuristic cullRate must be in [0,1]");
+        // hitsByTetType is a uniform distribution across TET_TYPE_COUNT types — all 6 must be present
+        assertEquals(6, stats.getHitsByTetType().size(),
+                     "heuristic prediction must cover all 6 tet types");
+
+        // S3: predictIntersectionStatsHeuristic must flag output as synthetic so callers
+        // cannot accidentally treat heuristic estimates as measured ground-truth values.
+        assertTrue(stats.isSynthetic(),
+                   "predictIntersectionStatsHeuristic must return isSynthetic()==true; "
+                   + "callers must be able to distinguish estimates from measurements");
     }
 
     // ========== Optimization Pipeline Tests ==========

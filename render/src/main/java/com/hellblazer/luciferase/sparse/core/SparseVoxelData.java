@@ -133,9 +133,12 @@ public interface SparseVoxelData<N extends SparseVoxelNode> extends SpatialData 
         int ptr = node.getChildPtr();
         if (node.isFar()) {
             var fp = getFarPointers();
-            if (fp != null && ptr < fp.length) {
-                return fp[ptr];
+            if (fp == null || ptr >= fp.length) {
+                throw new IllegalStateException(
+                    "Far node requires far-pointer table but table is "
+                    + (fp == null ? "null" : "too short (length=" + fp.length + ", ptr=" + ptr + ")"));
             }
+            return fp[ptr];
         }
         return ptr;
     }

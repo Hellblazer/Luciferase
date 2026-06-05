@@ -64,21 +64,21 @@ public final class MortonOptimizer {
      * Decode Morton code to x coordinate (3D)
      */
     public static int decodeX3D(long morton) {
-        return compact1By2((int) morton);
+        return compact1By2(morton);
     }
-    
+
     /**
      * Decode Morton code to y coordinate (3D)
      */
     public static int decodeY3D(long morton) {
-        return compact1By2((int) (morton >> 1));
+        return compact1By2(morton >> 1);
     }
-    
+
     /**
      * Decode Morton code to z coordinate (3D)
      */
     public static int decodeZ3D(long morton) {
-        return compact1By2((int) (morton >> 2));
+        return compact1By2(morton >> 2);
     }
     
     /**
@@ -141,15 +141,18 @@ public final class MortonOptimizer {
     }
     
     /**
-     * Compact by 2 (for 3D decoding)
+     * Compact by 2 (for 3D decoding, 63-bit long version supporting 21-bit components).
+     * Inverse of interleave21: extracts every third bit from a 63-bit Morton code.
+     * Final mask 0x1FFFFF retains the full 21-bit result.
      */
-    private static int compact1By2(int x) {
-        x &= 0x09249249;
-        x = (x ^ (x >> 2))  & 0x030c30c3;
-        x = (x ^ (x >> 4))  & 0x0300f00f;
-        x = (x ^ (x >> 8))  & 0xff0000ff;
-        x = (x ^ (x >> 16)) & 0x000003ff;
-        return x;
+    private static int compact1By2(long x) {
+        x &= 0x1249249249249249L;
+        x = (x ^ (x >> 2))  & 0x10c30c30c30c30c3L;
+        x = (x ^ (x >> 4))  & 0x100f00f00f00f00fL;
+        x = (x ^ (x >> 8))  & 0x1f0000ff0000ffL;
+        x = (x ^ (x >> 16)) & 0x1f00000000ffffL;
+        x = (x ^ (x >> 32)) & 0x1fffffL;
+        return (int) x;
     }
     
     /**
@@ -190,10 +193,24 @@ public final class MortonOptimizer {
     }
     
     /**
-     * Calculate Morton distance between two codes
-     * Useful for spatial proximity queries
+     * Returns the shared-prefix depth (quadtree LCA level) for two 2D Morton codes.
+     *
+     * <p>This is NOT a Euclidean, Chebyshev, or Manhattan distance between the decoded
+     * coordinates. It returns the number of identical 2-bit interleaved pairs counting
+     * from the least-significant end, i.e. the depth at which the two codes first agree
+     * in their quadtree path. Equal codes return 0 (maximum proximity / same cell).
+     * Adjacent codes that differ only in the lowest 2 bits return 0; codes that agree
+     * in the lowest k pairs return k.
+     *
+     * <p>Formerly misnamed "distance" — renamed semantics: higher value means the codes
+     * share more leading quadtree structure (closer in the tree), lower value (0) means
+     * they diverge at the leaf level. Callers needing a true spatial distance should
+     * decode both codes and compute coordinate distance explicitly.
      */
-    public static int mortonDistance2D(long morton1, long morton2) {
+    public static int mortonSharedPrefixDepth2D(long morton1, long morton2) {
+        if (morton1 == morton2) {
+            return 0;
+        }
         long xor = morton1 ^ morton2;
         return Long.numberOfTrailingZeros(xor) / 2;
     }

@@ -260,7 +260,7 @@ public class Face {
      * @param normalIndices Set the normal indices to the contents of the provided array.
      */
     public Face setAllNormalIndices(int... normalIndices) {
-        System.arraycopy(normalIndices, 0, normalIndices, 0, normalIndices.length);
+        System.arraycopy(normalIndices, 0, this.normalIndices, 0, normalIndices.length);
         return this;
     }
 

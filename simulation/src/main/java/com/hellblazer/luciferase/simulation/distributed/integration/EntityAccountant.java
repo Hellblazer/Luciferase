@@ -238,6 +238,32 @@ public class EntityAccountant {
     }
 
     /**
+     * Removes an empty bubble entry from the distribution map.
+     * <p>
+     * Used by rollback to clean up transient bubble keys (e.g. a newBubbleId
+     * added by a failed split) after all their entities have been moved back to
+     * snapshot bubbles. A non-empty bubble is left untouched — the caller must
+     * drain it first.
+     *
+     * @param bubbleId the bubble identifier to purge
+     * @return true if the entry was removed; false if the bubble was non-empty or
+     *         not present
+     */
+    public boolean purgeBubble(UUID bubbleId) {
+        lock.lock();
+        try {
+            var entities = bubbleToEntities.get(bubbleId);
+            if (entities == null || !entities.isEmpty()) {
+                return false;
+            }
+            bubbleToEntities.remove(bubbleId);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
      * Returns the total number of operations performed.
      *
      * @return total operation count

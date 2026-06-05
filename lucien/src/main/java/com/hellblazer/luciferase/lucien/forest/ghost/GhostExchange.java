@@ -45,11 +45,23 @@ public interface GhostExchange<Key extends SpatialKey<Key>, ID extends EntityID,
     /**
      * Synchronously request ghost elements from a remote process.
      *
+     * <p><b>Return-value contract:</b>
+     * <ul>
+     *   <li>{@code null} — the request failed at the transport level (connection error, RPC failure,
+     *       or a non-empty batch in which every element failed to parse — the caller cannot tell
+     *       which elements were intended).  Callers should log the failure and treat this as a
+     *       transient error.
+     *   <li>empty list — the peer returned a genuinely empty ghost set (no elements were sent).
+     *       This is a valid, successful response.
+     *   <li>non-empty list — the subset of elements that parsed successfully; partially-corrupt
+     *       batches return the valid elements with per-element errors already logged.
+     * </ul>
+     *
      * @param targetRank   the rank of the target process
      * @param treeId       the tree ID to request ghosts for
      * @param ghostType    the type of ghosts to request
      * @param boundaryKeys specific boundary keys to request
-     * @return list of ghost elements, or {@code null} if the request fails
+     * @return list of ghost elements (possibly empty), or {@code null} if the request fails
      */
     List<GhostElement<Key, ID, Content>> requestGhostElements(
             int targetRank, long treeId, GhostType ghostType, List<Key> boundaryKeys);

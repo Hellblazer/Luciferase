@@ -233,11 +233,11 @@ public class Mesh {
      * Write this mesh to a file on the OBJ format.
      *
      * @param outFile The file to write to.
+     * @throws IOException if the file cannot be created or written.
      */
-    public void toObjFile(File outFile) {
-        try {
-            outFile.createNewFile();
-            FileWriter outWriter = new FileWriter(outFile);
+    public void toObjFile(File outFile) throws IOException {
+        outFile.createNewFile();
+        try (FileWriter outWriter = new FileWriter(outFile)) {
             for (Vector3d vertexPos : vertexPositions) {
                 outWriter.write(String.format("v %f %f %f\n", vertexPos.x, vertexPos.y, vertexPos.z));
             }
@@ -248,9 +248,6 @@ public class Mesh {
                 outWriter.write(face.toOBJString());
                 outWriter.write('\n');
             }
-            outWriter.close();
-        } catch (IOException e) {
-            e.printStackTrace();
         }
     }
 

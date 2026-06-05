@@ -400,28 +400,35 @@ public class WriteAheadLog implements AutoCloseable {
     private List<Map<String, Object>> readLogFile(Path logFile) throws IOException {
         var events = new ArrayList<Map<String, Object>>();
 
+        // Collect non-empty lines first so we can detect torn-tail (final line only) vs
+        // mid-file corruption. This method is used internally (restoreSequenceCounter) and
+        // does not propagate a corrupt count; use WalLogReader for recovery paths.
+        var rawLines = new ArrayList<String>();
         try (var reader = Files.newBufferedReader(logFile)) {
             String line;
-            var lineNumber = 0;
-
             while ((line = reader.readLine()) != null) {
-                lineNumber++;
                 line = line.trim();
-
-                if (line.isEmpty()) {
-                    continue; // Skip empty lines
+                if (!line.isEmpty()) {
+                    rawLines.add(line);
                 }
+            }
+        }
 
-                try {
-                    Map<String, Object> event = MAPPER.readValue(line,
-                        new TypeReference<Map<String, Object>>(){});
-
-                    if (event != null) {
-                        events.add(event);
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to parse event at {}:{} - {}", logFile, lineNumber, e.getMessage());
-                    // Skip malformed events
+        for (int i = 0; i < rawLines.size(); i++) {
+            var line = rawLines.get(i);
+            boolean isFinalLine = (i == rawLines.size() - 1);
+            try {
+                Map<String, Object> event = MAPPER.readValue(line, new TypeReference<Map<String, Object>>(){});
+                if (event != null) {
+                    events.add(event);
+                }
+            } catch (Exception e) {
+                if (isFinalLine) {
+                    log.debug("Ignoring torn tail at {}:{} (likely crash-flush truncation) - {}",
+                              logFile, i + 1, e.getMessage());
+                } else {
+                    log.warn("Mid-file parse failure at {}:{} (corrupt WAL line) - {}",
+                             logFile, i + 1, e.getMessage());
                 }
             }
         }

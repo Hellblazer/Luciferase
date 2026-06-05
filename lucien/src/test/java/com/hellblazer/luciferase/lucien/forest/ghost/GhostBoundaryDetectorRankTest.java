@@ -28,6 +28,7 @@ import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -167,5 +168,70 @@ class GhostBoundaryDetectorRankTest {
         assertFalse(detector.ghostedKeys.isEmpty(), "explicitly remote-owned (rank 5 != 2) neighbours must be ghosted");
         assertTrue(detector.ghostedOwners.stream().allMatch(o -> o == 5),
                    "ghosted neighbours must report their explicit remote owner rank 5");
+    }
+
+    /**
+     * Luciferase-7wzml.9: after {@code createGhostLayer()} with a multi-rank fixture, {@code getNumGhostElements()}
+     * must be {@code > 0}. This pins the scan → override hook → layer population → counter increment pipeline that
+     * was non-functional when {@code createGhostElement} only logged.
+     *
+     * <p><b>Scope note:</b> the base {@code createGhostElement} is a do-nothing placeholder — it is called only
+     * for keys absent from the local index (guaranteed by the {@code !containsSpatialKey} guard in
+     * {@code createGhostsForElement}), so it always takes the debug-log-and-return branch and never emits a ghost.
+     * Remote entity data arrives via {@link DistributedGhostManager} (the gRPC fill path), not through this hook.
+     * In a single-process multi-partition test, a subclass override is required to supply synthetic ghost data.
+     * This test therefore uses {@code PopulatingDetector} (which overrides the hook) to verify the
+     * boundary-scan plumbing (scan → hook dispatch → ghost layer counter) rather than the gRPC fill path.
+     */
+    @Test
+    void createGhostLayerPopulatesGhostLayerOnMultiRankBoundary() {
+        var octree = boundaryOctree();
+        var detector = new PopulatingDetector(octree, octree.getNeighborDetector());
+        detector.setCurrentRank(2); // rank 2: default-owned (rank-0) neighbours are remote
+
+        detector.createGhostLayer();
+
+        // Non-vacuous: the layer must contain at least one ghost (not just "≥ 0").
+        assertTrue(detector.getGhostLayer().getNumGhostElements() > 0,
+                   "Luciferase-7wzml.9: getNumGhostElements() must be > 0 after createGhostLayer on a multi-rank fixture");
+        // Each ghost's entityId must be the synthetic sentinel we deposited.
+        var ghosts = detector.getGhostLayer().getAllGhostElements();
+        assertFalse(ghosts.isEmpty(), "ghost list must not be empty");
+        for (var ghost : ghosts) {
+            assertNotNull(ghost.getEntityId(), "each ghost must have a non-null entity ID");
+            // ownerRank is the neighbor's registered owner (0 by default), which is != local rank (2).
+            // The guard createGhostsForElement only calls createGhostElement when ownerRank != currentRank.
+            assertFalse(ghost.getOwnerRank() == 2,
+                        "ghost owner rank must not be the local rank (2); got " + ghost.getOwnerRank());
+        }
+    }
+
+    /**
+     * A detector that overrides {@code createGhostElement} to deposit a synthetic {@link GhostElement} into
+     * the ghost layer. This is the required pattern for single-process multi-partition tests: the base class
+     * cannot populate ghosts (it is called with keys absent from the local index and always defers to the
+     * gRPC fill path), so a subclass override is the only way to supply test data via this hook.
+     */
+    private static final class PopulatingDetector
+        extends GhostBoundaryDetector<MortonKey, LongEntityID, String> {
+
+        private long syntheticIdCounter = 1L;
+
+        PopulatingDetector(SpatialIndex<MortonKey, LongEntityID, String> index,
+                           NeighborDetector<MortonKey> detector) {
+            super(index, detector, GhostType.FACES, GhostAlgorithm.MINIMAL);
+        }
+
+        @Override
+        protected void createGhostElement(MortonKey neighborKey, int ownerRank) {
+            var ghost = new GhostElement<>(
+                neighborKey,
+                new LongEntityID(syntheticIdCounter++),
+                "synthetic-content",
+                new Point3f(0, 0, 0),
+                ownerRank,
+                0L);
+            getGhostLayer().addGhostElement(ghost);
+        }
     }
 }

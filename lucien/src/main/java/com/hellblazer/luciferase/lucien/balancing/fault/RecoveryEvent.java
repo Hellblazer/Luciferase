@@ -39,13 +39,34 @@ public record RecoveryEvent(
     }
 
     /**
-     * Create event with current timestamp.
+     * Create event with an explicit timestamp (clock-injectable, Luciferase-7wzml.103).
      *
      * @param partitionId partition undergoing recovery
      * @param eventType type of event
      * @param details event details
-     * @return RecoveryEvent with current timestamp
+     * @param timestampMs explicit timestamp in ms (e.g. from injected Clock)
+     * @return RecoveryEvent with the given timestamp
      */
+    public static RecoveryEvent at(UUID partitionId, RecoveryEventType eventType, String details, long timestampMs) {
+        return new RecoveryEvent(partitionId, eventType, details, timestampMs);
+    }
+
+    /**
+     * Create event with current wall-clock timestamp.
+     *
+     * @deprecated Use {@link #at(UUID, RecoveryEventType, String, long) at(..., clock.currentTimeMillis())}
+     *     instead. The {@code now()} factory calls {@code System.currentTimeMillis()} directly, which makes
+     *     event timestamps non-deterministic in tests. Inject a {@link com.hellblazer.luciferase.common.time.Clock}
+     *     and supply {@code clock.currentTimeMillis()} to {@code at()} so tests can control timestamps.
+     *     The last production caller was removed in wave-14 (bead my5mf). This factory is retained only
+     *     for any remaining test callers; it will be removed in a future wave.
+     *
+     * @param partitionId partition undergoing recovery
+     * @param eventType type of event
+     * @param details event details
+     * @return RecoveryEvent with current system timestamp
+     */
+    @Deprecated(since = "wave14", forRemoval = true)
     public static RecoveryEvent now(UUID partitionId, RecoveryEventType eventType, String details) {
         return new RecoveryEvent(partitionId, eventType, details, System.currentTimeMillis());
     }

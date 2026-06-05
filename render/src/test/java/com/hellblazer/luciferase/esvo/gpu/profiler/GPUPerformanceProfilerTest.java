@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.esvo.gpu.profiler;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.esvo.core.ESVORay;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
@@ -233,6 +234,26 @@ class GPUPerformanceProfilerTest {
     }
 
     @Test
+    @DisplayName("setClock makes timestamp deterministic — Luciferase-7wzml.4 H4")
+    void testSetClockMakesTimestampDeterministic() {
+        var profiler = new GPUPerformanceProfiler();
+        var fixedTime = 1_234_567_890L;
+        profiler.setClock(Clock.fixed(fixedTime));
+
+        var baselineMetrics = profiler.profileBaseline(testDAG, 100, true);
+        var optimizedMetrics = profiler.profileOptimized(testDAG, 100, true);
+        var configMetrics = profiler.profileWithConfig(testDAG,
+                new ProfilerConfig(100, true, 64, 16, 1), false);
+
+        assertEquals(fixedTime, baselineMetrics.timestamp(),
+                "Injected clock must control baseline timestamp");
+        assertEquals(fixedTime, optimizedMetrics.timestamp(),
+                "Injected clock must control optimized timestamp");
+        assertEquals(fixedTime, configMetrics.timestamp(),
+                "Injected clock must control config-based timestamp");
+    }
+
+    @Test
     @DisplayName("Profiler handles empty DAG gracefully")
     void testEmptyDAG() {
         var profiler = new GPUPerformanceProfiler();
@@ -242,6 +263,45 @@ class GPUPerformanceProfilerTest {
         // Should not throw, but may return zero metrics
         var metrics = profiler.profileBaseline(emptyDAG, 100, true);
         assertNotNull(metrics);
+    }
+
+    /**
+     * Acceptance test for Luciferase-7wzml.4: the non-mock path (mockMode=false) must
+     * not report fabricated constant-based latencies as real measurements.
+     *
+     * <p>Specifically, two calls with the SAME ray count but via the non-mock path must
+     * produce latencies that differ (due to random jitter), proving the value is not a
+     * static constant. This also confirms no fake nanoTime bracketing makes the result
+     * algebraically equal to a compile-time constant every time.
+     *
+     * <p>Additionally the returned latency must NOT equal the raw model constant
+     * (BASELINE_LATENCY_PER_100K_RAYS = 850.0 µs / OPTIMIZED = 450.0 µs) precisely,
+     * since jitter shifts it.
+     */
+    @Test
+    @DisplayName("Non-mock path returns estimate (not fabricated constant) — Luciferase-7wzml.4")
+    void testNonMockPathReturnsEstimateNotFabricatedConstant() {
+        var profiler1 = new GPUPerformanceProfiler();
+        var profiler2 = new GPUPerformanceProfiler();
+
+        // Two different profiler instances have different Random seeds after first draw.
+        // We just need to confirm neither returns the raw model constant exactly.
+        var baseline = profiler1.profileBaseline(testDAG, 100_000, false);
+        var optimized = profiler2.profileOptimized(testDAG, 100_000, false);
+
+        // Raw model constant values without any jitter:
+        // BASELINE = 850.0 µs exactly, OPTIMIZED = 450.0 µs exactly
+        // The estimate methods apply jitter via random.nextDouble(), so they must differ.
+        assertNotEquals(850.0, baseline.latencyMicroseconds(), 1e-9,
+                        "Baseline estimate must not equal the raw model constant 850.0µs — jitter required");
+        assertNotEquals(450.0, optimized.latencyMicroseconds(), 1e-9,
+                        "Optimized estimate must not equal the raw model constant 450.0µs — jitter required");
+
+        // The non-mock path must return positive, finite values
+        assertTrue(baseline.latencyMicroseconds() > 0, "Baseline latency must be positive");
+        assertTrue(optimized.latencyMicroseconds() > 0, "Optimized latency must be positive");
+        assertTrue(Double.isFinite(baseline.latencyMicroseconds()), "Baseline latency must be finite");
+        assertTrue(Double.isFinite(optimized.latencyMicroseconds()), "Optimized latency must be finite");
     }
 
     // Conditional GPU tests - only run if GPU hardware available

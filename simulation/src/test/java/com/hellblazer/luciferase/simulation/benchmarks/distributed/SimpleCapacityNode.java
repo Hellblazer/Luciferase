@@ -139,7 +139,8 @@ public class SimpleCapacityNode {
         // Initialize network (required but not used for capacity test)
         var nodeId = UUID.randomUUID();
         var peerNodeId = UUID.randomUUID();
-        var networkChannel = new GrpcBubbleNetworkChannel();
+        // Explicit plaintext opt-in for benchmark harness (Luciferase-7wzml.200).
+        var networkChannel = new GrpcBubbleNetworkChannel(true);
         networkChannel.initialize(nodeId, "localhost:" + serverPort);
         networkChannel.registerNode(peerNodeId, "localhost:" + peerPort);
 

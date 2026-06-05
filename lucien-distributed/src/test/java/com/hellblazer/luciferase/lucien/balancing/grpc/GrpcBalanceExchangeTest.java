@@ -25,8 +25,10 @@ import com.hellblazer.luciferase.lucien.balancing.proto.RefinementResponse;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
 import com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters;
+import com.hellblazer.luciferase.lucien.forest.ghost.grpc.TetreeKeySerde;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,7 +77,7 @@ class GrpcBalanceExchangeTest {
                 return "string";
             }
         };
-        adapter = new GrpcBalanceExchange<>(client, contentSerializer, LongEntityID.class);
+        adapter = new GrpcBalanceExchange<>(client, contentSerializer, LongEntityID.class, MortonKey.class);
     }
 
     @Test
@@ -264,6 +266,37 @@ class GrpcBalanceExchangeTest {
                      "Only the two valid (levelDifference>1) violations survive; the invalid one is skipped, not the batch");
         assertEquals(3, received.violations().get(0).levelDifference());
         assertEquals(2, received.violations().get(1).levelDifference());
+    }
+
+    @Test
+    void exchangeViolationsSkipsWrongKeyTypeAndKeepsValid() throws Exception {
+        // A violation whose keys carry type_id="tetree" arriving at a MortonKey-typed exchange.
+        // spatialKeyFromProtobuf returns a TetreeKey instance; the (Key) cast then throws
+        // ClassCastException — must be per-element skipped, not abort the batch (Luciferase-7wzml.89).
+        var tetKey = new CompactTetreeKey((byte) 3, 0xABCL);
+        var tetProtoKey = com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey.newBuilder()
+            .setTypeId(TetreeKeySerde.TYPE_ID)
+            .setPayload(ByteString.copyFrom(new TetreeKeySerde().serialize(tetKey)))
+            .build();
+        var wrongTypeViolation = BalanceViolation.newBuilder()
+            .setLocalKey(tetProtoKey)
+            .setGhostKey(tetProtoKey)
+            .setLocalLevel(5).setGhostLevel(2).setLevelDifference(3).setSourceRank(1)
+            .build();
+        var validViolation = protoViolation(new MortonKey(10L, (byte) 5), new MortonKey(11L, (byte) 2), 5, 2, 3, 7);
+
+        client.violationResponse = com.hellblazer.luciferase.lucien.balancing.proto.ViolationBatch.newBuilder()
+            .setRequesterRank(1).setResponderRank(0).setRoundNumber(0)
+            .addViolations(wrongTypeViolation)
+            .addViolations(validViolation)
+            .setTimestamp(0L)
+            .build();
+
+        var received = adapter.exchangeViolations(emptyBatch());
+
+        assertEquals(1, received.violations().size(),
+                     "Wrong-key-type violation must be skipped; valid violation must survive");
+        assertEquals(new MortonKey(10L, (byte) 5), received.violations().get(0).localKey());
     }
 
     private com.hellblazer.luciferase.lucien.balancing.proto.BalanceViolation protoViolation(

@@ -114,7 +114,14 @@ public class BucketSynchronizedController extends RealTimeController {
 
     /**
      * Synchronize at bucket boundary.
-     * Applies: simulationTime = max(current, target)
+     * Applies: simulationTime = max(current, target).
+     * <p>
+     * Called only from tickLoop after the CAS at lines 85-86 has already
+     * committed currentBucket to bucketNum. This method must NOT write
+     * currentBucket again: doing so would reintroduce the TOCTOU window
+     * closed by Luciferase-0frcy.56 — a concurrent advanceBucket(newer)
+     * landing between the CAS and a redundant set() here would be silently
+     * overwritten back to the stale bucketNum (Luciferase-7wzml.71).
      */
     // Visible-for-testing: deterministic regression testing of the synthetic tick
     // emission on a bucket-boundary jump (Luciferase-0frcy.83). Public because the
@@ -136,7 +143,9 @@ public class BucketSynchronizedController extends RealTimeController {
             }
         }
 
-        currentBucket.set(bucketNum);
+        // Do NOT write currentBucket here. The tickLoop's CAS (lines 85-86)
+        // already owns this transition; a redundant set() would clobber a
+        // concurrent advanceBucket that landed after the CAS (Luciferase-7wzml.71).
 
         org.slf4j.LoggerFactory.getLogger(getClass())
             .debug("Bucket sync: bubble={}, bucket={}, targetSimTime={}, currentSimTime={}, alignedSimTime={}",
@@ -144,11 +153,18 @@ public class BucketSynchronizedController extends RealTimeController {
     }
 
     /**
-     * Advance to next bucket (called by test framework at bucket boundaries).
-     * This provides external hint about bucket advancement.
+     * Advance to next bucket (called by test framework or external hints at bucket boundaries).
+     * Uses a forward-only monotonic CAS loop so currentBucket never moves backward:
+     * a stale/lower newBucket is a no-op, and a racing tickLoop that has already
+     * committed a newer bucket is preserved (Luciferase-7wzml.71).
      */
     public void advanceBucket(long newBucket) {
-        currentBucket.set(newBucket);
+        long cur;
+        while ((cur = currentBucket.get()) < newBucket) {
+            if (currentBucket.compareAndSet(cur, newBucket)) {
+                break;
+            }
+        }
     }
 
     /**

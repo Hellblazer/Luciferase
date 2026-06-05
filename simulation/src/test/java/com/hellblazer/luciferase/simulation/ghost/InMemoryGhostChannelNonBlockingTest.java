@@ -100,4 +100,37 @@ class InMemoryGhostChannelNonBlockingTest {
             channel.close();
         }
     }
+
+    /**
+     * Luciferase-7wzml.205: {@code close()} previously called {@code shutdownNow()} on the
+     * latency scheduler without reporting the count of dropped in-flight (delayed) batches.
+     * <p>
+     * This test verifies that the drop count is honest: schedule several batches with a long
+     * latency, immediately close before they can be delivered, and then confirm that
+     * {@link InMemoryGhostChannel#getDroppedBatchCount()} reports a non-zero count
+     * (fail-loud / honest reporting, not silent loss).
+     */
+    @Test
+    void close_reportsDroppedInFlightBatches() throws Exception {
+        // Use a very long latency so the batches are definitely in-flight when close() is called.
+        var channel = new InMemoryGhostChannel<TestEntityID, String>(60_000L);
+        var received = new CopyOnWriteArrayList<SimulationGhostEntity<TestEntityID, String>>();
+        channel.onReceive((from, ghosts) -> received.addAll(ghosts));
+
+        int batchCount = 3;
+        for (int i = 0; i < batchCount; i++) {
+            channel.queueGhost(UUID.randomUUID(), ghost());
+        }
+        channel.flush(0L); // schedules batchCount delayed deliveries, returns immediately
+
+        // Close before any delivery can happen — cancels scheduled tasks.
+        channel.close();
+
+        // No deliveries should have happened yet (60s latency).
+        assertEquals(0, received.size(), "no batches should be delivered before the latency expires");
+
+        // Honest reporting: dropped batch count must be > 0 (Luciferase-7wzml.205).
+        assertTrue(channel.getDroppedBatchCount() > 0,
+                   "close() must report dropped in-flight batch count (fail-loud), got 0");
+    }
 }

@@ -42,18 +42,18 @@ public class LinearTransformation implements CoordinateTransformation {
         if (matrix == null) {
             throw new IllegalArgumentException("Transformation matrix cannot be null");
         }
-        
+
         if (matrix.length == 0) {
             throw new IllegalArgumentException("Matrix must have at least one row");
         }
-        
+
         this.targetDimension = matrix.length;
         this.sourceDimension = matrix[0].length;
-        
+
         if (sourceDimension == 0) {
             throw new IllegalArgumentException("Matrix must have at least one column");
         }
-        
+
         // Validate matrix dimensions and create defensive copy
         this.matrix = new double[targetDimension][sourceDimension];
         for (int i = 0; i < targetDimension; i++) {
@@ -62,17 +62,35 @@ public class LinearTransformation implements CoordinateTransformation {
             }
             System.arraycopy(matrix[i], 0, this.matrix[i], 0, sourceDimension);
         }
-        
+
         if (precompute) {
             // Pre-compute determinant for square matrices
             this.cachedDeterminant = (sourceDimension == targetDimension) ? computeDeterminant() : null;
-            
+
             // Pre-compute inverse for invertible square matrices
             this.cachedInverse = (isInvertible()) ? computeInverse() : null;
         } else {
             this.cachedDeterminant = null;
             this.cachedInverse = null;
         }
+    }
+
+    /**
+     * Private constructor that directly assigns pre-computed cached values.
+     * Used by {@link #createInverseTransformation} to establish the bidirectional
+     * inverse relationship without reflection or infinite recursion.
+     *
+     * @param matrix               validated, already-copied transformation matrix
+     * @param precomputedDet       pre-computed determinant (1/det of the original)
+     * @param precomputedInverse   the inverse-of-the-inverse (i.e. the original)
+     */
+    private LinearTransformation(double[][] matrix, Double precomputedDet, LinearTransformation precomputedInverse) {
+        this.targetDimension = matrix.length;
+        this.sourceDimension = matrix[0].length;
+        // matrix is already validated and defensively copied by the caller
+        this.matrix = matrix;
+        this.cachedDeterminant = precomputedDet;
+        this.cachedInverse = precomputedInverse;
     }
     
     @Override
@@ -381,44 +399,41 @@ public class LinearTransformation implements CoordinateTransformation {
     }
     
     private LinearTransformation createInverseTransformation(double[][] inverseMatrix) {
-        // Create the inverse transformation with its own properly computed determinant and inverse
-        var inverseTransformation = new LinearTransformation(inverseMatrix, false);
-        
-        // Manually set the cached values to avoid infinite recursion
-        // The determinant of the inverse is 1/determinant of the original
-        var inverseDeterminant = 1.0 / determinant();
-        
-        // Use reflection to set the final fields
-        try {
-            var detField = LinearTransformation.class.getDeclaredField("cachedDeterminant");
-            detField.setAccessible(true);
-            detField.set(inverseTransformation, inverseDeterminant);
-            
-            var invField = LinearTransformation.class.getDeclaredField("cachedInverse");
-            invField.setAccessible(true);
-            invField.set(inverseTransformation, this); // The inverse of the inverse is the original
-            
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize inverse transformation", e);
+        // Defensive copy of the already-computed inverse matrix
+        int rows = inverseMatrix.length;
+        int cols = inverseMatrix[0].length;
+        var matrixCopy = new double[rows][cols];
+        for (int i = 0; i < rows; i++) {
+            System.arraycopy(inverseMatrix[i], 0, matrixCopy[i], 0, cols);
         }
-        
-        return inverseTransformation;
+
+        // det(A^-1) = 1 / det(A)
+        var inverseDeterminant = 1.0 / determinant();
+
+        // The inverse of the inverse is this transformation itself.
+        // Use the private (matrix, det, inverse) constructor to assign final fields
+        // directly — no reflection needed, no JPMS setAccessible warnings.
+        return new LinearTransformation(matrixCopy, inverseDeterminant, this);
     }
 
     private LinearTransformation composeWithLinear(LinearTransformation other) {
-        if (sourceDimension != other.targetDimension) {
+        if (targetDimension != other.sourceDimension) {
             throw new IllegalArgumentException(
-                "Cannot compose transformations: source dimension mismatch"
+                "Cannot compose transformations: source dimension of other (" + other.sourceDimension
+                + ") must equal target dimension of this (" + targetDimension + ") to compose"
             );
         }
-        
+
         // Multiply matrices: result = other.matrix * this.matrix
-        var resultMatrix = new double[other.targetDimension][targetDimension];
-        
+        // this is (q x r), other is (p x q) where q = this.targetDimension = other.sourceDimension
+        // the guard ensures this.targetDimension == other.sourceDimension = q (the contraction dimension)
+        // result is (p x r) = (other.targetDimension x this.sourceDimension)
+        var resultMatrix = new double[other.targetDimension][sourceDimension];
+
         for (int i = 0; i < other.targetDimension; i++) {
-            for (int j = 0; j < targetDimension; j++) {
+            for (int j = 0; j < sourceDimension; j++) {
                 resultMatrix[i][j] = 0.0;
-                for (int k = 0; k < sourceDimension; k++) {
+                for (int k = 0; k < targetDimension; k++) {
                     resultMatrix[i][j] += other.matrix[i][k] * matrix[k][j];
                 }
             }

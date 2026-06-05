@@ -18,7 +18,28 @@ import java.util.List;
  */
 public class Canonicalize {
 
-    private static final double MAX_VERTEX_CHANGE = 1.0;
+    // Scale-relative divergence guard: stop if any vertex moves more than this
+    // multiple of the centroid-relative mean vertex radius in a single iteration.
+    //
+    // An absolute threshold (the old value of 1.0) false-trips on legitimate
+    // unit-scale meshes (edge length ~1.0) whose first-iteration displacements
+    // are ~2–3× but are NOT divergent — just the algorithm taking a large
+    // corrective step from a non-canonical starting shape.
+    //
+    // We use the centroid-relative mean radius (bounding-sphere proxy) rather than
+    // mean edge length because mean edge length is dominated by massively-distorted
+    // edges (the very case we want the guard to catch), making the guard blind to
+    // the runaway it is supposed to detect.  The centroid-relative formulation is
+    // also TRANSLATION-INVARIANT: a mesh at world coords (100,100,100) yields the
+    // same radius as the same mesh centred at the origin.  The old origin-relative
+    // formula produced radius ≈173 for a unit mesh at (100,100,100), making the
+    // threshold ≈606 and permanently disabling the guard for any off-origin mesh.
+    //
+    // Factor derivation: for Cube(1.0) (centroid-relative mean radius ≈0.87),
+    // iter-1 displacement ≈2–3; for a tet with one vertex at (1000,1000,1000)
+    // relative to its centroid (mean radius ≈433), iter-1 displacement ≈1732.
+    // A factor in (2.89, 3.99) satisfies both.  We use 3.5.
+    private static final double MAX_VERTEX_CHANGE_FACTOR = 3.5;
 
     /**
      * Canonicalizes a polyhedron by adjusting its vertices iteratively. When no vertex moves more than the given
@@ -60,6 +81,7 @@ public class Canonicalize {
      * @return The number of iterations that were executed.
      */
     private static int canonicalize(Polyhedron poly, double threshold, boolean planarize) {
+        double maxVertexChange = planarize ? meanVertexRadius(poly) * MAX_VERTEX_CHANGE_FACTOR : Double.MAX_VALUE;
         Polyhedron dual = poly.dual();
         List<Vector3d> currentPositions = Struct.copyVectorList(poly.getVertexPositions());
 
@@ -77,10 +99,11 @@ public class Canonicalize {
             }
 
             // Check if an error occurred in computation. If so, terminate
-            // immediately
+            // immediately.
             // Check if the position changed by a significant amount so as to
-            // be erroneous. If so, terminate immediately
-            if (VectorMath.isNaN(newPositions.get(0)) || (planarize && maxChange > MAX_VERTEX_CHANGE)) {
+            // be erroneous. If so, terminate immediately.
+            // maxVertexChange is scale-relative (fraction of mean edge length).
+            if (VectorMath.isNaN(newPositions.get(0)) || (planarize && maxChange > maxVertexChange)) {
                 break;
             }
 
@@ -107,23 +130,27 @@ public class Canonicalize {
      * @param numIterations The number of iterations to planarize for.
      */
     public static void planarize(Polyhedron poly, int numIterations) {
+        double maxVertexChange = meanVertexRadius(poly) * MAX_VERTEX_CHANGE_FACTOR;
         Polyhedron dual = poly.dual();
         for (int i = 0; i < numIterations; i++) {
+            List<Vector3d> oldPositions = Struct.copyVectorList(poly.getVertexPositions());
+
             List<Vector3d> newDualPositions = reciprocalVertices(poly);
             dual.setVertexPositions(newDualPositions);
             List<Vector3d> newPositions = reciprocalVertices(dual);
 
             double maxChange = 0.;
-            for (Vector3d newPos : poly.getVertexPositions()) {
-                Vector3d diff = VectorMath.diff(newPos, newPos);
+            for (int j = 0; j < newPositions.size(); j++) {
+                Vector3d diff = VectorMath.diff(newPositions.get(j), oldPositions.get(j));
                 maxChange = Math.max(maxChange, diff.length());
             }
 
             // Check if an error occurred in computation. If so, terminate
             // immediately. This likely occurs when faces are already planar.
             // Check if the position changed by a significant amount so as to
-            // be erroneous. If so, terminate immediately
-            if (VectorMath.isNaN(newPositions.get(0)) || (maxChange > MAX_VERTEX_CHANGE)) {
+            // be erroneous. If so, terminate immediately.
+            // maxVertexChange is scale-relative (fraction of mean edge length).
+            if (VectorMath.isNaN(newPositions.get(0)) || (maxChange > maxVertexChange)) {
                 break;
             }
 
@@ -217,6 +244,52 @@ public class Canonicalize {
         }
 
         return newVertices;
+    }
+
+    /**
+     * Compute the mean distance of the polyhedron's vertices from their centroid.  This is used as a
+     * bounding-sphere proxy for the scale-relative divergence guard in planarize().
+     *
+     * <p>The centroid-relative mean radius is <em>translation-invariant</em>: a mesh translated to world
+     * coordinates (e.g., centroid at (100, 100, 100)) yields the same radius as the same mesh centred at
+     * the origin.  The old origin-relative formula produced a radius of ~173 for a unit mesh at (100,100,100),
+     * making the divergence threshold ~606 and permanently disabling the guard for any off-origin mesh.
+     *
+     * <p>Unlike mean edge length, the centroid-relative mean radius is not dominated by massively-distorted
+     * edges — exactly the case the divergence guard must detect.  A single outlier vertex raises this mean
+     * proportionally, keeping the threshold scaled to the actual distortion magnitude.
+     *
+     * <p>A floor of {@code 1e-6} is applied to prevent a degenerate all-coincident mesh (zero radius) from
+     * producing a threshold of 0, which would cause the guard to fire immediately on any movement.
+     *
+     * @param poly The polyhedron.
+     * @return The centroid-relative mean vertex radius, floored at 1e-6, or 1.0 if the polyhedron has no vertices.
+     */
+    private static double meanVertexRadius(Polyhedron poly) {
+        List<Vector3d> positions = poly.getVertexPositions();
+        if (positions.isEmpty()) {
+            return 1.0;
+        }
+
+        // Compute centroid (translation-invariant anchor)
+        Vector3d centroid = new Vector3d();
+        for (Vector3d v : positions) {
+            centroid.add(v);
+        }
+        centroid.scale(1.0 / positions.size());
+
+        // Accumulate centroid-relative distances
+        double total = 0.0;
+        for (Vector3d v : positions) {
+            Vector3d delta = new Vector3d(v);
+            delta.sub(centroid);
+            total += delta.length();
+        }
+        double meanRadius = total / positions.size();
+
+        // Floor: prevent zero-radius (all-coincident) from making the threshold 0,
+        // which would cause the guard to trip on ANY non-zero movement.
+        return Math.max(meanRadius, 1e-6);
     }
 
 }

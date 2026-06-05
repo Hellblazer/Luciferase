@@ -29,6 +29,7 @@ import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 
@@ -62,10 +63,16 @@ import java.util.function.BiConsumer;
  *   <li>⏳ Velocity tracking in EntityData for dead reckoning</li>
  * </ul>
  *
+ * <p><strong>Hardening note (Luciferase-7wzml.203):</strong> {@code sendBatch} now counts
+ * serialization-failure drops via {@link #getDroppedGhostCount()} instead of silently
+ * swallowing them; {@link #isConnected(UUID)} now returns {@code false} after {@link #close()}.
+ * Full removal tracked in bead <b>Luciferase-j877j</b>.
+ *
  * @author hal.hildebrand
  * @deprecated Use {@link P2PGhostChannel} for distributed multi-bubble ghost synchronization,
- *             or {@link InMemoryGhostChannel} for testing. This class will be removed in Month 2.
- *             See simulation/doc/ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md § Ghost Channel
+ *             or {@link InMemoryGhostChannel} for testing. Removal tracked by
+ *             bead Luciferase-j877j. See
+ *             simulation/doc/ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md § Ghost Channel
  *             Implementations for migration guidance.
  */
 @Deprecated(forRemoval = true)
@@ -82,6 +89,18 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
      * Monotonic version counter for ghost versioning.
      */
     private final AtomicLong versionCounter = new AtomicLong(0);
+
+    /**
+     * Cumulative count of ghosts dropped due to serialization failure in sendBatch.
+     * Callers and tests can observe this counter to detect silent data loss.
+     */
+    private final AtomicLong droppedGhostCount = new AtomicLong(0);
+
+    /**
+     * Whether this transport has been closed via {@link #close()}.
+     * {@link #isConnected(UUID)} returns {@code false} after close.
+     */
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     /**
      * Derive epoch from bucket number.
@@ -202,9 +221,17 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
                 log.trace("Serialized ghost {} to {} bytes", ghost.entityId().getValue(), bytes.length);
 
             } catch (Exception e) {
-                log.error("Failed to serialize ghost {}", ghost.entityId().getValue(), e);
-                // Continue with remaining ghosts
+                droppedGhostCount.incrementAndGet();
+                log.error("Failed to serialize ghost {} — ghost dropped (total dropped: {})",
+                          ghost.entityId().getValue(), droppedGhostCount.get(), e);
+                // Continue with remaining ghosts; caller can observe droppedGhostCount
             }
+        }
+
+        var dropped = ghosts.size() - serializedEvents.size();
+        if (dropped > 0) {
+            log.warn("sendBatch to {}: {}/{} ghosts dropped due to serialization failure (cumulative dropped: {})",
+                     targetBubbleId, dropped, ghosts.size(), droppedGhostCount.get());
         }
 
         // Phase 7B.2: Simulate network transmission for testing
@@ -259,8 +286,9 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
      */
     @Override
     public boolean isConnected(UUID targetBubbleId) {
-        return true; // Phase 7B.2: Simulated network always connected
-        // TODO Phase 7B.2: return delosTransport.isConnected(targetBubbleId);
+        // Returns false if this transport has been closed; true otherwise (simulated always-up network).
+        // TODO Phase 7B.2: replace with delosTransport.isConnected(targetBubbleId)
+        return !closed.get();
     }
 
     /**
@@ -276,11 +304,23 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
     }
 
     /**
+     * Return the cumulative number of ghosts dropped due to serialization failure in
+     * {@link #sendBatch}. A non-zero value indicates silent data loss that callers must
+     * investigate. Resets only on construction (not on {@link #close()}).
+     *
+     * @return cumulative dropped-ghost count since construction
+     */
+    public long getDroppedGhostCount() {
+        return droppedGhostCount.get();
+    }
+
+    /**
      * Close channel and release resources.
      * Clears all pending ghosts and handlers.
      */
     @Override
     public void close() {
+        closed.set(true);
         log.debug("Closing DelosSocketTransport for bubble {}", bubbleId);
         pendingBatches.clear();
         handlers.clear();
@@ -314,7 +354,8 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
      * @param ghost Ghost entity to convert
      * @return EntityUpdateEvent ready for serialization
      */
-    private EntityUpdateEvent ghostToEvent(SimulationGhostEntity<StringEntityID, EntityData> ghost) {
+    // Package-private to allow test subclasses to inject failures (e.g. poison-ghost tests)
+    EntityUpdateEvent ghostToEvent(SimulationGhostEntity<StringEntityID, EntityData> ghost) {
         // TODO Phase 7B.3: Extract velocity from EntityData when available
         var velocity = new Point3f(0f, 0f, 0f); // Placeholder - Phase 7B.3 will add velocity tracking
 
@@ -357,7 +398,11 @@ public class DelosSocketTransport implements GhostChannel<StringEntityID, Entity
             );
         // Note: GhostEntity sets timestamp internally, we use event.timestamp() for SimulationGhostEntity
 
-        // Wrap in SimulationGhostEntity with metadata
+        // Wrap in SimulationGhostEntity with metadata.
+        // NOTE: DelosSocketTransport is @Deprecated(forRemoval=true) — bead Luciferase-j877j tracks
+        // its removal. Velocity is available via event.velocity() but NOT wired here: the class is
+        // pending deletion and investment in wiring is deferred. Remaining zero-velocity sites
+        // tracked in Luciferase-chmxx (.186 completion, 2026-06-04).
         var bucket = event.lamportClock();
         return new SimulationGhostEntity<>(
             ghostEntity,

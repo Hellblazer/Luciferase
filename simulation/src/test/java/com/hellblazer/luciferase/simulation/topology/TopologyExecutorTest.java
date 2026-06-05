@@ -522,4 +522,222 @@ class TopologyExecutorTest {
             executor.setUuidSupplier(null);
         }, "Should reject null UUID supplier");
     }
+
+    /**
+     * Verifies that when a split passes the BubbleSplitter but then fails the
+     * executor-level validate(), rollback() restores the accountant distribution
+     * to the pre-operation snapshot — no entities are orphaned on the removed
+     * newBubbleId.
+     *
+     * <p>The accountant subclass makes validate() fail on the 2nd call: the
+     * splitter's internal validate() is call #1 (passes), and the executor's
+     * validate() at L325 is call #2 (fails). This exercises the previously-missing
+     * snapshot-diff restore in rollback().
+     */
+    @Test
+    void testRollbackRestoresAccountantDistributionAfterExecutorValidateFails() {
+        // Build grid + entities
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+
+        // Track entity IDs so we can verify location after rollback
+        var entityIds = new ArrayList<UUID>();
+        int entityCount = 5100;
+        for (int i = 0; i < entityCount; i++) {
+            var entityId = UUID.randomUUID();
+            entityIds.add(entityId);
+            bubble.addEntity(
+                entityId.toString(),
+                new Point3f(i * 0.001f, i * 0.001f, i * 0.001f),
+                null
+            );
+            accountant.register(bubble.id(), entityId);
+        }
+
+        // Capture pre-operation snapshot manually (same logic as takeSnapshot)
+        var snapshotBefore = new java.util.HashMap<UUID, java.util.Set<UUID>>();
+        for (var bId : accountant.getDistribution().keySet()) {
+            snapshotBefore.put(bId, accountant.entitiesInBubble(bId));
+        }
+
+        // Replace accountant with one that fails on the 2nd validate() call so the
+        // splitter's internal validate passes but the executor-level validate fails.
+        var failingAccountant = new FailOnSecondValidateAccountant(accountant);
+
+        var grid2 = bubbleGrid;  // same grid
+        var executor2 = new TopologyExecutor(grid2, failingAccountant, metrics);
+
+        // Proposal — valid split (>5000 entities, split plane through centroid)
+        var centroid = bubble.centroid();
+        var splitPlane = new SplitPlane(
+            new Point3f(1.0f, 0.0f, 0.0f),
+            (float) centroid.getX()
+        );
+        var proposal = new SplitProposal(
+            UUID.randomUUID(),
+            bubble.id(),
+            splitPlane,
+            DigestAlgorithm.DEFAULT.getOrigin(),
+            System.currentTimeMillis()
+        );
+
+        // Execute — must fail at executor-level validate (not at splitter level)
+        var result = executor2.execute(proposal);
+
+        assertFalse(result.success(),
+                    "Execute must return failure when executor-level validate fails");
+
+        // Assertion 1: every entity resolves to a LIVE bubble (no orphan on removed newBubbleId)
+        var liveBubbleIds = grid2.getAllBubbles().stream().map(b -> b.id()).collect(java.util.stream.Collectors.toSet());
+        for (var entityId : entityIds) {
+            var location = failingAccountant.getLocationOfEntity(entityId);
+            assertNotNull(location,
+                          "Entity " + entityId + " must have a bubble assignment after rollback");
+            assertTrue(liveBubbleIds.contains(location),
+                       "Entity " + entityId + " is assigned to removed bubble " + location
+                       + " (not in live set " + liveBubbleIds + ")");
+        }
+
+        // Assertion 2: accountant distribution after rollback == pre-operation snapshot
+        var distributionAfter = new java.util.HashMap<UUID, java.util.Set<UUID>>();
+        for (var bId : failingAccountant.getDistribution().keySet()) {
+            distributionAfter.put(bId, failingAccountant.entitiesInBubble(bId));
+        }
+        assertEquals(snapshotBefore.keySet(), distributionAfter.keySet(),
+                     "Post-rollback bubble key set must match pre-operation snapshot");
+        for (var entry : snapshotBefore.entrySet()) {
+            assertEquals(entry.getValue(), distributionAfter.get(entry.getKey()),
+                         "Entity set for bubble " + entry.getKey() + " must match snapshot after rollback");
+        }
+    }
+
+    /**
+     * Verifies that when a merge passes BubbleMerger but then fails the executor-level
+     * validate(), rollback() restores ALL entities to their pre-operation bubbles.
+     *
+     * <p>Before the fix, rollback() only scanned bubbles absent from the snapshot
+     * (transient bubbles). In a merge both bubble1 and bubble2 are snapshot keys, so
+     * no transient bubble exists and the restore was a no-op — entities remained in
+     * bubble1 and bubble2 was empty but still in the accountant. After the fix,
+     * rollback() iterates the snapshot directly and reverse-moves every entity whose
+     * current location differs.
+     *
+     * <p>BubbleMerger calls validate() once internally (call #1, passes).
+     * TopologyExecutor's post-operation validate() is call #2 (forced to fail).
+     */
+    @Test
+    void testRollbackRestoresAccountantDistributionAfterMergeValidateFails() {
+        // Two bubbles with entities
+        bubbleGrid.createBubbles(2, (byte) 1, 10);
+        var bubbles = bubbleGrid.getAllBubbles().stream().toList();
+        var bubble1 = bubbles.get(0);
+        var bubble2 = bubbles.get(1);
+
+        // Track entity IDs so we can verify locations after rollback
+        var entityIds1 = new ArrayList<UUID>();
+        var entityIds2 = new ArrayList<UUID>();
+        int count1 = 150;
+        int count2 = 100;
+        for (int i = 0; i < count1; i++) {
+            var id = UUID.randomUUID();
+            entityIds1.add(id);
+            bubble1.addEntity(id.toString(), new Point3f(i * 0.01f, 0f, 0f), null);
+            accountant.register(bubble1.id(), id);
+        }
+        for (int i = 0; i < count2; i++) {
+            var id = UUID.randomUUID();
+            entityIds2.add(id);
+            bubble2.addEntity(id.toString(), new Point3f(0f, i * 0.01f, 0f), null);
+            accountant.register(bubble2.id(), id);
+        }
+
+        // Capture pre-operation snapshot
+        var snapshotBefore = new java.util.HashMap<UUID, java.util.Set<UUID>>();
+        for (var bId : accountant.getDistribution().keySet()) {
+            snapshotBefore.put(bId, accountant.entitiesInBubble(bId));
+        }
+
+        // Use FailOnSecondValidateAccountant: BubbleMerger's internal validate() is
+        // call #1 (passes); executor-level validate() is call #2 (fails).
+        var failingAccountant = new FailOnSecondValidateAccountant(accountant);
+        var executor2 = new TopologyExecutor(bubbleGrid, failingAccountant, metrics);
+
+        var proposal = new MergeProposal(
+            UUID.randomUUID(),
+            bubble1.id(),
+            bubble2.id(),
+            DigestAlgorithm.DEFAULT.getOrigin(),
+            System.currentTimeMillis()
+        );
+
+        var result = executor2.execute(proposal);
+
+        assertFalse(result.success(),
+                    "Execute must return failure when executor-level validate fails after merge");
+
+        // Every entity originally in bubble1 must still be in bubble1
+        for (var entityId : entityIds1) {
+            var location = failingAccountant.getLocationOfEntity(entityId);
+            assertEquals(bubble1.id(), location,
+                         "Entity from bubble1 must be restored to bubble1 after rollback, got: " + location);
+        }
+
+        // Every entity originally in bubble2 must be restored to bubble2
+        for (var entityId : entityIds2) {
+            var location = failingAccountant.getLocationOfEntity(entityId);
+            assertEquals(bubble2.id(), location,
+                         "Entity from bubble2 must be restored to bubble2 after rollback, got: " + location);
+        }
+
+        // Full distribution must equal the pre-operation snapshot
+        var distributionAfter = new java.util.HashMap<UUID, java.util.Set<UUID>>();
+        for (var bId : failingAccountant.getDistribution().keySet()) {
+            distributionAfter.put(bId, failingAccountant.entitiesInBubble(bId));
+        }
+        assertEquals(snapshotBefore.keySet(), distributionAfter.keySet(),
+                     "Post-rollback bubble key set must match pre-operation snapshot");
+        for (var entry : snapshotBefore.entrySet()) {
+            assertEquals(entry.getValue(), distributionAfter.get(entry.getKey()),
+                         "Entity set for bubble " + entry.getKey() + " must match snapshot after rollback");
+        }
+    }
+
+    /**
+     * EntityAccountant subclass that makes validate() fail on the 2nd call.
+     * The first call (from BubbleSplitter's internal validate) returns a passing
+     * result; the second call (from TopologyExecutor's executor-level validate)
+     * returns a synthetic failure. This simulates a split that passes the splitter
+     * but then fails the executor-level validate check.
+     */
+    static final class FailOnSecondValidateAccountant extends EntityAccountant {
+
+        private final java.util.concurrent.atomic.AtomicInteger validateCalls =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+
+        /**
+         * Copy-constructs by replaying all registrations from an existing accountant.
+         */
+        FailOnSecondValidateAccountant(EntityAccountant source) {
+            // Replicate registrations: for each bubble, for each entity, register here
+            var distribution = source.getDistribution();
+            for (var bubbleId : distribution.keySet()) {
+                for (var entityId : source.entitiesInBubble(bubbleId)) {
+                    register(bubbleId, entityId);
+                }
+            }
+        }
+
+        @Override
+        public com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult validate() {
+            int call = validateCalls.incrementAndGet();
+            if (call >= 2) {
+                // Simulate executor-level validate failure
+                return new com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult(
+                    false, 1,
+                    java.util.List.of("Synthetic executor-level validate failure (call #" + call + ")")
+                );
+            }
+            return super.validate();
+        }
+    }
 }

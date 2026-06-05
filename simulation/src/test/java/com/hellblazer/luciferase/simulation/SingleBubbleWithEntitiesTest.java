@@ -267,13 +267,11 @@ class SingleBubbleWithEntitiesTest {
 
         // Wait for the target number of ticks to complete using tight polling
         // (1ms sleep instead of 10ms to minimize race window where controller ticks during sleep)
-        long lastTime = initialTime;
         while (controller.getSimulationTime() < targetTime) {
             if (System.currentTimeMillis() - startTime > maxWait) {
                 break; // Timeout - controller may not be advancing ticks properly
             }
             try {
-                lastTime = controller.getSimulationTime();
                 Thread.sleep(1); // Tight polling: check frequently to catch exact target
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -281,10 +279,14 @@ class SingleBubbleWithEntitiesTest {
             }
         }
 
+        // Stop the controller BEFORE reading finalTime: stop() joins the tick thread,
+        // ensuring no further ticks fire after we read simulationTime (Luciferase-emvlw).
+        controller.stop();
+
         // Collect positions: use simulation time as proxy for entity positions
         // In real implementation, this would query actual entity positions
         var positions = new ArrayList<Point3f>();
-        long finalTime = controller.getSimulationTime();
+        long finalTime = controller.getSimulationTime(); // stable: tick thread is halted
 
         // Create one position entry per tick that occurred
         // Use finalTime (actual) instead of targetTicks to ensure determinism
@@ -294,8 +296,6 @@ class SingleBubbleWithEntitiesTest {
             float offset = seed + tick;
             positions.add(new Point3f(5000f + offset, 5000f + offset, 5000f + offset));
         }
-
-        controller.stop();
 
         return positions;
     }

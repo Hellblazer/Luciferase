@@ -28,6 +28,7 @@ import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * EnhancedVolumeAnimator - Animation controller for EnhancedBubble with ghost support (Phase 7B.4).
@@ -68,7 +69,7 @@ public class EnhancedVolumeAnimator {
 
     private final EnhancedBubble       bubble;
     private final RealTimeController   controller;
-    private       long                 frameCount;
+    private final AtomicLong           frameCount = new AtomicLong(0);
 
     /**
      * Create an EnhancedVolumeAnimator for an EnhancedBubble.
@@ -79,8 +80,6 @@ public class EnhancedVolumeAnimator {
     public EnhancedVolumeAnimator(EnhancedBubble bubble, RealTimeController controller) {
         this.bubble = bubble;
         this.controller = controller;
-        this.frameCount = 0L;
-
         log.debug("EnhancedVolumeAnimator created: bubble={}", bubble.id());
     }
 
@@ -88,13 +87,27 @@ public class EnhancedVolumeAnimator {
      * Get all animated entities (owned + ghosts).
      * <p>
      * Combines:
-     * - Owned entities from bubble's spatial index
-     * - Ghost entities from GhostStateManager
+     * <ul>
+     *   <li>Owned entities from bubble's spatial index</li>
+     *   <li>Ghost entities from GhostStateManager</li>
+     * </ul>
      * <p>
      * This method creates a new collection on each call, ensuring thread-safe access
      * without blocking the animation loop.
+     * <p>
+     * <b>Consistency note (Luciferase-7wzml.193):</b> The ghost snapshot and each
+     * ghost's position are fetched in two separate reads against a concurrently-mutated
+     * {@code ConcurrentHashMap}. This means the returned collection is a
+     * <em>best-effort, non-atomic view</em>: it reflects ghost membership and positions
+     * at slightly different instants. A ghost evicted between the membership snapshot
+     * and its position lookup yields a {@code null} position, which is silently skipped
+     * (see guard at the per-ghost loop body below), so no {@code NullPointerException}
+     * can occur. Callers that require a consistent snapshot of a single instant should
+     * use a dedicated {@code GhostStateManager.getActiveGhostsAt(time)} API that
+     * returns id+position pairs atomically; that API does not currently exist and is
+     * deferred until a caller demonstrates the atomicity requirement.
      *
-     * @return Collection of all entities to animate (owned + ghosts)
+     * @return best-effort collection of all entities to animate (owned + ghosts)
      */
     public Collection<AnimatedEntity> getAnimatedEntities() {
         var result = new ArrayList<AnimatedEntity>();
@@ -141,16 +154,16 @@ public class EnhancedVolumeAnimator {
      * via the RealTimeController tick mechanism.
      */
     public void tick() {
-        frameCount++;
+        long frame = frameCount.incrementAndGet();
 
-        if (frameCount % 100 == 0) {
+        if (frame % 100 == 0) {
             var currentTime = controller.getSimulationTime();
             var entityCount = getAnimatedEntities().size();
             var ownedCount = bubble.entityCount();
             var ghostCount = bubble.getGhostStateManager().getActiveGhostCount();
 
             log.debug("Animation tick: frame={}, time={}, entities={} (owned={}, ghosts={})",
-                frameCount, currentTime, entityCount, ownedCount, ghostCount);
+                frame, currentTime, entityCount, ownedCount, ghostCount);
         }
     }
 
@@ -160,7 +173,7 @@ public class EnhancedVolumeAnimator {
      * @return Number of frames processed since creation
      */
     public long getFrameCount() {
-        return frameCount;
+        return frameCount.get();
     }
 
     /**

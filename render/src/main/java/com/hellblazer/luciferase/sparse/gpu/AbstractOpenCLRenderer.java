@@ -32,6 +32,8 @@ import javax.vecmath.Vector3f;
 import javax.vecmath.Vector4f;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.lwjgl.opencl.CL10.*;
 import static org.lwjgl.system.MemoryUtil.*;
@@ -109,6 +111,16 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
     protected boolean initialized = false;
     protected boolean disposed = false;
 
+    /**
+     * Tracks raw cl_mem handles allocated via {@link #createRawBuffer} and
+     * {@link #createEmptyRawBuffer} so that {@link #dispose()} can release any
+     * handles that a subclass's {@link #disposeTypeSpecificBuffers()} forgot.
+     *
+     * <p>Using {@link ArrayList} (not a concurrent collection) is correct because
+     * this class is documented as not thread-safe.
+     */
+    private final List<Long> trackedRawHandles = new ArrayList<>();
+
     // Current data info
     protected int nodeCount = 0;
     protected int maxDepth = 10;
@@ -124,6 +136,51 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
         this.frameHeight = frameHeight;
         this.rayCount = frameWidth * frameHeight;
         this.context = OpenCLContext.getInstance();
+    }
+
+    /**
+     * Package-private constructor for unit testing that accepts an explicit (possibly null)
+     * OpenCL context, allowing tests to verify bookkeeping behaviour without loading
+     * native libraries or requiring a real GPU.
+     *
+     * @param frameWidth  Output width in pixels
+     * @param frameHeight Output height in pixels
+     * @param context     OpenCL context; may be {@code null} in headless test environments
+     */
+    AbstractOpenCLRenderer(int frameWidth, int frameHeight, OpenCLContext context) {
+        this.frameWidth = frameWidth;
+        this.frameHeight = frameHeight;
+        this.rayCount = frameWidth * frameHeight;
+        this.context = context;
+    }
+
+    /**
+     * Returns the number of raw cl_mem handles currently tracked by the base class.
+     * Package-private — for unit-test assertions only.
+     */
+    int trackedRawHandleCount() {
+        return trackedRawHandles.size();
+    }
+
+    /**
+     * Returns {@code true} if the given handle is currently in the base-class tracking list.
+     * Package-private — for unit-test assertions only.
+     */
+    boolean isTracked(long clMem) {
+        return trackedRawHandles.contains(clMem);
+    }
+
+    /**
+     * Directly adds a handle to the tracking list.
+     *
+     * <p>Visible to subclasses and same-package tests. Subclasses should not
+     * normally call this directly — the tracking is done automatically by
+     * {@link #createRawBuffer} and {@link #createEmptyRawBuffer}.
+     * This method exists for test subclasses that need to inject fake handles
+     * without calling native OpenCL.
+     */
+    protected void recordRawHandle(long clMem) {
+        trackedRawHandles.add(clMem);
     }
 
     /**
@@ -433,7 +490,18 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
     }
 
     /**
-     * Create a raw OpenCL buffer from a ByteBuffer.
+     * Create a raw OpenCL buffer from a ByteBuffer and track it for disposal.
+     *
+     * <p>The returned handle is recorded in the base-class tracking list so that
+     * {@link #dispose()} can release it defensively even if the subclass's
+     * {@link #disposeTypeSpecificBuffers()} omits the release. Subclasses that
+     * release the handle themselves (via {@code clReleaseMemObject}) should call
+     * {@link #untrackRawHandle(long)} immediately after to avoid a double-free in
+     * {@code dispose()}.
+     *
+     * @param data  source data
+     * @param flags OpenCL buffer flags (e.g. {@code CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR})
+     * @return raw cl_mem handle
      */
     protected long createRawBuffer(ByteBuffer data, int flags) {
         try (var stack = MemoryStack.stackPush()) {
@@ -442,12 +510,19 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
             if (errcode.get(0) != CL_SUCCESS) {
                 throw new RuntimeException("Failed to create buffer: " + errcode.get(0));
             }
+            trackedRawHandles.add(clMem);
             return clMem;
         }
     }
 
     /**
-     * Create an empty raw OpenCL buffer of specified size.
+     * Create an empty raw OpenCL buffer of specified size and track it for disposal.
+     *
+     * <p>See {@link #createRawBuffer(ByteBuffer, int)} for the tracking contract.
+     *
+     * @param size  buffer size in bytes
+     * @param flags OpenCL buffer flags
+     * @return raw cl_mem handle
      */
     protected long createEmptyRawBuffer(long size, int flags) {
         try (var stack = MemoryStack.stackPush()) {
@@ -456,8 +531,23 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
             if (errcode.get(0) != CL_SUCCESS) {
                 throw new RuntimeException("Failed to create empty buffer: " + errcode.get(0));
             }
+            trackedRawHandles.add(clMem);
             return clMem;
         }
+    }
+
+    /**
+     * Remove a raw cl_mem handle from the base-class tracking list.
+     *
+     * <p>Call this immediately after a subclass manually releases a handle (via
+     * {@code clReleaseMemObject}) so that {@link #dispose()} does not attempt a
+     * second release. Passing a handle that is not tracked is silently ignored.
+     *
+     * @param clMem raw cl_mem handle to stop tracking
+     */
+    protected void untrackRawHandle(long clMem) {
+        // Use removeIf to avoid boxing/unboxing issues with List.remove(Object vs int)
+        trackedRawHandles.removeIf(h -> h == clMem);
     }
 
     /**
@@ -514,12 +604,32 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
             return;
         }
 
-        // Dispose type-specific buffers first (must not throw)
+        // Dispose type-specific buffers first (must not throw).
+        // Subclasses are expected to release their own raw handles here; any handles
+        // they released should have been removed via untrackRawHandle() to avoid
+        // the defensive release below attempting a double-free.
         try {
             disposeTypeSpecificBuffers();
         } catch (Exception e) {
             log.error("Error disposing type-specific buffers in {}", getRendererName(), e);
         }
+
+        // Defensive release: free any raw cl_mem handles that were allocated via
+        // createRawBuffer / createEmptyRawBuffer and NOT released by the subclass.
+        // This guards against future subclasses that forget to release in disposeTypeSpecificBuffers().
+        // Snapshot first: untrackRawHandle() mutates trackedRawHandles, so iterating a copy avoids any
+        // ConcurrentModificationException if a release path (now or in future) untracks during cleanup.
+        for (long handle : new ArrayList<>(trackedRawHandles)) {
+            try {
+                clReleaseMemObject(handle);
+                log.debug("Defensively released tracked raw buffer handle 0x{} in {}",
+                        Long.toHexString(handle), getRendererName());
+            } catch (Throwable t) {
+                log.error("Error releasing tracked raw buffer handle 0x{} in {}",
+                        Long.toHexString(handle), getRendererName(), t);
+            }
+        }
+        trackedRawHandles.clear();
 
         // Close common GPU kernel and buffers - continue even if errors occur
         try {
@@ -559,9 +669,11 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
             log.error("Error freeing output image", e);
         }
 
-        // Release OpenCL context (decrements ref count) - always attempt this
+        // Release OpenCL context (decrements ref count) - always attempt this.
+        // context may be null in test-only instances created via the package-private
+        // (frameWidth, frameHeight, context) constructor.
         try {
-            context.release();
+            if (context != null) context.release();
         } catch (Exception e) {
             log.error("Error releasing OpenCL context", e);
         }

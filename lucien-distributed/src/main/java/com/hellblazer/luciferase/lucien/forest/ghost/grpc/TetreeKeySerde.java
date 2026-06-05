@@ -78,6 +78,11 @@ public final class TetreeKeySerde implements SpatialKeySerde<TetreeKey<?>> {
         try {
             var proto = com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey.parseFrom(payload);
             var level = (byte) proto.getLevel();
+            if (level <= COMPACT_LEVEL_MAX && proto.getHigh() != 0) {
+                throw new IllegalArgumentException(
+                    "TetreeKeySerde: compact key (level=" + level + ") has non-zero high bits (0x"
+                    + Long.toHexString(proto.getHigh()) + "); payload is malformed or was encoded by a newer encoder");
+            }
             return level <= COMPACT_LEVEL_MAX
                 ? new CompactTetreeKey(level, proto.getLow())
                 : new ExtendedTetreeKey(level, proto.getLow(), proto.getHigh());

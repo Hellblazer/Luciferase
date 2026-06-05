@@ -28,12 +28,9 @@ import org.slf4j.LoggerFactory;
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 
 /**
  * A Forest manages multiple spatial index trees, providing coordinated operations across
@@ -61,11 +58,13 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     
     private static final Logger log = LoggerFactory.getLogger(Forest.class);
     
-    /** Thread-safe collection of trees in the forest */
-    private final CopyOnWriteArrayList<TreeNode<Key, ID, Content>> trees;
-    
-    /** Map for fast tree lookup by ID */
-    private final Map<String, TreeNode<Key, ID, Content>> treeMap;
+    /**
+     * Single source of truth for all trees: concurrent map keyed by tree ID.
+     * Eliminates the dual-structure (CopyOnWriteArrayList + ConcurrentHashMap) that
+     * previously allowed readers to observe a tree in one structure but not the other
+     * between addTree/removeTree's two non-atomic mutation steps (Luciferase-7wzml.99).
+     */
+    private final ConcurrentHashMap<String, TreeNode<Key, ID, Content>> treeMap;
     
     /** Tree ID generator */
     private final AtomicInteger treeIdGenerator;
@@ -86,7 +85,6 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      */
     public Forest(ForestConfig config) {
         this.config = Objects.requireNonNull(config, "Forest config cannot be null");
-        this.trees = new CopyOnWriteArrayList<>();
         this.treeMap = new ConcurrentHashMap<>();
         this.treeIdGenerator = new AtomicInteger(0);
         this.forestMetadata = new ConcurrentHashMap<>();
@@ -118,8 +116,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
             treeNode.setMetadata("metadata", metadata);
         }
         
-        // Add to collections
-        trees.add(treeNode);
+        // Single atomic publication via treeMap; no dual-structure inconsistency window.
         treeMap.put(treeId, treeNode);
         
         // Update statistics
@@ -151,8 +148,8 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     public boolean removeTree(String treeId) {
         var treeNode = treeMap.remove(treeId);
         if (treeNode != null) {
-            trees.remove(treeNode);
-            
+            // treeMap.remove is the single atomic retraction; no dual-structure step needed.
+
             // Update neighbor relationships
             for (var neighbor : treeNode.getNeighbors()) {
                 var neighborNode = treeMap.get(neighbor);
@@ -184,7 +181,9 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      * @return unmodifiable list of all trees
      */
     public List<TreeNode<Key, ID, Content>> getAllTrees() {
-        return Collections.unmodifiableList(new ArrayList<>(trees));
+        return treeMap.values().stream()
+                      .sorted(Comparator.comparing(TreeNode::getTreeId))
+                      .collect(Collectors.toUnmodifiableList());
     }
     
     /**
@@ -193,7 +192,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      * @return the tree count
      */
     public int getTreeCount() {
-        return trees.size();
+        return treeMap.size();
     }
     
     /**
@@ -230,7 +229,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
         var results = new ArrayList<ID>();
         var seen = new HashSet<ID>();
 
-        for (var tree : trees) {
+        for (var tree : treeMap.values()) {
             var spatialIndex = tree.getSpatialIndex();
             var bounds = tree.getGlobalBounds();
 
@@ -308,7 +307,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
         // Collect candidates from all trees
         var candidates = new ArrayList<EntityDistance<ID>>();
         
-        for (var tree : trees) {
+        for (var tree : treeMap.values()) {
             var spatialIndex = tree.getSpatialIndex();
             var neighbors = spatialIndex.kNearestNeighbors(point, k, Float.MAX_VALUE);
             
@@ -337,7 +336,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      * @return stream of trees that potentially contain relevant data
      */
     public Stream<TreeNode<Key, ID, Content>> routeQuery(EntityBounds queryBounds) {
-        return trees.stream()
+        return treeMap.values().stream()
             .filter(tree -> {
                 var treeBounds = tree.getGlobalBounds();
                 return treeBounds != null && boundsOverlap(queryBounds, treeBounds);
@@ -401,8 +400,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      * implementation (Octree, Tetree, etc.) during subsequent balance operations. This method
      * prepares the forest state for refinement by marking affected trees.
      *
-     * <p>Thread Safety: This method is thread-safe. It iterates over trees using the
-     * CopyOnWriteArrayList without locking, and forest metadata updates are atomic.
+     * <p>Thread Safety: This method is thread-safe. It iterates over trees via treeMap.values(), which is always consistent with the map.
      *
      * @param key the spatial key to refine - trees containing this key will be marked
      * @return true if refinement was applied (key found in at least one tree), false otherwise
@@ -415,7 +413,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
         var refined = false;
 
         // Search all trees for the specified spatial key
-        for (var tree : trees) {
+        for (var tree : treeMap.values()) {
             var spatialIndex = tree.getSpatialIndex();
 
             // Check if this tree's spatial index contains the key
@@ -433,7 +431,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
             // Update statistics after marking trees for refinement
             refreshAllStatistics();
             log.info("Forest refinement applied for key {}: {} tree(s) updated",
-                    key, trees.size());
+                    key, treeMap.size());
         }
 
         return refined;
@@ -443,7 +441,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      * Refresh statistics for all trees.
      */
     public void refreshAllStatistics() {
-        for (var tree : trees) {
+        for (var tree : treeMap.values()) {
             tree.refreshStatistics();
         }
         updateTotalEntityCount();
@@ -456,7 +454,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
      */
     public Map<String, Object> getForestStatistics() {
         var stats = new HashMap<String, Object>();
-        stats.put("treeCount", trees.size());
+        stats.put("treeCount", treeMap.size());
         stats.put("totalEntityCount", totalEntityCount.get());
         stats.put("configuration", config.toString());
         
@@ -464,15 +462,15 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
         var totalNodes = 0L;
         var maxDepth = 0;
         
-        for (var tree : trees) {
+        for (var tree : treeMap.values()) {
             totalNodes += tree.getNodeCount();
             maxDepth = Math.max(maxDepth, tree.getMaxDepth());
         }
         
         stats.put("totalNodeCount", totalNodes);
         stats.put("maxTreeDepth", maxDepth);
-        stats.put("averageEntitiesPerTree", trees.isEmpty() ? 0 : 
-            totalEntityCount.get() / (double) trees.size());
+        stats.put("averageEntitiesPerTree", treeMap.isEmpty() ? 0 : 
+            totalEntityCount.get() / (double) treeMap.size());
         
         return stats;
     }
@@ -518,48 +516,30 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     
     // Helper methods
     
+    /**
+     * Generate a deterministic tree ID from metadata and a per-forest monotone counter.
+     *
+     * <p><strong>Scope:</strong> IDs are unique <em>within a single Forest instance</em>. Two
+     * independently constructed Forest instances both start their counter at zero, so a tree added
+     * first to Forest A and first to Forest B will receive the same ID string. Callers that cross
+     * Forest boundaries — distributed ghost layers, shared registries, gRPC balance clients — must
+     * namespace the returned ID with a Forest-level identifier (e.g. a UUID assigned to the Forest
+     * at construction) before using it as a global key (Luciferase-7wzml.100).
+     */
     private String generateTreeId(TreeMetadata metadata) {
         var id = treeIdGenerator.getAndIncrement();
-        String input;
-        
+
+        // Simple, readable, deterministic ID. The per-forest counter guarantees within-forest
+        // uniqueness. SHA-256 hashing was removed (Luciferase-7wzml.100): it added no
+        // uniqueness beyond the counter and silently swallowed NoSuchAlgorithmException.
         if (metadata != null && metadata.getName() != null) {
-            // Use metadata name + id + timestamp for uniqueness
-            input = metadata.getName() + "_" + id + "_" + System.nanoTime();
-        } else {
-            input = "tree_" + id + "_" + System.nanoTime();
+            return metadata.getName() + "_" + id;
         }
-        
-        try {
-            // Generate SHA-256 hash
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes());
-            
-            // Take first 12 bytes (96 bits) for a shorter but still unique ID
-            byte[] truncated = Arrays.copyOf(hash, 12);
-            
-            // Base64 encode (will produce 16 characters for 12 bytes)
-            String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(truncated);
-            
-            // Add a short prefix for readability
-            if (metadata != null && metadata.getName() != null) {
-                String prefix = metadata.getName();
-                // Extract a short prefix from the name
-                if (prefix.length() > 4) {
-                    prefix = prefix.substring(0, 4);
-                }
-                return prefix + "_" + encoded;
-            }
-            return "T_" + encoded;
-            
-        } catch (NoSuchAlgorithmException e) {
-            // Fallback to simple ID if hashing fails
-            log.warn("Failed to generate hash-based tree ID, using fallback", e);
-            return "tree_" + id;
-        }
+        return "tree_" + id;
     }
     
     private void updateTotalEntityCount() {
-        var count = trees.stream()
+        var count = treeMap.values().stream()
             .mapToInt(TreeNode::getEntityCount)
             .sum();
         totalEntityCount.set(count);
@@ -597,7 +577,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     @Override
     public String toString() {
         return String.format("Forest[trees=%d, entities=%d, config=%s]",
-                           trees.size(), totalEntityCount.get(), config);
+                           treeMap.size(), totalEntityCount.get(), config);
     }
     
     /**

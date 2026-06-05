@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p><b>Thread-Safe</b>: Uses ConcurrentHashMap for partition state and
  * ScheduledExecutorService for background monitoring.
  */
-public class DefaultFailureDetector implements FailureDetector {
+public class DefaultFailureDetector implements FailureDetector, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultFailureDetector.class);
 
@@ -103,6 +103,18 @@ public class DefaultFailureDetector implements FailureDetector {
             detectorState.clear();
             log.info("FailureDetector stopped");
         }
+    }
+
+    /**
+     * Implements {@link AutoCloseable}: delegates to {@link #stop()}.
+     *
+     * <p>Enables try-with-resources usage, ensuring the background executor is shut down
+     * even if the caller forgets to call stop() explicitly (Luciferase-7wzml.109).
+     * Safe to call multiple times: stop() is idempotent via the AtomicBoolean guard.
+     */
+    @Override
+    public void close() {
+        stop();
     }
 
     @Override
@@ -172,19 +184,19 @@ public class DefaultFailureDetector implements FailureDetector {
 
             // Transition based on timeouts
             if (timeSinceHeartbeat > config.failureTimeout().toMillis()) {
-                // Exceeded failure timeout
+                // Exceeded failure timeout — drive handler directly to FAILED in one call
                 if (currentState != PartitionStatus.FAILED) {
                     detectorState.put(partitionId, PartitionStatus.FAILED);
-                    faultHandler.reportBarrierTimeout(partitionId);
+                    faultHandler.reportPartitionFailed(partitionId);
                     log.warn("Partition {} marked FAILED (timeout: {}ms)",
                             partitionId, timeSinceHeartbeat);
                 }
             } else if (timeSinceHeartbeat > config.suspectTimeout().toMillis()) {
-                // Exceeded suspect timeout
+                // Exceeded suspect timeout — report without fabricating a node UUID
                 if (currentState != PartitionStatus.SUSPECTED &&
                     currentState != PartitionStatus.FAILED) {
                     detectorState.put(partitionId, PartitionStatus.SUSPECTED);
-                    faultHandler.reportHeartbeatFailure(partitionId, UUID.randomUUID());
+                    faultHandler.reportHeartbeatFailure(partitionId);
                     log.warn("Partition {} marked SUSPECTED (timeout: {}ms)",
                             partitionId, timeSinceHeartbeat);
                 }

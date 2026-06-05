@@ -156,6 +156,33 @@ public interface FaultHandler {
      */
     void reportHeartbeatFailure(UUID partitionId, UUID nodeId);
 
+    /**
+     * Report heartbeat failure for a partition without a specific node identifier.
+     * <p>
+     * Use when the failing entity is the partition itself (e.g. from a
+     * timeout-based detector) and no real node UUID is available.  Unlike
+     * {@link #reportHeartbeatFailure(UUID, UUID)}, this overload does NOT add
+     * any nodeId to {@code failedNodes}, keeping that set free of fabricated
+     * UUIDs.
+     *
+     * @param partitionId partition that missed its heartbeat window
+     */
+    void reportHeartbeatFailure(UUID partitionId);
+
+    /**
+     * Report terminal failure for a partition, driving it directly to FAILED.
+     * <p>
+     * Used when the caller has already determined (via its own state machine) that
+     * the partition is definitively failed and does not need the two-step
+     * HEALTHY → SUSPECTED → FAILED escalation path.  A single call is sufficient;
+     * no second report is required.
+     * <p>
+     * If the partition is already FAILED this is a no-op.
+     *
+     * @param partitionId partition that has definitively failed
+     */
+    void reportPartitionFailed(UUID partitionId);
+
     // ===== Recovery Coordination =====
 
     /**

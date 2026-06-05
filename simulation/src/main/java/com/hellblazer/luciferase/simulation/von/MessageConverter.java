@@ -281,17 +281,25 @@ public class MessageConverter {
     // ==================== Ack Conversion ====================
 
     private static TransportVonMessage ackToTransport(Message.Ack msg) {
+        // Slot contract (Ack — Luciferase-7wzml.180):
+        //   sourceBubbleId  = senderId  (the node that sent this acknowledgement)
+        //   targetBubbleId  = ackFor    (repurposed: the message-ID being acknowledged,
+        //                               NOT a routing target — same slot, different semantic)
+        //   entityId        = ackFor    (redundant copy; ackFromTransport reads targetBubbleId)
         return new TransportVonMessage(
             "Ack",
-            msg.senderId().toString(),
-            msg.ackFor().toString(),
+            msg.senderId().toString(),   // sourceBubbleId = senderId
+            msg.ackFor().toString(),     // targetBubbleId = ackFor (repurposed slot)
             0f, 0f, 0f,
-            msg.ackFor().toString(),
+            msg.ackFor().toString(),     // entityId = ackFor (redundant; not read on deserialize)
             msg.timestamp()
         );
     }
 
     private static Message ackFromTransport(TransportVonMessage transport) {
+        // Slot contract (Ack — Luciferase-7wzml.180):
+        //   sourceBubbleId -> senderId
+        //   targetBubbleId -> ackFor  (repurposed slot — see ackToTransport)
         var ackFor = UUID.fromString(transport.targetBubbleId());
         var senderId = UUID.fromString(transport.sourceBubbleId());
 
@@ -407,12 +415,15 @@ public class MessageConverter {
                 null, null, null, null, null, null, null, null, null,
                 null, null,
                 null, m.reason(), null, null);
+            // Slot reuse (Luciferase-7wzml.180): AbortResponse stores rolledBack
+            // in the 'success' slot of TransportMigrationMessage (no dedicated field).
+            // migrationFromTransport reads it back via tm.success() → rolledBack.
             case MigrationProtocolMessages.AbortResponse m -> new TransportMigrationMessage(
                 "AbortResponse", m.transactionId().toString(), m.timestamp(),
                 null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
                 null, null,
-                m.rolledBack(), null, null, null);
+                m.rolledBack(), null, null, null); // success slot = rolledBack
         };
 
         return new TransportVonMessage(
@@ -479,7 +490,16 @@ public class MessageConverter {
     private static Double snapY(EntitySnapshot s) { return (s == null || s.position() == null) ? null : s.position().getY(); }
     private static Double snapZ(EntitySnapshot s) { return (s == null || s.position() == null) ? null : s.position().getZ(); }
     private static String snapContent(EntitySnapshot s) {
-        return (s == null || s.content() == null) ? null : s.content().toString();
+        if (s == null || s.content() == null) {
+            return null;
+        }
+        if (!(s.content() instanceof String str)) {
+            throw new IllegalArgumentException(
+                "EntitySnapshot.content must be String for wire transport; "
+                + "found " + s.content().getClass().getName()
+                + " (silent toString() collapse is forbidden — RDR-004 / Luciferase-7wzml.179)");
+        }
+        return str;
     }
     private static String snapAuthority(EntitySnapshot s) { return s == null ? null : uuidStr(s.authorityBubbleId()); }
     private static Long snapEpoch(EntitySnapshot s) { return s == null ? null : s.epoch(); }

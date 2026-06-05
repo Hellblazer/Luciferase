@@ -4,6 +4,7 @@
 
 package com.hellblazer.luciferase.esvo.dag.metrics;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.dag.CompressionStrategy;
@@ -287,6 +288,55 @@ class CompressionMetricsCollectorTest {
         assertThrows(NullPointerException.class, () -> {
             collector.recordCompression(octree, null);
         });
+    }
+
+    @Test
+    void testInjectedClockPinsTimestamp() throws Exception {
+        // TDD acceptance criterion: with an injected Clock.fixed, every emitted CompressionMetrics
+        // record must carry exactly the fixed time — deterministic, not wall-clock-dependent.
+        long fixedTime = 42_000L;
+        var collector = new CompressionMetricsCollector(Clock.fixed(fixedTime));
+        var octree = createSimpleOctree();
+        var result = DAGBuilder.from(octree)
+            .withHashAlgorithm(HashAlgorithm.SHA256)
+            .withCompressionStrategy(CompressionStrategy.BALANCED)
+            .withValidation(false)
+            .build();
+
+        collector.recordCompression(octree, result);
+
+        var metrics = collector.getAllMetrics().get(0);
+        assertEquals(fixedTime, metrics.timestamp(),
+                     "timestamp must equal injected clock time, not wall-clock time");
+    }
+
+    @Test
+    void testSetClockChangesSubsequentTimestamps() throws Exception {
+        // Verifies that setClock() (runtime setter) also routes through the injected clock.
+        long firstTime  = 100L;
+        long secondTime = 200L;
+        var collector = new CompressionMetricsCollector(Clock.fixed(firstTime));
+
+        var octree = createSimpleOctree();
+        var result = DAGBuilder.from(octree)
+            .withHashAlgorithm(HashAlgorithm.SHA256)
+            .withCompressionStrategy(CompressionStrategy.BALANCED)
+            .withValidation(false)
+            .build();
+        collector.recordCompression(octree, result);
+
+        collector.setClock(Clock.fixed(secondTime));
+        var octree2 = createSimpleOctree();
+        var result2 = DAGBuilder.from(octree2)
+            .withHashAlgorithm(HashAlgorithm.SHA256)
+            .withCompressionStrategy(CompressionStrategy.BALANCED)
+            .withValidation(false)
+            .build();
+        collector.recordCompression(octree2, result2);
+
+        var all = collector.getAllMetrics();
+        assertEquals(firstTime,  all.get(0).timestamp(), "first record should carry first fixed time");
+        assertEquals(secondTime, all.get(1).timestamp(), "second record should carry second fixed time");
     }
 
     // Helper methods

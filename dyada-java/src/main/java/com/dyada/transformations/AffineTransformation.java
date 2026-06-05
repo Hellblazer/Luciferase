@@ -150,6 +150,20 @@ public final class AffineTransformation implements CoordinateTransformation {
         }
     }
     
+    /**
+     * Returns a transformation that applies {@code this} first, then {@code other}.
+     *
+     * <p>Formally, {@code compose(other).transform(x) == other.transform(this.transform(x))}.
+     * In mathematical notation this is {@code other ∘ this}.
+     *
+     * <p>When {@code other} is an {@link AffineTransformation} the result is computed analytically
+     * as a new {@code AffineTransformation} (fast path). For all other types a
+     * {@link CompositeTransformation}{@code (this, other)} is returned (slow path); both paths
+     * apply transformations in the same order.
+     *
+     * @param other the transformation to apply after {@code this}
+     * @return a new transformation equivalent to applying {@code this} then {@code other}
+     */
     @Override
     public CoordinateTransformation compose(CoordinateTransformation other) {
         if (other instanceof AffineTransformation affine) {

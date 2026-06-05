@@ -154,7 +154,7 @@ class MigrationLogPersistenceTest {
     }
 
     @Test
-    void testMalformedLineHandling() throws IOException {
+    void testInteriorMalformedLineThrowsIOException() throws IOException {
         // Write a valid transaction
         var txnId = UUID.randomUUID();
         var state = new TransactionState(
@@ -164,20 +164,140 @@ class MigrationLogPersistenceTest {
         );
         persistence.recordPrepare(state);
 
-        // Manually append malformed lines
+        // Inject a malformed interior line BEFORE a valid trailing line so it is not the final line.
+        // This simulates mid-file corruption (not a torn tail). The former bug silently skipped this
+        // and returned txnId — encoding RDR-004-class silent data loss.
         var walFile = persistence.getWalFile();
         try (var writer = new PrintWriter(Files.newBufferedWriter(walFile, StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.APPEND))) {
-            writer.println("invalid json {{{");
-            writer.println("{ \"incomplete\": true }");
-            writer.println("");  // Empty line
+            writer.println("invalid json {{{");       // interior malformed line
+            // append a syntactically valid but semantically incomplete record so the corrupt line
+            // is not the final physical line — confirming it is an interior corruption
+            writer.println("{\"transactionId\":\"" + UUID.randomUUID() + "\",\"phase\":\"COMMIT\"}");
         }
 
-        // Recovery should skip malformed lines and return valid transaction
+        // Recovery must FAIL LOUD on the interior malformed line, not silently skip it.
+        var recovered = new TestMigrationLogPersistence(processId, tempDir);
+        assertThrows(IOException.class, recovered::loadIncomplete,
+                     "Interior malformed WAL line must throw IOException, not be silently skipped");
+    }
+
+    @Test
+    void testTornTailOnFinalLineIsToleratedNotThrowing() throws IOException {
+        // Write a valid PREPARE transaction
+        var txnId = UUID.randomUUID();
+        var state = new TransactionState(
+            txnId, "entity", UUID.randomUUID(), UUID.randomUUID(),
+            UUID.randomUUID(), UUID.randomUUID(),
+            null, UUID.randomUUID(), TransactionState.MigrationPhase.PREPARE, System.currentTimeMillis()
+        );
+        persistence.recordPrepare(state);
+
+        // Append a truncated/malformed line as the LAST physical line (torn tail after crash-mid-write).
+        var walFile = persistence.getWalFile();
+        try (var writer = new PrintWriter(Files.newBufferedWriter(walFile, StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.APPEND))) {
+            writer.print("{\"transactionId\":\"partial");  // truncated — no newline, no closing brace
+        }
+
+        // Torn tail (final line only) must be tolerated: prior PREPAREs still recovered, no throw.
         var recovered = new TestMigrationLogPersistence(processId, tempDir);
         var incomplete = recovered.loadIncomplete();
 
-        assertEquals(1, incomplete.size());
+        assertEquals(1, incomplete.size(), "PREPARE before torn tail must still be recovered");
         assertEquals(txnId, incomplete.get(0).transactionId());
+    }
+
+    // ---- S3 physical-position torn-tail tests (Luciferase-7wzml.198) ----
+
+    /**
+     * S3 regression (was silently tolerated before fix): a corrupt non-final physical line followed
+     * by trailing blank lines. The corrupt line is the last NON-BLANK entry but NOT the last
+     * physical line (blank lines follow). Old code used blank-stripped index and misclassified it
+     * as a torn tail. Fixed code checks file-ends-with-newline to detect this.
+     */
+    @Test
+    void testCorruptNonFinalPhysicalLineWithTrailingBlanksThrows() throws IOException {
+        var txnId = UUID.randomUUID();
+        var state = new TransactionState(
+            txnId, "entity", UUID.randomUUID(), UUID.randomUUID(),
+            UUID.randomUUID(), UUID.randomUUID(),
+            null, UUID.randomUUID(), TransactionState.MigrationPhase.PREPARE, System.currentTimeMillis()
+        );
+        persistence.recordPrepare(state);
+        persistence.close();
+
+        // Append: [CORRUPT]\n\n\n  — corrupt line followed by trailing blank lines.
+        // The corrupt line is last NON-BLANK but file ends with '\n' (not a torn tail).
+        var walFile = persistence.getWalFile();
+        try (var writer = new java.io.PrintWriter(Files.newBufferedWriter(walFile, StandardCharsets.UTF_8,
+                                                                          java.nio.file.StandardOpenOption.APPEND))) {
+            writer.println("[CORRUPT_LINE_NOT_JSON]");   // corrupt, with newline
+            writer.println();                             // trailing blank line 1
+            writer.println();                             // trailing blank line 2
+        }
+
+        // Must THROW — not silently tolerate as a torn tail (S3 regression test)
+        var recovered = new TestMigrationLogPersistence(processId, tempDir);
+        assertThrows(IOException.class, recovered::loadIncomplete,
+                     "Corrupt non-final physical line (followed by trailing blanks) must throw IOException, "
+                     + "not be silently tolerated as a torn tail");
+    }
+
+    /**
+     * S3: a genuinely truncated final line (file does NOT end with newline) is a legitimate torn
+     * tail and must be tolerated without throwing.
+     */
+    @Test
+    void testGenuinelyTruncatedFinalLineNoNewlineTolerated() throws IOException {
+        var txnId = UUID.randomUUID();
+        var state = new TransactionState(
+            txnId, "entity", UUID.randomUUID(), UUID.randomUUID(),
+            UUID.randomUUID(), UUID.randomUUID(),
+            null, UUID.randomUUID(), TransactionState.MigrationPhase.PREPARE, System.currentTimeMillis()
+        );
+        persistence.recordPrepare(state);
+        persistence.close();
+
+        // Append a truncated line with NO trailing newline — genuine crash-mid-write.
+        var walFile = persistence.getWalFile();
+        try (var out = Files.newOutputStream(walFile, java.nio.file.StandardOpenOption.APPEND)) {
+            out.write("{\"transactionId\":\"truncated-no-newline".getBytes(StandardCharsets.UTF_8));
+            // deliberately no newline
+        }
+
+        // Must NOT throw — prior PREPARE is still recoverable
+        var recovered = new TestMigrationLogPersistence(processId, tempDir);
+        var incomplete = recovered.loadIncomplete();
+        assertEquals(1, incomplete.size(), "PREPARE before genuinely truncated tail must be recovered");
+        assertEquals(txnId, incomplete.get(0).transactionId());
+    }
+
+    /**
+     * S3: a clean newline-terminated final line whose content is corrupt is NOT a torn tail.
+     * The write completed (file ends with '\n'); the content is real corruption → must throw.
+     */
+    @Test
+    void testNewlineTerminatedFinalCorruptLineThrows() throws IOException {
+        var txnId = UUID.randomUUID();
+        var state = new TransactionState(
+            txnId, "entity", UUID.randomUUID(), UUID.randomUUID(),
+            UUID.randomUUID(), UUID.randomUUID(),
+            null, UUID.randomUUID(), TransactionState.MigrationPhase.PREPARE, System.currentTimeMillis()
+        );
+        persistence.recordPrepare(state);
+        persistence.close();
+
+        // Append a corrupt line WITH a trailing newline — write completed but content is bad.
+        var walFile = persistence.getWalFile();
+        try (var writer = new java.io.PrintWriter(Files.newBufferedWriter(walFile, StandardCharsets.UTF_8,
+                                                                          java.nio.file.StandardOpenOption.APPEND))) {
+            writer.println("[CORRUPT_COMPLETE_WRITE]");  // has newline — write completed
+        }
+
+        // Must THROW — this is corruption, not a torn tail
+        var recovered = new TestMigrationLogPersistence(processId, tempDir);
+        assertThrows(IOException.class, recovered::loadIncomplete,
+                     "Newline-terminated corrupt final line must throw IOException — the write "
+                     + "completed so this is not a torn tail");
     }
 
     @Test

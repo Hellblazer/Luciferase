@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.collision.ccd;
 import com.hellblazer.luciferase.lucien.collision.*;
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
+import javax.vecmath.Vector3f;
 
 /**
  * Continuous collision detection implementation.
@@ -30,10 +31,11 @@ public class ContinuousCollisionDetector {
     
     private static final float EPSILON = 0.0001f;
     private static final int MAX_ITERATIONS = 20;
-    // Fixed scan resolution for the general-shape fallback (Luciferase-fglgp): finds a colliding bracket to bisect.
-    // The scan gap is 1/SAMPLE_STEPS in normalized time, so a collision window narrower than (motion length)/32 can
-    // still be tunnelled (see conservativeCCD). Worst-case shape-pair tests per call ~ SAMPLE_STEPS + MAX_ITERATIONS.
-    private static final int SAMPLE_STEPS   = 32;
+    // Minimum scan resolution for the general-shape fallback (Luciferase-fglgp).
+    private static final int SAMPLE_STEPS     = 32;
+    // Adaptive step count is scaled to geometry but capped to bound worst-case cost (Luciferase-7wzml.94).
+    // Cap = 512 → at most 512 + MAX_ITERATIONS shape-pair tests per conservativeCCD call.
+    private static final int MAX_SAMPLE_STEPS = 512;
     
     /**
      * Detect collision between two moving shapes
@@ -67,7 +69,28 @@ public class ContinuousCollisionDetector {
     }
     
     /**
-     * Swept sphere vs sphere collision detection
+     * Swept sphere vs sphere continuous collision detection.
+     *
+     * <p><b>Contact-point convention:</b> the returned
+     * {@link ContinuousCollisionResult#contactPoint()} is placed on the surface of
+     * {@code sphere1} at the time of impact:
+     * <pre>
+     *   contactPoint = center1(toi) - normal * sphere1.radius
+     * </pre>
+     * where {@code normal} points from sphere2 toward sphere1 (i.e. the direction
+     * from sphere2's center to sphere1's center at impact).  At the exact time of
+     * impact the two spheres are tangent, so this point is simultaneously
+     * {@code center2(toi) + normal * sphere2.radius}, i.e. on sphere2's surface
+     * as well — the two expressions are equivalent.
+     *
+     * <p><b>Normal convention:</b> the normal is always directed from sphere2
+     * toward sphere1 ({@code normalize(center1 - center2)}), giving a consistent
+     * "push sphere1 away from sphere2" direction.
+     *
+     * <p><b>Penetration depth:</b> reported as {@code 0.0f} at an exact TOI.
+     * Floating-point rounding in the quadratic solver may introduce tiny residual
+     * overlap; callers requiring strict separation should clamp to
+     * {@code max(0, depth)}.
      */
     private static ContinuousCollisionResult sphereVsSphereCCD(MovingShape movingSphere1, MovingShape movingSphere2) {
         var sphere1 = (SphereShape) movingSphere1.getShape();
@@ -161,30 +184,52 @@ public class ContinuousCollisionDetector {
     }
     
     /**
-     * Conservative advancement algorithm for general shapes
+     * Conservative advancement algorithm for general shapes.
+     *
+     * <p>No separation-distance (GJK) query exists for arbitrary shapes, so genuine conservative advancement is not
+     * available here. Instead scan [0,1] at an <em>adaptive</em> resolution to find the first colliding sample, then
+     * bisect within that bracket for a precise time of impact (Luciferase-fglgp, Luciferase-7wzml.94).
+     *
+     * <p>Adaptive step count (Luciferase-7wzml.94): to prevent tunnelling through a collision window narrower than
+     * motionLength/SAMPLE_STEPS, the scan resolution is scaled to the geometry:
+     * <pre>
+     *   steps = clamp(ceil(motionLength / minShapeRadius), SAMPLE_STEPS, MAX_SAMPLE_STEPS)
+     * </pre>
+     * where {@code minShapeRadius} is the smaller of the two shapes' bounding radii, and
+     * {@code MAX_SAMPLE_STEPS = 512} caps worst-case cost. Closed-form paths (e.g. sphereVsSphereCCD) avoid
+     * tunnelling entirely and do not use this method.
+     *
+     * <p><strong>Residual tunneling risk:</strong> when {@code relMotionLength / minShapeThickness} exceeds the
+     * 512-step cap (e.g. a ~cm-scale shape at multi-thousand-m/s relative speed), each scan step exceeds the shape
+     * thickness and tunneling can recur; callers operating in that regime should use a closed-form or GJK-based CCD
+     * instead of this method.
      */
     // Package-private for direct unit testing of the bracket / exhaustion behaviour (Luciferase-fglgp).
     static ContinuousCollisionResult conservativeCCD(MovingShape shape1, MovingShape shape2) {
-        // No separation-distance (GJK) query exists for arbitrary shapes, so genuine conservative advancement is
-        // not available here. Instead scan [0,1] at a fixed resolution to find the FIRST colliding sample, then
-        // bisect within that bracket for a precise time of impact (Luciferase-fglgp). This fixes two defects in the
-        // previous blind bisection of [0,1]: (1) a brief mid-interval through-collision whose window excluded the
-        // first bisection midpoint was never found (the search only ever narrowed the half containing t=0.5);
-        // (2) iteration exhaustion returned noCollision() even when a real hit had already been bracketed.
-        //
-        // Residual limitation (honest): a collision whose entire window falls strictly between two adjacent scan
-        // samples (a shape thinner than its per-step motion) can still be tunnelled. SAMPLE_STEPS bounds that gap;
-        // closed-form paths such as rayVsMovingSphereCCD avoid it entirely.
-
         var atZero = collideAt(shape1, shape2, 0.0f);
         if (atZero.collides) {
             return ContinuousCollisionResult.collision(0.0f, atZero.contactPoint, atZero.contactNormal,
                                                        atZero.penetrationDepth);
         }
 
+        // Adaptive scan resolution: scale to geometry so a window narrower than motion/SAMPLE_STEPS is not tunnelled.
+        // minShapeRadius: use the AABB's minimum half-extent as a proxy for minimum shape thickness (thinnest
+        // cross-section is the most conservative estimate).
+        float minRadius = Math.min(aabbMinHalfExtent(shape1.getShape()), aabbMinHalfExtent(shape2.getShape()));
+        // Use relative motion length: tunneling depends on how fast the shapes approach each other,
+        // not how fast each moves in absolute space. Co-moving shapes (parallel motion) no longer
+        // over-sample 2×; worst-case (head-on converging) is unchanged.
+        var relMotion = new Vector3f(shape1.getMotionVector());
+        relMotion.sub(shape2.getMotionVector());
+        float motionLength = relMotion.length();
+        int steps = SAMPLE_STEPS;
+        if (minRadius > EPSILON && motionLength > EPSILON) {
+            steps = Math.min(MAX_SAMPLE_STEPS, Math.max(SAMPLE_STEPS, (int) Math.ceil(motionLength / minRadius)));
+        }
+
         float lastClear = 0.0f;
-        for (int i = 1; i <= SAMPLE_STEPS; i++) {
-            float t = (float) i / SAMPLE_STEPS;
+        for (int i = 1; i <= steps; i++) {
+            float t = (float) i / steps;
             var res = collideAt(shape1, shape2, t);
             if (res.collides) {
                 return bisectTimeOfImpact(shape1, shape2, lastClear, t); // bracket [lastClear, t]
@@ -219,6 +264,18 @@ public class ContinuousCollisionDetector {
         return ContinuousCollisionResult.collision(tHit, hit.contactPoint, hit.contactNormal, hit.penetrationDepth);
     }
     
+    /**
+     * Returns the smallest AABB half-extent of {@code shape} as a proxy for its minimum cross-sectional thickness.
+     * Used by the adaptive scan in {@code conservativeCCD} (Luciferase-7wzml.94).
+     */
+    private static float aabbMinHalfExtent(CollisionShape shape) {
+        var aabb = shape.getAABB();
+        float hx = (aabb.getMaxX() - aabb.getMinX()) * 0.5f;
+        float hy = (aabb.getMaxY() - aabb.getMinY()) * 0.5f;
+        float hz = (aabb.getMaxZ() - aabb.getMinZ()) * 0.5f;
+        return Math.max(EPSILON, Math.min(hx, Math.min(hy, hz)));
+    }
+
     /**
      * Flip the result for symmetric collision detection
      */

@@ -94,9 +94,12 @@ public class ContactConstraint implements Constraint {
             tangentMass = 1.0f / tangentMass;
         }
         
-        // Baumgarte stabilization bias
+        // Baumgarte stabilization bias.
+        // relVel = velA - velB; vn = relVel.dot(normal); lambda = normalMass * (-vn + bias).
+        // Positive lambda separates A from B. For a penetrating contact (penetrationError > 0)
+        // the bias must be POSITIVE so that deeper penetration yields a larger separating impulse.
         float penetrationError = Math.max(penetrationDepth - SLOP, 0.0f);
-        bias = -BAUMGARTE_FACTOR * penetrationError / deltaTime;
+        bias = +BAUMGARTE_FACTOR * penetrationError / deltaTime;
         
         // Warm starting
         applyImpulse(normal, normalImpulseSum);

@@ -375,6 +375,72 @@ class PersistenceTest {
         assertTrue(recovered.totalEventsReplayed() >= 10, "Should replay all batched events");
     }
 
+    // ========== Production-path state-sink tests (Luciferase-7wzml.5) ==========
+
+    /**
+     * Proves that PersistenceManager.recover() passes a real RecoveryStateSink through to
+     * EventRecovery so that replayed WAL events mutate actual state.
+     *
+     * <p>Pre-fix, PersistenceManager.recover() constructed {@code new EventRecovery(logDir)}
+     * (NOOP-sink form) so every replayed event was silently discarded even though the API
+     * reported successful recovery.
+     */
+    @Test
+    void testRecoverViaManagerReconstructsRealState() throws IOException {
+        // Tracking sink — records every replayed call
+        var departed   = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var committed  = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var positions  = new java.util.concurrent.CopyOnWriteArrayList<float[]>();
+
+        RecoveryStateSink trackingSink = new RecoveryStateSink() {
+            @Override
+            public void onEntityDeparture(String entityId, String sourceBubble, String targetBubble) {
+                departed.add(entityId);
+            }
+            @Override
+            public void onMigrationCommit(String entityId) {
+                committed.add(entityId);
+            }
+            @Override
+            public void onDeferredUpdate(String entityId, float[] position, float[] velocity) {
+                if (position != null) positions.add(position.clone());
+            }
+        };
+
+        var entityId = UUID.randomUUID();
+        var src = UUID.randomUUID();
+        var tgt = UUID.randomUUID();
+
+        // Write events WITHOUT a checkpoint so recovery falls back to readAllEvents and replays them.
+        // (A checkpoint at seq=N tells recovery that events ≤N are already applied; we want them
+        // dispatched to the sink to prove the production path actually calls it.)
+        try (var persistenceMgr = new PersistenceManager(nodeId, tempDir, trackingSink)) {
+            persistenceMgr.logEntityDeparture(entityId, src, tgt);
+            persistenceMgr.logDeferredUpdate(entityId, new float[]{7.0f, 8.0f, 9.0f}, new float[]{0f, 0f, 0f});
+            persistenceMgr.logMigrationCommit(entityId);
+            // Intentionally NO checkpoint() — so recovery reads all events and dispatches them to the sink
+        }
+        // Flush has happened via close(); now recover using a NEW manager with the SAME sink
+        var recoveryMgr = new PersistenceManager(nodeId, tempDir, trackingSink);
+        var state = recoveryMgr.recover();
+        recoveryMgr.close();
+
+        // The sink must have been called for each replayed event — not just a non-zero count
+        assertEquals(1, departed.size(), "ENTITY_DEPARTURE must reach the real sink, not be silently discarded");
+        assertEquals(entityId.toString(), departed.get(0), "Departed entity ID must match");
+
+        assertEquals(1, committed.size(), "MIGRATION_COMMIT must reach the real sink");
+        assertEquals(entityId.toString(), committed.get(0));
+
+        // DEFERRED_UPDATE position must be reconstructed
+        assertFalse(positions.isEmpty(), "DEFERRED_UPDATE position must reach the real sink");
+        assertArrayEquals(new float[]{7.0f, 8.0f, 9.0f}, positions.get(0), 0.001f,
+            "Recovered position must match the written position");
+
+        // Sanity: total-replayed count consistent
+        assertTrue(state.totalEventsReplayed() >= 3, "At least 3 events must be reported as replayed");
+    }
+
     // ========== Helper Methods ==========
 
     private Map<String, Object> createEvent(String type, String entityId, String state) {

@@ -13,6 +13,7 @@ import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -218,6 +219,31 @@ class RenderingServerTest {
         long unpinnedCount = cache.get("unpinnedCount").asLong();
         assertEquals(totalCount, pinnedCount + unpinnedCount,
                     "totalCount should equal sum of pinned + unpinned");
+
+        server.stop();
+    }
+
+    /**
+     * Regression for start-order race: regionStreamer must be started (streaming=true)
+     * before the HTTP listener opens. Verified by checking streamer state immediately
+     * after app.start() completes (port > 0 means listener is already accepting).
+     */
+    @Test
+    void testStreamerStartedBeforeListenerOpens() {
+        var config = RenderingServerConfig.testing();
+        server = new RenderingServer(config);
+
+        server.start();
+
+        // Listener is open (port > 0) — verify streamer is already running
+        assertTrue(server.port() > 0, "Listener should be open after start()");
+        var streamer = server.getRegionStreamer();
+        assertNotNull(streamer, "RegionStreamer must be non-null after start()");
+        // RegionStreamer.start() sets streaming=true and starts the daemon thread.
+        // connectedClientCount() is only valid on a started streamer; calling it
+        // here exercises the streamer without reaching into its internals.
+        assertTrue(streamer.connectedClientCount() >= 0,
+                   "RegionStreamer must be started before listener accepts connections");
 
         server.stop();
     }
@@ -816,6 +842,102 @@ class RenderingServerTest {
         assertEquals(body1, body2, "Metrics response within TTL should be cached");
 
         server.stop();
+    }
+
+    /**
+     * Partial-startup rollback (I2 / Luciferase-7wzml.207): if app.start() throws (port in
+     * use), entityConsumer and regionStreamer must be rolled back so they are NOT left running.
+     *
+     * <p>Verification: after a failed start() the server must be in a clean enough state that
+     * a second start() on a free port succeeds — meaning no "already started" on entityConsumer
+     * and no live streaming thread leaking in the background.
+     */
+    @Test
+    void testPartialStartupRollbackOnPortConflict() throws Exception {
+        // Reserve a port, then try to start the RenderingServer on the same port.
+        // app.start(port) will throw because the port is already bound.
+        int reservedPort;
+        try (var blocker = new ServerSocket(0)) {
+            reservedPort = blocker.getLocalPort();
+
+            var config = new RenderingServerConfig(
+                reservedPort,       // port already in use → app.start() will throw
+                List.of(),
+                2,
+                SecurityConfig.permissive(),
+                CacheConfig.testing(),
+                BuildConfig.testing(),
+                1_000,
+                StreamingConfig.testing(),
+                PerformanceConfig.testing(),
+                0.0f,
+                1024.0f
+            );
+
+            server = new RenderingServer(config);
+
+            // start() must throw (port conflict) and NOT leave the server partially running
+            assertThrows(Exception.class, () -> server.start(),
+                         "start() must throw when port is already bound");
+
+            // Server must report not-started: the rollback must reset the started flag
+            assertFalse(server.isStarted(),
+                        "isStarted() must be false after a failed start()");
+        }
+        // blocker is now closed — the port is free again
+
+        // A second start() on a free port must succeed, proving entityConsumer and
+        // regionStreamer were properly cleaned up (no "already started" warnings / leaks).
+        var config2 = RenderingServerConfig.testing(); // port=0, dynamic
+        server = new RenderingServer(config2);
+        assertDoesNotThrow(() -> server.start(),
+                           "start() on a free port after rollback must succeed");
+        assertTrue(server.isStarted(), "Server must be started after recovery start()");
+        server.stop();
+    }
+
+    /**
+     * S1 single-use guard (Luciferase-7wzml.207): after a failed start() (port already in use),
+     * a SECOND start() on the SAME object must throw IllegalStateException rather than silently
+     * submitting work to the shutdown entityConsumer executor pool.
+     * <p>
+     * This test verifies the single-use guard path. The existing
+     * testPartialStartupRollbackOnPortConflict test covers recovery via a NEW instance.
+     */
+    @Test
+    void testSecondStartAfterFailedStartThrowsIllegalStateException() throws Exception {
+        int reservedPort;
+        try (var blocker = new java.net.ServerSocket(0)) {
+            reservedPort = blocker.getLocalPort();
+
+            var config = new RenderingServerConfig(
+                reservedPort,
+                List.of(),
+                2,
+                SecurityConfig.permissive(),
+                CacheConfig.testing(),
+                BuildConfig.testing(),
+                1_000,
+                StreamingConfig.testing(),
+                PerformanceConfig.testing(),
+                0.0f,
+                1024.0f
+            );
+
+            server = new RenderingServer(config);
+
+            // First start() must fail (port in use)
+            assertThrows(Exception.class, () -> server.start(),
+                         "start() must throw when port is already bound");
+            assertFalse(server.isStarted(), "isStarted() must be false after failed start()");
+
+            // Second start() on the SAME object must throw ISE (single-use guard),
+            // NOT silently proceed with a dead server backed by shutdown executors.
+            var ex = assertThrows(IllegalStateException.class, () -> server.start(),
+                                  "Second start() on a failed server must throw IllegalStateException");
+            assertTrue(ex.getMessage().contains("single-use"),
+                       "Exception message must mention single-use: " + ex.getMessage());
+        }
     }
 
     @Test

@@ -146,52 +146,70 @@ public final class ESVTChildOrder {
     }
 
     /**
-     * Compute child centroids from Bey subdivision.
+     * Derive child centroids from the authoritative Bey/t8code child geometry.
+     *
+     * <p>For each parent type and Morton child index, compute the centroid by:
+     * <ol>
+     *   <li>Looking up the Bey child index from {@link TetreeConnectivity#INDEX_TO_BEY_NUMBER}
+     *       ({@code beyChild = INDEX_TO_BEY_NUMBER[type][mortonChild]})</li>
+     *   <li>Computing the four vertices of Bey child {@code beyChild} from the parent's unit-cube
+     *       vertices ({@link Constants#SIMPLEX_STANDARD}) and their edge midpoints</li>
+     *   <li>Averaging the four vertices to get the centroid in [0,1] space</li>
+     * </ol>
+     *
+     * <p>Bey child vertex sets (t8code / BeySubdivision.getBeyChild convention):
+     * <ul>
+     *   <li>Bey 0: {v0, m01, m02, m03}</li>
+     *   <li>Bey 1: {m01, v1, m12, m13}</li>
+     *   <li>Bey 2: {m02, m12, v2, m23}</li>
+     *   <li>Bey 3: {m03, m13, m23, v3}</li>
+     *   <li>Bey 4: {m01, m02, m03, m13}</li>
+     *   <li>Bey 5: {m01, m02, m12, m13}</li>
+     *   <li>Bey 6: {m02, m03, m13, m23}</li>
+     *   <li>Bey 7: {m02, m12, m13, m23}</li>
+     * </ul>
+     *
+     * <p>This replaces the previous hand-written midpoint sets which treated Morton indices 0-7
+     * as if they were Bey indices 0-7, producing wrong centroids wherever Morton order differs
+     * from Bey order (Luciferase-7wzml.171).
      */
     private static void computeChildCentroids() {
-        // For each tet type, compute centroids of all 8 Bey children
         for (int type = 0; type < 6; type++) {
-            // Get parent vertices from SIMPLEX_STANDARD
-            Point3i[] parentVerts = Constants.SIMPLEX_STANDARD[type];
-            float[] pv0 = {parentVerts[0].x, parentVerts[0].y, parentVerts[0].z};
-            float[] pv1 = {parentVerts[1].x, parentVerts[1].y, parentVerts[1].z};
-            float[] pv2 = {parentVerts[2].x, parentVerts[2].y, parentVerts[2].z};
-            float[] pv3 = {parentVerts[3].x, parentVerts[3].y, parentVerts[3].z};
+            Point3i[] pv = Constants.SIMPLEX_STANDARD[type];
+            float[] v0 = toFloat(pv[0]);
+            float[] v1 = toFloat(pv[1]);
+            float[] v2 = toFloat(pv[2]);
+            float[] v3 = toFloat(pv[3]);
 
-            // Edge midpoints
-            float[] m01 = midpoint(pv0, pv1);
-            float[] m02 = midpoint(pv0, pv2);
-            float[] m03 = midpoint(pv0, pv3);
-            float[] m12 = midpoint(pv1, pv2);
-            float[] m13 = midpoint(pv1, pv3);
-            float[] m23 = midpoint(pv2, pv3);
+            // All six edge midpoints of the parent tetrahedron
+            float[] m01 = midpoint(v0, v1);
+            float[] m02 = midpoint(v0, v2);
+            float[] m03 = midpoint(v0, v3);
+            float[] m12 = midpoint(v1, v2);
+            float[] m13 = midpoint(v1, v3);
+            float[] m23 = midpoint(v2, v3);
 
-            // Bey children (from BEY_TETRAHEDRAL_SUBDIVISION.md):
-            // Child 0: corner at v0 → {v0, m01, m02, m03}
-            CHILD_CENTROIDS[type][0] = centroid(pv0, m01, m02, m03);
+            // Bey child vertex sets (indices 0-7), matching t8code / BeySubdivision.getBeyChild
+            float[][] beyVerts = {
+                centroid(v0,  m01, m02, m03), // Bey 0: {v0,  m01, m02, m03}
+                centroid(m01, v1,  m12, m13), // Bey 1: {m01, v1,  m12, m13}
+                centroid(m02, m12, v2,  m23), // Bey 2: {m02, m12, v2,  m23}
+                centroid(m03, m13, m23, v3),  // Bey 3: {m03, m13, m23, v3}
+                centroid(m01, m02, m03, m13), // Bey 4: {m01, m02, m03, m13}
+                centroid(m01, m02, m12, m13), // Bey 5: {m01, m02, m12, m13}
+                centroid(m02, m03, m13, m23), // Bey 6: {m02, m03, m13, m23}
+                centroid(m02, m12, m13, m23), // Bey 7: {m02, m12, m13, m23}
+            };
 
-            // Child 1: corner at v1 → {v1, m01, m12, m13}
-            CHILD_CENTROIDS[type][1] = centroid(pv1, m01, m12, m13);
-
-            // Child 2: corner at v2 → {v2, m02, m12, m23}
-            CHILD_CENTROIDS[type][2] = centroid(pv2, m02, m12, m23);
-
-            // Child 3: corner at v3 → {v3, m03, m13, m23}
-            CHILD_CENTROIDS[type][3] = centroid(pv3, m03, m13, m23);
-
-            // Children 4-7 are from the octahedral region
-            // Child 4: {m01, m02, m03, m12}
-            CHILD_CENTROIDS[type][4] = centroid(m01, m02, m03, m12);
-
-            // Child 5: {m01, m02, m12, m13}
-            CHILD_CENTROIDS[type][5] = centroid(m01, m02, m12, m13);
-
-            // Child 6: {m02, m03, m12, m23}
-            CHILD_CENTROIDS[type][6] = centroid(m02, m03, m12, m23);
-
-            // Child 7: {m03, m12, m13, m23}
-            CHILD_CENTROIDS[type][7] = centroid(m03, m12, m13, m23);
+            for (int mortonChild = 0; mortonChild < 8; mortonChild++) {
+                int beyChild = TetreeConnectivity.INDEX_TO_BEY_NUMBER[type][mortonChild];
+                CHILD_CENTROIDS[type][mortonChild] = beyVerts[beyChild];
+            }
         }
+    }
+
+    private static float[] toFloat(Point3i p) {
+        return new float[] { p.x, p.y, p.z };
     }
 
     /**

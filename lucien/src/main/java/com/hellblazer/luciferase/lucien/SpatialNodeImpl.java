@@ -83,6 +83,12 @@ public class SpatialNodeImpl<ID extends EntityID> implements SpatialNodeStorage<
     }
 
     @Override
+    public void clear() {
+        clearEntities();
+        childrenMask = 0;
+    }
+
+    @Override
     public void clearEntities() {
         entityIds.clear();
     }

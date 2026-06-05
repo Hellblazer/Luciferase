@@ -46,8 +46,8 @@ public class NodeProcess {
 
         System.out.println("[" + name + "] Starting node " + nodeId + " on port " + listenPort);
 
-        // Create and initialize gRPC channel
-        var channel = new GrpcBubbleNetworkChannel();
+        // Create and initialize gRPC channel — explicit plaintext opt-in (Luciferase-7wzml.200).
+        var channel = new GrpcBubbleNetworkChannel(true);
 
         try {
             // Initialize this node's gRPC server

@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.forest.ghost;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.balancing.fault.GhostSyncCallback;
@@ -25,7 +26,6 @@ import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -52,12 +52,10 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
 
     private static final Logger log = LoggerFactory.getLogger(DistributedGhostManager.class);
 
-    // Reserved: SpatialIndex back-reference retained for prospective incremental-sync paths (per-key existence
-    // checks during distributed reconciliation). Currently unused by any method on this class — the null-check
-    // in the constructor still serves as a contract guard. RDR-008 P2 follow-up (Luciferase-703) narrowed the
-    // type from AbstractSpatialIndex to SpatialIndex without removing the field, on the rationale that an
-    // upcoming distributed-ghost-sync arc will need it; flagged in code review and intentionally retained.
-    @SuppressWarnings("unused")
+    // SpatialIndex back-reference used by createGhostsForBoundaryElement to populate real content/position
+    // (Luciferase-7wzml.2). Previously unused (placeholder values were transmitted); the null-check in the
+    // constructor still serves as a contract guard. RDR-008 P2 follow-up (Luciferase-703) narrowed the type
+    // from AbstractSpatialIndex to SpatialIndex.
     private final SpatialIndex<Key, ID, Content> spatialIndex;
     private final GhostChannel<Key, ID, Content> ghostChannel;
     private final GhostBoundaryDetector<Key, ID, Content> localGhostManager;
@@ -73,6 +71,9 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
     private volatile boolean autoSyncEnabled = true;
     private volatile long lastSyncTime = 0;
     private volatile long syncIntervalMs = 30000; // 30 seconds default
+
+    // Clock — injected for deterministic testing; defaults to wall-clock
+    private volatile Clock clock = Clock.system();
 
     // Fault detection callback for sync operations
     private volatile GhostSyncCallback syncCallback = null;
@@ -99,6 +100,15 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
                 currentRank, treeId);
     }
     
+    /**
+     * Inject a clock for deterministic testing.
+     *
+     * @param clock the clock to use (must not be null)
+     */
+    public void setClock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
     /**
      * Get the ghost layer for this distributed manager.
      * @return the ghost layer for boundary violation checking
@@ -216,8 +226,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
 
         // Queue ghosts for transmission through channel
         for (var key : boundaryElements) {
-            var ghostElement = createGhostForBoundaryElement(key);
-            if (ghostElement != null) {
+            for (var ghostElement : createGhostsForBoundaryElement(key)) {
                 ghostChannel.queueGhost(targetRank, ghostElement);
             }
         }
@@ -268,7 +277,7 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
         }
         CompletableFuture.allOf(flushes.toArray(new CompletableFuture[0])).join();
 
-        lastSyncTime = System.currentTimeMillis();
+        lastSyncTime = clock.currentTimeMillis();
         log.info("Synchronization complete for {} processes", flushes.size());
     }
     
@@ -401,33 +410,44 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
     // Private helper methods
 
     /**
-     * Create a ghost element for a boundary element.
-     * This method creates a minimal ghost placeholder - actual ghost data
-     * should be fetched via gRPC from the owning process.
+     * Create ghost elements for a locally-owned boundary element by looking up real entity data from the
+     * spatial index (Luciferase-7wzml.2). Returns one {@link GhostElement} per entity stored at {@code key}.
+     *
+     * <p>Previous implementation used placeholder values ({@code (Content) new byte[0]}, position (0,0,0),
+     * and {@code currentRank} as the owner) — the unchecked cast is gone and content/position are populated
+     * from the live index. {@code ownerRank} remains {@code currentRank} because boundary elements are locally
+     * owned by definition (they are present in the local index and at the partition seam).
+     *
+     * <p>Returns an empty list if the key is not found in the index (race: element removed between boundary
+     * scan and transmission). The caller skips empty results.
+     *
+     * @param key a locally-owned spatial key identified as a partition-boundary element
+     * @return list of ghost elements (one per entity at this key), or empty if the key is absent
      */
-    private GhostElement<Key, ID, Content> createGhostForBoundaryElement(Key key) {
-        // Create a minimal ghost element with the spatial key
-        // Actual entity data will be populated by gRPC communication
-        // For now, use placeholder values
-
-        @SuppressWarnings("unchecked")
-        ID placeholderId = (ID) new com.hellblazer.luciferase.lucien.entity.UUIDEntityID(
-            java.util.UUID.nameUUIDFromBytes(("boundary-" + key.toString()).getBytes())
-        );
-
-        @SuppressWarnings("unchecked")
-        Content placeholderContent = (Content) new byte[0];
-
-        var position = new javax.vecmath.Point3f(0, 0, 0);
-
-        return new GhostElement<>(
-            key,
-            placeholderId,
-            placeholderContent,
-            position,
-            currentRank,
-            treeId
-        );
+    private List<GhostElement<Key, ID, Content>> createGhostsForBoundaryElement(Key key) {
+        // O(log N) direct key lookup — replaces former O(N) nodes().filter().findFirst() scan (Luciferase-7wzml.2 H1)
+        var entityIds = spatialIndex.getEntityIdsAt(key);
+        if (entityIds.isEmpty()) {
+            log.debug("Boundary key {} has no entities in the local index — skipping ghost transmission", key);
+            return List.of();
+        }
+        var result = new ArrayList<GhostElement<Key, ID, Content>>();
+        for (var entityId : entityIds) {
+            var position = spatialIndex.getEntityPosition(entityId);
+            if (position == null) {
+                log.debug("Entity {} at boundary key {} has no position — skipping ghost", entityId, key);
+                continue;
+            }
+            var content = spatialIndex.getEntity(entityId);
+            if (content == null) {
+                // Entity removed between boundary scan and transmission — skip, do not propagate null (Luciferase-7wzml.2 H2)
+                log.debug("Entity {} at boundary key {} has no content (removed mid-flight) — skipping ghost", entityId,
+                          key);
+                continue;
+            }
+            result.add(new GhostElement<>(key, entityId, content, position, currentRank, treeId));
+        }
+        return result;
     }
 
     /**
@@ -457,6 +477,6 @@ public class DistributedGhostManager<Key extends SpatialKey<Key>, ID extends Ent
 
     private boolean shouldPerformSync() {
         return autoSyncEnabled &&
-               (System.currentTimeMillis() - lastSyncTime) > syncIntervalMs;
+               (clock.currentTimeMillis() - lastSyncTime) > syncIntervalMs;
     }
 }

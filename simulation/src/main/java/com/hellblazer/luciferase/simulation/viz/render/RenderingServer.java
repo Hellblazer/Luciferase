@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.net.InetSocketAddress;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Map;
@@ -66,6 +67,10 @@ public class RenderingServer implements AutoCloseable {
     private final AdaptiveRegionManager regionManager;
     private final EntityStreamConsumer entityConsumer;
     private final AtomicBoolean started = new AtomicBoolean(false);
+    // Single-use guard: set permanently after a failed start() so a retry on the same object
+    // is rejected rather than silently submitting work to a shutdown executor pool (S1 fix,
+    // Luciferase-7wzml.207). After a failed start() construct a new RenderingServer.
+    private final AtomicBoolean failed = new AtomicBoolean(false);
 
     private Javalin app;
     private volatile long startTimeMs;
@@ -135,9 +140,18 @@ public class RenderingServer implements AutoCloseable {
     /**
      * Start the rendering server.
      *
-     * @throws IllegalStateException if already started
+     * <p>RenderingServer is single-use. If a previous call to {@code start()} failed and triggered
+     * the partial-startup rollback, this method will throw {@link IllegalStateException} rather than
+     * silently submitting work to a shutdown executor pool. Construct a new {@code RenderingServer}
+     * after a failed start.
+     *
+     * @throws IllegalStateException if already started, or if a previous start() failed (single-use)
      */
     public void start() {
+        if (failed.get()) {
+            throw new IllegalStateException(
+                "RenderingServer is single-use; construct a new instance after a failed start()");
+        }
         if (!started.compareAndSet(false, true)) {
             throw new IllegalStateException("RenderingServer already started");
         }
@@ -264,21 +278,46 @@ public class RenderingServer implements AutoCloseable {
         // jgpu: Add authentication filter (API key)
         if (config.security().apiKey() != null) {
             app.before("/api/*", ctx -> {
+                var clientHost = ctx.ip();
+
+                // vyik: Check if client is blocked due to too many failed REST auth attempts
+                var authLimiter = authLimiters.get(clientHost,
+                    id -> new AuthAttemptRateLimiter(clock));
+
+                if (authLimiter.isBlocked()) {
+                    log.warn("REST auth failed - rate limit exceeded: ip={}", clientHost);
+                    ctx.status(429).json(Map.of("error", "Too many failed authentication attempts"));
+                    return;
+                }
+
                 String authHeader = ctx.header("Authorization");
 
                 // Check for Bearer token format
                 if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                    authLimiter.recordFailedAttempt();
+                    log.warn("REST auth failed - missing/malformed header: ip={}", clientHost);
                     ctx.status(401).json(Map.of("error", "Unauthorized"));
                     return;
                 }
 
-                // Extract and validate API key
-                String providedKey = authHeader.substring(7); // Remove "Bearer " prefix
-                if (!config.security().apiKey().equals(providedKey)) {
-                    ctx.status(401).json(Map.of("error", "Unauthorized"));
+                // 8gdp: Constant-time comparison to prevent timing attacks
+                var expectedAuth = "Bearer " + config.security().apiKey();
+                byte[] providedBytes = authHeader.getBytes(StandardCharsets.UTF_8);
+                byte[] expectedBytes = expectedAuth.getBytes(StandardCharsets.UTF_8);
+
+                if (!MessageDigest.isEqual(providedBytes, expectedBytes)) {
+                    if (!authLimiter.recordFailedAttempt()) {
+                        log.warn("REST auth failed - rate limit exceeded after failed attempt: ip={}", clientHost);
+                        ctx.status(429).json(Map.of("error", "Too many failed authentication attempts"));
+                    } else {
+                        log.warn("REST auth failed - invalid credentials: ip={}", clientHost);
+                        ctx.status(401).json(Map.of("error", "Unauthorized"));
+                    }
                     return;
                 }
 
+                // vyik: Record successful auth (resets rate limiter)
+                authLimiter.recordSuccess();
                 // Authentication successful - continue to endpoint
             });
         }
@@ -310,8 +349,11 @@ public class RenderingServer implements AutoCloseable {
                 var apiKey = config.security().apiKey();
                 if (apiKey != null) {
                     var sessionId = ctx.sessionId();
-                    // vyik: Track auth attempts by client host (IP-based rate limiting)
-                    var clientHost = ctx.host();
+                    // vyik: Track auth attempts by remote socket IP (host-header-independent)
+                    var remoteAddr = ctx.session.getRemoteAddress();
+                    var clientHost = (remoteAddr instanceof InetSocketAddress isa)
+                        ? isa.getAddress().getHostAddress()
+                        : remoteAddr.toString();
 
                     // vyik: Check if client is blocked due to too many failed auth attempts
                     var authLimiter = authLimiters.get(clientHost,
@@ -357,14 +399,35 @@ public class RenderingServer implements AutoCloseable {
             ws.onError(regionStreamer::onError);
         });
 
-        app.start(config.port());
+        // Start consuming upstream entity streams and Phase 3 streaming BEFORE opening
+        // the HTTP/WS listener. An incoming WS onConnect arriving between app.start() and
+        // regionStreamer.start() would reach an unstarted streamer. Both start() calls are
+        // outbound-only (gRPC reconnect loop + daemon thread) — neither requires the
+        // listener to be open first, so this reorder is safe.
+        //
+        // Partial-startup rollback (Luciferase-7wzml.207 I2): if app.start() throws (e.g.
+        // port already in use), entityConsumer and regionStreamer are already running but
+        // `started` stays false, so stop() would no-op and leak the reconnect loop + daemon
+        // thread. Roll them back on failure so the caller sees a clean state.
+        try {
+            entityConsumer.start();
+
+            // Start Phase 3 streaming
+            regionStreamer.start();
+
+            app.start(config.port());
+        } catch (Exception e) {
+            // Mark this instance permanently failed (single-use guard, Luciferase-7wzml.207 S1).
+            // A second start() will throw IllegalStateException rather than re-submitting work
+            // to the now-shutdown entityConsumer executor pool.
+            failed.set(true);
+            started.set(false);
+            try { entityConsumer.close(); } catch (Exception ignored) {}
+            try { regionStreamer.stop();  } catch (Exception ignored) {}
+            try { regionStreamer.close(); } catch (Exception ignored) {}
+            throw e;
+        }
         startTimeMs = clock.currentTimeMillis();
-
-        // Start consuming upstream entity streams
-        entityConsumer.start();
-
-        // Start Phase 3 streaming
-        regionStreamer.start();
 
         log.info("RenderingServer started on port {}", port());
     }

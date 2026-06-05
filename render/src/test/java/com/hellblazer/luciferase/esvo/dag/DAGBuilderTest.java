@@ -22,8 +22,10 @@ import com.hellblazer.luciferase.sparse.core.PointerAddressingMode;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -719,5 +721,477 @@ class DAGBuilderTest {
         }
 
         return octree;
+    }
+
+    // ==================== Hash Collision Regression Tests ====================
+
+    /**
+     * Regression test for Luciferase-7wzml.23: DAGBuilder must NOT merge two structurally-distinct
+     * subtrees that share the same 64-bit truncation of their SHA-256 digest.
+     *
+     * <p>Mechanism: inject a {@code CollisionForcingHasher} via the package-private
+     * {@code withHasherFactory} test hook. The hasher always produces digests whose first 8 bytes
+     * (= the old truncated-long key) are identical, but whose remaining bytes differ based on a
+     * call-counter. Under the old code, every node would collapse to the first canonical because
+     * {@code putIfAbsent(identicalLong, nodeIdx)} treats them all as duplicates. Under the fixed
+     * code, the full byte[] is compared, so nodes with different content are kept distinct.
+     */
+    @Test
+    void testCollisionForcedHashDoesNotMergeDistinctSubtrees() {
+        // Create SVO with two sibling leaves that have different contour descriptors.
+        // They must NOT be merged even when their 64-bit hash prefix is forced identical.
+        var octree = new ESVOOctreeData(4096);
+
+        var root = new ESVONodeUnified();
+        root.setValid(true);
+        root.setChildMask(0b00000011); // 2 children
+        root.setChildPtr(1);
+        octree.setNode(0, root);
+
+        // Two structurally-distinct leaves: different contour descriptors
+        var leaf1 = new ESVONodeUnified(0, 1); // contourDescriptor = 1
+        leaf1.setValid(true);
+        leaf1.setChildMask(0);
+        octree.setNode(1, leaf1);
+
+        var leaf2 = new ESVONodeUnified(0, 2); // contourDescriptor = 2 — DISTINCT
+        leaf2.setValid(true);
+        leaf2.setChildMask(0);
+        octree.setNode(2, leaf2);
+
+        // The forced-collision hasher: all digests have identical first 8 bytes but unique bytes[8].
+        // Under the old truncated-long key, leaf1 and leaf2 would collapse to the same canonical.
+        // Under the fixed full-digest key they must remain distinct.
+        var callCounter = new AtomicInteger(0);
+        Supplier<Hasher> collisionFactory = () -> new CollisionForcingHasher(callCounter.getAndIncrement());
+
+        // Build with collision-forcing hasher injected via test hook
+        var dag = DAGBuilder.from(octree)
+                            .withHasherFactory(collisionFactory)
+                            .withValidation(false) // skip validation; node layout may differ
+                            .build();
+
+        // ASSERTION 1: both distinct leaves must survive as separate DAG nodes.
+        // If the old bug were present, canonicalNodes would contain only 2 entries (root + one leaf)
+        // instead of 3 (root + two distinct leaves).
+        assertEquals(3, dag.nodes().length,
+                     "Both structurally-distinct leaves must be kept separate despite forced hash collision; "
+                     + "old code would have merged them to 2 nodes total");
+
+        // ASSERTION 2: compression ratio should be 1.0 (no sharing among distinct nodes)
+        assertEquals(1.0f, dag.getCompressionRatio(), 0.01f,
+                     "No compression should occur when all nodes are distinct");
+    }
+
+    /**
+     * Verify that the collision-safe fix does NOT break compression on genuinely duplicate subtrees.
+     * Two identical leaves must still be merged to 1 canonical node (compression ratio > 1).
+     */
+    @Test
+    void testCollisionForcedHashStillMergesGenuineDuplicates() {
+        // Root with two children that have IDENTICAL content — must still be merged
+        var octree = new ESVOOctreeData(4096);
+
+        var root = new ESVONodeUnified();
+        root.setValid(true);
+        root.setChildMask(0b00000011); // 2 children
+        root.setChildPtr(1);
+        octree.setNode(0, root);
+
+        // Both leaves are identical
+        var leaf = new ESVONodeUnified(0, 42);
+        leaf.setValid(true);
+        leaf.setChildMask(0);
+        octree.setNode(1, leaf);
+        octree.setNode(2, leaf);
+
+        // Use real SHA-256 (no collision forcing) — identical nodes must still deduplicate
+        var dag = DAGBuilder.from(octree).build();
+
+        // Root + 1 canonical leaf (leaf1 and leaf2 are identical, merged to 1)
+        assertEquals(2, dag.nodes().length,
+                     "Genuinely identical leaves must still be merged to a single canonical node");
+        assertTrue(dag.getCompressionRatio() > 1.0f,
+                   "Genuine duplicates must yield compression ratio > 1.0");
+    }
+
+    /**
+     * Verify the digestBytes() API on JavaMessageDigestHasher returns a full 32-byte SHA-256 digest,
+     * not the old 8-byte truncation. This pins the root cause of the collision bug.
+     */
+    @Test
+    void testDigestBytesReturnsFullSha256() {
+        var hasher = new JavaMessageDigestHasher("SHA-256");
+        hasher.update(0xDEADBEEF);
+        var bytes = hasher.digestBytes();
+
+        assertEquals(32, bytes.length,
+                     "digestBytes() must return the full 32-byte SHA-256 digest, not a truncated form");
+
+        // Two different inputs must produce different full digests
+        var hasher2 = new JavaMessageDigestHasher("SHA-256");
+        hasher2.update(0xCAFEBABE);
+        var bytes2 = hasher2.digestBytes();
+
+        assertFalse(Arrays.equals(bytes, bytes2),
+                    "Different inputs must produce different full digests");
+    }
+
+    // ==================== bead .150 / .151 Metadata & Depth Tests ====================
+
+    /**
+     * Bead .150: sharingByDepth must record sharing at real, reachable depths —
+     * not at phantom depth-0 entries caused by orphaned nodes.
+     *
+     * <p>Layout:
+     * <pre>
+     *   idx 0: root  (depth 0)  childMask=0b111, childPtr=1 → children at 1,2,3
+     *   idx 1: leafA (depth 1)  default leaf — canonical for all leaves
+     *   idx 2: leafB (depth 1)  identical to leafA → duplicate at depth 1
+     *   idx 3: mid   (depth 1)  internal, childMask=0b11, childPtr=1 → children at 4,5
+     *   idx 4: leafC (depth 2)  identical to leafA → duplicate at depth 2
+     *   idx 5: leafD (depth 2)  identical to leafA → duplicate at depth 2
+     *   idx 6: orphan (unreachable) identical to leafA
+     * </pre>
+     * With the fix, orphan (idx 6) is skipped by the containsKey guard, so
+     * sharingByDepth = {1:1, 2:2} — no depth-0 entry.  The pre-fix
+     * {@code getOrDefault(6, 0)} would inject a spurious {0:1} entry.
+     *
+     * <p>Key discriminating assertion: {@code assertFalse(containsKey(0))}.
+     */
+    @Test
+    void testSharingByDepthHasMultipleKeysOnMultiLevelDAG() {
+        var octree = new ESVOOctreeData(8192);
+
+        // Layout (indices 1-5 are reachable from root; idx 6 is an orphan):
+        //   idx 0: root  (depth 0)  childMask=0b111, childPtr=1 → children at 1,2,3
+        //   idx 1: leafA (depth 1)  default leaf — canonical for all leaves
+        //   idx 2: leafB (depth 1)  identical to leafA → duplicate at depth 1
+        //   idx 3: mid   (depth 1)  internal, childMask=0b11, childPtr=1 → children at 4,5
+        //   idx 4: leafC (depth 2)  identical to leafA → duplicate at depth 2
+        //   idx 5: leafD (depth 2)  identical to leafA → duplicate at depth 2
+        //   idx 6: orphan           NOT reachable; under old code it gets depth=0 from getOrDefault
+
+        // root (idx 0, depth 0): 3 children at idx 1,2,3
+        var root = new ESVONodeUnified();
+        root.setValid(true);
+        root.setChildMask(0b00000111); // octants 0,1,2
+        root.setChildPtr(1);           // children at 0+1+{0,1,2} = 1,2,3
+        octree.setNode(0, root);
+
+        // leafA (idx 1, depth 1) — first default leaf; becomes canonical
+        var leafA = new ESVONodeUnified();
+        leafA.setValid(true);
+        leafA.setChildMask(0);
+        octree.setNode(1, leafA);
+
+        // leafB (idx 2, depth 1) — identical to leafA → duplicate at depth 1
+        var leafB = new ESVONodeUnified();
+        leafB.setValid(true);
+        leafB.setChildMask(0);
+        octree.setNode(2, leafB);
+
+        // mid (idx 3, depth 1) — internal node with 2 leaf children at 4 and 5
+        var mid = new ESVONodeUnified();
+        mid.setValid(true);
+        mid.setChildMask(0b00000011); // octants 0 and 1
+        mid.setChildPtr(1);           // children at 3+1+{0,1} = 4,5
+        octree.setNode(3, mid);
+
+        // leafC (idx 4, depth 2) — identical to leafA → duplicate at depth 2
+        var leafC = new ESVONodeUnified();
+        leafC.setValid(true);
+        leafC.setChildMask(0);
+        octree.setNode(4, leafC);
+
+        // leafD (idx 5, depth 2) — identical to leafA → duplicate at depth 2
+        var leafD = new ESVONodeUnified();
+        leafD.setValid(true);
+        leafD.setChildMask(0);
+        octree.setNode(5, leafD);
+
+        // orphan (idx 6) — identical leaf NOT reachable from root.
+        // Old code: getOrDefault(6, 0) = 0 → spurious depth-0 entry in sharingByDepth.
+        // Fixed code: !depthMap.containsKey(6) → skipped entirely.
+        var orphan = new ESVONodeUnified();
+        orphan.setValid(true);
+        orphan.setChildMask(0);
+        octree.setNode(6, orphan);
+
+        var dag = DAGBuilder.from(octree).build();
+        var sharingByDepth = dag.getMetadata().sharingByDepth();
+
+        // Real sharing at depth 1: leafB is a duplicate of leafA.
+        assertTrue(sharingByDepth.containsKey(1),
+                   "sharingByDepth must contain depth 1 (leafB duplicate); got: " + sharingByDepth);
+
+        // Real sharing at depth 2: leafC and leafD are duplicates of leafA.
+        assertTrue(sharingByDepth.containsKey(2),
+                   "sharingByDepth must contain depth 2 (leafC/leafD duplicates); got: " + sharingByDepth);
+
+        // KEY DISCRIMINATING ASSERTION: no spurious depth-0 entry from orphaned node.
+        // FAILS with pre-fix code (orphan idx 6 gets getOrDefault depth=0).
+        // PASSES with fix (containsKey guard skips orphaned nodes).
+        assertFalse(sharingByDepth.containsKey(0),
+                    "sharingByDepth must NOT contain depth 0 (orphan must be skipped); got: " + sharingByDepth);
+    }
+
+    /**
+     * Bead .150: sourceHash must differ for two sources with identical node count
+     * but different content.
+     *
+     * <p>This pins that sourceHash is a real content hash (derived from the root's
+     * subtree digest), not a node-count proxy.
+     */
+    @Test
+    void testSourceHashDiffersForSameCountDifferentContent() {
+        // Source A: root with one leaf child at octant 0
+        var octreeA = new ESVOOctreeData(64);
+        var rootA = new ESVONodeUnified();
+        rootA.setValid(true);
+        rootA.setChildMask(0b00000001); // octant 0
+        rootA.setChildPtr(1);
+        octreeA.setNode(0, rootA);
+        var leafA = new ESVONodeUnified();
+        leafA.setValid(true);
+        leafA.setChildMask(0);
+        octreeA.setNode(1, leafA);
+
+        // Source B: root with one leaf child at octant 1 — same node count, different structure
+        var octreeB = new ESVOOctreeData(64);
+        var rootB = new ESVONodeUnified();
+        rootB.setValid(true);
+        rootB.setChildMask(0b00000010); // octant 1 instead of 0
+        rootB.setChildPtr(1);
+        octreeB.setNode(0, rootB);
+        var leafB = new ESVONodeUnified();
+        leafB.setValid(true);
+        leafB.setChildMask(0);
+        octreeB.setNode(1, leafB);
+
+        var metaA = DAGBuilder.from(octreeA).build().getMetadata();
+        var metaB = DAGBuilder.from(octreeB).build().getMetadata();
+
+        assertEquals(metaA.originalNodeCount(), metaB.originalNodeCount(),
+                     "Both sources must have the same node count for this test to be meaningful");
+        assertNotEquals(metaA.sourceHash(), metaB.sourceHash(),
+                        "sourceHash must differ for sources with identical node count but different structure");
+    }
+
+    /**
+     * Bead .151: estimateMaxDepth must return the true depth on a hand-crafted
+     * 3-level SVO (depth == 2, since root is level 0) with non-contiguous octants.
+     *
+     * <p>All leaf nodes are given distinct contour descriptors so none deduplicate;
+     * the compacted DAG preserves the full 3-level chain.  The test locks the
+     * contract between buildCompactedDAG's ascending-octant child-pointer layout
+     * and estimateMaxDepth's sparseOffset traversal — if the two ever diverge, the
+     * BFS will mis-walk the childPointers array and return the wrong depth.
+     *
+     * <p>Structure (source indices → compacted indices after build):
+     * <pre>
+     *   root (idx 0): children at octants 1 and 5
+     *     octant-1 child (idx 1): child at octant 3          ← depth 1
+     *       octant-3 child (idx 3): unique leaf (contour=3)  ← depth 2
+     *     octant-5 child (idx 2): unique leaf (contour=2)    ← depth 1
+     * </pre>
+     */
+    @Test
+    void testEstimateMaxDepthOnThreeLevelDAGWithMixedOctants() {
+        // Build a 3-level source SVO with unique leaf nodes (distinct contour descriptors
+        // guarantee no deduplication, so the compacted DAG retains the full 3-level chain).
+        var octree = new ESVOOctreeData(1024);
+
+        // root (idx 0): children at octants 1 and 5
+        var root = new ESVONodeUnified();
+        root.setValid(true);
+        root.setChildMask((1 << 1) | (1 << 5)); // octants 1 and 5
+        root.setChildPtr(1); // first child at idx 0+1=1, second at idx 0+1+1=2
+        octree.setNode(0, root);
+
+        // mid1 (idx 1, depth 1): child at octant 3 only
+        var mid1 = new ESVONodeUnified();
+        mid1.setValid(true);
+        mid1.setChildMask(1 << 3); // octant 3 only
+        // getChildIndex = currentNodeIdx(1) + childPtr + sparseOffset(mask,oct)
+        // For octant 3: 1 + 2 + 0 = 3  → child at idx 3
+        mid1.setChildPtr(2);
+        octree.setNode(1, mid1);
+
+        // leaf2 (idx 2, depth 1, octant 5 child of root): unique via contour=200
+        var leaf2 = new ESVONodeUnified(0, 200);
+        leaf2.setValid(true);
+        leaf2.setChildMask(0);
+        octree.setNode(2, leaf2);
+
+        // leaf3 (idx 3, depth 2, octant 3 child of mid1): unique via contour=300
+        var leaf3 = new ESVONodeUnified(0, 300);
+        leaf3.setValid(true);
+        leaf3.setChildMask(0);
+        octree.setNode(3, leaf3);
+
+        var dag = DAGBuilder.from(octree).build();
+        var metadata = dag.getMetadata();
+
+        // No deduplication should have occurred (all leaf nodes unique).
+        assertEquals(4, metadata.originalNodeCount(), "Source has 4 nodes");
+        assertEquals(4, metadata.uniqueNodeCount(), "No deduplication expected with unique leaves");
+        assertEquals(2, metadata.maxDepth(),
+                     "3-level SVO should yield maxDepth == 2; got " + metadata.maxDepth());
+    }
+
+    /**
+     * Bead .151 S1: estimateMaxDepth must return the TRUE longest root-to-leaf path even
+     * when the deepest leaf is first reached via a SHORTER path.
+     *
+     * <p>Regression for the visited-set BFS that recorded a shared node at its first
+     * (shortest) arrival depth and never revisited it, causing underestimation.
+     *
+     * <p>Structure — all leaves have distinct contour descriptors so no deduplication
+     * occurs; the compacted DAG is topologically identical to the source SVO.
+     * <pre>
+     *   root (depth 0)  → children: A (depth 1), B (depth 1)
+     *   A    (depth 1)  → child: SHARED (depth 2)          ← SHORT path  reaches SHARED at depth 2
+     *   B    (depth 1)  → child: C (depth 2)
+     *   C    (depth 2)  → child: SHARED (depth 3)          ← LONG path   reaches SHARED at depth 3
+     *   SHARED (leaf, unique contour so it stays as one node, but two PATHS reach it)
+     * </pre>
+     * The TRUE longest path is depth 3 (root→B→C→SHARED).
+     * Old visited-BFS would record SHARED at depth 2 (via A) and never update → returns 2.
+     * Longest-path traversal must return 3.
+     *
+     * <p>This test FAILS with the old visited-set BFS and PASSES with the fix.
+     */
+    @Test
+    void testEstimateMaxDepthSharedNodeLongestPathWins() {
+        // We need a DAG (post-deduplication) where one node is truly shared (reachable
+        // via two paths of different lengths).  We achieve this by building an SVO whose
+        // two deep leaves are IDENTICAL so the DAGBuilder merges them into one shared node.
+        //
+        // Source SVO layout (indices):
+        //   0: root     childMask=0b11 (octants 0,1), childPtr=1  → children at 1,2
+        //   1: A        childMask=0b01 (octant 0),    childPtr=1  → child at 3      (depth 1, short path to 3)
+        //   2: B        childMask=0b01 (octant 0),    childPtr=1  → child at 4      (depth 1)
+        //   3: LEAF_X   childMask=0  (unique contour=111)         (depth 2 via root→A→LEAF_X)
+        //   4: C        childMask=0b01 (octant 0),    childPtr=1  → child at 5      (depth 2)
+        //   5: LEAF_Y   childMask=0  (same contour=111 as LEAF_X) (depth 3 via root→B→C→LEAF_Y)
+        //
+        // LEAF_X and LEAF_Y are IDENTICAL → DAGBuilder merges them into one shared node.
+        // After compaction the DAG has:
+        //   root → A → sharedLeaf  (path length 2)
+        //   root → B → C → sharedLeaf  (path length 3)
+        // TRUE max depth = 3.
+
+        var octree = new ESVOOctreeData(4096);
+
+        // root (idx 0, depth 0): 2 children at octants 0 and 1
+        var root = new ESVONodeUnified();
+        root.setValid(true);
+        root.setChildMask(0b00000011); // octants 0 and 1
+        root.setChildPtr(1);           // children at idx 1 and 2
+        octree.setNode(0, root);
+
+        // A (idx 1, depth 1): 1 child at octant 0
+        var a = new ESVONodeUnified(0, 10); // unique contour so A stays distinct
+        a.setValid(true);
+        a.setChildMask(0b00000001); // octant 0 only
+        a.setChildPtr(2);           // child at idx 1+2=3
+        octree.setNode(1, a);
+
+        // B (idx 2, depth 1): 1 child at octant 0
+        var b = new ESVONodeUnified(0, 20); // unique contour so B stays distinct
+        b.setValid(true);
+        b.setChildMask(0b00000001); // octant 0 only
+        b.setChildPtr(2);           // child at idx 2+2=4
+        octree.setNode(2, b);
+
+        // LEAF_X (idx 3, depth 2): identical leaf (contour=111) — will merge with LEAF_Y
+        var leafX = new ESVONodeUnified(0, 111);
+        leafX.setValid(true);
+        leafX.setChildMask(0);
+        octree.setNode(3, leafX);
+
+        // C (idx 4, depth 2): 1 child at octant 0
+        var c = new ESVONodeUnified(0, 30); // unique contour so C stays distinct
+        c.setValid(true);
+        c.setChildMask(0b00000001); // octant 0 only
+        c.setChildPtr(1);           // child at idx 4+1=5
+        octree.setNode(4, c);
+
+        // LEAF_Y (idx 5, depth 3): IDENTICAL to LEAF_X → will be merged by DAGBuilder
+        var leafY = new ESVONodeUnified(0, 111); // same contour=111
+        leafY.setValid(true);
+        leafY.setChildMask(0);
+        octree.setNode(5, leafY);
+
+        var dag = DAGBuilder.from(octree).build();
+        var metadata = dag.getMetadata();
+
+        // Sanity: the two identical leaves must have been merged (5 source nodes → 5 compacted,
+        // since root/A/B/C are unique but LEAF_X+LEAF_Y collapse to 1).
+        assertEquals(5, metadata.uniqueNodeCount(),
+                     "root+A+B+C+sharedLeaf = 5 unique nodes; got " + metadata.uniqueNodeCount());
+
+        // THE KEY ASSERTION: longest path is root→B→C→sharedLeaf = depth 3.
+        // Old visited-BFS would first reach sharedLeaf via root→A at depth 2, mark it visited,
+        // and never revisit it → returns maxDepth=2 (WRONG).
+        // Longest-path traversal must return 3.
+        assertEquals(3, metadata.maxDepth(),
+                     "True longest path root→B→C→sharedLeaf is depth 3; "
+                     + "visited-BFS would incorrectly return 2; got " + metadata.maxDepth());
+    }
+
+    /**
+     * Hasher that forces a 64-bit collision: all instances return the same first 8 bytes,
+     * but bytes[8] encodes the instance counter so full digests are distinct.
+     *
+     * <p>This simulates the birthday-bound collision scenario that the old code was
+     * vulnerable to: same truncated-long key, different structural content.
+     */
+    private static final class CollisionForcingHasher implements Hasher {
+        // All instances share the same 8-byte prefix — forces a 64-bit collision
+        private static final byte[] FIXED_PREFIX = new byte[]{0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42};
+
+        private final int instanceId;
+        // Accumulate input bytes so that nodes with different content still differ
+        // in bytes[9..31] of the digest (even though bytes[0..7] are always FIXED_PREFIX).
+        private int inputChecksum = 0;
+
+        CollisionForcingHasher(int instanceId) {
+            this.instanceId = instanceId;
+        }
+
+        @Override
+        public void update(byte value) {
+            inputChecksum = inputChecksum * 31 + value;
+        }
+
+        @Override
+        public void update(int value) {
+            inputChecksum = inputChecksum * 31 + value;
+        }
+
+        @Override
+        public void update(long value) {
+            inputChecksum = inputChecksum * 31 + Long.hashCode(value);
+        }
+
+        @Override
+        public byte[] digestBytes() {
+            // 32-byte digest: first 8 bytes always identical (forces 64-bit collision),
+            // bytes 8-11 encode inputChecksum (so distinct content yields distinct full digest),
+            // bytes 12-15 encode instanceId (extra uniqueness guard).
+            var result = new byte[32];
+            System.arraycopy(FIXED_PREFIX, 0, result, 0, 8);
+            result[8]  = (byte) (inputChecksum >> 24);
+            result[9]  = (byte) (inputChecksum >> 16);
+            result[10] = (byte) (inputChecksum >> 8);
+            result[11] = (byte) inputChecksum;
+            result[12] = (byte) (instanceId >> 24);
+            result[13] = (byte) (instanceId >> 16);
+            result[14] = (byte) (instanceId >> 8);
+            result[15] = (byte) instanceId;
+            return result;
+        }
     }
 }

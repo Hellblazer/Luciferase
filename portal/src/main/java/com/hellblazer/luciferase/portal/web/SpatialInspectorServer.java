@@ -1,7 +1,9 @@
 package com.hellblazer.luciferase.portal.web;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.esvo.io.VOLLoader;
 import com.hellblazer.luciferase.portal.web.dto.*;
+import com.hellblazer.luciferase.portal.web.service.EntityCapExceededException;
 import com.hellblazer.luciferase.portal.web.service.GpuService;
 import com.hellblazer.luciferase.portal.web.service.RenderService;
 import com.hellblazer.luciferase.portal.web.service.SpatialIndexService;
@@ -12,10 +14,15 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Web server for spatial inspector providing REST API for spatial operations.
@@ -34,13 +41,28 @@ public class SpatialInspectorServer {
     private static final Logger log = LoggerFactory.getLogger(SpatialInspectorServer.class);
     private static final int DEFAULT_PORT = 7071;
     private static final long SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    static final int MAX_SESSIONS = 100;
+    private static final long REAPER_PERIOD_MS = 60_000; // check every minute
+
+    /**
+     * Maximum number of entities allowed in a single bulk-insert array.
+     * Sized to comfortably admit legitimate large meshes (the Stanford Bunny voxelization is
+     * ~47,705 entities) while still bounding abuse. The 10 MB HTTP body cap
+     * ({@code config.http.maxRequestSize}) provides the primary request-size bound; this cap is the
+     * secondary element-count bound. Configurable via the 4-arg constructor.
+     */
+    static final int DEFAULT_MAX_BULK_INSERT = 100_000;
 
     private final Map<String, SpatialSession> sessions = new ConcurrentHashMap<>();
-    private final SpatialIndexService spatialService = new SpatialIndexService();
+    private final AtomicInteger sessionCount = new AtomicInteger(0);
+    private final SpatialIndexService spatialService;
+    private final int maxBulkInsert;
     private final RenderService renderService = new RenderService();
     private final GpuService gpuService = new GpuService();
     private final Javalin app;
     private final int port;
+    private final Clock clock;
+    private final ScheduledExecutorService reaperExecutor;
 
     /**
      * Create server with default port.
@@ -54,7 +76,37 @@ public class SpatialInspectorServer {
      * Use port 0 for dynamic port assignment (useful for testing).
      */
     public SpatialInspectorServer(int port) {
+        this(port, Clock.system());
+    }
+
+    /**
+     * Create server with specified port and clock.
+     * Use this constructor in tests to inject a {@link com.hellblazer.luciferase.common.time.Clock}
+     * for deterministic time control.
+     */
+    public SpatialInspectorServer(int port, Clock clock) {
+        this(port, clock, DEFAULT_MAX_BULK_INSERT, SpatialIndexService.DEFAULT_MAX_SESSION_ENTITIES);
+    }
+
+    /**
+     * Full constructor allowing cap configuration.
+     * Use in tests to lower caps without modifying defaults.
+     *
+     * @param port             listening port (0 = dynamic)
+     * @param clock            injectable clock for deterministic tests
+     * @param maxBulkInsert    maximum entities in a single bulk-insert request (→ 413 if exceeded)
+     * @param maxSessionEntities maximum total entities per session (→ 413 if exceeded)
+     */
+    public SpatialInspectorServer(int port, Clock clock, int maxBulkInsert, int maxSessionEntities) {
         this.port = port;
+        this.clock = clock;
+        this.maxBulkInsert = maxBulkInsert;
+        this.spatialService = new SpatialIndexService(maxSessionEntities);
+        this.reaperExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            var t = new Thread(r, "session-reaper");
+            t.setDaemon(true);
+            return t;
+        });
         this.app = createApp();
     }
 
@@ -84,6 +136,14 @@ public class SpatialInspectorServer {
         registerMeshEndpoints(javalin);
 
         // Exception handlers for specific types
+        javalin.exception(EntityCapExceededException.class, (e, ctx) -> {
+            ctx.status(413).json(Map.of(
+                "error", e.getMessage(),
+                "type", "PayloadTooLarge",
+                "timestamp", Instant.now().toString()
+            ));
+        });
+
         javalin.exception(NoSuchElementException.class, (e, ctx) -> {
             ctx.status(404).json(Map.of(
                 "error", e.getMessage(),
@@ -148,7 +208,17 @@ public class SpatialInspectorServer {
     }
 
     private void createSession(Context ctx) {
-        var session = SpatialSession.create();
+        // Atomically reserve a slot before creating the session to prevent TOCTOU overshoot.
+        if (sessionCount.incrementAndGet() > MAX_SESSIONS) {
+            sessionCount.decrementAndGet();
+            ctx.status(429).json(Map.of(
+                "error", "Session limit reached. Maximum " + MAX_SESSIONS + " concurrent sessions allowed.",
+                "type", "TooManyRequests",
+                "timestamp", Instant.now().toString()
+            ));
+            return;
+        }
+        var session = SpatialSession.create(clock);
         sessions.put(session.id(), session);
         log.info("Created session: {}", session.id());
         ctx.status(201).json(Map.of(
@@ -171,13 +241,13 @@ public class SpatialInspectorServer {
         }
 
         // Touch session to update lastAccessed
-        sessions.put(sessionId, session.touch());
+        sessions.put(sessionId, session.touch(clock));
 
         ctx.json(Map.of(
             "sessionId", session.id(),
             "created", session.created().toString(),
             "lastAccessed", session.lastAccessed().toString(),
-            "expired", session.isExpired(SESSION_TIMEOUT_MS)
+            "expired", session.isExpired(SESSION_TIMEOUT_MS, clock.currentTimeMillis())
         ));
     }
 
@@ -193,11 +263,9 @@ public class SpatialInspectorServer {
             return;
         }
 
-        try {
-            session.close();
-        } catch (Exception e) {
-            log.warn("Error closing session {}: {}", sessionId, e.getMessage());
-        }
+        // Only decrement when a session was actually present/removed — guards against double-decrement.
+        sessionCount.decrementAndGet();
+        cleanupSessionResources(sessionId);
 
         log.info("Deleted session: {}", sessionId);
         ctx.json(Map.of(
@@ -271,6 +339,11 @@ public class SpatialInspectorServer {
         validateSession(sessionId);
 
         var requests = ctx.bodyAsClass(InsertEntityRequest[].class);
+        if (requests.length > maxBulkInsert) {
+            throw new EntityCapExceededException(
+                    "Bulk-insert array length " + requests.length
+                    + " exceeds maximum of " + maxBulkInsert + " entities per request.");
+        }
         var entities = spatialService.insertEntities(sessionId, List.of(requests));
 
         ctx.status(201).json(Map.of(
@@ -580,6 +653,54 @@ public class SpatialInspectorServer {
 
     // ========== Helper Methods ==========
 
+    /**
+     * Release all per-session service-side resources for the given session ID.
+     * Safe to call multiple times — each guard check prevents double-free.
+     */
+    private void cleanupSessionResources(String sessionId) {
+        try {
+            if (gpuService.isGpuEnabled(sessionId)) {
+                gpuService.disableGpu(sessionId);
+            }
+        } catch (Exception e) {
+            log.warn("Error disabling GPU for session {}: {}", sessionId, e.getMessage());
+        }
+        try {
+            if (renderService.hasRender(sessionId)) {
+                renderService.deleteRender(sessionId);
+            }
+        } catch (Exception e) {
+            log.warn("Error deleting render for session {}: {}", sessionId, e.getMessage());
+        }
+        try {
+            if (spatialService.hasIndex(sessionId)) {
+                spatialService.deleteIndex(sessionId);
+            }
+        } catch (Exception e) {
+            log.warn("Error deleting spatial index for session {}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    /**
+     * Evict all sessions that have expired based on {@code SESSION_TIMEOUT_MS}.
+     * Calls {@link #cleanupSessionResources(String)} for each evicted session.
+     * <p>
+     * Package-private so tests can invoke it directly after advancing the injected clock,
+     * without waiting for the scheduler period.
+     */
+    void runReaper() {
+        long now = clock.currentTimeMillis();
+        sessions.entrySet().removeIf(entry -> {
+            if (entry.getValue().isExpired(SESSION_TIMEOUT_MS, now)) {
+                sessionCount.decrementAndGet();
+                cleanupSessionResources(entry.getKey());
+                log.info("Reaped expired session: {}", entry.getKey());
+                return true;
+            }
+            return false;
+        });
+    }
+
     private String requireSessionId(Context ctx) {
         var sessionId = ctx.queryParam("sessionId");
         if (sessionId == null || sessionId.isBlank()) {
@@ -589,14 +710,23 @@ public class SpatialInspectorServer {
     }
 
     private void validateSession(String sessionId) {
-        if (!sessions.containsKey(sessionId)) {
+        var session = sessions.get(sessionId);
+        if (session == null) {
             throw new NoSuchElementException("Session not found: " + sessionId);
         }
-        // Touch session to update lastAccessed
-        var session = sessions.get(sessionId);
-        if (session != null) {
-            sessions.put(sessionId, session.touch());
+        // Reject expired sessions rather than silently refreshing them
+        if (session.isExpired(SESSION_TIMEOUT_MS, clock.currentTimeMillis())) {
+            // Guard: only decrement (and clean up) when the remove actually succeeds —
+            // prevents double-decrement if two threads race to validate the same expired id.
+            var removed = sessions.remove(sessionId);
+            if (removed != null) {
+                sessionCount.decrementAndGet();
+                cleanupSessionResources(sessionId);
+            }
+            throw new NoSuchElementException("Session expired: " + sessionId);
         }
+        // Touch session to update lastAccessed
+        sessions.put(sessionId, session.touch(clock));
     }
 
     // ========== Server Lifecycle ==========
@@ -605,6 +735,7 @@ public class SpatialInspectorServer {
      * Start the server.
      */
     public void start() {
+        reaperExecutor.scheduleAtFixedRate(this::runReaper, REAPER_PERIOD_MS, REAPER_PERIOD_MS, TimeUnit.MILLISECONDS);
         app.start(port);
         var actualPort = app.port();
         log.info("=".repeat(70));
@@ -633,15 +764,22 @@ public class SpatialInspectorServer {
     public void stop() {
         log.info("Stopping Spatial Inspector Server...");
 
-        // Close all sessions
-        sessions.values().forEach(session -> {
-            try {
-                session.close();
-            } catch (Exception e) {
-                log.warn("Error closing session {}: {}", session.id(), e.getMessage());
-            }
-        });
+        // Shut down the reaper so no concurrent cleanup races with our full shutdown
+        reaperExecutor.shutdown();
+        try {
+            reaperExecutor.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        // Free all per-session service resources before clearing the map
+        var sessionIds = new ArrayList<>(sessions.keySet());
+        for (var id : sessionIds) {
+            cleanupSessionResources(id);
+        }
+        int cleared = sessionIds.size();
         sessions.clear();
+        sessionCount.addAndGet(-cleared);
 
         app.stop();
         log.info("Server stopped");
@@ -660,6 +798,26 @@ public class SpatialInspectorServer {
      */
     public Javalin app() {
         return app;
+    }
+
+    /** Package-private — test access to service state assertions. */
+    SpatialIndexService spatialService() {
+        return spatialService;
+    }
+
+    /** Package-private — test access to service state assertions. */
+    RenderService renderService() {
+        return renderService;
+    }
+
+    /** Package-private — test access to service state assertions. */
+    GpuService gpuService() {
+        return gpuService;
+    }
+
+    /** Package-private — test access to the session count (atomic counter, not map size). */
+    int sessionCount() {
+        return sessionCount.get();
     }
 
     /**

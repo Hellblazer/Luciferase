@@ -87,7 +87,8 @@ public class TwoNodeExample {
             // Phase 1: Initialize network channel
             var nodeId = UUID.randomUUID();
             var peerNodeId = UUID.randomUUID();
-            var networkChannel = new GrpcBubbleNetworkChannel();
+            // Explicit plaintext opt-in for demo (Luciferase-7wzml.200; mTLS: Luciferase-l9dny).
+            var networkChannel = new GrpcBubbleNetworkChannel(true);
             networkChannel.initialize(nodeId, "localhost:" + serverPort);
             networkChannel.registerNode(peerNodeId, "localhost:" + peerPort);
 

@@ -51,9 +51,13 @@ public interface SpatialBridge<D extends SpatialData> {
     /**
      * Result of a build operation, containing the data and build statistics.
      *
+     * <p>Use {@link #isSuccess()} as the authoritative success signal — never null-check
+     * the wrapper itself, since a failed result is still a non-null {@code BuildResult}.
+     *
      * @param <D> The spatial data type
      */
     record BuildResult<D extends SpatialData>(
+        boolean ok,
         D data,
         long buildTimeMs,
         int voxelCount,
@@ -68,10 +72,24 @@ public interface SpatialBridge<D extends SpatialData> {
         }
 
         /**
-         * Check if the build was successful (data is not null).
+         * Check if the build was successful.
+         * This is the authoritative success signal — do NOT use {@code result != null}
+         * or {@code result.data() != null} as a success check.
          */
         public boolean isSuccess() {
-            return data != null;
+            return ok;
+        }
+
+        /** Factory: successful result. */
+        public static <D extends SpatialData> BuildResult<D> success(D data, long buildTimeMs, int voxelCount,
+                                                                     String message) {
+            return new BuildResult<>(true, data, buildTimeMs, voxelCount, message);
+        }
+
+        /** Factory: failed result. */
+        public static <D extends SpatialData> BuildResult<D> failure(long buildTimeMs, int voxelCount,
+                                                                     String message) {
+            return new BuildResult<>(false, null, buildTimeMs, voxelCount, message);
         }
     }
 }

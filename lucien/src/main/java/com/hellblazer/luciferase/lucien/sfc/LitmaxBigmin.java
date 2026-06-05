@@ -171,7 +171,20 @@ public final class LitmaxBigmin {
      * Extends the interval as far as possible while all codes remain inside
      * the query box.
      *
-     * @param intervalStart the start of the interval
+     * <p>Uses an O(bits²) aligned-block walk instead of a O(range) linear scan.
+     * At each step the highest power-of-2-aligned block starting at {@code end+1}
+     * that is entirely within the box is consumed in a single jump, giving
+     * O(log range) outer iterations and O(bits) inner checks per iteration —
+     * bounded in total by O(bits²) ≈ 4 000 operations regardless of range size.
+     *
+     * <p>A Morton-aligned block [base, base+2ᵏ-1] where {@code base} has its
+     * lower k bits all zero has analytically-computable per-dimension coordinate
+     * ranges: dimension d spans
+     * {@code [baseCoord_d, baseCoord_d | freeMask_d]} where
+     * {@code freeMask_d = (1 << ceil((k-d)/3)) - 1}.  The block is entirely
+     * in the query box iff every dimension's range fits within [minD, maxD].
+     *
+     * @param intervalStart the start of the interval (must be inside the query box)
      * @param minX          minimum X coordinate
      * @param minY          minimum Y coordinate
      * @param minZ          minimum Z coordinate
@@ -183,21 +196,85 @@ public final class LitmaxBigmin {
      */
     public static long findIntervalEnd(long intervalStart, int minX, int minY, int minZ,
                                         int maxX, int maxY, int maxZ, long maxMorton) {
-        var current = intervalStart;
-        while (current < maxMorton) {
-            var next = current + 1;
-            var coords = MortonCurve.decode(next);
+        long end = intervalStart;
 
-            // Check if next is still in query
-            if (coords[0] >= minX && coords[0] <= maxX &&
-                coords[1] >= minY && coords[1] <= maxY &&
-                coords[2] >= minZ && coords[2] <= maxZ) {
-                current = next;
-            } else {
+        while (end < maxMorton) {
+            long next = end + 1;
+
+            // Largest power-of-2 alignment of `next`: next is 2^k-aligned.
+            // numberOfTrailingZeros(next) is safe here: next >= 1 always (end >= 0),
+            // and we have end < maxMorton <= Long.MAX_VALUE, so next <= Long.MAX_VALUE.
+            int k = Long.numberOfTrailingZeros(next);
+
+            // Clamp so the block fits within maxMorton.
+            // (1L << k) - 1 can overflow for k=63, but ntz(next) <= 62 for next >= 2,
+            // and for next = 1 (end=0) ntz = 0 so k=0 and no clamping needed.
+            while (k > 0 && next + (1L << k) - 1 > maxMorton) {
+                k--;
+            }
+
+            // Try the largest aligned block first; shrink until one fits in the box or
+            // even a single code (k=0) is outside — in which case the run ends.
+            boolean extended = false;
+            while (k >= 0) {
+                if (isAlignedBlockInBox(next, k, minX, minY, minZ, maxX, maxY, maxZ)) {
+                    end = next + (1L << k) - 1;
+                    extended = true;
+                    break;
+                }
+                k--;
+            }
+            if (!extended) {
                 break;
             }
         }
-        return current;
+
+        return end;
+    }
+
+    /**
+     * Test whether a 2ᵏ-aligned Morton block is entirely inside the query box.
+     *
+     * <p>{@code base} must satisfy {@code (base & ((1L<<k)-1)) == 0}, i.e. its
+     * lower {@code k} Morton bits are zero.  Under that condition the decoded
+     * coordinate for dimension {@code d} spans
+     * {@code [baseCoord_d,  baseCoord_d | freeMask_d]} where
+     * {@code freeMask_d = (1 << ceil((k-d)/3)) - 1} for {@code k > d}, else 0.
+     *
+     * @param base  first Morton code of the block (2ᵏ-aligned)
+     * @param k     log₂ of the block size; k=0 means a single code
+     * @param minX  query box minimum X
+     * @param minY  query box minimum Y
+     * @param minZ  query box minimum Z
+     * @param maxX  query box maximum X
+     * @param maxY  query box maximum Y
+     * @param maxZ  query box maximum Z
+     * @return true iff every Morton code in [base, base+2ᵏ-1] decodes to a
+     *         coordinate inside the query box
+     */
+    static boolean isAlignedBlockInBox(long base, int k,
+                                        int minX, int minY, int minZ,
+                                        int maxX, int maxY, int maxZ) {
+        int[] baseCoords = MortonCurve.decode(base);
+        int[] lo = { minX, minY, minZ };
+        int[] hi = { maxX, maxY, maxZ };
+
+        for (int d = 0; d < 3; d++) {
+            // Number of free bits for dimension d in a 2^k block:
+            //   free bits are Morton positions p < k with p%3 == d,
+            //   i.e. levels {0, 1, ..., ceil((k-d)/3)-1} — count = ceil((k-d)/3).
+            // Integer formula: (k - d + 2) / 3  (matches ceil((k-d)/3) for k > d).
+            int freeLen = (k > d) ? ((k - d + 2) / 3) : 0;
+            int freeMask = (1 << freeLen) - 1;  // freeLen <= 21 (MAX_REFINEMENT_LEVEL), no overflow
+
+            int minCoord = baseCoords[d];           // lower free bits are 0 in aligned base
+            int maxCoord = baseCoords[d] | freeMask;
+
+            if (minCoord < lo[d] || maxCoord > hi[d]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

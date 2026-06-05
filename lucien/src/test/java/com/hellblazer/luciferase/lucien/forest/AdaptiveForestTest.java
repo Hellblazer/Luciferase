@@ -19,11 +19,14 @@ package com.hellblazer.luciferase.lucien.forest;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -412,7 +415,46 @@ public class AdaptiveForestTest {
         assertEquals(500, config.getDensityCheckInterval());
         assertFalse(config.isAutoSubdivisionEnabled());
         assertTrue(config.isAutoMergingEnabled());
-        assertEquals(AdaptiveForest.AdaptationConfig.SubdivisionStrategy.BINARY_Y, 
+        assertEquals(AdaptiveForest.AdaptationConfig.SubdivisionStrategy.BINARY_Y,
                     config.getSubdivisionStrategy());
+    }
+
+    @Test
+    void testClockInjectionDeterminesEventTimestamp() {
+        // Inject a fixed TestClock so ForestEvent timestamps are deterministic
+        var testClock = new TestClock(42_000L);
+        adaptiveForest.setClock(testClock);
+
+        // Collect TreeAdded events
+        List<ForestEvent> captured = new ArrayList<>();
+        adaptiveForest.addEventListener(captured::add);
+
+        // addTree uses clock.currentTimeMillis() for the TreeAdded timestamp
+        var tree = new Octree<LongEntityID, String>(idGenerator);
+        var metadata = TreeMetadata.builder()
+            .name("ClockTestTree")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .build();
+        adaptiveForest.addTree(tree, metadata);
+
+        // Advance clock and add a second tree — its event must carry the new time
+        testClock.setTime(99_000L);
+        var tree2 = new Octree<LongEntityID, String>(idGenerator);
+        var metadata2 = TreeMetadata.builder()
+            .name("ClockTestTree2")
+            .treeType(TreeMetadata.TreeType.OCTREE)
+            .build();
+        adaptiveForest.addTree(tree2, metadata2);
+
+        var addedEvents = captured.stream()
+            .filter(e -> e instanceof ForestEvent.TreeAdded)
+            .map(e -> (ForestEvent.TreeAdded) e)
+            .toList();
+
+        assertEquals(2, addedEvents.size(), "Expected 2 TreeAdded events");
+        assertEquals(42_000L, addedEvents.get(0).timestamp(),
+            "First TreeAdded must use injected clock time 42000");
+        assertEquals(99_000L, addedEvents.get(1).timestamp(),
+            "Second TreeAdded must use advanced clock time 99000");
     }
 }

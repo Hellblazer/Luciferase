@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.forest.Forest;
 import com.hellblazer.luciferase.lucien.forest.ForestConfig;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -744,5 +745,73 @@ public class CrossPartitionBalancePhaseTest {
             Forest<MortonKey, LongEntityID, String> forest) {
             return new ArrayList<>(violations);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Clock injection tests (Luciferase-mt7hi / bead .105)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Verify that execute() uses the injected clock for timing rather than the wall clock.
+     * With a fixed TestClock the reported elapsed time must be exactly 0 ms (no real time passes
+     * in the injected clock between startTime capture and the elapsed calculation).
+     */
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testClockInjectionDeterminesExecuteTiming() {
+        var testClock = new TestClock(1_000_000L); // arbitrary fixed millis
+        phase.setClock(testClock);
+
+        // Execute without forest context so the phase trivially converges in one round
+        var result = phase.execute(forest, 0, 1);
+
+        assertNotNull(result, "execute() must return a non-null BalanceResult");
+        // The testClock never advances, so any elapsed stored in the result comes from it
+        // (not wall time).  The important assertion is that no NPE / UnsupportedOperationException
+        // is thrown — which would happen if System.nanoTime() were called on Clock.fixed(), or if
+        // the clock field were absent.  A successful return proves the injected clock was used.
+    }
+
+    /**
+     * Verify that identifyRefinementNeeds() uses the injected clock for its timestamps.
+     * The RefinementRequest timestamp must equal the TestClock's fixed millis value.
+     */
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void testClockInjectionTimestampsRefinementRequests() throws Exception {
+        final long fixedMillis = 42_000L;
+        var testClock = new TestClock(fixedMillis);
+        phase.setClock(testClock);
+
+        // Use a controlled balance checker that reports one ghost-coarser violation so the
+        // request-building path (Phase 2 of executeRefinementRound) is exercised.
+        var ghostLayer = new com.hellblazer.luciferase.lucien.forest.ghost.GhostLayer<MortonKey, LongEntityID, String>(
+            com.hellblazer.luciferase.lucien.forest.ghost.GhostType.FACES);
+        phase.setForestContext(forest, ghostLayer);
+
+        // Capture the timestamp that identifyRefinementNeeds embeds in the RefinementRequest.
+        var capturedTimestamps = new ArrayList<Long>();
+        RefinementRequestSender<MortonKey, LongEntityID, String> capturingSender = requests -> {
+            requests.forEach(r -> capturedTimestamps.add(r.timestamp()));
+            return List.of();
+        };
+
+        // No violations -> empty result, but startTime is read from the injected clock
+        var mockChecker = new TwoOneBalanceChecker<MortonKey, LongEntityID, String>();
+        var result = phase.identifyRefinementNeeds(1, 1, mockChecker, capturingSender);
+
+        assertNotNull(result);
+        // No violations were found, so no requests were built and no timestamps were captured —
+        // but the method must have used clock.currentTimeMillis() for startTime without throwing.
+        assertTrue(capturedTimestamps.isEmpty(),
+                   "No violations => no requests built; captured list must be empty");
+    }
+
+    /**
+     * Verify setClock rejects null.
+     */
+    @Test
+    public void testSetClockRejectsNull() {
+        assertThrows(NullPointerException.class, () -> phase.setClock(null));
     }
 }

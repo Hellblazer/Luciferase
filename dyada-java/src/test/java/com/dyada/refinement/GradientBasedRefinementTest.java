@@ -232,4 +232,34 @@ class GradientBasedRefinementTest {
         var decision = strategy.analyzeCell(context, fieldValues, criteria);
         assertNotNull(decision);
     }
+
+    @Test
+    @DisplayName("validateRefinementDecisions must check ALL dimensions, not just dimension 0")
+    void testValidateUsesMaxLevelAcrossAllDimensions() {
+        // Cell at dimension-0 level 2 (below maxLevel=10), but dimension-1 level 10 (AT maxLevel).
+        // A REFINE decision must be rejected because dim-1 is already at max.
+        // The bug: getLevel(0) returns 2, so the old code incorrectly accepts the REFINE.
+        var atMaxInDim1 = new LevelIndex(
+            new byte[]{2, 10},   // dim-0 level=2 (fine), dim-1 level=10 (= maxLevel)
+            new long[]{0, 0}
+        );
+        var decisions = Map.of(atMaxInDim1, AdaptiveRefinementStrategy.RefinementDecision.REFINE);
+        assertFalse(strategy.validateRefinementDecisions(decisions),
+            "REFINE on a cell at maxLevel in dim-1 must be rejected; hard-coded getLevel(0) would incorrectly accept it");
+    }
+
+    @Test
+    @DisplayName("validateRefinementDecisions must check ALL dimensions for COARSEN min-level")
+    void testValidateUsesMinLevelAcrossAllDimensions() {
+        // Cell at dimension-0 level 2 (above minLevel=0), but dimension-1 level 0 (= minLevel).
+        // A COARSEN decision must be rejected because dim-1 is already at min.
+        // The bug: getLevel(0) returns 2, so the old code incorrectly accepts the COARSEN.
+        var atMinInDim1 = new LevelIndex(
+            new byte[]{2, 0},    // dim-0 level=2 (fine), dim-1 level=0 (= minLevel)
+            new long[]{0, 0}
+        );
+        var decisions = Map.of(atMinInDim1, AdaptiveRefinementStrategy.RefinementDecision.COARSEN);
+        assertFalse(strategy.validateRefinementDecisions(decisions),
+            "COARSEN on a cell at minLevel in dim-1 must be rejected; hard-coded getLevel(0) would incorrectly accept it");
+    }
 }

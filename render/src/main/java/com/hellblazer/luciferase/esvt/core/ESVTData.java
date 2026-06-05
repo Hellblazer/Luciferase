@@ -176,7 +176,12 @@ public record ESVTData(
      */
     public int resolveChildPtr(ESVTNodeUnified node) {
         int ptr = node.getChildPtr();
-        if (node.isFar() && farPointers != null && ptr < farPointers.length) {
+        if (node.isFar()) {
+            if (farPointers == null || ptr >= farPointers.length) {
+                throw new IllegalStateException(
+                    "Far node requires far-pointer table but table is "
+                    + (farPointers == null ? "null" : "too short (length=" + farPointers.length + ", ptr=" + ptr + ")"));
+            }
             return farPointers[ptr];
         }
         return ptr;
@@ -257,47 +262,6 @@ public record ESVTData(
      */
     public ByteBuffer toByteBuffer() {
         return nodesToByteBuffer();
-    }
-
-    /**
-     * Create ESVTData from ByteBuffers.
-     *
-     * @param nodeBuffer Buffer containing packed node data
-     * @param contourBuffer Buffer containing packed contour data (may be null)
-     * @param nodeCount Number of nodes to read
-     * @param contourCount Number of contours to read
-     * @param rootType Root tetrahedron type
-     * @param maxDepth Maximum tree depth
-     * @param leafCount Number of leaf nodes
-     * @param internalCount Number of internal nodes
-     * @return ESVTData instance
-     */
-    public static ESVTData fromByteBuffers(ByteBuffer nodeBuffer, ByteBuffer contourBuffer,
-                                           int nodeCount, int contourCount,
-                                           int rootType, int maxDepth,
-                                           int leafCount, int internalCount) {
-        var nodes = new ESVTNodeUnified[nodeCount];
-        for (int i = 0; i < nodeCount; i++) {
-            nodes[i] = ESVTNodeUnified.fromByteBuffer(nodeBuffer);
-        }
-
-        int[] contours = new int[contourCount];
-        if (contourBuffer != null && contourCount > 0) {
-            for (int i = 0; i < contourCount; i++) {
-                contours[i] = contourBuffer.getInt();
-            }
-        }
-
-        return new ESVTData(nodes, contours, rootType, maxDepth, leafCount, internalCount);
-    }
-
-    /**
-     * Legacy method for backward compatibility.
-     */
-    public static ESVTData fromByteBuffer(ByteBuffer buffer, int nodeCount,
-                                          int rootType, int maxDepth,
-                                          int leafCount, int internalCount) {
-        return fromByteBuffers(buffer, null, nodeCount, 0, rootType, maxDepth, leafCount, internalCount);
     }
 
     @Override

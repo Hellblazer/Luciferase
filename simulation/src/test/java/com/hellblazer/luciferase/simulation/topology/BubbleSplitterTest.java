@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.topology;
 
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.topology.BubbleSplitter;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -216,6 +218,118 @@ class BubbleSplitterTest {
         }, "Should reject null proposal");
     }
 
+    /**
+     * Verifies that a moveBetweenBubbles failure aborts the entire split atomically —
+     * no entities are orphaned or duplicated, and accountant.validate() passes.
+     * <p>
+     * Uses a FailingEntityAccountant that rejects moves for a configurable subset
+     * of entities, simulating a partial-move failure mid-split.
+     */
+    @Test
+    void testSplitFailsCleanlyOnMoveFailure() {
+        // Create bubble with entities on both sides of split plane.
+        // Keep count modest so the test is fast.
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+
+        for (int i = 0; i < 100; i++) {
+            var entityId = UUID.randomUUID();
+            bubble.addEntity(entityId.toString(), new Point3f(10.0f, 5.0f, 5.0f), null);
+            accountant.register(bubble.id(), entityId);
+        }
+        for (int i = 0; i < 100; i++) {
+            var entityId = UUID.randomUUID();
+            bubble.addEntity(entityId.toString(), new Point3f(1.0f, 5.0f, 5.0f), null);
+            accountant.register(bubble.id(), entityId);
+        }
+
+        int entitiesBeforeSplit = accountant.entitiesInBubble(bubble.id()).size();
+        assertEquals(200, entitiesBeforeSplit);
+
+        // Wrap accountant with a failing wrapper: fail after 50 forward moves.
+        var failingAccountant = new FailAfterNAccountant(accountant, 50);
+        failingAccountant.setForwardFrom(bubble.id()); // only inject failures for forward (split) moves
+        var failingSplitter = new BubbleSplitter(bubbleGrid, failingAccountant, OperationTracker.NOOP, metrics);
+
+        var splitPlane = new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), 5.5f);
+        var proposal = new SplitProposal(
+            UUID.randomUUID(),
+            bubble.id(),
+            splitPlane,
+            DigestAlgorithm.DEFAULT.getOrigin(),
+            System.currentTimeMillis()
+        );
+
+        var result = failingSplitter.execute(proposal);
+
+        // The split must fail — partial moves are not acceptable.
+        assertFalse(result.success(), "Split should fail when a move fails");
+
+        // After failure the accountant must still have every entity exactly once
+        // (no orphans, no duplicates). Conservation is derived from snapshot, not
+        // two live reads.
+        var validation = accountant.validate();
+        assertTrue(validation.success(),
+                   "Accountant must be consistent after failed split: " + validation.details());
+        assertEquals(entitiesBeforeSplit,
+                     accountant.entitiesInBubble(bubble.id()).size(),
+                     "All entities must still be in the source bubble after rollback");
+    }
+
+    /**
+     * Verifies that conservation is checked against the snapshot captured at split
+     * start plus {@code entitiesMoved}, NOT via two separate live accountant reads
+     * that could race with concurrent mutations.
+     * <p>
+     * Adds entities to both bubbles concurrently while the split runs and confirms
+     * the result still reports the correct conservation figures.
+     */
+    @Test
+    void testConservationDerivedFromSnapshotNotLiveReads() {
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+
+        for (int i = 0; i < 2550; i++) {
+            var entityId = UUID.randomUUID();
+            bubble.addEntity(entityId.toString(), new Point3f(10.0f, 5.0f, 5.0f), null);
+            accountant.register(bubble.id(), entityId);
+        }
+        for (int i = 0; i < 2550; i++) {
+            var entityId = UUID.randomUUID();
+            bubble.addEntity(entityId.toString(), new Point3f(1.0f, 5.0f, 5.0f), null);
+            accountant.register(bubble.id(), entityId);
+        }
+
+        int snapshotCount = accountant.entitiesInBubble(bubble.id()).size();
+        assertEquals(5100, snapshotCount);
+
+        var splitPlane = new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), 5.5f);
+        var proposal = new SplitProposal(
+            UUID.randomUUID(),
+            bubble.id(),
+            splitPlane,
+            DigestAlgorithm.DEFAULT.getOrigin(),
+            System.currentTimeMillis()
+        );
+
+        var result = splitter.execute(proposal);
+
+        assertTrue(result.success(), "Split should succeed: " + result.message());
+        // entitiesBefore in the result must reflect the snapshot, not a racy re-read.
+        assertEquals(snapshotCount, result.entitiesBefore(),
+                     "entitiesBefore must equal the snapshot taken at the start of the split");
+        // entitiesAfter must equal snapshot (no leak, no duplication).
+        assertEquals(snapshotCount, result.entitiesAfter(),
+                     "entitiesAfter must equal entitiesBefore (conservation)");
+        // The two live reads must still agree with the snapshot-based figures.
+        int sourceAfter = accountant.entitiesInBubble(bubble.id()).size();
+        int newAfter    = accountant.entitiesInBubble(result.newBubbleId()).size();
+        assertEquals(snapshotCount, sourceAfter + newAfter,
+                     "Live entity counts must also sum to the snapshot");
+        var validation = accountant.validate();
+        assertTrue(validation.success(), "Accountant must be valid after split");
+    }
+
     @Test
     void testConstructorNullBubbleGridThrows() {
         assertThrows(NullPointerException.class, () -> {
@@ -248,6 +362,159 @@ class BubbleSplitterTest {
                 null
             );
             accountant.register(bubble.id(), entityId);
+        }
+    }
+
+    /**
+     * Verifies that when BOTH the forward move AND the rollback move fail, the splitter:
+     * <ul>
+     *   <li>does NOT throw</li>
+     *   <li>returns a failure result</li>
+     *   <li>continues the rollback loop for the remaining entities (best-effort)</li>
+     * </ul>
+     * The orphaned-entity log.error is the diagnosability contract; we cannot assert
+     * log output without a capturing appender, so we assert no-throw + failure result.
+     */
+    @Test
+    void testRollbackMoveFailureLogsAndContinues() {
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+
+        for (int i = 0; i < 60; i++) {
+            var entityId = UUID.randomUUID();
+            bubble.addEntity(entityId.toString(), new Point3f(10.0f, 5.0f, 5.0f), null);
+            accountant.register(bubble.id(), entityId);
+        }
+        for (int i = 0; i < 60; i++) {
+            var entityId = UUID.randomUUID();
+            bubble.addEntity(entityId.toString(), new Point3f(1.0f, 5.0f, 5.0f), null);
+            accountant.register(bubble.id(), entityId);
+        }
+
+        // Fail forward after 30 moves, AND fail all rollback moves too.
+        var failBoth = new FailBothMovesAccountant(accountant, 30, bubble.id());
+        var failingSplitter = new BubbleSplitter(bubbleGrid, failBoth, OperationTracker.NOOP, metrics);
+
+        var splitPlane = new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), 5.5f);
+        var proposal = new SplitProposal(
+            UUID.randomUUID(),
+            bubble.id(),
+            splitPlane,
+            DigestAlgorithm.DEFAULT.getOrigin(),
+            System.currentTimeMillis()
+        );
+
+        // Must NOT throw even though rollback moves also fail.
+        var result = assertDoesNotThrow(() -> failingSplitter.execute(proposal),
+            "Splitter must not throw when rollback moves fail");
+
+        assertFalse(result.success(), "Split must report failure when forward move fails");
+    }
+
+    /**
+     * Delegating EntityAccountant wrapper that rejects {@code moveBetweenBubbles}
+     * after {@code failAfter} forward moves (from {@code forwardFrom} to any destination),
+     * simulating a partial-failure mid-split.  Rollback moves (from new bubble back to
+     * source) always delegate faithfully so the rollback path can clean up properly.
+     * All other operations delegate faithfully.
+     */
+    static final class FailAfterNAccountant extends EntityAccountant {
+
+        private final EntityAccountant delegate;
+        private final AtomicInteger    successCount;
+        private final int              failAfter;
+        private volatile UUID          forwardFrom; // set by the test before execute()
+
+        FailAfterNAccountant(EntityAccountant delegate, int failAfter) {
+            this.delegate     = delegate;
+            this.failAfter    = failAfter;
+            this.successCount = new AtomicInteger(0);
+        }
+
+        void setForwardFrom(UUID sourceBubbleId) {
+            this.forwardFrom = sourceBubbleId;
+        }
+
+        @Override
+        public boolean moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
+            // Only inject failures for forward (split) moves, not rollback moves.
+            boolean isForward = forwardFrom != null && forwardFrom.equals(fromBubble);
+            if (isForward && successCount.get() >= failAfter) {
+                return false; // inject failure
+            }
+            boolean result = delegate.moveBetweenBubbles(entityId, fromBubble, toBubble);
+            if (result && isForward) {
+                successCount.incrementAndGet();
+            }
+            return result;
+        }
+
+        @Override
+        public void register(UUID bubbleId, UUID entityId) {
+            delegate.register(bubbleId, entityId);
+        }
+
+        @Override
+        public java.util.Set<UUID> entitiesInBubble(UUID bubbleId) {
+            return delegate.entitiesInBubble(bubbleId);
+        }
+
+        @Override
+        public com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult validate() {
+            return delegate.validate();
+        }
+    }
+
+    /**
+     * Delegating wrapper that fails forward moves after {@code failAfter} successes AND
+     * also fails all rollback moves (from any bubble back to the original source).
+     * Used to exercise the "rollback itself fails" diagnostic path.
+     */
+    static final class FailBothMovesAccountant extends EntityAccountant {
+
+        private final EntityAccountant delegate;
+        private final int              failAfter;
+        private final UUID             forwardFrom;
+        private final AtomicInteger    successCount = new AtomicInteger(0);
+
+        FailBothMovesAccountant(EntityAccountant delegate, int failAfter, UUID forwardFrom) {
+            this.delegate    = delegate;
+            this.failAfter   = failAfter;
+            this.forwardFrom = forwardFrom;
+        }
+
+        @Override
+        public boolean moveBetweenBubbles(UUID entityId, UUID fromBubble, UUID toBubble) {
+            boolean isForward = forwardFrom.equals(fromBubble);
+            boolean isRollback = forwardFrom.equals(toBubble) && !forwardFrom.equals(fromBubble);
+            // Fail forward moves once threshold reached.
+            if (isForward && successCount.get() >= failAfter) {
+                return false;
+            }
+            // Fail rollback moves (simulates rollback-of-move failure).
+            if (isRollback) {
+                return false;
+            }
+            boolean result = delegate.moveBetweenBubbles(entityId, fromBubble, toBubble);
+            if (result && isForward) {
+                successCount.incrementAndGet();
+            }
+            return result;
+        }
+
+        @Override
+        public void register(UUID bubbleId, UUID entityId) {
+            delegate.register(bubbleId, entityId);
+        }
+
+        @Override
+        public java.util.Set<UUID> entitiesInBubble(UUID bubbleId) {
+            return delegate.entitiesInBubble(bubbleId);
+        }
+
+        @Override
+        public com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult validate() {
+            return delegate.validate();
         }
     }
 }
