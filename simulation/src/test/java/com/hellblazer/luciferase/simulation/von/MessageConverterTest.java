@@ -22,6 +22,8 @@ import com.hellblazer.luciferase.simulation.distributed.migration.IdempotencyTok
 import javax.vecmath.Point3d;
 import org.junit.jupiter.api.Test;
 
+import com.hellblazer.luciferase.simulation.von.MigrationProtocolMessages;
+
 import java.util.ArrayList;
 import java.util.UUID;
 
@@ -290,6 +292,97 @@ class MessageConverterTest {
         assertInstanceOf(Message.GhostSync.class, recovered);
         var recoveredGhostSync = (Message.GhostSync) recovered;
         assertEquals(0, recoveredGhostSync.ghosts().size());
+    }
+
+    // ---- Migration subtype round-trips (Luciferase-7wzml.180) ----
+    // Each test asserts exact field-by-field equality to pin the slot contract
+    // (positional-overload reuse across subtypes — see MessageConverter comments).
+
+    @Test
+    void testPrepareResponseRoundTrip() {
+        var txId = UUID.randomUUID();
+        var destProcessId = UUID.randomUUID();
+        var msg = new MigrationProtocolMessages.PrepareResponse(
+            txId, true, null, destProcessId, 5000L);
+
+        var recovered = (MigrationProtocolMessages.PrepareResponse)
+            MessageConverter.fromTransport(MessageConverter.toTransport(msg));
+
+        assertEquals(txId, recovered.transactionId());
+        assertTrue(recovered.success());
+        assertNull(recovered.reason());
+        assertEquals(destProcessId, recovered.destProcessId());
+        assertEquals(5000L, recovered.timestamp());
+    }
+
+    @Test
+    void testPrepareResponseFailureRoundTrip() {
+        var txId = UUID.randomUUID();
+        var msg = new MigrationProtocolMessages.PrepareResponse(
+            txId, false, "capacity full", null, 6000L);
+
+        var recovered = (MigrationProtocolMessages.PrepareResponse)
+            MessageConverter.fromTransport(MessageConverter.toTransport(msg));
+
+        assertEquals(txId, recovered.transactionId());
+        assertFalse(recovered.success());
+        assertEquals("capacity full", recovered.reason());
+        assertNull(recovered.destProcessId());
+    }
+
+    @Test
+    void testCommitRequestRoundTrip() {
+        var txId = UUID.randomUUID();
+        var msg = new MigrationProtocolMessages.CommitRequest(txId, true, 7000L);
+
+        var recovered = (MigrationProtocolMessages.CommitRequest)
+            MessageConverter.fromTransport(MessageConverter.toTransport(msg));
+
+        assertEquals(txId, recovered.transactionId());
+        assertTrue(recovered.confirmed());
+        assertEquals(7000L, recovered.timestamp());
+    }
+
+    @Test
+    void testCommitResponseRoundTrip() {
+        var txId = UUID.randomUUID();
+        var msg = new MigrationProtocolMessages.CommitResponse(txId, true, null, 8000L);
+
+        var recovered = (MigrationProtocolMessages.CommitResponse)
+            MessageConverter.fromTransport(MessageConverter.toTransport(msg));
+
+        assertEquals(txId, recovered.transactionId());
+        assertTrue(recovered.success());
+        assertNull(recovered.reason());
+        assertEquals(8000L, recovered.timestamp());
+    }
+
+    @Test
+    void testAbortRequestRoundTrip() {
+        var txId = UUID.randomUUID();
+        var msg = new MigrationProtocolMessages.AbortRequest(txId, "destination unreachable", 9000L);
+
+        var recovered = (MigrationProtocolMessages.AbortRequest)
+            MessageConverter.fromTransport(MessageConverter.toTransport(msg));
+
+        assertEquals(txId, recovered.transactionId());
+        assertEquals("destination unreachable", recovered.reason());
+        assertEquals(9000L, recovered.timestamp());
+    }
+
+    @Test
+    void testAbortResponseRoundTrip() {
+        // Slot reuse: rolledBack is stored in the 'success' slot of TransportMigrationMessage.
+        // Verify the round-trip preserves the boolean correctly.
+        var txId = UUID.randomUUID();
+        var msg = new MigrationProtocolMessages.AbortResponse(txId, true, 10000L);
+
+        var recovered = (MigrationProtocolMessages.AbortResponse)
+            MessageConverter.fromTransport(MessageConverter.toTransport(msg));
+
+        assertEquals(txId, recovered.transactionId());
+        assertTrue(recovered.rolledBack(), "rolledBack must survive the success-slot round-trip");
+        assertEquals(10000L, recovered.timestamp());
     }
 
     // ---- EntitySnapshot content fidelity (Luciferase-7wzml.179) ----

@@ -186,11 +186,67 @@ class AffineTransformationTest {
     
     @Test
     void testComposeWithOtherTransformation() {
-        var affine = new AffineTransformation(scaling2D, translation2D);
+        // translate-then-scale is NOT commutative: order must be pinned.
+        // affine = translate by (1,2); other = scale by (3,4)
+        // Expected: this-then-other = scale(translate(x))
+        //   input (0,0) -> translate -> (1,2) -> scale -> (3,8)
+        // Wrong order (other-then-this) would give: translate(scale(0,0)) = (1,2)
+        var affine = AffineTransformation.translation(1.0, 2.0);
         var other = new ScalingTransformation(3.0, 4.0);
-        
+
         var composed = affine.compose(other);
         assertTrue(composed instanceof CompositeTransformation);
+
+        try {
+            var result = composed.transform(new Coordinate(new double[]{0.0, 0.0}));
+            assertArrayEquals(new double[]{3.0, 8.0}, result.values(), 1e-10,
+                "compose(other) must apply this first then other: translate(0,0)=(1,2), scale=(3,8)");
+        } catch (TransformationException e) {
+            fail("Transformation should not fail", e);
+        }
+    }
+
+    /**
+     * Pins that the affine fast path (both operands are AffineTransformation) and the
+     * CompositeTransformation slow path (non-affine operand) agree on composition order.
+     * Uses translate-then-scale (non-commutative) to catch any reversal.
+     */
+    @Test
+    void testComposeOrderConsistentBetweenFastAndSlowPath() {
+        // Fast path: affine.compose(affineEquivalentOfScaling)
+        // Slow path: affine.compose(nonAffineScaling) [ScalingTransformation is not AffineTransformation]
+        // Both must produce the same result: translate first, then scale.
+        double tx = 1.0, ty = 2.0, sx = 3.0, sy = 4.0;
+
+        var translateAffine = AffineTransformation.translation(tx, ty);
+        // Build an AffineTransformation equivalent to non-uniform scaling by sx, sy (zero translation)
+        var scaleAffine = new AffineTransformation(LinearTransformation.scale(sx, sy), new double[]{0.0, 0.0});
+        // Build a non-affine ScalingTransformation for the same scaling
+        var scaleNonAffine = new ScalingTransformation(sx, sy);
+
+        var fastPath = translateAffine.compose(scaleAffine);   // AffineTransformation fast path
+        var slowPath = translateAffine.compose(scaleNonAffine); // CompositeTransformation slow path
+
+        assertTrue(fastPath instanceof AffineTransformation, "fast path should stay AffineTransformation");
+        assertTrue(slowPath instanceof CompositeTransformation, "slow path should be CompositeTransformation");
+
+        var inputs = new double[][]{
+            {0.0, 0.0},   // translate->(1,2)->scale->(3,8)
+            {1.0, 1.0},   // translate->(2,3)->scale->(6,12)
+            {-1.0, 0.0},  // translate->(0,2)->scale->(0,8)
+        };
+
+        for (var input : inputs) {
+            try {
+                var src = new Coordinate(input);
+                var fast = fastPath.transform(src);
+                var slow = slowPath.transform(src);
+                assertArrayEquals(fast.values(), slow.values(), 1e-10,
+                    "fast path and slow path must agree for input (" + input[0] + "," + input[1] + ")");
+            } catch (TransformationException e) {
+                fail("Transformation should not fail for input (" + input[0] + "," + input[1] + ")", e);
+            }
+        }
     }
     
     @Test

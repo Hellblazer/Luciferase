@@ -206,6 +206,73 @@ public class SpatialNodePoolTest {
     }
 
     /**
+     * Concurrent shrink/acquire must not desync currentSize from actual queue depth.
+     * Regression for Luciferase-7wzml.126: shrink() polled and decremented non-atomically,
+     * allowing concurrent acquire() to race with the poll, leaving currentSize negative
+     * or mismatched vs the actual queue contents.
+     */
+    @Test
+    void concurrentShrinkAndAcquire_counterStaysConsistent() throws InterruptedException {
+        int maxSize = 50;
+        int initialFill = maxSize;
+        int targetShrink = 10;
+        int nAcquireThreads = 8;
+        int nShrinkThreads = 4;
+
+        SpatialNodePool<LongEntityID> stressPool = new SpatialNodePool<>(
+            () -> new SpatialNodeImpl<>(10),
+            new SpatialNodePool.PoolConfig()
+                .withInitialSize(0)
+                .withMaxSize(maxSize)
+                .withPreAllocation(false)
+                .withStatistics(false)
+        );
+
+        // Pre-fill pool
+        for (int i = 0; i < initialFill; i++) {
+            stressPool.release(new SpatialNodeImpl<>(10));
+        }
+        assertEquals(initialFill, stressPool.size(), "precondition: pool filled to " + initialFill);
+
+        CountDownLatch ready = new CountDownLatch(nAcquireThreads + nShrinkThreads);
+        CountDownLatch go    = new CountDownLatch(1);
+        ExecutorService exec = Executors.newFixedThreadPool(nAcquireThreads + nShrinkThreads);
+
+        // Threads that concurrently acquire from the pool
+        for (int t = 0; t < nAcquireThreads; t++) {
+            exec.submit(() -> {
+                ready.countDown();
+                try { go.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+                for (int i = 0; i < 5; i++) {
+                    stressPool.acquire(); // intentionally not re-releasing
+                }
+            });
+        }
+
+        // Threads that concurrently shrink the pool
+        for (int t = 0; t < nShrinkThreads; t++) {
+            exec.submit(() -> {
+                ready.countDown();
+                try { go.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+                stressPool.shrink(targetShrink);
+            });
+        }
+
+        ready.await();
+        go.countDown();
+        exec.shutdown();
+        assertTrue(exec.awaitTermination(10, TimeUnit.SECONDS), "threads did not finish in time");
+
+        int reportedSize = stressPool.size();
+        int queueDepth   = stressPool.getQueueDepth();
+
+        assertTrue(reportedSize >= 0,
+                   "currentSize " + reportedSize + " must not be negative");
+        assertEquals(reportedSize, queueDepth,
+                     "currentSize " + reportedSize + " drifted from actual queue depth " + queueDepth);
+    }
+
+    /**
      * Pool hit counter sanity: verify the pool correctly records a hit on re-acquire
      * after release, confirming node identity (same object) is returned from the pool.
      */

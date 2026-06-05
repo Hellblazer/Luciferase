@@ -229,12 +229,27 @@ public class SpatialNodePool<ID extends EntityID> {
     }
 
     /**
-     * Shrink the pool to a target size
+     * Shrink the pool to a target size.
+     *
+     * <p>Uses a CAS-claim protocol identical to {@link #release}: claim the decrement
+     * atomically <em>before</em> polling, so that even if a concurrent {@link #acquire}
+     * races to drain the queue the counter stays in sync with the actual queue depth.
+     * <p>
+     * Uses the same poll-then-decrement protocol as {@link #acquire()}: a node is only
+     * counted as removed once {@code poll()} actually returns it. This avoids the
+     * double-decrement race a claim-the-decrement-first (CAS) approach has against
+     * {@code acquire()} — there, a CAS-claimed decrement plus {@code acquire()}'s own
+     * unconditional decrement for the same physical node could drive {@code currentSize}
+     * negative (Luciferase-7wzml.126 review). Poll is atomic on the ConcurrentLinkedQueue,
+     * so concurrent shrinkers each obtain distinct nodes and decrement exactly once.
      */
     public void shrink(int targetSize) {
         targetSize = Math.max(0, targetSize);
 
         while (currentSize.get() > targetSize) {
+            // Poll first; only decrement when we actually removed a node. If poll returns
+            // null the queue was drained by a concurrent acquire() (which decremented the
+            // counter itself), so there is nothing for us to account for — stop.
             SpatialNodeImpl<ID> node = pool.poll();
             if (node == null) {
                 break;

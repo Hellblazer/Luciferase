@@ -259,13 +259,23 @@ public class GPUMemoryAccountant {
     /**
      * Updates access time for a buffer (touch for LRU).
      *
-     * @param bufferId ID of the buffer
+     * <p>Uses {@link ConcurrentHashMap#computeIfPresent} so the read-then-write
+     * is a single atomic operation on the map entry.  A plain
+     * {@code get}/{@code put} sequence (the prior implementation) was a
+     * non-atomic read-modify-write: a concurrent {@link #release} could remove
+     * the entry between the {@code get} and the {@code put}, causing the
+     * released entry to be resurrected in {@code activeBuffers} — corrupting
+     * accounting and skewing {@code totalActiveBytes}.
+     *
+     * <p>No explicit lock is needed: {@code ConcurrentHashMap.computeIfPresent}
+     * guarantees atomicity for the key's bucket and will silently no-op when
+     * the key is absent (i.e. already released).
+     *
+     * @param bufferId ID of the buffer to touch
      */
     public void touch(String bufferId) {
-        var buffer = activeBuffers.get(bufferId);
-        if (buffer != null) {
-            activeBuffers.put(bufferId, buffer.touch(clock.nanoTime()));
-        }
+        final long now = clock.nanoTime();
+        activeBuffers.computeIfPresent(bufferId, (id, buffer) -> buffer.touch(now));
     }
 
     /**

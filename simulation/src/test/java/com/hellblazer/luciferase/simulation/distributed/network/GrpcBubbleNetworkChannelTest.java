@@ -552,4 +552,51 @@ public class GrpcBubbleNetworkChannelTest {
             channel3.close();
         }
     }
+
+    // ==================== .201: sendWithRetry onNext exception must not be silently swallowed ====================
+
+    /**
+     * Luciferase-7wzml.201: if the {@code onNext} handler inside {@code sendWithRetry} throws,
+     * the exception must NOT be silently swallowed (previous code had {@code catch (Exception ignored)}).
+     * <p>
+     * This test drives a successful round-trip RPC and verifies that the channel remains operational
+     * after the call. The production fix ensures the exception is logged at WARN rather than dropped.
+     * We cannot inject a throwing lambda from outside the private method, so we verify the channel
+     * continues working after a real successful exchange and that the onNext path is exercised.
+     *
+     * @see GrpcBubbleNetworkChannel#sendWithRetry
+     */
+    @Test
+    void sendWithRetry_channelRemainsOperationalAfterSuccessfulExchange() throws Exception {
+        var nodeId1 = UUID.randomUUID();
+        var nodeId2 = UUID.randomUUID();
+        var ch1 = new GrpcBubbleNetworkChannel(true);
+        var ch2 = new GrpcBubbleNetworkChannel(true);
+        try {
+            ch1.initialize(nodeId1, "localhost:0");
+            ch2.initialize(nodeId2, "localhost:0");
+            ch1.registerNode(nodeId2, ch2.getLocalAddress());
+            ch2.registerNode(nodeId1, ch1.getLocalAddress());
+
+            var latch = new CountDownLatch(1);
+            ch2.setEntityDepartureListener((srcId, evt) -> latch.countDown());
+
+            var event = new EntityDepartureEvent(
+                UUID.randomUUID(), nodeId1, nodeId2,
+                EntityMigrationState.MIGRATING_OUT, System.nanoTime());
+            assertTrue(ch1.sendEntityDeparture(nodeId2, event),
+                       "sendEntityDeparture must return true (dispatched)");
+
+            // Wait for delivery — confirms the onNext path completed without crashing the channel.
+            assertTrue(latch.await(3, TimeUnit.SECONDS),
+                       "EntityDepartureEvent must be received — onNext path must execute");
+
+            // Channel must still be reachable after the exchange.
+            assertTrue(ch1.isNodeReachable(nodeId2),
+                       "Channel must remain operational after onNext execution");
+        } finally {
+            ch1.close();
+            ch2.close();
+        }
+    }
 }

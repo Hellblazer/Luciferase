@@ -328,6 +328,50 @@ class BinaryFrameCodecTest {
     }
 
     /**
+     * Test 13 (Luciferase-7wzml.208): decodeHeader must reject a buffer whose dataSize field
+     * exceeds the available remaining payload bytes (malformed / malicious frame).
+     * <p>
+     * Previously, the method decoded {@code dataSize} from the wire without any bounds check,
+     * trusting whatever value was present. A crafted frame with {@code dataSize} larger than
+     * the buffer allows should be rejected with an {@link IllegalArgumentException}.
+     */
+    @Test
+    void decodeHeader_rejectsDataSizeExceedingBufferRemaining() {
+        // Build a well-formed 50-byte-payload frame, then corrupt the dataSize field
+        // to claim a far larger payload than is present in the buffer.
+        var region = testBuiltRegion(RegionBuilder.BuildType.ESVO, 0, 50);
+        var buffer = BinaryFrameCodec.encode(region);
+
+        // dataSize is at offset 20; set it to a value exceeding buffer capacity
+        int oversizedDataSize = buffer.remaining() + 100;
+        buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        buffer.putInt(20, oversizedDataSize);
+        buffer.position(0);
+
+        // Must throw — not return null silently (fail-loud, not fail-silent)
+        assertThrows(IllegalArgumentException.class,
+                     () -> BinaryFrameCodec.decodeHeader(buffer),
+                     "dataSize exceeding buffer.remaining() must throw IllegalArgumentException");
+    }
+
+    /**
+     * Test 14 (Luciferase-7wzml.208): decodeHeader must reject a negative dataSize field.
+     */
+    @Test
+    void decodeHeader_rejectsNegativeDataSize() {
+        var region = testBuiltRegion(RegionBuilder.BuildType.ESVO, 0, 10);
+        var buffer = BinaryFrameCodec.encode(region);
+
+        buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        buffer.putInt(20, -1);
+        buffer.position(0);
+
+        assertThrows(IllegalArgumentException.class,
+                     () -> BinaryFrameCodec.decodeHeader(buffer),
+                     "Negative dataSize must throw IllegalArgumentException");
+    }
+
+    /**
      * Helper method to create a mock BuiltRegion for testing.
      *
      * @param type Build type (ESVO or ESVT)

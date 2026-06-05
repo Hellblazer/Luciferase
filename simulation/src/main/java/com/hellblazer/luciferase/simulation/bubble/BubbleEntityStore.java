@@ -322,13 +322,30 @@ public class BubbleEntityStore {
 
     /**
      * Internal entity data storage.
+     * <p>
+     * Point3f is mutable: the compact constructor defensively copies the caller's
+     * position so later mutation of the original Point3f cannot corrupt stored state
+     * (Luciferase-7wzml.189).
      */
     private record BubbleEntityData(Point3f position, Object content, long addedBucket) {
+        BubbleEntityData {
+            // Defensive copy on store — prevents caller aliasing/mutation hazard.
+            position = new Point3f(position);
+        }
     }
 
     /**
      * Entity record for query results.
+     * <p>
+     * Point3f is mutable: the compact constructor defensively copies the stored
+     * position so callers who mutate the returned record cannot corrupt the
+     * internal BubbleEntityData (Luciferase-7wzml.189).
      */
     public record BubbleEntityRecord(String id, Point3f position, Object content, long addedBucket) {
+        public BubbleEntityRecord {
+            // Defensive copy on expose — callers mutating the returned position
+            // must not be able to corrupt the stored entity state.
+            position = new Point3f(position);
+        }
     }
 }

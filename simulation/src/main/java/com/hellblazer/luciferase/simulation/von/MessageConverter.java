@@ -281,17 +281,25 @@ public class MessageConverter {
     // ==================== Ack Conversion ====================
 
     private static TransportVonMessage ackToTransport(Message.Ack msg) {
+        // Slot contract (Ack — Luciferase-7wzml.180):
+        //   sourceBubbleId  = senderId  (the node that sent this acknowledgement)
+        //   targetBubbleId  = ackFor    (repurposed: the message-ID being acknowledged,
+        //                               NOT a routing target — same slot, different semantic)
+        //   entityId        = ackFor    (redundant copy; ackFromTransport reads targetBubbleId)
         return new TransportVonMessage(
             "Ack",
-            msg.senderId().toString(),
-            msg.ackFor().toString(),
+            msg.senderId().toString(),   // sourceBubbleId = senderId
+            msg.ackFor().toString(),     // targetBubbleId = ackFor (repurposed slot)
             0f, 0f, 0f,
-            msg.ackFor().toString(),
+            msg.ackFor().toString(),     // entityId = ackFor (redundant; not read on deserialize)
             msg.timestamp()
         );
     }
 
     private static Message ackFromTransport(TransportVonMessage transport) {
+        // Slot contract (Ack — Luciferase-7wzml.180):
+        //   sourceBubbleId -> senderId
+        //   targetBubbleId -> ackFor  (repurposed slot — see ackToTransport)
         var ackFor = UUID.fromString(transport.targetBubbleId());
         var senderId = UUID.fromString(transport.sourceBubbleId());
 
@@ -407,12 +415,15 @@ public class MessageConverter {
                 null, null, null, null, null, null, null, null, null,
                 null, null,
                 null, m.reason(), null, null);
+            // Slot reuse (Luciferase-7wzml.180): AbortResponse stores rolledBack
+            // in the 'success' slot of TransportMigrationMessage (no dedicated field).
+            // migrationFromTransport reads it back via tm.success() → rolledBack.
             case MigrationProtocolMessages.AbortResponse m -> new TransportMigrationMessage(
                 "AbortResponse", m.transactionId().toString(), m.timestamp(),
                 null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
                 null, null,
-                m.rolledBack(), null, null, null);
+                m.rolledBack(), null, null, null); // success slot = rolledBack
         };
 
         return new TransportVonMessage(

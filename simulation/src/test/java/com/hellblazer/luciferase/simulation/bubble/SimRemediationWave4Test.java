@@ -141,24 +141,38 @@ class SimRemediationWave4Test {
     }
 
     /**
-     * Luciferase-0frcy.56: a bucket transition must be applied by exactly one
-     * actor. synchronizeAtBucket / advanceBucket / getCurrentBucket combined with
-     * the CAS in the tick loop mean the observable bucket is monotonic. Here we
-     * directly verify advanceBucket and synchronizeAtBucket keep currentBucket
-     * consistent (no lost update via the CAS contract).
+     * Luciferase-0frcy.56 / Luciferase-7wzml.71: bucket transitions must be
+     * monotonic. advanceBucket uses a forward-only CAS loop (never moves backward).
+     * synchronizeAtBucket must NOT write currentBucket — the tickLoop's CAS owns
+     * that transition; synchronizeAtBucket is only responsible for sim-time
+     * alignment and synthetic tick emission.
      */
     @Test
     void bucketAdvanceIsConsistent() {
         var controller = new BucketSynchronizedController(UUID.randomUUID(), "bucket-test", 100);
         assertEquals(0L, controller.getCurrentBucket());
 
+        // advanceBucket moves forward.
         controller.advanceBucket(5L);
         assertEquals(5L, controller.getCurrentBucket());
 
-        // synchronizeAtBucket sets the bucket and advances sim time toward target.
+        // advanceBucket with a lower value is a no-op (forward-only monotonic CAS).
+        controller.advanceBucket(3L);
+        assertEquals(5L, controller.getCurrentBucket(), "advanceBucket must not move bucket backward");
+
+        // synchronizeAtBucket does NOT write currentBucket (Luciferase-7wzml.71):
+        // the tickLoop's CAS is the sole owner of that transition.
+        // Bucket stays at 5; only sim-time is advanced.
         controller.synchronizeAtBucket(7L, 0L);
-        assertEquals(7L, controller.getCurrentBucket());
-        assertTrue(controller.getSimulationTime() >= 0L);
+        assertEquals(5L, controller.getCurrentBucket(),
+                     "synchronizeAtBucket must not write currentBucket; tick-loop CAS owns that");
+        // Sim time was advanced toward bucket 7's target (7 * TICKS_PER_BUCKET).
+        assertTrue(controller.getSimulationTime() > 0L,
+                   "synchronizeAtBucket should advance simulationTime toward bucket target");
+
+        // advanceBucket still works correctly after synchronizeAtBucket.
+        controller.advanceBucket(9L);
+        assertEquals(9L, controller.getCurrentBucket());
     }
 
     /**

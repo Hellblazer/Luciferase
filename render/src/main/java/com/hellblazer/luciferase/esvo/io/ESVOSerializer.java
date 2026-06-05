@@ -77,10 +77,33 @@ public class ESVOSerializer implements AutoCloseable {
 
     /**
      * Serialize with metadata appended after node and far-pointer sections.
+     *
+     * <p>Only VERSION_3 (or later) files support the metadata section; a lower
+     * version would miscalculate the header-rewrite offsets.  This method
+     * therefore enforces {@code version >= VERSION_3} and rejects any attempt to
+     * write metadata into a legacy-versioned serializer.
+     *
+     * <h2>Header-rewrite layout guarantee</h2>
+     * <pre>
+     * Byte 0: Header (VERSION_3 = 40 bytes) — written twice:
+     *   Pass 1: metadataOffset=0 / metadataSize=0 (placeholder)
+     *   Pass 2: metadataOffset=actual, metadataSize=actual (rewrite via fresh buffer)
+     * After header: node section + far-pointer section + metadata section
+     * </pre>
+     * The rewrite uses a <em>freshly allocated</em> buffer sized from
+     * {@code header.getHeaderSize()} to avoid any dependency on the original
+     * buffer's capacity or position state.
      */
     public void serializeWithMetadata(ESVOOctreeData octree, ESVOMetadata metadata, Path outputFile)
             throws IOException {
         ensureNotClosed();
+
+        // Only VERSION_3+ headers carry metadataOffset/metadataSize fields.
+        // A lower version would silently produce a corrupt header rewrite.
+        if (version < ESVOFileFormat.VERSION_3) {
+            throw new IllegalStateException(
+                    "serializeWithMetadata requires version >= VERSION_3 (configured version=" + version + ")");
+        }
 
         try (FileChannel channel = FileChannel.open(outputFile,
                 StandardOpenOption.CREATE,
@@ -95,8 +118,9 @@ public class ESVOSerializer implements AutoCloseable {
             header.nodeCount = indices.length;
             header.farPtrCount = farPointers.length;
 
-            // Write placeholder header (metadataOffset unknown yet)
-            ByteBuffer headerBuffer = allocateBuffer(header.getHeaderSize(), "header");
+            // Pass 1: write placeholder header (metadataOffset/Size still 0)
+            int headerSize = header.getHeaderSize(); // must be HEADER_SIZE_V3 = 40
+            ByteBuffer headerBuffer = allocateBuffer(headerSize, "header");
             headerBuffer.order(ByteOrder.LITTLE_ENDIAN);
             writeHeader(headerBuffer, header);
             headerBuffer.flip();
@@ -105,7 +129,11 @@ public class ESVOSerializer implements AutoCloseable {
             writeNodesV3(channel, octree, indices);
             writeFarPointers(channel, farPointers);
 
-            // Serialize metadata
+            // Serialize metadata using Java object serialization.
+            // ESVOMetadata implements Serializable and is version-stable via
+            // its explicit serialVersionUID.  The deserializer applies an
+            // ObjectInputFilter allow-list (ESVOMetadata + JDK types) to
+            // guard against gadget-chain exploits on untrusted files.
             long metadataOffset = channel.position();
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
@@ -114,14 +142,17 @@ public class ESVOSerializer implements AutoCloseable {
             byte[] metadataBytes = baos.toByteArray();
             channel.write(ByteBuffer.wrap(metadataBytes));
 
-            // Patch header with metadata location
+            // Pass 2: rewrite header at position 0 with exact metadata location.
+            // Allocate a fresh buffer (same size) so that no state from the
+            // first write (position, limit, capacity assumptions) can bleed in.
             header.metadataOffset = metadataOffset;
             header.metadataSize = metadataBytes.length;
-            headerBuffer.clear();
-            writeHeader(headerBuffer, header);
-            headerBuffer.flip();
+            ByteBuffer rewriteBuffer = ByteBuffer.allocate(headerSize);
+            rewriteBuffer.order(ByteOrder.LITTLE_ENDIAN);
+            writeHeader(rewriteBuffer, header);
+            rewriteBuffer.flip();
             channel.position(0);
-            channel.write(headerBuffer);
+            channel.write(rewriteBuffer);
         }
     }
 

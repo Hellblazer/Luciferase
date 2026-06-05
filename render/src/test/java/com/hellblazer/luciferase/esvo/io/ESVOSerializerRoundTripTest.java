@@ -274,6 +274,100 @@ class ESVOSerializerRoundTripTest {
     }
 
     // -------------------------------------------------------------------------
+    // 7wzml.156 — serializeWithMetadata / deserializeWithMetadata round-trip
+    // -------------------------------------------------------------------------
+
+    @Test
+    void serializeWithMetadata_roundTrip_metadataPreservedExactly() throws IOException {
+        ESVOOctreeData octree = new ESVOOctreeData(1024);
+        ESVONodeUnified node = new ESVONodeUnified();
+        node.setChildMask(0b00001111);
+        octree.setNode(5, node);
+
+        ESVOMetadata meta = new ESVOMetadata();
+        meta.setOctreeDepth(7);
+        meta.setNodeCount(1);
+        meta.addCustomProperty("scene", "test-scene");
+        meta.addCustomProperty("author", "unit-test");
+
+        Path file = tmp.resolve("meta.esvo");
+        try (ESVOSerializer ser = new ESVOSerializer()) {
+            ser.serializeWithMetadata(octree, meta, file);
+        }
+
+        ESVODeserializer deser = new ESVODeserializer();
+        ESVODeserializer.Result result = deser.deserializeWithMetadata(file);
+
+        assertNotNull(result.octree, "octree must be non-null");
+        assertNotNull(result.metadata, "metadata must be present");
+
+        assertEquals(7, result.metadata.getOctreeDepth(), "octreeDepth must round-trip");
+        assertEquals(1, result.metadata.getNodeCount(), "nodeCount must round-trip");
+        assertEquals("test-scene", result.metadata.getCustomProperty("scene"),
+                "custom property 'scene' must round-trip");
+        assertEquals("unit-test", result.metadata.getCustomProperty("author"),
+                "custom property 'author' must round-trip");
+
+        // Node content must also round-trip
+        assertNotNull(result.octree.getNode(5), "node at index 5 must survive");
+    }
+
+    @Test
+    void serializeWithMetadata_headerRewrite_metadataOffsetPointsAfterDataSections()
+            throws IOException {
+        // Verify that the rewritten header's metadataOffset is consistent with the
+        // actual file layout: header (40) + nodeCount*12 + farPtrCount*4 = data end.
+        ESVOOctreeData octree = new ESVOOctreeData(512);
+        for (int i = 0; i < 3; i++) {
+            octree.setNode(i, new ESVONodeUnified());
+        }
+        octree.setFarPointers(new int[]{ 10, 20 }); // 2 far pointers
+
+        ESVOMetadata meta = new ESVOMetadata();
+        meta.setOctreeDepth(4);
+
+        Path file = tmp.resolve("layout.esvo");
+        try (ESVOSerializer ser = new ESVOSerializer()) {
+            ser.serializeWithMetadata(octree, meta, file);
+        }
+
+        // Re-read header manually to verify metadataOffset
+        java.nio.ByteBuffer hdr = java.nio.ByteBuffer.allocate(ESVOFileFormat.HEADER_SIZE_V3);
+        hdr.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        try (java.nio.channels.FileChannel fc = java.nio.channels.FileChannel.open(
+                file, java.nio.file.StandardOpenOption.READ)) {
+            ESVODeserializer.fillBuffer(fc, hdr);
+        }
+        hdr.getInt(); // magic
+        hdr.getInt(); // version
+        int nodeCount = hdr.getInt();
+        hdr.getInt(); // reserved
+        long metadataOffset = hdr.getLong();
+        hdr.getLong(); // metadataSize
+        int farPtrCount = hdr.getInt();
+
+        long expectedOffset = ESVOFileFormat.HEADER_SIZE_V3
+                + (long) nodeCount * 12
+                + (long) farPtrCount * 4;
+
+        assertEquals(expectedOffset, metadataOffset,
+                "metadataOffset in rewritten header must equal header + node + farPtr bytes");
+    }
+
+    @Test
+    void serializeWithMetadata_v1Serializer_throwsIllegalStateException() {
+        ESVOOctreeData octree = new ESVOOctreeData(16);
+        ESVOMetadata meta = new ESVOMetadata();
+        Path file = tmp.resolve("v1meta.esvo");
+
+        try (ESVOSerializer ser = new ESVOSerializer(ESVOFileFormat.VERSION_1)) {
+            assertThrows(IllegalStateException.class,
+                    () -> ser.serializeWithMetadata(octree, meta, file),
+                    "VERSION_1 serializer must reject serializeWithMetadata");
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 

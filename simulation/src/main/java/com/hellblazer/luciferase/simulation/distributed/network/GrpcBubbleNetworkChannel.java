@@ -246,8 +246,10 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
                                    .set(0);
                 try {
                     onNext.accept(response);
-                } catch (Exception ignored) {
-                    // logging convenience only
+                } catch (Exception e) {
+                    // Luciferase-7wzml.201: log rather than silently swallow — handler exceptions
+                    // are not propagated (the observer contract is void) but must not be invisible.
+                    log.warn("sendWithRetry onNext handler threw for peer {} (label={})", peerId, label, e);
                 }
             }
 

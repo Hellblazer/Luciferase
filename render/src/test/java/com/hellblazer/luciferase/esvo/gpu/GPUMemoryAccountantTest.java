@@ -210,4 +210,110 @@ class GPUMemoryAccountantTest {
         assertNotNull(buf, "Should allocate with default system clock");
         assertTrue(buf.allocatedAtNs() > 0, "System clock nanoTime() must be > 0");
     }
+
+    // -------------------------------------------------------------------------
+    // 7wzml.164 — touch() must not resurrect a released entry
+    // -------------------------------------------------------------------------
+
+    /**
+     * Regression for the non-atomic get/put race in touch().
+     *
+     * <p>Scenario: allocate a buffer, release it (removes from activeBuffers),
+     * then touch it by its former ID.  The fixed implementation uses
+     * computeIfPresent so the touch is a no-op when the key is absent —
+     * a released entry is never resurrected in activeBuffers.
+     */
+    @Test
+    void touch_afterRelease_doesNotResurrectEntry() {
+        var buf = accountant.allocate(64 * 1024);
+        assertNotNull(buf);
+        String id = buf.id();
+
+        // Release the buffer — removes it from activeBuffers
+        assertTrue(accountant.release(id), "Release must succeed");
+
+        // activeBuffers should now be empty
+        var statsAfterRelease = accountant.getStats();
+        assertEquals(0, statsAfterRelease.activeBuffers(),
+                "No active buffers after release");
+
+        // touch() on the now-absent id must be a no-op
+        clock.advanceNanos(100_000L);
+        accountant.touch(id); // must NOT re-add the entry
+
+        var statsAfterTouch = accountant.getStats();
+        assertEquals(0, statsAfterTouch.activeBuffers(),
+                "touch() after release must not resurrect the entry in activeBuffers");
+    }
+
+    /**
+     * Verifies that touch() on an active buffer is a no-op for an absent id
+     * and does not crash when the buffer id is unknown.
+     */
+    @Test
+    void touch_onActiveBuffer_doesNotCrash() {
+        var buf = accountant.allocate(64 * 1024);
+        assertNotNull(buf);
+
+        // Touch while active — must not throw
+        clock.advanceNanos(250_000L);
+        assertDoesNotThrow(() -> accountant.touch(buf.id()),
+                "touch() on an active buffer must not throw");
+
+        // Touch with a completely unknown id — must silently no-op
+        assertDoesNotThrow(() -> accountant.touch("nonexistent-id"),
+                "touch() with unknown id must silently no-op");
+
+        // Stats unchanged by touch
+        var stats = accountant.getStats();
+        assertEquals(1, stats.activeBuffers(), "Active buffer count unchanged after touch");
+        assertEquals(0, stats.freeBuffers(), "Free buffer count unchanged after touch");
+    }
+
+    /**
+     * Concurrent stress: many threads calling touch() while one thread calls
+     * release() — must never resurrect a released entry into activeBuffers.
+     * This is the race that computeIfPresent closes.
+     */
+    @Test
+    void touch_concurrentWithRelease_neverResurrectsEntry() throws InterruptedException {
+        // Allocate buffers upfront
+        int bufCount = 20;
+        String[] ids = new String[bufCount];
+        for (int i = 0; i < bufCount; i++) {
+            var b = accountant.allocate(64 * 1024);
+            assertNotNull(b, "allocation " + i + " must succeed");
+            ids[i] = b.id();
+        }
+
+        var errors = new java.util.concurrent.atomic.AtomicInteger(0);
+        var threads = new java.util.ArrayList<Thread>();
+
+        // Threads that spam touch()
+        for (int t = 0; t < 4; t++) {
+            final int tid = t;
+            threads.add(Thread.ofVirtual().start(() -> {
+                for (int iter = 0; iter < 500; iter++) {
+                    accountant.touch(ids[tid % bufCount]);
+                }
+            }));
+        }
+
+        // Thread that releases all buffers
+        threads.add(Thread.ofVirtual().start(() -> {
+            for (String id : ids) {
+                accountant.release(id);
+            }
+        }));
+
+        for (var th : threads) {
+            th.join(5_000);
+        }
+
+        // After all releases: activeBuffers must have 0 entries (no resurrections)
+        var stats = accountant.getStats();
+        assertEquals(0, stats.activeBuffers(),
+                "No entries must remain in activeBuffers after all releases — "
+                + "concurrent touch() must not resurrect released entries");
+    }
 }
