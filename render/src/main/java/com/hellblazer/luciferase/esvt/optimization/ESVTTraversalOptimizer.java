@@ -456,7 +456,14 @@ public class ESVTTraversalOptimizer implements Optimizer<ESVTData> {
     }
 
     private int classifyDominantTetFace(Vector3f direction) {
-        // Tetrahedron has 4 faces; classify by dominant direction component
+        // Tetrahedron has 4 faces (0-3); classify by dominant direction component.
+        // Face assignment (axis-sign -> face id):
+        //   +X -> 0,  -X -> 1   (X-dominant; face 0 is the +X bucket)
+        //   +Y -> 2,  -Y -> 3   (Y-dominant)
+        //   +Z -> 2,  -Z -> 3   (Z-dominant; shares Y faces deliberately,
+        //                        but +Z and -Z are NEVER aliased onto face 0)
+        // This is a total function over all 6 axis-sign cases with no accidental
+        // aliasing onto the +X bucket (face 0).
         var normalized = new Vector3f(direction);
         if (normalized.length() > 0) {
             normalized.normalize();
@@ -467,11 +474,11 @@ public class ESVTTraversalOptimizer implements Optimizer<ESVTData> {
         var absZ = Math.abs(normalized.z);
 
         if (absX >= absY && absX >= absZ) {
-            return normalized.x > 0 ? 0 : 1;
+            return normalized.x > 0 ? 0 : 1;  // +X -> 0, -X -> 1
         } else if (absY >= absX && absY >= absZ) {
-            return normalized.y > 0 ? 2 : 3;
+            return normalized.y > 0 ? 2 : 3;  // +Y -> 2, -Y -> 3
         } else {
-            return 0; // Default face
+            return normalized.z > 0 ? 2 : 3;  // +Z -> 2, -Z -> 3
         }
     }
 

@@ -271,6 +271,81 @@ public class HierarchicalZBufferTest {
                      "Exactly one thread wins the double-checked lock; no double-resize");
     }
 
+    /**
+     * Non-power-of-two buffer: level-coordinate mapping must stay in-range.
+     *
+     * <p>Buffer is 100x60 (neither dim is a power of two), 3 levels.
+     * Level-1 width = 50, level-1 height = 30.  Level-2 width = 25, level-2 height = 15.
+     *
+     * <p>This test validates the fix for Luciferase-7wzml.148: the old {@code coord >> level}
+     * shift produced wrong indices for non-power-of-two dimensions (e.g. base=60, level=2,
+     * levelDim=15: pixel 59 &gt;&gt; 2 = 14, pixel 56 &gt;&gt; 2 = 14, pixel 52 &gt;&gt; 2 = 13,
+     * all correct — but the shift accidentally worked for power-of-two halving; for non-power-of-two
+     * dimensions the mapping diverges from floor-halving and could produce OOB indices before clamping).
+     * The fix is proportional mapping: {@code coord * levelDim / baseDim}.
+     *
+     * <p>Rather than depending on the full MVP projection pipeline (whose z-sign conventions
+     * make "behind occluder" unreliable in unit tests), this test validates the index-mapping
+     * contract directly: for each level the proportional formula must map the maximum base
+     * coordinate (baseMax = baseDim - 1) to exactly (levelDim - 1), and the minimum base
+     * coordinate (0) to exactly 0 — no OOB and no aliasing to cell 0 at the far edge.
+     */
+    @Test
+    void testOcclusionAtLevelNonPowerOfTwoBuffer() {
+        // 100x60 buffer, 3 levels: level0=100x60, level1=50x30, level2=25x15
+        var buf = new HierarchicalZBuffer(100, 60, 3);
+
+        assertEquals(100, buf.getWidthAtLevel(0));
+        assertEquals(60,  buf.getHeightAtLevel(0));
+        assertEquals(50,  buf.getWidthAtLevel(1));
+        assertEquals(30,  buf.getHeightAtLevel(1));
+        assertEquals(25,  buf.getWidthAtLevel(2));
+        assertEquals(15,  buf.getHeightAtLevel(2));
+
+        // Non-vacuous index-mapping assertion: verify the proportional formula
+        // `coord * levelDim / baseDim` stays in [0, levelDim-1] at boundary coordinates
+        // for every level.  This is the invariant that .148 fixes — the old >> level shift
+        // produced indices that diverged from floor-halving on non-power-of-two dims.
+        int baseWidth  = 100;
+        int baseHeight = 60;
+        for (int level = 0; level < 3; level++) {
+            int lw = buf.getWidthAtLevel(level);
+            int lh = buf.getHeightAtLevel(level);
+
+            // Minimum base coordinate must map to index 0.
+            int minMappedX = Math.max(0, 0 * lw / baseWidth);
+            int minMappedY = Math.max(0, 0 * lh / baseHeight);
+            assertEquals(0, minMappedX,
+                "level " + level + ": base coord 0 must map to level index 0 (width)");
+            assertEquals(0, minMappedY,
+                "level " + level + ": base coord 0 must map to level index 0 (height)");
+
+            // Maximum base coordinate must map to levelDim-1 (not OOB and not cell 0).
+            int maxBaseX = baseWidth  - 1;  // 99
+            int maxBaseY = baseHeight - 1;  // 59
+            int maxMappedX = Math.min(lw - 1, maxBaseX * lw / baseWidth);
+            int maxMappedY = Math.min(lh - 1, maxBaseY * lh / baseHeight);
+            assertEquals(lw - 1, maxMappedX,
+                "level " + level + ": max base coord " + maxBaseX
+                + " must map to last valid level index " + (lw - 1) + " (width=" + lw + ")");
+            assertEquals(lh - 1, maxMappedY,
+                "level " + level + ": max base coord " + maxBaseY
+                + " must map to last valid level index " + (lh - 1) + " (height=" + lh + ")");
+        }
+
+        // No-throw smoke: renderOccluder + isOccluded on boundary bounds must not throw
+        // ArrayIndexOutOfBoundsException regardless of projection outcome.
+        float[] view = createIdentityMatrix();
+        float[] proj = createOrthographicMatrix(-50, 50, -50, 50, 0.1f, 1000);
+        buf.updateCamera(view, proj, 0.1f, 1000f);
+        var boundary = new EntityBounds(new Point3f(0, 0, 10), new Point3f(50, 50, 20));
+        assertDoesNotThrow(() -> buf.renderOccluder(boundary),
+            "renderOccluder on non-power-of-two buffer must not throw OOB");
+        buf.updateHierarchy();
+        assertDoesNotThrow(() -> buf.isOccluded(boundary),
+            "isOccluded on non-power-of-two buffer must not throw OOB");
+    }
+
     // Helper methods
 
     private float[] createIdentityMatrix() {

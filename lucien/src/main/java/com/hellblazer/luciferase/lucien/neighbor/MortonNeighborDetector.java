@@ -29,10 +29,33 @@ import java.util.*;
 
 /**
  * Neighbor detector implementation for Morton-encoded octrees.
- * 
- * This class provides efficient neighbor detection using Morton code
+ *
+ * <p>This class provides efficient neighbor detection using Morton code
  * manipulation to find face, edge, and vertex neighbors.
- * 
+ *
+ * <h2>Contract: geometric (potential) neighbors</h2>
+ * <p>{@link #findFaceNeighbors}, {@link #findEdgeNeighbors}, and
+ * {@link #findVertexNeighbors} return <em>geometric</em> neighbor keys: every
+ * same-level cell that is topologically adjacent within the global grid and
+ * whose coordinates fall within the valid domain {@code [0, MAX_COORD]}.
+ * <strong>Existence in the octree is not checked.</strong>  A returned key
+ * may correspond to an empty cell (no node present in the octree).
+ *
+ * <p>This is the standard contract for SFC-based neighbor enumeration: the
+ * caller decides whether to filter against octree occupancy.  Ghost-layer and
+ * forest consumers that need only <em>occupied</em> neighbors must guard each
+ * returned key before consuming it using whichever occupancy predicate the
+ * {@link com.hellblazer.luciferase.lucien.SpatialIndex} exposes:
+ * {@link com.hellblazer.luciferase.lucien.SpatialIndex#containsSpatialKey}
+ * (default delegation to {@code hasNode}) or
+ * {@link com.hellblazer.luciferase.lucien.SpatialIndex#hasNode} directly.
+ * Both are valid; production callers such as {@code GhostBoundaryDetector}
+ * and {@code TwoOneBalanceChecker} use {@code containsSpatialKey}, while
+ * set-membership guards (e.g. in {@code PyramidIndex.addNeighboringNodes})
+ * are also acceptable.  For cross-process ghost wiring use
+ * {@link #findNeighborsWithOwners}, which enforces a real ownership resolver
+ * (and therefore fails loudly if none is wired).
+ *
  * @author Hal Hildebrand
  */
 public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
@@ -78,16 +101,35 @@ public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
         this.octree = Objects.requireNonNull(octree, "Octree cannot be null");
     }
     
+    /**
+     * Returns the (up to 6) geometric face neighbors of {@code element}.
+     *
+     * <p>Keys are computed purely from grid arithmetic; no octree-occupancy
+     * check is performed (see class-level contract).
+     */
     @Override
     public List<MortonKey> findFaceNeighbors(MortonKey element) {
         return findNeighborsWithOffsets(element, FACE_OFFSETS);
     }
-    
+
+    /**
+     * Returns the (up to 18) geometric face-and-edge neighbors of {@code element}.
+     *
+     * <p>Keys are computed purely from grid arithmetic; no octree-occupancy
+     * check is performed (see class-level contract).
+     */
     @Override
     public List<MortonKey> findEdgeNeighbors(MortonKey element) {
         return findNeighborsWithOffsets(element, EDGE_OFFSETS);
     }
-    
+
+    /**
+     * Returns the (up to 26) geometric face-, edge-, and vertex-neighbors of
+     * {@code element}.
+     *
+     * <p>Keys are computed purely from grid arithmetic; no octree-occupancy
+     * check is performed (see class-level contract).
+     */
     @Override
     public List<MortonKey> findVertexNeighbors(MortonKey element) {
         return findNeighborsWithOffsets(element, VERTEX_OFFSETS);
@@ -133,6 +175,19 @@ public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
             + "Remediation tracked in bead Luciferase-8neqb.");
     }
     
+    /**
+     * Core geometric neighbor computation shared by all three public find* methods.
+     *
+     * <p>A candidate neighbor is admitted when its raw grid coordinates satisfy
+     * {@code 0 <= coord <= Constants.MAX_COORD} on every axis, which is exactly
+     * the valid-coordinate range {@code [0, (1<<21)-1]}.  The upper bound uses
+     * {@code <=} (inclusive) so that cells whose origin coordinate equals
+     * {@code MAX_COORD} — i.e. cells at the positive domain boundary — are
+     * correctly included.  Using strict {@code <} would exclude those cells
+     * (off-by-one, bead Luciferase-7wzml.146).
+     *
+     * <p>No octree-occupancy check is performed; see class-level contract.
+     */
     private List<MortonKey> findNeighborsWithOffsets(MortonKey element, int[][] offsets) {
         var neighbors = new ArrayList<MortonKey>();
         var coords = decodeCoordinates(element);

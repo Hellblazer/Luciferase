@@ -358,19 +358,25 @@ public class HierarchicalZBuffer {
     }
     
     /**
-     * Tests occlusion at specified level
+     * Tests occlusion at specified level.
+     *
+     * <p>Level coordinates are derived by proportional mapping:
+     * {@code levelCoord = baseCoord * levelDim / baseDim}, clamped to
+     * {@code [0, levelDim-1]}.  This matches the floor-halving used by
+     * {@link #getWidthAtLevel}/{@link #getHeightAtLevel} and is correct for
+     * non-power-of-two base dimensions (unlike the old {@code >> level} shift).
      */
     private boolean testOcclusionAtLevel(ScreenSpaceBounds bounds, int level) {
         int levelWidth = getWidthAtLevel(level);
         int levelHeight = getHeightAtLevel(level);
         float[] buffer = zBuffers[level];
-        
-        // Scale bounds to level resolution
-        int minX = bounds.minX >> level;
-        int minY = bounds.minY >> level;
-        int maxX = Math.min(levelWidth - 1, bounds.maxX >> level);
-        int maxY = Math.min(levelHeight - 1, bounds.maxY >> level);
-        
+
+        // Proportional mapping: coord * levelDim / baseDim, clamped to [0, levelDim-1].
+        int minX = Math.max(0, bounds.minX * levelWidth / width);
+        int minY = Math.max(0, bounds.minY * levelHeight / height);
+        int maxX = Math.min(levelWidth - 1, bounds.maxX * levelWidth / width);
+        int maxY = Math.min(levelHeight - 1, bounds.maxY * levelHeight / height);
+
         // Test if any pixel passes depth test
         for (int y = minY; y <= maxY; y++) {
             for (int x = minX; x <= maxX; x++) {
@@ -380,24 +386,27 @@ public class HierarchicalZBuffer {
                 }
             }
         }
-        
+
         return true; // Fully occluded
     }
     
     /**
-     * Rasterizes bounds into Z-buffer
+     * Rasterizes bounds into Z-buffer.
+     *
+     * <p>Uses proportional mapping (same as {@link #testOcclusionAtLevel}) so
+     * non-power-of-two base dimensions are handled correctly.
      */
     private void rasterizeBounds(ScreenSpaceBounds bounds, int level) {
         int levelWidth = getWidthAtLevel(level);
         int levelHeight = getHeightAtLevel(level);
         float[] buffer = zBuffers[level];
-        
-        // Scale bounds to level resolution
-        int minX = Math.max(0, bounds.minX >> level);
-        int minY = Math.max(0, bounds.minY >> level);
-        int maxX = Math.min(levelWidth - 1, bounds.maxX >> level);
-        int maxY = Math.min(levelHeight - 1, bounds.maxY >> level);
-        
+
+        // Proportional mapping: coord * levelDim / baseDim, clamped to [0, levelDim-1].
+        int minX = Math.max(0, bounds.minX * levelWidth / width);
+        int minY = Math.max(0, bounds.minY * levelHeight / height);
+        int maxX = Math.min(levelWidth - 1, bounds.maxX * levelWidth / width);
+        int maxY = Math.min(levelHeight - 1, bounds.maxY * levelHeight / height);
+
         // Update depth values
         for (int y = minY; y <= maxY; y++) {
             for (int x = minX; x <= maxX; x++) {

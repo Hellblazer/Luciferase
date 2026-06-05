@@ -355,4 +355,135 @@ class MortonNeighborDetectorRoundTripTest {
                      () -> detector.findNeighborsWithOwners(key, GhostType.VERTICES),
                      "findNeighborsWithOwners(VERTICES) must throw — no owner-resolver wired");
     }
+
+    // -----------------------------------------------------------------------
+    // 9. Bounds fix (.146): maximum-coordinate cell IS returned as a neighbor
+    // -----------------------------------------------------------------------
+
+    /**
+     * Regression test for bead Luciferase-7wzml.146.
+     *
+     * At the finest level (21), each cell has cellSize=1 and the maximum valid
+     * cell origin is exactly Constants.MAX_COORD (2097151).  The cell at index
+     * (MAX_COORD-1, 0, 0) has its +X face neighbor at (MAX_COORD, 0, 0), which
+     * is a valid in-bounds cell.  A strict {@code nx < maxCoordinate} bound
+     * would reject that neighbor (off-by-one).  The correct inclusive bound
+     * {@code nx <= Constants.MAX_COORD} must accept it.
+     */
+    @Test
+    void testMaxCoordinateCellReturnedAsNeighborOfAdjacentCell() {
+        // Use a level where cellSize > 1 so that mid-range cell indices are available.
+        // At level 10: cellSize=2048, max cell index = MAX_COORD / 2048 = 1023.
+        // Cell (1022, 10, 10): all six face neighbors are in bounds:
+        //   +X -> 1023*2048 = 2095104 <= MAX_COORD  ✓
+        //   -X -> 1021*2048             in range      ✓
+        //   ±Y, ±Z -> 9*2048 and 11*2048 both in range ✓
+        // The +X neighbor world coordinate 2095104 is NOT MAX_COORD itself, but the
+        // critical bound is that it is <= MAX_COORD.  We also test at level 21
+        // (cellSize=1) where the +X neighbor of cell (MAX_COORD-1, 10, 10) has
+        // world-X = MAX_COORD exactly — the case the off-by-one bud excluded.
+        byte level = 10;
+        int cellSize = Constants.lengthAtLevel(level);
+        int maxCellIndex = Constants.MAX_COORD / cellSize; // 1023
+
+        // Cell one step below the max in X; interior in Y and Z.
+        var penultimateX = MortonKey.fromCellIndices(maxCellIndex - 1, 10, 10, level);
+        var faceNeighbors = detector.findFaceNeighbors(penultimateX);
+
+        assertEquals(6, faceNeighbors.size(),
+                     "Cell one step from the max-X boundary should have exactly 6 face neighbors");
+
+        // The +X neighbor is at world coord (maxCellIndex * cellSize) — must be present.
+        int expectedMaxX = maxCellIndex * cellSize;
+        boolean foundMaxX = false;
+        for (var neighbor : faceNeighbors) {
+            int[] nc = MortonCurve.decode(neighbor.getMortonCode());
+            if (nc[0] == expectedMaxX) {
+                foundMaxX = true;
+                assertEquals(level, neighbor.getLevel(), "Max-boundary neighbor must be at same level");
+            }
+        }
+        assertTrue(foundMaxX,
+                   "The cell at the maximum valid X coordinate (" + expectedMaxX + ") must be returned "
+                   + "as the +X neighbor — a strict '<' bound incorrectly excludes it (bead Luciferase-7wzml.146)");
+
+        // Also verify at level 21 (cellSize=1) where the +X neighbor's world coord
+        // is exactly Constants.MAX_COORD = 2097151, the most direct trigger of .146.
+        byte fineLevel = 21;
+        int maxFineIdx = Constants.MAX_COORD; // 2097151; world coord = idx * 1
+        // Use y=z=10 to keep the cell interior on those axes.
+        var penultimateFine = MortonKey.fromCellIndices(maxFineIdx - 1, 10, 10, fineLevel);
+        var fineNeighbors = detector.findFaceNeighbors(penultimateFine);
+
+        assertEquals(6, fineNeighbors.size(),
+                     "At level 21, cell (MAX_COORD-1, 10, 10) should have 6 face neighbors");
+
+        boolean foundExactMaxCoord = false;
+        for (var neighbor : fineNeighbors) {
+            int[] nc = MortonCurve.decode(neighbor.getMortonCode());
+            if (nc[0] == Constants.MAX_COORD && nc[1] == 10 && nc[2] == 10) {
+                foundExactMaxCoord = true;
+            }
+        }
+        assertTrue(foundExactMaxCoord,
+                   "At level 21, the cell whose world-X equals exactly MAX_COORD (" + Constants.MAX_COORD + ") "
+                   + "must be returned as the +X neighbor (bead Luciferase-7wzml.146)");
+    }
+
+    // -----------------------------------------------------------------------
+    // 10. Existence contract (.147): geometric neighbors vs octree-occupancy
+    // -----------------------------------------------------------------------
+
+    /**
+     * Documents and verifies the geometric-neighbor contract (bead Luciferase-7wzml.147).
+     *
+     * {@code findFaceNeighbors} returns <em>potential</em> geometric neighbors;
+     * existence in the octree is NOT checked.  This test uses a sparse octree
+     * (only the source cell is inserted) to confirm that neighbor keys for
+     * unoccupied cells are still returned, and then demonstrates that callers
+     * who need only occupied neighbors must explicitly filter via
+     * {@link com.hellblazer.luciferase.lucien.SpatialIndex#hasNode}.
+     */
+    @Test
+    void testGeometricNeighborsReturnedRegardlessOfOctreeOccupancy() {
+        var idGenerator = new SequentialLongIDGenerator();
+        var sparseOctree = new Octree<LongEntityID, Point3f>(idGenerator);
+        var sparseDetector = new MortonNeighborDetector(sparseOctree);
+
+        byte level = 10;
+        // Insert only the source cell — all its neighbors are geometrically valid
+        // but none will exist in the octree.
+        var sourcePoint = new Point3f(10 * Constants.lengthAtLevel(level),
+                                       10 * Constants.lengthAtLevel(level),
+                                       10 * Constants.lengthAtLevel(level));
+        sparseOctree.insert(sourcePoint, level, sourcePoint);
+
+        var sourceKey = MortonKey.fromCellIndices(10, 10, 10, level);
+
+        // All 6 face neighbors are returned (geometric contract).
+        var geometricNeighbors = sparseDetector.findFaceNeighbors(sourceKey);
+        assertEquals(6, geometricNeighbors.size(),
+                     "findFaceNeighbors must return 6 geometric neighbors regardless of octree occupancy");
+
+        // None of those neighbor positions has a node in the sparse octree.
+        long existingNeighborCount = geometricNeighbors.stream()
+                                                       .filter(sparseOctree::hasNode)
+                                                       .count();
+        assertEquals(0, existingNeighborCount,
+                     "No geometric neighbor should exist in the sparse octree — "
+                     + "callers wanting only occupied neighbors must filter via hasNode");
+
+        // Insert one neighbor and verify hasNode correctly identifies it.
+        var neighborPoint = new Point3f(11 * Constants.lengthAtLevel(level),
+                                         10 * Constants.lengthAtLevel(level),
+                                         10 * Constants.lengthAtLevel(level));
+        sparseOctree.insert(neighborPoint, level, neighborPoint);
+
+        long existingAfterInsert = geometricNeighbors.stream()
+                                                     .filter(sparseOctree::hasNode)
+                                                     .count();
+        assertEquals(1, existingAfterInsert,
+                     "Exactly one geometric neighbor should now exist after inserting it — "
+                     + "hasNode is the correct existence filter (bead Luciferase-7wzml.147)");
+    }
 }
