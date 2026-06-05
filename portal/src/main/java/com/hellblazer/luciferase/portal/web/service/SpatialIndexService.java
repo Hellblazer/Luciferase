@@ -112,6 +112,7 @@ public class SpatialIndexService {
      * would be exceeded.
      */
     public EntityInfo insertEntity(String sessionId, InsertEntityRequest request) {
+        validateCoords(request.x(), request.y(), request.z());
         var holder = getHolder(sessionId);
         var index = holder.index();
         reserveEntitySlots(sessionId, 1);
@@ -150,6 +151,12 @@ public class SpatialIndexService {
      * would be exceeded; no entities are inserted in that case.
      */
     public List<EntityInfo> insertEntities(String sessionId, List<InsertEntityRequest> requests) {
+        // Validate all coordinates before touching session state, so a bad input in the
+        // middle of the batch does not leave the entity counter incremented.
+        for (var request : requests) {
+            validateCoords(request.x(), request.y(), request.z());
+        }
+
         var holder = getHolder(sessionId);
         var index = holder.index();
         var level = holder.maxDepth();
@@ -225,10 +232,10 @@ public class SpatialIndexService {
      * Do not use this method from concurrent threads sharing a session without an external lock.
      */
     public EntityInfo updateEntity(String sessionId, UpdateEntityRequest request) {
+        validateCoords(request.x(), request.y(), request.z());
         var holder = getHolder(sessionId);
         var index = holder.index();
         var level = holder.maxDepth();
-
         var entityId = new UUIDEntityID(UUID.fromString(request.entityId()));
         var newPosition = new Point3f(request.x(), request.y(), request.z());
 
@@ -349,6 +356,8 @@ public class SpatialIndexService {
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public List<EntityInfo> knnQuery(String sessionId, KnnQueryRequest request) {
+        validateCoords(request.x(), request.y(), request.z());
+        validateK(request.k());
         var holder = getHolder(sessionId);
         var index = holder.index();
 
@@ -379,6 +388,10 @@ public class SpatialIndexService {
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public List<RayHitInfo> rayQuery(String sessionId, RayQueryRequest request) {
+        // Ray origins may be anywhere in 3D space (including negative); only entities
+        // require non-negative coords.  Reject only non-finite values here.
+        validateFinite(request.originX(), request.originY(), request.originZ());
+        validateDirection(request.directionX(), request.directionY(), request.directionZ());
         var holder = getHolder(sessionId);
         var index = holder.index();
 
@@ -457,6 +470,71 @@ public class SpatialIndexService {
     }
 
     // ===== Private Helpers =====
+
+    // ===== Coordinate Validation =====
+
+    /** Maximum k for KNN queries — prevents unbounded heap allocations. */
+    static final int MAX_K = 10_000;
+
+    /**
+     * Validates that x, y, z are finite and non-negative.
+     * SFC keys (Morton/TM) require non-negative coordinates; NaN/Infinity
+     * silently mis-key or corrupt the index.
+     *
+     * @throws IllegalArgumentException if any coordinate is non-finite or negative
+     */
+    static void validateCoords(float x, float y, float z) {
+        if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z)) {
+            throw new IllegalArgumentException(
+                    "Coordinates must be finite (non-NaN, non-Infinity): x=" + x + ", y=" + y + ", z=" + z);
+        }
+        if (x < 0 || y < 0 || z < 0) {
+            throw new IllegalArgumentException(
+                    "Coordinates must be non-negative (SFC index requires non-negative): x=" + x + ", y=" + y + ", z=" + z);
+        }
+    }
+
+    /**
+     * Validates that x, y, z are finite (not NaN, not Infinity).
+     * Does NOT require non-negative; use this for ray origins, which may legitimately
+     * be at any position in 3D space including negative coordinates.
+     *
+     * @throws IllegalArgumentException if any coordinate is non-finite
+     */
+    static void validateFinite(float x, float y, float z) {
+        if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z)) {
+            throw new IllegalArgumentException(
+                    "Coordinates must be finite (non-NaN, non-Infinity): x=" + x + ", y=" + y + ", z=" + z);
+        }
+    }
+
+    /**
+     * Validates that k is in range (1 .. MAX_K).
+     *
+     * @throws IllegalArgumentException if k is out of range
+     */
+    static void validateK(int k) {
+        if (k <= 0 || k > MAX_K) {
+            throw new IllegalArgumentException(
+                    "k must be in range [1, " + MAX_K + "]: k=" + k);
+        }
+    }
+
+    /**
+     * Validates that a ray direction vector is finite and non-zero.
+     * A zero or non-finite direction would produce a degenerate ray after normalize().
+     *
+     * @throws IllegalArgumentException if the direction is non-finite or all-zero
+     */
+    static void validateDirection(float dx, float dy, float dz) {
+        if (!Float.isFinite(dx) || !Float.isFinite(dy) || !Float.isFinite(dz)) {
+            throw new IllegalArgumentException(
+                    "Ray direction must be finite: dx=" + dx + ", dy=" + dy + ", dz=" + dz);
+        }
+        if (dx == 0 && dy == 0 && dz == 0) {
+            throw new IllegalArgumentException("Ray direction must be non-zero");
+        }
+    }
 
     /**
      * Atomically reserve {@code n} entity slots for the session.

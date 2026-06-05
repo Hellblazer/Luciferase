@@ -30,6 +30,9 @@ import javafx.scene.paint.Material;
 import javafx.scene.paint.PhongMaterial;
 import javafx.stage.Stage;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.vecmath.Point3f;
 
 /**
@@ -39,7 +42,9 @@ import javax.vecmath.Point3f;
  * @author hal.hildebrand
  */
 public class TetreeInspector extends Application {
-    
+
+    private static final Logger log = LoggerFactory.getLogger(TetreeInspector.class);
+
     private Tetree<LongEntityID, String> tetree;
     private ScaledTetreeView tetreeView;
     private CameraView cameraView;
@@ -142,8 +147,8 @@ public class TetreeInspector extends Application {
         // Add axis indicators
         addAxisIndicatorsToGroup();
         
-        System.out.println("Grid group has " + gridGroup.getChildren().size() + " children");
-        System.out.println("Axis group has " + axisGroup.getChildren().size() + " children");
+        log.debug("Grid group has {} children", gridGroup.getChildren().size());
+        log.debug("Axis group has {} children", axisGroup.getChildren().size());
         
         gridGroup.setVisible(true); // Start with grid visible
         axisGroup.setVisible(true); // Start with axes visible
@@ -179,8 +184,8 @@ public class TetreeInspector extends Application {
         // Level 5 - coarser detail
         addEntitiesAtLevel(5);
         
-        System.out.println("Created Tetree with " + tetree.entityCount() + " entities");
-        System.out.println("Node count: " + tetree.nodeCount());
+        log.debug("Created Tetree with {} entities", tetree.entityCount());
+        log.debug("Node count: {}", tetree.nodeCount());
     }
     
     private void addEntitiesAtLevel(int level) {
@@ -197,7 +202,7 @@ public class TetreeInspector extends Application {
             String content = String.format("Entity L%d-%d", level, i);
             
             tetree.insert(position, (byte) level, content);
-            System.out.println(String.format("Added entity at (%d, %d, %d) level %d", x, y, z, level));
+            log.debug("Added entity at ({}, {}, {}) level {}", x, y, z, level);
         }
     }
     
@@ -224,19 +229,15 @@ public class TetreeInspector extends Application {
     }
     
     private void printInstructions() {
-        System.out.println("\n=== Tetree Inspector ===");
-        System.out.println("Visualizing tetrahedral spatial index with proper scaling");
-        System.out.println();
-        System.out.println("Legend:");
-        System.out.println("- Red translucent meshes: Occupied tetrahedra (containing entities)");
-        System.out.println("- Black wireframes: Parent nodes in the hierarchy");
-        System.out.println("- White sphere: Origin (0,0,0)");
-        System.out.println("- Colored axes: X (red), Y (green), Z (blue)");
-        System.out.println();
-        System.out.println("Use the control panel on the right to adjust camera settings and display options.");
-        System.out.println();
-        System.out.println("Note: Coordinates are automatically scaled from spatial index range (0-2^21)");
-        System.out.println("to JavaFX-friendly coordinates for proper visualization.");
+        log.info("=== Tetree Inspector ===");
+        log.info("Visualizing tetrahedral spatial index with proper scaling");
+        log.info("Legend:");
+        log.info("- Red translucent meshes: Occupied tetrahedra (containing entities)");
+        log.info("- Black wireframes: Parent nodes in the hierarchy");
+        log.info("- White sphere: Origin (0,0,0)");
+        log.info("- Colored axes: X (red), Y (green), Z (blue)");
+        log.info("Use the control panel on the right to adjust camera settings and display options.");
+        log.info("Note: Coordinates are automatically scaled from spatial index range (0-2^21) to JavaFX-friendly coordinates for proper visualization.");
     }
     
     /**

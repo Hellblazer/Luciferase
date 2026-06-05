@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.portal.web.service;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.gpu.ESVTOpenCLRenderer;
 import com.hellblazer.luciferase.portal.web.dto.*;
@@ -35,6 +36,22 @@ public class GpuService {
 
     // Cached GPU info (device doesn't change during runtime)
     private volatile GpuInfo cachedGpuInfo;
+
+    /**
+     * Clock used for render/benchmark elapsed-time measurement.
+     * Default is {@link Clock#system()} (backed by {@link System#nanoTime()}).
+     * Injecting a TestClock via {@link #setClock} lets tests control elapsed values —
+     * this is intentional per Luciferase-7wzml.221.
+     */
+    private volatile Clock clock = Clock.system();
+
+    /**
+     * Replaces the clock used for render/benchmark timing.
+     * Default is {@link Clock#system()}. Override in tests for deterministic elapsed values.
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Get GPU device information.
@@ -146,9 +163,9 @@ public class GpuService {
         var cameraPos = new Vector3f(request.cameraPosX(), request.cameraPosY(), request.cameraPosZ());
         var lookAt = new Vector3f(request.lookAtX(), request.lookAtY(), request.lookAtZ());
 
-        long startTime = System.nanoTime();
+        long startTime = clock.nanoTime();
         state.renderer.renderFrame(cameraPos, lookAt, request.getFovOrDefault());
-        long renderTime = System.nanoTime() - startTime;
+        long renderTime = clock.nanoTime() - startTime;
 
         // Update stats
         state.framesRendered.incrementAndGet();
@@ -212,11 +229,9 @@ public class GpuService {
         double totalTime = 0;
 
         for (int i = 0; i < iterations; i++) {
-            // wall-clock elapsed-time measurement for benchmarking; intentionally not the
-            // injected Clock (perf timing needs real elapsed time, not simulation time)
-            long startTime = System.nanoTime();
+            long startTime = clock.nanoTime();
             state.renderer.renderFrame(cameraPos, lookAt, fov);
-            long elapsed = System.nanoTime() - startTime;  // wall-clock elapsed-time measurement
+            long elapsed = clock.nanoTime() - startTime;
 
             double timeMs = elapsed / 1_000_000.0;
             times[i] = timeMs;

@@ -29,6 +29,9 @@ import javafx.scene.paint.PhongMaterial;
 import javafx.scene.shape.MeshView;
 import javafx.scene.shape.Shape3D;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -40,7 +43,9 @@ import java.util.Map;
  * @author hal.hildebrand
  */
 public class TetreeView extends Group {
-    
+
+    private static final Logger log = LoggerFactory.getLogger(TetreeView.class);
+
     protected final CellViews cellViews;
     private final boolean showOccupiedAsMesh;
     private final Material occupiedMeshMaterial;
@@ -115,7 +120,7 @@ public class TetreeView extends Group {
         // Clear existing children
         getChildren().clear();
         
-        System.out.println("TetreeView: Updating from tetree with " + tetree.nodeCount() + " nodes and " + tetree.entityCount() + " entities");
+        log.debug("TetreeView: Updating from tetree with {} nodes and {} entities", tetree.nodeCount(), tetree.entityCount());
         
         // Create a visitor that emits visualizations dynamically during traversal
         TetreeVisualizationVisitor<ID, Content> visitor = new TetreeVisualizationVisitor<>(this);
@@ -123,7 +128,7 @@ public class TetreeView extends Group {
         // Traverse the tree in post-order to ensure we process children before parents
         tetree.traverse(visitor, TraversalStrategy.POST_ORDER);
         
-        System.out.println("TetreeView: Added " + getChildren().size() + " visual elements");
+        log.debug("TetreeView: Added {} visual elements", getChildren().size());
     }
     
     /**
@@ -169,9 +174,11 @@ public class TetreeView extends Group {
      * of nodes that contain entities.
      */
     @SuppressWarnings("rawtypes")
-    private static class TetreeVisualizationVisitor<ID extends EntityID, Content> 
+    private static class TetreeVisualizationVisitor<ID extends EntityID, Content>
             extends AbstractTreeVisitor<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
-        
+
+        private static final Logger log = LoggerFactory.getLogger(TetreeVisualizationVisitor.class);
+
         private final TetreeView view;
         
         TetreeVisualizationVisitor(TetreeView view) {
@@ -192,8 +199,10 @@ public class TetreeView extends Group {
             boolean isOccupied = !node.entityIds().isEmpty();
             
             if (isOccupied) {
-                System.out.println("Rendering occupied node at level " + key.toTet().l() + 
-                                 " with " + node.entityIds().size() + " entities");
+                if (log.isDebugEnabled()) {
+                    log.debug("Rendering occupied node at level {} with {} entities", key.toTet().l(),
+                              node.entityIds().size());
+                }
                 // This node is occupied - render it as mesh or wireframe
                 if (view.showOccupiedAsMesh) {
                     MeshView mesh = view.cellViews.createMeshView(key.toTet());
@@ -209,7 +218,9 @@ public class TetreeView extends Group {
                     }
                 }
             } else {
-                System.out.println("Rendering parent node at level " + key.toTet().l());
+                if (log.isDebugEnabled()) {
+                    log.debug("Rendering parent node at level {}", key.toTet().l());
+                }
                 // This node exists but is not occupied - it must be a parent of occupied nodes
                 // (otherwise it wouldn't exist in the spatial index)
                 // Render as parent wireframe
