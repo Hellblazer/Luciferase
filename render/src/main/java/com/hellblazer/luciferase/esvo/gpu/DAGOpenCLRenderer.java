@@ -540,47 +540,43 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         }
         updateCoherenceIfNeeded();
 
-        var activeKernel = useBatchKernel ? batchKernel : kernel;
+        // Snapshot volatile flags ONCE so the kernel selection and the arg-dispatch branch
+        // see an identical view even if another thread toggles useBatchKernel mid-method.
+        final boolean useBatch = this.useBatchKernel;
+        final int raysPerItem = this.currentRaysPerItem;
+
+        var activeKernel = useBatch ? batchKernel : kernel;
         if (activeKernel == null) {
             throw new IllegalStateException("Kernel not initialized");
         }
 
         // Phase 4.2.2a: Set kernel arguments in correct order for dag_ray_traversal.cl
-        // Use temporary kernel swap to set arguments on both kernels with same interface
-        var originalKernel = kernel;
-        try {
-            // Temporarily swap kernel to set arguments on the active one
-            kernel = activeKernel;
+        // Use activeKernel directly (no shared-field mutation) so concurrent executeKernel
+        // calls cannot observe each other's kernel choice via the shared 'kernel' field.
+        activeKernel.setRawBufferArg(0, clNodeBuffer);                      // arg0: nodePool
+        activeKernel.setRawBufferArg(1, clDummyChildPointersBuffer);        // arg1: childPointers (minimal dummy for absolute addressing)
+        activeKernel.setIntArg(2, nodeCount);                               // arg2: nodeCount
+        activeKernel.setBufferArg(3, rayBuffer, ComputeKernel.BufferAccess.READ);  // arg3: rays
+        activeKernel.setIntArg(4, rayCount);                                // arg4: rayCount
 
-            // Set common arguments for both kernels
-            setRawBufferArg(0, clNodeBuffer);                      // arg0: nodePool
-            setRawBufferArg(1, clDummyChildPointersBuffer);        // arg1: childPointers (minimal dummy for absolute addressing)
-            activeKernel.setIntArg(2, nodeCount);                  // arg2: nodeCount
-            activeKernel.setBufferArg(3, rayBuffer, ComputeKernel.BufferAccess.READ);  // arg3: rays
-            activeKernel.setIntArg(4, rayCount);                   // arg4: rayCount
+        if (useBatch) {
+            // Batch kernel: raysPerItem then results
+            activeKernel.setIntArg(5, raysPerItem);            // arg5: raysPerItem
+            activeKernel.setBufferArg(6, resultBuffer, ComputeKernel.BufferAccess.WRITE); // arg6: results
 
-            if (useBatchKernel) {
-                // Batch kernel: raysPerItem then results
-                activeKernel.setIntArg(5, currentRaysPerItem);     // arg5: raysPerItem
-                activeKernel.setBufferArg(6, resultBuffer, ComputeKernel.BufferAccess.WRITE); // arg6: results
+            // Adjust global work size for batch kernel
+            int workItems = (rayCount + raysPerItem - 1) / raysPerItem;
+            long adjustedGlobal = ((workItems + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
+            activeKernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
+        } else {
+            // Single-ray kernel
+            activeKernel.setBufferArg(5, resultBuffer, ComputeKernel.BufferAccess.WRITE); // arg5: results
 
-                // Adjust global work size for batch kernel
-                int workItems = (rayCount + currentRaysPerItem - 1) / currentRaysPerItem;
-                long adjustedGlobal = ((workItems + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
-                activeKernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
-            } else {
-                // Single-ray kernel
-                activeKernel.setBufferArg(5, resultBuffer, ComputeKernel.BufferAccess.WRITE); // arg5: results
-
-                long adjustedGlobal = ((rayCount + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
-                activeKernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
-            }
-
-            activeKernel.finish();
-        } finally {
-            // Restore original kernel
-            kernel = originalKernel;
+            long adjustedGlobal = ((rayCount + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
+            activeKernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
         }
+
+        activeKernel.finish();
     }
 
     /**
@@ -775,15 +771,18 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
      * Stream B Phase 8: Optimize renderer for detected GPU device
      *
      * Called during initialization to:
-     * 1. Detect GPU capabilities
+     * 1. Detect GPU capabilities from the real OpenCL device
      * 2. Load or generate optimal tuning configuration
      * 3. Log tuning metrics
      * 4. Recompile kernel with GPU-optimized build options
      */
     public void optimizeForDevice() {
-        // Detect GPU capabilities (placeholder - would use OpenCL device queries)
         gpuCapabilities = detectGPUCapabilities();
-        log.info("Detected GPU: {} {}", gpuCapabilities.vendor().getDisplayName(), gpuCapabilities.model());
+        if (gpuCapabilities.vendor() != GPUVendor.UNKNOWN) {
+            log.info("Detected GPU: {} {}", gpuCapabilities.vendor().getDisplayName(), gpuCapabilities.model());
+        } else {
+            log.info("No GPU device detected or OpenCL unavailable; using generic fallback tuning");
+        }
 
         // Try to load cached configuration first
         autoTuner = new GPUAutoTuner(gpuCapabilities, cacheDirectory);
@@ -821,25 +820,50 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
     }
 
     /**
-     * Detect GPU capabilities from OpenCL device
+     * Detect GPU capabilities from the real OpenCL device via GPUVendorDetector.
      *
-     * This is a simplified implementation. Production code would query:
-     * - CL_DEVICE_VENDOR
-     * - CL_DEVICE_NAME
-     * - CL_DEVICE_COMPUTE_UNITS
-     * - CL_DEVICE_LOCAL_MEM_SIZE
-     * - CL_DEVICE_MAX_WORK_GROUP_SIZE
+     * Queries CL_DEVICE_VENDOR, CL_DEVICE_NAME, CL_DEVICE_MAX_COMPUTE_UNITS,
+     * CL_DEVICE_LOCAL_MEM_SIZE, and CL_DEVICE_MAX_WORK_GROUP_SIZE.
+     * If no device is available (headless / no-GPU environment) returns an
+     * honest generic fallback with UNKNOWN vendor — never a hardcoded NVIDIA stub.
+     *
+     * <p><b>KNOWN LIMITATION (Luciferase-ie6v8):</b> {@link GPUVendorDetector#getInstance()}
+     * is a JVM singleton that queries the <em>first</em> GPU/platform found globally, not
+     * necessarily this renderer's actual device.  On multi-GPU or multi-platform systems the
+     * detected vendor, wavefront size, compute units, and local memory may not match the
+     * device used at {@code initialize()}, resulting in incorrect workgroup tuning.
+     * The single-GPU common case is correct; the UNKNOWN fallback when no device is present
+     * is honest.  Full fix requires passing this renderer's {@code cl_device_id} to a
+     * non-singleton query path — deferred to Luciferase-ie6v8.
      */
     private com.hellblazer.luciferase.sparse.gpu.GPUCapabilities detectGPUCapabilities() {
-        // Placeholder: would use context.getDeviceInfo() from gpu-support
-        // For now, return default NVIDIA configuration for demonstration
+        var detected = GPUVendorDetector.getInstance().getCapabilities();
+        if (detected.isValid()) {
+            // Map esvo.gpu.GPUVendor to sparse.gpu.GPUVendor via the vendor string.
+            var sparseVendor = GPUVendor.fromVendorString(detected.vendorString());
+            // wavefrontSize: use vendor preferred (NVIDIA=32, AMD=64, INTEL=32, APPLE=32, UNKNOWN=32).
+            int wavefrontSize = sparseVendor.getTypicalWavefrontSize();
+            // localMemoryBytes: cap at Integer.MAX_VALUE for the int field (in practice always < 2 GB).
+            int localMemBytes = (int) Math.min(detected.localMemorySize(), Integer.MAX_VALUE);
+            // maxRegisters: not directly exposed by OpenCL; use a reasonable vendor default.
+            int maxRegisters = 65536;
+            return new com.hellblazer.luciferase.sparse.gpu.GPUCapabilities(
+                detected.computeUnits(),
+                localMemBytes,
+                maxRegisters,
+                sparseVendor,
+                detected.deviceName(),
+                wavefrontSize
+            );
+        }
+        // No device available — return honest generic fallback, not a fake NVIDIA stub.
         return new com.hellblazer.luciferase.sparse.gpu.GPUCapabilities(
-            32,      // compute units (placeholder)
-            65536,   // local memory bytes
-            65536,   // max registers
-            GPUVendor.NVIDIA,
-            "Generic GPU",
-            32       // wavefront size
+            0,                   // computeUnits: unknown
+            0,                   // localMemoryBytes: unknown
+            0,                   // maxRegisters: unknown
+            GPUVendor.UNKNOWN,
+            "Unknown",
+            32                   // wavefrontSize: safe default
         );
     }
 

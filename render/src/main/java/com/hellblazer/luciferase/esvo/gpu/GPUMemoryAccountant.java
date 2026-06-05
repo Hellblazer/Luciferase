@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.esvo.gpu;
 
+import com.hellblazer.luciferase.common.time.Clock;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -30,13 +32,15 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * MemorySegment, etc.) is created or freed here.
  *
  * <p>Size-class buckets allow the accounting layer to round requests up to
- * powers-of-2 boundaries and enforce an LRU eviction policy over the
- * tracked quota when the limit is approached.
+ * powers-of-2 boundaries and enforce a true LRU eviction policy over the
+ * tracked quota when the limit is approached. Eviction selects the idle slot
+ * with the smallest {@code lastAccessNs} across all size classes until enough
+ * bytes are reclaimed.
  *
  * <p>Key features:
  * <ul>
  *   <li>Size-class based quota accounting (powers of 2)</li>
- *   <li>LRU eviction of least-recently-used quota slots</li>
+ *   <li>LRU eviction — least-recently-accessed idle slot evicted first</li>
  *   <li>Thread-safe counter adjustment</li>
  *   <li>Statistics tracking for monitoring</li>
  * </ul>
@@ -56,10 +60,12 @@ public class GPUMemoryAccountant {
         long lastAccessNs
     ) {
         /**
-         * Updates last access time.
+         * Updates last access time to the given nanosecond timestamp.
+         *
+         * @param nowNs nanosecond timestamp (from an injected clock)
          */
-        public PooledBuffer touch() {
-            return new PooledBuffer(id, sizeBytes, sizeClass, allocatedAtNs, System.nanoTime());
+        public PooledBuffer touch(long nowNs) {
+            return new PooledBuffer(id, sizeBytes, sizeClass, allocatedAtNs, nowNs);
         }
     }
 
@@ -115,6 +121,9 @@ public class GPUMemoryAccountant {
     private final AtomicLong hitCount;
     private final AtomicLong missCount;
 
+    // Clock for deterministic testing
+    private volatile Clock clock = Clock.system();
+
     /**
      * Creates a quota tracker with the specified byte ceiling.
      *
@@ -145,6 +154,15 @@ public class GPUMemoryAccountant {
     }
 
     /**
+     * Injects a clock for deterministic testing.
+     *
+     * @param clock the clock to use for allocation and LRU timestamps
+     */
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    /**
      * Registers a quota slot for the requested byte count.
      *
      * <p>No GPU memory is allocated. The returned {@link PooledBuffer} is a
@@ -162,7 +180,7 @@ public class GPUMemoryAccountant {
 
         long sizeClass = getSizeClass(requestedBytes);
         String id = UUID.randomUUID().toString();
-        long now = System.nanoTime();
+        long now = clock.nanoTime();
 
         lock.writeLock().lock();
         try {
@@ -228,7 +246,7 @@ public class GPUMemoryAccountant {
             // Park slot as idle so its byte budget can be reclaimed by eviction
             var freeList = freeBuffersByClass.get(buffer.sizeClass());
             if (freeList != null) {
-                freeList.addLast(buffer.touch());
+                freeList.addLast(buffer.touch(clock.nanoTime()));
                 totalFreeBytes.addAndGet(buffer.sizeBytes());
             }
 
@@ -246,7 +264,7 @@ public class GPUMemoryAccountant {
     public void touch(String bufferId) {
         var buffer = activeBuffers.get(bufferId);
         if (buffer != null) {
-            activeBuffers.put(bufferId, buffer.touch());
+            activeBuffers.put(bufferId, buffer.touch(clock.nanoTime()));
         }
     }
 
@@ -348,24 +366,47 @@ public class GPUMemoryAccountant {
      * Attempts to evict idle quota slots to reclaim enough quota for a new entry.
      * Must be called with write lock held.
      *
+     * <p>Uses true LRU eviction: on each iteration, selects the idle slot with
+     * the smallest {@code lastAccessNs} across all size classes and removes it.
+     * This ensures that a buffer re-acquired and re-released more recently will
+     * never be evicted before an older idle slot, regardless of insertion order.
+     *
      * @param bytesNeeded quota bytes to reclaim
      * @return true if enough quota was reclaimed
      */
     private boolean evictToMakeRoom(long bytesNeeded) {
         long freed = 0;
 
-        // Evict idle quota slots (LRU order - oldest first)
-        for (var entry : freeBuffersByClass.entrySet()) {
-            var freeList = entry.getValue();
-            while (!freeList.isEmpty() && freed < bytesNeeded) {
-                var evicted = freeList.removeFirst();
-                freed += evicted.sizeBytes();
-                totalFreeBytes.addAndGet(-evicted.sizeBytes());
-                evictions.incrementAndGet();
+        while (freed < bytesNeeded) {
+            // Find the globally least-recently-accessed idle slot across all size classes
+            LinkedList<PooledBuffer> lruList = null;
+            PooledBuffer lruCandidate = null;
+
+            for (var freeList : freeBuffersByClass.values()) {
+                if (freeList.isEmpty()) {
+                    continue;
+                }
+                // Find the entry with the minimum lastAccessNs in this size class
+                PooledBuffer classMin = null;
+                for (var buf : freeList) {
+                    if (classMin == null || buf.lastAccessNs() < classMin.lastAccessNs()) {
+                        classMin = buf;
+                    }
+                }
+                if (classMin != null && (lruCandidate == null || classMin.lastAccessNs() < lruCandidate.lastAccessNs())) {
+                    lruCandidate = classMin;
+                    lruList = freeList;
+                }
             }
-            if (freed >= bytesNeeded) {
-                break;
+
+            if (lruCandidate == null) {
+                break; // No more idle slots
             }
+
+            lruList.remove(lruCandidate);
+            freed += lruCandidate.sizeBytes();
+            totalFreeBytes.addAndGet(-lruCandidate.sizeBytes());
+            evictions.incrementAndGet();
         }
 
         return freed >= bytesNeeded;

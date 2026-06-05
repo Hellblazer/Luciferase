@@ -39,9 +39,17 @@ import static org.lwjgl.system.MemoryUtil.*;
  * <ul>
  *   <li>Stack-based octree ray traversal</li>
  *   <li>Sparse voxel indexing via child masks</li>
- *   <li>Far pointer support for large octrees</li>
  *   <li>Depth-based coloring</li>
  * </ul>
+ *
+ * <p><b>Far-pointer limitation:</b> Far pointers (nodes whose child offset exceeds
+ * the 14-bit in-band {@code childPtr} field) are <em>not yet supported</em> on the
+ * GPU path. The {@code esvo_ray_traversal.cl} kernel signature has no
+ * {@code farPointers[]} buffer argument, and the traversal never checks
+ * {@code FAR_FLAG_BIT}. Uploading an octree with far pointers would produce
+ * silently wrong geometry. This renderer therefore fails loud at upload time when
+ * far pointers are present. See Luciferase-7wzml.160 and the related ESVT kernel
+ * issue Luciferase-8putk for the kernel-protocol fix.
  *
  * <p><b>Coordinate Space:</b> [0, 1] normalized voxel space
  *
@@ -116,8 +124,23 @@ public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUni
     /**
      * Convert ESVOOctreeData to ByteBuffer for GPU upload.
      * Each node is 8 bytes (2 ints: childDescriptor + contourDescriptor).
+     *
+     * @throws UnsupportedOperationException if the octree contains far pointers,
+     *         because the ESVO OpenCL kernel has no farPointers[] buffer argument
+     *         and would silently resolve far-flagged nodes to wrong child indices.
+     *         See Luciferase-7wzml.160 / Luciferase-8putk for the kernel-protocol fix.
      */
     private ByteBuffer octreeToByteBuffer(ESVOOctreeData data) {
+        var farPointers = data.getFarPointers();
+        if (farPointers != null && farPointers.length > 0) {
+            throw new UnsupportedOperationException(
+                    "Far pointers are not yet wired to the ESVO OpenCL kernel: "
+                    + "the esvo_ray_traversal.cl kernel has no farPointers[] buffer argument "
+                    + "and never checks FAR_FLAG_BIT. Uploading this octree would silently "
+                    + "render wrong geometry. See Luciferase-7wzml.160 (ESVO) and "
+                    + "Luciferase-8putk (ESVT) for the kernel-protocol fix.");
+        }
+
         int nodeCount = data.getNodeCount();
         var buffer = memAlloc(nodeCount * ESVONodeUnified.SIZE_BYTES);
         buffer.order(ByteOrder.nativeOrder());

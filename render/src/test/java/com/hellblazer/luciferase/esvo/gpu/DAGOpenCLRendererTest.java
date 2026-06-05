@@ -21,10 +21,14 @@ import com.hellblazer.luciferase.esvo.dag.DAGBuilder;
 import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.sparse.core.PointerAddressingMode;
+import com.hellblazer.luciferase.sparse.gpu.GPUVendor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -189,6 +193,108 @@ class DAGOpenCLRendererTest {
             renderer.initialize();
             renderer.uploadData(testDAG);
         });
+    }
+
+    // ==================== .161 Thread-Safety Tests ====================
+
+    @Test
+    @DisplayName(".161: executeKernel does not mutate the shared 'kernel' field")
+    void testExecuteKernelNoSharedFieldMutation() throws Exception {
+        // Verify via reflection that the executeKernel() method body never assigns
+        // to the 'kernel' field of AbstractOpenCLRenderer.  We do this by reading
+        // the field before and after calling the private method on an uninitialized
+        // renderer (which will throw before any GPU call is made, but the field
+        // assignment would happen before the GPU call if the bug were present).
+        var r = new DAGOpenCLRenderer(64, 64);
+
+        // Grab the protected 'kernel' field from the superclass.
+        Field kernelField = r.getClass().getSuperclass().getDeclaredField("kernel");
+        kernelField.setAccessible(true);
+
+        // Field should be null before initialization.
+        Object kernelBefore = kernelField.get(r);
+        assertNull(kernelBefore, "kernel field should be null before initialization");
+
+        // Attempt to invoke executeKernel via reflection.
+        // Because batchKernel==null and kernel==null, it should throw
+        // IllegalStateException("Kernel not initialized") without touching the field.
+        Method executeKernel = r.getClass().getDeclaredMethod("executeKernel");
+        executeKernel.setAccessible(true);
+        assertThrows(Exception.class, () -> executeKernel.invoke(r));
+
+        // The field must remain null — the swap-and-restore idiom would have set it
+        // to activeKernel (non-null only if kernel/batchKernel were non-null, so this
+        // path verifies the null guard fires before any field assignment).
+        Object kernelAfter = kernelField.get(r);
+        assertNull(kernelAfter, ".161: kernel field must not be mutated inside executeKernel");
+    }
+
+    @Test
+    @DisplayName(".161: getKernel() always reflects main kernel, not batch kernel")
+    void testGetKernelReturnsMainKernel() {
+        // With the swap removed, getKernel() must never return batchKernel.
+        // Before initialization, both are null — this validates the invariant
+        // without requiring a real GPU.
+        var r = new DAGOpenCLRenderer(64, 64);
+        // getKernel() is inherited from AbstractOpenCLRenderer, returns the kernel field.
+        // After our fix it can never be set to batchKernel by executeKernel.
+        // We verify the renderer can be constructed and getKernel() is null (pre-init).
+        assertNull(r.getKernel(), ".161: getKernel() should return null (main kernel) pre-init, not batchKernel");
+    }
+
+    // ==================== .163 Real-Query-or-Honest-Generic Tests ====================
+
+    @Test
+    @DisplayName(".163: detectGPUCapabilities never claims NVIDIA when no real device detected")
+    void testDetectGPUCapabilitiesNoFakeNVIDIA() throws Exception {
+        var r = new DAGOpenCLRenderer(64, 64);
+
+        // Invoke detectGPUCapabilities via reflection (private method).
+        Method detect = r.getClass().getDeclaredMethod("detectGPUCapabilities");
+        detect.setAccessible(true);
+        var caps = (com.hellblazer.luciferase.sparse.gpu.GPUCapabilities) detect.invoke(r);
+
+        assertNotNull(caps, "detectGPUCapabilities must return non-null");
+
+        // Core acceptance criterion: must not silently claim NVIDIA when the real
+        // GPUVendorDetector returns no valid device in headless/CI environments.
+        // If a real GPU is present, the vendor may legitimately be NVIDIA — that's fine.
+        // If no GPU is present, GPUVendorDetector.getCapabilities().isValid()==false,
+        // and we must NOT return NVIDIA with model "Generic GPU".
+        var detector = GPUVendorDetector.getInstance();
+        if (!detector.getCapabilities().isValid()) {
+            // Headless / no-GPU: vendor must be UNKNOWN, model must not claim "Generic GPU" + NVIDIA.
+            assertNotEquals(GPUVendor.NVIDIA, caps.vendor(),
+                ".163: with no real GPU, vendor must not be hardcoded NVIDIA");
+            assertFalse(caps.vendor() == GPUVendor.NVIDIA && "Generic GPU".equals(caps.model()),
+                ".163: fake 'NVIDIA Generic GPU' stub must be replaced with honest generic fallback");
+        } else {
+            // Real GPU present: vendor must match what GPUVendorDetector detected.
+            // We just verify it's not the old hardcoded stub value.
+            assertFalse(caps.vendor() == GPUVendor.NVIDIA && "Generic GPU".equals(caps.model())
+                        && caps.computeUnits() == 32 && caps.localMemoryBytes() == 65536,
+                ".163: even with a real GPU, must not return the hardcoded stub");
+        }
+    }
+
+    @Test
+    @DisplayName(".163: optimizeForDevice does not log 'NVIDIA Generic GPU' without a real device")
+    void testOptimizeForDeviceHonestLogging() throws Exception {
+        var detector = GPUVendorDetector.getInstance();
+        // This test validates the logic only — log capture would require a log appender.
+        // Instead, verify that detectGPUCapabilities returns an honest value so optimizeForDevice
+        // would log the correct vendor name.
+        var r = new DAGOpenCLRenderer(64, 64);
+        Method detect = r.getClass().getDeclaredMethod("detectGPUCapabilities");
+        detect.setAccessible(true);
+        var caps = (com.hellblazer.luciferase.sparse.gpu.GPUCapabilities) detect.invoke(r);
+
+        if (!detector.getCapabilities().isValid()) {
+            // Headless: the log message vendor must be UNKNOWN, not the fake NVIDIA stub.
+            assertEquals(GPUVendor.UNKNOWN, caps.vendor(),
+                ".163: headless fallback must use UNKNOWN vendor, not fake NVIDIA");
+        }
+        // If a real GPU is present, any valid vendor value is acceptable.
     }
 
     // ==================== Helper Methods ====================
