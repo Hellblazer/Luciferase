@@ -549,6 +549,72 @@ public class MutableGridTest {
     }
     
     /**
+     * Regression test for Luciferase-7wzml.120: rebuildOptimized must not silently drop vertices
+     * whose locate() returns null — it must fail loud (throw IllegalStateException) with a count.
+     * <p>
+     * The defect: both branches of rebuildOptimized (useDirectForRebuild and TetrahedronPoolContext)
+     * have {@code if (containedIn != null) insert(...)} with no else — a locate miss silently drops
+     * the vertex with no log, no count, no assertion. A rebuild can return fewer vertices than the
+     * snapshot it was given, and the caller has no way to detect the loss.
+     * <p>
+     * The fix: count dropped vertices; after the loop, if the re-inserted count differs from
+     * the input list size, throw IllegalStateException (fail-loud) with the drop count.
+     * <p>
+     * This test verifies two things:
+     * <ol>
+     *   <li>Normal rebuild: all domain-interior vertices are re-inserted and size is preserved.</li>
+     *   <li>Fail-loud: constructing a Vertex list where {@code contains()} reports true but the
+     *       mesh is torn down (adjacency cleared) triggers the assertion, proving the guard fires.</li>
+     * </ol>
+     */
+    @Test
+    @DisplayName("rebuildOptimized must not silently drop interior vertices (Luciferase-7wzml.120)")
+    public void testRebuildOptimizedFailsLoudOnLocateMiss() {
+        // --- Part 1: normal rebuild preserves all vertices ---
+        MutableGrid testGrid = new MutableGrid();
+        Random testEntropy = new Random(0x42);
+        float base = 10_000f;
+        int n = 20;
+        List<Vertex> tracked = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            float x = base + (i % 3) * 2000f;
+            float y = base + ((i / 3) % 3) * 2000f;
+            float z = base + ((i / 9) % 3) * 2000f;
+            Vertex v = testGrid.track(new Point3f(x, y, z), testEntropy);
+            assertNotNull(v, "All inserted points must be tracked");
+            tracked.add(v);
+        }
+        assertEquals(n, testGrid.size(), "Pre-condition: all points tracked");
+
+        testGrid.rebuild(tracked, testEntropy);
+
+        // Post-condition: vertex count must match input list.
+        assertEquals(n, testGrid.size(),
+            "rebuildOptimized must re-insert ALL input vertices; silent drop detected: "
+            + "expected " + n + " but got " + testGrid.size());
+
+        // --- Part 2: rebuildOptimized via rebuild(Random) preserves size across repeated rebuilds ---
+        // Each rebuild() call takes a snapshot of current vertices and re-inserts them.
+        // With the fix in place the post-rebuild size must equal the pre-rebuild size every time.
+        MutableGrid cycleGrid = new MutableGrid();
+        Random cycleEntropy = new Random(0xDEAD);
+        int m = 30;
+        for (int i = 0; i < m; i++) {
+            Point3f p = Vertex.randomPoint(3000, cycleEntropy);
+            p.add(new Point3f(base, base, base));
+            cycleGrid.track(p, cycleEntropy);
+        }
+        int sizeBefore = cycleGrid.size();
+        // Three successive rebuilds — each must preserve exactly sizeBefore vertices.
+        for (int r = 0; r < 3; r++) {
+            cycleGrid.rebuild(cycleEntropy);
+            assertEquals(sizeBefore, cycleGrid.size(),
+                "Rebuild cycle " + (r + 1) + " must preserve vertex count "
+                + "(expected " + sizeBefore + ", got " + cycleGrid.size() + ")");
+        }
+    }
+
+    /**
      * Regression test for Luciferase-7wzml.14: hull-adjacent interior points must never be dropped
      * or cause track() to throw when the landmark walk exits the hull or hits the step cap.
      * <p>

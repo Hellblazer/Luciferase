@@ -10,6 +10,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.BeforeEach;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -114,6 +116,27 @@ class AdaptiveMeshTest extends TestBase {
         // entity1 and entity3 may or may not be in range depending on exact distances
     }
     
+    @Test
+    @DisplayName("refineAdaptively executionTime uses injected timeSource (deterministic)")
+    void testRefineAdaptivelyDeterministicExecutionTime() {
+        // Inject a stepped clock: first call returns 1000, second returns 1042 → executionTime == 42
+        AtomicLong tick = new AtomicLong(1000L);
+        LongSupplier steppedClock = () -> {
+            long t = tick.get();
+            tick.addAndGet(42L);
+            return t;
+        };
+        mesh.setTimeSource(steppedClock);
+
+        var strategy = new ErrorBasedRefinement();
+        var criteria = RefinementCriteria.simple(0.1, 0.01, 3);
+
+        var result = mesh.refineAdaptively(strategy, criteria);
+
+        assertEquals(42L, result.executionTimeMs(),
+            "executionTimeMs must equal the difference between the two timeSource calls");
+    }
+
     @Test
     @DisplayName("Adaptive refinement")
     void testAdaptiveRefinement() {

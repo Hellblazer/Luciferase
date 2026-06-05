@@ -7,6 +7,7 @@ package com.hellblazer.luciferase.common;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ConcurrentModificationException;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
@@ -91,6 +92,55 @@ class OpenAddressingSetTest {
         set.add(42);
         assertEquals(1, set.size());
         assertTrue(set.contains(42));
+    }
+
+    /**
+     * Regression: iterator must throw CME (not silently skip/duplicate/NPE)
+     * when a structural modification (add triggering rehash) occurs after the
+     * iterator is created. This is the core bug in Luciferase-7wzml.110.
+     */
+    @Test
+    void iteratorFailsFastOnStructuralModificationViaAdd() {
+        var set = new OaHashSet<Integer>();
+        // Pre-fill just below rehash threshold so the very next add triggers rehash.
+        // Initial capacity 4, threshold 0.75 → rehash at size >= 3.
+        set.add(1);
+        set.add(2);
+        // Iterator captured BEFORE the structural modification.
+        Iterator<Integer> it = set.iterator();
+        assertTrue(it.hasNext(), "iterator should see elements before modification");
+        // Structural modification: add triggers rehash → modCount bumped.
+        set.add(3);
+        // Both hasNext() and next() must now throw CME, not silently iterate stale data.
+        assertThrows(ConcurrentModificationException.class, it::hasNext,
+                     "hasNext() must throw CME after structural add");
+    }
+
+    @Test
+    void iteratorFailsFastOnStructuralModificationViaRemove() {
+        var set = new OaHashSet<Integer>();
+        set.add(10);
+        set.add(20);
+        set.add(30);
+        Iterator<Integer> it = set.iterator();
+        // Advance one step before modifying.
+        assertTrue(it.hasNext());
+        it.next();
+        // Remove a different element → structural modification.
+        assertTrue(set.remove(20));
+        assertThrows(ConcurrentModificationException.class, it::next,
+                     "next() must throw CME after structural remove");
+    }
+
+    @Test
+    void iteratorFailsFastOnClear() {
+        var set = new OaHashSet<Integer>();
+        set.add(1);
+        set.add(2);
+        Iterator<Integer> it = set.iterator();
+        set.clear();
+        assertThrows(ConcurrentModificationException.class, it::hasNext,
+                     "hasNext() must throw CME after clear()");
     }
 
     @Test

@@ -425,4 +425,64 @@ public class TetrahedronTest {
                 + " — adaptive predicate rescued near-degenerate sign (fix validated)");
         }
     }
+
+    /**
+     * circumsphereRadius must return a value within tight double tolerance of the analytically known circumradius.
+     *
+     * <p>A regular tetrahedron with edge length s has circumradius R = s * sqrt(6) / 4. We use the unit regular
+     * tetrahedron inscribed in the cube [0,1]^3 via its four non-adjacent vertices.
+     *
+     * <p>The four vertices of a regular tetrahedron inscribed in the unit cube are:
+     * (0,0,0), (1,1,0), (1,0,1), (0,1,1). Edge length = sqrt(2). Circumradius = sqrt(2)*sqrt(6)/4 = sqrt(3)/2.
+     */
+    @Test
+    @DisplayName("circumsphereRadius returns double-accurate result for regular tetrahedron with known circumradius")
+    public void testCircumsphereRadiusKnownValue() {
+        // Regular tetrahedron inscribed in unit cube — edge length = sqrt(2)
+        var va = new Vertex(0.0f, 0.0f, 0.0f);
+        var vb = new Vertex(1.0f, 1.0f, 0.0f);
+        var vc = new Vertex(1.0f, 0.0f, 1.0f);
+        var vd = new Vertex(0.0f, 1.0f, 1.0f);
+        var tet = new Tetrahedron(va, vb, vc, vd);
+
+        double r = tet.circumsphereRadius();
+
+        // Analytical circumradius for edge length sqrt(2): R = sqrt(3)/2 ≈ 0.8660254
+        double expected = Math.sqrt(3.0) / 2.0;
+        Assertions.assertFalse(Double.isNaN(r), "circumsphereRadius must not be NaN");
+        Assertions.assertFalse(Double.isInfinite(r), "circumsphereRadius must not be Infinite");
+        Assertions.assertEquals(expected, r, 1e-6,
+            "circumsphereRadius for regular tet (edge=sqrt(2)) must equal sqrt(3)/2 to 1e-6; got " + r);
+    }
+
+    /**
+     * Near-degenerate (sliver) tetrahedron: all four vertices nearly coplanar.
+     *
+     * <p>The float-precision path (centerSphereFast) would produce a near-zero denominator and blow up to NaN/Inf.
+     * The double-precision guard must return Double.MAX_VALUE (no NaN/Inf).
+     */
+    @Test
+    @DisplayName("circumsphereRadius returns Double.MAX_VALUE for near-degenerate (co-planar) tetrahedron")
+    public void testCircumsphereRadiusNearDegenerate() {
+        // Four nearly co-planar vertices: three in the z=0 plane, one barely above.
+        var va = new Vertex(0.0f, 0.0f, 0.0f);
+        var vb = new Vertex(1.0f, 0.0f, 0.0f);
+        var vc = new Vertex(0.0f, 1.0f, 0.0f);
+        // d is 1 ULP above the plane in float — orientation denominator ≈ 0.
+        var vd = new Vertex(0.5f, 0.5f, Float.MIN_VALUE);
+        var tet = new Tetrahedron(va, vb, vc, vd);
+
+        double r = tet.circumsphereRadius();
+
+        // Must be finite and guarded (no NaN, no Infinite).
+        // The adaptive leftOfPlane may return 0.0 for this configuration → MAX_VALUE returned.
+        // If the adaptive predicate resolves it as non-zero, the radius must still be finite.
+        Assertions.assertFalse(Double.isNaN(r),
+            "circumsphereRadius must not be NaN for near-degenerate tet");
+        Assertions.assertFalse(Double.isInfinite(r),
+            "circumsphereRadius must not be Infinite for near-degenerate tet");
+        // Either the guard kicked in (MAX_VALUE) or the adaptive predicate produced a finite radius.
+        Assertions.assertTrue(r == Double.MAX_VALUE || r > 0.0,
+            "circumsphereRadius must be MAX_VALUE (degenerate guard) or a positive finite radius; got " + r);
+    }
 }

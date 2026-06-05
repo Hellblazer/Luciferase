@@ -417,19 +417,23 @@ public class LinearTransformation implements CoordinateTransformation {
     }
 
     private LinearTransformation composeWithLinear(LinearTransformation other) {
-        if (sourceDimension != other.targetDimension) {
+        if (targetDimension != other.sourceDimension) {
             throw new IllegalArgumentException(
-                "Cannot compose transformations: source dimension mismatch"
+                "Cannot compose transformations: source dimension of other (" + other.sourceDimension
+                + ") must equal target dimension of this (" + targetDimension + ") to compose"
             );
         }
-        
+
         // Multiply matrices: result = other.matrix * this.matrix
-        var resultMatrix = new double[other.targetDimension][targetDimension];
-        
+        // this is (q x r), other is (p x q) where q = this.targetDimension = other.sourceDimension
+        // the guard ensures this.targetDimension == other.sourceDimension = q (the contraction dimension)
+        // result is (p x r) = (other.targetDimension x this.sourceDimension)
+        var resultMatrix = new double[other.targetDimension][sourceDimension];
+
         for (int i = 0; i < other.targetDimension; i++) {
-            for (int j = 0; j < targetDimension; j++) {
+            for (int j = 0; j < sourceDimension; j++) {
                 resultMatrix[i][j] = 0.0;
-                for (int k = 0; k < sourceDimension; k++) {
+                for (int k = 0; k < targetDimension; k++) {
                     resultMatrix[i][j] += other.matrix[i][k] * matrix[k][j];
                 }
             }

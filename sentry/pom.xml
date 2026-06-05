@@ -23,6 +23,11 @@
             <artifactId>grpc</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
         <!-- Test Only Dependencies Below This Line-->
         <dependency>
             <groupId>ch.qos.logback</groupId>

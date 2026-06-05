@@ -233,15 +233,20 @@ class MortonOptimizerTest {
     
     @Test
     void testMortonDistance2D() {
-        // Test Morton distance calculation - actual implementation behavior
-        assertEquals(32, MortonOptimizer.mortonDistance2D(0L, 0L)); // Identical values
-        assertEquals(32, MortonOptimizer.mortonDistance2D(5L, 5L)); // Identical values
-        
-        // Test actual behavior - distance measures common prefix length
-        assertEquals(0, MortonOptimizer.mortonDistance2D(0L, 1L)); // Adjacent codes
-        assertEquals(0, MortonOptimizer.mortonDistance2D(2L, 3L)); // Adjacent codes
-        assertEquals(1, MortonOptimizer.mortonDistance2D(0L, 4L)); // Different at bit 2
-        assertEquals(2, MortonOptimizer.mortonDistance2D(0L, 16L)); // Different at bit 4
+        // Identical codes must return 0 (same point, zero shared-prefix depth == maximum proximity)
+        assertEquals(0, MortonOptimizer.mortonSharedPrefixDepth2D(0L, 0L)); // Identical zero
+        assertEquals(0, MortonOptimizer.mortonSharedPrefixDepth2D(5L, 5L)); // Identical non-zero
+        assertEquals(0, MortonOptimizer.mortonSharedPrefixDepth2D(Long.MAX_VALUE, Long.MAX_VALUE)); // Identical at all bits
+
+        // Shared-prefix LCA depth: number of identical 2-bit pairs from the LSB end
+        assertEquals(0, MortonOptimizer.mortonSharedPrefixDepth2D(0L, 1L)); // Differ at bit 0 -> depth 0
+        assertEquals(0, MortonOptimizer.mortonSharedPrefixDepth2D(2L, 3L)); // Differ at bit 0 -> depth 0
+        assertEquals(1, MortonOptimizer.mortonSharedPrefixDepth2D(0L, 4L)); // Differ at bit 2 -> depth 1
+        assertEquals(2, MortonOptimizer.mortonSharedPrefixDepth2D(0L, 16L)); // Differ at bit 4 -> depth 2
+
+        // Cross-quadrant adjacency: codes 3 (binary 11) and 4 (binary 100) differ at bit 0
+        // -> depth 0 regardless of being in "adjacent" cells across a major boundary
+        assertEquals(0, MortonOptimizer.mortonSharedPrefixDepth2D(3L, 4L));
     }
     
     @Test

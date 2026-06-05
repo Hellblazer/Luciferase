@@ -21,6 +21,9 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 import java.util.*;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import static com.hellblazer.sentry.V.*;
 
 /**
@@ -86,6 +89,8 @@ import static com.hellblazer.sentry.V.*;
  */
 
 public class MutableGrid extends Grid {
+    private static final Logger log = LoggerFactory.getLogger(MutableGrid.class);
+
     // Configuration options
     public enum AllocationStrategy {
         POOLED,    // Use TetrahedronPool (default)
@@ -255,12 +260,17 @@ public class MutableGrid extends Grid {
         last = rebuildAllocator.acquire(fourCorners);
         allocator.warmUp(128); // Keep original allocator warm
 
+        // Counts of vertices that locate() could not place — used for fail-loud check below.
+        final int[] dropped = { 0 };
+
         if (useDirectForRebuild) {
             // Skip context overhead entirely for direct allocation
             for (var v : verticesList) {
                 var containedIn = locate(v, last, entropy);
                 if (containedIn != null) {
                     insertDirectly(v, containedIn, rebuildAllocator);
+                } else {
+                    dropped[0]++;
                 }
             }
         } else {
@@ -272,12 +282,23 @@ public class MutableGrid extends Grid {
                     var containedIn = locate(v, last, entropy);
                     if (containedIn != null) {
                         insertOptimized(v, containedIn);
+                    } else {
+                        dropped[0]++;
                     }
                 }
             });
         }
 
-        // Note: Call GridValidator.validateAndRepairVertexReferences() if needed
+        // Fail-loud: any vertex whose locate() returned null for a domain-interior point
+        // signals a mesh-consistency or robustness fault — not expected normal behaviour.
+        // A silent drop here corrupts the grid silently; surface it immediately.
+        if (dropped[0] > 0) {
+            log.warn("rebuildOptimized: {} of {} vertices could not be re-inserted (locate returned null)",
+                     dropped[0], verticesList.size());
+            throw new IllegalStateException(
+                "rebuildOptimized: " + dropped[0] + " of " + verticesList.size()
+                + " vertices dropped (locate returned null); mesh-consistency fault");
+        }
     }
 
     /**

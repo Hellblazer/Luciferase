@@ -87,7 +87,7 @@ public final class FloatArrayList implements RandomAccess {
 
         int newSize = size + list.size;
         if (newSize > array.length) {
-            array = Arrays.copyOf(array, newSize);
+            array = Arrays.copyOf(array, Math.max(newSize, array.length + (array.length >> 1) + 1));
         }
 
         System.arraycopy(list.array, 0, array, size, list.size);
@@ -201,6 +201,11 @@ public final class FloatArrayList implements RandomAccess {
 
     public int size() {
         return size;
+    }
+
+    /** Returns the current backing-array capacity. For testing only. */
+    int capacity() {
+        return array.length;
     }
 
     private void addFloat(int index, float element) {

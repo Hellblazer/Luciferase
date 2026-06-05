@@ -193,10 +193,24 @@ public final class MortonOptimizer {
     }
     
     /**
-     * Calculate Morton distance between two codes
-     * Useful for spatial proximity queries
+     * Returns the shared-prefix depth (quadtree LCA level) for two 2D Morton codes.
+     *
+     * <p>This is NOT a Euclidean, Chebyshev, or Manhattan distance between the decoded
+     * coordinates. It returns the number of identical 2-bit interleaved pairs counting
+     * from the least-significant end, i.e. the depth at which the two codes first agree
+     * in their quadtree path. Equal codes return 0 (maximum proximity / same cell).
+     * Adjacent codes that differ only in the lowest 2 bits return 0; codes that agree
+     * in the lowest k pairs return k.
+     *
+     * <p>Formerly misnamed "distance" — renamed semantics: higher value means the codes
+     * share more leading quadtree structure (closer in the tree), lower value (0) means
+     * they diverge at the leaf level. Callers needing a true spatial distance should
+     * decode both codes and compute coordinate distance explicitly.
      */
-    public static int mortonDistance2D(long morton1, long morton2) {
+    public static int mortonSharedPrefixDepth2D(long morton1, long morton2) {
+        if (morton1 == morton2) {
+            return 0;
+        }
         long xor = morton1 ^ morton2;
         return Long.numberOfTrailingZeros(xor) / 2;
     }
