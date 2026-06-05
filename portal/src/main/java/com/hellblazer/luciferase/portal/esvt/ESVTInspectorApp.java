@@ -810,6 +810,6 @@ public class ESVTInspectorApp extends SpatialInspectorApp<ESVTData, ESVTBridge> 
     }
 
     public static void main(String[] args) {
-        Application.launch(args);
+        Launcher.main(args);
     }
 }

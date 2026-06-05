@@ -1,10 +1,14 @@
 package com.hellblazer.luciferase.portal.web;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import io.javalin.testtools.JavalinTest;
 import okhttp3.MediaType;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import org.junit.jupiter.api.Test;
+
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -385,6 +389,107 @@ class SpatialInspectorServerTest {
         var server = new SpatialInspectorServer(0);
         // stop() should not throw even with an idle executor
         assertDoesNotThrow(server::stop);
+    }
+
+    // ========== .218: Bulk-Insert and Per-Session Entity Cap Tests ==========
+
+    /**
+     * A bulk-insert request whose array length exceeds MAX_BULK_INSERT must return 413
+     * and must NOT insert any entities into the spatial index.
+     *
+     * Uses a low cap (maxBulkInsert=3) to keep the JSON payload tiny.
+     */
+    @Test
+    void bulkInsertExceedingArrayCapReturns413AndInsertsNothing() {
+        // maxBulkInsert=3, maxSessionEntities=1000 — array of 4 exceeds bulk cap
+        var server = new SpatialInspectorServer(0, Clock.system(), 3, 1000);
+        JavalinTest.test(server.app(), (javalin, client) -> {
+            var sessionId = extractSessionId(client.post("/api/session/create").body().string());
+            postJson(client, "/api/spatial/create?sessionId=" + sessionId, CREATE_OCTREE_BODY);
+
+            // Build an array of 4 entities (over the cap of 3)
+            var body = buildEntityArray(4);
+            var resp = postJson(client, "/api/spatial/entities/bulk-insert?sessionId=" + sessionId, body);
+
+            assertEquals(413, resp.code(), "Expected 413 when bulk array exceeds cap");
+            var respBody = resp.body().string();
+            assertTrue(respBody.contains("PayloadTooLarge"), "Body must contain PayloadTooLarge type");
+
+            // Nothing must have been inserted
+            assertEquals(0, server.spatialService().sessionEntityCount(sessionId),
+                         "No entities must be inserted when bulk array cap is exceeded");
+        });
+    }
+
+    /**
+     * Successive inserts that push the per-session total over maxSessionEntities must return 413.
+     * The cap must be enforced by insertEntities (and insertEntity) so both paths are covered.
+     *
+     * Uses maxSessionEntities=5 to keep the test fast.
+     */
+    @Test
+    void perSessionEntityCapReturns413WhenExceeded() {
+        // maxBulkInsert=100, maxSessionEntities=5
+        var server = new SpatialInspectorServer(0, Clock.system(), 100, 5);
+        JavalinTest.test(server.app(), (javalin, client) -> {
+            var sessionId = extractSessionId(client.post("/api/session/create").body().string());
+            postJson(client, "/api/spatial/create?sessionId=" + sessionId, CREATE_OCTREE_BODY);
+
+            // Insert exactly 5 (at cap) — must succeed
+            var firstBatch = buildEntityArray(5);
+            var okResp = postJson(client, "/api/spatial/entities/bulk-insert?sessionId=" + sessionId, firstBatch);
+            assertEquals(201, okResp.code(), "Insert at cap must succeed");
+            assertEquals(5, server.spatialService().sessionEntityCount(sessionId));
+
+            // One more entity via single-insert path — must be rejected (cap=5, current=5)
+            var singleInsert = "{\"x\":0.5,\"y\":0.5,\"z\":0.5}";
+            var overCapResp = postJson(client, "/api/spatial/entities/insert?sessionId=" + sessionId, singleInsert);
+            assertEquals(413, overCapResp.code(), "Single insert over session cap must return 413");
+            assertTrue(overCapResp.body().string().contains("PayloadTooLarge"));
+
+            // Also reject a bulk insert that would push over cap
+            var extraBulk = buildEntityArray(1);
+            var overCapBulkResp = postJson(client,
+                    "/api/spatial/entities/bulk-insert?sessionId=" + sessionId, extraBulk);
+            assertEquals(413, overCapBulkResp.code(), "Bulk insert over session cap must return 413");
+
+            // Counter must remain at 5 — rejected inserts must not change it
+            assertEquals(5, server.spatialService().sessionEntityCount(sessionId),
+                         "Entity count must stay at cap after rejected inserts");
+        });
+    }
+
+    /**
+     * A bulk insert within both caps (array length ≤ maxBulkInsert and session total ≤ maxSessionEntities)
+     * must return 201 and all entities must be counted.
+     */
+    @Test
+    void withinCapBulkInsertSucceedsWithStatus201() {
+        // maxBulkInsert=10, maxSessionEntities=20
+        var server = new SpatialInspectorServer(0, Clock.system(), 10, 20);
+        JavalinTest.test(server.app(), (javalin, client) -> {
+            var sessionId = extractSessionId(client.post("/api/session/create").body().string());
+            postJson(client, "/api/spatial/create?sessionId=" + sessionId, CREATE_OCTREE_BODY);
+
+            var body = buildEntityArray(5);
+            var resp = postJson(client, "/api/spatial/entities/bulk-insert?sessionId=" + sessionId, body);
+
+            assertEquals(201, resp.code(), "Within-cap bulk insert must return 201");
+            var respBody = resp.body().string();
+            assertTrue(respBody.contains("\"inserted\":5"), "Response must report inserted count");
+
+            assertEquals(5, server.spatialService().sessionEntityCount(sessionId),
+                         "Session entity count must reflect inserted entities");
+        });
+    }
+
+    /**
+     * Build a JSON array of n minimal InsertEntityRequest objects with distinct positions.
+     */
+    private static String buildEntityArray(int n) {
+        return IntStream.range(0, n)
+                        .mapToObj(i -> "{\"x\":" + (i * 0.01f) + ",\"y\":0.0,\"z\":0.0}")
+                        .collect(Collectors.joining(",", "[", "]"));
     }
 
     /**

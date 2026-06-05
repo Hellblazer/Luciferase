@@ -3,6 +3,7 @@ package com.hellblazer.luciferase.portal.web;
 import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.esvo.io.VOLLoader;
 import com.hellblazer.luciferase.portal.web.dto.*;
+import com.hellblazer.luciferase.portal.web.service.EntityCapExceededException;
 import com.hellblazer.luciferase.portal.web.service.GpuService;
 import com.hellblazer.luciferase.portal.web.service.RenderService;
 import com.hellblazer.luciferase.portal.web.service.SpatialIndexService;
@@ -43,9 +44,13 @@ public class SpatialInspectorServer {
     static final int MAX_SESSIONS = 100;
     private static final long REAPER_PERIOD_MS = 60_000; // check every minute
 
+    /** Maximum number of entities allowed in a single bulk-insert array. */
+    static final int DEFAULT_MAX_BULK_INSERT = 10_000;
+
     private final Map<String, SpatialSession> sessions = new ConcurrentHashMap<>();
     private final AtomicInteger sessionCount = new AtomicInteger(0);
-    private final SpatialIndexService spatialService = new SpatialIndexService();
+    private final SpatialIndexService spatialService;
+    private final int maxBulkInsert;
     private final RenderService renderService = new RenderService();
     private final GpuService gpuService = new GpuService();
     private final Javalin app;
@@ -74,8 +79,23 @@ public class SpatialInspectorServer {
      * for deterministic time control.
      */
     public SpatialInspectorServer(int port, Clock clock) {
+        this(port, clock, DEFAULT_MAX_BULK_INSERT, SpatialIndexService.DEFAULT_MAX_SESSION_ENTITIES);
+    }
+
+    /**
+     * Full constructor allowing cap configuration.
+     * Use in tests to lower caps without modifying defaults.
+     *
+     * @param port             listening port (0 = dynamic)
+     * @param clock            injectable clock for deterministic tests
+     * @param maxBulkInsert    maximum entities in a single bulk-insert request (→ 413 if exceeded)
+     * @param maxSessionEntities maximum total entities per session (→ 413 if exceeded)
+     */
+    public SpatialInspectorServer(int port, Clock clock, int maxBulkInsert, int maxSessionEntities) {
         this.port = port;
         this.clock = clock;
+        this.maxBulkInsert = maxBulkInsert;
+        this.spatialService = new SpatialIndexService(maxSessionEntities);
         this.reaperExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "session-reaper");
             t.setDaemon(true);
@@ -110,6 +130,14 @@ public class SpatialInspectorServer {
         registerMeshEndpoints(javalin);
 
         // Exception handlers for specific types
+        javalin.exception(EntityCapExceededException.class, (e, ctx) -> {
+            ctx.status(413).json(Map.of(
+                "error", e.getMessage(),
+                "type", "PayloadTooLarge",
+                "timestamp", Instant.now().toString()
+            ));
+        });
+
         javalin.exception(NoSuchElementException.class, (e, ctx) -> {
             ctx.status(404).json(Map.of(
                 "error", e.getMessage(),
@@ -305,6 +333,11 @@ public class SpatialInspectorServer {
         validateSession(sessionId);
 
         var requests = ctx.bodyAsClass(InsertEntityRequest[].class);
+        if (requests.length > maxBulkInsert) {
+            throw new EntityCapExceededException(
+                    "Bulk-insert array length " + requests.length
+                    + " exceeds maximum of " + maxBulkInsert + " entities per request.");
+        }
         var entities = spatialService.insertEntities(sessionId, List.of(requests));
 
         ctx.status(201).json(Map.of(

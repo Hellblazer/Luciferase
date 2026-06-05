@@ -219,15 +219,16 @@ public class ESVOBridge implements SpatialBridge<ESVOOctreeData> {
     @Override
     public BuildResult<ESVOOctreeData> buildFromVoxels(List<Point3i> voxels, int maxDepth, int gridResolution) {
         var startTime = System.currentTimeMillis();
+        int voxelCount = voxels != null ? voxels.size() : 0;
         try {
             var octree = buildOctree(voxels, maxDepth);
             lastBuildTimeMs = System.currentTimeMillis() - startTime;
-            return new BuildResult<>(octree, lastBuildTimeMs, voxels.size(),
+            return BuildResult.success(octree, lastBuildTimeMs, voxelCount,
                 String.format("Built octree with %d nodes in %d ms", octree.getNodeCount(), lastBuildTimeMs));
         } catch (Exception e) {
             lastBuildTimeMs = System.currentTimeMillis() - startTime;
             log.error("Failed to build octree", e);
-            return new BuildResult<>(null, lastBuildTimeMs, voxels.size(), "Build failed: " + e.getMessage());
+            return BuildResult.failure(lastBuildTimeMs, voxelCount, "Build failed: " + e.getMessage());
         }
     }
 

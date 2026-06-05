@@ -291,6 +291,48 @@ class ESVOBridgeTest {
         }
     }
     
+    // ==================== BuildResult unambiguous-failure-signal tests ====================
+
+    @Test
+    void testBuildFromVoxels_failure_setsOkFalseAndNullData() {
+        // null voxels triggers IllegalArgumentException inside buildOctree → catch block
+        var result = bridge.buildFromVoxels(null, 5, 64);
+
+        assertNotNull(result, "buildFromVoxels must return a non-null wrapper even on failure");
+        assertFalse(result.ok(), "ok flag must be false on failure");
+        assertFalse(result.isSuccess(), "isSuccess() must be false on failure");
+        assertNull(result.data(), "data must be null on failure");
+        assertNotNull(result.message(), "failure message should be non-null");
+        assertTrue(result.message().startsWith("Build failed:"), "message should describe failure");
+    }
+
+    @Test
+    void testBuildFromVoxels_success_setsOkTrueAndNonNullData() {
+        var voxels = createSimpleVoxelCube(8);
+        var result = bridge.buildFromVoxels(voxels, 3, 64);
+
+        assertNotNull(result, "buildFromVoxels must return a non-null wrapper on success");
+        assertTrue(result.ok(), "ok flag must be true on success");
+        assertTrue(result.isSuccess(), "isSuccess() must be true on success");
+        assertNotNull(result.data(), "data must be non-null on success");
+        assertTrue(result.data().getNodeCount() > 0, "octree must have nodes");
+    }
+
+    @Test
+    void testBuildResult_okFlagIsAuthoritative_notWrapperNullCheck() {
+        // Demonstrate that the wrapper is always non-null — callers who check
+        // `if (result != null)` would incorrectly treat failure as success.
+        // The ok flag is the ONLY correct signal.
+        var failResult = bridge.buildFromVoxels(null, 5, 64);
+
+        // wrapper is not null — null-checking the wrapper is WRONG
+        assertNotNull(failResult, "wrapper is never null; null-checking it silently passes failures");
+        // ok flag is false — this is the correct check
+        assertFalse(failResult.ok(), "ok is the authoritative failure signal");
+        // isSuccess delegates to ok, not to data != null
+        assertFalse(failResult.isSuccess(), "isSuccess() must agree with ok flag");
+    }
+
     // Helper method to create a simple cube of voxels
     private List<Point3i> createSimpleVoxelCube(int size) {
         var voxels = new ArrayList<Point3i>();
