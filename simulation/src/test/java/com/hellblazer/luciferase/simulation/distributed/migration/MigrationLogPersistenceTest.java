@@ -84,6 +84,38 @@ class MigrationLogPersistenceTest {
         assertEquals(TransactionState.MigrationPhase.PREPARE, recovered_state.phase());
     }
 
+    /**
+     * Luciferase-rtffx: every case here passed a null snapshot, so a regression in serializing a non-null
+     * TransactionState.snapshot would go undetected in this file. Record a PREPARE carrying a populated
+     * SerializedSnapshot and assert it survives recordPrepare -> loadIncomplete (the Point3d-free
+     * SerializedSnapshot is Jackson-round-trippable; the old EntitySnapshot/Point3d field was not).
+     */
+    @Test
+    void testRecordAndLoadTransactionWithNonNullSnapshot() throws IOException {
+        var txnId = UUID.randomUUID();
+        var authority = UUID.randomUUID();
+        var snap = new TransactionState.SerializedSnapshot("entity-x", authority, 7L, 3L, 4242L);
+
+        var state = new TransactionState(
+            txnId, "entity-x", UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+            snap, UUID.randomUUID(), TransactionState.MigrationPhase.PREPARE, 1000L
+        );
+
+        persistence.recordPrepare(state);
+
+        var recovered = new TestMigrationLogPersistence(processId, tempDir);
+        var incomplete = recovered.loadIncomplete();
+
+        assertEquals(1, incomplete.size(), "the PREPARE record with a non-null snapshot must be recoverable");
+        var roundTripped = incomplete.get(0).snapshot();
+        assertNotNull(roundTripped, "non-null snapshot must survive recordPrepare -> loadIncomplete");
+        assertEquals("entity-x", roundTripped.entityId());
+        assertEquals(authority, roundTripped.authorityBubbleId());
+        assertEquals(7L, roundTripped.epoch());
+        assertEquals(3L, roundTripped.version());
+        assertEquals(4242L, roundTripped.timestamp());
+    }
+
     @Test
     void testCommitMarksTransactionComplete() throws IOException {
         var txnId = UUID.randomUUID();
