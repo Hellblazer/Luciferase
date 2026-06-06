@@ -46,16 +46,10 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<? exte
     
     private final Tetree<?, ?> tetree;
     
-    // Edge vertex pairs (0-5)
-    private static final int[][] EDGE_VERTICES = {
-        {0, 1}, // Edge 0
-        {0, 2}, // Edge 1
-        {0, 3}, // Edge 2
-        {1, 2}, // Edge 3
-        {1, 3}, // Edge 4
-        {2, 3}  // Edge 5
-    };
-    
+    // Canonical edge/face connectivity now lives in TetreeConnectivity (RDR-014 AC2); consume it
+    // directly so both neighbor classes share one authoritative source.
+    private static final int[][] EDGE_VERTICES = TetreeConnectivity.EDGE_VERTICES;
+
     // Which edges touch each vertex
     private static final int[][] VERTEX_EDGES = {
         {0, 1, 2},    // Vertex 0: edges 0, 1, 2
@@ -63,17 +57,10 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<? exte
         {1, 3, 5},    // Vertex 2: edges 1, 3, 5
         {2, 4, 5}     // Vertex 3: edges 2, 4, 5
     };
-    
-    // Which faces share each edge
-    private static final int[][] EDGE_FACES = {
-        {2, 3},    // Edge 0 (v0-v1): faces 2 and 3
-        {1, 3},    // Edge 1 (v0-v2): faces 1 and 3
-        {1, 2},    // Edge 2 (v0-v3): faces 1 and 2
-        {0, 3},    // Edge 3 (v1-v2): faces 0 and 3
-        {0, 2},    // Edge 4 (v1-v3): faces 0 and 2
-        {0, 1}     // Edge 5 (v2-v3): faces 0 and 1
-    };
-    
+
+    // Which faces share each edge (canonical: TetreeConnectivity.EDGE_FACES)
+    private static final int[][] EDGE_FACES = TetreeConnectivity.EDGE_FACES;
+
     // Which faces contain each vertex
     private static final int[][] VERTEX_FACES = {
         {1, 2, 3},    // Vertex 0: in faces 1, 2, 3 (opposite face 0)

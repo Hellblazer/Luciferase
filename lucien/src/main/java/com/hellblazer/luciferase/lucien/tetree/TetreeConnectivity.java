@@ -46,6 +46,36 @@ public final class TetreeConnectivity {
     public static final int TET_TYPES = 6;
 
     /**
+     * Canonical edge -> vertex-pair table (RDR-014 AC2). Edge e is bounded by the two local vertices
+     * {@code EDGE_VERTICES[e]}. Type-independent (the local vertex numbering is shared by all 6 types).
+     * [edge_index] -> {vertexA, vertexB}.
+     */
+    public static final int[][] EDGE_VERTICES = { { 0, 1 }, // Edge 0
+                                                  { 0, 2 }, // Edge 1
+                                                  { 0, 3 }, // Edge 2
+                                                  { 1, 2 }, // Edge 3
+                                                  { 1, 3 }, // Edge 4
+                                                  { 2, 3 }  // Edge 5
+    };
+
+    /**
+     * Canonical edge -> bounding-face table (RDR-014 F4 / AC2). Edge e is bounded by exactly the two
+     * faces that contain both of its vertices, where face i is opposite vertex i (see {@link #FACE_CORNERS}).
+     * This is the single authoritative source consumed by both {@code TetreeNeighborFinder} and
+     * {@code TetreeNeighborDetector}; it replaces the (incorrect) inline table previously in the Finder.
+     * Type-independent because {@code FACE_CORNERS} is identical across all 6 types.
+     * {@code EdgeFaceTableParityTest} asserts this equals the geometric derivation from {@code FACE_CORNERS}.
+     * [edge_index] -> {faceA, faceB}.
+     */
+    public static final int[][] EDGE_FACES = { { 2, 3 }, // Edge 0 (v0-v1)
+                                               { 1, 3 }, // Edge 1 (v0-v2)
+                                               { 1, 2 }, // Edge 2 (v0-v3)
+                                               { 0, 3 }, // Edge 3 (v1-v2)
+                                               { 0, 2 }, // Edge 4 (v1-v3)
+                                               { 0, 1 }  // Edge 5 (v2-v3)
+    };
+
+    /**
      * Parent type to child type mapping. Given a parent tetrahedron type (0-5) and child index (0-7), returns the type
      * of that child tetrahedron.
      *
