@@ -285,3 +285,25 @@ traverse the same-level ring's descendants (via `findDescendantsAtLevel` on the 
 `tet`'s own children; Phase 1's exact-count fixtures pin (A) via an independent geometric incidence oracle
 (`Tet.coordinates()` collinearity/vertex-coincidence), not a table re-derivation, so they cannot be
 satisfied by a self-children-only or table-tautological implementation.
+
+## Implementation-time decision — vertex cross-level scope is ±1 (resolved 2026-06-05, Phase 3)
+
+The `## Decision (updated post-research)` D1' text said to implement `findVertexNeighborsAtLevel` /
+`findVertexNeighborsAtFinerLevels` **full-depth**. During Phase 3 implementation this was deliberately
+scoped to **±1 only** (level±1), for three reasons:
+
+- **The locked oracle is ±1.** `CrossLevelNeighborOracle.finerVertexStarPlus1` — the independent geometric
+  fixture that pins CONTRACT (A) — enumerates only the level-(L+1) star. The AC4 exact-count fixture
+  (`vertexFinerStarExactCountContractA`) asserts the level-(L+1) slice. There is no test contract for
+  depths beyond ±1; "full-depth" was never pinned by a fixture.
+- **Full-depth descent is unbounded work.** A finer star descending to `maxRefinementLevel = 21` runs an
+  anchor-box sweep at every level for every queried vertex; in the dense-grid vertex tests this hung the
+  suite. The cost buys no tested coverage.
+- **Reciprocity requires symmetric depth (AC3).** The coarser loop and the finer descent must reach the
+  same number of levels or the cross-level relation is non-reciprocal (a level-L↔level-(L+2) pair listed
+  in one direction only). Both are now ±1, so the relation is reciprocal by construction. This is
+  consistent with F1: vertex neighbors are a read-only, test-contract-scope query (not a live BFS path),
+  and the live edge path is itself ±1.
+
+**Decision: vertex cross-level scope is ±1**, symmetric finer/coarser, matching the oracle and F1. The
+D1' "full-depth" wording is superseded by this note.

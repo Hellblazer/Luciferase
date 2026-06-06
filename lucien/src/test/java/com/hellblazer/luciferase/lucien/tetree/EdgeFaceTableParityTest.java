@@ -140,11 +140,19 @@ class EdgeFaceTableParityTest {
                 }
             }
 
-            Set<Object> actual = new HashSet<>(finder.findEdgeNeighbors(tet.tmIndex(), e));
+            // This test validates the same-level edge->face mapping. Since RDR-014 Phase 2, findEdgeNeighbors
+            // also returns the ±1 cross-level adjacency ring; restrict to the same-level slice so the assertion
+            // still pins exactly the edge->face table (the cross-level ring is covered by TetreeEdgeNeighborTest).
+            Set<Object> actual = new HashSet<>();
+            for (var k : finder.findEdgeNeighbors(tet.tmIndex(), e)) {
+                if (Tet.tetrahedron(k).l() == tet.l()) {
+                    actual.add(k);
+                }
+            }
             assertEquals(expected, actual,
-                         "findEdgeNeighbors(edge " + e + ", v" + va + "-v" + vb + ") must equal the face "
-                         + "neighbors across the geometrically-derived bounding faces; a mismatch means the "
-                         + "live path is using a wrong edge->face mapping");
+                         "findEdgeNeighbors(edge " + e + ", v" + va + "-v" + vb + ") same-level slice must equal "
+                         + "the face neighbors across the geometrically-derived bounding faces; a mismatch means "
+                         + "the live path is using a wrong edge->face mapping");
             anyNonEmpty |= !actual.isEmpty();
         }
         assertTrue(anyNonEmpty,

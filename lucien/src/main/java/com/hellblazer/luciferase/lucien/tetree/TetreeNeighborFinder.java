@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.Constants;
 
+import javax.vecmath.Point3i;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -110,11 +111,26 @@ public class TetreeNeighborFinder {
         // Also need to check for neighbors at different levels that share the edge
         var level = tet.l();
 
-        // Check coarser level
+        // Check coarser level. CONTRACT (A) coarser neighbors are the EXACT inverse of the finer ring: a
+        // level-(L-1) tet m is a coarser edge-neighbor of tet ACROSS THIS edge iff tet lies in m's finer
+        // adjacency ring for the m-edge that geometrically coincides with tet's queried edge [pa,pb]. m must be
+        // a face-neighbor of tet's parent (so tet is a child of one of m's face-neighbors). Scoping to the
+        // coincident m-edge (not the union over all of m's edges) is required: tet may share a DIFFERENT edge
+        // with m, which must not be reported as a neighbor across THIS edge. This makes the relation reciprocal
+        // by construction per-edge (RDR-014 AC3): tet→m across [pa,pb] ⟹ m's finer ring on that edge ∋ tet ⟹ m→tet.
         if (level > 0) {
             var parent = tet.parent();
-            var parentEdgeNeighbors = findEdgeNeighborsAtLevel(parent, edgeIndex, (byte) (level - 1));
-            uniqueNeighbors.addAll(parentEdgeNeighbors);
+            var pa = tet.coordinates()[TetreeConnectivity.EDGE_VERTICES[edgeIndex][0]];
+            var pb = tet.coordinates()[TetreeConnectivity.EDGE_VERTICES[edgeIndex][1]];
+            for (var face = 0; face < TetreeConnectivity.FACES_PER_TET; face++) {
+                var m = findFaceNeighbor(parent, face);
+                if (m == null || m.l() != level - 1) {
+                    continue;
+                }
+                if (isCoarserEdgeNeighbor(m, tet.tmIndex(), pa, pb)) {
+                    uniqueNeighbors.add(m.tmIndex());
+                }
+            }
         }
 
         // Check finer level
@@ -307,15 +323,13 @@ public class TetreeNeighborFinder {
         // Check different levels for vertex neighbors
         var level = tet.l();
 
-        // Check coarser levels
+        // Check the coarser level. ±1 live reach only (RDR-014 F1), symmetric to the finer star so the
+        // cross-level relation is reciprocal (AC3). Pass the ORIGINAL tet (not its ancestor) so the helper
+        // resolves the shared vertex POINT from tet.coordinates()[vertexIndex]; re-deriving it from an
+        // ancestor's same index would pick a different geometric vertex (the anchor/index correspondence is not
+        // preserved up the parent chain).
         if (level > 0) {
-            var current = tet;
-            for (var l = (byte) (level - 1); l >= 0; l--) {
-                current = current.parent();
-                // Find all neighbors at this level that share the vertex
-                var coarserNeighbors = findVertexNeighborsAtLevel(current, vertexIndex, l);
-                vertexNeighbors.addAll(coarserNeighbors);
-            }
+            vertexNeighbors.addAll(findVertexNeighborsAtLevel(tet, vertexIndex, (byte) (level - 1)));
         }
 
         // Check finer levels
@@ -323,6 +337,16 @@ public class TetreeNeighborFinder {
             var finerNeighbors = findVertexNeighborsAtFinerLevels(tet, vertexIndex, (byte) (level + 1));
             vertexNeighbors.addAll(finerNeighbors);
         }
+
+        // A cross-level (level != L) vertex neighbor must genuinely carry the shared vertex (CONTRACT A). The
+        // edge-neighbor aggregation above pulls in finer/coarser edge rings whose tets touch an edge THROUGH
+        // the vertex but need not be coincident with it; drop those so the cross-level slices equal exactly the
+        // adjacency star (RDR-014 AC4). Same-level adjacency (face/edge ring) is left untouched.
+        var vp = tet.coordinates()[vertexIndex];
+        vertexNeighbors.removeIf(k -> {
+            var other = Tet.tetrahedron(k);
+            return other.l() != level && !hasVertex(other, vp);
+        });
 
         // Remove self
         vertexNeighbors.remove(tetIndex);
@@ -377,28 +401,205 @@ public class TetreeNeighborFinder {
         return descendants;
     }
 
-    // Helper method to find edge neighbors at a specific level
-    private List<ExtendedTetreeKey> findEdgeNeighborsAtLevel(Tet tet, int edgeIndex, byte targetLevel) {
-        var neighbors = new ArrayList<ExtendedTetreeKey>();
-        // Implementation would traverse to find all tets at target level sharing the edge
-        // This is a placeholder for the complex geometric calculation
+    /**
+     * Cross-level EDGE neighbors under CONTRACT (A) ADJACENCY (RDR-014). Returns the level-{@code targetLevel}
+     * tets that share {@code tet}'s edge {@code edgeIndex} and are adjacent to {@code tet} via its (at most two)
+     * bounding-face neighbors — never {@code tet}'s own nested children. Scope is ±1 (RDR-014 F1): the public
+     * caller invokes this with {@code targetLevel == tet.level()} (coarser-side, passing the parent) or
+     * {@code targetLevel == tet.level()+1} (finer-side, passing the tet itself).
+     *
+     * <ul>
+     *   <li><b>Same level</b> ({@code targetLevel == tet.level()}): the bounding-face neighbors of {@code tet}
+     *       across {@code EDGE_FACES[edgeIndex]} that actually share the edge segment.</li>
+     *   <li><b>Finer</b> ({@code targetLevel > tet.level()}): the children of those bounding-face neighbors that
+     *       lie along the shared edge — the contract-(A) adjacency ring, matching the independent geometric
+     *       oracle {@code CrossLevelNeighborOracle.finerEdgeRingPlusMinus1}.</li>
+     * </ul>
+     */
+    private List<TetreeKey<?>> findEdgeNeighborsAtLevel(Tet tet, int edgeIndex, byte targetLevel) {
+        var neighbors = new ArrayList<TetreeKey<?>>();
+        if (targetLevel < 0 || targetLevel > Constants.getMaxRefinementLevel() || targetLevel < tet.l()) {
+            return neighbors; // ±1 scope: callers only ask same-level or finer (RDR-014 F1)
+        }
+        var verts = tet.coordinates();
+        var pa = verts[TetreeConnectivity.EDGE_VERTICES[edgeIndex][0]];
+        var pb = verts[TetreeConnectivity.EDGE_VERTICES[edgeIndex][1]];
+        for (var faceIndex : TetreeConnectivity.EDGE_FACES[edgeIndex]) {
+            var neighbor = findFaceNeighbor(tet, faceIndex);
+            if (neighbor == null) {
+                continue; // boundary face
+            }
+            if (targetLevel == tet.l()) {
+                if (neighbor.l() == targetLevel && sharesEdgeSegment(neighbor, pa, pb)) {
+                    neighbors.add(neighbor.tmIndex());
+                }
+            } else { // targetLevel > tet.l(): finer adjacency ring = neighbor's children along the edge
+                for (var c = 0; c < TetreeConnectivity.CHILDREN_PER_TET; c++) {
+                    Tet child;
+                    try {
+                        child = neighbor.child(c);
+                    } catch (RuntimeException e) {
+                        continue; // invalid / max-level child
+                    }
+                    if (child.l() == targetLevel && sharesEdgeSegment(child, pa, pb)) {
+                        neighbors.add(child.tmIndex());
+                    }
+                }
+            }
+        }
         return neighbors;
     }
 
-    // Helper method to find vertex neighbors at finer levels
-    private List<ExtendedTetreeKey> findVertexNeighborsAtFinerLevels(Tet tet, int vertexIndex, byte startLevel) {
-        var neighbors = new ArrayList<ExtendedTetreeKey>();
-        // Implementation would recursively check children that share the vertex
-        // This is a placeholder for the complex geometric calculation
+    /**
+     * True iff coarser tet {@code m} is an edge-neighbor of the tet whose queried edge is the segment
+     * [{@code pa}, {@code pb}] (identified by {@code tetKey}). Scoped to the single m-edge that geometrically
+     * coincides with [pa, pb] (both query endpoints lie on it): for that m-edge, {@code tetKey} must appear in
+     * {@code m}'s finer adjacency ring. Per-edge scoping prevents reporting {@code m} across an edge the query
+     * tet does not actually share with {@code m} (RDR-014 AC3 reciprocity is then per-edge, not all-edges).
+     */
+    private boolean isCoarserEdgeNeighbor(Tet m, TetreeKey<?> tetKey, Point3i pa, Point3i pb) {
+        var finer = (byte) (m.l() + 1);
+        var mv = m.coordinates();
+        for (var em = 0; em < TetreeConnectivity.EDGES_PER_TET; em++) {
+            var ma = mv[TetreeConnectivity.EDGE_VERTICES[em][0]];
+            var mb = mv[TetreeConnectivity.EDGE_VERTICES[em][1]];
+            if (!onSegment(pa, ma, mb) || !onSegment(pb, ma, mb)) {
+                continue; // the queried edge does not lie on this m-edge
+            }
+            if (findEdgeNeighborsAtLevel(m, em, finer).contains(tetKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Cross-level (finer) VERTEX star under CONTRACT (A) ADJACENCY (RDR-014). Returns every level-{@code
+     * startLevel} tet that carries {@code tet}'s vertex {@code vertexIndex}, EXCLUDING {@code tet}'s own nested
+     * children (a parent is not an adjacency neighbor of its child). Enumerated geometrically — independent of
+     * the BEY-indexed {@code CHILD_VERTEX_PARENT_VERTEX} table (which a naive Morton-index inversion would
+     * mis-read, RDR-014 Phase 3 hazard) — so it matches the table-independent oracle
+     * {@code CrossLevelNeighborOracle.finerVertexStarPlus1}. Vertex neighbors are a read-only, test-scope query
+     * (RDR-014 F1).
+     */
+    private List<TetreeKey<?>> findVertexNeighborsAtFinerLevels(Tet tet, int vertexIndex, byte startLevel) {
+        var neighbors = new ArrayList<TetreeKey<?>>();
+        if (startLevel < 0 || startLevel > Constants.getMaxRefinementLevel()) {
+            return neighbors;
+        }
+        // ±1 live reach only (RDR-014 F1; matches the oracle finerVertexStarPlus1). The public caller invokes
+        // this with startLevel == level+1, so this enumerates exactly the level-(L+1) star. Full-depth descent
+        // is intentionally NOT done: it is unbounded work (to maxRefinementLevel=21) for no tested benefit and
+        // would make the finer/coarser depths asymmetric unless the coarser loop also ran full-depth.
+        collectVertexStarAtLevel(tet, tet.coordinates()[vertexIndex], startLevel, neighbors);
         return neighbors;
     }
 
-    // Helper method to find vertex neighbors at a specific level
-    private List<ExtendedTetreeKey> findVertexNeighborsAtLevel(Tet tet, int vertexIndex, byte targetLevel) {
-        var neighbors = new ArrayList<ExtendedTetreeKey>();
-        // Implementation would traverse to find all tets at target level sharing the vertex
-        // This is a placeholder for the complex geometric calculation
+    /**
+     * Cross-level (coarser) VERTEX star under CONTRACT (A) ADJACENCY (RDR-014). Returns every level-{@code
+     * targetLevel} tet (coarser than {@code tet}) that carries {@code tet}'s vertex {@code vertexIndex},
+     * EXCLUDING {@code tet}'s own ancestor at that level (the container, not an adjacency neighbor). Symmetric
+     * to {@link #findVertexNeighborsAtFinerLevels}: whenever {@code tet} lists a finer neighbor {@code n},
+     * {@code n} lists {@code tet} here, satisfying AC3 reciprocity.
+     */
+    private List<TetreeKey<?>> findVertexNeighborsAtLevel(Tet tet, int vertexIndex, byte targetLevel) {
+        var neighbors = new ArrayList<TetreeKey<?>>();
+        if (targetLevel < 0 || targetLevel >= tet.l()) {
+            return neighbors;
+        }
+        collectVertexStarAtLevel(tet, tet.coordinates()[vertexIndex], targetLevel, neighbors);
         return neighbors;
+    }
+
+    /**
+     * Enumerate all level-{@code targetLevel} tets carrying point {@code p}, excluding {@code self}'s own
+     * relative at that level (its child when {@code targetLevel} is finer, its ancestor when coarser). A
+     * level-{@code targetLevel} tet with anchor {@code a} spans {@code [a, a+h]} per axis, so to carry {@code p}
+     * its anchor must lie in {@code [p-h, p]} — a 2×2×2 anchor box, all 6 types. Pure {@code Tet.coordinates()}
+     * geometry; no connectivity-table dependence.
+     */
+    private void collectVertexStarAtLevel(Tet self, Point3i p, byte targetLevel, List<TetreeKey<?>> out) {
+        int h = Constants.lengthAtLevel(targetLevel);
+        for (var ax = anchorFloor(p.x - h, h); ax <= p.x; ax += h) {
+            for (var ay = anchorFloor(p.y - h, h); ay <= p.y; ay += h) {
+                for (var az = anchorFloor(p.z - h, h); az <= p.z; az += h) {
+                    if (ax < 0 || ay < 0 || az < 0) {
+                        continue;
+                    }
+                    for (byte type = 0; type < TetreeConnectivity.TET_TYPES; type++) {
+                        Tet cand;
+                        try {
+                            cand = new Tet(ax, ay, az, targetLevel, type);
+                            if (!cand.isValid()) {
+                                continue;
+                            }
+                        } catch (RuntimeException e) {
+                            continue;
+                        }
+                        if (!hasVertex(cand, p)) {
+                            continue;
+                        }
+                        // Exclude self's own containment line (CONTRACT A: a container is not an adjacency
+                        // neighbor of what it contains). Finer: skip cand if it is a descendant of self (self is
+                        // its ancestor). Coarser: skip cand if it is self's ancestor. Both reduce to the same
+                        // ancestor test on the deeper of the two, making finer/coarser exclusions symmetric so
+                        // the cross-level relation is reciprocal (RDR-014 AC3).
+                        if (targetLevel > self.l()) {
+                            if (self.equals(findAncestorAtLevel(cand, self.l()))) {
+                                continue; // finer: skip self's own descendant
+                            }
+                        } else {
+                            if (cand.equals(findAncestorAtLevel(self, targetLevel))) {
+                                continue; // coarser: skip self's own ancestor
+                            }
+                        }
+                        out.add(cand.tmIndex());
+                    }
+                }
+            }
+        }
+    }
+
+    /** True iff at least two vertices of {@code cand} lie on the inclusive segment [pa, pb]. */
+    private static boolean sharesEdgeSegment(Tet cand, Point3i pa, Point3i pb) {
+        var onSeg = 0;
+        for (var v : cand.coordinates()) {
+            if (onSegment(v, pa, pb)) {
+                onSeg++;
+            }
+        }
+        return onSeg >= 2;
+    }
+
+    /** True iff {@code cand} has a vertex coincident with {@code p}. */
+    private static boolean hasVertex(Tet cand, Point3i p) {
+        for (var v : cand.coordinates()) {
+            if (v.equals(p)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Exact integer test: {@code v} is collinear with [pa,pb] and lies within the inclusive segment. */
+    private static boolean onSegment(Point3i v, Point3i pa, Point3i pb) {
+        long dx = pb.x - pa.x, dy = pb.y - pa.y, dz = pb.z - pa.z;
+        long wx = v.x - pa.x, wy = v.y - pa.y, wz = v.z - pa.z;
+        long cx = dy * wz - dz * wy;
+        long cy = dz * wx - dx * wz;
+        long cz = dx * wy - dy * wx;
+        if (cx != 0 || cy != 0 || cz != 0) {
+            return false; // not collinear
+        }
+        long dot = wx * dx + wy * dy + wz * dz;
+        long len2 = dx * dx + dy * dy + dz * dz;
+        return dot >= 0 && dot <= len2;
+    }
+
+    /** Floor {@code v} to the nearest multiple of {@code h} toward -inf (v may be slightly negative). */
+    private static int anchorFloor(int v, int h) {
+        var a = (v / h) * h;
+        return a > v ? a - h : a;
     }
 
     // Helper method to check if tetrahedron is within domain bounds

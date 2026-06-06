@@ -166,6 +166,55 @@ final class CrossLevelNeighborOracle {
         return star;
     }
 
+    /**
+     * Contract-(A) coarser (level-1) EDGE ring, scoped to the ±1 live reach (RDR-014 F1): the level-(L-1)
+     * face-neighbors {@code m} of {@code t}'s parent for which {@code t} lies on the finer ring of {@code m}
+     * across the m-edge that geometrically coincides with {@code t}'s edge. This is the exact inverse of
+     * {@link #finerEdgeRingPlusMinus1}: {@code m} is a coarser neighbor of {@code t} iff {@code t} is a finer
+     * neighbor of {@code m}. Built from the same geometric primitives ({@code findFaceNeighbor}, child
+     * incidence, segment collinearity), independent of the production helper's traversal.
+     */
+    static Set<TetreeKey<?>> coarserEdgeRingMinus1(TetreeNeighborFinder finder, Tet t, int edge) {
+        var ring = new HashSet<TetreeKey<?>>();
+        if (t.l() == 0) {
+            return ring;
+        }
+        var verts = t.coordinates();
+        var pa = verts[TetreeConnectivity.EDGE_VERTICES[edge][0]];
+        var pb = verts[TetreeConnectivity.EDGE_VERTICES[edge][1]];
+        var parent = t.parent();
+        var tKey = t.tmIndex();
+        for (var f = 0; f < TetreeConnectivity.FACES_PER_TET; f++) {
+            var m = finder.findFaceNeighbor(parent, f);
+            if (m == null || m.l() != t.l() - 1) {
+                continue;
+            }
+            var mv = m.coordinates();
+            for (var em = 0; em < TetreeConnectivity.EDGES_PER_TET; em++) {
+                var ma = mv[TetreeConnectivity.EDGE_VERTICES[em][0]];
+                var mb = mv[TetreeConnectivity.EDGE_VERTICES[em][1]];
+                if (!onSegment(pa, ma, mb) || !onSegment(pb, ma, mb)) {
+                    continue; // t's edge does not lie on this m-edge
+                }
+                if (finerEdgeRingPlusMinus1(finder, m, em).contains(tKey)) {
+                    ring.add(m.tmIndex());
+                }
+            }
+        }
+        return ring;
+    }
+
+    /** The level-(L-1) members of {@code result} (the coarser slice of a merged neighbor set). */
+    static Set<TetreeKey<?>> coarserSlice(Set<TetreeKey<?>> result, byte level) {
+        var out = new HashSet<TetreeKey<?>>();
+        for (var k : result) {
+            if (Tet.tetrahedron(k).l() == level - 1) {
+                out.add(k);
+            }
+        }
+        return out;
+    }
+
     /** The level-(L+1) members of {@code result} (the finer slice of a merged neighbor set). */
     static Set<TetreeKey<?>> finerSlice(Set<TetreeKey<?>> result, byte level) {
         var out = new HashSet<TetreeKey<?>>();

@@ -310,4 +310,33 @@ public class TetreeEdgeNeighborTest {
                          + "own children appearing = wrong contract (B)");
         }
     }
+
+    /**
+     * AC4 — non-vacuous EXACT-count fixture for the COARSER (level-1) edge contribution under CONTRACT (A).
+     * The level-(L-1) slice of {@code findEdgeNeighbors} must equal EXACTLY the adjacency ring computed by the
+     * independent coarser oracle: the level-(L-1) face-neighbors of t's parent whose finer ring (across the
+     * coincident m-edge) contains t. This pins the EXACT INVERSE of the finer ring per-edge, catching the
+     * all-edges over-match failure mode (a coarser m reported across an edge t does not actually share with m).
+     * {@code assertTrue(count>=0)} is forbidden (RDR-014 AC4).
+     */
+    @Test
+    void edgeCoarserRingExactCountContractA() {
+        var finder = new TetreeNeighborFinder();
+        byte level = 5;
+        int cell = Constants.lengthAtLevel(level);
+        for (byte type : new byte[] { 0, 5 }) {
+            var t = new Tet(cell * 4, cell * 4, cell * 4, level, type);
+            int edge = 0;
+            var expected = CrossLevelNeighborOracle.coarserEdgeRingMinus1(finder, t, edge);
+            assertFalse(expected.isEmpty(),
+                        "fixture must be non-vacuous: interior type " + type + " edge 0 must have a coarser ring");
+            var result = new HashSet<TetreeKey<?>>(finder.findEdgeNeighbors(t.tmIndex(), edge));
+            var coarser = CrossLevelNeighborOracle.coarserSlice(result, level);
+            assertEquals(expected, coarser,
+                         "type " + type + " edge 0: the level-" + (level - 1) + " slice of findEdgeNeighbors must "
+                         + "equal exactly the contract-(A) coarser ring (level-(L-1) face-neighbors of the parent "
+                         + "whose finer ring across the coincident edge contains t). Extra entries = all-edges "
+                         + "over-match (m reported across an edge t does not share with m)");
+        }
+    }
 }
