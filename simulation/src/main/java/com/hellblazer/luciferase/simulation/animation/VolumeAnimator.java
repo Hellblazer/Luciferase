@@ -81,6 +81,11 @@ public class VolumeAnimator implements AutoCloseable {
      */
     public void setClock(Clock clock) {
         this.clock = clock;
+        // Re-seed the frame's delay baseline off the injected clock. The AnimationFrame field initializer ran
+        // during construction (before any setClock call), seeding lastActive from Clock.system().nanoTime();
+        // leaving it would poison the first cumulativeDelay with a wall-clock baseline subtracted from an
+        // injected-clock reading (Luciferase-9niuo).
+        frame.lastActive = clock.nanoTime();
     }
 
     /**
@@ -250,6 +255,24 @@ public class VolumeAnimator implements AutoCloseable {
             if (!running) {
                 return; // termination guard: stop() was called
             }
+            long duration = recordFrameTiming();
+            Kronos.sleep(VolumeAnimator.frameSleepNs(frameRateNs, duration, eventOverhead));
+            if (running) {
+                this.track(); // reschedule next frame (PrimeMover event, not real recursion)
+            }
+        }
+
+        /**
+         * Per-frame timing accounting (frameCount, cumulativeDelay, cumulativeDurations, lastActive,
+         * eventOverhead), returning this frame's compute duration for the sleep calculation.
+         * <p>
+         * Extracted from {@link #track()} as a {@link NonEvent @NonEvent} unit so the delay/duration
+         * bookkeeping can be exercised deterministically in tests WITHOUT the self-rescheduling {@code track()}
+         * loop (which infinite-recurses under untransformed bytecode). All time reads go through the injected
+         * {@code clock} (Luciferase-9niuo).
+         */
+        @NonEvent
+        long recordFrameTiming() {
             frameCount++;
             long start = clock.nanoTime();
             cumulativeDelay += start - lastActive;
@@ -261,10 +284,7 @@ public class VolumeAnimator implements AutoCloseable {
             // are not dead under literal-recursion semantics.
             lastActive = clock.nanoTime();
             eventOverhead = (lastActive - now) / 2;
-            Kronos.sleep(VolumeAnimator.frameSleepNs(frameRateNs, duration, eventOverhead));
-            if (running) {
-                this.track(); // reschedule next frame (PrimeMover event, not real recursion)
-            }
+            return duration;
         }
     }
 }
