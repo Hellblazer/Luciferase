@@ -257,51 +257,55 @@ public class MultiDirectionalMigration {
         var sourceBubble = bubbleGrid.getBubble(intent.sourceCoord());
         var targetBubble = bubbleGrid.getBubble(intent.targetCoord());
 
-        // LOCK MISSING (Luciferase-n7io1): acquire source+target getMutationLock() in UUID order;
-        // races concurrent migration/merge
-        try {
-            // Step 1: Add entity to target bubble (target now owns entity)
-            targetBubble.addEntity(entityId, intent.position(), intent.content());
-        } catch (Exception e) {
-            // Add failed - no rollback needed, entity stays in source
-            metrics.recordFailure();
-            return MigrationResult.failure(
-                entityId,
-                intent.direction(),
-                "Failed to add to target: " + e.getMessage()
-            );
-        }
-
-        try {
-            // Step 2: Add velocity to target (but don't remove from source yet)
-            if (intent.velocity() != null) {
-                velocities.put(entityId, intent.velocity());
+        // Hold both bubbles' mutation locks (UUID order, deadlock-free) for the whole add-then-remove
+        // commit so it is atomic w.r.t. concurrent migration/merge/split writers on the same pair
+        // (Luciferase-n7io1). Rollback (below) also runs under the locks.
+        try (var ignored = com.hellblazer.luciferase.simulation.bubble.MutationLocks.lock(
+                sourceBubble, targetBubble)) {
+            try {
+                // Step 1: Add entity to target bubble (target now owns entity)
+                targetBubble.addEntity(entityId, intent.position(), intent.content());
+            } catch (Exception e) {
+                // Add failed - no rollback needed, entity stays in source
+                metrics.recordFailure();
+                return MigrationResult.failure(
+                    entityId,
+                    intent.direction(),
+                    "Failed to add to target: " + e.getMessage()
+                );
             }
 
-            // Step 3: Remove entity from source bubble
-            sourceBubble.removeEntity(entityId);
+            try {
+                // Step 2: Add velocity to target (but don't remove from source yet)
+                if (intent.velocity() != null) {
+                    velocities.put(entityId, intent.velocity());
+                }
 
-            // Step 4: Now safe to remove velocity from source (source removal succeeded)
-            // Note: velocity is already in target from step 2, so this just cleans up
+                // Step 3: Remove entity from source bubble
+                sourceBubble.removeEntity(entityId);
 
-            // Step 5: Update metrics and cooldown
-            metrics.recordMigration(intent.direction());
-            migrationCooldowns.put(entityId, currentTick + MIGRATION_COOLDOWN_TICKS);
+                // Step 4: Now safe to remove velocity from source (source removal succeeded)
+                // Note: velocity is already in target from step 2, so this just cleans up
 
-            log.debug("Migrated {} from {} to {} ({})",
-                      entityId, intent.sourceCoord(), intent.targetCoord(), intent.direction());
-            return MigrationResult.success(entityId, intent.direction());
+                // Step 5: Update metrics and cooldown
+                metrics.recordMigration(intent.direction());
+                migrationCooldowns.put(entityId, currentTick + MIGRATION_COOLDOWN_TICKS);
 
-        } catch (Exception e) {
-            // Rollback: remove from target since it was added but migration failed
-            // Note: velocity was NOT removed from source, so it's still there
-            rollbackMigration(intent, e);
-            metrics.recordFailure();
-            return MigrationResult.failure(
-                entityId,
-                intent.direction(),
-                "Rollback after failure: " + e.getMessage()
-            );
+                log.debug("Migrated {} from {} to {} ({})",
+                          entityId, intent.sourceCoord(), intent.targetCoord(), intent.direction());
+                return MigrationResult.success(entityId, intent.direction());
+
+            } catch (Exception e) {
+                // Rollback: remove from target since it was added but migration failed
+                // Note: velocity was NOT removed from source, so it's still there
+                rollbackMigration(intent, e);
+                metrics.recordFailure();
+                return MigrationResult.failure(
+                    entityId,
+                    intent.direction(),
+                    "Rollback after failure: " + e.getMessage()
+                );
+            }
         }
     }
 

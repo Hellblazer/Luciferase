@@ -188,41 +188,61 @@ public class DuplicateEntityDetector {
 
         var sourceBubble = sourceBubbleOpt.get();
 
-        // Verify the authoritative source still holds the entity before pruning the others. If the
-        // entity has already left the expected source (another concurrent migration), deleting from
-        // the other locations risks erasing the live copy — abort and let the next cycle re-resolve.
         var sourceBubbleInstance = findBubbleById(sourceBubble);
-        if (sourceBubbleInstance == null || !sourceBubbleInstance.getEntities().contains(entityId)) {
-            if (config.logLevel() != DuplicateDetectionConfig.LogLevel.ERROR) {
-                log.warn("Reconciliation deferred: entity={} expected source={} no longer holds the entity "
-                         + "(concurrent migration); skipping to avoid entity loss", entityId, sourceBubble);
+
+        // Hold the mutation locks of EVERY involved bubble (the authoritative source plus every
+        // non-source location) in UUID order for the whole verify-then-prune so it is atomic w.r.t.
+        // concurrent migration/merge/split writers (Luciferase-n7io1). Without this, the
+        // "source still holds the entity" check below races a concurrent migration and the prune could
+        // erase the live copy. The locks are gathered before acquisition so the global UUID ordering is
+        // deadlock-free across all writer paths.
+        var involved = new java.util.ArrayList<EnhancedBubble>();
+        if (sourceBubbleInstance != null) {
+            involved.add(sourceBubbleInstance);
+        }
+        for (var bubbleId : locations) {
+            if (!bubbleId.equals(sourceBubble)) {
+                var b = findBubbleById(bubbleId);
+                if (b != null) {
+                    involved.add(b);
+                }
             }
-            return 0;  // No removal — re-resolve on the next cycle
         }
 
         var removedCount = 0;
+        try (var ignored = com.hellblazer.luciferase.simulation.bubble.MutationLocks.lock(involved)) {
+            // Verify (now race-free, under lock) that the authoritative source still holds the entity
+            // before pruning the others. If it has already left the expected source (a migration that
+            // committed before we acquired the locks), deleting from the other locations risks erasing
+            // the live copy — abort and let the next cycle re-resolve.
+            if (sourceBubbleInstance == null || !sourceBubbleInstance.getEntities().contains(entityId)) {
+                if (config.logLevel() != DuplicateDetectionConfig.LogLevel.ERROR) {
+                    log.warn("Reconciliation deferred: entity={} expected source={} no longer holds the entity "
+                             + "(concurrent migration); skipping to avoid entity loss", entityId, sourceBubble);
+                }
+                return 0;  // No removal — re-resolve on the next cycle
+            }
 
-        // LOCK MISSING (Luciferase-n7io1): acquire source+target getMutationLock() in UUID order;
-        // races concurrent migration/merge
-        // Remove from all non-source bubbles
-        for (var bubbleId : locations) {
-            if (!bubbleId.equals(sourceBubble)) {
-                // Find bubble by ID and remove entity
-                var bubble = findBubbleById(bubbleId);
-                if (bubble != null) {
-                    try {
-                        bubble.removeEntity(entityId);
-                        removedCount++;
+            // Remove from all non-source bubbles
+            for (var bubbleId : locations) {
+                if (!bubbleId.equals(sourceBubble)) {
+                    // Find bubble by ID and remove entity
+                    var bubble = findBubbleById(bubbleId);
+                    if (bubble != null) {
+                        try {
+                            bubble.removeEntity(entityId);
+                            removedCount++;
 
-                        if (config.logLevel() != DuplicateDetectionConfig.LogLevel.ERROR) {
-                            log.info("Reconciled duplicate: entity={} source={} removed_from={}",
-                                    entityId, sourceBubble, bubbleId);
+                            if (config.logLevel() != DuplicateDetectionConfig.LogLevel.ERROR) {
+                                log.info("Reconciled duplicate: entity={} source={} removed_from={}",
+                                        entityId, sourceBubble, bubbleId);
+                            }
+                        } catch (Exception e) {
+                            log.error("Failed to remove duplicate: entity={} bubble={}", entityId, bubbleId, e);
                         }
-                    } catch (Exception e) {
-                        log.error("Failed to remove duplicate: entity={} bubble={}", entityId, bubbleId, e);
+                    } else {
+                        log.error("Bubble not found during reconciliation: entity={} bubble={}", entityId, bubbleId);
                     }
-                } else {
-                    log.error("Bubble not found during reconciliation: entity={} bubble={}", entityId, bubbleId);
                 }
             }
         }
