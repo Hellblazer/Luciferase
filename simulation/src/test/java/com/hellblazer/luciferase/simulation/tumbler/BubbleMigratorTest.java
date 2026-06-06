@@ -14,7 +14,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.hellblazer.luciferase.common.time.Clock;
+import com.hellblazer.luciferase.simulation.persistence.PersistenceManager;
 import javax.vecmath.Point3f;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -48,6 +52,48 @@ class BubbleMigratorTest {
 
         tumbler.registerServer(sourceServerId);
         tumbler.registerServer(targetServerId);
+    }
+
+    /**
+     * RDR-016 R2: when persistence is enabled, a MIGRATION_COMMIT WAL-write failure must ABORT the
+     * migration (roll back staging, leave the source authoritative) — not warn-and-proceed. A swallowed
+     * commit-log failure would let the source close with no durable commit record, so a post-crash
+     * recovery replays ENTITY_DEPARTURE (MIGRATING_OUT) with no MIGRATION_COMMIT and forces the entity
+     * back onto the source while the target also owns it — split-brain ownership.
+     */
+    @Test
+    void migrationCommitWalFailure_abortsMigration_noSplitBrain() throws Exception {
+        var walDir = Files.createTempDirectory("rdr016-r2-wal");
+        try (var pm = new PersistenceManager(UUID.randomUUID(), walDir) {
+            @Override
+            public void logMigrationCommit(UUID entityId) throws IOException {
+                throw new IOException("simulated WAL commit-log failure");
+            }
+        }) {
+            migrator.setPersistenceManager(pm);
+
+            var sourceBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+            sourceBubble.addEntity("e1", new Point3f(1f, 0f, 0f), "content1");
+            var targetBubble = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+            migrator.setBubbleTransferFactory((tgtServerId, src) -> targetBubble);
+
+            var result = migrator.migrate(sourceBubble, sourceServerId, targetServerId)
+                                 .get(5, TimeUnit.SECONDS);
+
+            assertThat(result.success())
+                .as("MIGRATION_COMMIT WAL failure must abort the migration (RDR-016 R2)")
+                .isFalse();
+            assertThat(sourceBubble.entityCount())
+                .as("source must remain authoritative (not closed) when commit logging fails")
+                .isEqualTo(1);
+            assertThat(targetBubble.entityCount())
+                .as("target staging must be rolled back on WAL-commit abort (no split-brain)")
+                .isEqualTo(0);
+        } finally {
+            try (var paths = Files.walk(walDir)) {
+                paths.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+            }
+        }
     }
 
     @Test

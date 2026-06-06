@@ -275,8 +275,13 @@ public class BubbleMigrator {
                         persistenceManager.logEntityDeparture(
                             UUID.fromString(entity.id()), bubbleId, targetBubble.id());
                     } catch (java.io.IOException | IllegalArgumentException walEx) {
-                        log.warn("WAL ENTITY_DEPARTURE log failed for entity {} in bubble {}: {}",
-                                 entity.id(), bubbleId, walEx.getMessage());
+                        // Fail loud: when persistence is enabled the WAL bracket MUST be durable. A
+                        // swallowed open-bracket failure leaves an in-flight migration unrecoverable on
+                        // restart. Re-throw so the outer catch rolls back staging and leaves the source
+                        // authoritative (RDR-016 R2). This is pre-staging, so rollback is a no-op here.
+                        throw new RuntimeException(
+                            "WAL ENTITY_DEPARTURE log failed for entity " + entity.id() + " in bubble "
+                            + bubbleId + ": " + walEx.getMessage(), walEx);
                     }
                 }
             }
@@ -316,20 +321,27 @@ public class BubbleMigrator {
             }
             // ackDeadline used only for the elapsed-time log message above; no raw sleep.
 
-            // COMMIT POINT — no rollback after this line.
-            // WAL bracket close: MIGRATION_COMMIT logged per entity before source is deactivated.
+            // WAL bracket close: MIGRATION_COMMIT logged per entity. This runs BEFORE the true point of
+            // no return (sourceBubble.close() below), so a WAL failure here MUST abort the migration —
+            // re-throw to the outer catch, which rolls back staging and leaves the source authoritative.
+            // Swallowing it would let the source close with no durable commit record; on restart, recovery
+            // would replay ENTITY_DEPARTURE (MIGRATING_OUT) with no MIGRATION_COMMIT and force the entity
+            // back onto the source while the target also owns it — split-brain ownership (RDR-016 R2).
             if (persistenceManager != null) {
                 for (var entity : entities) {
                     try {
                         persistenceManager.logMigrationCommit(
                             UUID.fromString(entity.id()));
                     } catch (java.io.IOException | IllegalArgumentException walEx) {
-                        log.warn("WAL MIGRATION_COMMIT log failed for entity {} in bubble {}: {}",
-                                 entity.id(), bubbleId, walEx.getMessage());
+                        throw new RuntimeException(
+                            "WAL MIGRATION_COMMIT log failed for entity " + entity.id() + " in bubble "
+                            + bubbleId + " — aborting migration before source close: " + walEx.getMessage(),
+                            walEx);
                     }
                 }
             }
 
+            // COMMIT POINT — no rollback after this line.
             // Step 5: Deactivate source bubble — target is now the sole authoritative copy.
             sourceBubble.close();
 
