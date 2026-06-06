@@ -180,6 +180,42 @@ primitives.
   symmetric-membership reciprocity for all 6 edges and 4 vertices, PLUS hand-worked exact-count fixtures
   (ring/star size) at a small fixed level — not `assertTrue(count >= 0)`, and NOT a dualFace involution.
 
+### F4 — Authoritative edge→face table; the Finder's inline table is WRONG (gate Critical, resolved)
+
+Two parallel implementations carry edge→face tables, and they **conflict**:
+
+- `TetreeNeighborDetector.EDGE_FACES` (`TetreeNeighborDetector.java:68-75`):
+  `e0→{2,3}, e1→{1,3}, e2→{1,2}, e3→{0,3}, e4→{0,2}, e5→{0,1}`
+- `TetreeNeighborFinder` inline (`TetreeNeighborFinder.java:104-110`):
+  `e0→{0,2}, e1→{0,3}, e2→{1,3}, e3→{0,1}, e4→{1,2}, e5→{2,3}`
+
+Both classes use the **same** edge→vertex-pair numbering (`EDGE_VERTICES`,
+`TetreeNeighborDetector.java:50-57`): `e0=(0,1) e1=(0,2) e2=(0,3) e3=(1,2) e4=(1,3) e5=(2,3)`, so this is
+**not** a numbering-convention artifact. Faces follow the t8code convention face *i* = opposite vertex *i*
+(`TetreeConnectivity.java:242-259`, `FACE_CORNERS`): `f0={1,2,3} f1={0,2,3} f2={0,1,3} f3={0,1,2}`.
+
+Deriving the ground truth — edge `(va,vb)` is bounded by exactly the faces containing **both** va and vb:
+
+| edge | verts | bounding faces (derived) |
+|------|-------|--------------------------|
+| 0 | (0,1) | {2,3} |
+| 1 | (0,2) | {1,3} |
+| 2 | (0,3) | {1,2} |
+| 3 | (1,2) | {0,3} |
+| 4 | (1,3) | {0,2} |
+| 5 | (2,3) | {0,1} |
+
+The derived mapping **matches `TetreeNeighborDetector.EDGE_FACES` exactly**; the
+`TetreeNeighborFinder` inline table is **incorrect** (e.g. edge 0 should be {2,3}, not {0,2}). This is a
+latent defect in the existing same-level edge code too, masked because the F2 intersection
+`CHILDREN_AT_FACE[F1] ∩ CHILDREN_AT_FACE[F2]` is commutative and some wrong-pair intersections happen to
+coincide, and because no test asserts exact cross-level edge counts.
+
+**Resolution:** the implementation MUST use the derived/`EDGE_FACES` table as the single authoritative
+source (promote it into `TetreeConnectivity` as the canonical `EDGE_FACES` and have both
+`TetreeNeighborFinder` and `TetreeNeighborDetector` consume it), and **correct the wrong inline table**.
+t8code parity of the edge→face table is an acceptance gate (below).
+
 ## Decision (updated post-research — proposed for gate)
 
 - **D1' (implement, scoped):** Implement `findEdgeNeighborsAtLevel` for the ±1 live case first
@@ -193,9 +229,36 @@ primitives.
   `VERTEX_TO_BEY_CHILDREN` cache only if profiling shows a hot path).
 - **Validation RESOLVED:** symmetric-membership reciprocity DFS + exact-count fixtures, adapting
   `PyramidNeighborParityTest.reciprocitySweep`. Keep the 21 previously-broken live tests green.
+- **Edge→face table RESOLVED (F4):** the derived/`TetreeNeighborDetector.EDGE_FACES` mapping is
+  authoritative; the `TetreeNeighborFinder` inline table (L104-110) is wrong and is corrected as part of
+  this work. Promote a single canonical `EDGE_FACES` into `TetreeConnectivity`; both neighbor classes
+  consume it.
+- **Vertex scope RESOLVED:** D1' governs — implement `findVertexNeighborsAtLevel` /
+  `findVertexNeighborsAtFinerLevels` **full-depth** to satisfy the existing `TetreeVertexNeighborTest`
+  contract (vertex incidence via inverted `CHILD_VERTEX_PARENT_VERTEX`). Note: a *separate* working
+  same-level vertex impl already exists in `TetreeNeighborDetector.findVertexNeighbors` (the ghost path);
+  the stubs being fixed are the `TetreeNeighborFinder` cross-level helpers only.
 
-## Open Questions (remaining for gate)
+## Acceptance Criteria
 
-1. Vertex-neighbor scope: implement full-depth (to satisfy `TetreeVertexNeighborTest`) now, or fence
-   vertex cross-level until a live consumer appears? (Lower risk than edge since not live.)
-2. Exact hand-worked ring/star counts for the exact-count fixtures (derive during implementation).
+1. The three helpers (`findEdgeNeighborsAtLevel`, `findVertexNeighborsAtLevel`,
+   `findVertexNeighborsAtFinerLevels`) perform real traversal; no empty-list placeholders remain.
+2. **Edge→face t8code parity:** a single canonical `EDGE_FACES` table (the F4-derived mapping) is the
+   only source; the wrong `TetreeNeighborFinder` inline table is removed. A test asserts the table equals
+   the geometric derivation (each edge → the two faces containing both its vertices) for the face
+   convention in `FACE_CORNERS`.
+3. **Symmetric-membership reciprocity** DFS (depth 4–5 refined Tetree) over all 6 edges and 4 vertices:
+   for every neighbor `n` of `e`, `e ∈ neighbors(n)` (adapt `PyramidNeighborParityTest.reciprocitySweep`).
+4. **Non-vacuous exact-count fixtures:** at least one concrete `(type, level, edge)` and one
+   `(type, level, vertex)` assert the **exact** coarser+finer neighbor count (the count is now mechanically
+   derivable from `CHILDREN_AT_FACE` ∩ `EDGE_FACES` for edges and the inverted
+   `CHILD_VERTEX_PARENT_VERTEX` for vertices) — explicitly guarding against the empty-set-both-sides
+   vacuity that bare reciprocity admits. `assertTrue(count >= 0)` is forbidden.
+5. The 21 previously-broken Tetree collision/integration tests stay green (live-path canary).
+6. No deep-tet insertion (RDR-012 fence): the helpers are read-only neighbor queries.
+
+## Remaining Open Question (safe to defer to implementation)
+
+1. The specific numeric ring/star counts for the criterion-4 fixtures — mechanically derivable from the
+   now-authoritative tables during implementation; the *requirement* (assert an exact count for ≥1 edge
+   and ≥1 vertex case) is locked above, only the literal numbers are derived in-code.
