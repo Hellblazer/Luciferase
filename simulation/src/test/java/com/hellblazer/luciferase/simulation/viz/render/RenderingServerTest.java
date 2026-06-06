@@ -57,6 +57,34 @@ class RenderingServerTest {
         assertFalse(server.isStarted(), "Server should be stopped");
     }
 
+    /**
+     * Luciferase-bshji: the EntityStreamConsumer must be constructed with the server's own {@code clock}
+     * field (default Clock.system()), not a separate {@code Clock.system()} literal. Since Clock.system()
+     * returns a fresh instance per call, a literal would hand the consumer a different clock object than the
+     * server holds, so they could diverge during the construction-to-setClock() window. Asserts the two are
+     * the same instance from construction.
+     */
+    @Test
+    void entityConsumerSharesServerClockInstanceAtConstruction() throws Exception {
+        var config = RenderingServerConfig.testing();
+        server = new RenderingServer(config);
+
+        var serverClockField = RenderingServer.class.getDeclaredField("clock");
+        serverClockField.setAccessible(true);
+        var serverClock = serverClockField.get(server);
+
+        var consumerField = RenderingServer.class.getDeclaredField("entityConsumer");
+        consumerField.setAccessible(true);
+        var consumer = consumerField.get(server);
+        var consumerClockField = consumer.getClass().getDeclaredField("clock");
+        consumerClockField.setAccessible(true);
+        var consumerClock = consumerClockField.get(consumer);
+
+        assertSame(serverClock, consumerClock,
+                   "EntityStreamConsumer must share the server's clock instance from construction "
+                   + "(Luciferase-bshji); a separate Clock.system() literal would diverge");
+    }
+
     @Test
     void testDynamicPortAssignment() {
         var config = RenderingServerConfig.testing();  // port = 0

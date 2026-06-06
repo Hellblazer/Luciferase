@@ -105,11 +105,14 @@ public class RenderingServer implements AutoCloseable {
     public RenderingServer(RenderingServerConfig config) {
         this.config = config;
         this.regionManager = new AdaptiveRegionManager(config);
+        // Use the clock field (default Clock.system()) rather than a fresh Clock.system() literal so the
+        // server and its EntityStreamConsumer share one clock instance from construction — closing the
+        // construction-to-setClock() window where they could diverge (Luciferase-bshji).
         this.entityConsumer = new EntityStreamConsumer(
             config.upstreams(),
             regionManager,
             config.performance(),
-            Clock.system()
+            this.clock
         );
 
         log.info("RenderingServer created with config: port={}, regionLevel={}, upstreams={}",
