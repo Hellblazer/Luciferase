@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -55,14 +56,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  */
 class DirectedMigrationRegressionTest {
 
-    private static final int  BUBBLE_COUNT = 8;
-    private static final byte MAX_LEVEL    = (byte) 3;
-    private static final long TARGET_FRAME = 10L;
+    private static final int         BUBBLE_COUNT = 8;
+    private static final long        TARGET_FRAME = 10L;
+    private static final WorldBounds WORLD        = new WorldBounds(0.0f, 100.0f);
 
     @Test
     void escapedEntityRoutesToTheSpecificAdjacentNeighbor() {
-        var grid = new TetreeBubbleGrid(MAX_LEVEL);
-        grid.createBubbles(BUBBLE_COUNT, MAX_LEVEL, TARGET_FRAME);
+        var grid = new TetreeBubbleGrid((byte) 21);
+        grid.createBubbles(BUBBLE_COUNT, WORLD, TARGET_FRAME);
 
         var keySet = new HashSet<>(grid.getBubblesWithKeys().keySet());
 

@@ -16,9 +16,11 @@
  */
 package com.hellblazer.luciferase.simulation.bubble;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.entity.StringEntityIDGenerator;
 
@@ -173,6 +175,122 @@ public class TetreeBubbleGrid {
                 createdCount++;
             }
         }
+    }
+
+    /**
+     * Build the bubble grid as a SINGLE-LEVEL adjacent spatial partition tiling the
+     * {@link WorldBounds} domain (RDR-015 AC2, Option B).
+     * <p>
+     * Unlike the legacy {@link #createBubbles(int, byte, long)} — which distributes bubbles across
+     * <em>mixed</em> tree levels (an L0 root catch-all plus nested children) and is therefore not a
+     * spatial partition — this method emits a set of <em>same-level</em>, face-adjacent tetrahedra
+     * that tile the world domain, so an entity crossing a bubble face lands in a real neighbor bubble
+     * and the migration path is well-defined.
+     * <p>
+     * Coordinates are placed directly into the Tetree absolute integer-coordinate space without
+     * rescaling (RDR-003 / RDR-015 F5): a world coordinate {@code w} is the Tetree coordinate {@code w}.
+     * <p>
+     * <b>Level selection.</b> The partition level {@code L} is the finest level whose cell-edge is no
+     * coarser than the requested granularity: {@code lengthAtLevel(L) <= WorldBounds.size() / cbrt(N)}.
+     * {@code L} is clamped to {@code [1, MAX_REFINEMENT_LEVEL]} — never the L0 root.
+     * <p>
+     * <b>Seeding + tiling.</b> Seeds from the level-{@code L} tet containing the world centre, then
+     * BFS over <b>same-level face neighbors</b>, including a neighbor iff its centroid lies inside the
+     * world bounds. Adjacency is confirmed by <b>involution reciprocity</b>
+     * ({@code faceNeighbor(faceNeighbor(t,f).face()).tet() == t}), never a shared-vertex count: the
+     * Bey-SFC face neighbor is non-conforming (shares 0–3 vertices — see CLAUDE.md). The in-bounds
+     * level-{@code L} tet set is finite, so BFS terminates.
+     *
+     * @param targetBubbleCount granularity hint {@code N} (drives level selection; the realized count
+     *                          is the number of in-bounds level-{@code L} tets, which may exceed {@code N})
+     * @param worldBounds       the entity world domain to tile
+     * @param targetFrameMs     per-bubble frame-time budget
+     * @return the chosen partition level {@code L}
+     * @throws IllegalArgumentException if {@code targetBubbleCount <= 0} or {@code targetFrameMs <= 0}
+     * @throws NullPointerException     if {@code worldBounds} is null
+     */
+    public byte createBubbles(int targetBubbleCount, WorldBounds worldBounds, long targetFrameMs) {
+        if (targetBubbleCount <= 0) {
+            throw new IllegalArgumentException("Target bubble count must be positive, got: " + targetBubbleCount);
+        }
+        Objects.requireNonNull(worldBounds, "WorldBounds cannot be null");
+        if (targetFrameMs <= 0) {
+            throw new IllegalArgumentException("Target frame time must be positive, got: " + targetFrameMs);
+        }
+
+        var level = choosePartitionLevel(worldBounds, targetBubbleCount);
+
+        // Seed from the level-L tet containing the world centre.
+        var centre = worldBounds.center();
+        var seed = Tet.locatePointBeyRefinementFromRoot(centre, centre, centre, level);
+
+        // BFS over same-level reciprocal face neighbors whose centroid lies inside the world domain.
+        var partition = new LinkedHashMap<TetreeKey<?>, Tet>();
+        var queue = new ArrayDeque<Tet>();
+        partition.put(seed.tmIndex(), seed);
+        queue.add(seed);
+
+        while (!queue.isEmpty()) {
+            var current = queue.poll();
+            for (int face = 0; face < 4; face++) {
+                var fn = current.faceNeighbor(face);
+                if (fn == null) {
+                    continue; // domain boundary
+                }
+                // Involution reciprocity: the dual face must point back to current.
+                var back = fn.tet().faceNeighbor(fn.face());
+                if (back == null || !current.equals(back.tet())) {
+                    continue;
+                }
+                var neighbor = fn.tet();
+                if (!centroidInBounds(neighbor, worldBounds)) {
+                    continue;
+                }
+                var key = neighbor.tmIndex();
+                if (partition.containsKey(key)) {
+                    continue;
+                }
+                partition.put(key, neighbor);
+                queue.add(neighbor);
+            }
+        }
+
+        // Materialize the partition.
+        bubblesByKey.clear();
+        neighborFinder.clearCache();
+        for (var entry : partition.entrySet()) {
+            var bubble = new EnhancedBubble(UUID.randomUUID(), level, targetFrameMs);
+            addBubble(bubble, entry.getKey());
+        }
+
+        return level;
+    }
+
+    /**
+     * Choose the finest partition level whose cell-edge is no coarser than
+     * {@code WorldBounds.size() / cbrt(targetBubbleCount)} (RDR-015 AC2). Clamped to
+     * {@code [1, MAX_REFINEMENT_LEVEL]} so the partition is never the L0 root.
+     */
+    private static byte choosePartitionLevel(WorldBounds worldBounds, int targetBubbleCount) {
+        double cellTarget = worldBounds.size() / Math.cbrt(targetBubbleCount);
+        byte maxLevel = Constants.getMaxRefinementLevel();
+        // lengthAtLevel(L) = 2^(maxLevel - L); want 2^(maxLevel - L) <= cellTarget.
+        for (byte level = 1; level < maxLevel; level++) {
+            if (Constants.lengthAtLevel(level) <= cellTarget) {
+                return level;
+            }
+        }
+        return maxLevel;
+    }
+
+    /** True iff the tetrahedral centroid of {@code tet} lies within the world bounds (raw coordinates). */
+    private static boolean centroidInBounds(Tet tet, WorldBounds worldBounds) {
+        var c = tet.coordinates();
+        double cx = (c[0].x + c[1].x + c[2].x + c[3].x) / 4.0;
+        double cy = (c[0].y + c[1].y + c[2].y + c[3].y) / 4.0;
+        double cz = (c[0].z + c[1].z + c[2].z + c[3].z) / 4.0;
+        return worldBounds.contains((float) cx) && worldBounds.contains((float) cy)
+               && worldBounds.contains((float) cz);
     }
 
     /**

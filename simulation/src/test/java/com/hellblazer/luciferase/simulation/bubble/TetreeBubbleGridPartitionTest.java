@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayDeque;
@@ -57,13 +58,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TetreeBubbleGridPartitionTest {
 
-    private static final int  BUBBLE_COUNT  = 8;
-    private static final byte MAX_LEVEL     = (byte) 3;
-    private static final long TARGET_FRAME  = 10L;
+    private static final int        BUBBLE_COUNT = 8;
+    private static final long       TARGET_FRAME = 10L;
+    private static final WorldBounds WORLD       = new WorldBounds(0.0f, 100.0f);
 
     private static TetreeBubbleGrid partitionGrid() {
-        var grid = new TetreeBubbleGrid(MAX_LEVEL);
-        grid.createBubbles(BUBBLE_COUNT, MAX_LEVEL, TARGET_FRAME);
+        var grid = new TetreeBubbleGrid((byte) 21);
+        grid.createBubbles(BUBBLE_COUNT, WORLD, TARGET_FRAME);
         return grid;
     }
 
@@ -72,8 +73,8 @@ class TetreeBubbleGridPartitionTest {
         var grid = partitionGrid();
         var keys = new ArrayList<>(grid.getBubblesWithKeys().keySet());
 
-        assertEquals(BUBBLE_COUNT, keys.size(),
-                     "every requested bubble must materialize at a distinct key (no dedup loss)");
+        assertTrue(keys.size() > 1,
+                   "a world-tiling partition must produce more than one bubble; got " + keys.size());
 
         byte expectedLevel = keys.get(0).toTet().l();
         assertTrue(expectedLevel > 0, "partition level L must be > 0 (no L0 root catch-all bubble)");
